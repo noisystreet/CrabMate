@@ -255,6 +255,15 @@ effective = min(chosen, ceiling, role.max_permission_level)
 3. **只有 `approval = Gate` 的等级才查这个集合**：`Deny`（L0–L2）直接拒、`AuditOnly`（L4）不需要（`command_scope = Any`）。
 4. **写入前缀恒为 `effective`，与 ceiling 无关**：ceiling 只决定 `effective` 的上界（§6.1），所以不存在“批一个更高等级的键”这种操作——`AllowAlways` 最多写下当前 `effective` 的前缀（配合 MB-1）。
 
+**落地结果（S4 的一部分，S3 之后单独合入）**：
+
+- **载体**：`cm_types::scoped_allowlist_key(level, key)` 是唯一生成点（`None` → 裸键，未接线路径逐字等价）；`PermissionLevel::index()` 是唯一序号来源。
+- **写入**：`cm_approval::persist_allowlist_key` 统一加前缀，等级由 `SharedAllowlistHandles.level` 带入（`shared_allowlist_handles_web(web_ctx, level)`）；workflow 节点走 `WorkflowApprovalMode::Interactive.permission_level`，与主链路同一把尺子。SSE 载荷里的 `allowlist_key` **保持裸键**（客户端可读性 + 既有 golden 不变）。
+- **命中**：`http_tool_exec.inc.rs` 的 URL 集合查询、`execute_run_command_approval.inc.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
+- **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
+- **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
+- **仍未做**（S4 剩余）：`ApprovalPolicy::AuditOnly` 的审计事件与 §11.2 的 `permission.*` 结构化字段；`permission_confirm_tools` 目前仍无消费点（MB-4 由工具自身 `confirm` 参数承担）。
+
 ### 6.4 沙盒：只钳路径与网络，不降等级
 
 `sync_default_tool_sandbox_mode = docker` 时**不**把等级钳到 L2——那样会把 L3 的「越界 → 审批」变成 L2 的「越界 → 直接拒」，即**为了更安全打开沙盒，结果白名单外命令从“弹审批”变成“报错”**（隔离机制误伤成权限降级）。
@@ -543,7 +552,7 @@ dst.permission.permission_level_max =
 | **S1** | 类型 + 配置键 + **ceiling 按部署形态推导**（§5.1）+ **`agent_roles.max_permission_level` 解析**（§6.1 的 role cap 依赖它）+ `resolve_permission_level_for_turn` + `project_caps` + golden + **热重载登记与启动期 ceiling 冻结**（§9.1）（**不接线**） | **无** | ✅ |
 | **S2** | `tool_visibility` + early-deny（L0 / L1 生效）+ **`command_scope = None` 硬拒**（`run_command` / `terminal_session` / `python_snippet_run` / `run_executable`） | 仅显式设 `chat` / `read` 时 | ✅ |
 | **S3** | 命令白名单 / 路径 / 网络三轴接线（L2 硬边界、L4 放行）+ **`caps` 进 `WorkflowToolExecCtx`** + **`external_tools` 接线**（L0–L2 拒 `mcp__*` / 动态工具）+ L0 编排短路（§8.2） | 仅显式设 `workspace` / `unrestricted` 时 | ✅ |
-| **S4** | `ApprovalPolicy::AuditOnly` + 审计事件 + allowlist 等级作用域（§6.3） | 仅 L4 时 | ✅ |
+| **S4** | allowlist 等级作用域（§6.3，**已落地**）+ `ApprovalPolicy::AuditOnly` 与审计事件（**待做**） | 前者：仅跨级复用旧批准时；后者：仅 L4 时 | ✅（部分） |
 | **S5a** | `GET /permission` 只读投影（§16.2，含 `?agent_role=`）+ OpenAPI + `docs/命令行与路由.md` | 无 | ✅ |
 | **S5b** | `POST /chat` 的 `permission_level`（含 `chat_keys` 字母序）+ `GET /conversation/messages` 的 `active` / `effective` 双字段（§16.1） | 客户端不传时无变化 | ✅ |
 | **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |
@@ -799,7 +808,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 
 预期只剩 `tests.rs` 里直接测自由函数的两行；若出现**非测试**文件命中，说明该工具尚未接入载体，先补 R1 再往下写。file 模块之外的上表调用点则逐个确认意图已写入 `PathScope`。
 
-**R4**（allowlist 键构造收口，为 §6.3 的 `l{n}|` 前缀准备）与 **R5**（工具可见性三处判定合一）**不前置**：S3/S4 本来就要改那几个函数，届时顺手做。
+**R4**（allowlist 键构造收口，为 §6.3 的 `l{n}|` 前缀准备）**已随 S4 落地**：生成点收口到 `cm_types::scoped_allowlist_key`，四处命中点改为「用当前等级现算键」。**R5**（工具可见性三处判定合一）**不前置**：S3 已按 `caps` 收口，剩余若要做另开 PR。
 
 ---
 

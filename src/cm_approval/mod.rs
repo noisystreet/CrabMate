@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::cm_types::CommandApprovalDecision;
+use crate::cm_types::{CommandApprovalDecision, PermissionLevel, scoped_allowlist_key};
 use log::debug;
 use tokio::sync::{Mutex, mpsc};
 
@@ -97,6 +97,8 @@ impl ToolApprovalWebError {
 /// Web 会话级 **永久允许** 集合句柄。
 pub struct SharedAllowlistHandles<'a> {
     pub web: Option<&'a Arc<Mutex<HashSet<String>>>>,
+    /// 写入时的**等级作用域**（设计 §6.3）；`None` = 该路径未接线等级，写裸键。
+    pub level: Option<PermissionLevel>,
 }
 
 /// 白名单未命中且已走交互审批之后的结果（`AllowOnce` / `AllowAlways` 均视为已放行）。
@@ -115,10 +117,14 @@ pub(crate) fn web_timeline_detail(spec: &ApprovalRequestSpec) -> String {
     format!("{command} {args}")
 }
 
-/// 将 `key` 写入 Web persistent allowlist（无 `web` 句柄时为 no-op）。
+/// 将 `key` 按当回合等级加上**作用域前缀**后写入 Web persistent allowlist（无 `web` 句柄时为 no-op）。
+///
+/// 前缀由 [`scoped_allowlist_key`] 统一生成：写入与命中必须同一把尺子（设计 §6.3）。
 pub async fn persist_allowlist_key(handles: &SharedAllowlistHandles<'_>, key: &str) {
     if let Some(w) = handles.web {
-        w.lock().await.insert(key.to_string());
+        w.lock()
+            .await
+            .insert(scoped_allowlist_key(handles.level, key));
     }
 }
 

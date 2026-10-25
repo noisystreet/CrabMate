@@ -294,7 +294,10 @@ async fn request_unknown_cmd_approval(
             ),
         });
     };
-    let allow_handles = crate::cm_internal::tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
+    let allow_handles = crate::cm_internal::tool_approval::shared_allowlist_handles_web(
+        ctx.web_ctx,
+        ctx.permission.map(|c| c.level),
+    );
     let cmd_show = if script.is_empty() {
         cmd.to_string()
     } else {
@@ -378,13 +381,20 @@ async fn resolve_unknown_cmd_allowlist(
     ) {
         return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
     }
-    if let Some(w) = ctx.web_ctx
-        && w.persistent_allowlist_shared
+    // persistent allowlist 的键带**等级作用域前缀**（设计 §6.3）：L3 批过的命令在 L2
+    // 不得继续命中——否则这一行会抢在下面的 L2 硬拒之前把命令放行。
+    if let Some(w) = ctx.web_ctx {
+        let stored_cmd_key = crate::cm_types::scoped_allowlist_key(
+            ctx.permission.map(|c| c.level),
+            parsed.cmd.as_str(),
+        );
+        if w.persistent_allowlist_shared
             .lock()
             .await
-            .contains(parsed.cmd.as_str())
-    {
-        return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
+            .contains(&stored_cmd_key)
+        {
+            return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
+        }
     }
     // L2（`approval = Deny`）：未知命令直接拒，**不**弹审批（无人值守档的硬边界）。
     // 顺序放在「工作区内脚本 / persistent allowlist 放行」之后：那两条不是越界，
@@ -507,7 +517,10 @@ async fn approve_posix_shell_wrap_if_needed(
         });
     }
     let spec = tool_approval::approval_spec_shell_script(ctx.sse_command, parsed.script.as_str());
-    let allow_handles = tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(
+        ctx.web_ctx,
+        ctx.permission.map(|c| c.level),
+    );
     match tool_approval::interactive_gate_after_whitelist_miss(
         ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
@@ -626,7 +639,10 @@ async fn approve_external_run_command_paths_if_needed(
     let detail_paths = unsafe_args.join(", ");
     let spec =
         tool_approval::approval_spec_workspace_external_path(ctx.sse_command, &detail_paths);
-    let allow_handles = tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(
+        ctx.web_ctx,
+        ctx.permission.map(|c| c.level),
+    );
     match tool_approval::interactive_gate_after_whitelist_miss(
         ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,

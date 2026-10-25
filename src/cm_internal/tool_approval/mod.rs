@@ -80,17 +80,23 @@ pub async fn request_tool_interactive_approval(
 }
 
 /// 从 [`crate::cm_tools::tool_runtime::WebToolRuntime`] 构造 persistent allowlist 句柄。
+///
+/// `level` 是本回合生效等级，用于给 `AllowAlways` 的键加**作用域前缀**（设计 §6.3）：
+/// 只传 `Option` 而不是 `&PermissionCaps`，是因为本层只需要「键写进哪一档」这一件事。
 pub fn shared_allowlist_handles_web(
     web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+    level: Option<crate::cm_types::PermissionLevel>,
 ) -> SharedAllowlistHandles<'_> {
     SharedAllowlistHandles {
         web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+        level,
     }
 }
 
 /// Web 会话下的交互审批门控（封装 allowlist 句柄与 sink 构造）。
 pub async fn interactive_gate_web_runtime(
     web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+    level: Option<crate::cm_types::PermissionLevel>,
     spec: &ApprovalRequestSpec,
     sse_log_label: &'static str,
 ) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
@@ -98,7 +104,7 @@ pub async fn interactive_gate_web_runtime(
         web_ctx.map(web_tool_runtime_approval_sink),
         spec,
         sse_log_label,
-        &shared_allowlist_handles_web(web_ctx),
+        &shared_allowlist_handles_web(web_ctx, level),
     )
     .await
 }

@@ -79,7 +79,7 @@ pub use mcp_types::*;
 pub use message::*;
 pub use permission_level::{
     CeilingSource, PathScope, PermissionCapsView, PermissionLevel, parse_optional_permission_level,
-    parse_permission_level,
+    parse_permission_level, scoped_allowlist_key,
 };
 pub use real_user_message::{
     first_real_user_task_content, is_real_user_task_message, last_real_user_message_index,

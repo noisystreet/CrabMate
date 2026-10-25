@@ -304,6 +304,9 @@ async fn unknown_cmd_gate_decision_matrix() {
     let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
     assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
     assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
+    // `test_policy_context` 不带 `caps`（`permission = None`），所以这里断言的是
+    // 「未接线路径写裸键」——与引入等级前的行为一致。若将来该 fixture 接上 caps，
+    // 断言须改成 `scoped_allowlist_key(Some(level), cmd)`。
     assert!(
         fixture
             .web

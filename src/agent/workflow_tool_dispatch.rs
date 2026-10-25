@@ -64,6 +64,10 @@ pub async fn dispatch_workflow_execute_tool(
                     approval_request_guard: web_ctx.approval_request_guard.clone(),
                     persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
                     cancel: web_ctx.cancel.clone(),
+                    // 节点内 `AllowAlways` 写进本回合等级的作用域（设计 §6.3）。
+                    permission_level: permission.map(|c| c.level),
+                    // 节点层也要看等级给的越界策略：L2 直接拒、L4 放行，都不弹窗。
+                    approval: permission.map(|c| c.approval),
                 }
             } else {
                 workflow::WorkflowApprovalMode::NoApproval

@@ -168,7 +168,8 @@ async fn approve_external_read_dir_if_needed(
         ));
     }
     let spec = tool_approval::approval_spec_read_dir_external_path(&ext_path);
-    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
+    let allow_handles =
+        tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level));
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
@@ -203,3 +204,7 @@ mod tests;
 #[cfg(test)]
 #[path = "execute_run_command_gate_tests.rs"]
 mod run_command_gate_tests;
+
+#[cfg(test)]
+#[path = "execute_allowlist_scope_tests.rs"]
+mod allowlist_scope_tests;

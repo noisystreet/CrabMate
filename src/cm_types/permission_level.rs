@@ -2,7 +2,8 @@
 //!
 //! 设计见 `docs/design/permission_levels.md`：§4 等级定义、§5.1 上限推导、§9 安全边界。
 //!
-//! 本模块只放**枚举与解析**。「等级 → 六轴能力」的投影在
+//! 本模块只放**枚举、解析与纯值构造**（如 [`scoped_allowlist_key`]：审批键的等级前缀，
+//! 无 IO、无配置依赖）。「等级 → 六轴能力」的投影在
 //! [`crate::cm_agent::permission`]（依赖方向 `cm_types` → `cm_config` → `cm_tools` → `cm_agent`，
 //! 投影要用 [`crate::cm_config::AgentConfig`]，因此不能下沉到本层）。
 
@@ -75,6 +76,22 @@ impl PermissionLevel {
             PermissionLevel::Approved => "现状：越界走人工审批",
             PermissionLevel::Unrestricted => "不受工作区路径与命令白名单限制：放行 + 审计",
         }
+    }
+}
+
+/// persistent allowlist（`AllowAlways` 的会话级集合）的**等级作用域键**：`l{level}|{key}`。
+///
+/// 设计 §6.3：写入用当回合的**生效**等级；**命中要求等级严格相等**（用当前等级现算键去
+/// 比对），不是 `>=`。用 `>=` 会让 L3 批过的 URL / 命令在 L2 会话继续命中，而 L2 的全部
+/// 意义就是「人工例外通道关闭」。
+///
+/// `level = None` 表示该调用路径尚未接线等级（如无 `caps` 的旧测试路径），返回裸键，
+/// 与引入等级前逐字一致。
+#[must_use]
+pub fn scoped_allowlist_key(level: Option<PermissionLevel>, key: &str) -> String {
+    match level {
+        Some(level) => format!("l{}|{}", level.index(), key),
+        None => key.to_string(),
     }
 }
 
