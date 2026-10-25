@@ -672,7 +672,7 @@ pub(super) async fn run_serve_branch(
         cors_allowed_origins.clone(),
     );
     let bind_ip = parse_bind_ip(http_bind_host)?;
-    let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
+    let auth_enabled = cli_run_serve::serve_validate_bind_gates(cfg_holder, bind_ip).await?;
     let addr = std::net::SocketAddr::from((bind_ip, port));
     cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli).await;
     let listener = tokio::net::TcpListener::bind(addr).await?;

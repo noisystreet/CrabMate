@@ -17,6 +17,8 @@ use super::types::AgentConfig;
 /// - **MCP**：`mcp_enabled` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 `crate::cm_config::mcp::clear_mcp_process_cache`.
 /// - **`chat_uploads_dir`**：`serve` 启动时钉到会话库旁，**不**热更、**不**随工作区切换。
 /// - **`chat_workspace_root`**：`serve` / **`POST /workspace`** 注入，**不**热更（`src` 里恒为 `None`）。
+/// - **`permission`**：显式登记；`permission_level` 可自由热更，而 `permission_level_max` **只降不升**
+///   （抬上限须重启进程，见 `docs/design/permission_levels.md` §9.1）。
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
     // `serve --yes`（或 CM_ALLOWED_COMMANDS=*）写入的「全放行」哨兵不因热重载被覆盖。
     let allowlist_allows_all = dst
@@ -47,6 +49,25 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.thinking_echo.clone_from(&src.thinking_echo);
     dst.context_pipeline.clone_from(&src.context_pipeline);
     dst.workspace_roots.clone_from(&src.workspace_roots);
+    // 权限等级：**显式登记**（本函数是逐字段白名单，不登记则连「降级」都不会热更）。
+    // ceiling 只降不升（设计 §9.1）：抬上限须重启进程——重启要 shell / 部署权限，
+    // 而 `/config/reload` 只要有共享 Bearer，两者不是同一把钥匙，故不能靠热更提权。
+    let ceiling_at_startup = (
+        dst.permission.permission_level_max_effective,
+        dst.permission.permission_level_max_source,
+    );
+    dst.permission.clone_from(&src.permission);
+    let (ceiling, ceiling_source) = super::permission::clamp_permission_ceiling_on_reload(
+        ceiling_at_startup,
+        dst.permission.permission_level_max,
+    );
+    dst.permission.permission_level_max_effective = ceiling;
+    dst.permission.permission_level_max_source = ceiling_source;
+    // 默认等级只是 fallback，可自由热更；但仍不得高于上限。
+    dst.permission.permission_level = super::permission::reconcile_default_level_with_ceiling(
+        dst.permission.permission_level,
+        ceiling,
+    );
     dst.web_api.clone_from(&src.web_api);
     dst.chat_queues_cache.clone_from(&src.chat_queues_cache);
     dst.session_workspace_changelist

@@ -164,6 +164,20 @@ pub(crate) struct ConfigBuilderWorkspaceRoots {
 }
 
 #[derive(Default)]
+pub(crate) struct ConfigBuilderPermission {
+    /// `permission_level`：`chat` / `read` / `workspace` / `approved` / `unrestricted`。
+    pub(crate) permission_level_str: Option<String>,
+    /// `permission_level_max`：省略 = 按部署形态推导（`serve` 绑定时冻结）。
+    pub(crate) permission_level_max_str: Option<String>,
+    pub(crate) permission_chat_control_tools: Option<Vec<String>>,
+    /// 显式空数组 = 配置错误（见 `validate_permission_config`），故用允许空的覆盖。
+    pub(crate) permission_read_tools: Option<Vec<String>>,
+    pub(crate) permission_deny_system_paths: Option<Vec<String>>,
+    pub(crate) permission_confirm_tools: Option<Vec<String>>,
+    pub(crate) allow_unrestricted_permission_for_non_loopback: Option<bool>,
+}
+
+#[derive(Default)]
 pub(crate) struct ConfigBuilderWebApi {
     pub(crate) web_api_bearer_token: Option<String>,
     pub(crate) web_api_require_bearer: Option<bool>,
@@ -323,6 +337,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) thinking_echo: ConfigBuilderThinkingEcho,
     pub(crate) context_pipeline: ConfigBuilderContextPipeline,
     pub(crate) workspace_roots: ConfigBuilderWorkspaceRoots,
+    pub(crate) permission: ConfigBuilderPermission,
     pub(crate) web_api: ConfigBuilderWebApi,
     pub(crate) chat_queues_cache: ConfigBuilderChatQueuesCache,
     pub(crate) session_workspace_changelist: ConfigBuilderSessionWorkspaceChangelist,

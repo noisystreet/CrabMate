@@ -780,3 +780,14 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
     Ok(assemble_finalize_tail_scalars(pack, ptt, cqs, ssw, sin))
 }
 
+/// 会话/权限策略标量：默认会话模式与权限等级配置。
+///
+/// 合并成一个 `Result` 是为了让 `finalize_agent_config` 的 `?` 计数不再增长
+/// （仓库门禁：函数 CCN ≤ 10）；两者都属「策略标量」，解析失败都应在启动期报错。
+fn derive_session_policy(
+    b: &ConfigBuilder,
+) -> Result<(crate::cm_types::SessionMode, types::PermissionConfig), String> {
+    let session_mode = parse_builder_default_session_mode(b)?;
+    let permission = super::permission::derive_permission_config(b)?;
+    Ok((session_mode, permission))
+}

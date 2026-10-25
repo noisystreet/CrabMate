@@ -1,0 +1,5 @@
+{"level":"chat","caps":{"tool_visibility":"none","external_tools":"denied","path_scope":"session_root","command_scope":"none","net_scope":"none","approval":"deny"}}
+{"level":"read","caps":{"tool_visibility":"readonly","external_tools":"denied","path_scope":"session_root","command_scope":"none","net_scope":"prefixes","approval":"deny"}}
+{"level":"workspace","caps":{"tool_visibility":"full","external_tools":"denied","path_scope":"session_root","command_scope":"allowlist","net_scope":"prefixes","approval":"deny"}}
+{"level":"approved","caps":{"tool_visibility":"full","external_tools":"allowed","path_scope":"session_root","command_scope":"allowlist","net_scope":"prefixes","approval":"gate"}}
+{"level":"unrestricted","caps":{"tool_visibility":"full","external_tools":"allowed","path_scope":"any","command_scope":"any","net_scope":"any","approval":"audit_only"}}

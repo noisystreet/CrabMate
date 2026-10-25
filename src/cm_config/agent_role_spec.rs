@@ -13,4 +13,7 @@ pub struct AgentRoleSpec {
     pub allowed_tools: Option<Arc<HashSet<String>>>,
     /// 该角色未显式选 mode、且会话未持久化 mode 时的默认工作模式。
     pub default_session_mode: Option<SessionMode>,
+    /// 角色级权限上限（TOML only）：与全局 `permission_level_max`、会话模式取 `min`。
+    /// 省略 = 不额外限制（见 `docs/design/permission_levels.md` §6.1）。
+    pub max_permission_level: Option<crate::cm_types::PermissionLevel>,
 }

@@ -15,6 +15,8 @@ mod env_overrides_mcp_codebase;
 mod env_overrides_part9;
 #[path = "env_overrides_per_plan_policy.rs"]
 mod env_overrides_per_plan_policy;
+#[path = "env_overrides_permission.rs"]
+mod env_overrides_permission;
 
 /// 从 `CM_*` 环境变量覆盖 `ConfigBuilder` 字段。
 pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
@@ -33,6 +35,7 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_13(b);
     env_overrides_mcp_codebase::apply_env_overrides_part_14(b);
     apply_env_overrides_part_15(b);
+    env_overrides_permission::apply_env_permission_overrides(b);
 }
 
 fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
