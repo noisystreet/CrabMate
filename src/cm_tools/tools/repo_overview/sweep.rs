@@ -7,7 +7,9 @@ use crate::cm_tools::project_profile;
 
 use super::parse::RepoSweepParams;
 use crate::cm_tools::tools::ToolContext;
-use crate::cm_tools::tools::file::{canonical_workspace_root, glob_files, list_tree, read_file};
+use crate::cm_tools::tools::file::{
+    canonical_workspace_root, glob_files_try, list_tree_try, read_file,
+};
 use crate::cm_tools::tools::output_util::truncate_output_bytes;
 use crate::cm_tools::workspace::path::{
     absolutize_relative_under_root, ensure_existing_ancestor_within_root,
@@ -171,7 +173,8 @@ fn sweep_append_source_trees(
             }
         };
         out.push_str(&format!("### 根：`{}`\n", root));
-        out.push_str(&list_tree(&tree_s, workspace_root));
+        // 失败正文即历史 String facade 返回的文本，故聚合块字节不变；这里的错误只作展示，不中断 sweep。
+        out.push_str(&list_tree_try(&tree_s, workspace_root).unwrap_or_else(|e| e.message));
         out.push_str("\n\n");
     }
 }
@@ -190,7 +193,8 @@ fn sweep_collect_build_paths(workspace_root: &Path, params: &RepoSweepParams) ->
             Ok(s) => s,
             Err(_) => continue,
         };
-        let block = glob_files(&gstr, workspace_root);
+        // 同 `list_tree`：正文照抄错误文本，保持构建路径块的聚合输出逐字不变。
+        let block = glob_files_try(&gstr, workspace_root).unwrap_or_else(|e| e.message);
         let mut after_first_sep = false;
         for line in block.lines() {
             let t = line.trim();

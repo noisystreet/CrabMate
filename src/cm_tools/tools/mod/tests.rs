@@ -665,7 +665,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（B2 第二段）：`markdown_check_links` / `structured_validate` / `structured_query` /
     // `structured_diff` 迁为 Typed（−4）。
     // 本轮（B2 第三段）：`text_transform` / `structured_patch` 迁为 Typed（−2）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 49 } else { 46 };
+    // 本轮（B4）：file_core 只读族 `read_dir` / `glob_files` / `list_tree` /
+    // `read_binary_meta` / `hash_file` 迁为 Typed（−5）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 44 } else { 41 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

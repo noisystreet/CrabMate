@@ -3,6 +3,11 @@ use super::*;
 /// 临时测试目录；实现见共享脚手架，被兄弟测试模块复用。
 pub(super) use crate::cm_tools::tools::testing::make_test_dir;
 
+/// file_core 只读族测试脚手架：Typed 接口下取成功正文（失败即测试语义已变）。
+fn out_str(r: Result<String, crate::cm_tools::tool_result::ToolError>) -> String {
+    r.expect("expected success")
+}
+
 #[test]
 fn test_read_file_with_line_range() {
     let dir = make_test_dir();
@@ -198,7 +203,10 @@ fn test_read_binary_meta_prefix_hash() {
     let dir = make_test_dir();
     let file = dir.join("bin.dat");
     std::fs::write(&file, [1u8, 2, 3, 4, 5]).unwrap();
-    let out = read_binary_meta(r#"{"path":"bin.dat","prefix_hash_bytes":64}"#, &dir);
+    let out = out_str(read_binary_meta_try(
+        r#"{"path":"bin.dat","prefix_hash_bytes":64}"#,
+        &dir,
+    ));
     assert!(out.contains("size_bytes: 5"), "{}", out);
     assert!(out.contains("sha256_prefix:"), "{}", out);
     assert!(out.contains("sha256_prefix_bytes: 5"), "{}", out);
@@ -210,7 +218,10 @@ fn test_read_binary_meta_skip_hash() {
     let dir = make_test_dir();
     let file = dir.join("x.bin");
     std::fs::write(&file, b"x").unwrap();
-    let out = read_binary_meta(r#"{"path":"x.bin","prefix_hash_bytes":0}"#, &dir);
+    let out = out_str(read_binary_meta_try(
+        r#"{"path":"x.bin","prefix_hash_bytes":0}"#,
+        &dir,
+    ));
     assert!(out.contains("size_bytes: 1"), "{}", out);
     assert!(out.contains("已跳过"), "{}", out);
     let _ = std::fs::remove_dir_all(&dir);
@@ -221,7 +232,10 @@ fn test_hash_file_sha256_empty() {
     let dir = make_test_dir();
     let file = dir.join("empty.dat");
     std::fs::write(&file, []).unwrap();
-    let out = hash_file(r#"{"path":"empty.dat","algorithm":"sha256"}"#, &dir);
+    let out = out_str(hash_file_try(
+        r#"{"path":"empty.dat","algorithm":"sha256"}"#,
+        &dir,
+    ));
     assert!(out.contains("digest_hex:"), "{}", out);
     assert!(out.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -232,11 +246,14 @@ fn test_hash_file_sha256_prefix() {
     let dir = make_test_dir();
     let file = dir.join("p.bin");
     std::fs::write(&file, b"hello world").unwrap();
-    let full = hash_file(r#"{"path":"p.bin","algorithm":"sha256"}"#, &dir);
-    let prefix = hash_file(
+    let full = out_str(hash_file_try(
+        r#"{"path":"p.bin","algorithm":"sha256"}"#,
+        &dir,
+    ));
+    let prefix = out_str(hash_file_try(
         r#"{"path":"p.bin","algorithm":"sha256","max_bytes":5}"#,
         &dir,
-    );
+    ));
     assert!(full.contains("digest_hex:"), "{}", full);
     assert!(prefix.contains("hashed_bytes: 5"), "{}", prefix);
     assert_ne!(
@@ -246,6 +263,7 @@ fn test_hash_file_sha256_prefix() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
 
 fn line_digest(out: &str) -> String {
     out.lines()
@@ -659,7 +677,7 @@ fn test_glob_files_recursive_rs() {
     std::fs::write(dir.join("src/a.rs"), "").unwrap();
     std::fs::write(dir.join("src/nested/b.rs"), "").unwrap();
     std::fs::write(dir.join("readme.txt"), "").unwrap();
-    let out = glob_files(r#"{"pattern":"**/*.rs"}"#, &dir);
+    let out = out_str(glob_files_try(r#"{"pattern":"**/*.rs"}"#, &dir));
     assert!(out.contains("src/a.rs"), "{}", out);
     assert!(out.contains("src/nested/b.rs"), "{}", out);
     assert!(!out.contains("readme.txt"), "{}", out);
@@ -670,7 +688,7 @@ fn test_glob_files_recursive_rs() {
 fn test_read_dir_output_starts_with_header() {
     let dir = make_test_dir();
     std::fs::write(dir.join("f.txt"), "x").unwrap();
-    let out = read_dir(r#"{"path":".","max_entries":10}"#, &dir);
+    let out = out_str(read_dir_try(r#"{"path":".","max_entries":10}"#, &dir));
     let first = out.lines().next().expect("header line");
     let v: serde_json::Value = serde_json::from_str(first).expect("json");
     assert_eq!(v["kind"], "crabmate_tool_output");
@@ -685,7 +703,7 @@ fn test_list_tree_respects_max_depth() {
     std::fs::create_dir_all(dir.join("a/b")).unwrap();
     std::fs::write(dir.join("a/x.txt"), "").unwrap();
     std::fs::write(dir.join("a/b/y.txt"), "").unwrap();
-    let out = list_tree(r#"{"max_depth":1}"#, &dir);
+    let out = out_str(list_tree_try(r#"{"max_depth":1}"#, &dir));
     let first = out.lines().next().expect("header");
     let v: serde_json::Value = serde_json::from_str(first).expect("json");
     assert_eq!(v["kind"], "crabmate_tool_output");

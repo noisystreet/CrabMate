@@ -111,6 +111,29 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "read_file_encoding"
         | "read_file_internal" => ToolFailureCategory::External,
         c if c.starts_with("read_file_workspace_") => ToolFailureCategory::Workspace,
+        // file_core 只读族（read_dir / glob_files / list_tree / read_binary_meta / hash_file）：
+        // 「不是目录 / 不是文件」的前置条件归 `invalid_input`；路径越界（或工作区自身不可解析）归 `workspace`；
+        // 目标不存在、打开失败等 IO 侧原因归 `external`；其余入参问题统一 `invalid_args`（见上方通用分支）。
+        "read_dir_path_not_dir"
+        | "glob_files_path_not_dir"
+        | "list_tree_path_not_dir"
+        | "read_binary_meta_path_not_file"
+        | "hash_file_path_not_file" => ToolFailureCategory::InvalidInput,
+        "read_dir_sensitive_path" => ToolFailureCategory::PolicyDenied,
+        // 仅表示「路径落到工作区根之外」或工作区自身不可解析；「文件不存在」走下面的 `*_io_failed`。
+        "read_dir_workspace_resolve_failed"
+        | "glob_files_workspace_resolve_failed"
+        | "glob_files_workspace_root_resolve_failed"
+        | "list_tree_workspace_resolve_failed"
+        | "list_tree_workspace_root_resolve_failed"
+        | "read_binary_meta_workspace_resolve_failed"
+        | "hash_file_workspace_resolve_failed" => ToolFailureCategory::Workspace,
+        // 显式登记（不依赖 `ends_with("_failed")` 兜底），改码名时不至于静默退化成 `Unknown`。
+        "read_dir_io_failed"
+        | "glob_files_io_failed"
+        | "list_tree_io_failed"
+        | "read_binary_meta_io_failed"
+        | "hash_file_io_failed" => ToolFailureCategory::External,
         "write_precheck_failed" => ToolFailureCategory::InvalidInput,
         "search_in_files_invalid_regex"
         | "search_in_files_invalid_glob"

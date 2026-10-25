@@ -5,9 +5,23 @@ use glob::Pattern;
 use std::path::Path;
 use walkdir::DirEntry;
 
+use crate::cm_tools::tool_result::ToolError;
+
 use super::path::{
-    canonical_workspace_root, path_for_tool_display, resolve_for_read,
-    tool_user_error_from_workspace_path,
+    WorkspacePathCodes, canonical_workspace_root, path_for_tool_display, resolve_for_read,
+    tool_user_error_from_workspace_path, workspace_path_tool_error_with_message,
+};
+
+/// `glob_files` 在工作区路径解析失败时的稳定码（越界 / IO）。
+const GLOB_FILES_PATH_CODES: WorkspacePathCodes = WorkspacePathCodes {
+    outside: "glob_files_workspace_resolve_failed",
+    io: "glob_files_io_failed",
+};
+
+/// `list_tree` 在工作区路径解析失败时的稳定码（越界 / IO）。
+const LIST_TREE_PATH_CODES: WorkspacePathCodes = WorkspacePathCodes {
+    outside: "list_tree_workspace_resolve_failed",
+    io: "list_tree_io_failed",
 };
 
 /// glob_files：默认/上限
@@ -73,6 +87,8 @@ fn prepend_list_tree_output_header(
 }
 
 /// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。
+///
+/// 单条 `walkdir` 错误按「跳过该项」处理（与历史一致），故不返回 `Result`。
 #[allow(clippy::too_many_arguments)] // 递归遍历需携带扫描上下文，字段多为路径/限制参数
 fn walk_glob_collect_walkdir(
     scan_root: &Path,
@@ -82,7 +98,7 @@ fn walk_glob_collect_walkdir(
     include_hidden: bool,
     max_results: usize,
     results: &mut Vec<String>,
-) -> Result<(), String> {
+) {
     use walkdir::WalkDir;
 
     let walker = WalkDir::new(scan_root)
@@ -109,7 +125,6 @@ fn walk_glob_collect_walkdir(
             results.push(rel);
         }
     }
-    Ok(())
 }
 
 struct GlobFilesArgs<'a> {
@@ -121,15 +136,19 @@ struct GlobFilesArgs<'a> {
     include_hidden: bool,
 }
 
-fn parse_glob_files_args(v: &serde_json::Value) -> Result<GlobFilesArgs<'_>, String> {
+#[allow(clippy::result_large_err)]
+fn parse_glob_files_args(v: &serde_json::Value) -> Result<GlobFilesArgs<'_>, ToolError> {
     let pattern_s = match v.get("pattern").and_then(|p| p.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
-        _ => return Err("错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string()),
+        _ => return Err(ToolError::invalid_args("错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string())),
     };
     if pattern_s.starts_with('/') || pattern_s.contains("..") {
-        return Err("错误：pattern 不能使用绝对路径或包含 ..".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：pattern 不能使用绝对路径或包含 ..".to_string(),
+        ));
     }
-    let pattern = Pattern::new(pattern_s).map_err(|e| format!("错误：glob 模式无效: {}", e))?;
+    let pattern = Pattern::new(pattern_s)
+        .map_err(|e| ToolError::invalid_args(format!("错误：glob 模式无效: {e}")))?;
 
     let root = v
         .get("path")
@@ -138,7 +157,9 @@ fn parse_glob_files_args(v: &serde_json::Value) -> Result<GlobFilesArgs<'_>, Str
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
     if root.starts_with('/') || root.contains("..") {
-        return Err("错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string(),
+        ));
     }
 
     let max_depth = v
@@ -193,33 +214,36 @@ fn format_glob_files_output(args: &GlobFilesArgs<'_>, results: &[String]) -> Str
 
 /// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
 /// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
-pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args = match parse_glob_files_args(&v) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn glob_files_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let args = parse_glob_files_args(&v)?;
 
-    let scan_root = match resolve_for_read(working_dir, args.root) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：无法解析起始目录：{}", e),
-    };
+    let scan_root = resolve_for_read(working_dir, args.root).map_err(|e| {
+        workspace_path_tool_error_with_message(
+            &e,
+            GLOB_FILES_PATH_CODES,
+            format!("错误：无法解析起始目录：{e}"),
+        )
+    })?;
     if !scan_root.is_dir() {
-        return format!(
-            "错误：path 不是目录：{}",
-            path_for_tool_display(working_dir, &scan_root, Some(args.root))
-        );
+        return Err(ToolError::external_code(
+            "glob_files_path_not_dir",
+            format!(
+                "错误：path 不是目录：{}",
+                path_for_tool_display(working_dir, &scan_root, Some(args.root))
+            ),
+        ));
     }
-    let workspace_canonical = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let workspace_canonical = canonical_workspace_root(working_dir).map_err(|e| {
+        ToolError::workspace(
+            "glob_files_workspace_root_resolve_failed",
+            tool_user_error_from_workspace_path(e),
+        )
+    })?;
 
     let mut results: Vec<String> = Vec::new();
-    if let Err(e) = walk_glob_collect_walkdir(
+    walk_glob_collect_walkdir(
         &scan_root,
         &workspace_canonical,
         &args.pattern,
@@ -227,13 +251,11 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
         args.include_hidden,
         args.max_results,
         &mut results,
-    ) {
-        return e;
-    }
+    );
 
     results.sort();
     results.dedup();
-    format_glob_files_output(&args, &results)
+    Ok(format_glob_files_output(&args, &results))
 }
 
 fn walk_list_tree_walkdir(
@@ -243,7 +265,7 @@ fn walk_list_tree_walkdir(
     include_hidden: bool,
     max_entries: usize,
     lines: &mut Vec<(String, bool)>,
-) -> Result<(), String> {
+) {
     use walkdir::WalkDir;
 
     let walker = WalkDir::new(scan_root)
@@ -271,7 +293,6 @@ fn walk_list_tree_walkdir(
         };
         lines.push((rel, is_dir));
     }
-    Ok(())
 }
 
 struct ListTreeArgs<'a> {
@@ -281,7 +302,8 @@ struct ListTreeArgs<'a> {
     include_hidden: bool,
 }
 
-fn parse_list_tree_args(v: &serde_json::Value) -> Result<ListTreeArgs<'_>, String> {
+#[allow(clippy::result_large_err)]
+fn parse_list_tree_args(v: &serde_json::Value) -> Result<ListTreeArgs<'_>, ToolError> {
     let root = v
         .get("path")
         .and_then(|p| p.as_str())
@@ -289,7 +311,9 @@ fn parse_list_tree_args(v: &serde_json::Value) -> Result<ListTreeArgs<'_>, Strin
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
     if root.starts_with('/') || root.contains("..") {
-        return Err("错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string(),
+        ));
     }
     let max_depth = v
         .get("max_depth")
@@ -345,45 +369,46 @@ fn format_list_tree_body(root: &str, args: &ListTreeArgs<'_>, lines: &[(String, 
 
 /// 自起始目录起递归列出子路径（先序、字典序），含 `dir:` / `file:` 前缀。
 /// 参数：`path`（可选，默认 `.`）、`max_depth`、`max_entries`、`include_hidden`
-pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args = match parse_list_tree_args(&v) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let scan_root = match resolve_for_read(working_dir, args.root) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：无法解析起始目录：{}", e),
-    };
+#[allow(clippy::result_large_err)]
+pub fn list_tree_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let args = parse_list_tree_args(&v)?;
+    let scan_root = resolve_for_read(working_dir, args.root).map_err(|e| {
+        workspace_path_tool_error_with_message(
+            &e,
+            LIST_TREE_PATH_CODES,
+            format!("错误：无法解析起始目录：{e}"),
+        )
+    })?;
     if !scan_root.is_dir() {
-        return format!(
-            "错误：path 不是目录：{}",
-            path_for_tool_display(working_dir, &scan_root, Some(args.root))
-        );
+        return Err(ToolError::external_code(
+            "list_tree_path_not_dir",
+            format!(
+                "错误：path 不是目录：{}",
+                path_for_tool_display(working_dir, &scan_root, Some(args.root))
+            ),
+        ));
     }
-    let workspace_canonical = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let workspace_canonical = canonical_workspace_root(working_dir).map_err(|e| {
+        ToolError::workspace(
+            "list_tree_workspace_root_resolve_failed",
+            tool_user_error_from_workspace_path(e),
+        )
+    })?;
 
     let mut lines: Vec<(String, bool)> = Vec::new();
     lines.push((".".to_string(), true));
-    if let Err(e) = walk_list_tree_walkdir(
+    walk_list_tree_walkdir(
         &scan_root,
         &workspace_canonical,
         args.max_depth,
         args.include_hidden,
         args.max_entries,
         &mut lines,
-    ) {
-        return e;
-    }
+    );
 
     let out = format_list_tree_body(args.root, &args, &lines);
-    prepend_list_tree_output_header(
+    Ok(prepend_list_tree_output_header(
         out.trim_end(),
         args.root,
         args.max_depth,
@@ -391,5 +416,5 @@ pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
         args.include_hidden,
         lines.len(),
         lines.len() >= args.max_entries,
-    )
+    ))
 }

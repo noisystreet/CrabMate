@@ -4,8 +4,19 @@
 use std::cmp::Ordering;
 use std::path::Path;
 
+use crate::cm_tools::tool_result::ToolError;
+
 use super::display_fmt::{format_size, format_unix_timestamp};
-use super::path::{path_for_tool_display, resolve_for_read};
+use super::path::{
+    WorkspacePathCodes, path_for_tool_display, resolve_for_read,
+    workspace_path_tool_error_with_message,
+};
+
+/// `read_dir` 在工作区路径解析失败时的稳定码（越界 / IO）。
+const READ_DIR_PATH_CODES: WorkspacePathCodes = WorkspacePathCodes {
+    outside: "read_dir_workspace_resolve_failed",
+    io: "read_dir_io_failed",
+};
 
 fn prepend_read_dir_output_header(
     body: &str,
@@ -91,24 +102,37 @@ fn format_dir_entry_line(entry: &DirEntry, include_size: bool, include_mtime: bo
     line
 }
 
-fn resolve_read_dir_root(path: &str, working_dir: &Path) -> Result<std::path::PathBuf, String> {
+#[allow(clippy::result_large_err)]
+fn resolve_read_dir_root(
+    path: &str,
+    working_dir: &Path,
+) -> Result<std::path::PathBuf, ToolError> {
     if path.starts_with('/') {
         if is_sensitive_external_path(path) {
-            return Err(format!("错误：禁止访问敏感系统路径：{}", path));
+            return Err(ToolError::external_code(
+                "read_dir_sensitive_path",
+                format!("错误：禁止访问敏感系统路径：{}", path),
+            ));
         }
         Ok(Path::new(path).to_path_buf())
     } else if path.contains("..") {
-        Err("错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string())
+        Err(ToolError::invalid_args(
+            "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string(),
+        ))
     } else {
-        resolve_for_read(working_dir, path).map_err(|e| format!("错误：无法解析目录路径：{}", e))
+        resolve_for_read(working_dir, path).map_err(|e| {
+            workspace_path_tool_error_with_message(
+                &e,
+                READ_DIR_PATH_CODES,
+                format!("错误：无法解析目录路径：{e}"),
+            )
+        })
     }
 }
 
-pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn read_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     let path = v
         .get("path")
@@ -117,16 +141,16 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
 
-    let root = match resolve_read_dir_root(path, working_dir) {
-        Ok(p) => p,
-        Err(msg) => return msg,
-    };
+    let root = resolve_read_dir_root(path, working_dir)?;
 
     if !root.is_dir() {
-        return format!(
-            "错误：指定路径不是目录：{}",
-            path_for_tool_display(working_dir, &root, Some(path))
-        );
+        return Err(ToolError::external_code(
+            "read_dir_path_not_dir",
+            format!(
+                "错误：指定路径不是目录：{}",
+                path_for_tool_display(working_dir, &root, Some(path))
+            ),
+        ));
     }
 
     let max_entries = v
@@ -170,8 +194,16 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
             }
             out.push_str(&format!("总计遍历: {}，展示: {}\n", count, shown));
             let path_disp = path_for_tool_display(working_dir, &root, Some(path));
-            prepend_read_dir_output_header(out.trim_end(), &path_disp, shown, count)
+            Ok(prepend_read_dir_output_header(
+                out.trim_end(),
+                &path_disp,
+                shown,
+                count,
+            ))
         }
-        Err(e) => format!("读取目录失败：{}", e),
+        Err(e) => Err(ToolError::external_code(
+            "read_dir_io_failed",
+            format!("读取目录失败：{}", e),
+        )),
     }
 }
