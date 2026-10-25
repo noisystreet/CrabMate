@@ -4,7 +4,7 @@
 //! 启发式直接看最新真实 user 句（不改写「继续」/确认续接为前序任务）。
 
 use crate::agent::plan_artifact::PlanStepExecutorKind;
-use crate::cm_agent::agent_turn::TurnStartSnapshot;
+use crate::agent::agent_turn::policy::TurnStartSnapshot;
 use crate::cm_types::SessionMode;
 
 use crate::agent::agent_turn::params::RunLoopParams;

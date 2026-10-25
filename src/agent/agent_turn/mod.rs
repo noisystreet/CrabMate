@@ -5,12 +5,13 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! **目录分组（T4）**：
-//! - `turn_loop`（目录 `loop/`）：外循环 IO、分发、完成纠偏包装
+//! **目录分组**：
+//! - `turn_loop`：外循环 IO、分发、完成纠偏包装
 //! - `plan_reflect`：P / R / 回合起点 Act 启发式
 //! - `host`：工具执行宿主、`RunLoopParams`、TurnSink、错误类型
+//! - `policy`：外循环 FSM / 完成判定核等**纯逻辑**（不触 IO；只依赖 `cm_agent` 的纯类型）
 //!
-//! 外循环 FSM / 完成判定核等纯逻辑已下沉 **`crate::cm_agent::agent_turn`**；本目录再导出。
+//! `policy/*` 经本文件的同名再导出，保持 `crate::agent::agent_turn::…` 既有路径可用。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
@@ -25,7 +26,11 @@ use self::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_t
 
 pub(crate) mod host;
 pub(crate) mod plan_reflect;
-#[path = "loop/mod.rs"]
+/// 纯逻辑（FSM / reduce / 完成判定核）：不触 IO，只依赖 `cm_agent` 的纯类型。
+///
+/// 与迁移前 `#[doc(hidden)] pub mod cm_agent::agent_turn` 保持等价可见性 —— 公开可达但不进 rustdoc。
+#[doc(hidden)]
+pub mod policy;
 pub(crate) mod turn_loop;
 
 // ---- 稳定模块路径（对外 / `$crate::agent::agent_turn::…`）----
@@ -38,7 +43,7 @@ pub(crate) use turn_loop::turn_completion;
 pub(crate) use turn_loop::{orchestration_entry, run_dispatch};
 
 pub(crate) mod messages {
-    pub(crate) use crate::cm_agent::agent_turn::messages::*;
+    pub(crate) use crate::agent::agent_turn::policy::messages::*;
 }
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。

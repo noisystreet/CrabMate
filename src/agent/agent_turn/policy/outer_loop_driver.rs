@@ -96,7 +96,7 @@ impl Default for OuterLoopDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_agent::agent_turn::outer_loop_iteration_reduce::reduce_outer_loop_post_tools_exit;
+    use crate::agent::agent_turn::policy::outer_loop_iteration_reduce::reduce_outer_loop_post_tools_exit;
 
     #[test]
     fn happy_path_phase_sequence() {

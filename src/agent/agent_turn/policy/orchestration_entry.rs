@@ -52,7 +52,7 @@ pub fn log_orchestration_transition(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_agent::agent_turn::{ReActBecause, TurnOrchestrationMode, TurnResolution};
+    use crate::agent::agent_turn::policy::{ReActBecause, TurnOrchestrationMode, TurnResolution};
 
     fn cfg_single_agent() -> crate::cm_config::AgentConfig {
         crate::cm_config::load_config(None).expect("embed default config")

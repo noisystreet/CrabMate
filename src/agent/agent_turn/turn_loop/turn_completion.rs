@@ -8,19 +8,19 @@
 mod turn_completion_golden;
 
 #[cfg(test)]
-pub(crate) use crate::cm_agent::agent_turn::turn_completion_decision::evaluate_turn_suppress_replanning;
-pub(crate) use crate::cm_agent::agent_turn::turn_completion_decision::{
+pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::evaluate_turn_suppress_replanning;
+pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     log_turn_completion_decision,
 };
 
-pub(crate) use crate::cm_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
+pub(crate) use crate::agent::agent_turn::policy::completion_suppression::redundant_tool_names_for_log;
 
 pub(crate) use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
 
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use crate::cm_agent::agent_turn::completion_suppression::{
+pub(crate) use crate::agent::agent_turn::policy::completion_suppression::{
     plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion,
 };

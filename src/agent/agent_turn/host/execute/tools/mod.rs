@@ -19,7 +19,7 @@ use crate::tool_registry;
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, Tool, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
-use crate::cm_agent::agent_turn::{
+use crate::agent::agent_turn::policy::{
     ToolBatchExecutionMode, ToolBatchModeParams, replay_force_serial_from_env,
     resolve_tool_batch_execution_mode,
 };
@@ -96,7 +96,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
-pub(crate) use crate::cm_agent::agent_turn::{
+pub(crate) use crate::agent::agent_turn::policy::{
     ExecuteToolsBatchOutcome, dedup_readonly_tool_calls_count,
 };
 

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tracing::Instrument;
 
 use crate::agent::agent_turn::execute::{ParallelPrefetchParams, ToolExecutionHost};
-use crate::cm_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
+use crate::agent::agent_turn::policy::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
 use crate::config::AgentConfig;
