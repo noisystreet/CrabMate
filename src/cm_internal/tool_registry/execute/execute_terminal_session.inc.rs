@@ -116,8 +116,9 @@ async fn execute_terminal_session_impl(
                 mode: ExecMode::Pty,
                 sse_command: "terminal_session",
             };
-            match evaluate_policy(parsed, &policy_ctx).await {
-                Ok(d) => (d.allowed_commands, d.skip_arg_safety),
+            let mut policy_caps = policy_ctx.command_caps();
+            match evaluate_policy(parsed, &policy_ctx, &mut policy_caps).await {
+                Ok(d) => (Arc::clone(&d.caps.allowed_commands), d.skip_arg_safety),
                 Err(e) => return e.into_message(),
             }
         }

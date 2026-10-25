@@ -125,6 +125,10 @@ async fn facade_rejects_pty_mode() {
     let env = async_test_env(&cfg, &sandbox);
     let mut workspace_changed = false;
     let args = r#"{"command":"echo","args":["hi"]}"#;
+    // R3：`PolicyDecision` 只借用命令能力快照；本用例只验证 PTY 分派，就地构造一份。
+    let policy_caps = RunCommandCaps {
+        allowed_commands: vec!["echo".to_string()].into(),
+    };
     let (out, inject) = execute_run_command_facade(RunCommandFacadeInvoke {
         env: &env,
         effective_working_dir: std::path::Path::new("."),
@@ -140,7 +144,7 @@ async fn facade_rejects_pty_mode() {
         timeout_secs: None,
         parsed: parsed_run_command(args),
         decision: PolicyDecision {
-            allowed_commands: vec!["echo".to_string()].into(),
+            caps: &policy_caps,
             skip_arg_safety: false,
             capabilities: PolicyCapabilities {
                 mode: ExecMode::Pty,

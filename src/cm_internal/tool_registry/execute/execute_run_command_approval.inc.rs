@@ -47,6 +47,32 @@ struct PolicyCapabilities {
     has_approval_channel: bool,
 }
 
+/// 本次策略评估的**命令能力快照**：生效白名单的唯一持有者。
+///
+/// R3（设计 §17.3）：[`PolicyDecision`] 只**借用**本结构读结果，不再自带
+/// `Arc<[String]>` 副本。评估过程在基快照上就地扩展（`AllowOnce` / `AllowAlways` /
+/// 工作区脚本 + `bash`），扩展结果写回同一快照，语义与拆分前逐字一致。
+///
+/// S3 引入 `PermissionCaps` 后并入其 `command_scope` 轴
+/// （`Any` ↔ `*` 哨兵、`Allowlist` ↔ 具体列表）。
+///
+/// **不要 `Clone`、不要跨评估复用**：评估以它持有的列表为基做扩展，
+/// 复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单。
+#[derive(Debug)]
+struct RunCommandCaps {
+    /// 生效白名单；含 `*` 哨兵时等价全放行（见 [`tools::allowlist_allows_all`]）。
+    allowed_commands: Arc<[String]>,
+}
+
+impl RunCommandCaps {
+    /// 以 `cfg.command_exec.allowed_commands` 为基快照。
+    fn from_cfg(cfg: &AgentConfig) -> Self {
+        Self {
+            allowed_commands: Arc::clone(&cfg.command_exec.allowed_commands),
+        }
+    }
+}
+
 /// 策略评估上下文。
 struct PolicyContext<'a> {
     cfg: &'a Arc<AgentConfig>,
@@ -70,6 +96,11 @@ impl PolicyContext<'_> {
             mode,
             has_approval_channel: self.web_ctx.is_some(),
         }
+    }
+
+    /// 以当前配置为基构造命令能力快照（每次评估一份，评估后就地扩展）。
+    fn command_caps(&self) -> RunCommandCaps {
+        RunCommandCaps::from_cfg(self.cfg)
     }
 }
 
@@ -131,10 +162,14 @@ enum PolicyApproval {
     ExternalPath,
 }
 
-/// 一次策略评估的最终生效参数。
+/// 一次策略评估的最终生效结果。
+///
+/// `caps` 是白名单的**单一真源**（借用，不由本结构持有）；`skip_arg_safety` 是它的
+/// 派生值——仅工作区外路径审批通过时为 `true`。`ExecMode` 留在
+/// [`PolicyCapabilities`]：那是**执行形态**，不是权限面（设计 §7.4）。
 #[derive(Debug)]
-struct PolicyDecision {
-    allowed_commands: Arc<[String]>,
+struct PolicyDecision<'a> {
+    caps: &'a RunCommandCaps,
     skip_arg_safety: bool,
     capabilities: PolicyCapabilities,
     approvals: Vec<PolicyApproval>,
@@ -144,10 +179,15 @@ struct PolicyDecision {
 ///
 /// 顺序、弹窗次数与错误文案与拆分前逐字一致；`async` / Docker / 通道可用性统一由
 /// [`PolicyCapabilities`] 判定。
-async fn evaluate_policy(
+///
+/// `caps` **必须每次评估新建**（用 [`PolicyContext::command_caps`]）：它既是基白名单的
+/// 唯一来源，也是扩展结果的落点。复用上一轮的快照会让 `AllowOnce` 的临时批准变成下一轮的
+/// 基白名单——等于静默放宽命令面。
+async fn evaluate_policy<'a>(
     parsed: &ParsedRunCommandJson,
     ctx: &PolicyContext<'_>,
-) -> Result<PolicyDecision, PolicyError> {
+    caps: &'a mut RunCommandCaps,
+) -> Result<PolicyDecision<'a>, PolicyError> {
     let capabilities = ctx.capabilities();
     let (policy_cmd, policy_args) =
         tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
@@ -155,7 +195,8 @@ async fn evaluate_policy(
         || tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
 
     let mut approvals = Vec::new();
-    let (allowed_commands, approval) = resolve_unknown_cmd_allowlist(parsed, needs_shell, ctx).await?;
+    let (allowed_commands, approval) =
+        resolve_unknown_cmd_allowlist(parsed, needs_shell, ctx, &caps.allowed_commands).await?;
     approvals.extend(approval);
     let (allowed_commands, approval) = approve_posix_shell_wrap_if_needed(
         parsed,
@@ -172,8 +213,10 @@ async fn evaluate_policy(
         approvals.push(PolicyApproval::ExternalPath);
     }
 
+    // 生效白名单落回快照：`caps` 是唯一持有者，`PolicyDecision` 只借用它。
+    caps.allowed_commands = allowed_commands;
     let decision = PolicyDecision {
-        allowed_commands,
+        caps: &*caps,
         skip_arg_safety,
         capabilities,
         approvals,
@@ -187,12 +230,14 @@ async fn evaluate_policy(
     Ok(decision)
 }
 
+/// 未知命令的交互审批；`base` 是快照里的白名单（批准后基于**它**扩展，不是 `cfg`）。
 async fn request_unknown_cmd_approval(
     ctx: &PolicyContext<'_>,
     cmd: &str,
     script: &str,
     argv_tail: &str,
     needs_shell: bool,
+    base: &Arc<[String]>,
 ) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
     if ctx.capabilities().mode == ExecMode::Async {
         return Err(PolicyError::ApprovalUnavailable {
@@ -239,7 +284,7 @@ async fn request_unknown_cmd_approval(
         }
     };
     apply_unknown_cmd_decision(
-        ctx.cfg,
+        base,
         cmd,
         needs_shell,
         &cmd_show,
@@ -249,8 +294,12 @@ async fn request_unknown_cmd_approval(
     .await
 }
 
+/// 把一次性审批结论落到「快照基白名单 + 新命令（+ `bash`）」上。
+///
+/// `base` 必须来自 [`RunCommandCaps`] 而非 `cfg`：等级上限收窄后两者不再相等，
+/// 用 `cfg` 作基会把配置全量白名单带进生效集，绕过等级边界（设计 §6 只收紧不放宽）。
 async fn apply_unknown_cmd_decision(
-    cfg: &Arc<AgentConfig>,
+    base: &Arc<[String]>,
     cmd: &str,
     needs_shell: bool,
     cmd_show: &str,
@@ -259,11 +308,7 @@ async fn apply_unknown_cmd_decision(
 ) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
     let extended = |approval| {
         (
-            extend_allowlist_with_cmd_and_optional_bash(
-                &cfg.command_exec.allowed_commands,
-                cmd,
-                needs_shell,
-            ),
+            extend_allowlist_with_cmd_and_optional_bash(base, cmd, needs_shell),
             Some(approval),
         )
     };
@@ -280,20 +325,21 @@ async fn apply_unknown_cmd_decision(
     }
 }
 
+/// 以快照里的基白名单做未知命令判定；`base` 由 [`RunCommandCaps`] 持有（单一真源）。
 async fn resolve_unknown_cmd_allowlist(
     parsed: &ParsedRunCommandJson,
     needs_shell: bool,
     ctx: &PolicyContext<'_>,
+    base: &Arc<[String]>,
 ) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
-    let base = Arc::clone(&ctx.cfg.command_exec.allowed_commands);
     if !cmd_missing_from_allowlist(&parsed.cmd, base.as_ref()) {
-        return Ok((base, None));
+        return Ok((Arc::clone(base), None));
     }
     if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
         ctx.workspace,
         &parsed.spec.command,
     ) {
-        return Ok((extend_allowed_commands_arc(&base, &parsed.cmd), None));
+        return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
     }
     if let Some(w) = ctx.web_ctx
         && w.persistent_allowlist_shared
@@ -301,7 +347,7 @@ async fn resolve_unknown_cmd_allowlist(
             .await
             .contains(parsed.cmd.as_str())
     {
-        return Ok((extend_allowed_commands_arc(&base, &parsed.cmd), None));
+        return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
     }
     request_unknown_cmd_approval(
         ctx,
@@ -309,6 +355,7 @@ async fn resolve_unknown_cmd_allowlist(
         parsed.script.as_str(),
         parsed.argv_tail.as_str(),
         needs_shell,
+        base,
     )
     .await
 }

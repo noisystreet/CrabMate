@@ -46,7 +46,7 @@ struct RunCommandFacadeInvoke<'a> {
     tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
     timeout_secs: Option<u64>,
     parsed: ParsedRunCommandJson,
-    decision: PolicyDecision,
+    decision: PolicyDecision<'a>,
     capabilities: RunCommandCapabilities,
 }
 

@@ -725,16 +725,28 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 **收益**：S3 的 `external_tools` 变成一个谓词（`tool_origin(n) != Builtin && caps.external_tools == Denied`），MB-8 才可验证。
 
-### 17.3 R3 `PolicyDecision` 借用能力快照
+### 17.3 R3 `PolicyDecision` 借用能力快照（✅ 已完成）
 
-**问题**：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。先实现权限再改，等于在同一文件里改两遍。
+**落地结果**（比原估算多一层约束：借用生命周期绑不住返回值）：
 
-**改法**：`allowed_commands` / `skip_arg_safety` 改为从**借用的快照**读取，结构与 §7.4 的最终形态一致；快照暂时仍由 `cfg` 构造，语义不变。
+- 载体：`execute_run_command_approval.inc.rs` 新增 `RunCommandCaps { allowed_commands: Arc<[String]> }`，由 `PolicyContext::command_caps()` 以 `cfg.command_exec.allowed_commands` 构造。它是**白名单的唯一持有者**，注释里标明 S3 后并入 `PermissionCaps.command_scope`。
+- `PolicyDecision<'a> { caps: &'a RunCommandCaps, skip_arg_safety, capabilities, approvals }`——不再含 `Arc<[String]>` 字段；`skip_arg_safety`（派生）与 `capabilities`（`ExecMode` 是**执行形态**不是权限面）按 §7.4 留在 decision。
+- **出参而非返回值**：`evaluate_policy` 不能「内部建快照、返回借用它的 decision」，故签名改为 `caps: &'a mut RunCommandCaps`。评估过程仍在局部变量里做扩展，**末尾一次性**写回 `caps.allowed_commands`，decision 只 reborrow；中途 Err 返回时快照保持调用前状态。
+- 白名单的**两处读取点**都改走快照：`resolve_unknown_cmd_allowlist` 的**判定基**与 `apply_unknown_cmd_decision` 的**扩展基**现在是同一个 `base: &Arc<[String]>`（从 `caps` 透传）。原实现后者仍以 `cfg.command_exec.allowed_commands` 为基——当前 `caps ≡ cfg` 所以等价，但 S3 让等级收窄白名单后，那条路会把配置全量白名单带进生效集、绕过等级边界，因此本轮一并收口。
+- 快照**不可 clone、不可跨评估复用**：`RunCommandCaps` 不派生 `Clone`，`evaluate_policy` 的 doc 写明「必须每次评估新建」——它以自身列表为基做扩展，复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单（静默放宽）。写回只在**成功路径末尾**发生，`Err` 时快照保持调用前状态。
+- 调用点：`execute_run_command_host.inc.rs` 与 `execute_terminal_session.inc.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
+- 测试：`execute_tests.rs` 新增 `evaluate_for_test`（内部持快照、对外回 owned `EvaluatedPolicy`），20 处矩阵断言形态不变，避免逐用例声明快照；`execute_run_command_gate_tests.rs::facade_rejects_pty_mode` 就地构造快照。
 
-**等价验收**：
+**问题**（历史记录）：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。先实现权限再改，等于在同一文件里改两遍。
 
-- `execute_run_command_gate_tests.rs` 逐字通过——三道 gate 顺序、弹窗次数、错误文案全部不变（这正是 S3 的验收标准）；
-- `PolicyDecision` 不再持有 `Arc<[String]>` 的副本（编译期可验证）。
+**改法**（原计划）：`allowed_commands` / `skip_arg_safety` 改为从**借用的快照**读取，结构与 §7.4 的最终形态一致；快照暂时仍由 `cfg` 构造，语义不变。
+
+**等价验收**（均已完成）：
+
+- ✅ `execute_run_command_gate_tests.rs` 逐字通过——三道 gate 顺序、弹窗次数、错误文案全部不变（这正是 S3 的验收标准）；
+- ✅ `PolicyDecision` 不再持有 `Arc<[String]>` 的副本（编译期可验证）；
+- ✅ 新增 `caps_snapshot_only_updated_on_success`：`Err` 不改写快照、批准后的扩展写回生效；
+- ✅ 全量 `cargo test` 1973 passed。
 
 ### 17.4 明确不做
 
