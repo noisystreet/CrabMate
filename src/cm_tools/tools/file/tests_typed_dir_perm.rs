@@ -31,7 +31,7 @@ fn delete_files_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || delete_files(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || delete_files_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || delete_files_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("已删除 2 个文件"), "{typed}");
@@ -49,7 +49,7 @@ fn delete_files_try_missing_confirm_is_invalid_input() {
 
     let err = delete_files_try(
         r#"{"paths":["a.txt"]}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("未确认的删除须失败");
@@ -68,7 +68,7 @@ fn delete_files_try_non_file_is_invalid_input() {
 
     let err = delete_files_try(
         r#"{"paths":["sub"],"confirm":true}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("目录不能作为 delete_files 目标");
@@ -111,7 +111,7 @@ fn delete_files_try_partial_failure_is_delete_files_failed() {
     write(&dir, "b.txt", "B");
     let err = delete_files_try(
         r#"{"paths":["b.txt","./b.txt"],"confirm":true}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("重复路径的第二次删除须失败");
@@ -159,7 +159,7 @@ fn delete_dir_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || delete_dir(args, &dir_legacy),
-        || delete_dir_try(args, &dir_typed),
+        || delete_dir_try(args, &super::PathAccess::new(&dir_typed)),
     );
 
     assert!(typed.contains("已删除目录（递归）"), "{typed}");
@@ -174,7 +174,10 @@ fn delete_dir_try_non_empty_without_recursive_is_delete_dir_failed() {
     let dir = make_test_dir();
     write(&dir, "sub/a.txt", "A");
 
-    let err = delete_dir_try(r#"{"path":"sub","confirm":true}"#, &dir)
+    let err = delete_dir_try(
+        r#"{"path":"sub","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("非空目录未递归须失败");
 
     assert_error(
@@ -192,7 +195,10 @@ fn delete_dir_try_non_empty_without_recursive_is_delete_dir_failed() {
 fn delete_dir_try_missing_path_is_invalid_input() {
     let dir = make_test_dir();
 
-    let err = delete_dir_try(r#"{"path":"  ","confirm":true}"#, &dir)
+    let err = delete_dir_try(
+        r#"{"path":"  ","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("空 path 须失败");
     assert_invalid_input(&err);
     assert!(err.message.contains("缺少 path 参数"), "{}", err.message);
@@ -211,7 +217,8 @@ fn delete_dir_try_missing_confirm_is_invalid_input() {
         &test_ctx(&dir),
         "invalid_args",
     );
-    let err = delete_dir_try(r#"{"path":"sub"}"#, &dir).expect_err("缺 confirm 须失败");
+    let err = delete_dir_try(r#"{"path":"sub"}"#, &super::PathAccess::new(&dir))
+        .expect_err("缺 confirm 须失败");
     assert_invalid_input(&err);
     assert!(err.message.contains("confirm=true"), "{}", err.message);
     assert!(dir.join("sub").is_dir(), "失败时不得删除目录");
@@ -223,7 +230,10 @@ fn delete_dir_try_non_directory_is_invalid_input() {
     let dir = make_test_dir();
     write(&dir, "a.txt", "A");
 
-    let err = delete_dir_try(r#"{"path":"a.txt","confirm":true}"#, &dir)
+    let err = delete_dir_try(
+        r#"{"path":"a.txt","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("文件路径不可当目录删除");
     assert_invalid_input(&err);
     assert!(err.message.contains("不是目录"), "{}", err.message);
@@ -244,7 +254,10 @@ fn delete_dir_try_non_directory_is_invalid_input() {
 fn delete_dir_try_workspace_root_is_invalid_input() {
     let dir = make_test_dir();
 
-    let err = delete_dir_try(r#"{"path":".","confirm":true}"#, &dir)
+    let err = delete_dir_try(
+        r#"{"path":".","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("不得删除工作区根目录");
     assert_invalid_input(&err);
     assert!(err.message.contains("工作区根目录"), "{}", err.message);
@@ -287,7 +300,7 @@ fn create_dir_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || create_dir(args, &dir_legacy),
-        || create_dir_try(args, &dir_typed),
+        || create_dir_try(args, &super::PathAccess::new(&dir_typed)),
     );
 
     assert!(typed.contains("已创建目录"), "{typed}");
@@ -302,7 +315,8 @@ fn create_dir_try_existing_file_is_invalid_input() {
     let dir = make_test_dir();
     write(&dir, "a.txt", "A");
 
-    let err = create_dir_try(r#"{"path":"a.txt"}"#, &dir).expect_err("已存在文件不可当目录创建");
+    let err = create_dir_try(r#"{"path":"a.txt"}"#, &super::PathAccess::new(&dir))
+        .expect_err("已存在文件不可当目录创建");
 
     // 正文含「错误」会被 Legacy 误判为 `create_dir_failed`，显式头须覆盖为 `invalid_args`。
     assert_run_tool_error_code(

@@ -291,15 +291,16 @@ fn read_file_pipeline_body(
 #[allow(clippy::result_large_err)]
 pub fn read_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &super::PathAccess<'_>,
     ctx: &super::super::ToolContext<'_>,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+    let working_dir = access.root();
     let v = crate::cm_tools::tools::parse_args_json(args_json)
         .map_err(crate::cm_tools::tool_result::ToolError::invalid_args)?;
     let parsed = parse_read_file_args(&v)?;
     let path = parsed.path.as_str();
 
-    let mut opened = resolve_for_read_open(working_dir, path)
+    let mut opened = access.for_read_open(path)
         .map_err(read_file_workspace_tool_error_maybe_hint)?;
     read_file_require_regular_file(&opened.metadata)?;
 
@@ -344,7 +345,7 @@ pub fn read_file(
     working_dir: &Path,
     ctx: &super::super::ToolContext<'_>,
 ) -> String {
-    match read_file_try(args_json, working_dir, ctx) {
+    match read_file_try(args_json, &super::PathAccess::new(working_dir), ctx) {
         Ok(s) => s,
         Err(e) => e.message,
     }

@@ -532,7 +532,7 @@ dst.permission.permission_level_max =
 | **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | ✅ |
 | **S6** | 可选 `PathScope::AllowedRoots`（见 §15 Q4） | 仅显式配置多根时 | ✅ |
 
-排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 的改动面从 20+ 调用点压到 3 个文件；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
+排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
 
 ---
 
@@ -662,9 +662,17 @@ dst.permission.permission_level_max =
 
 三处「切点分散」会让 S3 在同一批调用点上改两遍。先做三个**纯等价重构**（零行为变化、现有测试全绿），把「改 N 处」压成「改 1 处」。
 
-### 17.1 R1 路径访问收口
+### 17.1 R1 路径访问收口（✅ 已完成）
 
-**问题**：`resolve_for_read` / `resolve_for_write` 有 **18+ 个调用点**（`file/mutate.rs` ×6、`file/write_ops.rs` ×6、`structured_data.rs` ×4、`tree_glob.rs` ×2、`file/directory.rs` / `file/inspect.rs` / `file/perm.rs` / `text_diff.rs` 各 1）。S3 加 `PathScope` 形参要改 20 处，S6 加 `AllowedRoots` 时**再改一遍**。
+**落地结果**（与本节原估算的差异以实测为准）：
+
+- 载体：`file::PathAccess`，仅持 `root`；`for_read` / `for_read_open` / `for_write` 委托现有自由函数，**零行为变化**。
+- **16 个**文件类工具全部接入：`read_file` `read_dir` `glob_files` `list_tree` `read_binary_meta` `hash_file` `chmod_file` `delete_dir` `create_dir` `delete_files` `append_file` `search_replace` `create_file` `copy_file` `move_file` `modify_file`。
+- 构造点收在 `runners.rs` 两个宏：`define_runners_paths_try!` / `define_runners_paths_ctx_try!`（后者带 `ctx`）。
+- 展示类 helper（`*_display` / `*_body`）仍收 `&Path`，由调用方传 `access.root()`——它们不解析路径，换成载体只增遮蔽风险。
+- 实测踩到的两个点：`mutate.rs` 已有 `paths: &[String]` 形参（访问器必须叫 `access`，否则静默遮蔽）；`read_file` 起初漏转（`read_tool.rs` 直调 `resolve_for_read_open`），第二轮补上。
+
+**问题**（历史记录）：`resolve_for_read` / `resolve_for_write` 原有 **18+ 个调用点**（`file/mutate.rs` ×6、`file/write_ops.rs` ×6、`structured_data.rs` ×4、`tree_glob.rs` ×2、`file/directory.rs` / `file/inspect.rs` / `file/perm.rs` / `text_diff.rs` 各 1）。S3 加 `PathScope` 形参要改 20 处，S6 加 `AllowedRoots` 时**再改一遍**。
 
 **改法**：
 
@@ -732,7 +740,26 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 ### 17.5 完成判据
 
-R1–R3 之后，**S3 应当只改三个文件**：`cm_tools/tools/file/path.rs`、`execute_run_command_approval.inc.rs`、`http_tool_exec.inc.rs`。做不到就说明切点没收干净——停下手补，不要继续往下写。
+**不要用「只改 N 个文件」这类估算**——R1 落地后的实测口径如下（R1 已完成，两批提交）。
+
+S3 的必需改动点：
+
+| 范围 | 具体位置 | 说明 |
+|---|---|---|
+| 路径载体 | `cm_tools/tools/file/path.rs` | `PathAccess` 加 `PathScope` 字段；`for_read` / `for_read_open` / `for_write` 内做 scope 判定（**唯一判定点**） |
+| 文件类工具构造点 | `runners.rs` 的 `define_runners_paths_try!` 与 `define_runners_paths_ctx_try!` | 两个宏各一行 `PathAccess::new(ctx.working_dir)`；16 个文件类工具全部经此构造 |
+| 命令执行 | `execute_run_command_approval.inc.rs` | `cwd` 越界判定 |
+| HTTP | `http_tool_exec.inc.rs` | 出站前缀判定 |
+
+不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`tools/mod.rs::resolve_workspace_path_for_read`×1、`cm_llm/outbound_workspace_images.rs`×1。
+
+**可验证的停止条件**（比「改了几个文件」可靠）：
+
+```bash
+grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | grep -v "path.rs"
+```
+
+预期只剩 `tests.rs` 里直接测自由函数的两行；若出现**非测试**文件命中，说明该工具尚未接入载体，先补 R1 再往下写。file 模块之外的上表调用点则逐个确认意图已写入 `PathScope`。
 
 **R4**（allowlist 键构造收口，为 §6.3 的 `l{n}|` 前缀准备）与 **R5**（工具可见性三处判定合一）**不前置**：S3/S4 本来就要改那几个函数，届时顺手做。
 
