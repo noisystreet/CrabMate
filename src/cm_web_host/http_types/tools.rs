@@ -29,6 +29,15 @@ pub struct ToolListItem {
     /// `feature_not_built` / `config_disabled` / `disabled_by_policy`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub absent_reason: Option<String>,
+    /// 是否在**当前权限等级**下可用（设计 `permission_levels.md` §16.4）。
+    ///
+    /// 与 `present` 是两条独立的轴：`present` 说「本回合能不能被注册」（feature /
+    /// 配置开关 / `disabled_tools`），本字段说「注册了能不能调」（等级投影后的
+    /// `tool_allowed_by_caps`）。两者都为 `true` 才真的调得动。
+    ///
+    /// 基准是**进程默认等级**（`permission_level` 经 ceiling 钳制），不是某个会话的
+    /// 等级——`GET /tools` 是「枚举 + 策略投影」，不引入 `?permission_level=` 过滤（Q7）。
+    pub available_at_level: bool,
 }
 
 /// `GET /tools` 响应。
@@ -40,6 +49,12 @@ pub struct ToolsListResponse {
     pub offset: usize,
     pub has_more: bool,
     pub counts: ToolSourceCounts,
+    /// 本清单的**等级基准**（`chat` / `read` / `workspace` / `approved` / `unrestricted`）。
+    ///
+    /// 即 `available_at_level` 按哪一档算出来的：进程默认档经 `permission_level_max`
+    /// 钳制后的值。必须回传——会话可以持久化自己的等级（S5b），与该档常常不同；
+    /// 只给 bool 不给基准，客户端看到 `false` 无从解释，看到 `true` 也不知道能不能当真。
+    pub permission_level: String,
     /// 当前工作区根；未设置工作区时省略。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
@@ -70,6 +85,9 @@ pub struct ToolDetailView {
     pub present: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub absent_reason: Option<String>,
+    /// 是否在**当前权限等级**下可用；与 [`ToolListItem::available_at_level`] 同一条判据、
+    /// 同一档基准，否则清单与详情页会给出互相矛盾的答案（设计 §16.4）。
+    pub available_at_level: bool,
     /// 工具的 JSON Schema `parameters`（内置走编译期缓存；动态工具读盘）。
     pub parameters: serde_json::Value,
     pub policy: ToolPolicyView,

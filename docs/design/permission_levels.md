@@ -568,7 +568,7 @@ dst.permission.permission_level_max =
 | **S4** | allowlist 等级作用域（§6.3，**已落地**）+ `ApprovalPolicy::AuditOnly` 与审计事件（**已落地**） | 前者：仅跨级复用旧批准时；后者：仅 L4 时（多出的是日志，不是放行面） | ✅ |
 | **S5a** | `GET /permission` 只读投影（§16.2，含 `?agent_role=`）+ OpenAPI + `docs/命令行与路由.md` | 无 | ✅ |
 | **S5b** | `POST /chat` 的 `permission_level`（含 `chat_keys` 字母序）+ `GET /conversation/messages` 的 `active` / `effective` 双字段（§16.1） | 客户端不传时无变化 | ✅ |
-| **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | **部分**：`GET /status` 两个默认值已落地；`GET /tools` 的 `available_at_level` 未做 |
+| **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |
 | **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
 | **S6** | 可选 `PathScope::AllowedRoots`（见 §15 Q4） | 仅显式配置多根时 | ✅ |
 
@@ -709,6 +709,8 @@ dst.permission.permission_level_max =
 `GET /tools`（见 [`tool_management_api.md`](tool_management_api.md)）现在枚举三源全部工具。等级会改变可见性，若它仍列全部，客户端会展示一批实际调不动的工具，形成“命令行能看到、UI 能看到、实际被拒”的排查黑洞。
 
 **已定（Q7）**：每项附 `available_at_level: bool`，保留全量枚举，**不**引入 `?permission_level=` 过滤——`GET /tools` 的定位是“枚举 + 策略投影”，不是“当前回合可用集”。
+
+**落地（S5c）**：`ToolListItem` 新增 `available_at_level`，判据直接复用 [`tool_allowed_by_caps`](../../src/cm_agent/permission.rs)——与回合内可见性过滤、early-deny 同一条，不留第二套比较规则。基准等级的取法：该端点无会话、无请求体，`requested` / `persisted` / `role_max` 全为 `None`，故 min 链退化成 `min(permission_level, ceiling)`（`web::tools_handlers::default_projection_caps`）；`ask` / `plan` 那条轴属于**会话**，不参与进程级枚举（函数内刻意传 `SessionMode::Act` 并注明原因：它只读 `projection_level`，换成 `effective` 就会随默认会话模式悄悄变只读）。与 `present` 是两条独立的轴：`present` 说“本回合能不能被注册”（feature / 配置开关 / `disabled_tools`），`available_at_level` 说“注册了能不能调”，两者都为 `true` 才真的调得动——把这两个语义分开，客户端才能区分“这个工具没构建”和“这个工具在你的等级下调不动”。**基准档回传**：响应顶层带 `permission_level`，因为会话可以持久化自己的等级（§16.1），与进程默认档常常不同——只给 bool 不给基准，`false` 无从解释；`GET /tools/{tool_name}` 的 `ToolDetailView` 带同一字段，避免清单与详情页互相矛盾。回归由 `web::tools_handlers::tests` 钉住：`tool_list_item_reports_availability_per_level`（五档 × 三类工具，**经 handler 真正调用的 `tool_list_item`**，而非在测试里重抄一遍判据）、`present_and_available_at_level_are_independent_axes`（`present=true` + `available_at_level=false` 且两者都真的序列化出去）、`ceiling_clamps_default_projection_caps`（调低上限后基准档与清单同时变窄）。
 
 ### 16.5 审批弹窗也要带等级
 
