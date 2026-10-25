@@ -120,9 +120,13 @@
 | `limit` | 否 | `50` | clamp 到 `1..=200` |
 | `offset` | 否 | `0` | 与 `limit` 组成切片 |
 
-响应 `ToolsListResponse`：`tools: [ToolListItem]` / `total` / `limit` / `offset` / `has_more` / `counts: {builtin, dynamic, mcp, present}` / `workspace_root: string?`。
+响应 `ToolsListResponse`：`tools: [ToolListItem]` / `total` / `limit` / `offset` / `has_more` / `counts: {builtin, dynamic, mcp, present}` / `permission_level: string` / `workspace_root: string?`。
 
-`ToolListItem`：`name` / `description` / `category`（`basic` \| `development`；动态与 MCP 工具按 `development` 归入或在 §7.2 另定）/ `source`（`builtin` \| `dynamic` \| `mcp`）/ `dev_tags: [string]` / `present: bool` / `absent_reason: string?`。
+`ToolListItem`：`name` / `description` / `category`（`basic` \| `development`；动态与 MCP 工具按 `development` 归入或在 §7.2 另定）/ `source`（`builtin` \| `dynamic` \| `mcp`）/ `dev_tags: [string]` / `present: bool` / `absent_reason: string?` / `available_at_level: bool`。
+
+`available_at_level`（S5c，见 [`permission_levels.md`](permission_levels.md) §16.4）：该工具是否在**当前权限等级**下可用，判据是 `cm_agent::permission::tool_allowed_by_caps`（与回合内可见性 / early-deny 同一条，不留第二套）。与 `present` 是两条**独立**的轴——`present` 说「本回合能不能被注册」（feature / 配置开关 / `disabled_tools`），它说「注册了能不能调」（等级投影），两者都为 `true` 才真的调得动。基准取**进程默认档**：无会话也无请求体，故 min 链退化为 `min(permission_level, ceiling)`，`ask` / `plan` 那条会话模式轴不参与。本端点**不**按等级过滤（Q7 已结案），等级选择器用 `GET /permission`。
+
+**基准档必须回传**：响应顶层带 `permission_level`（本次清单按哪一档算出来的，即进程默认档经 `permission_level_max` 钳制后的值）。只给 bool 不给基准，客户端看到 `false` 无从解释；而会话可以持久化自己的等级（S5b），与进程默认档常常不同。`GET /tools/{tool_name}` 的 `ToolDetailView` 也带同一字段、同一条判据、同一档基准，避免清单与详情页互相矛盾。
 
 `absent_reason` 取值（**只反映既有事实**）：
 

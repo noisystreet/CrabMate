@@ -267,6 +267,55 @@ fn parse_usize_or(raw: Option<&String>, default: usize) -> Result<usize, ApiErr>
     }
 }
 
+/// `GET /tools` / `GET /tools/{tool_name}` 的等级基准：**进程默认档**下的六轴投影
+/// （设计 `permission_levels.md` §16.4）。
+///
+/// 这两个端点没有会话也没有请求体，故 `requested` / `persisted` / `role_max` 全为 `None`，
+/// min 链退化成 `min(permission_level, ceiling)`——正好是「不指定会话时这台机器能用到哪一档」。
+///
+/// 复用 `resolve_permission_level_for_turn` + `project_caps` 而非自己比大小，
+/// 避免 `available_at_level` 与回合实际可见性长出第二套判据。
+fn default_projection_caps(cfg: &AgentConfig) -> crate::cm_agent::permission::PermissionCaps {
+    let resolved = crate::cm_agent::permission::resolve_permission_level_for_turn(
+        crate::cm_agent::permission::PermissionTurnInput {
+            cfg,
+            requested: None,
+            persisted: None,
+            role_max: None,
+            // 会话模式是**会话**轴，这里刻意给 `Act`：本函数只读 `projection_level`，
+            // 它不含会话模式钳制，故这个值不影响结果。显式写 `Act`（而不是
+            // `default_session_mode`）是为了让一件事在 diff 里看得见——若哪天改成读
+            // `resolved.effective`，进程级清单就会随默认会话模式悄悄变成只读。
+            session_mode: crate::cm_types::SessionMode::Act,
+        },
+    );
+    crate::cm_agent::permission::project_caps(resolved.projection_level, cfg)
+}
+
+/// 单条枚举结果 → 对外投影。
+///
+/// 抽成纯函数是为了让 `available_at_level` 的**接线**可被单测直接钉住：断言走的就是
+/// handler 调用的这个函数，而不是在测试里把它的内部逻辑重抄一遍（那样把 handler 里的
+/// 赋值改成常量也照样全绿）。
+fn tool_list_item(
+    entry: ToolEntry,
+    caps: &crate::cm_agent::permission::PermissionCaps,
+) -> ToolListItem {
+    // 须在 `entry.name` 被 move 进结构体之前算：判据吃的是 `&str`。
+    let available_at_level =
+        crate::cm_agent::permission::tool_allowed_by_caps(caps, &entry.name);
+    ToolListItem {
+        name: entry.name,
+        description: entry.description,
+        category: entry.category.to_string(),
+        source: entry.source.to_string(),
+        dev_tags: entry.dev_tags,
+        present: entry.present,
+        absent_reason: entry.absent_reason.map(|s| s.to_string()),
+        available_at_level,
+    }
+}
+
 /// `GET /tools`：三源只读清单（只读、不建 MCP 会话）。
 pub(crate) async fn tools_list_handler(
     State(http): State<AppStateHttpCore>,
@@ -279,6 +328,9 @@ pub(crate) async fn tools_list_handler(
 
     let ws = http.effective_workspace_path().await;
     let cfg = http.cfg.read().await;
+    // 等级投影与工具枚举共用同一次读锁：两份投影若取到不同版本的 `cfg`，
+    // 就会出现「工具按旧等级算出不可用、却按新配置列出来」的错位。
+    let caps = default_projection_caps(&cfg);
     let mut entries = enumerate_tools_from(&cfg, &ws).await;
     drop(cfg);
 
@@ -310,15 +362,7 @@ pub(crate) async fn tools_list_handler(
         .into_iter()
         .skip(offset)
         .take(limit)
-        .map(|e| ToolListItem {
-            name: e.name,
-            description: e.description,
-            category: e.category.to_string(),
-            source: e.source.to_string(),
-            dev_tags: e.dev_tags,
-            present: e.present,
-            absent_reason: e.absent_reason.map(|s| s.to_string()),
-        })
+        .map(|e| tool_list_item(e, &caps))
         .collect();
     let has_more = offset.saturating_add(limit) < total;
 
@@ -329,6 +373,9 @@ pub(crate) async fn tools_list_handler(
         offset,
         has_more,
         counts,
+        // 基准档必须回传：只有 `available_at_level` 而没有「按哪一档算的」，
+        // 客户端看到 `false` 也没法解释（设计 §16.4）。
+        permission_level: caps.level.as_str().to_string(),
         workspace_root: (!ws.trim().is_empty()).then_some(ws),
     }))
 }
@@ -393,6 +440,9 @@ pub(crate) async fn tool_detail_handler(
     validate_tool_name(&tool_name)?;
     let ws = http.effective_workspace_path().await;
     let cfg = http.cfg.read().await;
+    // 与清单同一档、同一次读锁：两个端点的 `available_at_level` 必须能对得上，
+    // 否则客户端会在清单与详情页看到互相矛盾的两个答案。
+    let caps = default_projection_caps(&cfg);
     let entries = enumerate_tools_from(&cfg, &ws).await;
     let Some(entry) = entries.into_iter().find(|e| e.name == tool_name) else {
         return Err(err(
@@ -401,6 +451,7 @@ pub(crate) async fn tool_detail_handler(
             format!("未注册的工具：{tool_name}"),
         ));
     };
+    let available_at_level = crate::cm_agent::permission::tool_allowed_by_caps(&caps, &entry.name);
     let parameters = parameters_for(&cfg, &ws, &entry.name, entry.source);
     let policy = policy_view(&cfg, &entry.name);
     drop(cfg);
@@ -413,6 +464,7 @@ pub(crate) async fn tool_detail_handler(
         dev_tags: entry.dev_tags,
         present: entry.present,
         absent_reason: entry.absent_reason.map(|s| s.to_string()),
+        available_at_level,
         parameters,
         policy,
     }))
@@ -715,5 +767,99 @@ mod tests {
         assert!(entries.iter().any(|e| e.source == "builtin"));
         assert_eq!(entry_source(&entries, "run_command"), Some("builtin"));
         assert_eq!(entry_source(&entries, "definitely_not_a_tool"), None);
+    }
+
+    /// 测试用最小 `ToolEntry`（来源固定 `builtin`；`present` 与 `absent_reason` 自洽）。
+    fn entry(name: &str, present: bool) -> ToolEntry {
+        ToolEntry {
+            name: name.to_string(),
+            description: String::new(),
+            category: "basic",
+            source: "builtin",
+            dev_tags: Vec::new(),
+            present,
+            absent_reason: (!present).then_some("disabled_by_policy"),
+        }
+    }
+
+    /// 指定等级下的 caps（上限拉到顶，确保测的是等级本身而不是 ceiling 推导）。
+    fn caps_at(
+        level: crate::cm_types::PermissionLevel,
+    ) -> crate::cm_agent::permission::PermissionCaps {
+        let mut cfg = base_cfg();
+        cfg.permission.permission_level = level;
+        cfg.permission.permission_level_max_effective =
+            crate::cm_types::PermissionLevel::Unrestricted;
+        default_projection_caps(&cfg)
+    }
+
+    /// `available_at_level` 的**接线**（§16.4）：五档 × 三类工具矩阵。
+    ///
+    /// 断言必须经 `tool_list_item`——即 handler 真正调用的那个函数。若在测试里直接把
+    /// `tool_allowed_by_caps` 与 caps 组合，等价于把 handler 的内部逻辑重抄一遍，
+    /// 于是把结构体里的赋值改成常量也照样全绿。
+    #[test]
+    fn tool_list_item_reports_availability_per_level() {
+        use crate::cm_types::PermissionLevel;
+
+        let available = |level: PermissionLevel, name: &str| {
+            tool_list_item(entry(name, true), &caps_at(level)).available_at_level
+        };
+
+        // L0：无工具。
+        for name in ["read_file", "modify_file", "run_command"] {
+            assert!(!available(PermissionLevel::Chat, name), "L0 不应允许 {name}");
+        }
+        // L1：只读正列表——写工具与命令类都不可用。
+        assert!(available(PermissionLevel::Read, "read_file"));
+        assert!(!available(PermissionLevel::Read, "modify_file"));
+        assert!(!available(PermissionLevel::Read, "run_command"));
+        // L2–L4：全量可见（外部工具轴仍是 Denied，但内置写工具与命令类可用）。
+        for level in [
+            PermissionLevel::Workspace,
+            PermissionLevel::Approved,
+            PermissionLevel::Unrestricted,
+        ] {
+            for name in ["read_file", "modify_file", "run_command"] {
+                assert!(available(level, name), "{level:?} 下 {name} 应可用");
+            }
+        }
+    }
+
+    /// `present` 与 `available_at_level` 是两条独立的轴，且都真的出现在 JSON 里。
+    ///
+    /// 「在场但当前等级调不动」只能靠两个字段并列表达；字段漏标 / 改名时客户端只会
+    /// 看到「没有这个字段」而不是报错，所以这里直接断言序列化结果。
+    #[test]
+    fn present_and_available_at_level_are_independent_axes() {
+        use crate::cm_types::PermissionLevel;
+
+        let item = tool_list_item(entry("modify_file", true), &caps_at(PermissionLevel::Read));
+        assert!(item.present, "写工具在 L1 下仍然在场（可被注册）");
+        assert!(!item.available_at_level, "但 L1 下调不动");
+
+        let v = serde_json::to_value(&item).expect("ToolListItem 必须可序列化");
+        assert_eq!(v.get("present"), Some(&Value::Bool(true)));
+        assert_eq!(v.get("available_at_level"), Some(&Value::Bool(false)));
+    }
+
+    /// 基准取 `min(permission_level, ceiling)`：调低上限后，清单立刻跟着变窄。
+    ///
+    /// 这条钉住「`GET /tools` 是投影而不是配置回显」——热重载把
+    /// `permission_level_max` 降下来（只允许降）后，客户端不该还看到一批调不动的工具。
+    #[test]
+    fn ceiling_clamps_default_projection_caps() {
+        use crate::cm_types::PermissionLevel;
+
+        let mut cfg = base_cfg();
+        cfg.permission.permission_level = PermissionLevel::Unrestricted;
+        cfg.permission.permission_level_max_effective = PermissionLevel::Read;
+        let caps = default_projection_caps(&cfg);
+
+        // 回传给客户端的基准档也必须落在上限上，否则 `available_at_level` 无从解释。
+        assert_eq!(caps.level, PermissionLevel::Read);
+        assert!(tool_list_item(entry("read_file", true), &caps).available_at_level);
+        assert!(!tool_list_item(entry("modify_file", true), &caps).available_at_level);
+        assert!(!tool_list_item(entry("run_command", true), &caps).available_at_level);
     }
 }

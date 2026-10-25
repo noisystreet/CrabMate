@@ -3030,7 +3030,7 @@
     },
     "/tools": {
       "get": {
-        "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。",
+        "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。每项另有 `available_at_level: bool`：是否在当前权限等级（进程默认档，经 `permission_level_max` 钳制）下可用——它与 `present` 是两条独立的轴（在场 ≠ 调得动），本端点**不**按等级过滤，等级选择器请用 `GET /permission`。",
         "parameters": [
           {
             "description": "按来源过滤，可重复；取值 builtin / dynamic / mcp。非法取值 400 INVALID_TOOL_FILTER",
@@ -3136,8 +3136,58 @@
                     "offset": {
                       "type": "integer"
                     },
+                    "permission_level": {
+                      "description": "`available_at_level` 的等级基准（进程默认档经 `permission_level_max` 钳制）；会话可持久化自己的等级，故这是解释该字段的前提",
+                      "enum": [
+                        "chat",
+                        "read",
+                        "workspace",
+                        "approved",
+                        "unrestricted"
+                      ],
+                      "type": "string"
+                    },
                     "tools": {
                       "items": {
+                        "properties": {
+                          "absent_reason": {
+                            "type": "string"
+                          },
+                          "available_at_level": {
+                            "description": "该工具在 `permission_level` 档下是否可调用；与 `present` 是两条独立的轴（在场 ≠ 调得动）",
+                            "type": "boolean"
+                          },
+                          "category": {
+                            "enum": [
+                              "basic",
+                              "development"
+                            ],
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "dev_tags": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "present": {
+                            "type": "boolean"
+                          },
+                          "source": {
+                            "enum": [
+                              "builtin",
+                              "dynamic",
+                              "mcp"
+                            ],
+                            "type": "string"
+                          }
+                        },
                         "type": "object"
                       },
                       "type": "array"
@@ -3492,6 +3542,10 @@
                   "properties": {
                     "absent_reason": {
                       "type": "string"
+                    },
+                    "available_at_level": {
+                      "description": "与 `GET /tools` 清单同一条判据、同一档基准",
+                      "type": "boolean"
                     },
                     "category": {
                       "type": "string"

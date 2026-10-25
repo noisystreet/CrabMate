@@ -19,7 +19,7 @@ fn tools_list_path() -> Value {
         "get": {
             "tags": ["tools"],
             "summary": "枚举工具（内置 / 工作区动态 / MCP 三源只读清单）",
-            "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。",
+            "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。每项另有 `available_at_level: bool`：是否在当前权限等级（进程默认档，经 `permission_level_max` 钳制）下可用——它与 `present` 是两条独立的轴（在场 ≠ 调得动），本端点**不**按等级过滤，等级选择器请用 `GET /permission`。",
             "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
             "parameters": [
                 {
@@ -73,7 +73,25 @@ fn tools_list_path() -> Value {
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "tools": { "type": "array", "items": { "type": "object" } },
+                                    "tools": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": { "type": "string" },
+                                                "description": { "type": "string" },
+                                                "category": { "type": "string", "enum": ["basic", "development"] },
+                                                "source": { "type": "string", "enum": ["builtin", "dynamic", "mcp"] },
+                                                "dev_tags": { "type": "array", "items": { "type": "string" } },
+                                                "present": { "type": "boolean" },
+                                                "absent_reason": { "type": "string" },
+                                                "available_at_level": {
+                                                    "type": "boolean",
+                                                    "description": "该工具在 `permission_level` 档下是否可调用；与 `present` 是两条独立的轴（在场 ≠ 调得动）"
+                                                }
+                                            }
+                                        }
+                                    },
                                     "total": { "type": "integer" },
                                     "limit": { "type": "integer" },
                                     "offset": { "type": "integer" },
@@ -86,6 +104,11 @@ fn tools_list_path() -> Value {
                                             "mcp": { "type": "integer" },
                                             "present": { "type": "integer" }
                                         }
+                                    },
+                                    "permission_level": {
+                                        "type": "string",
+                                        "enum": ["chat", "read", "workspace", "approved", "unrestricted"],
+                                        "description": "`available_at_level` 的等级基准（进程默认档经 `permission_level_max` 钳制）；会话可持久化自己的等级，故这是解释该字段的前提"
                                     },
                                     "workspace_root": { "type": "string" }
                                 }
@@ -202,6 +225,10 @@ fn tool_detail_path() -> Value {
                                     "dev_tags": { "type": "array", "items": { "type": "string" } },
                                     "present": { "type": "boolean" },
                                     "absent_reason": { "type": "string" },
+                                    "available_at_level": {
+                                        "type": "boolean",
+                                        "description": "与 `GET /tools` 清单同一条判据、同一档基准"
+                                    },
                                     "parameters": { "type": "object" },
                                     "policy": {
                                         "type": "object",
