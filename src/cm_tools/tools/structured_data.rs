@@ -7,6 +7,8 @@ use std::path::Path;
 
 use serde_json::Value as JsonValue;
 
+use crate::cm_tools::tool_result::ToolError;
+
 use super::ToolContext;
 use super::file;
 use super::tool_param_types::{StructuredDiffArgs, StructuredQueryArgs, StructuredValidateArgs};
@@ -137,6 +139,17 @@ fn read_limited(path: &Path) -> Result<String, String> {
         ));
     }
     fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))
+}
+
+/// [`read_limited`] 的错误分流：超上限属输入问题（`invalid_args`），其余为 IO。
+/// 正文保留调用处原有的 `错误：…` 前缀，与迁移前逐字一致。
+#[allow(clippy::result_large_err)]
+fn structured_io_error(msg: String) -> ToolError {
+    if msg.starts_with("文件过大") {
+        ToolError::invalid_args(format!("错误：{msg}"))
+    } else {
+        ToolError::external_code("structured_io_failed", format!("错误：{msg}"))
+    }
 }
 
 fn parse_to_json(text: &str, fmt: DataFormat, has_header: bool) -> Result<JsonValue, String> {
@@ -497,31 +510,25 @@ fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String>
 
 /// 校验并可选摘要顶层结构。
 /// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
-pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
-    let args: StructuredValidateArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn structured_validate_try(
+    args_json: &str,
+    working_dir: &Path,
+) -> Result<String, ToolError> {
+    let args: StructuredValidateArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
         p if !p.is_empty() => p,
-        _ => return "错误：缺少 path".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 path".to_string())),
     };
     let fmt = args.format.map(|f| f.as_detect_token());
     let summarize = args.summarize;
     let has_header = args.has_header;
 
-    let abs = match file::resolve_for_read(working_dir, path) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let data_fmt = match detect_format(path, fmt) {
-        Ok(f) => f,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let text = match read_limited(&abs) {
-        Ok(t) => t,
-        Err(e) => return format!("错误：{}", e),
-    };
+    let abs = file::resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
+    let data_fmt = detect_format(path, fmt)
+        .map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
+    let text = read_limited(&abs).map_err(structured_io_error)?;
     match parse_to_json(&text, data_fmt, has_header) {
         Ok(jv) => {
             let mut out = format!("校验通过: {}\n格式: {:?}\n", path, data_fmt);
@@ -529,37 +536,40 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
                 out.push_str(&summarize_top_level(&jv, 24));
                 out.push('\n');
             }
-            out.trim_end().to_string()
+            Ok(out.trim_end().to_string())
         }
-        Err(e) => format!("校验失败: {}\n{}", path, e),
+        Err(e) => Err(ToolError::external_code(
+            "structured_parse_failed",
+            format!("校验失败: {}\n{}", path, e),
+        )),
     }
 }
 
 /// 解析后按路径取值（JSON Pointer 或点号路径）。
 /// 参数：`path`，`query`（必填），`format?`，`has_header?`（仅 CSV/TSV；默认 true）
-pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
-    let args = match crate::cm_tools::tools::parse_args_typed::<StructuredQueryArgs>(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn structured_query_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args = crate::cm_tools::tools::parse_args_typed::<StructuredQueryArgs>(args_json)
+        .map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
         p if !p.is_empty() => p,
-        _ => return "错误：缺少 path".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 path".to_string())),
     };
     let query = match args.query.trim() {
         q if !q.is_empty() => q,
-        _ => return "错误：缺少 query（JSON Pointer 如 /a/b 或点号路径如 a.b）".to_string(),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：缺少 query（JSON Pointer 如 /a/b 或点号路径如 a.b）".to_string(),
+            ));
+        }
     };
-    let jv = match load_structured_query_doc(
+    let jv = load_structured_query_doc(
         working_dir,
         path,
         args.format.map(|f| f.as_detect_token()),
         args.has_header,
-    ) {
-        Ok(j) => j,
-        Err(e) => return e,
-    };
-    match resolve_query_path(&jv, query) {
+    )?;
+    Ok(match resolve_query_path(&jv, query) {
         Some(found) => {
             format!(
                 "路径: {}\nquery: {}\n类型: {}\n值:\n{}",
@@ -569,21 +579,25 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
                 serde_json::to_string_pretty(found).unwrap_or_else(|_| preview_value(found))
             )
         }
+        // 「路径不存在」是查询的正常结果（工具成功），与迁移前一致。
         None => format!("路径不存在或中间节点缺失: file={} query={}", path, query),
-    }
+    })
 }
 
 /// 解析路径、探测格式并载入为 JSON 模型。
+#[allow(clippy::result_large_err)]
 fn load_structured_query_doc(
     working_dir: &Path,
     path: &str,
     fmt: Option<&str>,
     has_header: bool,
-) -> Result<JsonValue, String> {
-    let abs = file::resolve_for_read(working_dir, path).map_err(|e| format!("错误：{}", e))?;
-    let data_fmt = detect_format(path, fmt).map_err(|e| format!("错误：{}", e))?;
-    let text = read_limited(&abs).map_err(|e| format!("错误：{}", e))?;
-    parse_to_json(&text, data_fmt, has_header).map_err(|e| format!("解析失败: {}", e))
+) -> Result<JsonValue, ToolError> {
+    let abs = file::resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
+    let data_fmt = detect_format(path, fmt)
+        .map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
+    let text = read_limited(&abs).map_err(structured_io_error)?;
+    parse_to_json(&text, data_fmt, has_header)
+        .map_err(|e| ToolError::external_code("structured_parse_failed", format!("解析失败: {e}")))
 }
 
 fn json_type_name(v: &JsonValue) -> &'static str {
@@ -597,32 +611,45 @@ fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn structured_diff_prepare_pair(
     working_dir: &Path,
     path_a: &str,
     path_b: &str,
     fmt_override: Option<&str>,
     has_header: bool,
-) -> Result<(JsonValue, JsonValue, DataFormat, DataFormat), String> {
-    let abs_a =
-        file::resolve_for_read(working_dir, path_a).map_err(|e| format!("错误 path_a: {}", e))?;
-    let abs_b =
-        file::resolve_for_read(working_dir, path_b).map_err(|e| format!("错误 path_b: {}", e))?;
+) -> Result<(JsonValue, JsonValue, DataFormat, DataFormat), ToolError> {
+    let abs_a = file::resolve_for_read(working_dir, path_a).map_err(|e| {
+        ToolError::external_code(
+            "structured_diff_path_a_resolve_failed",
+            format!("错误 path_a: {e}"),
+        )
+    })?;
+    let abs_b = file::resolve_for_read(working_dir, path_b).map_err(|e| {
+        ToolError::external_code(
+            "structured_diff_path_b_resolve_failed",
+            format!("错误 path_b: {e}"),
+        )
+    })?;
 
-    let fmt_a = detect_format(path_a, fmt_override)?;
+    // `fmt_a` 迁移前不带 `错误：` 前缀、首行也无关键词 ⇒ 曾被判成功；现在显式失败。
+    let fmt_a = detect_format(path_a, fmt_override).map_err(ToolError::invalid_args)?;
     let fmt_b = if fmt_override.is_some() {
         fmt_a
     } else {
-        detect_format(path_b, None).map_err(|e| format!("错误 path_b 格式: {}", e))?
+        detect_format(path_b, None)
+            .map_err(|e| ToolError::invalid_args(format!("错误 path_b 格式: {e}")))?
     };
 
-    let text_a = read_limited(&abs_a).map_err(|e| format!("错误：{}", e))?;
-    let text_b = read_limited(&abs_b).map_err(|e| format!("错误：{}", e))?;
+    let text_a = read_limited(&abs_a).map_err(structured_io_error)?;
+    let text_b = read_limited(&abs_b).map_err(structured_io_error)?;
 
-    let jv_a = parse_to_json(&text_a, fmt_a, has_header)
-        .map_err(|e| format!("解析 path_a 失败: {}", e))?;
-    let jv_b = parse_to_json(&text_b, fmt_b, has_header)
-        .map_err(|e| format!("解析 path_b 失败: {}", e))?;
+    let jv_a = parse_to_json(&text_a, fmt_a, has_header).map_err(|e| {
+        ToolError::external_code("structured_parse_failed", format!("解析 path_a 失败: {e}"))
+    })?;
+    let jv_b = parse_to_json(&text_b, fmt_b, has_header).map_err(|e| {
+        ToolError::external_code("structured_parse_failed", format!("解析 path_b 失败: {e}"))
+    })?;
     Ok((jv_a, jv_b, fmt_a, fmt_b))
 }
 
@@ -656,18 +683,17 @@ fn structured_diff_format_report(
 
 /// 将两份文件解析为同一 JSON 模型后做键级差异（非文本 diff）。
 /// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`has_header?`（仅 CSV/TSV；默认 true），`max_diff_lines?` 默认 200，上限 2000
-pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
-    let args: StructuredDiffArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn structured_diff_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: StructuredDiffArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let path_a = match args.path_a.trim() {
         p if !p.is_empty() => p,
-        _ => return "错误：缺少 path_a".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 path_a".to_string())),
     };
     let path_b = match args.path_b.trim() {
         p if !p.is_empty() => p,
-        _ => return "错误：缺少 path_b".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 path_b".to_string())),
     };
     let fmt_override = args.format.map(|f| f.as_detect_token());
     let max_lines = (args.max_diff_lines.unwrap_or(DEFAULT_DIFF_MAX_LINES as u64) as usize)
@@ -675,15 +701,14 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
     let has_header = args.has_header;
 
     let (jv_a, jv_b, fmt_a, fmt_b) =
-        match structured_diff_prepare_pair(working_dir, path_a, path_b, fmt_override, has_header) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        structured_diff_prepare_pair(working_dir, path_a, path_b, fmt_override, has_header)?;
 
     let mut lines = Vec::new();
     diff_recursive("", &jv_a, &jv_b, &mut lines, max_lines);
 
-    structured_diff_format_report(path_a, path_b, fmt_a, fmt_b, &lines, max_lines)
+    Ok(structured_diff_format_report(
+        path_a, path_b, fmt_a, fmt_b, &lines, max_lines,
+    ))
 }
 
 #[path = "structured_data_patch/mod.rs"]
@@ -762,5 +787,70 @@ mod tests {
         let mut j = serde_json::json!({"x":{"y":2}});
         remove_value_at_path(&mut j, &["x".to_string(), "y".to_string()]).unwrap();
         assert!(j.pointer("/x/y").is_none());
+    }
+
+    fn temp_dir_with(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "crabmate_structured_{}_{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, body) in files {
+            std::fs::write(dir.join(name), body).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn validate_missing_path_is_invalid_args() {
+        let j = serde_json::json!({ "path": "   " });
+        let err = structured_validate_try(&j.to_string(), Path::new("/tmp"))
+            .expect_err("blank path must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("缺少 path"), "{}", err.message);
+    }
+
+    #[test]
+    fn validate_ok_body_is_verbatim() {
+        let dir = temp_dir_with("validate_ok", &[("a.json", "{\"a\":1}")]);
+        let j = serde_json::json!({ "path": "a.json" });
+        let out = structured_validate_try(&j.to_string(), &dir).expect("validate should succeed");
+        assert!(out.starts_with("校验通过: a.json\n格式: Json\n"), "{out}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `detect_from_path` 的「无法从扩展名推断格式」迁移前首行无关键词 ⇒ 曾被判成功。
+    #[test]
+    fn diff_unknown_extension_is_invalid_args() {
+        let dir = temp_dir_with("diff_ext", &[("a.data", "x"), ("b.data", "y")]);
+        let j = serde_json::json!({ "path_a": "a.data", "path_b": "b.data" });
+        let err = structured_diff_try(&j.to_string(), &dir).expect_err("unknown ext must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(
+            err.message.contains("无法从扩展名推断格式"),
+            "{}",
+            err.message
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn query_missing_query_is_invalid_args() {
+        let j = serde_json::json!({ "path": "a.json", "query": "  " });
+        let err = structured_query_try(&j.to_string(), Path::new("/tmp"))
+            .expect_err("blank query must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("缺少 query"), "{}", err.message);
+    }
+
+    #[test]
+    fn query_ok_body_is_verbatim() {
+        let dir = temp_dir_with("query_ok", &[("a.json", "{\"a\":1}")]);
+        let j = serde_json::json!({ "path": "a.json", "query": "/a" });
+        let out = structured_query_try(&j.to_string(), &dir).expect("query should succeed");
+        assert!(out.starts_with("路径: a.json\nquery: /a\n类型: "), "{out}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

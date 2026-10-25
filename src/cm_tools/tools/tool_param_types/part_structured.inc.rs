@@ -69,7 +69,7 @@ fn default_structured_patch_action() -> StructuredPatchAction {
     StructuredPatchAction::Set
 }
 
-/// [`super::structured_data::structured_validate`] 入参。
+/// [`super::structured_data::structured_validate_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredValidateArgs {
@@ -81,7 +81,7 @@ pub struct StructuredValidateArgs {
     pub summarize: bool,
 }
 
-/// [`super::structured_data::structured_query`] 入参。
+/// [`super::structured_data::structured_query_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredQueryArgs {
@@ -96,7 +96,7 @@ fn default_structured_diff_max_lines() -> Option<u64> {
     Some(200)
 }
 
-/// [`super::structured_data::structured_diff`] 入参。
+/// [`super::structured_data::structured_diff_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredDiffArgs {

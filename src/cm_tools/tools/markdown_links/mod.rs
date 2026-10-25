@@ -5,7 +5,7 @@
 mod check;
 mod core;
 
-pub use check::markdown_check_links;
+pub use check::markdown_check_links_try;
 
 #[cfg(test)]
 mod tests;

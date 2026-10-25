@@ -155,7 +155,7 @@ pub struct BackgroundJobCancelArgs {
     pub tool_job_id: String,
 }
 
-/// [`super::markdown_links::markdown_check_links`] 的 `output_format`。
+/// [`super::markdown_links::markdown_check_links_try`] 的 `output_format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum MarkdownCheckLinksOutputFormat {
@@ -168,7 +168,7 @@ pub enum MarkdownCheckLinksOutputFormat {
     Sarif,
 }
 
-/// [`super::markdown_links::markdown_check_links`] 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。
+/// [`super::markdown_links::markdown_check_links_try`] 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MarkdownCheckLinksArgs {
