@@ -160,7 +160,7 @@ pub enum CeilingSource {
 /// `cm_types` → `cm_config` → `cm_tools` → `cm_agent`，反向引用会让 `cm_tools` 变成非叶子层。
 /// 由 `PermissionCaps::view()` 唯一产生——白名单 / 前缀**不进**投影（内部数据、长度不可控），
 /// 因此本结构可直接进 golden 与 HTTP 响应。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PermissionCapsView {
     pub tool_visibility: String,
     pub external_tools: String,

@@ -874,6 +874,103 @@
         ],
         "type": "object"
       },
+      "PermissionCapsView": {
+        "description": "六轴投影的**对外序列化形态**（设计 §16.2 `GET /permission` 的 `caps`）。\n\n定义在本层而不是 [`crate::cm_agent::permission`]：`cm_tools` 的 `self_config_info` 也要输出\n同一份投影（§11.1「同源序列化，避免两处漂移」），而依赖方向是\n`cm_types` → `cm_config` → `cm_tools` → `cm_agent`，反向引用会让 `cm_tools` 变成非叶子层。\n由 `PermissionCaps::view()` 唯一产生——白名单 / 前缀**不进**投影（内部数据、长度不可控），\n因此本结构可直接进 golden 与 HTTP 响应。",
+        "properties": {
+          "approval": {
+            "type": "string"
+          },
+          "command_scope": {
+            "type": "string"
+          },
+          "external_tools": {
+            "type": "string"
+          },
+          "net_scope": {
+            "type": "string"
+          },
+          "path_scope": {
+            "type": "string"
+          },
+          "tool_visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_visibility",
+          "external_tools",
+          "path_scope",
+          "command_scope",
+          "net_scope",
+          "approval"
+        ],
+        "type": "object"
+      },
+      "PermissionLevelSource": {
+        "description": "[`PermissionView::level`] 的取值来源（设计 §16.2 的 `level_source`）。",
+        "oneOf": [
+          {
+            "const": "config",
+            "description": "无会话级意图：回落配置默认 `permission_level`（已按生效上限钳制）。",
+            "type": "string"
+          },
+          {
+            "const": "persisted",
+            "description": "会话持久化的意图（`?conversation_id=` 带来的 `active_permission_level`）。",
+            "type": "string"
+          }
+        ]
+      },
+      "PermissionView": {
+        "description": "`GET /permission` 响应体。\n\n客户端据此渲染等级选择器：选项集直接取 [`Self::available`]，\n「为什么不能选 L4」由 [`Self::clamped_by`] + [`Self::ceiling_source`] 回答。",
+        "properties": {
+          "available": {
+            "description": "选择器选项集：全部 `≤` 上限，并已扣除角色上限与会话模式钳制；自低到高。",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "caps": {
+            "$ref": "#/components/schemas/PermissionCapsView",
+            "description": "六轴投影，与 `self_config_info` 的 `permission` 小节同源（同一个 [`PermissionCapsView`]），\n避免两处漂移。"
+          },
+          "ceiling": {
+            "description": "服务端生效上限（启动期冻结；热重载只降不升）。",
+            "type": "string"
+          },
+          "ceiling_source": {
+            "description": "上限来源：`config` / `derived_loopback` / `derived_non_loopback`。",
+            "type": "string"
+          },
+          "clamped_by": {
+            "description": "实际收窄的轴，顺序固定 `ceiling` → `role` → `session_mode`；空数组 = 未被钳制。",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "level": {
+            "description": "当前生效等级（min 链之后；与工具拒绝文案里的等级是同一个值）。",
+            "type": "string"
+          },
+          "level_source": {
+            "$ref": "#/components/schemas/PermissionLevelSource",
+            "description": "`level` 的来源：`config` / `persisted`。"
+          }
+        },
+        "required": [
+          "level",
+          "level_source",
+          "ceiling",
+          "ceiling_source",
+          "available",
+          "clamped_by",
+          "caps"
+        ],
+        "title": "PermissionView",
+        "type": "object"
+      },
       "PutWebSessionsBody": {
         "properties": {
           "active_session_id": {
@@ -2702,6 +2799,61 @@
           }
         },
         "summary": "OpenAPI 本文档",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/permission": {
+      "get": {
+        "description": "客户端等级选择器的数据源：`available` 是选项集（全部 ≤ 上限，并已扣除角色上限与会话模式钳制），`clamped_by` 与 `ceiling_source` 解释「为什么本机不能选 L4」。刻意不提供写上限的接口（设计 §16.3）。",
+        "parameters": [
+          {
+            "description": "即将使用的命名角色 id（决定角色上限 max_permission_level）；省略时按默认角色计算，未知角色返回 400 INVALID_AGENT_ROLE",
+            "in": "query",
+            "name": "agent_role",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "可选会话 id：取该会话持久化的 agent_role 与 session_mode；不带时只返回静态投影",
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionView"
+                }
+              }
+            },
+            "description": "权限投影"
+          },
+          "400": {
+            "description": "agent_role / conversation_id 非法"
+          },
+          "404": {
+            "description": "会话不存在或已过期"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "权限等级与六轴投影（只读策略投影）",
         "tags": [
           "system"
         ]
