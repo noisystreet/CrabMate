@@ -149,10 +149,24 @@ async fn approve_external_read_dir_if_needed(
     };
     // S3：路径轴先定论——L4 放行（不弹窗），L2 硬拒（不弹窗），其余走现状审批。
     if let Some(caps) = permission {
+        // 审计正文只留末两段路径（完整绝对路径不进日志）。
+        let audit_detail = crate::cm_tools::tools::audit_path_detail(&ext_path);
         if caps.path_scope.is_unrestricted() {
+            crate::cm_agent::permission_audit::record_allowed(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Path,
+                Some("read_dir"),
+                Some(&audit_detail),
+            );
             return Ok(());
         }
         if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+            crate::cm_agent::permission_audit::record_denied(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Path,
+                Some("read_dir"),
+                Some(&audit_detail),
+            );
             return Err(format!(
                 "错误：当前权限等级（{}）下不允许 read_dir 访问工作区外路径 \"{}\"：{}。",
                 caps.level.as_str(),

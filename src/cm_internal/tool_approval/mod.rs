@@ -36,6 +36,39 @@ pub fn web_tool_runtime_approval_sink(
     }
 }
 
+/// 审批能力域 → 审计轴（设计 §11.2）。
+///
+/// `WorkflowGate` 是节点级的跨轴放行（可能是命令、也可能是任意工具），归 `Tool`：
+/// 审计轴要能一句话解释「越界发生在哪一类能力上」，含糊时就报最外层的工具轴。
+fn audit_axis_for(
+    capability: crate::cm_approval::SensitiveCapability,
+) -> crate::cm_agent::permission_audit::PermissionAxis {
+    use crate::cm_agent::permission_audit::PermissionAxis;
+    use crate::cm_approval::SensitiveCapability;
+    match capability {
+        SensitiveCapability::HostShell => PermissionAxis::Command,
+        SensitiveCapability::OutboundHttpRead | SensitiveCapability::OutboundHttpWrite => {
+            PermissionAxis::Net
+        }
+        SensitiveCapability::WorkspaceExternalPath => PermissionAxis::Path,
+        SensitiveCapability::WorkflowGate => PermissionAxis::Tool,
+    }
+}
+
+/// 记一条「人批准了这次越界」。`level = None`（未接线等级的旧路径）不记。
+fn audit_approval_granted(spec: &ApprovalRequestSpec, level: Option<crate::cm_types::PermissionLevel>) {
+    let Some(level) = level else {
+        return;
+    };
+    // 只带 `sse_command`，不带 `sse_args`：后者可能含路径、query 等细节。
+    crate::cm_agent::permission_audit::record_approved(
+        level,
+        audit_axis_for(spec.capability),
+        None,
+        Some(spec.sse_command.as_str()),
+    );
+}
+
 /// 配置白名单与 persistent 集合均未放行时：发起交互审批，并在 `AllowAlways` 时写入 [`ApprovalRequestSpec::allowlist_key`]（若有）。
 pub async fn interactive_gate_after_whitelist_miss(
     web: Option<WebApprovalSink<'_>>,
@@ -50,11 +83,15 @@ pub async fn interactive_gate_after_whitelist_miss(
             spec.sse_command,
             spec.sse_args.trim()
         ))),
-        CommandApprovalDecision::AllowOnce => Ok(InteractiveGateOutcome::Allowed),
+        CommandApprovalDecision::AllowOnce => {
+            audit_approval_granted(spec, allowlist.level);
+            Ok(InteractiveGateOutcome::Allowed)
+        }
         CommandApprovalDecision::AllowAlways => {
             if let Some(k) = spec.allowlist_key.as_deref() {
                 persist_allowlist_key(allowlist, k).await;
             }
+            audit_approval_granted(spec, allowlist.level);
             Ok(InteractiveGateOutcome::Allowed)
         }
     }

@@ -1,6 +1,6 @@
 # 工具权限等级（Permission Levels）：设计草案
 
-**状态**：设计草案（**未**实现）。默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
+**状态**：S1–S3 与 S4 的审计事件部分已落地（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计含路径轴全覆盖）。**未做**：§11.3 的 SSE 审计事件与 Client 侧等级 UI。默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
 **受众**：维护者、安全评审、Client（Web / `crabmate-tui`）维护者。
 **语言**：中文。
 **维护**：实现或废弃某级能力时同步修订本文、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。
@@ -262,7 +262,20 @@ effective = min(chosen, ceiling, role.max_permission_level)
 - **命中**：`http_tool_exec.inc.rs` 的 URL 集合查询、`execute_run_command_approval.inc.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
 - **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
 - **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
-- **仍未做**（S4 剩余）：`ApprovalPolicy::AuditOnly` 的审计事件与 §11.2 的 `permission.*` 结构化字段；`permission_confirm_tools` 目前仍无消费点（MB-4 由工具自身 `confirm` 参数承担）。
+- **仍未做**（S4 剩余之外）：`permission_confirm_tools` 目前仍无消费点（MB-4 由工具自身 `confirm` 参数承担）。
+
+**落地结果（S4 的审计事件部分）**：
+
+- **载体**：`src/cm_types/permission_audit.rs`——`PermissionAxis`（`tool` / `path` / `command` / `net` / `external`）、`PermissionDecision`（`allowed` / `denied` / `approved`）、`PermissionAuditEvent`，以及唯一判据 `should_emit(approval, decision)`。`src/cm_agent/permission_audit.rs` 只保留「从 `PermissionCaps` 取 `level` / `approval`」的薄包装。
+- **为什么在 `cm_types`（叶子层）而不在 `cm_agent`**：路径轴要在 `cm_tools` 的 `PathAccess` 记录，而依赖方向是 `cm_types` → `cm_config` → `cm_tools` → `cm_agent`；放 `cm_agent` 会让叶子层反向依赖。`ApprovalPolicy` 随之从 `cm_agent::permission` 下沉到 `cm_types`（后者 `pub use` 重导出，调用点不变）。
+- **为什么 `Allowed` 只记 `AuditOnly`**：L0–L3 下「命中白名单」是每一步的常态，记进来会把「L4 到底放行了什么」这批真需要审计的记录淹没。`Denied` / `Approved` 一律记——它们是边界真的动了。
+- **接线点**：工具可见性 / early-deny（`Tool`，外部工具归 `External`，L0/L1 的命令类工具归 `Command`）、`http_net_gate` 的 `Any` 与两处 `Deny`（`Net`）、`run_command` 的 `external_path_gate_by_caps`（`Path`）、未知命令白名单命中与 L2 硬拒（`Command`）、`read_dir` 工作区外路径（`Path`）、**`PathAccess::for_read` / `for_read_open` / `for_write` 的 `PathScope::Any` 分支（`Path`；路径面的唯一收口，`read_file` / `write` / `copy_file` / `delete_*` 等全部经此）**、workflow 节点的等级结论（`approval_disposition` 的两个消费点：`run_command` 归 `Command`、通用审批阀门归 `Tool`）。
+- **`approved` 落在审批门**：`cm_internal::tool_approval::interactive_gate_after_whitelist_miss` 是全部交互审批的唯一收口，`AllowOnce` / `AllowAlways` 在此记一条；轴由 `SensitiveCapability` 映射（`HostShell` → 命令、两个 `OutboundHttp*` → 网络、`WorkspaceExternalPath` → 路径、`WorkflowGate` → 工具）。只带 `sse_command`，不带 `sse_args`（后者可能含路径与 query）。
+- **不设 `clamped`**：等级钳制发生在 `resolve_permission_level_for_turn`，它不属于五轴中任何一轴；`GET /permission` 的 `clamped_by` 已是该信息的对外答案。原先预留的 `PermissionDecision::Clamped` 从未有 emit 点，本次随下沉一并删除，避免留下永远为空的枚举值。
+- **为什么先用 tracing 而非 SSE 审计事件**：§11.3 的 control-plane 方案需要双端同步（`cm_sse_protocol` + Client 解析器 + 协议 golden），留给 Client 那一波；tracing 零协议变更、可独立合并。
+- **字段名**：§11.2 写的 `permission.level` 落地为 `permission_level`——tracing 的字段名必须是 Rust 标识符，点号无法出现。检索统一用 `target: "permission_audit"`。
+- **审计正文的脱敏**：网络轴只记 `origin`（无 path / query）；路径轴只记末两段（完整绝对路径会把宿主机目录结构写进日志，可能被远端采集）。
+- **测试**：`cm_types/permission_audit_tests.rs`——`should_emit` 9 组矩阵、字段串防漂移、`path_scope = any` 只在 L4（`PathAccess` 回填等级的依据）、以及用最小 subscriber 捕获真实 tracing 输出。**接线回归**：`http_net_gate_tests::net_gate_emits_audit_only_on_l4_direct_allow` 与 `file::path::tests::unrestricted_scope_emits_path_audit` 断言的是事件本身而非返回值——删掉对应 `record_*` 调用会红。
 
 ### 6.4 沙盒：只钳路径与网络，不降等级
 
@@ -539,7 +552,7 @@ dst.permission.permission_level_max =
 ## 11. 观测与对外契约
 
 1. **`GET /permission` / `GET /status` / `self_config_info`**：等级与投影的统一出口。`GET /permission` 的响应形状见 §16.2；`self_config_info` 的 `permission` 小节与其**同源序列化**（同一个 `PermissionCaps`），避免两处漂移。密钥类字段一律不出现（沿用现有“只报是否设置”的规矩）。
-2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved` / `clamped`）。
+2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，`cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
 3. **SSE（可选，需 Client 同步）**：若采纳审计事件，建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、`fixtures/sse_ag_ui_golden.jsonl`、`docs/SSE协议.md` 与 Client `parser_v2.rs` / `sse_dispatch/types.rs`，并跑双端 golden 测试。
 4. **Client（另仓）**：`crabmate-client` 侧在 `session_mode` 选择器旁加等级选择（只列 ≤ ceiling 的项），L4 需二次确认文案。**本次不涉及本仓 `frontend/`（本仓没有前端源码）。**
 
@@ -552,7 +565,7 @@ dst.permission.permission_level_max =
 | **S1** | 类型 + 配置键 + **ceiling 按部署形态推导**（§5.1）+ **`agent_roles.max_permission_level` 解析**（§6.1 的 role cap 依赖它）+ `resolve_permission_level_for_turn` + `project_caps` + golden + **热重载登记与启动期 ceiling 冻结**（§9.1）（**不接线**） | **无** | ✅ |
 | **S2** | `tool_visibility` + early-deny（L0 / L1 生效）+ **`command_scope = None` 硬拒**（`run_command` / `terminal_session` / `python_snippet_run` / `run_executable`） | 仅显式设 `chat` / `read` 时 | ✅ |
 | **S3** | 命令白名单 / 路径 / 网络三轴接线（L2 硬边界、L4 放行）+ **`caps` 进 `WorkflowToolExecCtx`** + **`external_tools` 接线**（L0–L2 拒 `mcp__*` / 动态工具）+ L0 编排短路（§8.2） | 仅显式设 `workspace` / `unrestricted` 时 | ✅ |
-| **S4** | allowlist 等级作用域（§6.3，**已落地**）+ `ApprovalPolicy::AuditOnly` 与审计事件（**待做**） | 前者：仅跨级复用旧批准时；后者：仅 L4 时 | ✅（部分） |
+| **S4** | allowlist 等级作用域（§6.3，**已落地**）+ `ApprovalPolicy::AuditOnly` 与审计事件（**已落地**） | 前者：仅跨级复用旧批准时；后者：仅 L4 时（多出的是日志，不是放行面） | ✅ |
 | **S5a** | `GET /permission` 只读投影（§16.2，含 `?agent_role=`）+ OpenAPI + `docs/命令行与路由.md` | 无 | ✅ |
 | **S5b** | `POST /chat` 的 `permission_level`（含 `chat_keys` 字母序）+ `GET /conversation/messages` 的 `active` / `effective` 双字段（§16.1） | 客户端不传时无变化 | ✅ |
 | **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |

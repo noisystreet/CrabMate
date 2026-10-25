@@ -14,7 +14,9 @@ use super::super::placeholders::inject_placeholders;
 use super::super::types::{NodeRunResult, NodeRunStatus};
 use super::retry::workflow_node_failure_retryable;
 use super::trace::{WorkflowTracePush, workflow_trace_push};
-use super::{WorkflowApprovalMode, WorkflowToolExecCtx};
+use super::{
+    ApprovalDisposition, WorkflowApprovalMode, WorkflowToolExecCtx, audit_workflow_node_gate,
+};
 
 pub(super) fn command_max_output_len_from(ctx: &WorkflowToolExecCtx) -> usize {
     ctx.command_max_output_len
@@ -294,18 +296,6 @@ fn args_preview_from_node(node: &WorkflowNodeSpec) -> String {
         .unwrap_or_default()
 }
 
-/// 越界时节点该做什么（设计 §7.2）。把「等级 → 动作」收敛成一个纯函数，
-/// 避免在每个节点路径上重复 `match approval` 而顶破 CCN 上限。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ApprovalDisposition {
-    /// 放行（L4：命令 / 路径面已放宽，不该再拦）。
-    Proceed,
-    /// 直接拒，**不弹窗**（L2 硬边界；或根本没有审批通道）。
-    Deny,
-    /// 走 SSE 人工审批（L3 现状）。
-    Ask,
-}
-
 fn approval_disposition(approval_mode: &WorkflowApprovalMode) -> ApprovalDisposition {
     match approval_mode {
         // 无审批通道：越界只能拒（不是「等级禁止」，但动作相同）。
@@ -465,7 +455,15 @@ async fn apply_run_command_allowlist_approvals(
         ));
     }
     // 等级给出的结论先于「有没有审批通道」：L2 直接拒（不弹窗）、L4 放行（不弹窗）。
-    match approval_disposition(approval_mode) {
+    let disposition = approval_disposition(approval_mode);
+    audit_workflow_node_gate(
+        approval_mode,
+        crate::cm_types::permission_audit::PermissionAxis::Command,
+        "run_command",
+        node.id.as_str(),
+        disposition,
+    );
+    match disposition {
         ApprovalDisposition::Ask => {}
         ApprovalDisposition::Deny => return Err(command_not_allowed_result(node, &cmd_lower)),
         ApprovalDisposition::Proceed => {
@@ -489,7 +487,15 @@ async fn apply_generic_workflow_node_approval(
     let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
 
     // 等级先给结论：L4 放行、L2 直接拒，都不弹窗（设计 §7.2 / §13）。
-    match approval_disposition(approval_mode) {
+    let disposition = approval_disposition(approval_mode);
+    audit_workflow_node_gate(
+        approval_mode,
+        crate::cm_types::permission_audit::PermissionAxis::Tool,
+        node.tool_name.as_str(),
+        node.id.as_str(),
+        disposition,
+    );
+    match disposition {
         ApprovalDisposition::Proceed => return Ok(()),
         ApprovalDisposition::Deny => {
             let reason = match approval_mode {

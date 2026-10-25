@@ -98,6 +98,20 @@ pub fn tool_policy_early_deny_message(p: &ToolPolicyEarlyDenyParams<'_>) -> Opti
     if let Some(caps) = p.permission
         && !crate::cm_agent::permission::tool_allowed_by_caps(caps, p.name)
     {
+        // 审计轴按 `tool_allowed_by_caps` 的**先决否决顺序**归因，与拒因一致：
+        // 外部工具轴 → `external`；L0/L1 的命令类四工具硬拒 → `command`；其余算工具可见性。
+        let axis = if !crate::cm_agent::permission::external_tools_allowed_by_caps(caps, p.name) {
+            crate::cm_agent::permission_audit::PermissionAxis::External
+        } else if matches!(
+            caps.command_scope,
+            crate::cm_agent::permission::CommandScope::None
+        ) && crate::cm_agent::permission::is_command_tool(p.name)
+        {
+            crate::cm_agent::permission_audit::PermissionAxis::Command
+        } else {
+            crate::cm_agent::permission_audit::PermissionAxis::Tool
+        };
+        crate::cm_agent::permission_audit::record_denied(caps, axis, Some(p.name), None);
         return Some(crate::cm_agent::permission::permission_denied_message(
             caps, p.name,
         ));

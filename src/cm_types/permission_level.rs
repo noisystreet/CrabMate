@@ -138,6 +138,32 @@ pub fn parse_optional_permission_level(
     }
 }
 
+/// 越界处理策略（六轴投影的 `approval` 轴）。
+///
+/// 定义在本层而非 [`crate::cm_agent::permission`]：审计事件（[`crate::cm_types::permission_audit`]）
+/// 与文件路径访问器（`cm_tools::tools::file::PathAccess`）都要判断它，而依赖方向是
+/// `cm_types` → `cm_config` → `cm_tools` → `cm_agent`，反向引用会让叶子层抬升。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalPolicy {
+    /// L0–L2：越界即拒（不弹审批；无人值守可解释、可复现）。
+    Deny,
+    /// L3：SSE 人工审批（现状）。
+    Gate,
+    /// L4：放行 + 审计。
+    AuditOnly,
+}
+
+impl ApprovalPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ApprovalPolicy::Deny => "deny",
+            ApprovalPolicy::Gate => "gate",
+            ApprovalPolicy::AuditOnly => "audit_only",
+        }
+    }
+}
+
 /// 服务端上限（ceiling）的来源，用于 `GET /permission` 的 `ceiling_source`（设计 §5.1）。
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, PartialOrd, Ord,
