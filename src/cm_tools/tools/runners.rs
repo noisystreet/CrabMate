@@ -140,6 +140,20 @@ macro_rules! define_runners_paths_try {
     };
 }
 
+/// 形态：`f(args, &PathAccess, ctx) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
+///
+/// 与 [`define_runners_paths_try`] 的差别只在多带一个 `ctx`（写盘类工具需要变更集/预览上下文）。
+macro_rules! define_runners_paths_ctx_try {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+                $func(args, &file::PathAccess::new(ctx.working_dir), ctx)
+            }
+        )*
+    };
+}
+
 /// 形态：`f(args)`（不使用 `ctx`）。
 macro_rules! define_runners_args_only {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -189,7 +203,7 @@ macro_rules! gh_runner {
 mod try_macro_typecheck {
     use super::*;
 
-    define_runners_cwd_ctx_try! {
+    define_runners_paths_ctx_try! {
         runner_read_file_try_smoke => crate::cm_tools::tools::file::read_file_try,
     }
 
@@ -349,7 +363,7 @@ pub fn read_file_try_dispatch(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, ctx.working_dir, ctx)
+    file::read_file_try(args_json, &file::PathAccess::new(ctx.working_dir), ctx)
 }
 
 /// 用户消息 `@路径` 展开等：与 `read_file` 工具同源校验与读取。
@@ -359,7 +373,7 @@ pub fn read_file_try_at_paths(
     working_dir: &std::path::Path,
     ctx: &ToolContext<'_>,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, working_dir, ctx)
+    file::read_file_try(args_json, &file::PathAccess::new(working_dir), ctx)
 }
 
 /// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
@@ -428,21 +442,22 @@ define_runners_cwd_ctx! {
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
 define_runners_cwd_ctx_try! {
+    runner_structured_patch_try => structured_data::structured_patch_try,
+}
+
+define_runners_paths_ctx_try! {
     runner_create_file_try => file::create_file_try,
     runner_copy_file_try => file::copy_file_try,
     runner_move_file_try => file::move_file_try,
     runner_modify_file_try => file::modify_file_try,
+    runner_delete_files_try => file::delete_files_try,
     runner_append_file_try => file::append_file_try,
     runner_search_replace_try => file::search_replace_try,
-    runner_delete_files_try => file::delete_files_try,
-    runner_structured_patch_try => structured_data::structured_patch_try,
 }
 
 // ── 同构薄封装实例（形态 3 孪生：f(args, cwd) -> Result）──────
 
 define_runners_cwd_try! {
-    runner_delete_dir_try => file::delete_dir_try,
-    runner_create_dir_try => file::create_dir_try,
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
@@ -457,6 +472,8 @@ define_runners_cwd_try! {
 define_runners_paths_try! {
     // file_core 只读族 B4：显式 ToolError（read_dir 同样覆盖工作区外路径的审批前置场景）。
     runner_chmod_file_try => file::chmod_file_try,
+    runner_delete_dir_try => file::delete_dir_try,
+    runner_create_dir_try => file::create_dir_try,
     runner_read_dir_try => file::read_dir_try,
     runner_glob_files_try => file::glob_files_try,
     runner_list_tree_try => file::list_tree_try,

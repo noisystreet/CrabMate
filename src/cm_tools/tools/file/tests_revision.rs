@@ -349,7 +349,7 @@ fn test_line_mode_without_read_baseline_is_rejected_with_code() {
 
     let err = modify_file_try(
         r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","dry_run":false}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &ctx,
     )
     .expect_err("无快照基线的行号编辑应被拒绝");

@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use super::path::{
-    canonical_workspace_root, parse_path_content, path_for_tool_display, resolve_for_read,
-    resolve_for_read_open, resolve_for_write,
+    PathAccess, canonical_workspace_root, parse_path_content, path_for_tool_display,
+    resolve_for_read, resolve_for_read_open, resolve_for_write,
 };
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
@@ -40,19 +40,20 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    create_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    create_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`create_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn create_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let (path, content) = parse_path_content(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
-    let target = resolve_for_write(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
+    let target = access.for_write(&path).map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         return Err(ToolError::invalid_args(
             "错误：文件已存在，无法仅创建".to_string(),
@@ -120,27 +121,28 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
 /// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    copy_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    copy_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`copy_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn copy_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
     let opened =
-        resolve_for_read_open(working_dir, &from).map_err(ToolError::path_resolve_failed)?;
+        access.for_read_open(&from).map_err(ToolError::path_resolve_failed)?;
     if !opened.file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string(),
         ));
     }
-    let dst = resolve_for_write(working_dir, &to).map_err(ToolError::path_resolve_failed)?;
+    let dst = access.for_write(&to).map_err(ToolError::path_resolve_failed)?;
     if opened.resolved_path == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同，无需复制".to_string(),
@@ -176,26 +178,27 @@ pub fn copy_file_try(
 /// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
 /// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
 pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    move_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    move_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`move_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn move_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
-    let src = resolve_for_read(working_dir, &from).map_err(ToolError::path_resolve_failed)?;
+    let src = access.for_read(&from).map_err(ToolError::path_resolve_failed)?;
     if !src.is_file() {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string(),
         ));
     }
-    let dst = resolve_for_write(working_dir, &to).map_err(ToolError::path_resolve_failed)?;
+    let dst = access.for_write(&to).map_err(ToolError::path_resolve_failed)?;
     if src == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同".to_string(),
@@ -497,7 +500,7 @@ fn modify_file_dispatch_mode(
 ///   风险），但显式 `base_revision` 仍始终校验。
 /// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    modify_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    modify_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`modify_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
@@ -508,15 +511,16 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 #[allow(clippy::result_large_err)]
 pub fn modify_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let v =
         crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = modify_file_path_arg(&v).map_err(ToolError::invalid_args)?;
     let (explicit_mode, mode) = modify_file_mode_arg(&v);
 
-    let target = resolve_for_read(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
+    let target = access.for_read(&path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(
             "错误：路径不是文件或不存在，无法仅修改".to_string(),

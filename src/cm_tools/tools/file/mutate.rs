@@ -6,8 +6,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::path::{
-    canonical_workspace_root, path_for_tool_display, resolve_for_read, resolve_for_write,
-    tool_user_error_from_workspace_path,
+    PathAccess, canonical_workspace_root, path_for_tool_display, resolve_for_read,
+    resolve_for_write, tool_user_error_from_workspace_path,
 };
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
@@ -35,8 +35,12 @@ fn parse_append_file_args(args_json: &str) -> Result<AppendFileArgs, String> {
 }
 
 #[allow(clippy::result_large_err)]
-fn delete_dir_validate_target(working_dir: &Path, path: &str) -> Result<PathBuf, ToolError> {
-    let target = resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
+fn delete_dir_validate_target(
+    access: &PathAccess<'_>,
+    path: &str,
+) -> Result<PathBuf, ToolError> {
+    let working_dir = access.root();
+    let target = access.for_read(path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_dir() {
         return Err(ToolError::invalid_args(format!(
             "错误：{} 不是目录",
@@ -76,14 +80,14 @@ fn delete_dir_failure_message(recursive: bool, e: &std::io::Error) -> String {
 
 #[allow(clippy::result_large_err)]
 fn append_resolve_target_path(
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     path: &str,
     create_if_missing: bool,
 ) -> Result<PathBuf, ToolError> {
     if create_if_missing {
-        resolve_for_write(working_dir, path).map_err(ToolError::path_resolve_failed)
+        access.for_write(path).map_err(ToolError::path_resolve_failed)
     } else {
-        match resolve_for_read(working_dir, path) {
+        match access.for_read(path) {
             Ok(p) => Ok(p),
             // 越界 / 敏感目录 / 绝对路径等策略拒绝与「文件不存在」无关，须保留统一错误码。
             Err(e) if e.is_policy_denied() => Err(ToolError::path_resolve_failed(e)),
@@ -167,13 +171,14 @@ fn append_file_after_preview(plan: &AppendFilePlan) -> Option<String> {
 #[allow(clippy::result_large_err)]
 fn append_file_prepare(
     args: AppendFileArgs,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
 ) -> Result<(bool, AppendFilePlan), ToolError> {
+    let working_dir = access.root();
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
         _ => return Err(ToolError::invalid_args("缺少 path 参数".to_string())),
     };
-    let target = append_resolve_target_path(working_dir, &path, args.create_if_missing)?;
+    let target = append_resolve_target_path(access, &path, args.create_if_missing)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
     append_create_parent_if_needed(&base, args.create_if_missing, &target)?;
     let before = std::fs::read_to_string(&target).ok();
@@ -296,12 +301,13 @@ fn delete_file_remove(working_dir: &Path, target: &Path) -> Result<(), String> {
 /// 校验阶段：全部路径须可解析且在根内、且是文件；任一非法则整批拒绝、不产生部分删除。
 #[allow(clippy::result_large_err)]
 fn delete_files_validate(
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     paths: &[String],
 ) -> Result<Vec<PathBuf>, ToolError> {
+    let working_dir = access.root();
     let mut targets = Vec::with_capacity(paths.len());
     for path in paths {
-        targets.push(resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?);
+        targets.push(access.for_read(path).map_err(ToolError::path_resolve_failed)?);
     }
     for (path, target) in paths.iter().zip(&targets) {
         if !target.is_file() {
@@ -344,18 +350,19 @@ fn delete_files_execute(
 /// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
 /// 再**逐个删除**并汇总成功/失败（删除阶段继续删完）。
 pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    delete_files_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    delete_files_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`delete_files`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn delete_files_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let paths = parse_delete_files_args(args_json).map_err(ToolError::invalid_args)?;
-    let targets = delete_files_validate(working_dir, &paths)?;
+    let targets = delete_files_validate(access, &paths)?;
     let (deleted, failed) = delete_files_execute(working_dir, ctx, &paths, &targets);
 
     let mut body = format!("已删除 {} 个文件：", deleted.len());
@@ -394,12 +401,13 @@ pub fn delete_files_try(
 // ── delete_dir ──────────────────────────────────────────────
 
 pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
-    delete_dir_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+    delete_dir_try(args_json, &PathAccess::new(working_dir)).unwrap_or_else(|e| e.message)
 }
 
 /// [`delete_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
-pub fn delete_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn delete_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let args = parse_delete_dir_args(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -412,7 +420,7 @@ pub fn delete_dir_try(args_json: &str, working_dir: &Path) -> Result<String, Too
     }
     let recursive = args.recursive;
 
-    let target = delete_dir_validate_target(working_dir, &path)?;
+    let target = delete_dir_validate_target(access, &path)?;
     let result = if recursive {
         std::fs::remove_dir_all(&target)
     } else {
@@ -435,19 +443,20 @@ pub fn delete_dir_try(args_json: &str, working_dir: &Path) -> Result<String, Too
 // ── append_file ─────────────────────────────────────────────
 
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    append_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    append_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`append_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn append_file_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let args = parse_append_file_args(args_json).map_err(ToolError::invalid_args)?;
     let skip_precheck = args.skip_precheck;
-    let (dry_run, plan) = append_file_prepare(args, working_dir)?;
+    let (dry_run, plan) = append_file_prepare(args, access)?;
     if dry_run {
         return Ok(append_file_preview(working_dir, plan));
     }
@@ -467,12 +476,13 @@ pub fn append_file_try(
 // ── create_dir ──────────────────────────────────────────────
 
 pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
-    create_dir_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+    create_dir_try(args_json, &PathAccess::new(working_dir)).unwrap_or_else(|e| e.message)
 }
 
 /// [`create_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
-pub fn create_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn create_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let args: CreateDirArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
@@ -481,7 +491,7 @@ pub fn create_dir_try(args_json: &str, working_dir: &Path) -> Result<String, Too
     };
     let parents = args.parents;
 
-    let target = resolve_for_write(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
+    let target = access.for_write(&path).map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         if target.is_dir() {
             return Ok(format!(
@@ -624,10 +634,10 @@ fn search_replace_precheck(
 
 #[allow(clippy::result_large_err)]
 fn load_search_replace_file_bytes(
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     path: &str,
 ) -> Result<(PathBuf, String), ToolError> {
-    let target = resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
+    let target = access.for_read(path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(format!("错误：{} 不是文件", path)));
     }
@@ -645,16 +655,17 @@ fn load_search_replace_file_bytes(
 }
 
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    search_replace_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+    search_replace_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`search_replace`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn search_replace_try(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
+    let working_dir = access.root();
     let args = parse_search_replace_args(args_json).map_err(ToolError::invalid_args)?;
     let (path, search) = search_replace_path_and_query(&args).map_err(ToolError::invalid_args)?;
     let replace = args.replace;
@@ -662,7 +673,7 @@ pub fn search_replace_try(
     let dry_run = args.dry_run;
     let max_replacements = args.max_replacements.unwrap_or(0) as usize;
 
-    let (target, content) = load_search_replace_file_bytes(working_dir, &path)?;
+    let (target, content) = load_search_replace_file_bytes(access, &path)?;
 
     let (new_content, count) =
         apply_search_replace_inner(&content, &search, &replace, is_regex, max_replacements)

@@ -65,7 +65,12 @@ fn test_read_file_rejects_directory_with_directory_hint() {
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
-    let err = read_file_try(r#"{"path":"subdir"}"#, &dir, &ctx).expect_err("expected dir error");
+    let err = read_file_try(
+        r#"{"path":"subdir"}"#,
+        &super::PathAccess::new(&dir),
+        &ctx,
+    )
+    .expect_err("expected dir error");
     assert_eq!(err.code, "read_file_not_file");
     assert!(
         err.message.contains("目录") && err.message.contains("read_dir"),
@@ -185,7 +190,7 @@ fn test_read_file_anchor_line_rejects_start_line_combo() {
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let err = read_file_try(
         r#"{"path":"x.txt","anchor_line":1,"start_line":1}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &ctx,
     )
     .expect_err("expected conflict");

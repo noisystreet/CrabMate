@@ -32,7 +32,7 @@ fn create_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || create_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || create_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || create_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -49,7 +49,7 @@ fn create_file_try_existing_path_is_invalid_input() {
 
     let err = create_file_try(
         r#"{"path":"a.txt","content":"new"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("已存在路径须失败");
@@ -66,7 +66,7 @@ fn create_file_try_precheck_failure_keeps_legacy_body_and_code() {
 
     let err = create_file_try(
         r#"{"path":"bad.json","content":"{not json"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("写盘前校验失败须拒绝写入");
@@ -89,7 +89,7 @@ fn create_file_try_path_escape_is_workspace_resolve_failed() {
 
     let err = create_file_try(
         r#"{"path":"../escape.txt","content":"x"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("越界路径须失败");
@@ -114,7 +114,7 @@ fn copy_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || copy_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || copy_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || copy_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -132,7 +132,7 @@ fn copy_file_try_existing_without_overwrite_is_invalid_input() {
 
     let err = copy_file_try(
         r#"{"from":"a.txt","to":"b.txt"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("目标已存在且未 overwrite 须失败");
@@ -147,7 +147,11 @@ fn copy_file_try_existing_without_overwrite_is_invalid_input() {
 fn copy_file_try_missing_from_is_invalid_input() {
     let dir = make_test_dir();
 
-    let err = copy_file_try(r#"{"to":"b.txt"}"#, &dir, &test_ctx(&dir))
+    let err = copy_file_try(
+        r#"{"to":"b.txt"}"#,
+        &super::PathAccess::new(&dir),
+        &test_ctx(&dir),
+    )
         .expect_err("缺少 from 须失败");
 
     assert_invalid_input(&err);
@@ -168,7 +172,7 @@ fn move_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || move_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || move_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || move_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(!dir_typed.join("a.txt").exists());
@@ -228,7 +232,7 @@ fn move_file_try_missing_source_is_workspace_resolve_failed() {
 
     let err = move_file_try(
         r#"{"from":"missing.txt","to":"b.txt"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("源文件不存在须失败");
@@ -252,7 +256,7 @@ fn modify_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || modify_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || modify_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || modify_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("已按行替换"), "{typed}");
@@ -267,7 +271,11 @@ fn modify_file_try_success_matches_string_face() {
 fn modify_file_try_missing_path_is_invalid_input() {
     let dir = make_test_dir();
 
-    let err = modify_file_try(r#"{"content":"x"}"#, &dir, &test_ctx(&dir))
+    let err = modify_file_try(
+        r#"{"content":"x"}"#,
+        &super::PathAccess::new(&dir),
+        &test_ctx(&dir),
+    )
         .expect_err("缺少 path 须失败");
 
     assert_invalid_input(&err);
@@ -280,7 +288,11 @@ fn modify_file_try_non_file_path_is_invalid_input() {
     let dir = make_test_dir();
     std::fs::create_dir(dir.join("sub")).unwrap();
 
-    let err = modify_file_try(r#"{"path":"sub","content":"x"}"#, &dir, &test_ctx(&dir))
+    let err = modify_file_try(
+        r#"{"path":"sub","content":"x"}"#,
+        &super::PathAccess::new(&dir),
+        &test_ctx(&dir),
+    )
         .expect_err("目录不可作为修改目标");
 
     assert_invalid_input(&err);
@@ -299,7 +311,7 @@ fn modify_file_try_stale_revision_keeps_body_and_code() {
 
     let err = modify_file_try(
         r#"{"path":"a.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","base_revision":"deadbeef"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("过期 base_revision 须拒写");
@@ -321,7 +333,7 @@ fn modify_file_try_full_overwrite_guard_keeps_preview_and_failure() {
 
     let err = modify_file_try(
         r#"{"path":"big.txt","mode":"full","content":"","dry_run":false}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("高危整文件覆盖未确认须拒写");
@@ -371,7 +383,7 @@ fn append_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || append_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || append_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -394,7 +406,7 @@ fn append_file_try_dry_run_matches_string_face_and_does_not_write() {
         &dir_legacy,
         &dir_typed,
         || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || append_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || append_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert_eq!(read(&dir_typed, "a.txt"), "hello", "dry-run 不得写盘");
@@ -409,7 +421,7 @@ fn append_file_try_missing_file_is_invalid_input() {
 
     let err = append_file_try(
         r#"{"path":"missing.txt","content":"x"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("未设 create_if_missing 时缺失文件须失败");
@@ -427,7 +439,7 @@ fn append_file_try_precheck_failure_keeps_legacy_body_and_code() {
 
     let err = append_file_try(
         r#"{"path":"bad.json","content":",","ensure_leading_newline":false,"dry_run":false}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("写盘前校验失败须拒绝写入");
@@ -456,7 +468,8 @@ fn append_file_try_path_escape_is_workspace_resolve_failed() {
     })
     .to_string();
 
-    let err = append_file_try(&args, &dir, &test_ctx(&dir)).expect_err("越界路径须失败");
+    let err = append_file_try(&args, &super::PathAccess::new(&dir), &test_ctx(&dir))
+        .expect_err("越界路径须失败");
 
     assert_eq!(err.code, "workspace_resolve_failed");
     assert_eq!(err.category, ToolFailureCategory::External);
@@ -497,7 +510,7 @@ fn search_replace_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || search_replace_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("已替换"), "{typed}");
@@ -521,7 +534,7 @@ fn search_replace_try_dry_run_matches_string_face_and_does_not_write() {
         &dir_legacy,
         &dir_typed,
         || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)),
+        || search_replace_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
     );
 
     assert_eq!(read(&dir_typed, "a.txt"), "hello world\n", "dry-run 不得写盘");
@@ -537,7 +550,7 @@ fn search_replace_try_no_match_is_invalid_input_and_does_not_write() {
 
     let err = search_replace_try(
         r#"{"path":"a.txt","search":"zzz","replace":"x"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("未找到匹配须失败");
@@ -556,7 +569,7 @@ fn search_replace_try_writes_without_confirm_when_dry_run_false() {
 
     let out = search_replace_try(
         r#"{"path":"a.txt","search":"hello","replace":"bye","dry_run":false}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect("dry_run=false 应直接写盘，无需 confirm");
@@ -573,7 +586,7 @@ fn search_replace_try_invalid_regex_is_invalid_input() {
 
     let err = search_replace_try(
         r#"{"path":"a.txt","search":"(","replace":"x","regex":true}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("无效正则须失败");
@@ -590,7 +603,7 @@ fn search_replace_try_precheck_failure_keeps_legacy_body_and_code() {
 
     let err = search_replace_try(
         r#"{"path":"app.py","search":"    return 1","replace":"x = 1\nreturn 2","dry_run":false,"confirm":true}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("写盘前校验失败须拒绝写入");
@@ -617,7 +630,7 @@ fn search_replace_try_path_escape_is_workspace_resolve_failed() {
 
     let err = search_replace_try(
         r#"{"path":"../a.txt","search":"a","replace":"b"}"#,
-        &dir,
+        &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
     .expect_err("越界路径须失败");
