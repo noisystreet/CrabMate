@@ -64,7 +64,7 @@ async fn emit_mcp_servers_skipped_notice(
 /// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
-/// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
+/// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：`agent::agent_turn::RunAgentTurnError` 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
 /// 分阶段规划下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与门控拒绝时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再视情况执行工具，避免网关误报 `tool_calls` 时静默无动作。
 /// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；运维 CLI 传 `None`。
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。

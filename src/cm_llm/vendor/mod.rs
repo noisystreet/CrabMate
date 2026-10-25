@@ -177,7 +177,7 @@ impl LlmVendorAdapter for ZhipuGlmVendor {
     }
 }
 
-/// **MiniMax**：不在此写智谱 **`thinking`**；**`reasoning_split`** 仍由 [`crate::cm_llm::types::ChatRequest`] / `tool_chat_request` 按配置组装。
+/// **MiniMax**：不在此写智谱 **`thinking`**；**`reasoning_split`** 仍由 `crate::cm_llm::types::ChatRequest` / `tool_chat_request` 按配置组装。
 #[derive(Debug, Copy, Clone, Default)]
 pub struct MiniMaxVendor;
 

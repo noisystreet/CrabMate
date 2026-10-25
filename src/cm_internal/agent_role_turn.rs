@@ -196,7 +196,7 @@ pub fn turn_allow_for_web_or_cli_job(
 
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
 ///
-/// 实现委托 [`crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`]，
+/// 实现委托 `crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`，
 /// 与 `crate::cm_agent::turn_tool_policy` 保持同一规则。
 #[inline]
 pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {

@@ -1,6 +1,6 @@
 //! Workflow 反思（Review）控制器：将“反思阶段 -> 模型修订计划 -> 再执行”做成可测试、可复用的决策逻辑。
 //!
-//! **FSM**：[`WorkflowReflectionFsmPhase`] 描述会话状态（与 JSON 注入文案正交）；[`WorkflowReflectionController::reflection_fsm_phase`] 供观测。
+//! **FSM**：`WorkflowReflectionFsmPhase` 描述会话状态（与 JSON 注入文案正交）；`WorkflowReflectionController::reflection_fsm_phase` 供观测。
 
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -96,7 +96,7 @@ impl WorkflowReflectionController {
     }
 
     /// 设置严格模式：是否要求终答 `agent_reply_plan` 覆盖全部 workflow 节点 id。
-    /// 该值来自 [`PerCoordinatorInit::final_plan_require_strict_workflow_node_coverage`]，
+    /// 该值来自 `PerCoordinatorInit::final_plan_require_strict_workflow_node_coverage`，
     /// 在 workflow 反思控制器构造时由外部注入。
     pub fn set_require_strict_workflow_node_coverage(&mut self, required: bool) {
         // 目前 `WorkflowReflectionController` 不直接持有此标志，

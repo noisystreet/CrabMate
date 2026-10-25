@@ -21,7 +21,7 @@ pub enum TurnCompletionDecision {
     },
     /// 金样 / [`evaluate_turn_suppress_replanning`]；生产 outer_loop 尚未接线。
     AllowSuppressReplanning,
-    /// 见 [`AllowSuppressReplanning`]。
+    /// 见 `AllowSuppressReplanning`。
     DenySuppressReplanning {
         reason: &'static str,
     },

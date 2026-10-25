@@ -536,7 +536,7 @@ fn filtered_where_clause(
 
 /// 完整投影列表（排除 `embedding`），`limit` / `offset` 分页，`created_at` + `id` 稳定排序。
 ///
-/// 纯读：过期行由 [`filtered_where_clause`] 的 `expires_at_unix` 条件排除，不触发物理回收。
+/// 纯读：过期行由 `filtered_where_clause` 的 `expires_at_unix` 条件排除，不触发物理回收。
 pub fn list_projected_for_scope(
     conn: &Connection,
     scope_id: &str,

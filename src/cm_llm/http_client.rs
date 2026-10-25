@@ -19,7 +19,7 @@ use crate::cm_types::llm_config::LlmHttpRetryConfig;
 
 /// 将 `reqwest` 传输错误格式化为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
 ///
-/// [`map_reqwest_transport_err`] 与 LLM 层 [`crate::cm_llm::llm::call_error::LlmCallError`] 共用此文案。
+/// [`map_reqwest_transport_err`] 与 LLM 层 `crate::cm_llm::llm::call_error::LlmCallError` 共用此文案。
 pub fn format_reqwest_transport_err(e: &reqwest::Error) -> String {
     let mut msg = e.to_string();
     if e.is_timeout() {

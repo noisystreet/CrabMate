@@ -368,8 +368,8 @@ fn collect_unsafe_after_resolve(
     Ok(())
 }
 
-/// 与 [`prepare_run_command_spec`] 同源解析后，返回按 validate 规则判定为不安全的参数。
-/// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 [`is_arg_safe`] 一致）。
+/// 与 `prepare_run_command_spec` 同源解析后，返回按 validate 规则判定为不安全的参数。
+/// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 `is_arg_safe` 一致）。
 pub fn scan_run_command_unsafe_args_spec(
     spec: &CommandSpec,
     working_dir: &Path,

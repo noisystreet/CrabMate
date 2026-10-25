@@ -1,4 +1,4 @@
-//! `cm_internal` 对 [`crate::cm_tools::memory_tool_host`] 的实现。
+//! `cm_internal` 对 `crate::cm_tools::memory_tool_host` 的实现。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -108,7 +108,7 @@ impl DispatchMemoryHosts {
     }
 }
 
-/// `background_job_status` / `background_job_list` 的宿主：只读进程内 [`ToolJobRegistry`]。
+/// `background_job_status` / `background_job_list` 的宿主：只读进程内 `ToolJobRegistry`。
 ///
 /// 仅暴露查询能力（不含发起执行/取消），与 ADR `docs/design/background_tool_jobs.md`
 /// 「不新增发起执行型工具组」的约束一致。

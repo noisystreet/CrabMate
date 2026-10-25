@@ -1,5 +1,5 @@
 //! 从 `messages` 扫描工作流工具结果、组装规划重写 user 正文、终答侧向校验摘要、用尽原因分类。
-//! **不**调用 `complete_chat_retrying`（侧向 LLM 仍在 [`crate::cm_agent::agent::per_plan_semantic_check`]）。
+//! **不**调用 `complete_chat_retrying`（侧向 LLM 仍在 `per_plan_semantic_check`（根包））。
 
 use crate::cm_tools::tool_result::{
     normalize_tool_message_content, tool_message_payload_for_inner_parse,

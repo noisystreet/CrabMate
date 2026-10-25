@@ -1,6 +1,6 @@
-//! 整请求（[`crate::cm_internal::run_agent_turn`]）级 **Chrome Trace Event Format**（`ph: B` / `ph: E`，`ts` 为微秒，原点在回合起点）。
+//! 整请求（`crate::cm_internal::run_agent_turn`）级 **Chrome Trace Event Format**（`ph: B` / `ph: E`，`ts` 为微秒，原点在回合起点）。
 //!
-//! 因 **Tokio 任务与 `spawn_blocking` 可能跨线程**，在 **async 主路径**用显式 **B/E** 区间（不依赖 `tracing-subscriber` 全局 Layer），与工作流 [`crate::cm_agent::workflow::chrome_trace`] 事件**合并**到同一文件。
+//! 因 **Tokio 任务与 `spawn_blocking` 可能跨线程**，在 **async 主路径**用显式 **B/E** 区间（不依赖 `tracing-subscriber` 全局 Layer），与工作流 `crate::cm_agent::workflow::chrome_trace` 事件**合并**到同一文件。
 //!
 //! | 环境变量 | 说明 |
 //! |----------|------|

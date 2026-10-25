@@ -1,6 +1,6 @@
 //! 发往模型的 **`messages` 上下文策略**：工具结果截断、按条数/近似字符裁剪、可选 LLM 摘要。
 //!
-//! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（[`apply_session_sync_pipeline`]）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
+//! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（`apply_session_sync_pipeline`）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
@@ -143,7 +143,7 @@ fn complete_turn_group_tail_len(messages: &[Message], requested_tail: usize) -> 
     )
 }
 
-/// 每次调用模型前执行：经 [`apply_session_sync_pipeline`]（顺序见 `message_pipeline` 模块文档）。
+/// 每次调用模型前执行：经 `apply_session_sync_pipeline`（顺序见 `message_pipeline` 模块文档）。
 ///
 /// - **Debug**（`RUST_LOG` 含 **`crabmate=debug`** 或 **`debug`**）：汇总一行 `message_pipeline session_sync: …`。
 /// - **Trace**（**`crabmate::message_pipeline=trace`**）：每步一行 `session_sync_step stage=…`（可不开启全局 debug）。
@@ -173,7 +173,7 @@ fn message_pipeline_config_for_turn(
     pipe
 }
 
-/// 与 [`prepare_messages_before_model_call_sync`] 相同，但当 [`TurnBudgetCounter`] 用量 ≥70%/≥90% 时收紧 char 预算裁剪。
+/// 与 [`prepare_messages_before_model_call_sync`] 相同，但当 `TurnBudgetCounter` 用量 ≥70%/≥90% 时收紧 char 预算裁剪。
 pub fn prepare_messages_before_model_call_sync_with_budget(
     messages: &mut Vec<Message>,
     cfg: &AgentConfig,

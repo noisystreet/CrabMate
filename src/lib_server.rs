@@ -71,7 +71,7 @@ pub fn reset_process_tool_globals_for_tests() {
 
 mod run_agent_turn;
 mod runtime;
-/// 测试用 Web 服务器启动器（feature="web"）；集成测试通过 [`test_serve::start_test_serve`] 启动。**不**承诺 semver。
+/// 测试用 Web 服务器启动器（feature="web"）；集成测试通过 `test_serve::start_test_serve` 启动。**不**承诺 semver。
 #[cfg(feature = "web")]
 #[doc(hidden)]
 pub mod test_serve;
@@ -115,7 +115,7 @@ pub struct AgentTurnTransport<'a> {
 
 /// 本回合对 `chat/completions` 的采样与模型路由覆盖（相对 [`config::AgentConfig`]）。
 pub struct AgentTurnLlmOverrides {
-    /// 覆盖本回合 `chat/completions` 的 **`temperature`**（`None` 则用 [`config::AgentConfig::temperature`]）。
+    /// 覆盖本回合 `chat/completions` 的 **`temperature`**（`None` 则用 `config::AgentConfig::temperature`）。
     pub temperature_override: Option<f32>,
     /// 覆盖本回合的 `model`（planner 阶段，见编排层 `use_executor_model`）
     pub model_override: Option<String>,
@@ -511,7 +511,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     cli_run::run().await
 }
 
-/// 已解析 CLI 参数后的入口；[`main`](crate::main) 在 `block_on` 时优先调用本函数以减小 future 嵌套深度。
+/// 已解析 CLI 参数后的入口；`main` 在 `block_on` 时优先调用本函数以减小 future 嵌套深度。
 pub async fn run_cli_from_parsed(
     args: config::cli::ParsedCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {

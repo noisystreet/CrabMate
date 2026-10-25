@@ -1,4 +1,4 @@
-//! `workflow_execute` 的调度：**PER 反思**（[`super::per_coord::PerCoordinator`]）与 DAG 执行（[`super::workflow`]）同属 Agent 编排，不进入 [`crate::tool_registry`]，避免 `tool_registry → agent` 依赖。
+//! `workflow_execute` 的调度：**PER 反思**（`super::per_coord::PerCoordinator`）与 DAG 执行（`super::workflow`）同属 Agent 编排，不进入 [`crate::tool_registry`]，避免 `tool_registry → agent` 依赖。
 
 use std::path::Path;
 use std::sync::Arc;

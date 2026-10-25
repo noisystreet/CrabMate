@@ -8,13 +8,13 @@ use super::types::AgentConfig;
 /// - **`API_KEY`**：仍来自**进程环境**；本函数**不**读取或改写密钥，与启动时一致。
 /// - **`conversation_store_sqlite_path`**：**不**热更（会话 SQLite 连接在启动时打开；改路径须重启 `serve`）。
 /// - **`conversation_store_ttl_secs` / `conversation_store_max_entries`**：**可**热更；每次落盘与每小时后台清理都读取最新值。把上限调**小**不会立即删除既有会话，而在下一次 save / 后台 prune 时生效。
-/// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 [`load_config`] 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
+/// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 `load_config` 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
 /// - **`scheduled_agent_tasks`**：热更可更新内存中的列表；**cron 注册仅在 `serve` 启动时完成**，改表达式或增减任务需重启进程生效。
 /// - **`web_api_require_bearer`**：热更后字段与 **`web_api_bearer_token`** 一并更新；**`true`** 时与「非空密钥」的**启动级**强制组合仅在下次 **`serve`** 启动时校验（中间件是否挂载仍仅由启动时 token 是否非空决定）。
 /// - **`web_cors_allowed_origins`**：热更会更新内存中的列表；**CorsLayer 仅在 `serve` 启动时装配**，增删白名单 Origin 须**重启 `serve`**。
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
 /// - **`agent_tool_stats_*`**：热更后影响**下一轮起**附加段内容；已打开会话的 `system` 不会自动改写。
-/// - **MCP**：`mcp_enabled` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::cm_config::mcp::clear_mcp_process_cache`].
+/// - **MCP**：`mcp_enabled` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 `crate::cm_config::mcp::clear_mcp_process_cache`.
 /// - **`chat_uploads_dir`**：`serve` 启动时钉到会话库旁，**不**热更、**不**随工作区切换。
 /// - **`chat_workspace_root`**：`serve` / **`POST /workspace`** 注入，**不**热更（`src` 里恒为 `None`）。
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {

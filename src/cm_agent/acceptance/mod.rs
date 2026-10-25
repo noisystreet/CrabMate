@@ -3,7 +3,7 @@
 //! - **规则**：[`AcceptanceSpec`]（由 `PlanStepAcceptance` / `GoalAcceptance` 转换而来）。
 //! - **证据**：[`AcceptanceEvidence`]（工具输出、解析后的 stdout/stderr、工作区路径策略等）。
 //! - **判定**：[`verify_against_spec`] 产出 [`VerifyOutcome`]（与 `step_verifier::VerifyResult` 对齐）。
-//! - **缺省规则**：[`executor_defaults`] 在模型未填 `acceptance` 时按 `executor_kind` / 构建类描述补齐（分阶段与分层共用）。
+//! - **缺省规则**：`executor_defaults` 在模型未填 `acceptance` 时按 `executor_kind` / 构建类描述补齐（分阶段与分层共用）。
 
 mod check;
 mod executor_defaults;

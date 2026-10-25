@@ -494,7 +494,7 @@ gh_runner!(runner_gh_release_create, github_cli::gh_release_create);
 gh_runner!(runner_gh_api, github_cli::gh_api);
 
 /// `gh_pr` / `gh_run` 是动作分发器（见 `github_cli::gh_pr` / `gh_run`），
-/// 形参与 [`gh_runner!`] 生成的一致，但需要独立入口。
+/// 形参与 `gh_runner!` 生成的一致，但需要独立入口。
 pub fn runner_gh_pr(args: &str, ctx: &ToolContext<'_>) -> String {
     github_cli::gh_pr(
         args,

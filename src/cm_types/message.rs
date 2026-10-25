@@ -547,7 +547,7 @@ impl Message {
         Self::user_server_injection(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, content)
     }
 
-    /// 服务端编排注入 user（`user.name` 须为 [`CRABMATE_*`] 注册名）。
+    /// 服务端编排注入 user（`user.name` 须为 `CRABMATE_*` 注册名）。
     pub fn user_server_injection(name: &'static str, content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
@@ -815,7 +815,7 @@ pub fn merge_consecutive_assistants_in_place(messages: &mut Vec<Message>) {
 /// - **后一条助手带 `tool_calls`**，前一条仅有正文：旧逻辑未合并，仍报 `Invalid consecutive assistant`。
 ///
 /// 本函数仅用于拼装 **`ChatRequest.messages`**，**不**写入会话 `Vec<Message>`：会话尾部空占位须保留，
-/// 供 [`crate::cm_types::agent::agent_turn::push_assistant_merging_trailing_empty_placeholder`] 合并。
+/// 供 `crate::cm_types::agent::agent_turn::push_assistant_merging_trailing_empty_placeholder` 合并。
 ///
 /// 末尾「仅有 `tool_calls`、无对应 `tool` 消息」的 assistant 会先清空 `tool_calls`（悬空调用非法）；
 /// 若清空后正文仍为空，须再删掉该条，否则供应商返回 `content or tool_calls must be set`。
@@ -840,7 +840,7 @@ fn role_is_system_for_vendor(role: &str) -> bool {
     role.trim().eq_ignore_ascii_case("system")
 }
 
-/// 将独立 **`role: "system"`** 折叠进后续 **`user`**，避免上游返回 HTTP 400（如 **`invalid message role: system`**）。MiniMax OpenAI 兼容域名上**实测常见**该错误；CrabMate 在识别为 MiniMax 时由 [`crate::cm_types::llm::fold_system_into_user_for_config`] 为真并走本函数。
+/// 将独立 **`role: "system"`** 折叠进后续 **`user`**，避免上游返回 HTTP 400（如 **`invalid message role: system`**）。MiniMax OpenAI 兼容域名上**实测常见**该错误；CrabMate 在识别为 MiniMax 时由 `crate::cm_types::llm::fold_system_into_user_for_config` 为真并走本函数。
 ///
 /// 将连续 **`system`** 的正文按顺序拼接后，合并进**下一条** **`user`** 的 `content` 之前（中间空一行）；若下一条非 `user`，则先插入一条仅含该拼接正文的 **`user`**。**不**写入会话，仅用于拼装出站 `ChatRequest.messages`。
 pub fn fold_system_messages_into_following_user(msgs: Vec<Message>) -> Vec<Message> {

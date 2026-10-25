@@ -1,6 +1,6 @@
 //! 会话导出契约：JSON 信封常量 / [`ChatSessionFile`] / [`DisplayChatSessionFile`]，以及 Markdown 分段（无 I/O）。
 //!
-//! - **CLI / TUI / `save-session`**：[`ChatSessionFile`]（`projection=raw`）完整 OpenAI 形 [`Message`]。
+//! - **CLI / TUI / `save-session`**：[`ChatSessionFile`]（`projection=raw`）完整 OpenAI 形 `Message`。
 //! - **Web / Tauri**：[`DisplayChatSessionFile`]（`projection=display`）展示投影；**不可**直接作 tool-replay 输入。
 
 mod markdown;

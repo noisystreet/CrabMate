@@ -279,7 +279,7 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
-    /// 将会话同步管道使用的「非 system 近似字符预算」：显式 `context_char_budget` 与按 [`Self::llm_sampling.llm_context_tokens`] 推导值取**更小者**（任一者为 `0` 则忽略该侧上限）。
+    /// 将会话同步管道使用的「非 system 近似字符预算」：显式 `context_char_budget` 与按 `Self::llm_sampling.llm_context_tokens` 推导值取**更小者**（任一者为 `0` 则忽略该侧上限）。
     ///
     /// 推导：`≈ max(0, llm_context_tokens − max_tokens) × 4`（字节近似 UTF-8，偏保守），并封顶 `50_000_000`。
     #[must_use]
@@ -298,7 +298,7 @@ impl AgentConfig {
         }
     }
 
-    /// 供 [`maybe_summarize_with_llm`] 使用的摘要触发阈值：若配置中 `context_summary_trigger_chars > 0` 则沿用；否则在 [`Self::llm_sampling.llm_context_tokens`] 非零时取推导字符预算的约一半（下限 8192，且不超过推导预算）。
+    /// 供 `maybe_summarize_with_llm` 使用的摘要触发阈值：若配置中 `context_summary_trigger_chars > 0` 则沿用；否则在 `Self::llm_sampling.llm_context_tokens` 非零时取推导字符预算的约一半（下限 8192，且不超过推导预算）。
     #[must_use]
     pub fn effective_context_summary_trigger_chars(&self) -> usize {
         let explicit = self.context_pipeline.context_summary_trigger_chars;
@@ -337,8 +337,8 @@ impl AgentConfig {
 
     /// 新建 Web/CLI 会话首条 `system` 的正文来源。
     ///
-    /// - 显式 `agent_role`：须在 [`Self::roles_prompts.agent_roles`] 中存在，否则返回 `Err`。
-    /// - 未指定：使用 [`Self::roles_prompts.default_agent_role_id`] 对应条目（若配置且存在），否则 [`Self::roles_prompts.system_prompt`]。
+    /// - 显式 `agent_role`：须在 `Self::roles_prompts.agent_roles` 中存在，否则返回 `Err`。
+    /// - 未指定：使用 `Self::roles_prompts.default_agent_role_id` 对应条目（若配置且存在），否则 `Self::roles_prompts.system_prompt`。
     pub fn system_prompt_for_new_conversation(
         &self,
         agent_role: Option<&str>,

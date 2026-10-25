@@ -1,6 +1,6 @@
 //! 运行状况检查：与 **`GET /health`** JSON 形状一致，供 Axum handler 与 TUI（F10）共用。
 //!
-//! 默认**不**请求上游 LLM；可选（配置 [`crate::cm_config::AgentConfig::health_llm_models_probe`]）对当前 `api_base` 发起 **GET …/models**（与 `crabmate probe` 同源，无 chat/completions 计费），并带进程内缓存以降低探活频率。
+//! 默认**不**请求上游 LLM；可选（配置 `crate::cm_config::AgentConfig::health_llm_models_probe`）对当前 `api_base` 发起 **GET …/models**（与 `crabmate probe` 同源，无 chat/completions 计费），并带进程内缓存以降低探活频率。
 
 use serde::Serialize;
 use std::collections::BTreeMap;

@@ -1,7 +1,7 @@
 //! 测试用 Web 服务器启动器（仅在 `feature = "web"` 时编译）。
 //!
-//! 集成测试通过 [`start_test_serve`] 快速启动一个随机端口的 axum 实例，避免重复
-//! 构造 [`AppState`] 的样板代码。支持注入自定义 LLM 后端（e2e 录制/回放）。
+//! 集成测试通过 `start_test_serve` 快速启动一个随机端口的 axum 实例，避免重复
+//! 构造 `AppState` 的样板代码。支持注入自定义 LLM 后端（e2e 录制/回放）。
 
 #![cfg(feature = "web")]
 
@@ -54,7 +54,7 @@ pub async fn start_test_serve(
     start_test_serve_with_config(cfg, llm_backend).await
 }
 
-/// 同 [`start_test_serve`]，但由调用方注入已改好的配置（如定向覆盖单个开关的 handler 测试）。
+/// 同 `start_test_serve`，但由调用方注入已改好的配置（如定向覆盖单个开关的 handler 测试）。
 pub async fn start_test_serve_with_config(
     cfg: crate::config::AgentConfig,
     llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,

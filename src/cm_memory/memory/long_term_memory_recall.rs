@@ -140,7 +140,7 @@ pub(crate) fn keyword_overlap_score(query: &str, text: &str) -> f32 {
 
 /// 排序总分 = `base + boost`。
 ///
-/// `base_from_keywords` 为真表示 base 本身就是 [`keyword_overlap_score`]（关键词路径，
+/// `base_from_keywords` 为真表示 base 本身就是 `keyword_overlap_score`（关键词路径，
 /// 以及向量路径中对「无向量」旧行的回退打分）：此时 boost **不再叠加关键词项**，
 /// 否则同一个关键词重叠量会被计两次（实际 ×1.15），使这类行的排序被无谓放大。
 pub fn score_row(
@@ -197,7 +197,7 @@ fn into_pick((score, _base, row): ScoredRow) -> RecallPick {
 /// 余下槽位由回合按分数回填；经验条不足时回合条可占满剩余槽位。
 ///
 /// `cutoff_ratio` 为 `Some(r)` 时对候选做相对衰减（向量路径传 [`RELATIVE_SCORE_RATIO`]）；
-/// 关键词路径传 `None`，理由见 [`apply_relative_cutoff`]。
+/// 关键词路径传 `None`，理由见 `apply_relative_cutoff`。
 pub fn pick_recall_chunks(
     top_k: usize,
     _query: &str,
@@ -242,7 +242,7 @@ pub fn pick_recall_chunks(
 /// 等价于「按时间取最新几条」，纯噪声。
 ///
 /// 本路径**不做相对衰减**（传 `None`）：命中即保留，仅靠排序 + `top_k` 截断，见
-/// [`apply_relative_cutoff`] 对量纲差异的说明。
+/// `apply_relative_cutoff` 对量纲差异的说明。
 pub fn keyword_rank_rows(
     top_k: usize,
     rows: Vec<MemoryRow>,

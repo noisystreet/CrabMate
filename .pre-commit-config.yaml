@@ -23,6 +23,17 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # rustdoc 断链（`crate::…` 路径写错、链接到私有项）不会让 `cargo doc` 非 0 退出，
+      # 所以必须 `-D warnings` 才拦得住；`--no-deps` 只检查本 crate。
+      # `files: \.rs$` 而非 `always_run`：rustdoc 是 crate 级检查，只在 Rust 源码变动时才值得跑
+      # （约 9s；markdown/CHANGELOG 提交不白跑）。
+      - id: cargo-doc
+        name: cargo doc (rustdoc warnings denied)
+        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps'
+        language: system
+        pass_filenames: false
+        files: \.rs$
+        stages: [pre-commit]
       - id: check-crate-deps
         name: crate dep policy (forbidden edges)
         entry: bash scripts/check-crate-deps.sh

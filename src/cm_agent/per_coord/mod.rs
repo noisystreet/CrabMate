@@ -1,5 +1,5 @@
 //! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、`after_final_assistant` 分支）。
-//! 可变回合侧字段按职责拆入 **[`per_turn_state`]**（计数 / `workflow_validate` 层缓存 / 工具失败短路表），减少顶层「一锅烩」。
+//! 可变回合侧字段按职责拆入 **`per_turn_state`**（计数 / `workflow_validate` 层缓存 / 工具失败短路表），减少顶层「一锅烩」。
 //! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`crate::cm_agent::plan_rewrite`]；侧向 **LLM** 调用仍在根包 `crabmate::agent::per_plan_semantic_check`。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
 //!
