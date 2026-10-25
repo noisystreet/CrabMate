@@ -237,6 +237,20 @@ pub fn resolve_unrestricted_for_write(base: &Path, sub: &str) -> Result<PathBuf,
     Ok(lexical_normalize(&unrestricted_target(base, sub)))
 }
 
+/// 审计正文只用**末两段**路径。
+///
+/// 完整绝对路径会把宿主机目录结构写进日志（可能被采集到远端），而「访问了哪个文件」
+/// 用末两段已足够定位；需要全路径时以同一时间窗口的 `tool_call` 参数为准。
+pub(crate) fn audit_path_detail(sub: &str) -> String {
+    let mut tail: Vec<&str> = sub.rsplit('/').filter(|s| !s.is_empty()).take(2).collect();
+    tail.reverse();
+    if tail.is_empty() {
+        "-".to_string()
+    } else {
+        tail.join("/")
+    }
+}
+
 /// 工作区路径访问器：把「根 + 访问范围」收成一个载体。
 ///
 /// R1（设计 §17.1）收口调用形态；S3 起持有 [`PathScope`]：`SessionRoot`（默认，L0–L3）
@@ -273,9 +287,26 @@ impl<'a> PathAccess<'a> {
         self.scope
     }
 
+    /// L4 的路径放行留痕。
+    ///
+    /// 等级直接回填 `Unrestricted`：`PathScope::Any` **只**由 `project_caps(Unrestricted)` 产生
+    /// （唯一投影点），五级投影里只有 L4 的 `path_scope` 是 `any`——
+    /// 由 `cm_types::permission_audit::tests::path_scope_any_exists_only_at_unrestricted` 钉住。
+    /// 本层拿不到 `PermissionCaps`（依赖方向 `cm_tools` → `cm_agent` 不允许反向）。
+    fn audit_unrestricted_path(&self, sub: &str) {
+        crate::cm_types::permission_audit::record_allowed(
+            crate::cm_types::PermissionLevel::Unrestricted,
+            crate::cm_types::ApprovalPolicy::AuditOnly,
+            crate::cm_types::permission_audit::PermissionAxis::Path,
+            None,
+            Some(&audit_path_detail(sub)),
+        );
+    }
+
     /// 见 [`resolve_for_read`]。
     pub fn for_read(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
         if self.scope.is_unrestricted() {
+            self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_read(self.root, sub);
         }
         resolve_for_read(self.root, sub)
@@ -284,6 +315,7 @@ impl<'a> PathAccess<'a> {
     /// 见 [`resolve_for_read_open`]（`openat2` / `RESOLVE_IN_ROOT`）。
     pub fn for_read_open(&self, sub: &str) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
         if self.scope.is_unrestricted() {
+            self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_read_open(self.root, sub);
         }
         resolve_for_read_open(self.root, sub)
@@ -292,6 +324,7 @@ impl<'a> PathAccess<'a> {
     /// 见 [`resolve_for_write`]。
     pub fn for_write(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
         if self.scope.is_unrestricted() {
+            self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_write(self.root, sub);
         }
         resolve_for_write(self.root, sub)
@@ -375,5 +408,33 @@ mod tests {
         let path = resolve_unrestricted_for_write(std::path::Path::new("/tmp/root"), "a/../b.txt")
             .expect("resolve");
         assert_eq!(path, std::path::PathBuf::from("/tmp/root/b.txt"));
+    }
+
+    /// 接线回归（High）：L4 的路径放行必须留痕——这是路径面**唯一**的记录点，
+    /// `read_file` / `write` / `delete_*` 等全部经 `PathAccess` 走这里。
+    #[test]
+    fn unrestricted_scope_emits_path_audit() {
+        use crate::cm_types::permission_audit::test_support::captured_with;
+
+        let any = PathAccess::with_scope(std::path::Path::new("/tmp/root"), PathScope::Any);
+        let captured = captured_with(|| {
+            // 目标不存在 → `Err`，但审计在解析前就记了（放行意图本身就是审计对象）。
+            let _ = any.for_read("/etc/shadow");
+        });
+        assert!(captured.contains("permission_axis=path"), "{captured}");
+        assert!(
+            captured.contains("permission_level=unrestricted"),
+            "{captured}"
+        );
+        // 只留末两段：完整绝对路径不进日志。
+        assert!(captured.contains("detail=etc/shadow"), "{captured}");
+        assert!(!captured.contains("/tmp/root"), "{captured}");
+
+        // L0–L3（`SessionRoot`）是常态，不记。
+        let scoped = PathAccess::new(std::path::Path::new("/tmp/root"));
+        let quiet = captured_with(|| {
+            let _ = scoped.for_read("a.txt");
+        });
+        assert!(quiet.is_empty(), "{quiet}");
     }
 }

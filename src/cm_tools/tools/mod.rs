@@ -46,6 +46,8 @@ pub use exec::{
 mod file;
 pub use file::canonical_workspace_root;
 pub(crate) use file::resolve_for_read_open;
+// 审计正文的路径截断：`cm_internal` 的 `read_dir` 工作区外审批也要用它，避免各写一份。
+pub(crate) use file::audit_path_detail;
 mod frontend_tools;
 mod git;
 mod github_cli;

@@ -71,11 +71,36 @@ fn http_net_gate(
             HttpNetGate::NeedApproval
         };
     };
+    // 懒算：`Prefixes(_) if url_allowed`（L0–L3 常态放行）既不记录也不需要它。
+    let audit_origin = || url.origin().ascii_serialization();
     match caps.net_scope {
-        NetScope::None => HttpNetGate::Deny(http_tool_net_denied_message(caps, url)),
-        NetScope::Any => HttpNetGate::Allow,
+        NetScope::None => {
+            crate::cm_agent::permission_audit::record_denied(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Net,
+                None,
+                Some(&audit_origin()),
+            );
+            HttpNetGate::Deny(http_tool_net_denied_message(caps, url))
+        }
+        NetScope::Any => {
+            // L4 的唯一留痕点之一：出站不再有前缀与审批，全靠这条审计事件。
+            crate::cm_agent::permission_audit::record_allowed(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Net,
+                None,
+                Some(&audit_origin()),
+            );
+            HttpNetGate::Allow
+        }
         NetScope::Prefixes(_) if url_allowed => HttpNetGate::Allow,
         NetScope::Prefixes(_) if caps.approval == ApprovalPolicy::Deny => {
+            crate::cm_agent::permission_audit::record_denied(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Net,
+                None,
+                Some(&audit_origin()),
+            );
             HttpNetGate::Deny(http_tool_net_denied_message(caps, url))
         }
         NetScope::Prefixes(_) => HttpNetGate::NeedApproval,
@@ -264,6 +289,47 @@ mod http_net_gate_tests {
         // 未接线：回落现状「命中即放行，否则审批」。
         assert!(matches!(http_net_gate(None, &url, false), HttpNetGate::NeedApproval));
         assert!(matches!(http_net_gate(None, &url, true), HttpNetGate::Allow));
+    }
+
+    /// 接线回归：L4 的 `NetScope::Any` 放行必须留痕；L3 的前缀命中不得产出记录。
+    ///
+    /// `net_gate_matrix_follows_permission_level` 只钉返回值——没有这条，删掉
+    /// `record_allowed` 调用也不会红。
+    #[test]
+    fn net_gate_emits_audit_only_on_l4_direct_allow() {
+        use crate::cm_types::permission_audit::test_support::captured_with;
+        let cfg = test_cfg();
+        let url = reqwest::Url::parse("https://evil.example.org/x").expect("url");
+
+        let l4 = project_caps(PermissionLevel::Unrestricted, &cfg);
+        let captured = captured_with(|| {
+            let _ = http_net_gate(Some(&l4), &url, false);
+        });
+        assert!(captured.contains("permission_axis=net"), "{captured}");
+        assert!(
+            captured.contains("permission_decision=allowed"),
+            "{captured}"
+        );
+        assert!(
+            captured.contains("permission_level=unrestricted"),
+            "{captured}"
+        );
+        // 只报 origin，不回显路径。
+        assert!(!captured.contains("/x"), "{captured}");
+
+        // L3 命中前缀：常态放行，不记。
+        let l3 = project_caps(PermissionLevel::Approved, &cfg);
+        let quiet = captured_with(|| {
+            let _ = http_net_gate(Some(&l3), &url, true);
+        });
+        assert!(quiet.is_empty(), "{quiet}");
+
+        // L2 硬拒：记 denied。
+        let l2 = project_caps(PermissionLevel::Workspace, &cfg);
+        let denied = captured_with(|| {
+            let _ = http_net_gate(Some(&l2), &url, false);
+        });
+        assert!(denied.contains("permission_decision=denied"), "{denied}");
     }
 
     /// 拒因文案只报 origin，不回显完整 URL（query 里可能有敏感参数）。

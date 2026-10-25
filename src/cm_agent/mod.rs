@@ -15,6 +15,8 @@ pub mod message_pipeline;
 pub mod per_coord;
 /// 权限等级 → 六轴投影与回合 min 链（唯一 `match level` 处；设计 `docs/design/permission_levels.md`）。
 pub mod permission;
+/// 权限决策的结构化审计事件（设计 §11.2；L4 `AuditOnly` 的放行留痕）。
+pub mod permission_audit;
 pub mod plan_artifact;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在根包 `per_plan_semantic_check`）。
 pub mod plan_rewrite;

@@ -373,6 +373,16 @@ async fn resolve_unknown_cmd_allowlist(
     base: &Arc<[String]>,
 ) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
     if !cmd_missing_from_allowlist(&parsed.cmd, base.as_ref()) {
+        // L4 的白名单是 `*` 哨兵：命令面不再有审批，留痕是唯一可见性来源
+        // （L0–L3 命中白名单属常态，`record_allowed` 自己会跳过）。
+        if let Some(caps) = ctx.permission {
+            crate::cm_agent::permission_audit::record_allowed(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Command,
+                Some("run_command"),
+                Some(parsed.cmd.as_str()),
+            );
+        }
         return Ok((Arc::clone(base), None));
     }
     if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
@@ -402,6 +412,12 @@ async fn resolve_unknown_cmd_allowlist(
     if let Some(caps) = ctx.permission
         && caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny
     {
+        crate::cm_agent::permission_audit::record_denied(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Command,
+            Some("run_command"),
+            Some(parsed.cmd.as_str()),
+        );
         return Err(PolicyError::Denied {
             reason: PolicyReason::UnknownCommand,
             message: format!(
@@ -562,9 +578,22 @@ fn external_path_gate_by_caps(
 ) -> Option<Result<ExternalPathGate, PolicyError>> {
     let caps = ctx.permission?;
     if caps.path_scope.is_unrestricted() {
+        // L4：越界路径不再有配置开关与审批，留痕是唯一的可见性来源。
+        crate::cm_agent::permission_audit::record_allowed(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Path,
+            Some("run_command"),
+            None,
+        );
         return Some(Ok(ExternalPathGate::Approved));
     }
     if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+        crate::cm_agent::permission_audit::record_denied(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Path,
+            Some("run_command"),
+            None,
+        );
         return Some(Err(PolicyError::Denied {
             reason: PolicyReason::ExternalPath,
             message: format!(

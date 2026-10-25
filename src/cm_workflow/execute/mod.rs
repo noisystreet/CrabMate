@@ -69,6 +69,57 @@ pub enum WorkflowApprovalMode {
     },
 }
 
+/// 越界时节点该做什么（设计 §7.2）。把「等级 → 动作」收敛成一个纯函数，
+/// 避免在每个节点路径上重复 `match approval` 而顶破 CCN 上限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ApprovalDisposition {
+    /// 放行（L4：命令 / 路径面已放宽，不该再拦）。
+    Proceed,
+    /// 直接拒，**不弹窗**（L2 硬边界；或根本没有审批通道）。
+    Deny,
+    /// 走 SSE 人工审批（L3 现状）。
+    Ask,
+}
+
+/// 节点层等级结论的留痕（设计 §11.2「二级执行面」）。
+///
+/// 只记**等级本身给出的结论**：`Proceed`（L4 放行，记 `allowed`）与 `Deny`（L2 硬边界）。
+/// `Ask` 走人工审批，其结论由 `interactive_gate_after_whitelist_miss` 统一记 `approved`；
+/// `NoApproval`（无审批通道）不是等级结论，不记。
+///
+/// 放在 `mod.rs` 而不是 `node.rs`：`node.rs` 已贴着仓库的文件行数上限（920），
+/// 这层簿记不属于单节点执行逻辑。
+pub(crate) fn audit_workflow_node_gate(
+    approval_mode: &WorkflowApprovalMode,
+    axis: crate::cm_types::permission_audit::PermissionAxis,
+    tool: &str,
+    node_id: &str,
+    disposition: ApprovalDisposition,
+) {
+    use crate::cm_types::permission_audit::PermissionDecision;
+    let WorkflowApprovalMode::Interactive {
+        permission_level: Some(level),
+        approval,
+        ..
+    } = approval_mode
+    else {
+        return;
+    };
+    let decision = match disposition {
+        ApprovalDisposition::Proceed => PermissionDecision::Allowed,
+        ApprovalDisposition::Deny => PermissionDecision::Denied,
+        ApprovalDisposition::Ask => return,
+    };
+    crate::cm_types::permission_audit::record(
+        *level,
+        approval.unwrap_or(crate::cm_agent::permission::ApprovalPolicy::Gate),
+        axis,
+        decision,
+        Some(tool),
+        Some(node_id),
+    );
+}
+
 /// 语义检索参数（从 `WorkflowConfig` 构造，再写入 [`WorkflowToolExecCtx`]；字段由工具侧读取）。
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // 整包经 `ToolContext` 透传；本 crate 内不直接读字段
