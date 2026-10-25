@@ -340,22 +340,33 @@ pub fn permission_denied_message(caps: &PermissionCaps, name: &str) -> String {
     )
 }
 
+/// 回合权限 `min` 链的四档输入（设计 §6.1）。
+///
+/// 收成结构体而不是继续平铺形参：`RunAgentTurnAttach` 与三个 build args 都要把它穿到
+/// `run_agent_turn`，平铺会让每个构造点多 4 行、并把 `run_agent_turn` 顶出 nloc ≤ 200 的棘轮。
+#[derive(Debug, Clone, Copy)]
+pub struct TurnPermissionStages {
+    /// 角色级上限（`agent_roles[].max_permission_level`）；`None` = 不额外限制。
+    pub role_max: Option<PermissionLevel>,
+    /// 本回合会话模式（`ask` / `plan` → 再钳到 ≤ `read`）。
+    pub session_mode: SessionMode,
+    /// `/chat` 请求显式申请的等级；`None` = 未申请。
+    pub requested: Option<PermissionLevel>,
+    /// 会话持久化的意图；`None` = 该会话从未指定。
+    pub persisted: Option<PermissionLevel>,
+}
+
 /// 回合级装配：解析等级 → 投影 `caps`，并按 L0 需要收窄本回合的终答计划要求。
 ///
 /// 与投影同处一模块，是为了让「L0 没有工具可下发」这条规则只有一个落点（设计 §8.2）：
 /// 调用方只需给出本回合输入，不必各自记得改 `per_plan_policy`。
-pub fn plan_turn_permission(
-    cfg: &mut AgentConfig,
-    role_max: Option<PermissionLevel>,
-    session_mode: SessionMode,
-    persisted: Option<PermissionLevel>,
-) -> PermissionCaps {
+pub fn plan_turn_permission(cfg: &mut AgentConfig, stages: TurnPermissionStages) -> PermissionCaps {
     let resolved = resolve_permission_level_for_turn(PermissionTurnInput {
         cfg: &*cfg,
-        requested: None,
-        persisted,
-        role_max,
-        session_mode,
+        requested: stages.requested,
+        persisted: stages.persisted,
+        role_max: stages.role_max,
+        session_mode: stages.session_mode,
     });
     // 投影取 `projection_level` 而非 `effective`：`ask` / `plan` 的只读由既有
     // `ReviewReadonly` 执行，不能回灌成 L1 的正列表（见 [`ResolvedPermission`]）。
@@ -379,13 +390,11 @@ fn allowlist_from_cfg(cfg: &AgentConfig) -> CommandScope {
 pub fn prepare_turn_cfg_and_permission(
     cfg: &AgentConfig,
     workspace_root: &std::path::Path,
-    role_max: Option<PermissionLevel>,
-    session_mode: SessionMode,
-    persisted: Option<PermissionLevel>,
+    stages: TurnPermissionStages,
 ) -> (Arc<AgentConfig>, PermissionCaps) {
     let mut snap = cfg.clone();
     snap.chat_workspace_root = Some(workspace_root.to_path_buf());
-    let caps = plan_turn_permission(&mut snap, role_max, session_mode, persisted);
+    let caps = plan_turn_permission(&mut snap, stages);
     (Arc::new(snap), caps)
 }
 

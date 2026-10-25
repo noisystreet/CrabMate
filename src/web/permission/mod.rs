@@ -142,6 +142,9 @@ fn session_mode_for_projection(
 /// 两者都必须给：等级会被 ceiling / 角色上限 / `ask`·`plan` 三重钳制，
 /// 只回一个值就会出现「我明明切了 L4，怎么还是只读」且无从排查（设计 §16.1）。
 /// 复用 [`resolve_permission_level_for_turn`] 而非重写比较，避免长出第二套判据。
+///
+/// `effective` 是**当前** `cfg` 下的投影而不是历史记录：热重载调低 `permission_level_max` 后，
+/// 旧会话读到的值会跟着变低（契约字段的 doc 与 `docs/命令行与路由.md` 都按此口径写）。
 pub(crate) fn permission_levels_for_snapshot(
     cfg: &AgentConfig,
     persisted_agent_role: Option<&str>,

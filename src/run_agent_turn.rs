@@ -96,9 +96,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory_scope_id,
         read_file_turn_cache,
         turn_allowed_tool_names,
-        session_mode,
-        permission_role_max,
-        permission_persisted,
+        permission: permission_stages,
     } = attach;
 
     let RunAgentTurnObs {
@@ -134,7 +132,7 @@ pub async fn run_agent_turn<'a>(
     // 出站 `@` 图跟本轮工具 `work_dir`，不读热更新后的全局工作区；权限 `caps`（含 L0 的编排
     // 收敛）在同一次快照里算好。
     let (cfg_for_turn, permission) = crate::cm_agent::permission::prepare_turn_cfg_and_permission(
-        cfg, effective_working_dir, permission_role_max, session_mode, permission_persisted,
+        cfg, effective_working_dir, permission_stages,
     );
     let cfg = &cfg_for_turn;
 
@@ -204,7 +202,9 @@ pub async fn run_agent_turn<'a>(
                 read_file_turn_cache,
                 workspace_changelist,
                 turn_allowed_tool_names: turn_allowed_tool_names.clone(),
-                session_mode,
+                session_mode: permission_stages.session_mode,
+                // 能力快照（`PermissionCaps`）与 `permission_stages` 同名不同物：
+                // 前者是投影结果，后者是 min 链的输入档位——两者都要穿进环内。
                 permission,
             },
             obs: crate::agent::agent_turn::RunLoopObs {
