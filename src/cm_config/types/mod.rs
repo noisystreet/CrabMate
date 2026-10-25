@@ -4,7 +4,8 @@ pub use agent_config_sections::{
     AgentsMdConfigSection, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
     ConversationPersistenceConfig, HttpFetchConfigSection,
-    LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, RolesPromptsConfig,
+    LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, PermissionConfig,
+    RolesPromptsConfig,
     SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncToolSandboxConfig,
     ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig,
     TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
@@ -260,6 +261,8 @@ pub struct AgentConfig {
     pub thinking_echo: ThinkingEchoConfig,
     pub context_pipeline: ContextPipelineConfig,
     pub workspace_roots: WorkspaceRootsConfig,
+    /// 工具权限等级与六轴上投影的配置来源；执行点接线见设计 §8（S2–S4）。
+    pub permission: PermissionConfig,
     pub web_api: WebApiConfig,
     pub chat_queues_cache: ChatQueuesCacheConfig,
     pub session_workspace_changelist: SessionWorkspaceChangelistConfig,

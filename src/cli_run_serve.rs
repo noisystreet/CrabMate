@@ -529,6 +529,28 @@ pub(super) fn serve_ready_json(
     })
 }
 
+/// `serve` 启动期的「绑定地址 → 安全门槛」校验，一次做完两件事：
+///
+/// 1. Web 鉴权（非 loopback 无 token 直接拒启）；
+/// 2. 权限等级上限按部署形态**冻结**（设计 `docs/design/permission_levels.md` §5.1 / §9 MB-3）：
+///    非 loopback 下显式要 `unrestricted` 而缺 `allow_unrestricted_permission_for_non_loopback`
+///    时直接启动失败，而不是悄悄降档——否则远端部署会以为拿到了 L4。
+///
+/// 合并成一个入口也避免 `cli_run::run_serve_branch` 的 `?` 计数继续增长（CCN ≤ 10 门禁）。
+pub(super) async fn serve_validate_bind_gates(
+    cfg_holder: &SharedAgentConfig,
+    bind_ip: std::net::IpAddr,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let auth_enabled = super::validate_bind_auth(cfg_holder, bind_ip).await?;
+    let (ceiling, source) =
+        crate::cm_config::freeze_permission_ceiling_for_bind(cfg_holder, bind_ip).await?;
+    info!(
+        target: "crabmate",
+        "权限等级上限 ceiling={ceiling} source={source}"
+    );
+    Ok(auth_enabled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,3 +702,4 @@ mod tests {
         assert!(serve_ready_json(addr, false, None)["instance_id"].is_null());
     }
 }
+

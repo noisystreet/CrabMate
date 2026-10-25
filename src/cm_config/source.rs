@@ -135,6 +135,9 @@ pub(super) struct AgentRoleRow {
     /// 角色默认会话模式（`ask` / `plan` / `act`）。
     #[serde(default)]
     pub(super) default_session_mode: Option<String>,
+    /// 角色级权限上限（`chat` / `read` / `workspace` / `approved` / `unrestricted`）；省略 = 不额外限制。
+    #[serde(default)]
+    pub(super) max_permission_level: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,6 +265,20 @@ pub(super) struct AgentSection {
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     /// Web 项目池根目录；配置后浏览器可用项目名切换/新建子工作区。须同时配置非空 `workspace_allowed_roots`。`CM_WEB_WORKSPACE_POOL`
     pub(super) web_workspace_pool: Option<String>,
+    /// 会话默认权限等级：`chat` / `read` / `workspace` / `approved` / `unrestricted`。`CM_PERMISSION_LEVEL`
+    pub(super) permission_level: Option<String>,
+    /// 服务端硬上限；省略则按部署形态推导（loopback → `unrestricted`，非 loopback → `approved`）。`CM_PERMISSION_LEVEL_MAX`
+    pub(super) permission_level_max: Option<String>,
+    /// L0 下允许的零副作用控制面工具（如澄清问卷）。`CM_PERMISSION_CHAT_CONTROL_TOOLS`
+    pub(super) permission_chat_control_tools: Option<Vec<String>>,
+    /// L1 的只读**正列表**；省略 = 由写副作用清单的补集推导。`CM_PERMISSION_READ_TOOLS`
+    pub(super) permission_read_tools: Option<Vec<String>>,
+    /// 仅 L4 生效的可选敏感前缀加固；默认空 = 不设黑名单。`CM_PERMISSION_DENY_SYSTEM_PATHS`
+    pub(super) permission_deny_system_paths: Option<Vec<String>>,
+    /// 任何等级都不豁免的不可逆操作确认清单。`CM_PERMISSION_CONFIRM_TOOLS`
+    pub(super) permission_confirm_tools: Option<Vec<String>>,
+    /// 非 loopback 下显式允许把上限提到 `unrestricted`；否则启动失败。`CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK`
+    pub(super) allow_unrestricted_permission_for_non_loopback: Option<bool>,
     pub(super) web_api_bearer_token: Option<String>,
     /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **false**（允许无密钥启动 `serve`）；显式 **`true`** 时须配非空 `web_api_bearer_token` 后 `serve` 才启动。
     pub(super) web_api_require_bearer: Option<bool>,

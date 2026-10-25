@@ -13,6 +13,7 @@ mod finalize;
 mod gateway_hints;
 mod hot_reload;
 mod load;
+mod permission;
 mod scheduled_agent_task;
 pub mod skills;
 pub mod skills_slash;
@@ -34,6 +35,10 @@ pub use gateway_hints::{
 };
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
+pub use permission::{
+    clamp_permission_ceiling_on_reload, freeze_permission_ceiling_for_bind,
+    reconcile_default_level_with_ceiling, resolve_permission_ceiling, validate_permission_config,
+};
 pub use user_config_xdg::{
     ENV_SKIP_CONFIG_SEED, SYSTEM_CONFIG_DIR, cwd_has_local_user_config,
     cwd_in_crabmate_source_tree, ensure_user_config_seeded_from,
@@ -60,7 +65,7 @@ pub use types::{
     ContextPipelineConfig, ConversationPersistenceConfig, ExposeSecret, HttpFetchConfigSection,
     LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
     LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend, McpClientConfig,
-    PerPlanPolicyConfig, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,
+    PerPlanPolicyConfig, PermissionConfig, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,
     SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncDefaultToolSandboxMode,
     SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
     ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,

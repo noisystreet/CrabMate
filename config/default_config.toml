@@ -97,6 +97,24 @@ coding_workbench_enabled = true
 coding_workbench_increment_file = "config/prompts/coding_workbench_increment.md"
 # 默认会话工作模式：ask（只读）| plan（只读规划）| act（执行）。可被 Web/CLI 请求与会话持久化覆盖。CM_DEFAULT_SESSION_MODE
 default_session_mode = "act"
+
+# 7.1 工具权限等级（L0–L4；设计 docs/design/permission_levels.md）
+# chat（只能对话）< read（只读）< workspace（工作区硬边界，越界直接拒）< approved（现状：越界走人工审批）< unrestricted（不受工作区路径与命令白名单限制）
+permission_level = "approved"
+# 服务端硬上限：**省略则按部署形态推导**——绑 127.0.0.1 → unrestricted；绑 0.0.0.0 → approved。
+# 非 loopback 下显式要 unrestricted 还须 allow_unrestricted_permission_for_non_loopback = true，否则启动失败。CM_PERMISSION_LEVEL_MAX
+# permission_level_max = "workspace"
+# L0 下允许的零副作用控制面工具（默认空：连澄清问卷也不下发）。CM_PERMISSION_CHAT_CONTROL_TOOLS
+# permission_chat_control_tools = ["present_clarification_questionnaire"]
+# L1 的只读**正列表**；省略 = 由写副作用工具清单的补集推导（不受 tool_registry_write_effect_tools 影响）。CM_PERMISSION_READ_TOOLS
+# permission_read_tools = ["read_file", "read_dir", "glob_files"]
+# 仅 L4 生效的**可选**敏感前缀加固；默认空（unrestricted 名实相符）。CM_PERMISSION_DENY_SYSTEM_PATHS
+# permission_deny_system_paths = ["/proc", "/sys", "/dev"]
+# 任何等级都不豁免的不可逆操作确认清单（delete 类）。CM_PERMISSION_CONFIRM_TOOLS
+permission_confirm_tools = ["delete_dir", "delete_files"]
+# 非 loopback 绑定下显式允许把上限提到 unrestricted（不安全，见上）。CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK
+# allow_unrestricted_permission_for_non_loopback = false
+
 # 新会话首条 system 末附「思考纪律」附录（减轻模型在 thinking 中复述系统提示）；软性约束。CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT
 thinking_avoid_echo_system_prompt = true
 # 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。CM_THINKING_AVOID_ECHO_APPENDIX_FILE

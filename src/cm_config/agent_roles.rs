@@ -22,6 +22,8 @@ pub(super) struct AgentRoleEntryBuilder {
     pub(super) allowed_tools: Option<Vec<String>>,
     /// 角色默认会话模式（`ask` / `plan` / `act`）；省略则用全局 `default_session_mode`。
     pub(super) default_session_mode: Option<String>,
+    /// 角色级权限上限（`chat` / `read` / `workspace` / `approved` / `unrestricted`）。
+    pub(super) max_permission_level: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +50,8 @@ struct AgentRoleEntryToml {
     prepend_coding_workbench: Option<bool>,
     #[serde(default)]
     default_session_mode: Option<String>,
+    #[serde(default)]
+    max_permission_level: Option<String>,
 }
 
 pub(super) fn merge_into_role_entry(
@@ -57,6 +61,7 @@ pub(super) fn merge_into_role_entry(
     allowed_tools: Option<Vec<String>>,
     prepend_coding_workbench: Option<bool>,
     default_session_mode: Option<String>,
+    max_permission_level: Option<String>,
 ) {
     super::builder::override_opt_string_non_empty(&mut slot.system_prompt, system_prompt);
     super::builder::override_opt_string_non_empty(&mut slot.system_prompt_file, system_prompt_file);
@@ -69,6 +74,10 @@ pub(super) fn merge_into_role_entry(
     super::builder::override_opt_string_non_empty(
         &mut slot.default_session_mode,
         default_session_mode,
+    );
+    super::builder::override_opt_string_non_empty(
+        &mut slot.max_permission_level,
+        max_permission_level,
     );
 }
 
@@ -102,6 +111,7 @@ pub(super) fn merge_agent_roles_file_into_builder(
                 row.allowed_tools,
                 row.prepend_coding_workbench,
                 row.default_session_mode,
+                row.max_permission_level,
             );
         }
     }
@@ -136,6 +146,20 @@ fn parse_role_default_session_mode(
         Some(s) => crate::cm_types::parse_session_mode(s)
             .map(Some)
             .map_err(|e| format!("配置错误：角色 \"{role_id}\" 的 default_session_mode：{e}")),
+    }
+}
+
+/// 角色级权限上限（设计 §6.1 的 role cap）：省略 = 不额外限制；非法串 → 启动期报错，
+/// 不静默回退（否则「以为被限住了其实没限」）。
+fn parse_role_max_permission_level(
+    role_id: &str,
+    raw: Option<&str>,
+) -> Result<Option<crate::cm_types::PermissionLevel>, String> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(s) => crate::cm_types::parse_permission_level(s)
+            .map(Some)
+            .map_err(|e| format!("配置错误：角色 \"{role_id}\" 的 max_permission_level：{e}")),
     }
 }
 
@@ -356,6 +380,8 @@ pub(super) fn finalize_agent_role_catalog(
         let merged = merge_role_system_prompt(id.as_str(), &b, &merge_ctx)?;
         let default_session_mode =
             parse_role_default_session_mode(id.as_str(), b.default_session_mode.as_deref())?;
+        let max_permission_level =
+            parse_role_max_permission_level(id.as_str(), b.max_permission_level.as_deref())?;
         let allowed_tools = normalize_allowed_tools(b.allowed_tools);
         out.insert(
             id,
@@ -363,6 +389,7 @@ pub(super) fn finalize_agent_role_catalog(
                 system_prompt: merged,
                 allowed_tools,
                 default_session_mode,
+                max_permission_level,
             },
         );
     }

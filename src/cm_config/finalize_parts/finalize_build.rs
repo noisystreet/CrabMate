@@ -23,6 +23,7 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         thinking_echo: finalize_section_thinking_echo(tail),
         context_pipeline: finalize_section_context_pipeline(mid, tail),
         workspace_roots: finalize_section_workspace_roots(mid),
+        permission: mid.permission.clone(),
         web_api: finalize_section_web_api(tail),
         chat_queues_cache: finalize_section_chat_queues_cache(tail),
         session_workspace_changelist: finalize_section_session_workspace_changelist(tail),

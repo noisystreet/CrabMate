@@ -64,6 +64,33 @@ impl ConfigBuilder {
         self.apply_section_merge_numeric_tail_sandbox_web_conv(&agent);
         self.apply_section_merge_numeric_tail_context_tool_explain(&agent);
         self.apply_section_merge_numeric_tail_memory_mcp_semantic_intent(&agent);
+        self.apply_section_permission(&agent);
+    }
+
+    /// 权限等级相关键（保留原始字符串，`finalize` 再解析枚举）。
+    fn apply_section_permission(&mut self, agent: &AgentSection) {
+        let perm = &mut self.permission;
+        override_opt_string_non_empty(&mut perm.permission_level_str, agent.permission_level.clone());
+        override_opt_string_non_empty(
+            &mut perm.permission_level_max_str,
+            agent.permission_level_max.clone(),
+        );
+        override_opt_vec_allow_empty(
+            &mut perm.permission_chat_control_tools,
+            &agent.permission_chat_control_tools,
+        );
+        override_opt_vec_allow_empty(&mut perm.permission_read_tools, &agent.permission_read_tools);
+        override_opt_vec_allow_empty(
+            &mut perm.permission_deny_system_paths,
+            &agent.permission_deny_system_paths,
+        );
+        override_opt_vec_allow_empty(
+            &mut perm.permission_confirm_tools,
+            &agent.permission_confirm_tools,
+        );
+        perm.allow_unrestricted_permission_for_non_loopback = agent
+            .allow_unrestricted_permission_for_non_loopback
+            .or(perm.allow_unrestricted_permission_for_non_loopback);
     }
 
     /// 标识字段、提示词路径、列表类覆盖。
@@ -539,6 +566,7 @@ impl ConfigBuilder {
                 row.allowed_tools.clone(),
                 row.prepend_coding_workbench,
                 row.default_session_mode.clone(),
+                row.max_permission_level.clone(),
             );
         }
     }

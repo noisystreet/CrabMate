@@ -746,6 +746,8 @@ struct FinalizeAfterRoles {
     system_prompt_search_bases: Vec<PathBuf>,
     run_command_working_dir: PathBuf,
     scheduled_agent_tasks: Vec<ScheduledAgentTask>,
+    /// 权限等级配置（S1：只解析与投影，执行点尚未消费）。
+    permission: types::PermissionConfig,
 }
 
 fn validate_required_llm_endpoints(b: &ConfigBuilder) -> Result<(), String> {
@@ -868,7 +870,7 @@ fn finalize_agent_config(
             skills_top_k: pm.skills_top_k,
         })?;
 
-    let default_session_mode = parse_builder_default_session_mode(&b)?;
+    let (default_session_mode, permission) = derive_session_policy(&b)?;
 
     let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
         std::mem::take(&mut b.scheduled_agent_task_rows),
@@ -905,6 +907,7 @@ fn finalize_agent_config(
         system_prompt_search_bases,
         run_command_working_dir,
         scheduled_agent_tasks,
+        permission,
     })
 }
 

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::cm_config::FinalPlanRequirementMode;
+use crate::cm_types::{CeilingSource, PermissionLevel};
 
 use super::{
     AgentRoleCatalog, LongTermMemoryVectorBackend, SandboxDockerContainerUser, ScheduledAgentTask,
@@ -151,6 +152,46 @@ pub struct WorkspaceRootsConfig {
     /// 非空时启用 Web「项目池」：浏览器可用项目名切换/新建子目录，无需手输绝对路径。
     /// 配置时 finalize 要求非空 `workspace_allowed_roots`，且池根落在白名单内、非敏感前缀。
     pub web_workspace_pool: Option<PathBuf>,
+}
+
+/// 工具权限等级（L0–L4）与其六轴投影的配置来源。
+///
+/// 设计见 `docs/design/permission_levels.md`。S1 只落地**类型与配置**：各执行点尚未消费
+/// `caps`，故不设任何新键时每次调用的行为与改造前逐字一致（§5.2 等价性核对）。
+#[derive(Debug, Clone)]
+pub struct PermissionConfig {
+    /// 会话默认等级（`permission_level`）；可被 `/chat` 请求与会话持久化覆盖，但只能降。
+    pub permission_level: PermissionLevel,
+    /// 服务端**显式**上限（`permission_level_max`）；`None` = 按部署形态推导（§5.1）。
+    pub permission_level_max: Option<PermissionLevel>,
+    /// 启动期冻结的**生效**上限（非 TOML）；热重载只降不升（§9.1）。
+    ///
+    /// 各执行点只读本字段（经 [`Self::effective_ceiling`]），不读 `permission_level_max`
+    /// ——后者仅是启动期冻结的输入。
+    pub permission_level_max_effective: PermissionLevel,
+    /// 生效上限的来源（`config` / `derived_loopback` / `derived_non_loopback`）。
+    pub permission_level_max_source: CeilingSource,
+    /// L0 下允许的零副作用控制面工具（如澄清问卷）；仅 `chat` 级生效。
+    pub permission_chat_control_tools: Vec<String>,
+    /// L1 的只读**正列表**；`None` = 由 `builtin_write_effect_tools()` 的补集推导（S2 消费）。
+    ///
+    /// 显式写出即覆盖推导。**不受** `tool_registry_write_effect_tools` 影响——后者是并行只读批的
+    /// 性能开关（整体替换式），不能当安全边界（设计 §4.2 / §7.2）。
+    pub permission_read_tools: Option<Vec<String>>,
+    /// 仅 L4 生效的**可选**敏感前缀加固（默认空 = 不设黑名单，§8.3）。
+    pub permission_deny_system_paths: Vec<String>,
+    /// 任何等级都不豁免的不可逆操作确认清单（§9 MB-4）。
+    pub permission_confirm_tools: Vec<String>,
+    /// 非 loopback 绑定下显式允许把上限提到 `unrestricted`（否则启动失败，§9 MB-3）。
+    pub allow_unrestricted_permission_for_non_loopback: bool,
+}
+
+impl PermissionConfig {
+    /// 生效上限（启动期冻结值）。等级解析链（§6.1）与观测出口都只读它。
+    #[must_use]
+    pub fn effective_ceiling(&self) -> PermissionLevel {
+        self.permission_level_max_effective
+    }
 }
 
 #[derive(Debug, Clone)]
