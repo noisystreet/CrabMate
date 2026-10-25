@@ -73,6 +73,7 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     ))?;
     ensure_active_agent_role_column(conn)?;
     ensure_active_session_mode_column(conn)?;
+    ensure_active_permission_level_column(conn)?;
     ensure_layout_meta_json_column(conn)?;
     Ok(())
 }
@@ -87,6 +88,14 @@ fn ensure_active_agent_role_column(conn: &Connection) -> Result<(), rusqlite::Er
 
 fn ensure_active_session_mode_column(conn: &Connection) -> Result<(), rusqlite::Error> {
     ensure_text_column(conn, "active_session_mode")
+}
+
+/// 会话级权限等级**意图**（设计 §16.1 的「持久化」段）。
+///
+/// 空串 = 该会话从未指定：读回时必须回落配置默认，**不得**当成 `approved` 落死——
+/// 否则运维把 `permission_level_max` 调低后，旧会话会按旧值续跑，降级失效。
+fn ensure_active_permission_level_column(conn: &Connection) -> Result<(), rusqlite::Error> {
+    ensure_text_column(conn, "active_permission_level")
 }
 
 fn ensure_text_column(conn: &Connection, column: &str) -> Result<(), rusqlite::Error> {
@@ -162,6 +171,8 @@ pub struct LoadedConversation {
     pub revision: u64,
     pub active_agent_role: String,
     pub active_session_mode: String,
+    /// 会话级权限等级意图；空串 = 未指定（调用方须回落配置默认）。
+    pub active_permission_level: String,
     pub layout: Option<ConversationLayoutMeta>,
 }
 
@@ -171,6 +182,7 @@ struct ConversationFetchRow {
     updated: i64,
     active_role: String,
     active_mode: String,
+    active_permission_level: String,
     layout_meta_json: String,
 }
 
@@ -203,7 +215,7 @@ pub fn load(
     let row: Option<ConversationFetchRow> = conn
         .query_row(
             &format!(
-                "SELECT messages_json, revision, updated_at_unix, active_agent_role, active_session_mode, layout_meta_json FROM {TABLE} WHERE id = ?1"
+                "SELECT messages_json, revision, updated_at_unix, active_agent_role, active_session_mode, active_permission_level, layout_meta_json FROM {TABLE} WHERE id = ?1"
             ),
             params![id],
             |r| {
@@ -213,7 +225,8 @@ pub fn load(
                     updated: r.get(2)?,
                     active_role: r.get(3)?,
                     active_mode: r.get(4)?,
-                    layout_meta_json: r.get(5)?,
+                    active_permission_level: r.get(5)?,
+                    layout_meta_json: r.get(6)?,
                 })
             },
         )
@@ -258,6 +271,7 @@ fn load_row_after_fetch(
         revision: rev,
         active_agent_role: row.active_role,
         active_session_mode: row.active_mode,
+        active_permission_level: row.active_permission_level,
         layout: layout_meta_from_column(id, &row.layout_meta_json),
     }))
 }
@@ -269,6 +283,7 @@ pub fn save_if_revision(
     messages: Vec<Message>,
     active_agent_role: Option<&str>,
     active_session_mode: Option<&str>,
+    active_permission_level: Option<&str>,
     expected_revision: Option<u64>,
 ) -> Result<SaveConversationOutcome, rusqlite::Error> {
     let now = now_unix();
@@ -277,6 +292,10 @@ pub fn save_if_revision(
         .filter(|s| !s.is_empty())
         .unwrap_or("");
     let mode_col = active_session_mode
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    let level_col = active_permission_level
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
@@ -297,9 +316,9 @@ pub fn save_if_revision(
     if let Some(exp) = expected_revision {
         let n = conn.execute(
             &format!(
-                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, layout_meta_json = ?4, revision = revision + 1, updated_at_unix = ?5 WHERE id = ?6 AND revision = ?7"
+                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, active_permission_level = ?4, layout_meta_json = ?5, revision = revision + 1, updated_at_unix = ?6 WHERE id = ?7 AND revision = ?8"
             ),
-            params![json, active_col, mode_col, layout_json, now, id, exp as i64],
+            params![json, active_col, mode_col, level_col, layout_json, now, id, exp as i64],
         )?;
         if n == 0 {
             return Ok(SaveConversationOutcome::Conflict);
@@ -315,9 +334,9 @@ pub fn save_if_revision(
         }
         conn.execute(
             &format!(
-                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, layout_meta_json, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6)"
+                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, active_permission_level, layout_meta_json, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)"
             ),
-            params![id, json, active_col, mode_col, layout_json, now],
+            params![id, json, active_col, mode_col, level_col, layout_json, now],
         )?;
     }
     Ok(SaveConversationOutcome::Saved)
@@ -334,6 +353,7 @@ pub fn save_with_archive_if_revision(
     messages: Vec<Message>,
     active_agent_role: Option<&str>,
     active_session_mode: Option<&str>,
+    active_permission_level: Option<&str>,
     expected_revision: Option<u64>,
     archive_rows: &[ArchiveRow],
     codec_min_bytes: usize,
@@ -345,6 +365,7 @@ pub fn save_with_archive_if_revision(
         messages,
         active_agent_role,
         active_session_mode,
+        active_permission_level,
         expected_revision,
     )?;
     if outcome == SaveConversationOutcome::Saved && !archive_rows.is_empty() {

@@ -192,6 +192,10 @@ pub struct WebChatJobEnvelope {
     pub request_session_mode: Option<String>,
     /// 回合开始前持久化的会话模式（空串/`None` 表示未设置）。
     pub persisted_active_session_mode: Option<String>,
+    /// 本请求 JSON 中的 `permission_level`（若有；已校验为合法串）。
+    pub request_permission_level: Option<String>,
+    /// 回合开始前持久化的权限等级意图（空串/`None` 表示未设置）。
+    pub persisted_active_permission_level: Option<String>,
     pub work_dir: PathBuf,
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,

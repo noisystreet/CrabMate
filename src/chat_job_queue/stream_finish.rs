@@ -28,6 +28,10 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
     pub(super) persisted_active_session_mode: Option<&'a str>,
+    /// 本请求显式申请的权限等级（落盘时优先于 `persisted_active_permission_level`）。
+    pub(super) request_permission_level: Option<&'a str>,
+    /// 回合开始前持久化的权限等级意图。
+    pub(super) persisted_active_permission_level: Option<&'a str>,
     /// 本轮结构性提交结果（A2/A3）：canonical 收缩区间，作为归档行落盘。
     pub(super) structural_commit: crate::agent::model_context_view::StructuralCommit,
 }
@@ -63,6 +67,8 @@ pub(super) async fn post_turn_web_prepare_and_save(
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        request_permission_level,
+        persisted_active_permission_level,
         structural_commit,
     } = p;
     let scope = conversation_id.to_string();
@@ -81,6 +87,11 @@ pub(super) async fn post_turn_web_prepare_and_save(
         persisted_active_session_mode,
         request_session_mode,
     );
+    // 只存**意图**：生效值每回合按 min 链重算（运维调低上限后旧会话才会跟着降级）。
+    let level_save = crate::cm_types::persisted_permission_level_after_turn(
+        persisted_active_permission_level,
+        request_permission_level,
+    );
     let archive_rows = crate::conversation_store::archive_rows_from_structural_commit(&structural_commit);
     app.conversation
         .save_conversation_messages_if_revision(
@@ -88,6 +99,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
             messages.clone(),
             active_save.as_deref(),
             mode_save.as_deref(),
+            level_save.as_deref(),
             expected_revision,
             archive_rows,
         )
@@ -104,6 +116,10 @@ pub(super) struct CancelledTurnSaveParams<'a> {
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
     pub(super) persisted_active_session_mode: Option<&'a str>,
+    /// 本请求显式申请的权限等级（落盘时优先于 `persisted_active_permission_level`）。
+    pub(super) request_permission_level: Option<&'a str>,
+    /// 回合开始前持久化的权限等级意图。
+    pub(super) persisted_active_permission_level: Option<&'a str>,
     pub(super) job_id: u64,
     /// 归档行：`Ok(commit)` 取消分支须传结构性提交的归档行（本轮若发生压缩，canonical 已收缩，
     /// 归档行丢了就是数据丢失）；`Err` 取消分支只做仅追加写回，传空。
@@ -130,6 +146,8 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        request_permission_level,
+        persisted_active_permission_level,
         job_id,
         archive_rows,
     } = p;
@@ -160,6 +178,10 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
         persisted_active_session_mode,
         request_session_mode,
     );
+    let level_save = crate::cm_types::persisted_permission_level_after_turn(
+        persisted_active_permission_level,
+        request_permission_level,
+    );
     match app
         .conversation
         .save_conversation_messages_if_revision(
@@ -167,6 +189,7 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
             messages.clone(),
             active_save.as_deref(),
             mode_save.as_deref(),
+            level_save.as_deref(),
             expected_revision,
             archive_rows,
         )
@@ -437,6 +460,9 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
     pub(super) persisted_active_session_mode: Option<&'a str>,
+    /// 本请求显式申请的权限等级；与 `persisted_active_permission_level` 一起决定落盘意图。
+    pub(super) request_permission_level: Option<&'a str>,
+    pub(super) persisted_active_permission_level: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut bool,
 }
 
@@ -460,6 +486,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        request_permission_level,
+        persisted_active_permission_level,
         stream_ended_sent,
     } = ctx;
     match r {
@@ -475,6 +503,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 persisted_active_agent_role,
                 request_session_mode,
                 persisted_active_session_mode,
+                request_permission_level,
+                persisted_active_permission_level,
                 job_id,
                 archive_rows: crate::conversation_store::archive_rows_from_structural_commit(
                     &commit,
@@ -510,6 +540,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 persisted_active_agent_role,
                 request_session_mode,
                 persisted_active_session_mode,
+                request_permission_level,
+                persisted_active_permission_level,
                 structural_commit: commit,
             })
             .await
@@ -598,6 +630,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         persisted_active_agent_role,
                         request_session_mode,
                         persisted_active_session_mode,
+                        request_permission_level,
+                        persisted_active_permission_level,
                         job_id,
                         archive_rows: Vec::new(),
                     })

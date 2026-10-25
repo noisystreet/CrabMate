@@ -35,6 +35,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        request_permission_level,
+        persisted_active_permission_level,
         work_dir,
         workspace_is_set,
         temperature_override,
@@ -131,6 +133,10 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 turn_allowed_tool_names: turn_allow,
                 session_mode,
                 permission_role_max,
+                permission_persisted: super::resolve_job_permission_persisted(
+                    request_permission_level.as_deref(),
+                    persisted_active_permission_level.as_deref(),
+                ),
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
@@ -152,6 +158,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             persisted_active_agent_role: persisted_active_agent_role.as_deref(),
             request_session_mode: request_session_mode.as_deref(),
             persisted_active_session_mode: persisted_active_session_mode.as_deref(),
+            request_permission_level: request_permission_level.as_deref(),
+            persisted_active_permission_level: persisted_active_permission_level.as_deref(),
         },
     )
     .await;
@@ -219,6 +227,8 @@ struct JsonTurnFinishParams<'a> {
     persisted_active_agent_role: Option<&'a str>,
     request_session_mode: Option<&'a str>,
     persisted_active_session_mode: Option<&'a str>,
+    request_permission_level: Option<&'a str>,
+    persisted_active_permission_level: Option<&'a str>,
 }
 
 async fn finish_json_queued_job_after_turn(
@@ -237,6 +247,8 @@ async fn finish_json_queued_job_after_turn(
             persisted_active_agent_role: p.persisted_active_agent_role,
             request_session_mode: p.request_session_mode,
             persisted_active_session_mode: p.persisted_active_session_mode,
+            request_permission_level: p.request_permission_level,
+            persisted_active_permission_level: p.persisted_active_permission_level,
             structural_commit: commit,
         })
         .await

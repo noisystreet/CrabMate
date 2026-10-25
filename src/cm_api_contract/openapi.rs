@@ -323,6 +323,8 @@ mod tests {
             revision: 1,
             active_agent_role: None,
             active_session_mode: None,
+            active_permission_level: None,
+            effective_permission_level: None,
             tiktoken_prompt_tokens: None,
             layout: None,
             context_artifacts: Vec::new(),

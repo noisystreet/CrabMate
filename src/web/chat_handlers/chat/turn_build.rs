@@ -73,6 +73,24 @@ pub(super) fn parse_last_event_id(headers: &axum::http::HeaderMap) -> Option<u64
     s.parse::<u64>().ok()
 }
 
+/// 解析 `session_mode` 与 `permission_level` 两个「本回合覆盖」字段。
+///
+/// 合并成一个 helper 的两个理由：两者都是可选的会话级覆盖、带着同一套 `INVALID_*` 错误码；
+/// 而 `parse_chat_*_request_tail` 的圈复杂度已贴着仓库上限（CCN ≤ 10），
+/// 再在里面各加一个 `?` 就要拆函数，收益不如就地收敛。
+pub(super) fn parse_chat_mode_and_permission_level(
+    body: &ChatRequestBody,
+) -> Result<(Option<String>, Option<String>), ChatPayloadError> {
+    let session_mode = crate::types::parse_optional_session_mode(body.session_mode.as_deref())
+        .map_err(|e| bad_request("INVALID_SESSION_MODE", e))?
+        .map(|m| m.as_str().to_string());
+    let permission_level =
+        crate::cm_types::parse_optional_permission_level(body.permission_level.as_deref())
+            .map_err(|e| bad_request("INVALID_PERMISSION_LEVEL", e))?
+            .map(|l| l.as_str().to_string());
+    Ok((session_mode, permission_level))
+}
+
 /// `chat_stream_handler` 前半段：校验并解析请求体（降低主 handler 圈复杂度）。
 pub(super) struct ChatStreamRequestParsed {
     pub(super) resume: Option<StreamResumeBody>,
@@ -82,6 +100,8 @@ pub(super) struct ChatStreamRequestParsed {
     pub(super) conversation_id: String,
     pub(super) agent_role: Option<String>,
     pub(super) session_mode: Option<String>,
+    /// 本请求显式申请的权限等级（已校验为合法串）；`None` = 沿用会话持久值。
+    pub(super) permission_level: Option<String>,
     pub(super) temperature_override: Option<f32>,
     pub(super) seed_override: crate::types::LlmSeedOverride,
     pub(super) client_sse_protocol: Option<u8>,
@@ -128,9 +148,7 @@ fn parse_chat_stream_request_tail(
         .unwrap_or_else(|| state.next_conversation_id());
     let agent_role = normalize_agent_role(body.agent_role.as_deref())
         .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
-    let session_mode = crate::types::parse_optional_session_mode(body.session_mode.as_deref())
-        .map_err(|e| bad_request("INVALID_SESSION_MODE", e))?
-        .map(|m| m.as_str().to_string());
+    let (session_mode, permission_level) = parse_chat_mode_and_permission_level(body)?;
     let temperature_override = parse_optional_chat_temperature(body.temperature)
         .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
@@ -154,6 +172,7 @@ fn parse_chat_stream_request_tail(
         conversation_id,
         agent_role,
         session_mode,
+        permission_level,
         temperature_override,
         seed_override,
         client_sse_protocol: body.client_sse_protocol,
@@ -255,6 +274,8 @@ fn refresh_existing_turn_system(
 struct TurnBuildParts<'a> {
     agent_role: Option<&'a str>,
     mode_opt: Option<crate::types::SessionMode>,
+    /// 本请求显式申请的权限等级；`None` = 沿用 seed 里的持久意图。
+    permission_level: Option<&'a str>,
     user_msg: &'a str,
     root: &'a std::path::Path,
     forced_skill: Option<crate::config::skills::SkillDoc>,
@@ -281,6 +302,11 @@ async fn build_existing_conversation_turn(
     }
     if let Some(m) = parts.mode_opt {
         seed.persisted_active_session_mode = Some(m.as_str().to_string());
+    }
+    // 权限等级与 session_mode 同一条取向：请求显式给了就覆盖本会话的持久意图，
+    // 没给就原样保留（回合结束后 worker 也按同样的规则落盘）。
+    if let Some(level) = parts.permission_level {
+        seed.persisted_active_permission_level = Some(level.to_string());
     }
     seed.messages.push(parts.last_user);
     Ok(seed)
@@ -346,6 +372,7 @@ async fn build_new_conversation_turn(
         expected_revision: None,
         persisted_active_agent_role: None,
         persisted_active_session_mode: Some(mode.as_str().to_string()),
+        persisted_active_permission_level: parts.permission_level.map(str::to_string),
         layout: None,
     })
 }
@@ -357,6 +384,7 @@ pub(super) async fn build_messages_for_turn(
     image_urls: &[String],
     agent_role: Option<&str>,
     session_mode: Option<&str>,
+    permission_level: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
@@ -377,6 +405,7 @@ pub(super) async fn build_messages_for_turn(
     let parts = TurnBuildParts {
         agent_role,
         mode_opt,
+        permission_level,
         user_msg: user_msg.as_str(),
         root: root.as_path(),
         forced_skill,

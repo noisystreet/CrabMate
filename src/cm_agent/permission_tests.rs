@@ -418,7 +418,7 @@ fn prepare_turn_relaxes_final_plan_requirement_for_chat_level() {
     cfg.permission.permission_level = PermissionLevel::Chat;
     cfg.permission.permission_level_max_effective = PermissionLevel::Unrestricted;
     let (snap, caps) =
-        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act);
+        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act, None);
     assert_eq!(caps.tool_visibility, ToolVisibility::None);
     assert_eq!(
         snap.per_plan_policy.final_plan_requirement,
@@ -436,7 +436,7 @@ fn prepare_turn_keeps_final_plan_requirement_for_approved_level() {
     let cfg = test_cfg();
     let before = cfg.per_plan_policy.final_plan_requirement;
     let (snap, caps) =
-        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act);
+        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act, None);
     assert_eq!(caps.tool_visibility, ToolVisibility::Full);
     assert_eq!(snap.per_plan_policy.final_plan_requirement, before);
 }

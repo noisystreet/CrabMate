@@ -24,6 +24,14 @@ fn schema_session_mode(_gen: &mut SchemaGenerator) -> Schema {
     })
 }
 
+fn schema_permission_level(_gen: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["string", "null"],
+        "enum": ["chat", "read", "workspace", "approved", "unrestricted"],
+        "description": "Session permission level intent (L0–L4). Never raises the effective level: it is clamped by `permission_level_max`, the role cap and the session mode. Omit to keep the conversation's persisted level. See docs/design/permission_levels.md."
+    })
+}
+
 fn schema_open_object_array(_gen: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "array",
@@ -54,6 +62,11 @@ pub struct ChatRequestBody {
     pub agent_role: Option<String>,
     /// 本回合会话工作模式：`ask` / `plan` / `act`。
     pub session_mode: Option<String>,
+    /// 本回合申请的会话权限等级（`chat` / `read` / `workspace` / `approved` / `unrestricted`）。
+    ///
+    /// **只收窄不提权**：生效值仍取 min(申请, 上限, 角色上限)，`ask` / `plan` 再钳到 ≤ `read`。
+    /// 省略表示沿用该会话已持久化的等级（设计 `permission_levels.md` §16.1）。
+    pub permission_level: Option<String>,
     pub approval_session_id: Option<String>,
     pub temperature: Option<f64>,
     pub seed: Option<i64>,
@@ -198,6 +211,15 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub active_agent_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_session_mode: Option<String>,
+    /// 会话持久化的等级**意图**（设计 §16.1 的「写」段）；`None` = 从未指定，按配置默认。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_permission_level: Option<String>,
+    /// 本回合 `min()` 链之后的**生效**等级。
+    ///
+    /// 与 `active_*` 并列回传是必须的：等级会被 ceiling / 角色上限 / `ask`·`plan` 三重钳制，
+    /// 只回显一个值就会出现「我明明切了 L4，怎么还是只读」且无从排查（设计 §16.1）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
     /// 会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。
@@ -246,6 +268,9 @@ pub struct ChatRequestBodyWire {
     #[schemars(schema_with = "schema_session_mode")]
     pub session_mode: Option<String>,
     #[serde(default)]
+    #[schemars(schema_with = "schema_permission_level")]
+    pub permission_level: Option<String>,
+    #[serde(default)]
     pub approval_session_id: Option<String>,
     #[serde(default)]
     pub temperature: Option<f64>,
@@ -276,6 +301,7 @@ impl From<ChatRequestBodyWire> for ChatRequestBody {
             conversation_id: s.conversation_id,
             agent_role: s.agent_role,
             session_mode: s.session_mode,
+            permission_level: s.permission_level,
             approval_session_id: s.approval_session_id,
             temperature: s.temperature,
             seed: s.seed,
@@ -354,6 +380,12 @@ pub struct ConversationMessagesResponseBody<M> {
     pub active_agent_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_session_mode: Option<String>,
+    /// 会话持久化的等级意图（`active_permission_level`）；`None` 表示从未指定。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_permission_level: Option<String>,
+    /// 本回合 min() 链之后的生效等级（省略 = 未接线，仅测试路径）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
     /// 会话级布局元数据；省略表示未写入。不随本页 `messages` 窗口切片；当前保存路径仍不写（hydration 不变）。
@@ -443,6 +475,7 @@ mod b5_roundtrip_serde_tests {
             conversation_id: Some("conv-1".into()),
             agent_role: None,
             session_mode: Some("act".into()),
+            permission_level: Some("read".into()),
             approval_session_id: None,
             temperature: Some(0.5),
             seed: None,
@@ -473,6 +506,7 @@ mod b5_roundtrip_serde_tests {
         assert_eq!(body.message, "hi");
         assert_eq!(body.conversation_id.as_deref(), Some("conv-1"));
         assert_eq!(body.session_mode.as_deref(), Some("act"));
+        assert_eq!(body.permission_level.as_deref(), Some("read"));
     }
 
     #[test]

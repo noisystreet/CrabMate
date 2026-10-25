@@ -158,6 +158,7 @@ async fn chat_stream_build_turn_seed(
         &p.image_urls,
         p.agent_role.as_deref(),
         p.session_mode.as_deref(),
+        p.permission_level.as_deref(),
     )
     .await
     .map_err(|e| {
@@ -266,6 +267,10 @@ async fn chat_stream_try_enqueue_job(
                 persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
                 request_session_mode: p.session_mode.clone(),
                 persisted_active_session_mode: turn_seed.persisted_active_session_mode.clone(),
+                request_permission_level: p.permission_level.clone(),
+                persisted_active_permission_level: turn_seed
+                    .persisted_active_permission_level
+                    .clone(),
                 work_dir: work_dir_for_job,
                 workspace_is_set,
                 temperature_override: p.temperature_override,

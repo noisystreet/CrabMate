@@ -11,7 +11,7 @@ fn truncate_before_user_ordinal_skips_first_turn_workspace_injection() {
         Message::user_only("hi".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -42,7 +42,7 @@ fn save_load_roundtrip() {
         Message::user_only("hi".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -53,7 +53,7 @@ fn save_load_roundtrip() {
         Some(2)
     );
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(1)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -66,21 +66,21 @@ fn save_load_active_agent_role_roundtrip() {
     migrate(&conn).unwrap();
     let msgs = vec![Message::system_only("s".to_string())];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded.active_agent_role, "");
 
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), None, Some(1)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), None, None, Some(1)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded2.active_agent_role, "reviewer");
 
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(2)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -93,26 +93,78 @@ fn save_load_active_session_mode_roundtrip() {
     migrate(&conn).unwrap();
     let msgs = vec![Message::system_only("s".to_string())];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, Some("ask"), None).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, Some("ask"), None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded.active_session_mode, "ask");
 
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, Some("plan"), Some(1)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, Some("plan"), None, Some(1)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded2.active_session_mode, "plan");
 
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(2)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded3.active_session_mode, "");
 }
+#[test]
+fn save_load_active_permission_level_roundtrip() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    let msgs = vec![Message::system_only("s".to_string())];
+    assert_eq!(
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, Some("read"), None).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(loaded.active_permission_level, "read");
+
+    // 不传等级时落空串（= 未指定，读回由调用方回落配置默认），而不是保留上一轮的值。
+    assert_eq!(
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(1)).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(loaded2.active_permission_level, "");
+}
+
+/// 旧库（S5b 之前创建、无该列）在 `migrate` 后必须能读写该列。
+#[test]
+fn migrate_adds_active_permission_level_column_to_legacy_table() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE {TABLE} (\
+            id TEXT PRIMARY KEY NOT NULL,\
+            messages_json TEXT NOT NULL,\
+            revision INTEGER NOT NULL,\
+            updated_at_unix INTEGER NOT NULL\
+        );"
+    ))
+    .unwrap();
+    migrate(&conn).expect("migrate legacy table");
+    assert_eq!(
+        save_if_revision(
+            &conn,
+            "c1",
+            vec![Message::system_only("s".to_string())],
+            None,
+            None,
+            Some("workspace"),
+            None
+        )
+        .unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(loaded.active_permission_level, "workspace");
+}
+
 
 #[test]
 fn load_optional_layout_meta_json_without_touching_save_path() {
@@ -120,7 +172,7 @@ fn load_optional_layout_meta_json_without_touching_save_path() {
     migrate(&conn).unwrap();
     let msgs = vec![Message::user_only("hi".to_string())];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let meta = ConversationLayoutMeta {
@@ -156,7 +208,7 @@ fn save_if_revision_rewrites_layout_from_messages() {
         Message::assistant_only("ok".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     conn.execute(
@@ -168,7 +220,7 @@ fn save_if_revision_rewrites_layout_from_messages() {
     )
     .unwrap();
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
+        save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(1)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -192,7 +244,7 @@ fn truncate_before_user_rewrites_layout_meta() {
         Message::assistant_only("ok".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -213,6 +265,7 @@ fn seed_ids(conn: &Connection, ids: &[&str]) {
                 conn,
                 id,
                 vec![Message::user_only("hi".to_string())],
+                None,
                 None,
                 None,
                 None,
@@ -602,6 +655,7 @@ fn save_with_archive_writes_canonical_and_rows_in_one_transaction() {
         None,
         None,
         None,
+        None,
         &rows,
         ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
     )
@@ -628,6 +682,7 @@ fn save_with_archive_conflict_leaves_archive_untouched() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
     let rows = vec![arow(ArchiveReason::RemovedTurnGroup, 0, 1, "dropped")];
@@ -635,6 +690,7 @@ fn save_with_archive_conflict_leaves_archive_untouched() {
         &conn,
         "c1",
         vec![Message::user_only("new".to_string())],
+        None,
         None,
         None,
         Some(999),
@@ -670,7 +726,7 @@ fn truncate_before_user_ordinal_compensates_archived_users() {
         Message::assistant_only("r3".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
@@ -703,7 +759,7 @@ fn truncate_before_user_ordinal_in_archive_prefix_reexpands() {
         Message::user_only("u2".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
@@ -748,7 +804,7 @@ fn truncate_before_user_ordinal_in_recycled_archive_prefix_returns_archive_incom
         Message::system_only("s".to_string()),
         Message::user_only("u2".to_string()),
     ];
-    save_if_revision(&conn, "c1", msgs, None, None, None).unwrap();
+    save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap();
     let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
     // 会话级序号 0 落在归档前缀内且归档不完整 → 显式 ArchiveIncomplete，canonical 不变。
     assert_eq!(
@@ -794,7 +850,7 @@ fn prune_recycles_archive_prefix_then_branch_reports_incomplete() {
         Message::user_only("u3".to_string()),
     ];
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        save_if_revision(&conn, "c1", msgs, None, None, None, None).unwrap(),
         SaveConversationOutcome::Saved
     );
     // 顶层 prune 按单会话上限回收归档前缀（丢 seq 0，保留 seq 1、2）。

@@ -348,11 +348,12 @@ pub fn plan_turn_permission(
     cfg: &mut AgentConfig,
     role_max: Option<PermissionLevel>,
     session_mode: SessionMode,
+    persisted: Option<PermissionLevel>,
 ) -> PermissionCaps {
     let resolved = resolve_permission_level_for_turn(PermissionTurnInput {
         cfg: &*cfg,
         requested: None,
-        persisted: None,
+        persisted,
         role_max,
         session_mode,
     });
@@ -380,10 +381,11 @@ pub fn prepare_turn_cfg_and_permission(
     workspace_root: &std::path::Path,
     role_max: Option<PermissionLevel>,
     session_mode: SessionMode,
+    persisted: Option<PermissionLevel>,
 ) -> (Arc<AgentConfig>, PermissionCaps) {
     let mut snap = cfg.clone();
     snap.chat_workspace_root = Some(workspace_root.to_path_buf());
-    let caps = plan_turn_permission(&mut snap, role_max, session_mode);
+    let caps = plan_turn_permission(&mut snap, role_max, session_mode, persisted);
     (Arc::new(snap), caps)
 }
 

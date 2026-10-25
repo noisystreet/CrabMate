@@ -682,9 +682,17 @@ dst.permission.permission_level_max =
 - **鉴权**：挂在**受保护** API 面（`src/web/server.rs` 的 `protected_api`），**不**并到 `/status` 所在的公开面——它暴露上限来源与角色上限，属于授权信息；非 loopback 部署本来就能读 `/status`，但不应因此能读到 `ceiling_source`。
 - **`available` 上界**：`cm_agent::permission::selectable_max_level` = `min(ceiling, role_max, session_mode)`，与 `resolve_permission_level_for_turn` 用**同一组三轴**（差别只在没看 `chosen`）。防漂移由 `permission_tests::selectable_cap_matches_resolve_chain`（申请上界 → 正好落在上界；申请 L4 → 也只到上界）与 `each_axis_narrows_selectable_levels` 钉住。
 - **`clamped_by` 的语义边界**：它记录的是**本回合请求被钳制**的轴，而不是「配置默认值被上限折进去」。启动期 `reconcile_default_level_with_ceiling` 会先把默认等级降到上限，因此那种情况下三个轴都为空才是正确结果（`web::permission::tests::ceiling_clamps_available_set_and_config_level_follows_it`）。
-- **`level_source`**：`persisted` 需要会话级写入（store 列 + `POST /chat` 字段），S5a 阶段 handler 传 `persisted_level: None`，故线上恒为 `config`；S5b 落地时只需填这一个入参。
+- **`level_source`**：`persisted` 来自会话列 `active_permission_level`（`POST /chat` 的 `permission_level` 写入）。S5a 阶段恒为 `config`；S5b 落地后 handler 读 `seed.persisted_active_permission_level` 解析成 `persisted_level`（坏串按「未指定」处理并留 warn，只读端点不因脏数据整页 500）。
 - **参数校验取严**：未知 `agent_role` → **400 `INVALID_AGENT_ROLE`**（静默回落默认角色会给出一份偏松的 `available`，正是本节要避免的体验）；`conversation_id` 不存在或过期 → **404 `CONVERSATION_NOT_FOUND`**（不悄悄退回静态投影，否则客户端会把按默认配出来的等级当成该会话的等级）。
 - **OpenAPI**：`docs/openapi.json` 已再生成；`GET /permission` 的 path 与 `PermissionView` schema 由 `openapi_ops_match_axum_route_source` / `openapi_docs_snapshot_matches_spec` 两个测试锁住。
+
+**落地结果（S5b）**——三段式按 `session_mode` 的现成链路逐段对齐，没有新造管理层：
+
+- **写 / 校验**：`ChatRequestBody` + `ChatRequestBodyWire` 加 `permission_level`，`chat_keys` 白名单字母序插在 `"message"` 与 `"readonly_tool_ttl_cache_secs"` 之间（该表 `binary_search`，位置错会静默失效）。解析在 `turn_build::parse_chat_mode_and_permission_level`（与 `session_mode` 合并成一个 helper：`parse_chat_*_request_tail` 的 CCN 已贴上限），未知值 → **400 `INVALID_PERMISSION_LEVEL`**。
+- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入用 `cm_types::persisted_permission_level_after_turn`（请求值优先，否则保留原意图），与 `persisted_session_mode_after_turn` 同规。
+- **回合内生效**：`RunAgentTurnAttach.permission_persisted` → `prepare_turn_cfg_and_permission(..., persisted)` → `PermissionTurnInput.persisted`。worker 侧 `worker::resolve_job_permission_persisted` 做「请求优先 → 会话持久 → 无」的选档，坏串回落配置默认并留 warn（与 `session_mode` 解析失败回落 `act` 同取向）。
+- **读**：`GET /conversation/messages` 回 `active_permission_level`（意图）+ `effective_permission_level`（生效），由 `web::permission::permission_levels_for_snapshot` 复用 `resolve_permission_level_for_turn` 算出——**不**另写一套比较，避免第二套判据。`GET /permission` 的 `level_source` 随之能真的报 `persisted`。
+- **兼容性**：客户端不传 `permission_level` 时 `persisted` 档为 `None`，`chosen` 仍落 `fallback`，与 S5b 之前逐字等价；`cron` / `/btw` 等无该字段的入口显式传 `None`。
 
 ### 16.3 严禁：写 `ceiling` 的接口
 
