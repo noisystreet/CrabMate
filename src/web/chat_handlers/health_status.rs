@@ -235,6 +235,9 @@ fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView 
         planner_executor_mode: "single_agent".to_string(),
         conversation_store_sqlite_path_configured,
         conversation_store_sqlite_active,
+        // 权限等级只放两个标量（设计 §16.2）：六轴投影走 `self_config_info` / `GET /permission`。
+        permission_level_default: cfg.permission.permission_level.as_str().to_string(),
+        permission_level_max: cfg.permission.effective_ceiling().as_str().to_string(),
     }
 }
 

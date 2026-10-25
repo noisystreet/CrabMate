@@ -171,19 +171,94 @@ pub(super) fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, Works
     Ok(normalized)
 }
 
+/// 词法归一化：折叠 `.` 与 `..`，不要求路径存在，也不做「是否越界」判断。
+///
+/// 只用于 `PathScope::Any`（L4）的写路径：目标可能尚不存在，`canonicalize` 用不了，
+/// 但 `..` 必须按路径语义折叠，否则 `a/../b` 与 `b` 会在审计里显示成两条路径。
+fn lexical_normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                // 已在根（`/`）时 `pop` 返回 false，保持根不变。
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// 把「绝对 / 相对」统一成待解析的绝对路径（相对路径按会话根拼接）。
+fn unrestricted_target(base: &Path, sub: &str) -> PathBuf {
+    let p = Path::new(sub);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        base.join(p)
+    }
+}
+
+/// `PathScope::Any` 的读解析：目标必须存在，**不**校验是否落在工作区根内。
+///
+/// 安全边界：L4 显式放宽工作区约束（设计 §4 / §9），因此这里不再有 `openat2`
+/// `RESOLVE_IN_ROOT` 那层保护——路径由模型在 L4 下给出，属运维有意授权。
+pub fn resolve_unrestricted_for_read(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+    let sub = sub.trim();
+    if sub.is_empty() {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    unrestricted_target(base, sub)
+        .canonicalize()
+        .map_err(WorkspacePathError::PathResolveFailed)
+}
+
+/// [`resolve_unrestricted_for_read`] 的打开版本（无 `RESOLVE_IN_ROOT`，见其安全说明）。
+pub fn resolve_unrestricted_for_read_open(
+    base: &Path,
+    sub: &str,
+) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
+    let target = resolve_unrestricted_for_read(base, sub)?;
+    crate::cm_tools::workspace::fs::open_existing_file_unrestricted(&target).map_err(|e| {
+        WorkspacePathError::PathResolveFailed(std::io::Error::new(
+            e.kind(),
+            format!("open unrestricted: {e}"),
+        ))
+    })
+}
+
+/// `PathScope::Any` 的写解析：目标可不存在，**不**校验是否落在工作区根内。
+pub fn resolve_unrestricted_for_write(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+    let sub = sub.trim();
+    if sub.is_empty() {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    Ok(lexical_normalize(&unrestricted_target(base, sub)))
+}
+
 /// 工作区路径访问器：把「根 + 访问范围」收成一个载体。
 ///
-/// R1（设计 §17.1）只收口调用形态：目前仅持有根，行为与直接调用
-/// [`resolve_for_read`] / [`resolve_for_write`] 完全一致；后续引入 `PathScope`
-/// 时只改本结构，不必再触碰各处调用点。
+/// R1（设计 §17.1）收口调用形态；S3 起持有 [`PathScope`]：`SessionRoot`（默认，L0–L3）
+/// 仍走 [`resolve_for_read`] / [`resolve_for_write`] 的越界校验，`Any`（L4）走
+/// [`resolve_unrestricted_for_read`] / [`resolve_unrestricted_for_write`]。
+/// 调用点不必知道自己在哪个档位，只需把 `ctx.path_scope` 传进来。
 pub struct PathAccess<'a> {
     root: &'a Path,
+    scope: crate::cm_types::PathScope,
 }
 
 impl<'a> PathAccess<'a> {
+    /// 默认 `SessionRoot`（与 S3 之前逐字等价）。
     #[must_use]
     pub fn new(root: &'a Path) -> Self {
-        Self { root }
+        Self::with_scope(root, crate::cm_types::PathScope::SessionRoot)
+    }
+
+    /// 带路径范围构造（主 Agent 的 `dispatch` 与工作流节点用这一条）。
+    #[must_use]
+    pub fn with_scope(root: &'a Path, scope: crate::cm_types::PathScope) -> Self {
+        Self { root, scope }
     }
 
     /// 工作区根（供 `canonical_workspace_root` / `path_for_tool_display` 复用）。
@@ -192,18 +267,33 @@ impl<'a> PathAccess<'a> {
         self.root
     }
 
+    /// 当前路径范围。
+    #[must_use]
+    pub fn scope(&self) -> crate::cm_types::PathScope {
+        self.scope
+    }
+
     /// 见 [`resolve_for_read`]。
     pub fn for_read(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+        if self.scope.is_unrestricted() {
+            return resolve_unrestricted_for_read(self.root, sub);
+        }
         resolve_for_read(self.root, sub)
     }
 
     /// 见 [`resolve_for_read_open`]（`openat2` / `RESOLVE_IN_ROOT`）。
     pub fn for_read_open(&self, sub: &str) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
+        if self.scope.is_unrestricted() {
+            return resolve_unrestricted_for_read_open(self.root, sub);
+        }
         resolve_for_read_open(self.root, sub)
     }
 
     /// 见 [`resolve_for_write`]。
     pub fn for_write(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+        if self.scope.is_unrestricted() {
+            return resolve_unrestricted_for_write(self.root, sub);
+        }
         resolve_for_write(self.root, sub)
     }
 }
@@ -249,4 +339,41 @@ pub(super) fn parse_path_content(args_json: &str) -> Result<(String, String), St
         .map(String::from)
         .unwrap_or_default();
     Ok((path, content))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_types::PathScope;
+
+    /// S3 路径轴：`Any`（L4）可读到工作区根之外，`SessionRoot`（L0–L3）仍拒。
+    #[test]
+    fn unrestricted_scope_reads_outside_workspace_root() {
+        let base = std::env::temp_dir().join(format!("crabmate_s3_path_{}", std::process::id()));
+        let root = base.join("root");
+        let outside = base.join("outside.txt");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::write(&outside, b"x").expect("write probe");
+        let outside_str = outside.to_str().expect("utf8 temp path");
+
+        let any = PathAccess::with_scope(&root, PathScope::Any);
+        assert!(any.for_read(outside_str).is_ok(), "L4 应能读工作区外");
+        assert!(any.for_write(outside_str).is_ok(), "L4 应能写工作区外");
+
+        let scoped = PathAccess::new(&root);
+        assert!(
+            scoped.for_read(outside_str).is_err(),
+            "SessionRoot 必须拒绝工作区外绝对路径"
+        );
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// `..` 在 L4 写路径里按词法折叠（目标可不存在），不残留 `..` 分量。
+    #[test]
+    fn unrestricted_write_normalizes_parent_dir() {
+        let path = resolve_unrestricted_for_write(std::path::Path::new("/tmp/root"), "a/../b.txt")
+            .expect("resolve");
+        assert_eq!(path, std::path::PathBuf::from("/tmp/root/b.txt"));
+    }
 }

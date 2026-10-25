@@ -91,6 +91,8 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) cfg_http_fetch_max_response_bytes: usize,
     pub(crate) cfg_http_fetch_allowed_prefixes: Vec<String>,
     pub(crate) cfg_allowed_commands: Arc<[String]>,
+    /// 本回合权限等级的路径轴（S3）：节点内文件工具据此决定是否仍在工作区根内解析。
+    pub(crate) path_scope: crate::cm_types::PathScope,
     pub(crate) effective_working_dir: PathBuf,
     pub(crate) workspace_is_set: bool,
     pub(crate) command_max_output_len: usize,

@@ -39,6 +39,15 @@ pub struct StatusShellView {
     pub conversation_store_sqlite_path_configured: bool,
     #[serde(default)]
     pub conversation_store_sqlite_active: bool,
+    /// 进程默认权限等级（`permission_level`：`chat` / `read` / `workspace` / `approved` / `unrestricted`）。
+    ///
+    /// 只放**两个标量**：六轴投影不进壳层视图（设计 §16.2「不塞进 `StatusShellView`」），
+    /// 要看轴名用 `self_config_info` 的 `permission` 小节。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub permission_level_default: String,
+    /// 启动期冻结的生效上限（`permission_level_max_effective`）；客户端据此解释「为什么不能选 L4」。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub permission_level_max: String,
 }
 
 fn default_session_mode_act() -> String {

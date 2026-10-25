@@ -28,6 +28,7 @@ pub const SECTION_NAMES: &[&str] = &[
     "mcp",
     "tool_registry",
     "sandbox",
+    "permission",
 ];
 
 /// 汇总运行时配置为模型可读文本。
@@ -68,6 +69,7 @@ fn section_body(cfg: &AgentConfig, name: &str) -> Option<String> {
         "mcp" => Some(mcp_section(cfg)),
         "tool_registry" => Some(tool_registry_section(cfg)),
         "sandbox" => Some(sandbox_section(cfg)),
+        "permission" => Some(permission_section(cfg)),
         _ => None,
     }
 }
@@ -309,6 +311,39 @@ fn sandbox_section(cfg: &AgentConfig) -> String {
     )
 }
 
+/// 权限等级（L0–L4）与六轴投影（设计 §11.1 的观测出口，与 `GET /permission` 同源形态）。
+///
+/// 六轴取 [`crate::cm_types::PermissionLevel::caps_view`]（`cm_types` 层的「等级 → 轴名」映射）：
+/// 本模块是叶子层（不依赖 `cm_agent`），权威投影 `project_caps(...).view()` 的一致性由
+/// `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住。
+/// **只报等级与轴名**：白名单 / 前缀本身属内部数据且长度不可控，不进任何对外视图。
+fn permission_section(cfg: &AgentConfig) -> String {
+    let p = &cfg.permission;
+    let caps = p.permission_level.caps_view();
+    format!(
+        "permission_level_default = {}\n\
+         permission_level_max_effective = {}\n\
+         permission_level_max_source = {}\n\
+         allow_unrestricted_permission_for_non_loopback = {}\n\
+         caps.tool_visibility = {}\n\
+         caps.external_tools = {}\n\
+         caps.path_scope = {}\n\
+         caps.command_scope = {}\n\
+         caps.net_scope = {}\n\
+         caps.approval = {}\n",
+        p.permission_level.as_str(),
+        p.effective_ceiling().as_str(),
+        p.permission_level_max_source.as_str(),
+        p.allow_unrestricted_permission_for_non_loopback,
+        caps.tool_visibility,
+        caps.external_tools,
+        caps.path_scope,
+        caps.command_scope,
+        caps.net_scope,
+        caps.approval,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{section_body, self_config_info, SECTION_NAMES};
@@ -341,6 +376,32 @@ mod tests {
         let cfg = crate::config::load_config(None).expect("embed default config");
         let out = self_config_info(&cfg, Some(&["no_such_section".to_string()]));
         assert!(out.is_empty());
+    }
+
+    /// S3 观测出口：`permission` 小节要给出默认等级、生效上限、上限来源与六轴轴名。
+    ///
+    /// 轴名与 `GET /permission` 的 `caps` 同形（同源映射），但**不含**白名单 / 前缀本身。
+    #[test]
+    fn permission_section_reports_level_and_axes() {
+        let mut cfg = crate::config::load_config(None).expect("embed default config");
+        cfg.permission.permission_level = crate::cm_types::PermissionLevel::Unrestricted;
+
+        let out = self_config_info(&cfg, Some(&["permission".to_string()]));
+        assert!(out.contains("[permission]"), "{out}");
+        assert!(
+            out.contains("permission_level_default = unrestricted"),
+            "{out}"
+        );
+        assert!(out.contains("permission_level_max_effective ="), "{out}");
+        assert!(out.contains("permission_level_max_source ="), "{out}");
+        assert!(out.contains("caps.tool_visibility = full"), "{out}");
+        assert!(out.contains("caps.external_tools = allowed"), "{out}");
+        assert!(out.contains("caps.path_scope = any"), "{out}");
+        assert!(out.contains("caps.command_scope = any"), "{out}");
+        assert!(out.contains("caps.net_scope = any"), "{out}");
+        assert!(out.contains("caps.approval = audit_only"), "{out}");
+        // 白名单是内部数据：只报轴名，不把命令清单灌进模型上下文。
+        assert!(!out.contains("allowed_commands"), "{out}");
     }
 
     #[test]

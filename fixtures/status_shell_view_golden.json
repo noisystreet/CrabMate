@@ -21,5 +21,7 @@
   "executor_api_base": "",
   "planner_executor_mode": "single_agent",
   "conversation_store_sqlite_path_configured": true,
-  "conversation_store_sqlite_active": true
+  "conversation_store_sqlite_active": true,
+  "permission_level_default": "approved",
+  "permission_level_max": "unrestricted"
 }

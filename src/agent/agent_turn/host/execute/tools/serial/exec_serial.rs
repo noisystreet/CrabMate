@@ -228,6 +228,7 @@ async fn serial_execute_one_tool_call(
                     turn_allow: st.turn_allow,
                     handler_lookup: &st.handler_lookup,
                     sync_default_sandbox_backend: &st.sync_default_sandbox_backend,
+                    permission: Some(st.permission),
                 },
                 obs: tool_registry::DispatchToolObs {
                     sse_out_tx: st.control.out,

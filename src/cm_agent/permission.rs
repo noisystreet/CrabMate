@@ -13,8 +13,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use crate::cm_config::AgentConfig;
 use crate::cm_types::{PermissionLevel, SessionMode};
 
@@ -88,16 +86,14 @@ pub enum ExternalTools {
     Allowed,
 }
 
-/// 路径范围。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathScope {
-    /// 仅当前会话工作区根（L0–L3 的现状）。
-    SessionRoot,
-    /// 会话根 + `workspace_allowed_roots`（S6）。
-    AllowedRoots,
-    /// 任意路径（L4）。
-    Any,
-}
+/// 路径范围：定义在 [`crate::cm_types`]，此处重导出（`cm_tools` 的文件工具也要用它，
+/// 不能让依赖方向反向）。
+pub use crate::cm_types::PathScope;
+
+/// 白名单「全放行」哨兵，与 [`crate::cm_tools::tools::allowlist_allows_all`] 同一约定。
+///
+/// `CommandScope::Any`（L4）靠它落成配置层能理解的值，不新增第二套「全放行」表示。
+pub const COMMAND_ALLOW_ALL: &str = "*";
 
 /// 命令范围。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,17 +150,6 @@ impl ExternalTools {
     }
 }
 
-impl PathScope {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            PathScope::SessionRoot => "session_root",
-            PathScope::AllowedRoots => "allowed_roots",
-            PathScope::Any => "any",
-        }
-    }
-}
-
 impl CommandScope {
     #[must_use]
     pub fn as_str(&self) -> &'static str {
@@ -212,19 +197,9 @@ pub struct PermissionCaps {
     pub approval: ApprovalPolicy,
 }
 
-/// `caps` 的**对外序列化形态**：六轴各自的小写字符串（§16.2 `GET /permission` 的 `caps`）。
-///
-/// 由 [`PermissionCaps::view`] 唯一产生——白名单 / 前缀**不进**投影（它们是内部数据，且长度
-/// 不可控），因此本结构可直接进 golden 与 HTTP 响应。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionCapsView {
-    pub tool_visibility: String,
-    pub external_tools: String,
-    pub path_scope: String,
-    pub command_scope: String,
-    pub net_scope: String,
-    pub approval: String,
-}
+/// `caps` 的**对外序列化形态**：定义在 [`crate::cm_types`]（`cm_tools` 的 `self_config_info`
+/// 也要输出同一份投影，叶子层不能反向依赖本模块），此处重导出以保持既有调用点不变。
+pub use crate::cm_types::PermissionCapsView;
 
 impl PermissionCaps {
     /// 投影的对外形态（不含工具清单本身）。
@@ -237,6 +212,19 @@ impl PermissionCaps {
             command_scope: self.command_scope.as_str().to_string(),
             net_scope: self.net_scope.as_str().to_string(),
             approval: self.approval.as_str().to_string(),
+        }
+    }
+
+    /// 命令白名单（S3）：`None` = 本等级**全禁命令**（L0 / L1）；`Any` = `*` 哨兵。
+    ///
+    /// 返回 `Arc` 而不是 `&[String]`：`Any` 需要现造一个哨兵列表，与 `Allowlist` 分支
+    /// 共用同一形状（[`crate::cm_tools::tools::allowlist_allows_all`] 认 `*`）。
+    #[must_use]
+    pub fn command_allowlist(&self) -> Option<Arc<[String]>> {
+        match &self.command_scope {
+            CommandScope::None => None,
+            CommandScope::Allowlist(list) => Some(Arc::clone(list)),
+            CommandScope::Any => Some(Arc::from([COMMAND_ALLOW_ALL.to_string()])),
         }
     }
 }
@@ -318,12 +306,27 @@ pub fn is_command_tool(name: &str) -> bool {
     COMMAND_TOOLS.contains(&name)
 }
 
+/// `caps.external_tools = Denied` 时，非内置工具（`mcp__*` / `dyn__*`）一律不可执行。
+///
+/// `mcp__*` 与 `plugins/*.json` 动态工具的实际能力由**外部进程**决定，宿主侧的路径 /
+/// 命令 / 网络三轴管不到它们；放进 L0–L2 就等于「硬边界」名不副实（设计 §7.1 / Q8）。
+#[must_use]
+pub fn external_tools_allowed_by_caps(caps: &PermissionCaps, name: &str) -> bool {
+    caps.external_tools == ExternalTools::Allowed
+        || crate::cm_tools::tool_naming::tool_origin(name)
+            == crate::cm_tools::tool_naming::ToolOrigin::Builtin
+}
+
 /// 单工具是否允许在 `caps` 下**执行**：可见性过滤与 early-deny 共用这一条判据（§7.4「不要第二套」）。
 ///
-/// L2–L4（`tool_visibility = Full`）恒为 `true`：路径 / 命令 / 网络三轴的越界处理在 S3 接线，
-/// 此处只做「进不进得来」的判定，避免 S2 就改变现状档位的行为。
+/// 两条**先决**否决：外部工具轴（`Denied` 时非内置一律拒）与 `command_scope = None` 的命令类
+/// 四工具。之后才按 `tool_visibility` 判定「进不进得来」；路径 / 命令白名单 / 网络的**越界**
+/// 处理在各执行点按 `caps` 的相应轴做（S3）。
 #[must_use]
 pub fn tool_allowed_by_caps(caps: &PermissionCaps, name: &str) -> bool {
+    if !external_tools_allowed_by_caps(caps, name) {
+        return false;
+    }
     if matches!(caps.command_scope, CommandScope::None) && is_command_tool(name) {
         return false;
     }
@@ -512,381 +515,5 @@ pub fn resolve_permission_level_for_turn(input: PermissionTurnInput<'_>) -> Reso
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde::Deserialize;
-
-    fn test_cfg() -> AgentConfig {
-        let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-        // 固定白名单 / 前缀，让投影 golden 不受嵌入默认值变动影响。
-        cfg.command_exec.allowed_commands = vec!["cargo".to_string(), "git".to_string()].into();
-        cfg.http_fetch.http_fetch_allowed_prefixes = vec!["https://example.com".to_string()];
-        cfg
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct GoldenCaps {
-        tool_visibility: String,
-        external_tools: String,
-        path_scope: String,
-        command_scope: String,
-        net_scope: String,
-        approval: String,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct GoldenLine {
-        level: String,
-        caps: GoldenCaps,
-    }
-
-    /// 五级 × 六轴 golden（设计 §13「`project_caps` 五级 golden」）。
-    #[test]
-    fn project_caps_matches_golden() {
-        let raw = include_str!("fixtures/permission_caps_golden.jsonl");
-        let cfg = test_cfg();
-        let mut seen = 0usize;
-        for line in raw.lines().map(str::trim).filter(|l| !l.is_empty()) {
-            let golden: GoldenLine = serde_json::from_str(line).expect("golden line is valid JSON");
-            let level = crate::cm_types::parse_permission_level(&golden.level)
-                .expect("golden level is a known permission level");
-            let view = project_caps(level, &cfg).view();
-            assert_eq!(
-                view,
-                PermissionCapsView {
-                    tool_visibility: golden.caps.tool_visibility,
-                    external_tools: golden.caps.external_tools,
-                    path_scope: golden.caps.path_scope,
-                    command_scope: golden.caps.command_scope,
-                    net_scope: golden.caps.net_scope,
-                    approval: golden.caps.approval,
-                },
-                "level {level} 的六轴投影与 golden 不一致"
-            );
-            seen += 1;
-        }
-        assert_eq!(seen, PermissionLevel::ALL.len(), "golden 必须覆盖五级");
-    }
-
-    #[test]
-    fn caps_view_is_stable_json() {
-        let cfg = test_cfg();
-        let json = serde_json::to_string(&project_caps(PermissionLevel::Approved, &cfg).view())
-            .expect("serialize");
-        assert_eq!(
-            json,
-            r#"{"tool_visibility":"full","external_tools":"allowed","path_scope":"session_root","command_scope":"allowlist","net_scope":"prefixes","approval":"gate"}"#
-        );
-    }
-
-    #[test]
-    fn command_scope_shares_the_configured_arc() {
-        let cfg = test_cfg();
-        let caps = project_caps(PermissionLevel::Workspace, &cfg);
-        let CommandScope::Allowlist(list) = &caps.command_scope else {
-            panic!("L2 必须是白名单档");
-        };
-        assert!(Arc::ptr_eq(list, &cfg.command_exec.allowed_commands));
-    }
-
-    #[test]
-    fn unrestricted_bypasses_all_three_axes() {
-        let cfg = test_cfg();
-        let caps = project_caps(PermissionLevel::Unrestricted, &cfg);
-        assert_eq!(caps.path_scope, PathScope::Any);
-        assert_eq!(caps.command_scope, CommandScope::Any);
-        assert_eq!(caps.net_scope, NetScope::Any);
-        assert_eq!(caps.approval, ApprovalPolicy::AuditOnly);
-    }
-
-    fn input<'a>(
-        cfg: &'a AgentConfig,
-        requested: Option<PermissionLevel>,
-        persisted: Option<PermissionLevel>,
-        role_max: Option<PermissionLevel>,
-        session_mode: SessionMode,
-    ) -> PermissionTurnInput<'a> {
-        PermissionTurnInput {
-            cfg,
-            requested,
-            persisted,
-            role_max,
-            session_mode,
-        }
-    }
-
-    #[test]
-    fn request_above_ceiling_is_clamped() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_level_max_effective = PermissionLevel::Workspace;
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            Some(PermissionLevel::Unrestricted),
-            None,
-            None,
-            SessionMode::Act,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Workspace);
-        assert_eq!(got.requested, Some(PermissionLevel::Unrestricted));
-        assert_eq!(got.clamped_by, vec![PermissionClamp::Ceiling]);
-    }
-
-    #[test]
-    fn request_above_role_cap_is_clamped() {
-        let cfg = test_cfg();
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            Some(PermissionLevel::Workspace),
-            None,
-            Some(PermissionLevel::Read),
-            SessionMode::Act,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Read);
-        assert_eq!(got.clamped_by, vec![PermissionClamp::Role]);
-    }
-
-    #[test]
-    fn persisted_intent_is_reclamped_against_new_ceiling() {
-        let mut cfg = test_cfg();
-        // 运维把上限调低后，旧会话的 `unrestricted` 意图不得续跑（§6.2 fail-safe）。
-        cfg.permission.permission_level_max_effective = PermissionLevel::Workspace;
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            None,
-            Some(PermissionLevel::Unrestricted),
-            None,
-            SessionMode::Act,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Workspace);
-        assert_eq!(got.clamped_by, vec![PermissionClamp::Ceiling]);
-    }
-
-    #[test]
-    fn fallback_uses_configured_default_when_nothing_requested() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_level = PermissionLevel::Read;
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            None,
-            None,
-            None,
-            SessionMode::Act,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Read);
-        assert!(got.clamped_by.is_empty());
-    }
-
-    #[test]
-    fn ask_and_plan_modes_clamp_to_read() {
-        let cfg = test_cfg();
-        for mode in [SessionMode::Ask, SessionMode::Plan] {
-            let got = resolve_permission_level_for_turn(input(
-                &cfg,
-                Some(PermissionLevel::Approved),
-                None,
-                None,
-                mode,
-            ));
-            assert_eq!(got.effective, PermissionLevel::Read, "{mode}");
-            assert_eq!(got.projection_level, PermissionLevel::Approved, "{mode}");
-            assert_eq!(got.clamped_by, vec![PermissionClamp::SessionMode]);
-        }
-    }
-
-    /// `clamped_by` 按 `ceiling` → `role` → `session_mode` 的固定顺序记录**实际发生**的收窄。
-    ///
-    /// 只写「真的降了」的轴：`role_max` 恰好等于钳制后的值时不算收窄（否则等于把
-    /// 「配置写了个够严的上限」误报成「被收了权限」）。三轴同时收窄在五档枚举下不可能
-    /// ——`session_mode` 的目标档 `read` 已是下限——故这里验证前两轴，`session_mode` 由
-    /// `ask_and_plan_modes_clamp_to_read` 单独覆盖。
-    #[test]
-    fn clamps_are_reported_in_axis_order() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_level_max_effective = PermissionLevel::Workspace;
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            Some(PermissionLevel::Unrestricted),
-            None,
-            Some(PermissionLevel::Read),
-            SessionMode::Act,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Read);
-        assert_eq!(
-            got.clamped_by,
-            vec![PermissionClamp::Ceiling, PermissionClamp::Role]
-        );
-        assert_eq!(PermissionClamp::SessionMode.as_str(), "session_mode");
-
-        // 上限不变、角色不紧时：只有会话模式收窄（顺序仍从 ceiling 开始）。
-        let got = resolve_permission_level_for_turn(input(
-            &cfg,
-            Some(PermissionLevel::Approved),
-            None,
-            None,
-            SessionMode::Plan,
-        ));
-        assert_eq!(got.effective, PermissionLevel::Read);
-        assert_eq!(
-            got.clamped_by,
-            vec![PermissionClamp::Ceiling, PermissionClamp::SessionMode]
-        );
-    }
-
-    /// L3（默认档）必须与改造前逐字等价：任何内置工具都被允许，命令类工具也不例外。
-    /// 这是 S2 的验收标准（设计 §12「S3 是唯一可能悄悄改变现有行为的切片」的前置约束）。
-    #[test]
-    fn approved_level_allows_every_tool_like_before() {
-        let cfg = test_cfg();
-        let caps = project_caps(PermissionLevel::Approved, &cfg);
-        for name in [
-            "read_file",
-            "run_command",
-            "terminal_session",
-            "python_snippet_run",
-            "run_executable",
-            "modify_file",
-            "delete_dir",
-            "mcp__demo__tool",
-        ] {
-            assert!(tool_allowed_by_caps(&caps, name), "L3 不应拒绝 {name}");
-        }
-    }
-
-    /// L0：不下发也不执行任何工具（连只读都不给）。
-    #[test]
-    fn chat_level_denies_every_tool() {
-        let cfg = test_cfg();
-        let caps = project_caps(PermissionLevel::Chat, &cfg);
-        for name in ["read_file", "glob_files", "present_clarification_questionnaire"] {
-            assert!(!tool_allowed_by_caps(&caps, name), "L0 不应允许 {name}");
-        }
-    }
-
-    /// L1：推导正列表 = 「内置且非写副作用」；写工具、命令与外部工具一律拒。
-    #[test]
-    fn read_level_allows_only_derived_readonly_tools() {
-        let cfg = test_cfg();
-        assert!(
-            cfg.permission.permission_read_tools.is_none(),
-            "本用例针对推导路径，需要未显式配置正列表"
-        );
-        let caps = project_caps(PermissionLevel::Read, &cfg);
-        assert!(tool_allowed_by_caps(&caps, "read_file"));
-        assert!(tool_allowed_by_caps(&caps, "glob_files"));
-        for name in [
-            "run_command",
-            "terminal_session",
-            "modify_file",
-            "delete_dir",
-            "mcp__demo__tool",
-        ] {
-            assert!(!tool_allowed_by_caps(&caps, name), "L1 不应允许 {name}");
-        }
-    }
-
-    /// L1 显式正列表：**只**放行名单内名字，覆盖推导结果。
-    #[test]
-    fn read_level_explicit_positive_list_overrides_derivation() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_read_tools = Some(vec!["read_file".to_string()]);
-        let caps = project_caps(PermissionLevel::Read, &cfg);
-        assert!(tool_allowed_by_caps(&caps, "read_file"));
-        // `glob_files` 本身是只读的（推导路径会放行），但显式名单没写它 → 拒。
-        assert!(!tool_allowed_by_caps(&caps, "glob_files"));
-    }
-
-    /// 推导路径**不读** `tool_registry_write_effect_tools`：运维为调并行把 `run_command`
-    /// 移出写集合后，L1 仍必须拒它（把性能开关当安全边界会静默放行子进程）。
-    #[test]
-    fn read_level_ignores_write_effect_perf_override() {
-        let mut cfg = test_cfg();
-        cfg.tool_registry_policy.tool_registry_write_effect_tools =
-            Some(Arc::new(HashSet::from(["create_file".to_string()])));
-        let caps = project_caps(PermissionLevel::Read, &cfg);
-        assert!(!tool_allowed_by_caps(&caps, "run_command"));
-        assert!(!tool_allowed_by_caps(&caps, "modify_file"));
-    }
-
-    /// 拒绝正文带上等级与该级的一句话承诺，便于模型与用户对齐。
-    #[test]
-    fn denial_message_mentions_level_and_promise() {
-        let cfg = test_cfg();
-        let caps = project_caps(PermissionLevel::Read, &cfg);
-        let msg = permission_denied_message(&caps, "run_command");
-        assert!(msg.contains("run_command"), "{msg}");
-        assert!(msg.contains(PermissionLevel::Read.as_str()), "{msg}");
-        assert!(msg.contains(PermissionLevel::Read.promise_zh()), "{msg}");
-    }
-
-    /// `ask` / `plan` 的只读由 `ReviewReadonly` 执行，投影不得回灌成 L1：否则默认档下
-    /// Plan 会话会丢掉 MCP 代理工具（`step_executor_policy` 明确放行，见
-    /// `review_readonly_allows_mcp_proxy`），等于让会话模式悄悄改了默认行为。
-    #[test]
-    fn session_mode_does_not_shrink_projected_caps() {
-        let cfg = test_cfg();
-        for mode in [SessionMode::Ask, SessionMode::Plan] {
-            let resolved = resolve_permission_level_for_turn(input(
-                &cfg,
-                Some(PermissionLevel::Approved),
-                None,
-                None,
-                mode,
-            ));
-            assert_eq!(resolved.effective, PermissionLevel::Read, "{mode}");
-            let caps = project_caps(resolved.projection_level, &cfg);
-            assert_eq!(
-                caps.tool_visibility,
-                ToolVisibility::Full,
-                "{mode} 不应把投影缩成只读"
-            );
-            assert!(
-                tool_allowed_by_caps(&caps, "mcp__demo__tool"),
-                "{mode} 下 MCP 代理仍应由 ReviewReadonly 放行"
-            );
-        }
-    }
-
-    /// 显式正列表也放不出外部工具：L1 下 `mcp__*` / 动态工具只受 `external_tools` 轴管，
-    /// 否则把 `mcp__x` 写进 `permission_read_tools` 就绕过了 L1 的外部工具禁用。
-    #[test]
-    fn read_level_explicit_list_cannot_whitelist_external_tools() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_read_tools = Some(vec![
-            "read_file".to_string(),
-            "mcp__demo__tool".to_string(),
-        ]);
-        let caps = project_caps(PermissionLevel::Read, &cfg);
-        assert!(tool_allowed_by_caps(&caps, "read_file"));
-        assert!(!tool_allowed_by_caps(&caps, "mcp__demo__tool"));
-    }
-
-    /// L0 装配：`chat` 档把本回合的终答计划要求收敛到 `never`（设计 §8.2），并保留空工具面。
-    #[test]
-    fn prepare_turn_relaxes_final_plan_requirement_for_chat_level() {
-        let mut cfg = test_cfg();
-        cfg.permission.permission_level = PermissionLevel::Chat;
-        cfg.permission.permission_level_max_effective = PermissionLevel::Unrestricted;
-        let (snap, caps) =
-            prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act);
-        assert_eq!(caps.tool_visibility, ToolVisibility::None);
-        assert_eq!(
-            snap.per_plan_policy.final_plan_requirement,
-            crate::cm_config::FinalPlanRequirementMode::Never
-        );
-        assert_eq!(
-            snap.chat_workspace_root.as_deref(),
-            Some(std::path::Path::new("ws"))
-        );
-    }
-
-    /// 非 L0 档不得动 `final_plan_requirement`：默认档的编排行为必须逐字不变。
-    #[test]
-    fn prepare_turn_keeps_final_plan_requirement_for_approved_level() {
-        let cfg = test_cfg();
-        let before = cfg.per_plan_policy.final_plan_requirement;
-        let (snap, caps) =
-            prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act);
-        assert_eq!(caps.tool_visibility, ToolVisibility::Full);
-        assert_eq!(snap.per_plan_policy.final_plan_requirement, before);
-    }
-}
+#[path = "permission_tests.rs"]
+mod tests;

@@ -59,6 +59,12 @@ pub struct DispatchToolPolicy<'a> {
     /// 与 `crate::cm_internal::RunAgentTurnParams::obs` 的 `process_handles` 同源。
     pub handler_lookup: &'a HandlerLookupTable,
     pub sync_default_sandbox_backend: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
+    /// 本回合权限能力快照（S3 接线：命令白名单 / 路径 / 网络 / 外部工具）。
+    ///
+    /// `None` = 调用方尚未接线（运维 CLI、单测、内部直调），等价于现状：只按 `cfg` 判。
+    /// **不要**在这里默认造一份 `project_caps`——那会让未接线路径凭空获得一个等级，
+    /// 等于把「没接线」变成「按某等级静默收窄」。
+    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 pub struct DispatchToolObs<'a> {
@@ -111,6 +117,8 @@ struct SyncDefaultToolDispatchArgs<'a> {
 struct ToolExecEnv<'a> {
     cfg: &'a Arc<AgentConfig>,
     sandbox_backend: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
+    /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判定）。
+    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 /// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
@@ -134,10 +142,25 @@ fn read_dir_path_is_external(args_json: &str) -> Option<String> {
 async fn approve_external_read_dir_if_needed(
     args: &str,
     web_ctx: Option<&WebToolRuntime>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> Result<(), String> {
     let Some(ext_path) = read_dir_path_is_external(args) else {
         return Ok(());
     };
+    // S3：路径轴先定论——L4 放行（不弹窗），L2 硬拒（不弹窗），其余走现状审批。
+    if let Some(caps) = permission {
+        if caps.path_scope.is_unrestricted() {
+            return Ok(());
+        }
+        if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+            return Err(format!(
+                "错误：当前权限等级（{}）下不允许 read_dir 访问工作区外路径 \"{}\"：{}。",
+                caps.level.as_str(),
+                ext_path,
+                caps.level.promise_zh()
+            ));
+        }
+    }
     if web_ctx.is_none() {
         return Err(format!(
             "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",

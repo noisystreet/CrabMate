@@ -95,6 +95,7 @@ mod tests {
                     turn_allow: None,
                     handler_lookup: &lookup,
                     sync_default_sandbox_backend: &sandbox,
+                    permission: None,
                 },
                 obs: DispatchToolObs {
                     sse_out_tx: None,

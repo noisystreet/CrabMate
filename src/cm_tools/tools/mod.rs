@@ -153,6 +153,18 @@ pub struct ToolContext<'a> {
     pub long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
     /// 后台任务查询工具（`background_job_status` / `background_job_list`）；主 Agent 路径由 `cm_internal` 注入。
     pub tool_jobs_host: Option<&'a dyn ToolJobsToolHost>,
+    /// 文件类工具的路径范围（S3）。默认 [`crate::cm_types::PathScope::SessionRoot`] = 现状；
+    /// 主 Agent 路径由 `dispatch` 按权限等级投影覆盖（见 [`ToolContext::with_path_scope`]）。
+    pub path_scope: crate::cm_types::PathScope,
+}
+
+impl<'a> ToolContext<'a> {
+    /// 覆盖路径范围（权限等级投影的唯一注入点）。
+    #[must_use]
+    pub fn with_path_scope(mut self, scope: crate::cm_types::PathScope) -> Self {
+        self.path_scope = scope;
+        self
+    }
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -193,6 +205,7 @@ pub fn tool_context_for<'a>(
         test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
         long_term_memory_host: None,
         tool_jobs_host: None,
+        path_scope: crate::cm_types::PathScope::SessionRoot,
     }
 }
 

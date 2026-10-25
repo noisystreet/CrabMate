@@ -166,6 +166,8 @@ struct WorkflowExecuteDagParams<'a> {
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
     request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判）。
+    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, bool) {
@@ -178,6 +180,7 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         approval_mode,
         command_max_output_len,
         request_chrome_merge,
+        permission,
     } = p;
     let spec = match parse_workflow_spec(args_json) {
         Ok(s) => s,
@@ -215,7 +218,25 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     }
 
     let workdir = effective_working_dir.to_path_buf();
-    let allowed_commands: Arc<[String]> = cfg.allowed_commands.clone().into();
+    // S3：节点的命令白名单 / 出站前缀改由 `caps` 派生，不再直接取 `cfg`。
+    // 否则 L2 的「硬边界」会被 `WorkflowGate` 的节点级审批绕过（节点内审批只看自身配置）。
+    // `permission = None`（未接线）回落 `cfg`，与 S3 前逐字一致。
+    let allowed_commands: Arc<[String]> = match permission {
+        Some(caps) => caps
+            .command_allowlist()
+            .unwrap_or_else(|| Arc::from(Vec::<String>::new())),
+        None => cfg.allowed_commands.clone().into(),
+    };
+    let path_scope = permission
+        .map(|c| c.path_scope)
+        .unwrap_or(crate::cm_types::PathScope::SessionRoot);
+    let http_fetch_allowed_prefixes: Vec<String> = match permission.map(|c| &c.net_scope) {
+        // L4：`*` 哨兵即「不查前缀」（`prefix_allows_any_http_url` 认它）。
+        Some(crate::cm_agent::permission::NetScope::Any) => vec!["*".to_string()],
+        // L0：出站全禁；空表让前缀匹配必然失败。
+        Some(crate::cm_agent::permission::NetScope::None) => Vec::new(),
+        _ => cfg.http_fetch_allowed_prefixes.clone(),
+    };
     let weather_timeout_secs = cfg.weather_timeout_secs;
     let command_timeout_secs = cfg.command_timeout_secs;
     let web_search_timeout_secs = cfg.web_search_timeout_secs;
@@ -225,7 +246,6 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     let web_search_proxy = cfg.web_search_proxy.clone();
     let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
     let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;
-    let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
 
     let tool_exec_ctx = WorkflowToolExecCtx {
         cfg_command_timeout_secs: command_timeout_secs,
@@ -239,6 +259,7 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         cfg_http_fetch_max_response_bytes: http_fetch_max_response_bytes,
         cfg_http_fetch_allowed_prefixes: http_fetch_allowed_prefixes,
         cfg_allowed_commands: allowed_commands,
+        path_scope,
         effective_working_dir: workdir,
         workspace_is_set,
         command_max_output_len,
@@ -275,6 +296,9 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     (main_result, workspace_changed)
 }
 
+// 8 个入参：配置 / 工作区 / 审批模式 / 输出上限 / trace / 权限快照各属不同层，打包成结构体
+// 只会把同一次调用的拆解噪音推给调用方（与 `tool_context_for_with_read_cache_and_memory` 同处理）。
+#[allow(clippy::too_many_arguments)]
 pub async fn run_workflow_execute_tool(
     args_json: &str,
     cfg: &WorkflowConfig,
@@ -283,6 +307,7 @@ pub async fn run_workflow_execute_tool(
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
     request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> (String, bool) {
     let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
     info!(
@@ -374,6 +399,7 @@ pub async fn run_workflow_execute_tool(
         approval_mode,
         command_max_output_len,
         request_chrome_merge,
+        permission,
     })
     .await
 }

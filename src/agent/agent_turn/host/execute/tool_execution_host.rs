@@ -23,12 +23,18 @@ async fn prefetch_parallel_approval_failures_impl(
         cfg,
         web_tool_ctx,
         handler_lookup,
+        permission,
     } = params;
     let mut prefetch_failures = ParallelPrefetchFailures::new();
     if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
         prefetch_failures.extend(
-            tool_registry::prefetch_http_fetch_parallel_approvals(tool_calls, cfg, web_tool_ctx)
-                .await,
+            tool_registry::prefetch_http_fetch_parallel_approvals(
+                tool_calls,
+                cfg,
+                web_tool_ctx,
+                permission,
+            )
+            .await,
         );
     }
     prefetch_failures.extend(
@@ -36,6 +42,7 @@ async fn prefetch_parallel_approval_failures_impl(
             tool_calls,
             web_tool_ctx,
             handler_lookup,
+            permission,
         )
         .await,
     );
@@ -60,6 +67,7 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>) {
         if p.policy.handler_lookup.id_for(name) == HandlerId::Workflow {
+            let permission = p.policy.permission;
             workflow_tool_dispatch::dispatch_workflow_execute_tool(
                 p.runtime,
                 self.per_coord,
@@ -68,6 +76,7 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                 p.workspace.workspace_is_set,
                 p.call.args,
                 self.request_chrome_trace.clone(),
+                permission,
             )
             .await
         } else {

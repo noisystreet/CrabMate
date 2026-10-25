@@ -40,6 +40,7 @@ pub(crate) fn test_ctx(working_dir: &Path) -> ToolContext<'_> {
         weather_timeout_secs: 5,
         allowed_commands: &[],
         working_dir,
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         web_search_timeout_secs: 5,
         web_search_provider: WebSearchProvider::Worbrow,
         web_search_api_key: "",

@@ -55,6 +55,7 @@ async fn execute_run_command_impl(
         web_ctx,
         mode: capabilities.mode,
         sse_command: "run_command",
+        permission: env.permission,
     };
     // 命令能力快照由本层持有：`evaluate_policy` 就地扩展它，`PolicyDecision` 只借用（R3）。
     // 命名避开 `capabilities`（那是执行形态 `RunCommandCapabilities`）。
@@ -89,6 +90,7 @@ pub async fn prefetch_http_fetch_parallel_approvals(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&WebToolRuntime>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
@@ -110,8 +112,15 @@ pub async fn prefetch_http_fetch_parallel_approvals(
         };
         let storage_key = tools::http_fetch::storage_key(&url);
         let approval_args = tools::http_fetch::approval_args_display(method, &url);
-        match http_fetch_prefetch_approval(web_ctx, cfg.as_ref(), &url, &storage_key, &approval_args)
-            .await
+        match http_fetch_prefetch_approval(
+            web_ctx,
+            cfg.as_ref(),
+            permission,
+            &url,
+            &storage_key,
+            &approval_args,
+        )
+        .await
         {
             Ok(()) => {}
             Err(msg) => {

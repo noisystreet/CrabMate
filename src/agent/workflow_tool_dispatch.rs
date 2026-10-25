@@ -14,6 +14,8 @@ use super::workflow_reflection_controller;
 
 /// 执行 `workflow_execute`（含 `prepare_workflow_execute` 与可选 DAG 运行），返回工具结果正文与反思注入 JSON。
 /// 有 `web_ctx` 时走 Interactive（Web SSE 审批）；否则 NoApproval（与运维/无会话通道一致）。
+// 同 `run_workflow_execute_tool`：权限快照是 S3 新增的独立一层入参。
+#[allow(clippy::too_many_arguments)]
 pub async fn dispatch_workflow_execute_tool(
     runtime: ToolRuntime<'_>,
     per_coord: &mut PerCoordinator,
@@ -22,6 +24,7 @@ pub async fn dispatch_workflow_execute_tool(
     workspace_is_set: bool,
     args: &str,
     request_chrome_merge: Option<Arc<RequestTurnTrace>>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> (String, Option<serde_json::Value>) {
     let args = match workflow::resolve_workflow_execute_args(
         args,
@@ -124,6 +127,7 @@ pub async fn dispatch_workflow_execute_tool(
                 approval_mode,
                 cfg.command_exec.command_max_output_len,
                 request_chrome_merge.map(|v| v as Arc<dyn std::any::Any + Send + Sync>),
+                permission,
             )
             .await;
             *workspace_changed_ref |= wf_ws_changed;
