@@ -663,6 +663,16 @@ dst.permission.permission_level_max =
 - **落点**：`src/web/routes/system/mod.rs:13` 已有 `/status`，毗邻新增（或独立 `src/web/routes/permission/mod.rs`），并登记到 `src/web/openapi/openapi_paths.rs:54` 一带。
 - **不塞进 `StatusShellView`**（`src/cm_api_contract/status.rs:10`）的理由：它的定位是“Web 壳层稳定子集”，塞六轴投影会让它名不副实（加两个标量默认值仍可接受，见 §16.1，golden 相应更新）。
 
+**落地结果（S5a）**：
+
+- **落点**：路由 `src/web/routes/permission/mod.rs`，handler 与视图组装 `src/web/permission/mod.rs`（纯函数 `build_permission_view` + `PermissionViewInput`，IO 只在 handler 里），契约 `src/cm_api_contract/permission.rs`（`PermissionView` / `PermissionLevelSource`；`caps` 直接复用 `cm_types::PermissionCapsView`，与 `self_config_info` 同一份序列化）。
+- **鉴权**：挂在**受保护** API 面（`src/web/server.rs` 的 `protected_api`），**不**并到 `/status` 所在的公开面——它暴露上限来源与角色上限，属于授权信息；非 loopback 部署本来就能读 `/status`，但不应因此能读到 `ceiling_source`。
+- **`available` 上界**：`cm_agent::permission::selectable_max_level` = `min(ceiling, role_max, session_mode)`，与 `resolve_permission_level_for_turn` 用**同一组三轴**（差别只在没看 `chosen`）。防漂移由 `permission_tests::selectable_cap_matches_resolve_chain`（申请上界 → 正好落在上界；申请 L4 → 也只到上界）与 `each_axis_narrows_selectable_levels` 钉住。
+- **`clamped_by` 的语义边界**：它记录的是**本回合请求被钳制**的轴，而不是「配置默认值被上限折进去」。启动期 `reconcile_default_level_with_ceiling` 会先把默认等级降到上限，因此那种情况下三个轴都为空才是正确结果（`web::permission::tests::ceiling_clamps_available_set_and_config_level_follows_it`）。
+- **`level_source`**：`persisted` 需要会话级写入（store 列 + `POST /chat` 字段），S5a 阶段 handler 传 `persisted_level: None`，故线上恒为 `config`；S5b 落地时只需填这一个入参。
+- **参数校验取严**：未知 `agent_role` → **400 `INVALID_AGENT_ROLE`**（静默回落默认角色会给出一份偏松的 `available`，正是本节要避免的体验）；`conversation_id` 不存在或过期 → **404 `CONVERSATION_NOT_FOUND`**（不悄悄退回静态投影，否则客户端会把按默认配出来的等级当成该会话的等级）。
+- **OpenAPI**：`docs/openapi.json` 已再生成；`GET /permission` 的 path 与 `PermissionView` schema 由 `openapi_ops_match_axum_route_source` / `openapi_docs_snapshot_matches_spec` 两个测试锁住。
+
 ### 16.3 严禁：写 `ceiling` 的接口
 
 **故意不提供**（不是“暂未实现”）：

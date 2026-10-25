@@ -13,6 +13,7 @@ pub mod chat_keys;
 pub mod error_codes;
 pub mod health;
 pub mod openapi;
+pub mod permission;
 pub mod sessions;
 pub mod status;
 pub mod tool_jobs;

@@ -514,6 +514,44 @@ pub fn resolve_permission_level_for_turn(input: PermissionTurnInput<'_>) -> Reso
     }
 }
 
+/// `GET /permission` 的 `available` 上界（设计 §16.2）：`min(ceiling, role_max, session_mode)`。
+///
+/// 与 [`resolve_permission_level_for_turn`] 是**同一组三轴**，差别只在没看 `chosen`：
+/// `available` 回答「这台机器 + 这个角色 + 这个会话模式下一共能选到哪一档」，
+/// 而不是「这一轮最终落在哪一档」。上界一致性由
+/// `permission_tests::selectable_cap_matches_resolve_chain` 钉住。
+#[must_use]
+pub fn selectable_max_level(
+    cfg: &AgentConfig,
+    role_max: Option<PermissionLevel>,
+    session_mode: SessionMode,
+) -> PermissionLevel {
+    let ceiling = cfg.permission.effective_ceiling();
+    let role_limit = role_max.unwrap_or(PermissionLevel::Unrestricted);
+    // 会话模式是独立的一条轴：`ask` / `plan` 只读，能选的最高档就是 L1。
+    let mode_limit = if session_mode.requires_readonly_tools() {
+        PermissionLevel::Read
+    } else {
+        PermissionLevel::Unrestricted
+    };
+    ceiling.min(role_limit).min(mode_limit)
+}
+
+/// 选择器选项集（自低到高，全部 `≤` [`selectable_max_level`]）——`GET /permission` 的 `available`。
+#[must_use]
+pub fn selectable_levels(
+    cfg: &AgentConfig,
+    role_max: Option<PermissionLevel>,
+    session_mode: SessionMode,
+) -> Vec<PermissionLevel> {
+    let cap = selectable_max_level(cfg, role_max, session_mode);
+    PermissionLevel::ALL
+        .iter()
+        .copied()
+        .filter(|level| *level <= cap)
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "permission_tests.rs"]
 mod tests;

@@ -440,3 +440,76 @@ fn prepare_turn_keeps_final_plan_requirement_for_approved_level() {
     assert_eq!(caps.tool_visibility, ToolVisibility::Full);
     assert_eq!(snap.per_plan_policy.final_plan_requirement, before);
 }
+
+/// §16.2 的 `available`：上界必须与 `resolve_permission_level_for_turn` 的 min 链一致。
+///
+/// 取上界作为请求时 `effective` 正好落在上界，取更高档（L4）时也只到上界——两处若各写一套
+/// 三轴逻辑，这个测试会立刻红（防「第二套判据」）。
+#[test]
+fn selectable_cap_matches_resolve_chain() {
+    let cfg = test_cfg();
+    let cases = [
+        (None, SessionMode::Act),
+        (Some(PermissionLevel::Read), SessionMode::Act),
+        (Some(PermissionLevel::Workspace), SessionMode::Plan),
+        (None, SessionMode::Ask),
+    ];
+    for (role_max, session_mode) in cases {
+        let cap = selectable_max_level(&cfg, role_max, session_mode);
+        let levels = selectable_levels(&cfg, role_max, session_mode);
+        assert_eq!(
+            levels.last().copied(),
+            Some(cap),
+            "available 的最高项必须等于上界（role_max={role_max:?} mode={session_mode:?}）"
+        );
+        assert!(
+            levels.windows(2).all(|pair| pair[0] < pair[1]),
+            "available 必须自低到高且不重复：{levels:?}"
+        );
+        let at_cap = resolve_permission_level_for_turn(input(
+            &cfg,
+            Some(cap),
+            None,
+            role_max,
+            session_mode,
+        ));
+        assert_eq!(at_cap.effective, cap, "申请上界应正好落在上界");
+        let top_requested = resolve_permission_level_for_turn(input(
+            &cfg,
+            Some(PermissionLevel::Unrestricted),
+            None,
+            role_max,
+            session_mode,
+        ));
+        assert_eq!(
+            top_requested.effective, cap,
+            "申请 L4 也只能到上界（等价于「选项集里没有更高档」）"
+        );
+    }
+}
+
+/// 三条轴各自都能单独收紧 `available`，而不是只有取 min 后的合成效果。
+#[test]
+fn each_axis_narrows_selectable_levels() {
+    let mut cfg = test_cfg();
+    cfg.permission.permission_level_max_effective = PermissionLevel::Workspace;
+    assert_eq!(
+        selectable_levels(&cfg, None, SessionMode::Act),
+        vec![
+            PermissionLevel::Chat,
+            PermissionLevel::Read,
+            PermissionLevel::Workspace
+        ],
+        "ceiling 收到 L2"
+    );
+    assert_eq!(
+        selectable_levels(&cfg, Some(PermissionLevel::Read), SessionMode::Act),
+        vec![PermissionLevel::Chat, PermissionLevel::Read],
+        "角色上限收到 L1"
+    );
+    assert_eq!(
+        selectable_levels(&cfg, None, SessionMode::Ask),
+        vec![PermissionLevel::Chat, PermissionLevel::Read],
+        "ask / plan 收到 L1"
+    );
+}
