@@ -9,7 +9,7 @@ use crate::cm_types::ToolCall;
 use crate::cm_tools::tool_dispatch::{
     HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool,
 };
-use crate::cm_tools::tool_naming::{is_dynamic_tool_name, is_mcp_proxy_tool};
+use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 
 /// `web_search`（worbrow）外圈相对配置超时的额外等待秒数，供浏览器进程收尾。
 pub const WEB_SEARCH_WORBROW_OUTER_GRACE_SECS: u64 = 15;
@@ -147,10 +147,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
 
 /// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
 pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
-    if is_mcp_proxy_tool(name) {
-        return false;
-    }
-    if is_dynamic_tool_name(name) {
+    if tool_origin(name) != ToolOrigin::Builtin {
         return false;
     }
     let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
@@ -260,7 +257,7 @@ pub fn tool_ok_for_parallel_readonly_batch_piece(
     cfg: &AgentConfig,
     name: &str,
 ) -> bool {
-    !is_mcp_proxy_tool(name)
+    tool_origin(name) != ToolOrigin::Mcp
         && is_readonly_tool(cfg, name)
         && parallel_batch_eligible_tool(handler_lookup, cfg, name)
 }
