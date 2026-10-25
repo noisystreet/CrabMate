@@ -147,7 +147,8 @@ async fn answer_btw(
         req.image_urls,
         None,
         None,
-        // 旁路提问（`/btw`）不切权限等级：沿用它原会话的持久意图。
+        // `/btw` 不走 `run_agent_turn`，随后直接 `no_tools_chat_request`（无工具 → 无从越界），
+        // 权限等级在这里不参与判定；传 `None` 只是「不覆盖会话已持久化的意图」。
         None,
     )
     .await

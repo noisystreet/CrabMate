@@ -528,9 +528,12 @@ async fn run_single_agent_turn(
             long_term_memory_scope_id: None,
             read_file_turn_cache: None,
             turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
-            session_mode: args.session_mode,
-            permission_role_max: None,
-            permission_persisted: None,
+            permission: crate::cm_agent::permission::TurnPermissionStages {
+                role_max: None,
+                session_mode: args.session_mode,
+                requested: None,
+                persisted: None,
+            },
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,

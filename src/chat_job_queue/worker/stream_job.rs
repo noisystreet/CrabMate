@@ -112,18 +112,22 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         request_id: request_id.clone(),
         out: &rt.sse_tx,
         turn_allowed_tool_names: rt.turn_allow,
-        session_mode,
-        // 角色级权限上限：与 `rt.turn_allow` 同一角色解析口径（设计 §6.1 的 min 链）。
-        permission_role_max:
-            crate::cm_internal::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
-                rt.cfg_turn.as_ref(),
-                persisted_active_agent_role.as_deref(),
-                request_agent_role.as_deref(),
+        permission: crate::cm_agent::permission::TurnPermissionStages {
+            // 角色级权限上限：与 `rt.turn_allow` 同一角色解析口径（设计 §6.1 的 min 链）。
+            role_max:
+                crate::cm_internal::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
+                    rt.cfg_turn.as_ref(),
+                    persisted_active_agent_role.as_deref(),
+                    request_agent_role.as_deref(),
+                ),
+            session_mode,
+            requested: super::resolve_job_permission_requested(
+                request_permission_level.as_deref(),
             ),
-        permission_persisted: super::resolve_job_permission_persisted(
-            request_permission_level.as_deref(),
-            persisted_active_permission_level.as_deref(),
-        ),
+            persisted: super::resolve_job_permission_persisted(
+                persisted_active_permission_level.as_deref(),
+            ),
+        },
         request_audit: std::sync::Arc::new(request_audit),
         process_handles: std::sync::Arc::clone(&app.process_handles),
         tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),

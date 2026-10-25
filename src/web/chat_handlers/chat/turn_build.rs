@@ -457,3 +457,55 @@ mod client_sse_protocol_tests {
         assert_eq!(err.1.0.code, error_codes::SSE_PROTOCOL_MISMATCH);
     }
 }
+
+/// `parse_chat_mode_and_permission_level` 的解析与错误码（S5b 的写入口）。
+///
+/// 未知值必须 400 `INVALID_PERMISSION_LEVEL`——静默回落到配置默认，等于把客户端的
+/// 显式选择当成没发生，而这正是「切了 L4 却没反应」那类困惑的来源。
+#[cfg(test)]
+mod chat_mode_and_permission_level_tests {
+    use super::parse_chat_mode_and_permission_level;
+    use crate::cm_api_contract::chat::{ChatRequestBody, ChatRequestBodyWire};
+
+    fn body(permission_level: Option<&str>) -> ChatRequestBody {
+        let mut wire: ChatRequestBodyWire =
+            serde_json::from_value(serde_json::json!({ "message": "hi" })).expect("wire");
+        wire.permission_level = permission_level.map(str::to_string);
+        ChatRequestBody::from(wire)
+    }
+
+    #[test]
+    fn accepts_a_known_level() {
+        let Ok((mode, level)) = parse_chat_mode_and_permission_level(&body(Some("read"))) else {
+            panic!("合法等级不应报错")
+        };
+        assert_eq!(mode, None);
+        assert_eq!(level.as_deref(), Some("read"));
+    }
+
+    #[test]
+    fn absent_means_unset() {
+        let Ok((_, level)) = parse_chat_mode_and_permission_level(&body(None)) else {
+            panic!("省略等级不应报错")
+        };
+        assert_eq!(level, None);
+    }
+
+    #[test]
+    fn unknown_level_is_invalid_permission_level() {
+        let err = parse_chat_mode_and_permission_level(&body(Some("root"))).unwrap_err();
+        assert_eq!(err.0, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.0.code, "INVALID_PERMISSION_LEVEL");
+    }
+
+    #[test]
+    fn session_mode_and_level_are_parsed_together() {
+        let mut b = body(Some("workspace"));
+        b.session_mode = Some("ask".to_string());
+        let Ok((mode, level)) = parse_chat_mode_and_permission_level(&b) else {
+            panic!("两个字段同时合法不应报错")
+        };
+        assert_eq!(mode.as_deref(), Some("ask"));
+        assert_eq!(level.as_deref(), Some("workspace"));
+    }
+}

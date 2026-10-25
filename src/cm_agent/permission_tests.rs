@@ -418,7 +418,16 @@ fn prepare_turn_relaxes_final_plan_requirement_for_chat_level() {
     cfg.permission.permission_level = PermissionLevel::Chat;
     cfg.permission.permission_level_max_effective = PermissionLevel::Unrestricted;
     let (snap, caps) =
-        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act, None);
+        prepare_turn_cfg_and_permission(
+            &cfg,
+            std::path::Path::new("ws"),
+            TurnPermissionStages {
+                role_max: None,
+                session_mode: SessionMode::Act,
+                requested: None,
+                persisted: None,
+            },
+        );
     assert_eq!(caps.tool_visibility, ToolVisibility::None);
     assert_eq!(
         snap.per_plan_policy.final_plan_requirement,
@@ -436,9 +445,59 @@ fn prepare_turn_keeps_final_plan_requirement_for_approved_level() {
     let cfg = test_cfg();
     let before = cfg.per_plan_policy.final_plan_requirement;
     let (snap, caps) =
-        prepare_turn_cfg_and_permission(&cfg, std::path::Path::new("ws"), None, SessionMode::Act, None);
+        prepare_turn_cfg_and_permission(
+            &cfg,
+            std::path::Path::new("ws"),
+            TurnPermissionStages {
+                role_max: None,
+                session_mode: SessionMode::Act,
+                requested: None,
+                persisted: None,
+            },
+        );
     assert_eq!(caps.tool_visibility, ToolVisibility::Full);
     assert_eq!(snap.per_plan_policy.final_plan_requirement, before);
+}
+
+/// S5b 接线回归：`requested` 档必须真的进 min 链。
+///
+/// 若把请求值合并进 `persisted` 再传（那样 `PermissionTurnInput.requested` 恒为 `None`），
+/// 这里会红——而「解析 → 选档 → 落盘」各段单测仍然全绿。这正是本轮修正要防的形态：
+/// 客户端在 `POST /chat` 里切到 L1 不能是空操作。
+#[test]
+fn requested_stage_reaches_caps_and_wins_over_persisted() {
+    let mut cfg = test_cfg();
+    cfg.permission.permission_level = PermissionLevel::Approved;
+    cfg.permission.permission_level_max_effective = PermissionLevel::Unrestricted;
+
+    let (_, caps) = prepare_turn_cfg_and_permission(
+        &cfg,
+        std::path::Path::new("ws"),
+        TurnPermissionStages {
+            role_max: None,
+            session_mode: SessionMode::Act,
+            requested: Some(PermissionLevel::Read),
+            persisted: Some(PermissionLevel::Approved),
+        },
+    );
+    assert_eq!(
+        caps.tool_visibility,
+        ToolVisibility::Readonly,
+        "requested 必须优先于 persisted"
+    );
+
+    // 只有 persisted 时仍走它：两档各自保留，互不遮蔽。
+    let (_, caps) = prepare_turn_cfg_and_permission(
+        &cfg,
+        std::path::Path::new("ws"),
+        TurnPermissionStages {
+            role_max: None,
+            session_mode: SessionMode::Act,
+            requested: None,
+            persisted: Some(PermissionLevel::Read),
+        },
+    );
+    assert_eq!(caps.tool_visibility, ToolVisibility::Readonly);
 }
 
 /// §16.2 的 `available`：上界必须与 `resolve_permission_level_for_turn` 的 min 链一致。

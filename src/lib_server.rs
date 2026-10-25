@@ -156,13 +156,10 @@ pub struct RunAgentTurnAttach {
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
     /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    /// 本回合会话工作模式（Ask/Plan/Act）。
-    pub session_mode: types::SessionMode,
-    /// 角色级权限上限（`agent_roles[].max_permission_level`）；`None` = 不额外限制，参与回合 min 链。
-    pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
-    /// 会话持久化的权限等级**意图**（`active_permission_level`），参与回合 min 链的 `persisted` 档；
-    /// `None` = 该会话从未指定（回落配置默认）。请求体显式传的等级已由 `POST /chat` 合并进这一档。
-    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
+    /// 权限 `min` 链的四档输入（角色上限 / 会话模式 / 请求等级 / 会话持久意图）。
+    ///
+    /// 收成结构体而不是四个平铺字段：`run_agent_turn` 的 nloc 已贴上限，S6 还要往里加轴。
+    pub permission: crate::cm_agent::permission::TurnPermissionStages,
 }
 
 /// 可观测与进程句柄（入口袋；与环内 `RunLoopObs` 对应，勿与之混淆）。
@@ -216,11 +213,8 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    pub session_mode: types::SessionMode,
-    /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
-    pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
-    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
-    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
+    /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
+    pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
@@ -249,11 +243,8 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    pub session_mode: types::SessionMode,
-    /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
-    pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
-    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
-    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
+    /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
+    pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
@@ -270,11 +261,7 @@ struct WebChatJobCommonParts<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     conversation_id: &'a str,
     turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    session_mode: types::SessionMode,
-    /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
-    permission_role_max: Option<crate::cm_types::PermissionLevel>,
-    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
-    permission_persisted: Option<crate::cm_types::PermissionLevel>,
+    permission: crate::cm_agent::permission::TurnPermissionStages,
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
@@ -294,9 +281,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
-            session_mode,
-            permission_role_max,
-            permission_persisted,
+            permission,
             tracing_chat_turn,
             request_audit,
             process_handles,
@@ -316,9 +301,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 long_term_memory_scope_id: Some(conversation_id.to_string()),
                 read_file_turn_cache: None,
                 turn_allowed_tool_names,
-                session_mode,
-                permission_role_max,
-                permission_persisted,
+                permission,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: Some(tracing_chat_turn),
@@ -354,9 +337,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             request_audit,
             process_handles,
-            session_mode,
-            permission_role_max,
-            permission_persisted,
+            permission,
             request_id,
             tool_job_registry,
         } = args;
@@ -387,9 +368,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
-            session_mode,
-            permission_role_max,
-            permission_persisted,
+            permission,
             tracing_chat_turn: observability::TracingChatTurn::new(
                 job_id,
                 conversation_id,
@@ -423,9 +402,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             request_audit,
             process_handles,
-            session_mode,
-            permission_role_max,
-            permission_persisted,
+            permission,
             request_id,
             tool_job_registry,
         } = args;
@@ -456,9 +433,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
-            session_mode,
-            permission_role_max,
-            permission_persisted,
+            permission,
             tracing_chat_turn: observability::TracingChatTurn::new(
                 job_id,
                 conversation_id,
@@ -516,9 +491,12 @@ impl<'a> RunAgentTurnParams<'a> {
                 long_term_memory_scope_id: None,
                 read_file_turn_cache: None,
                 turn_allowed_tool_names: None,
-                session_mode: types::SessionMode::Act,
-                permission_role_max: None,
-                permission_persisted: None,
+                permission: crate::cm_agent::permission::TurnPermissionStages {
+                    role_max: None,
+                    session_mode: types::SessionMode::Act,
+                    requested: None,
+                    persisted: None,
+                },
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: None,

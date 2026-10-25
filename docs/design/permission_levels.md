@@ -568,8 +568,8 @@ dst.permission.permission_level_max =
 | **S4** | allowlist 等级作用域（§6.3，**已落地**）+ `ApprovalPolicy::AuditOnly` 与审计事件（**已落地**） | 前者：仅跨级复用旧批准时；后者：仅 L4 时（多出的是日志，不是放行面） | ✅ |
 | **S5a** | `GET /permission` 只读投影（§16.2，含 `?agent_role=`）+ OpenAPI + `docs/命令行与路由.md` | 无 | ✅ |
 | **S5b** | `POST /chat` 的 `permission_level`（含 `chat_keys` 字母序）+ `GET /conversation/messages` 的 `active` / `effective` 双字段（§16.1） | 客户端不传时无变化 | ✅ |
-| **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |
-| **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | ✅ |
+| **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | **部分**：`GET /status` 两个默认值已落地；`GET /tools` 的 `available_at_level` 未做 |
+| **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
 | **S6** | 可选 `PathScope::AllowedRoots`（见 §15 Q4） | 仅显式配置多根时 | ✅ |
 
 排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。

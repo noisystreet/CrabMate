@@ -214,10 +214,12 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     /// 会话持久化的等级**意图**（设计 §16.1 的「写」段）；`None` = 从未指定，按配置默认。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_permission_level: Option<String>,
-    /// 本回合 `min()` 链之后的**生效**等级。
+    /// 按**当前**配置重算的**生效**等级（`min()` 链之后）。
     ///
     /// 与 `active_*` 并列回传是必须的：等级会被 ceiling / 角色上限 / `ask`·`plan` 三重钳制，
     /// 只回显一个值就会出现「我明明切了 L4，怎么还是只读」且无从排查（设计 §16.1）。
+    /// 注意它是**投影**而不是历史记录：`POST /config/reload` 把 `permission_level_max` 调低后，
+    /// 既有会话此处的值会跟着变低；那一回合当时实际生效的等级不会被任何字段留存。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -383,7 +385,7 @@ pub struct ConversationMessagesResponseBody<M> {
     /// 会话持久化的等级意图（`active_permission_level`）；`None` 表示从未指定。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_permission_level: Option<String>,
-    /// 本回合 min() 链之后的生效等级（省略 = 未接线，仅测试路径）。
+    /// 按当前配置重算的生效等级（`min()` 链之后；省略 = 未接线，仅测试路径）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

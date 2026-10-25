@@ -131,12 +131,16 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 conversation_id: conversation_id.as_str(),
                 request_id,
                 turn_allowed_tool_names: turn_allow,
-                session_mode,
-                permission_role_max,
-                permission_persisted: super::resolve_job_permission_persisted(
-                    request_permission_level.as_deref(),
-                    persisted_active_permission_level.as_deref(),
-                ),
+                permission: crate::cm_agent::permission::TurnPermissionStages {
+                    role_max: permission_role_max,
+                    session_mode,
+                    requested: super::resolve_job_permission_requested(
+                        request_permission_level.as_deref(),
+                    ),
+                    persisted: super::resolve_job_permission_persisted(
+                        persisted_active_permission_level.as_deref(),
+                    ),
+                },
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),

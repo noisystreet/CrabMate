@@ -295,6 +295,9 @@ pub fn save_if_revision(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
+    // `active_*` 三件套都是**落盘值**而不是增量更新：`None` / 空白一律写成空串。
+    // 因此调用方必须先合并（等级用 `persisted_permission_level_after_turn`），
+    // 否则「本回合没传等级」会把这个会话已有的意图静默清空。
     let level_col = active_permission_level
         .map(str::trim)
         .filter(|s| !s.is_empty())
