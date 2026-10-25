@@ -696,9 +696,16 @@ impl PathAccess<'_> {
 
 **收益**：S3 的 `Any`、S6 的 `AllowedRoots` 都只改 `path.rs` 一处；`openat2` 的 TOCTOU 语义集中在一处，不散到 18 个调用点（AGENTS.md → **Security-sensitive surfaces** 明确不得弱化）。
 
-### 17.2 R2 外部工具来源收口
+### 17.2 R2 外部工具来源收口（✅ 已完成）
 
-**问题**：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`execute_dispatch_body.inc.rs:8/57`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
+**落地结果**（实测 10 个判定点，与下方原估算基本一致）：
+
+- 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
+- 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`execute_dispatch_body.inc.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
+- **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；写成 `tool_origin != Dynamic` 只会更难读。
+- 附带发现（未在 R2 处理）：转换后 `cm_mcp/stub.rs` / `cm_mcp/mcp_impl.rs` / `cm_internal/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链**已无消费者**，属死代码，留待与其它转发壳一并清理。
+
+**问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`execute_dispatch_body.inc.rs:8/57`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
 
 **改法**：
 
@@ -709,10 +716,10 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 所有现有判定改成读 `tool_origin`，**判定规则本身不变**。
 
-**等价验收**：
+**等价验收**（均已完成）：
 
-- `tool_origin` 的单测覆盖三类输入（`MCP_PROXY_PREFIX` / `DYNAMIC_TOOL_PREFIX` / 两者都不匹配）；
-- 原 10 个调用点的布尔结果**逐点不变**：用同一批工具名做表驱动断言，新旧判定一致；
+- ✅ `tool_origin` 的单测覆盖三类输入（`MCP_PROXY_PREFIX` / `DYNAMIC_TOOL_PREFIX` / 两者都不匹配），含「只在开头匹配」与空串边界；
+- ✅ 原 10 个调用点的布尔结果**逐点不变**：`tool_origin_matches_legacy_predicates` 用同一批工具名对三条谓词做表驱动断言；
 - **已知分歧只记录、不在 R2 修**：`tool_call_explain.rs:28` 把 MCP 与只读工具并列处理，与 L1「只读 = 独立正列表」冲突——R2 只统一**来源判定**，这条策略留到 S2 由 `caps.tool_visibility` 收口。
 
 **收益**：S3 的 `external_tools` 变成一个谓词（`tool_origin(n) != Builtin && caps.external_tools == Denied`），MB-8 才可验证。

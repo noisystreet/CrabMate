@@ -20,6 +20,29 @@ pub fn is_dynamic_tool_name(name: &str) -> bool {
     name.starts_with(DYNAMIC_TOOL_PREFIX)
 }
 
+/// 工具来源：内建 / MCP 代理 / 运行时动态工具。
+///
+/// 后续“外部工具禁用”只需一个谓词（`tool_origin(n) != Builtin`），
+/// 不必逐点判断两个前缀——逐点判断必漏。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolOrigin {
+    Builtin,
+    Mcp,
+    Dynamic,
+}
+
+/// 判定工具来源。两个前缀互斥，故判定顺序不影响结果。
+#[inline]
+pub fn tool_origin(name: &str) -> ToolOrigin {
+    if is_mcp_proxy_tool(name) {
+        ToolOrigin::Mcp
+    } else if is_dynamic_tool_name(name) {
+        ToolOrigin::Dynamic
+    } else {
+        ToolOrigin::Builtin
+    }
+}
+
 /// 多角色 / 回合工具白名单判定（列表裁剪与执行层须共用本函数，避免分叉）。
 ///
 /// - `allow == None`：不限制。
@@ -30,7 +53,7 @@ pub fn tool_name_allowed_by_turn_allowlist(name: &str, allow: Option<&HashSet<St
     let Some(set) = allow else {
         return true;
     };
-    if is_mcp_proxy_tool(name) {
+    if tool_origin(name) == ToolOrigin::Mcp {
         return set.contains("mcp") || set.contains(name);
     }
     set.contains(name)
@@ -63,5 +86,53 @@ mod tests {
             "read_file",
             Some(&by_exact)
         ));
+    }
+
+    #[test]
+    fn tool_origin_classifies_three_way() {
+        assert_eq!(tool_origin("read_file"), ToolOrigin::Builtin);
+        assert_eq!(tool_origin("mcp__fanalyzer__list"), ToolOrigin::Mcp);
+        assert_eq!(tool_origin("dyn__deploy"), ToolOrigin::Dynamic);
+        // 只在**开头**匹配前缀，不按包含匹配。
+        assert_eq!(tool_origin("read_mcp__x"), ToolOrigin::Builtin);
+        assert_eq!(tool_origin(""), ToolOrigin::Builtin);
+    }
+
+    /// R2 等价验收：同一批工具名上，新枚举映射与旧布尔判定逐点一致。
+    #[test]
+    fn tool_origin_matches_legacy_predicates() {
+        let cases = [
+            "read_file",
+            "write_file",
+            "git",
+            "mcp",
+            "mcp__a__b",
+            "mcp_",
+            "dyn",
+            "dyn__x",
+            "dyn_",
+            "read_mcp__x",
+            "",
+            "MCP__A__B",
+            "Dyn__x",
+        ];
+        for name in cases {
+            let origin = tool_origin(name);
+            assert_eq!(
+                origin == ToolOrigin::Mcp,
+                is_mcp_proxy_tool(name),
+                "mcp 判定不一致：{name:?}"
+            );
+            assert_eq!(
+                origin == ToolOrigin::Dynamic,
+                is_dynamic_tool_name(name),
+                "dynamic 判定不一致：{name:?}"
+            );
+            assert_eq!(
+                origin != ToolOrigin::Builtin,
+                is_mcp_proxy_tool(name) || is_dynamic_tool_name(name),
+                "external 判定不一致：{name:?}"
+            );
+        }
     }
 }

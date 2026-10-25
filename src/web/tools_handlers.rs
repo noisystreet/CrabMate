@@ -355,7 +355,7 @@ fn parameters_for(cfg: &AgentConfig, ws: &str, name: &str, source: &str) -> Valu
 fn policy_view(cfg: &AgentConfig, name: &str) -> ToolPolicyView {
     let handlers = HandlerLookupTable::default_dispatch();
     let read_only = registry_policy::is_readonly_tool(cfg, name);
-    let is_external = tool_naming::is_mcp_proxy_tool(name) || tool_naming::is_dynamic_tool_name(name);
+    let is_external = tool_naming::tool_origin(name) != tool_naming::ToolOrigin::Builtin;
     let p = &cfg.tool_registry_policy;
     let mut sub_agent_extra_allow: Vec<String> = Vec::new();
     if p.tool_registry_sub_agent_patch_write_extra_tools

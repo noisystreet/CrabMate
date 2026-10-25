@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use crate::cm_config::AgentConfig;
 use crate::cm_tools::registry_policy::is_readonly_tool;
-use crate::cm_tools::tool_naming::is_mcp_proxy_tool;
+use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 use crate::cm_types::Tool;
 
 use crate::cm_agent::plan_artifact::PlanStepExecutorKind;
@@ -62,7 +62,7 @@ fn test_runner_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
 
 /// 分阶段 `review_readonly` 步末空执行检测：须出现阅读/探查类只读工具。
 pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
-    if is_mcp_proxy_tool(name) {
+    if tool_origin(name) == ToolOrigin::Mcp {
         return false;
     }
     matches!(
@@ -95,7 +95,7 @@ pub fn tool_allowed_for_step_executor_kind(
 ) -> bool {
     // 用户显式启用的 MCP 代理：三种子代理角色均可调用。
     // （仍视为非只读，不参与并行只读批；副作用面由 MCP server 自身与审批策略约束。）
-    if is_mcp_proxy_tool(name) {
+    if tool_origin(name) == ToolOrigin::Mcp {
         return true;
     }
     match kind {
