@@ -33,13 +33,14 @@
 | [long_running_tool_execution_todo.md](long_running_tool_execution_todo.md) | 长耗时工具执行：待办 |
 | [subprocess_session_tokio_migration_todo.md](subprocess_session_tokio_migration_todo.md) | 子进程会话 tokio 化迁移：实施计划 |
 
-## 3. 工具系统（3）
+## 3. 工具系统（4）
 
 | 文档 | 说明 |
 |---|---|
 | [tool_calling_evolution.md](tool_calling_evolution.md) | 工具调用层：对标开源 Agent 的演进方向（含薄封装收敛 §8.5） |
 | [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) | 工具薄 CLI 封装：剩余家族候选盘点与判定（§8.5 配套） |
 | [tool_management_api.md](tool_management_api.md) | 设计草案：工具管理 API 补齐 |
+| [permission_levels.md](permission_levels.md) | 工具权限等级（L0–L4）：设计草案（默认取现状） |
 
 ## 4. 回合 / Agent 运行时（9）
 
