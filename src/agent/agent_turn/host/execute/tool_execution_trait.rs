@@ -23,6 +23,8 @@ pub struct ParallelPrefetchParams<'a> {
     pub cfg: &'a Arc<AgentConfig>,
     pub web_tool_ctx: Option<&'a WebToolRuntime>,
     pub handler_lookup: &'a HandlerLookupTable,
+    /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判）。
+    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 /// 根包实现的工具分发（经 [`super::ToolDispatch`] 与 `workflow_execute` 等）。

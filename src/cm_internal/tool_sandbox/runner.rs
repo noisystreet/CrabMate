@@ -136,6 +136,7 @@ pub async fn tool_runner_internal_main() -> Result<(), String> {
         weather_timeout_secs: snap.weather_timeout_secs,
         allowed_commands: allowed,
         working_dir: Path::new("/workspace"),
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         web_search_timeout_secs: snap.web_search_timeout_secs,
         web_search_provider: provider,
         web_search_api_key: key,

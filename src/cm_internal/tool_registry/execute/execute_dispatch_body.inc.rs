@@ -127,9 +127,16 @@ async fn dispatch_sync_default_tool(
     }
 
     // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
+    // 文件类工具的路径范围（S3）：只在 `dispatch` 这一处把权限投影落成 `ToolContext`，
+    // 各工具实现只读 `ctx.path_scope`。
+    let path_scope = env
+        .permission
+        .map(|c| c.path_scope)
+        .unwrap_or(crate::cm_types::PathScope::SessionRoot);
+
     if name == "read_dir" {
         let web_ctx = http_tool_approval_context(runtime);
-        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx).await {
+        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, env.permission).await {
             return (msg, None);
         }
     }
@@ -154,7 +161,8 @@ async fn dispatch_sync_default_tool(
             jobs_host
                 .as_ref()
                 .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
-        );
+        )
+        .with_path_scope(path_scope);
         return (tools::run_tool(name, args, &ctx), None);
     }
     let cfg2 = Arc::clone(cfg);
@@ -189,7 +197,8 @@ async fn dispatch_sync_default_tool(
                 jobs_host
                     .as_ref()
                     .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
-            );
+            )
+            .with_path_scope(path_scope);
             tools::run_tool(&tool_name, &tool_args, &ctx)
         })
     });
@@ -299,6 +308,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         turn_allow,
         handler_lookup,
         sync_default_sandbox_backend,
+        permission,
     } = policy;
     let DispatchToolObs {
         sse_out_tx,
@@ -321,6 +331,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
     let workspace_changelist = workspace_changelist.clone();
     let cfg: &Arc<AgentConfig> = cfg;
     let turn_allow: Option<&HashSet<String>> = *turn_allow;
+    let permission: Option<&crate::cm_agent::permission::PermissionCaps> = *permission;
     let sse_out_tx = *sse_out_tx;
     let sse_control_mirror = *sse_control_mirror;
     let cancel = cancel.clone();
@@ -337,6 +348,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
     let env = ToolExecEnv {
         cfg,
         sandbox_backend: sync_default_sandbox_backend,
+        permission,
     };
     if !crate::cm_internal::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         return (crate::cm_internal::agent_role_turn::turn_tool_denied_message(name), None);
@@ -486,6 +498,7 @@ pub async fn prefetch_parallel_syncdefault_approvals(
     tool_calls: &[ToolCall],
     web_ctx: Option<&WebToolRuntime>,
     handler_lookup: &HandlerLookupTable,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
@@ -501,7 +514,8 @@ pub async fn prefetch_parallel_syncdefault_approvals(
             continue;
         }
         if let Err(msg) =
-            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx).await
+            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx, permission)
+                .await
         {
             failures.insert(key, msg);
         }

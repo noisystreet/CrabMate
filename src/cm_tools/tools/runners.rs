@@ -134,7 +134,10 @@ macro_rules! define_runners_paths_try {
         $(
             #[allow(clippy::result_large_err)]
             pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-                $func(args, &file::PathAccess::new(ctx.working_dir))
+                $func(
+                    args,
+                    &file::PathAccess::with_scope(ctx.working_dir, ctx.path_scope),
+                )
             }
         )*
     };
@@ -148,7 +151,11 @@ macro_rules! define_runners_paths_ctx_try {
         $(
             #[allow(clippy::result_large_err)]
             pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-                $func(args, &file::PathAccess::new(ctx.working_dir), ctx)
+                $func(
+                    args,
+                    &file::PathAccess::with_scope(ctx.working_dir, ctx.path_scope),
+                    ctx,
+                )
             }
         )*
     };

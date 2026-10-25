@@ -188,6 +188,8 @@ pub async fn run_workflow_run_command(
         WorkflowApprovalMode::NoApproval,
         cfg.command_exec.command_max_output_len,
         None,
+        // 运维 CLI 无会话权限等级：`None` = 按 `cfg` 现状判（与 S3 前一致）。
+        None,
     )
     .await;
 

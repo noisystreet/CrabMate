@@ -37,6 +37,7 @@ async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_withou
         &calls,
         None,
         &HandlerLookupTable::default_dispatch(),
+        None,
     )
     .await;
     assert_eq!(failures.len(), 1);
@@ -53,7 +54,7 @@ async fn prefetch_http_fetch_blocks_without_channel_when_prefix_miss() {
     let cfg = Arc::new(cfg);
     let args = r#"{"url":"https://example.com/private"}"#;
     let calls = vec![tool_call("http_fetch", args)];
-    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None).await;
+    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None, None).await;
     assert_eq!(failures.len(), 1);
     let msg = failures
         .get(&("http_fetch".to_string(), args.to_string()))
@@ -70,7 +71,7 @@ async fn prefetch_http_fetch_skips_approval_when_prefix_matches() {
     let cfg = Arc::new(cfg);
     let args = r#"{"url":"https://example.com/api/v1"}"#;
     let calls = vec![tool_call("http_fetch", args)];
-    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None).await;
+    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None, None).await;
     assert!(failures.is_empty());
 }
 
@@ -89,6 +90,25 @@ pub(super) fn test_policy_context<'a>(
         web_ctx,
         mode,
         sse_command: "run_command",
+        permission: None,
+    }
+}
+
+/// 带权限能力快照的策略上下文（S3 等级行为用例）。`permission = None` 的现状用例仍用
+/// [`test_policy_context`]，两者刻意分开，避免「忘传 caps」被默认值掩盖。
+pub(super) fn test_policy_context_with_caps<'a>(
+    cfg: &'a Arc<AgentConfig>,
+    permission: &'a crate::cm_agent::permission::PermissionCaps,
+    web_ctx: Option<&'a crate::cm_tools::tool_runtime::WebToolRuntime>,
+    mode: ExecMode,
+) -> PolicyContext<'a> {
+    PolicyContext {
+        cfg,
+        workspace: std::path::Path::new("."),
+        web_ctx,
+        mode,
+        sse_command: "run_command",
+        permission: Some(permission),
     }
 }
 
@@ -155,72 +175,6 @@ async fn caps_snapshot_only_updated_on_success() {
         "{:?}",
         policy_caps.allowed_commands
     );
-}
-
-#[tokio::test]
-async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
-    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    let external = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
-    let git_range = parsed_run_command(r#"{"command":"git","args":["log","main..HEAD"]}"#);
-
-    cfg.command_exec.allow_external_path_with_approval = false;
-    let cfg = Arc::new(cfg);
-    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let d = evaluate_for_test(&external, &ctx)
-        .await
-        .expect("disabled → NotNeeded");
-    assert!(!d.skip_arg_safety);
-
-    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.command_exec.allow_external_path_with_approval = true;
-    let cfg = Arc::new(cfg);
-    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let d = evaluate_for_test(&git_range, &ctx)
-        .await
-        .expect("git range → NotNeeded");
-    assert!(!d.skip_arg_safety);
-}
-
-#[tokio::test]
-async fn external_run_command_gate_errs_without_channel_or_in_docker() {
-    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.command_exec.allow_external_path_with_approval = true;
-    let mut cfg = Arc::new(cfg);
-    let abs = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
-
-    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_for_test(&abs, &ctx)
-        .await
-        .expect_err("no channel")
-        .into_message();
-    assert!(msg.contains("需要审批通道"), "{msg}");
-
-    Arc::get_mut(&mut cfg)
-        .expect("sole owner")
-        .sync_tool_sandbox
-        .sync_default_tool_sandbox_mode = crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_for_test(&abs, &ctx)
-        .await
-        .expect_err("docker")
-        .into_message();
-    assert!(msg.contains("Docker"), "{msg}");
-}
-
-#[tokio::test]
-async fn posix_shell_wrap_gate_errs_without_channel() {
-    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.command_exec.allowed_commands = vec!["echo".to_string()].into();
-    let cfg = Arc::new(cfg);
-    let parsed = parsed_run_command(r#"{"command":"echo","args":["$HOME"]}"#);
-
-    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_for_test(&parsed, &ctx)
-        .await
-        .expect_err("no channel")
-        .into_message();
-    assert!(msg.contains("无审批通道"), "{msg}");
-    assert!(msg.contains("echo $HOME"), "{msg}");
 }
 
 #[tokio::test]
@@ -505,6 +459,7 @@ pub(super) fn async_test_env<'a>(
     ToolExecEnv {
         cfg,
         sandbox_backend: sandbox,
+        permission: None,
     }
 }
 

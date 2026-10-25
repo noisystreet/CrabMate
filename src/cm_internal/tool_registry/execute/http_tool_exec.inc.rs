@@ -20,6 +20,55 @@ async fn http_tool_url_allowed(
     }
 }
 
+/// 出站网络门的三态结论（S3：`net_scope` + `approval` 两轴）。
+enum HttpNetGate {
+    /// 直接放行：`net_scope = Any`（L4），或地址已命中前缀 / persistent allowlist。
+    Allow,
+    /// 需要人工审批：L3（`Prefixes` + `Gate`）。
+    NeedApproval,
+    /// 直接拒：L0（`None`）或 L2（`Prefixes` + `Deny`）。拒绝**不弹审批**——
+    /// 无人值守时可解释、可复现，弹窗只会把「被拒」变成「挂着等超时」。
+    Deny(String),
+}
+
+/// 权限等级拒绝出站访问时的正文。只报 origin，不回显完整 URL（query 里可能有敏感参数）。
+fn http_tool_net_denied_message(
+    caps: &crate::cm_agent::permission::PermissionCaps,
+    url: &reqwest::Url,
+) -> String {
+    format!(
+        "错误：当前权限等级（{}）下不允许访问出站地址 {}：{}。",
+        caps.level.as_str(),
+        url.origin().ascii_serialization(),
+        caps.level.promise_zh()
+    )
+}
+
+/// 由 `caps` + 前缀命中结果判定三态；`caps = None`（未接线）回落现状「命中即放行，否则审批」。
+fn http_net_gate(
+    caps: Option<&crate::cm_agent::permission::PermissionCaps>,
+    url: &reqwest::Url,
+    url_allowed: bool,
+) -> HttpNetGate {
+    use crate::cm_agent::permission::{ApprovalPolicy, NetScope};
+    let Some(caps) = caps else {
+        return if url_allowed {
+            HttpNetGate::Allow
+        } else {
+            HttpNetGate::NeedApproval
+        };
+    };
+    match caps.net_scope {
+        NetScope::None => HttpNetGate::Deny(http_tool_net_denied_message(caps, url)),
+        NetScope::Any => HttpNetGate::Allow,
+        NetScope::Prefixes(_) if url_allowed => HttpNetGate::Allow,
+        NetScope::Prefixes(_) if caps.approval == ApprovalPolicy::Deny => {
+            HttpNetGate::Deny(http_tool_net_denied_message(caps, url))
+        }
+        NetScope::Prefixes(_) => HttpNetGate::NeedApproval,
+    }
+}
+
 /// 未放行时发起 Web 审批；`Ok(())` 表示可继续本地执行。
 async fn http_tool_gate_url_approval(
     web_ctx: Option<&WebToolRuntime>,
@@ -57,8 +106,19 @@ async fn http_tool_preflight(
     p: HttpToolPreflightParams<'_>,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
     let cfg = p.env.cfg;
-    if !http_tool_url_allowed(cfg.as_ref(), p.web_ctx, p.url, p.storage_key).await {
-        http_tool_gate_url_approval(p.web_ctx, p.approval_spec, p.sse_log_label).await?;
+    // S3：先按 `net_scope` 判三态。`Any` / `None` 不必再查前缀与 persistent allowlist
+    // （省一次加锁，也让 L0 的拒绝不依赖配置长什么样）。
+    let needs_prefix_lookup = p.env.permission.is_none_or(|c| {
+        matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
+    });
+    let url_allowed = needs_prefix_lookup
+        && http_tool_url_allowed(cfg.as_ref(), p.web_ctx, p.url, p.storage_key).await;
+    match http_net_gate(p.env.permission, p.url, url_allowed) {
+        HttpNetGate::Allow => {}
+        HttpNetGate::Deny(msg) => return Err((msg, None)),
+        HttpNetGate::NeedApproval => {
+            http_tool_gate_url_approval(p.web_ctx, p.approval_spec, p.sse_log_label).await?;
+        }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(
         p.env,
@@ -98,26 +158,88 @@ async fn spawn_blocking_http_tool(
     }
 }
 
-/// 并行预取：`http_fetch` URL 审批（与单工具路径共用 spec 构建器）。
+/// 并行预取：`http_fetch` URL 审批（与单工具路径共用 spec 构建器与网络门）。
 async fn http_fetch_prefetch_approval(
     web_ctx: Option<&WebToolRuntime>,
     cfg: &crate::cm_config::AgentConfig,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     url: &reqwest::Url,
     storage_key: &str,
     approval_args: &str,
 ) -> Result<(), String> {
-    if http_tool_url_allowed(cfg, web_ctx, url, storage_key).await {
-        return Ok(());
+    let needs_prefix_lookup = permission.is_none_or(|c| {
+        matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
+    });
+    let url_allowed =
+        needs_prefix_lookup && http_tool_url_allowed(cfg, web_ctx, url, storage_key).await;
+    match http_net_gate(permission, url, url_allowed) {
+        HttpNetGate::Allow => Ok(()),
+        HttpNetGate::Deny(msg) => Err(msg),
+        HttpNetGate::NeedApproval => {
+            let spec = tool_approval::approval_spec_http_fetch(approval_args, storage_key);
+            match http_tool_gate_url_approval(
+                web_ctx,
+                &spec,
+                "tool_registry::http_fetch approval parallel prefetch",
+            )
+            .await
+            {
+                Ok(()) => Ok(()),
+                Err((msg, _)) => Err(msg),
+            }
+        }
     }
-    let spec = tool_approval::approval_spec_http_fetch(approval_args, storage_key);
-    match http_tool_gate_url_approval(
-        web_ctx,
-        &spec,
-        "tool_registry::http_fetch approval parallel prefetch",
-    )
-    .await
-    {
-        Ok(()) => Ok(()),
-        Err((msg, _)) => Err(msg),
+}
+
+#[cfg(test)]
+mod http_net_gate_tests {
+    use super::*;
+    use crate::cm_agent::permission::project_caps;
+    use crate::cm_types::PermissionLevel;
+
+    fn test_cfg() -> crate::cm_config::AgentConfig {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+        cfg.http_fetch.http_fetch_allowed_prefixes = vec!["https://example.com".to_string()];
+        cfg
+    }
+
+    /// S3 网络轴：L0 全禁、L2 越界硬拒（不弹窗）、L3 审批、L4 直接放行。
+    #[test]
+    fn net_gate_matrix_follows_permission_level() {
+        let cfg = test_cfg();
+        let url = reqwest::Url::parse("https://evil.example.org/x").expect("url");
+
+        let l0 = project_caps(PermissionLevel::Chat, &cfg);
+        assert!(matches!(http_net_gate(Some(&l0), &url, false), HttpNetGate::Deny(_)));
+
+        let l2 = project_caps(PermissionLevel::Workspace, &cfg);
+        assert!(matches!(http_net_gate(Some(&l2), &url, false), HttpNetGate::Deny(_)));
+
+        let l3 = project_caps(PermissionLevel::Approved, &cfg);
+        assert!(matches!(
+            http_net_gate(Some(&l3), &url, false),
+            HttpNetGate::NeedApproval
+        ));
+        // 命中配置前缀时 L3 直接放行（等价现状）。
+        assert!(matches!(http_net_gate(Some(&l3), &url, true), HttpNetGate::Allow));
+
+        let l4 = project_caps(PermissionLevel::Unrestricted, &cfg);
+        assert!(matches!(http_net_gate(Some(&l4), &url, false), HttpNetGate::Allow));
+
+        // 未接线：回落现状「命中即放行，否则审批」。
+        assert!(matches!(http_net_gate(None, &url, false), HttpNetGate::NeedApproval));
+        assert!(matches!(http_net_gate(None, &url, true), HttpNetGate::Allow));
+    }
+
+    /// 拒因文案只报 origin，不回显完整 URL（query 里可能有敏感参数）。
+    #[test]
+    fn net_denied_message_redacts_path_and_query() {
+        let cfg = test_cfg();
+        let l0 = project_caps(PermissionLevel::Chat, &cfg);
+        let url = reqwest::Url::parse("https://example.com/a?token=secret").expect("url");
+        let msg = http_tool_net_denied_message(&l0, &url);
+        assert!(!msg.contains("secret"), "{msg}");
+        assert!(!msg.contains("/a"), "{msg}");
+        assert!(msg.contains("https://example.com"), "{msg}");
     }
 }

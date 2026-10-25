@@ -92,6 +92,7 @@ async fn parallel_prefetch_approval_failures(
     cfg: &Arc<AgentConfig>,
     web_tool_ctx: Option<&WebToolRuntime>,
     handler_lookup: &HandlerLookupTable,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {
     let host = CrabmateParallelToolDispatch;
     host.prefetch_parallel_approval_failures(ParallelPrefetchParams {
@@ -99,6 +100,7 @@ async fn parallel_prefetch_approval_failures(
         cfg,
         web_tool_ctx,
         handler_lookup,
+        permission,
     })
     .await
 }
@@ -237,6 +239,7 @@ async fn parallel_collect_unique_results(
                                     turn_allow,
                                     handler_lookup: &hl,
                                     sync_default_sandbox_backend: &sb,
+                                    permission,
                                 },
                                 obs: tool_registry::DispatchToolObs {
                                     sse_out_tx: None,
@@ -474,8 +477,14 @@ pub(super) async fn execute_tools_parallel(
         return ExecuteToolsBatchOutcome::AbortedSse;
     }
 
-    let prefetch_failures =
-        parallel_prefetch_approval_failures(tool_calls, cfg, web_tool_ctx, &handler_lookup).await;
+    let prefetch_failures = parallel_prefetch_approval_failures(
+        tool_calls,
+        cfg,
+        web_tool_ctx,
+        &handler_lookup,
+        Some(permission),
+    )
+    .await;
 
     let result_by_name_args = parallel_collect_unique_results(
         ParallelUniqueBatchParts {

@@ -38,6 +38,7 @@ fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolC
         weather_timeout_secs: 0,
         allowed_commands: &[],
         working_dir: workspace_root,
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         web_search_timeout_secs: 0,
         web_search_provider: crate::cm_config::WebSearchProvider::Brave,
         web_search_api_key: "",

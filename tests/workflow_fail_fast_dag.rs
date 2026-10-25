@@ -41,6 +41,7 @@ async fn workflow_fail_fast_marks_downstream_skipped_and_returns() {
         WorkflowApprovalMode::NoApproval,
         8192,
         None,
+        None,
     )
     .await;
 

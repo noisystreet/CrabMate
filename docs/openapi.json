@@ -1085,6 +1085,14 @@
           "model": {
             "type": "string"
           },
+          "permission_level_default": {
+            "description": "进程默认权限等级（`permission_level`：`chat` / `read` / `workspace` / `approved` / `unrestricted`）。\n\n只放**两个标量**：六轴投影不进壳层视图（设计 §16.2「不塞进 `StatusShellView`」），\n要看轴名用 `self_config_info` 的 `permission` 小节。",
+            "type": "string"
+          },
+          "permission_level_max": {
+            "description": "启动期冻结的生效上限（`permission_level_max_effective`）；客户端据此解释「为什么不能选 L4」。",
+            "type": "string"
+          },
           "planner_executor_mode": {
             "default": "",
             "type": "string"

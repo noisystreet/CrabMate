@@ -31,6 +31,24 @@ fn canonical_path_via_proc_fd(_file: &File) -> Option<PathBuf> {
     None
 }
 
+/// 不受工作区根约束的只读打开（`PathScope::Any` / L4）。
+///
+/// 与 [`open_existing_file_under_root`] 的区别是**没有** `openat2` + `RESOLVE_IN_ROOT`
+/// 那层约束：调用方已按 L4 显式放宽路径面（设计 §4 / §9），此处只保证「打开与
+/// `fstat` 是同一 inode」，不再保证「不越过工作区根」。`SessionRoot` 路径不会走到这里。
+pub fn open_existing_file_unrestricted(logical: &Path) -> io::Result<OpenedWorkspaceFile> {
+    let file = File::open(logical)?;
+    let metadata = file.metadata()?;
+    let resolved_path = canonical_path_via_proc_fd(&file)
+        .or_else(|| std::fs::canonicalize(logical).ok())
+        .unwrap_or_else(|| logical.to_path_buf());
+    Ok(OpenedWorkspaceFile {
+        file,
+        resolved_path,
+        metadata,
+    })
+}
+
 fn rel_under_root(root_canonical: &Path, logical: &Path) -> io::Result<PathBuf> {
     logical
         .strip_prefix(root_canonical)

@@ -564,6 +564,7 @@ mod tests {
             weather_timeout_secs: 15,
             allowed_commands: allowed,
             working_dir: std::path::Path::new("."),
+            path_scope: crate::cm_types::PathScope::SessionRoot,
             web_search_timeout_secs: 15,
             web_search_provider: crate::cm_config::WebSearchProvider::Brave,
             web_search_api_key: "",

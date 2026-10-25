@@ -195,6 +195,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,
@@ -252,6 +253,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,
@@ -310,6 +312,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,
@@ -375,6 +378,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,
@@ -449,6 +453,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,
@@ -501,6 +506,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             turn_allow: None,
             handler_lookup: &lookup,
             sync_default_sandbox_backend: &sandbox,
+            permission: None,
         },
         obs: DispatchToolObs {
             sse_out_tx: None,

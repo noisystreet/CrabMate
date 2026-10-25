@@ -115,6 +115,7 @@ async fn execute_terminal_session_impl(
                 web_ctx,
                 mode: ExecMode::Pty,
                 sse_command: "terminal_session",
+                permission: env.permission,
             };
             let mut policy_caps = policy_ctx.command_caps();
             match evaluate_policy(parsed, &policy_ctx, &mut policy_caps).await {

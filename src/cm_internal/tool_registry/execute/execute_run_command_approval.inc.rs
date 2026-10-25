@@ -71,6 +71,27 @@ impl RunCommandCaps {
             allowed_commands: Arc::clone(&cfg.command_exec.allowed_commands),
         }
     }
+
+    /// 以权限等级投影出的 `command_scope` 为基快照（S3）。
+    ///
+    /// - `None`（L0 / L1）→ **空**白名单；调用方已在 early-deny 拒掉，这里是双保险，
+    ///   空表让「未知命令」走拒绝而不是审批。
+    /// - `Any`（L4）→ `*` 哨兵，等价于 [`tools::allowlist_allows_all`]。
+    /// - `Allowlist`（L2 / L3）→ 该列表（L2 与 cfg 同源，L3 略窄）。
+    /// - `permission = None`（未接线路径）→ 回落 `cfg`，行为与 S3 前一致。
+    fn from_permission(
+        cfg: &AgentConfig,
+        permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    ) -> Self {
+        match permission {
+            None => Self::from_cfg(cfg),
+            Some(caps) => Self {
+                allowed_commands: caps
+                    .command_allowlist()
+                    .unwrap_or_else(|| Arc::from(Vec::<String>::new())),
+            },
+        }
+    }
 }
 
 /// 策略评估上下文。
@@ -80,6 +101,8 @@ struct PolicyContext<'a> {
     web_ctx: Option<&'a WebToolRuntime>,
     mode: ExecMode,
     sse_command: &'a str,
+    /// 本回合权限能力快照；`None` = 未接线，回落 `cfg` 白名单（S3）。
+    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 impl PolicyContext<'_> {
@@ -100,7 +123,7 @@ impl PolicyContext<'_> {
 
     /// 以当前配置为基构造命令能力快照（每次评估一份，评估后就地扩展）。
     fn command_caps(&self) -> RunCommandCaps {
-        RunCommandCaps::from_cfg(self.cfg)
+        RunCommandCaps::from_permission(self.cfg, self.permission)
     }
 }
 
@@ -189,6 +212,20 @@ async fn evaluate_policy<'a>(
     caps: &'a mut RunCommandCaps,
 ) -> Result<PolicyDecision<'a>, PolicyError> {
     let capabilities = ctx.capabilities();
+    // L0 / L1（`command_scope = None`）：命令类工具已在 early-deny 与可见性处被拒，这里再拦一次。
+    // 空白名单本可让「未知命令」直接进审批，`AllowOnce` 会把它放行——那就等于用一次弹窗
+    // 绕过等级边界。双保险的落点放在审批之前。
+    if let Some(caps) = ctx.permission
+        && matches!(
+            caps.command_scope,
+            crate::cm_agent::permission::CommandScope::None
+        )
+    {
+        return Err(PolicyError::Denied {
+            reason: PolicyReason::UnknownCommand,
+            message: crate::cm_agent::permission::permission_denied_message(caps, ctx.sse_command),
+        });
+    }
     let (policy_cmd, policy_args) =
         tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
     let needs_shell = parsed.spec.script.is_some()
@@ -349,6 +386,22 @@ async fn resolve_unknown_cmd_allowlist(
     {
         return Ok((extend_allowed_commands_arc(base, &parsed.cmd), None));
     }
+    // L2（`approval = Deny`）：未知命令直接拒，**不**弹审批（无人值守档的硬边界）。
+    // 顺序放在「工作区内脚本 / persistent allowlist 放行」之后：那两条不是越界，
+    // 与等级无关的既有放行道保持不变。
+    if let Some(caps) = ctx.permission
+        && caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny
+    {
+        return Err(PolicyError::Denied {
+            reason: PolicyReason::UnknownCommand,
+            message: format!(
+                "错误：{} 不在当前权限等级（{}）的命令白名单内：{}。",
+                parsed.cmd,
+                caps.level.as_str(),
+                caps.level.promise_zh()
+            ),
+        });
+    }
     request_unknown_cmd_approval(
         ctx,
         parsed.cmd.as_str(),
@@ -418,6 +471,21 @@ async fn approve_posix_shell_wrap_if_needed(
     if !needs_approval {
         return Ok((effective_allowed, None));
     }
+    // L2（`approval = Deny`）：需要 shell 包装的场景同样硬拒，不弹审批。
+    if let Some(caps) = ctx.permission
+        && caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny
+    {
+        return Err(PolicyError::Denied {
+            reason: PolicyReason::PosixShellWrap,
+            message: format!(
+                "错误：{} 需要 POSIX shell 包装，而当前权限等级（{}）不允许交互审批：{}。完整脚本：{}",
+                ctx.sse_command,
+                caps.level.as_str(),
+                caps.level.promise_zh(),
+                parsed.script
+            ),
+        });
+    }
     let capabilities = ctx.capabilities();
     if !capabilities.has_approval_channel {
         return Err(PolicyError::ApprovalUnavailable {
@@ -470,6 +538,33 @@ enum ExternalPathGate {
     Approved,
 }
 
+/// 权限等级对「工作区外路径参数」的**直接结论**（S3）：
+/// `None` = 继续走现状（配置开关 + 交互审批），`Some(Ok/Err)` = 不弹窗直接定论。
+///
+/// - L4（`path_scope = Any`）：路径面已放宽，直接 `Approved`（等价 `skip_arg_safety`）。
+/// - L2（`approval = Deny`）：硬拒，不弹审批。
+fn external_path_gate_by_caps(
+    ctx: &PolicyContext<'_>,
+    unsafe_args: &[String],
+) -> Option<Result<ExternalPathGate, PolicyError>> {
+    let caps = ctx.permission?;
+    if caps.path_scope.is_unrestricted() {
+        return Some(Ok(ExternalPathGate::Approved));
+    }
+    if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+        return Some(Err(PolicyError::Denied {
+            reason: PolicyReason::ExternalPath,
+            message: format!(
+                "错误：当前权限等级（{}）下不允许工作区外路径参数（{}）：{}。",
+                caps.level.as_str(),
+                unsafe_args.join(", "),
+                caps.level.promise_zh()
+            ),
+        }));
+    }
+    None
+}
+
 /// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
 /// `async` 模式拒绝需要交互审批的工作区外路径。
 async fn approve_external_run_command_paths_if_needed(
@@ -495,6 +590,9 @@ async fn approve_external_run_command_paths_if_needed(
     };
     if unsafe_args.is_empty() {
         return Ok(ExternalPathGate::NotNeeded);
+    }
+    if let Some(gate) = external_path_gate_by_caps(ctx, &unsafe_args) {
+        return gate;
     }
     let capabilities = ctx.capabilities();
     if capabilities.mode == ExecMode::Docker {

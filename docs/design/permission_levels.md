@@ -458,6 +458,16 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 ---
 
+### 8.4 观测出口的落地结果（S3）
+
+§8.1 表最后一行（`self_config_info` / `GET /status` 的 `permission` 小节）已随 S3 落地，落点与 §16.1 / §16.2 的分工一致：
+
+1. **`self_config_info` 新增 `permission` 小节**：`permission_level_default`、`permission_level_max_effective`、`permission_level_max_source`、`allow_unrestricted_permission_for_non_loopback`，外加六轴轴名 `caps.*`。轴名来自 `cm_types::PermissionLevel::caps_view()`——它**不是**第二套投影，只做「等级 → 轴名」映射；与 `project_caps(...).view()` 的一致性由 `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住（`cm_tools` 是叶子层，不能反向依赖 `cm_agent`，故 `PermissionCapsView` 随之下沉到 `cm_types`）。
+2. **`GET /status?view=shell` 只加两个标量**：`permission_level_default` 与 `permission_level_max`（§16.1 的「壳层稳定子集」口径），golden fixture 与 `docs/openapi.json` 同步；六轴投影仍留给 S5a 的 `GET /permission`。
+3. **白名单 / 前缀不进任何对外视图**：长度不可控，且属内部数据（AGENTS.md → Secrets & logging 的口径）。
+
+---
+
 ## 9. 安全边界（硬规则）
 
 | 编号 | 规则 |

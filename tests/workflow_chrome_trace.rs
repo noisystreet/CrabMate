@@ -72,6 +72,7 @@ async fn workflow_execute_writes_chrome_trace_and_reports_path() {
         WorkflowApprovalMode::NoApproval,
         8192,
         None,
+        None,
     )
     .await;
 

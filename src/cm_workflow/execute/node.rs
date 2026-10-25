@@ -54,6 +54,8 @@ async fn execute_node_tool_phase(
         tool_exec_ctx.cfg_command_timeout_secs
     };
     let run_command_reaps_self = tool_name == "run_command";
+    // 节点内的文件工具同样受本回合权限等级的路径轴约束（S3）。
+    let node_path_scope = tool_exec_ctx.path_scope;
 
     let tool_result = if run_command_reaps_self {
         // `run_command`：直接走异步 funnel（内部 `spawn_blocking` + 墙钟超时），不再外层包超时。
@@ -66,6 +68,7 @@ async fn execute_node_tool_phase(
             weather_timeout_secs,
             allowed_commands: &allowed,
             working_dir: &working_dir,
+            path_scope: node_path_scope,
             web_search_timeout_secs: ws_timeout,
             web_search_provider: ws_provider,
             web_search_api_key: &web_search_api_key,
@@ -93,6 +96,7 @@ async fn execute_node_tool_phase(
                     weather_timeout_secs,
                     allowed_commands: &allowed,
                     working_dir: &working_dir,
+                    path_scope: node_path_scope,
                     web_search_timeout_secs: ws_timeout,
                     web_search_provider: ws_provider,
                     web_search_api_key: &web_search_api_key,

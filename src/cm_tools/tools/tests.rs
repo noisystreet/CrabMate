@@ -14,6 +14,7 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         weather_timeout_secs: TEST_WEATHER_TIMEOUT_SECS,
         allowed_commands,
         working_dir: test_work_dir(),
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         web_search_timeout_secs: 15,
         web_search_provider: crate::cm_config::WebSearchProvider::Brave,
         web_search_api_key: "",
@@ -153,6 +154,7 @@ fn test_run_tool_try_cargo_check_workspace_no_cargo_toml() {
     std::fs::create_dir_all(&dir).expect("mkdir temp workspace");
     let ctx = ToolContext {
         working_dir: &dir,
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         ..test_ctx(&allowed)
     };
     let e = run_tool_try("cargo_check", "{}", &ctx).expect_err("no Cargo.toml");
@@ -719,6 +721,7 @@ fn typed_ok_end_to_end_survives_failure_like_file_body() {
     let allowed = test_allowed_commands();
     let ctx = ToolContext {
         working_dir: dir.path(),
+        path_scope: crate::cm_types::PathScope::SessionRoot,
         ..test_ctx(&allowed)
     };
     let result = run_tool_result("read_file", r#"{"path":"failure_like.txt"}"#, &ctx);
