@@ -33,7 +33,7 @@ pub const OUTER_LOOP_STEP_TOOLS_EXECUTE: &str = "tools_execute";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_agent::agent_turn::{OuterLoopIterationPhase, TurnOrchestrationMode};
+    use crate::agent::agent_turn::policy::{OuterLoopIterationPhase, TurnOrchestrationMode};
 
     #[test]
     fn turn_orchestration_mode_strings_match_enum() {

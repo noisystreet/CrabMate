@@ -6,7 +6,7 @@ pub(crate) mod params;
 pub(crate) mod turn_sink;
 
 pub(crate) mod run_command_dedupe {
-    pub(crate) use crate::cm_agent::agent_turn::run_command_dedupe::*;
+    pub(crate) use crate::agent::agent_turn::policy::run_command_dedupe::*;
 }
 
 pub(crate) use execute::tools as execute_tools;

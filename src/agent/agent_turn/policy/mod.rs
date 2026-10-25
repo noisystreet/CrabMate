@@ -1,7 +1,7 @@
 //! Agent 回合编排中的**纯领域**片段（消息合并、路由决议、外循环 FSM、完成判定）。
 //!
-//! **相位词汇真源**：见 [`phase_vocabulary`]（`turn_orchestration_mode` / `outer_loop_step` / `sub_phase` / Gate 对照）。
-//! **路由入口**：回合起点启发式（session_mode / Act 句）之后唯一决议函数为 [`assess_turn_routing`]；根包 `run_dispatch` 只消费 [`TurnRouteDriver`]。
+//! **相位词汇真源**：见 `phase_vocabulary`（`turn_orchestration_mode` / `outer_loop_step` / `sub_phase` / Gate 对照）。
+//! **路由入口**：回合起点启发式（session_mode / Act 句）之后唯一决议函数为 `assess_turn_routing`；根包 `run_dispatch` 只消费 `TurnRouteDriver`。
 
 pub mod completion_suppression;
 pub mod messages;

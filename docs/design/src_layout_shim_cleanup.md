@@ -36,11 +36,11 @@
 | `runtime/cli_exit.rs` 与 `cm_runtime/cli_exit.rs` | 两份 39 行同名文件（一为壳、一为真实现） | ✅ 已合并 |
 | `cm_chat_export/` 与 `cm_runtime/chat_export.rs` | 后者再导出前者全部符号再加落盘 IO，命名几乎相同 | ✅ 已改名 |
 | `cm_tools/tools/mod/`、`src/lib/` | 目录名仅为绕开 `mod.rs` / `lib.rs` 命名冲突而存在 | ✅ 已归位 |
-| `agent/agent_turn/` 与 `cm_agent/agent_turn/` | 一个逻辑模块在两个顶层目录各叫一次 `agent_turn` | ⬜ P1 |
+| `agent/agent_turn/` 与 `cm_agent/agent_turn/` | 一个逻辑模块在两个顶层目录各叫一次 `agent_turn` | ✅ 已合并（P1a） |
 | `crate::tools` | 解析链 `lib_server → cm_internal → cm_tools::tools`，三级别名 | ⬜ P2 |
 | `cm_tools/tools/` | 66 个平铺 `.rs` + 763 行 `mod.rs`（63 条 `mod` 声明） | ⬜ P3 |
 | 42 个 `.inc.rs`（5521 行） | `include!` 文本分片，用于绕开 `fn-nloc-ratchet`，属「假模块」 | ⬜ P3 |
-| `#[path = "loop/mod.rs"] mod turn_loop;` | `loop` 是 Rust 关键字，被迫加一层间接 | ⬜ P1 |
+| `#[path = "loop/mod.rs"] mod turn_loop;` | `loop` 是 Rust 关键字，被迫加一层间接 | ✅ 已消除（P1a，目录改名 `turn_loop/`） |
 
 ---
 
@@ -49,7 +49,8 @@
 | 阶段 | 内容 | 行为变化 | 需同步 `docs/开发文档.md` |
 |---|---|---|---|
 | **P0** ✅ | 删纯转发壳；合并同名双份；tests 目录归位 | **无** | 否 |
-| P1 | 合并 `agent_turn` 双树为单目录（`engine/` + `policy/`） | 无（纯搬家） | 是 |
+| **P1a** ✅ | 合并 `agent_turn` 双树：纯逻辑入 `agent/agent_turn/policy/`；目录 `loop/` → `turn_loop/` 去掉 `#[path]` | 无（纯搬家） | 是（已更新 `docs/开发文档.md`、`agent_turn_split.md`） |
+| P1b | 删除 `web/http_types` 的 4 个残留壳（约 40 处 handler import） | 无 | 否 |
 | P2 | 拆 `cm_internal`；`crate::tools` 收敛为一级别名 | 无 | 是 |
 | P3 | `cm_tools/tools` 按域分组；`.inc.rs` 收敛为真子模块 | 无 | 否（无顶层模块增减） |
 
@@ -153,10 +154,10 @@ pre-commit run --all-files                   # 全绿（含 lizard / fn-param / 
 | `.rs` 文件数 | 728 | 721 | −7 |
 | HTTP 契约 `use` 跳数 | 3 | 1 | −2 |
 | 同名双份模块 | 3 组 | 0 组 | −3 |
-| `#[path]` 绕名 hack | 3 处 | 1 处（`turn_loop`，P1 处理） | −2 |
+| `#[path]` 绕名 hack | 3 处 | 0 处（P1a 完成） | −3 |
 
 ## 7. 后续阶段要点（未实施）
 
-- **P1**：`agent_turn/` 合并为单一目录，`engine/`（现 `agent/agent_turn/{host,loop,plan_reflect}`）与 `policy/`（现 `cm_agent/agent_turn/*`）作子目录；顺带解掉 `#[path = "loop/mod.rs"]`，并删除 `web/http_types` 的 4 个残留壳（约 40 处 handler import）。须保留 `agent_turn_split.md` 定义的「纯函数不依赖 IO」分层——用子目录表达，而非顶层目录名。需同步 `docs/开发文档.md`。
+- **P1b**：删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳，把约 40 处 `use crate::web::http_types::…` 直连真源（`cm_api_contract` / `cm_tools::workspace::tasks_side`）。机械改动，可单独 PR。
 - **P2**：`cm_internal`（18 文件）既是别名表、又转发 12 个 `cm_tools` 模块、又有自身职责（`tool_registry` / `tool_jobs` / `tool_sandbox` / `terminal_session` / `user_data` / `context_bootstrap` / `observability` / `health`）。按职责拆分为工具基建 / 上下文装配 / 可观测三块，并把 `crate::tools` 收敛为一级别名。需同步 `docs/开发文档.md`。
 - **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、语义自洽）保留，其余转真子模块。

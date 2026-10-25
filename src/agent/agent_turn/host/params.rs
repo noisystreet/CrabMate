@@ -115,7 +115,7 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) execution_constraint_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 本回合起点启发式快照（供 [`TurnRouteDecisionV1`] 组装）。
-    pub(crate) turn_start_snapshot: Option<crate::cm_agent::agent_turn::TurnStartSnapshot>,
+    pub(crate) turn_start_snapshot: Option<crate::agent::agent_turn::policy::TurnStartSnapshot>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
