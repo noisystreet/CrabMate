@@ -1,7 +1,7 @@
 //! 从会话消息中提取工具调用时间线，导出为 JSON fixture，并在本地重放（不调用大模型）。
 //! 用于复现工具链路与回归对比；**与正常对话相同**走 `tools::run_tool_async`，须在可信工作区使用。
 
-use crate::runtime::chat_export::ChatSessionFile;
+use crate::runtime::session_export::ChatSessionFile;
 use crate::tools::{run_tool_async, tool_context_for};
 use crate::types::{Message, ToolCall};
 use serde::{Deserialize, Serialize};
@@ -113,7 +113,7 @@ pub fn load_chat_session_file(path: &Path) -> io::Result<ChatSessionFile> {
             format!("会话或导出 JSON 无效（期望 ChatSessionFile）: {e}"),
         )
     })?;
-    crate::runtime::chat_export::ensure_raw_projection(&file.projection)
+    crate::runtime::session_export::ensure_raw_projection(&file.projection)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     Ok(file)
 }
@@ -129,7 +129,7 @@ pub fn load_tool_replay_file(path: &Path) -> io::Result<ToolReplayFile> {
 }
 
 fn default_tool_replay_export_path(workspace: &Path) -> PathBuf {
-    let dir = crate::runtime::chat_export::workspace_exports_dir(workspace);
+    let dir = crate::runtime::session_export::workspace_exports_dir(workspace);
     let name = format!(
         "tool_replay_{}.json",
         chrono::Local::now().format("%Y%m%d_%H%M%S")
@@ -159,7 +159,7 @@ pub fn export_tool_replay_fixture(
     let dest = match output {
         Some(p) => p.to_path_buf(),
         None => {
-            let dir = crate::runtime::chat_export::workspace_exports_dir(workspace);
+            let dir = crate::runtime::session_export::workspace_exports_dir(workspace);
             std::fs::create_dir_all(&dir)?;
             default_tool_replay_export_path(workspace)
         }

@@ -28,6 +28,23 @@ pub fn is_quota_or_rate_limit_llm_message(msg: &str) -> bool {
     QUOTA_OR_RATE_LIMIT_NEEDLES.iter().any(|n| msg.contains(n))
 }
 
+/// 把 LLM / `run_agent_turn` 错误文案归类为 CLI 退出码（启发式，与 `llm::api` 用户可见串对齐）。
+pub fn classify_model_error_message(msg: &str) -> i32 {
+    use crate::cm_runtime::cli_exit::{EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT};
+
+    if is_quota_or_rate_limit_llm_message(msg) {
+        return EXIT_QUOTA_OR_RATE_LIMIT;
+    }
+    if msg.contains("模型接口返回错误")
+        || msg.contains("模型返回内容无法解析")
+        || msg.contains("非流式响应 choices 为空")
+        || msg.contains("无 tool_calls")
+    {
+        return EXIT_MODEL_ERROR;
+    }
+    EXIT_GENERAL
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +64,19 @@ mod tests {
         assert!(is_quota_or_rate_limit_llm_message(
             "模型接口返回错误（HTTP 429）：x"
         ));
+    }
+
+    #[test]
+    fn classify_model_error_maps_429_to_quota() {
+        assert_eq!(
+            classify_model_error_message("模型接口返回错误（HTTP 429）：too many requests"),
+            crate::cm_runtime::cli_exit::EXIT_QUOTA_OR_RATE_LIMIT
+        );
+    }
+
+    #[test]
+    fn classify_model_error_maps_generic_model_line() {
+        let got = classify_model_error_message("模型接口返回错误（HTTP 401）：bad key");
+        assert_eq!(got, crate::cm_runtime::cli_exit::EXIT_MODEL_ERROR);
     }
 }

@@ -47,7 +47,7 @@ pub(crate) struct MemoryListResponse {
     pub(crate) has_more: bool,
 }
 
-/// 记忆路由错误体：在 [`ApiError`](crate::cm_web_host::http_types::api::ApiError) 形态上可选带
+/// 记忆路由错误体：在 [`ApiError`](crate::cm_api_contract::api::ApiError) 形态上可选带
 /// `enabled`——禁用态 503 用于让 UI 直接展示原因；400 时该字段被省略。
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct MemoryErrorBody {

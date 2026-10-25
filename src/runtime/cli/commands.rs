@@ -97,7 +97,7 @@ fn write_save_session_export(
     workspace: &std::path::Path,
     messages: &[crate::types::Message],
     fmt: SessionExportKind,
-    projection: crate::runtime::chat_export::JsonExportProjection,
+    projection: crate::runtime::session_export::JsonExportProjection,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match fmt {
         SessionExportKind::Json => {
@@ -143,7 +143,7 @@ pub fn run_save_session_command(
         return Err(std::io::Error::new(ErrorKind::NotFound, "会话文件不存在").into());
     }
     let data = std::fs::read_to_string(&session_path)?;
-    let parsed: crate::runtime::chat_export::ChatSessionFile = serde_json::from_str(&data)
+    let parsed: crate::runtime::session_export::ChatSessionFile = serde_json::from_str(&data)
         .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, format!("会话 JSON 无效: {e}")))?;
     let fmt = match args.format {
         SaveSessionFormat::Json => SessionExportKind::Json,
@@ -151,9 +151,9 @@ pub fn run_save_session_command(
         SaveSessionFormat::Both => SessionExportKind::Both,
     };
     let projection = match args.projection {
-        SaveSessionProjection::Raw => crate::runtime::chat_export::JsonExportProjection::Raw,
+        SaveSessionProjection::Raw => crate::runtime::session_export::JsonExportProjection::Raw,
         SaveSessionProjection::Display => {
-            crate::runtime::chat_export::JsonExportProjection::Display
+            crate::runtime::session_export::JsonExportProjection::Display
         }
     };
     write_save_session_export(&workspace, &parsed.messages, fmt, projection)

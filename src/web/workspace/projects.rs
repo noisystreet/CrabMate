@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use axum::{Json, extract::State, http::StatusCode};
-use crate::cm_web_host::http_types::workspace::{
+use crate::cm_api_contract::workspace::{
     WorkspaceProjectPostBody, WorkspaceProjectPostResponse, WorkspaceProjectsListResponse,
 };
 

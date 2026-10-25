@@ -541,9 +541,8 @@ pub use types::{
 pub use runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
     EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
-    classify_model_error_message,
 };
+pub use agent_errors::classify_model_error_message;
 
 #[cfg(test)]
-#[path = "lib/tests.rs"]
 mod tests;

@@ -66,7 +66,7 @@ mod tests {
         clamp_workspace_search_max_results, validate_workspace_query_encoding_optional,
         workspace_search_pattern_or_error,
     };
-    use crate::cm_web_host::http_types::chat_keys::{
+    use crate::cm_api_contract::chat_keys::{
         CHAT_REQUEST_BODY_ALLOWED_KEYS, reject_unknown_chat_body_keys,
     };
     use crate::cm_web_host::http_types::limits::{
