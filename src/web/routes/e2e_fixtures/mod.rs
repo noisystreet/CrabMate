@@ -96,7 +96,7 @@ async fn seed_conversation_handler(
         facet.delete_conversation_record(&cid).await;
     }
     let outcome = facet
-        .save_conversation_messages_if_revision(cid.clone(), messages, None, None, None, Vec::new())
+        .save_conversation_messages_if_revision(cid.clone(), messages, None, None, None, None, Vec::new())
         .await;
     match outcome {
         crate::SaveConversationOutcome::Saved => Ok(StatusCode::NO_CONTENT),

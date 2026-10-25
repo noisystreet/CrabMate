@@ -54,6 +54,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        request_permission_level,
+        persisted_active_permission_level,
         work_dir,
         workspace_is_set,
         temperature_override,
@@ -118,6 +120,10 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
                 persisted_active_agent_role.as_deref(),
                 request_agent_role.as_deref(),
             ),
+        permission_persisted: super::resolve_job_permission_persisted(
+            request_permission_level.as_deref(),
+            persisted_active_permission_level.as_deref(),
+        ),
         request_audit: std::sync::Arc::new(request_audit),
         process_handles: std::sync::Arc::clone(&app.process_handles),
         tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
@@ -161,6 +167,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             persisted_active_agent_role: persisted_active_agent_role.as_deref(),
             request_session_mode: request_session_mode.as_deref(),
             persisted_active_session_mode: persisted_active_session_mode.as_deref(),
+            request_permission_level: request_permission_level.as_deref(),
+            persisted_active_permission_level: persisted_active_permission_level.as_deref(),
             stream_ended_sent: &mut stream_ended_sent,
         })
         .await;

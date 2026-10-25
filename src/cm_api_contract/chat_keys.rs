@@ -13,6 +13,7 @@ pub const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
     "executor_llm",
     "image_urls",
     "message",
+    "permission_level",
     "readonly_tool_ttl_cache_secs",
     "seed",
     "seed_policy",

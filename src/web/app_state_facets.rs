@@ -141,12 +141,15 @@ impl E2eConversationFixtureFacet {
             .await
     }
 
+    /// 与 [`AppStateConversationRuntime::save_conversation_messages_if_revision`] 同形（含该处的 `allow` 理由）。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn save_conversation_messages_if_revision(
         &self,
         conversation_id: String,
         messages: Vec<crate::types::Message>,
         active_agent_role: Option<&str>,
         active_session_mode: Option<&str>,
+        active_permission_level: Option<&str>,
         expected_revision: Option<u64>,
         archive_rows: Vec<crate::conversation_store::ArchiveRow>,
     ) -> SaveConversationOutcome {
@@ -156,6 +159,7 @@ impl E2eConversationFixtureFacet {
                 messages,
                 active_agent_role,
                 active_session_mode,
+                active_permission_level,
                 expected_revision,
                 archive_rows,
             )

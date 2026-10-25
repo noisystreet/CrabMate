@@ -338,6 +338,13 @@ pub(crate) async fn conversation_messages_handler(
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     let cfg = state.cfg.read().await;
+    let (active_permission_level, effective_permission_level) =
+        crate::web::permission::permission_levels_for_snapshot(
+            &cfg,
+            active_agent_role.as_deref(),
+            active_session_mode.as_deref(),
+            seed.persisted_active_permission_level.as_deref(),
+        );
     let tiktoken_prompt_tokens =
         crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
             &cfg,
@@ -353,6 +360,8 @@ pub(crate) async fn conversation_messages_handler(
         revision,
         active_agent_role,
         active_session_mode,
+        active_permission_level,
+        effective_permission_level,
         tiktoken_prompt_tokens,
         layout: seed.layout,
         context_artifacts,

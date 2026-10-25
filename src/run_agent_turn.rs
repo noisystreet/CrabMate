@@ -98,7 +98,9 @@ pub async fn run_agent_turn<'a>(
         turn_allowed_tool_names,
         session_mode,
         permission_role_max,
+        permission_persisted,
     } = attach;
+
     let RunAgentTurnObs {
         tracing_chat_turn,
         request_audit,
@@ -132,7 +134,7 @@ pub async fn run_agent_turn<'a>(
     // 出站 `@` 图跟本轮工具 `work_dir`，不读热更新后的全局工作区；权限 `caps`（含 L0 的编排
     // 收敛）在同一次快照里算好。
     let (cfg_for_turn, permission) = crate::cm_agent::permission::prepare_turn_cfg_and_permission(
-        cfg, effective_working_dir, permission_role_max, session_mode,
+        cfg, effective_working_dir, permission_role_max, session_mode, permission_persisted,
     );
     let cfg = &cfg_for_turn;
 

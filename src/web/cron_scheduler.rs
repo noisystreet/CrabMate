@@ -118,6 +118,8 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
         &[],
         agent_role.clone(),
         None,
+        // 定时任务不带 `permission_level`：沿用会话持久意图（从未指定则按配置默认）。
+        None,
         conversation_id.clone(),
     )
     .await
@@ -163,6 +165,10 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 persisted_active_agent_role: prepared.turn_seed.persisted_active_agent_role,
                 request_session_mode: None,
                 persisted_active_session_mode: prepared.turn_seed.persisted_active_session_mode,
+                request_permission_level: None,
+                persisted_active_permission_level: prepared
+                    .turn_seed
+                    .persisted_active_permission_level,
                 work_dir: prepared.work_dir,
                 workspace_is_set: prepared.workspace_is_set,
                 temperature_override: None,

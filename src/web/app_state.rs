@@ -44,6 +44,8 @@ pub(crate) struct MemoryConversationEntry {
     active_agent_role: Option<String>,
     /// 当前会话工作模式；`None` 表示未显式设置（回落配置默认）。
     active_session_mode: Option<String>,
+    /// 当前会话权限等级**意图**；`None` 表示未显式设置（回落配置默认）。
+    active_permission_level: Option<String>,
     /// B2：与 SQLite `layout_meta_json` 同语义，每次按当前 `messages` 派生写入。
     layout: Option<ConversationLayoutMeta>,
     revision: u64,
@@ -57,6 +59,8 @@ pub(crate) struct ConversationTurnSeed {
     pub persisted_active_agent_role: Option<String>,
     /// 持久化的会话工作模式（ask/plan/act）；`None` 表示未设置。
     pub persisted_active_session_mode: Option<String>,
+    /// 持久化的权限等级**意图**（chat/…/unrestricted）；`None` 表示未设置。
+    pub persisted_active_permission_level: Option<String>,
     /// 可选布局元数据；缺省时 GET 省略。会话级，不随消息分页切片。
     pub layout: Option<ConversationLayoutMeta>,
 }
@@ -321,6 +325,7 @@ impl AppStateConversationRuntime {
                     expected_revision: Some(entry.revision),
                     persisted_active_agent_role: entry.active_agent_role.clone(),
                     persisted_active_session_mode: entry.active_session_mode.clone(),
+                    persisted_active_permission_level: entry.active_permission_level.clone(),
                     layout: entry.layout.clone(),
                 })
             }
@@ -361,6 +366,9 @@ impl AppStateConversationRuntime {
                     persisted_active_agent_role: nonempty_persisted_column(row.active_agent_role),
                     persisted_active_session_mode: nonempty_persisted_column(
                         row.active_session_mode,
+                    ),
+                    persisted_active_permission_level: nonempty_persisted_column(
+                        row.active_permission_level,
                     ),
                     layout: row.layout,
                 })
@@ -431,12 +439,17 @@ impl AppStateConversationRuntime {
         }
     }
 
+    // 会话级 `active_*` 三件套与 CAS revision 同属一次落盘事务的入参，
+    // 拆成结构体只会把调用点从「一排 None」变成「一排字段 = None」，可读性不变，
+    // 反而让 `conversation_store` 的两处签名与实现三边不同形（仓库形参棘轮上限是 9）。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn save_conversation_messages_if_revision(
         &self,
         conversation_id: String,
         messages: Vec<Message>,
         active_agent_role: Option<&str>,
         active_session_mode: Option<&str>,
+        active_permission_level: Option<&str>,
         expected_revision: Option<u64>,
         archive_rows: Vec<crate::conversation_store::ArchiveRow>,
     ) -> SaveConversationOutcome {
@@ -454,6 +467,10 @@ impl AppStateConversationRuntime {
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(str::to_string);
+                let level_owned = active_permission_level
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
                 if let Some(entry) = guard.get_mut(&conversation_id) {
                     match expected_revision {
                         Some(exp) if entry.revision == exp => {
@@ -463,6 +480,7 @@ impl AppStateConversationRuntime {
                             entry.messages = messages;
                             entry.active_agent_role = role_owned;
                             entry.active_session_mode = mode_owned;
+                            entry.active_permission_level = level_owned;
                             entry.revision = entry.revision.saturating_add(1);
                             entry.updated_at = now;
                         }
@@ -478,6 +496,7 @@ impl AppStateConversationRuntime {
                             messages,
                             active_agent_role: role_owned,
                             active_session_mode: mode_owned,
+                            active_permission_level: level_owned,
                             layout,
                             revision: 1,
                             updated_at: now,
@@ -494,6 +513,7 @@ impl AppStateConversationRuntime {
                 let exp = expected_revision;
                 let active_for_sql = active_agent_role.map(|s| s.to_string());
                 let mode_for_sql = active_session_mode.map(|s| s.to_string());
+                let level_for_sql = active_permission_level.map(|s| s.to_string());
                 sqlite_conversation_store_op(
                     c,
                     id_log,
@@ -506,6 +526,7 @@ impl AppStateConversationRuntime {
                             messages,
                             active_for_sql.as_deref(),
                             mode_for_sql.as_deref(),
+                            level_for_sql.as_deref(),
                             exp,
                             &archive_rows,
                             r.archive_codec_min_bytes,
@@ -737,6 +758,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 Vec::new(),
             )
             .await,
@@ -813,6 +835,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 archive_rows,
             )
             .await,
@@ -837,6 +860,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 vec![crate::conversation_store::ArchiveRow {
                     reason: crate::conversation_store::ArchiveReason::Summarized,
                     range_start: 0,
@@ -858,6 +882,7 @@ mod tests {
             sq.save_conversation_messages_if_revision(
                 "c1".to_string(),
                 one_user_msg("canonical 正文无附件引用"),
+                None,
                 None,
                 None,
                 None,

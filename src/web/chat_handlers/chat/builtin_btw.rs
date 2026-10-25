@@ -147,6 +147,8 @@ async fn answer_btw(
         req.image_urls,
         None,
         None,
+        // 旁路提问（`/btw`）不切权限等级：沿用它原会话的持久意图。
+        None,
     )
     .await
     .map_err(BtwFailure::Other)?;

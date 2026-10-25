@@ -160,6 +160,9 @@ pub struct RunAgentTurnAttach {
     pub session_mode: types::SessionMode,
     /// 角色级权限上限（`agent_roles[].max_permission_level`）；`None` = 不额外限制，参与回合 min 链。
     pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
+    /// 会话持久化的权限等级**意图**（`active_permission_level`），参与回合 min 链的 `persisted` 档；
+    /// `None` = 该会话从未指定（回落配置默认）。请求体显式传的等级已由 `POST /chat` 合并进这一档。
+    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
 }
 
 /// 可观测与进程句柄（入口袋；与环内 `RunLoopObs` 对应，勿与之混淆）。
@@ -216,6 +219,8 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub session_mode: types::SessionMode,
     /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
     pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
+    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
+    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
@@ -247,6 +252,8 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub session_mode: types::SessionMode,
     /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
     pub permission_role_max: Option<crate::cm_types::PermissionLevel>,
+    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
+    pub permission_persisted: Option<crate::cm_types::PermissionLevel>,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
@@ -266,6 +273,8 @@ struct WebChatJobCommonParts<'a> {
     session_mode: types::SessionMode,
     /// 角色级权限上限（设计 §6.1 的 min 链）；`None` = 不额外限制。
     permission_role_max: Option<crate::cm_types::PermissionLevel>,
+    /// 会话持久化的权限等级意图（design §6.1 `persisted` 档）；`None` = 未指定。
+    permission_persisted: Option<crate::cm_types::PermissionLevel>,
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
@@ -287,6 +296,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             session_mode,
             permission_role_max,
+            permission_persisted,
             tracing_chat_turn,
             request_audit,
             process_handles,
@@ -308,6 +318,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 turn_allowed_tool_names,
                 session_mode,
                 permission_role_max,
+                permission_persisted,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: Some(tracing_chat_turn),
@@ -345,6 +356,7 @@ impl<'a> RunAgentTurnParams<'a> {
             process_handles,
             session_mode,
             permission_role_max,
+            permission_persisted,
             request_id,
             tool_job_registry,
         } = args;
@@ -377,6 +389,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             session_mode,
             permission_role_max,
+            permission_persisted,
             tracing_chat_turn: observability::TracingChatTurn::new(
                 job_id,
                 conversation_id,
@@ -412,6 +425,7 @@ impl<'a> RunAgentTurnParams<'a> {
             process_handles,
             session_mode,
             permission_role_max,
+            permission_persisted,
             request_id,
             tool_job_registry,
         } = args;
@@ -444,6 +458,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             session_mode,
             permission_role_max,
+            permission_persisted,
             tracing_chat_turn: observability::TracingChatTurn::new(
                 job_id,
                 conversation_id,
@@ -503,6 +518,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 turn_allowed_tool_names: None,
                 session_mode: types::SessionMode::Act,
                 permission_role_max: None,
+                permission_persisted: None,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: None,

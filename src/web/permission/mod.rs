@@ -37,10 +37,10 @@ pub(crate) struct PermissionQuery {
     /// 缺省时按 `roles_prompts.default_agent_role_id` 算——但客户端**应当**带上一轮真正要用的
     /// `agent_role`：不带只会拿到按默认角色算的 `available`，再被服务端钳制（§16.2）。
     pub agent_role: Option<String>,
-    /// 可选会话 id：取该会话持久化的 `agent_role` / `session_mode`。
+    /// 可选会话 id：取该会话持久化的 `agent_role` / `session_mode` / `permission_level`。
     ///
-    /// 会话级 `permission_level` 的写入随 S5b（`POST /chat` 的 `permission_level`）落地；
-    /// 在那之前 `persisted_level` 恒为 `None`，`level_source` 也就恒为 `config`。
+    /// 会话级等级由 `POST /chat` 的 `permission_level` 写入（S5b）；会话从未指定时
+    /// `persisted_level` 为 `None`，`level_source` 即为 `config`。
     pub conversation_id: Option<String>,
 }
 
@@ -134,6 +134,47 @@ fn session_mode_for_projection(
         }
     }
 }
+/// `GET /conversation/messages` 的等级回显：`(active, effective)`。
+///
+/// - `active` = 会话持久化的**意图**（原样回传，非法串不瞎修）；
+/// - `effective` = 走与回合同一条 min 链后的**生效**值。
+///
+/// 两者都必须给：等级会被 ceiling / 角色上限 / `ask`·`plan` 三重钳制，
+/// 只回一个值就会出现「我明明切了 L4，怎么还是只读」且无从排查（设计 §16.1）。
+/// 复用 [`resolve_permission_level_for_turn`] 而非重写比较，避免长出第二套判据。
+pub(crate) fn permission_levels_for_snapshot(
+    cfg: &AgentConfig,
+    persisted_agent_role: Option<&str>,
+    persisted_session_mode: Option<&str>,
+    persisted_level: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let active = persisted_level
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let persisted_parsed = match crate::cm_types::parse_optional_permission_level(persisted_level) {
+        Ok(level) => level,
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "会话持久化的 permission_level 非法，回显按未指定处理：{e}"
+            );
+            None
+        }
+    };
+    let role_max =
+        turn_role_max_permission_level_for_web_or_cli_job(cfg, persisted_agent_role, None);
+    let session_mode =
+        session_mode_for_projection(cfg, persisted_agent_role, None, persisted_session_mode);
+    let resolved = resolve_permission_level_for_turn(PermissionTurnInput {
+        cfg,
+        requested: None,
+        persisted: persisted_parsed,
+        role_max,
+        session_mode,
+    });
+    (active, Some(resolved.effective.as_str().to_string()))
+}
 
 fn bad_request(code: &'static str, message: impl Into<String>) -> (StatusCode, Json<ApiError>) {
     (StatusCode::BAD_REQUEST, Json(ApiError::new(code, message)))
@@ -183,7 +224,20 @@ pub(crate) async fn permission_handler(
         persisted_session_mode: seed
             .as_ref()
             .and_then(|seed| seed.persisted_active_session_mode.as_deref()),
-        persisted_level: None,
+        persisted_level: match crate::cm_types::parse_optional_permission_level(
+            seed.as_ref()
+                .and_then(|seed| seed.persisted_active_permission_level.as_deref()),
+        ) {
+            Ok(level) => level,
+            Err(e) => {
+                // 坏的历史串按「未指定」处理：只读端点不该因一行脏数据整页 500。
+                log::warn!(
+                    target: "crabmate",
+                    "GET /permission：持久化的 permission_level 非法，按未指定处理：{e}"
+                );
+                None
+            }
+        },
     });
     Ok(Json(view))
 }
@@ -240,6 +294,32 @@ mod tests {
         assert_eq!(view.clamped_by, ["session_mode"]);
         assert_eq!(view.caps, PermissionLevel::Approved.caps_view());
     }
+    /// 会话快照回显必须同时给出「意图」与「生效」：`ask` 会话即便持久化了 L4 也只读到 L1。
+    #[test]
+    fn snapshot_reports_intent_and_effective_separately() {
+        let cfg = base_cfg();
+        let (active, effective) = permission_levels_for_snapshot(&cfg, None, Some("ask"), Some("unrestricted"));
+        assert_eq!(active.as_deref(), Some("unrestricted"));
+        assert_eq!(effective.as_deref(), Some("read"), "ask 钳到 ≤ read");
+
+        let (active, effective) = permission_levels_for_snapshot(&cfg, None, Some("act"), Some("workspace"));
+        assert_eq!(active.as_deref(), Some("workspace"));
+        assert_eq!(effective.as_deref(), Some("workspace"));
+    }
+
+    /// 会话从未指定 + 坏串都按「未指定」回显，且 `effective` 回落配置默认而不是整页报错。
+    #[test]
+    fn snapshot_tolerates_missing_and_corrupt_persisted_level() {
+        let cfg = base_cfg();
+        let (active, effective) = permission_levels_for_snapshot(&cfg, None, None, None);
+        assert_eq!(active, None);
+        assert_eq!(effective.as_deref(), Some(cfg.permission.permission_level.as_str()));
+
+        let (active, effective) = permission_levels_for_snapshot(&cfg, None, None, Some("root"));
+        assert_eq!(active.as_deref(), Some("root"), "原样回传，便于用户看到脏值");
+        assert_eq!(effective.as_deref(), Some(cfg.permission.permission_level.as_str()));
+    }
+
 
     /// 上限被显式降到 `workspace`（启动期 `reconcile_default_level_with_ceiling` 会把默认等级
     /// 一并降到上限）：`available` 里不再出现更高的档。`clamped_by` 此时为空是**正确**的 ——

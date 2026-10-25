@@ -157,6 +157,19 @@
           "message": {
             "type": "string"
           },
+          "permission_level": {
+            "default": null,
+            "description": "Session permission level intent (L0–L4). Never raises the effective level: it is clamped by `permission_level_max`, the role cap and the session mode. Omit to keep the conversation's persisted level. See docs/design/permission_levels.md.",
+            "enum": [
+              "chat",
+              "read",
+              "workspace",
+              "approved",
+              "unrestricted"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "readonly_tool_ttl_cache_secs": {
             "default": null,
             "format": "uint64",
@@ -401,6 +414,19 @@
           "message": {
             "type": "string"
           },
+          "permission_level": {
+            "default": null,
+            "description": "Session permission level intent (L0–L4). Never raises the effective level: it is clamped by `permission_level_max`, the role cap and the session mode. Omit to keep the conversation's persisted level. See docs/design/permission_levels.md.",
+            "enum": [
+              "chat",
+              "read",
+              "workspace",
+              "approved",
+              "unrestricted"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "readonly_tool_ttl_cache_secs": {
             "default": null,
             "format": "uint64",
@@ -609,6 +635,11 @@
             "nullable": true,
             "type": "string"
           },
+          "active_permission_level": {
+            "description": "会话持久化的等级**意图**（设计 §16.1 的「写」段）；`None` = 从未指定，按配置默认。",
+            "nullable": true,
+            "type": "string"
+          },
           "active_session_mode": {
             "nullable": true,
             "type": "string"
@@ -630,6 +661,11 @@
             "type": "array"
           },
           "conversation_id": {
+            "type": "string"
+          },
+          "effective_permission_level": {
+            "description": "本回合 `min()` 链之后的**生效**等级。\n\n与 `active_*` 并列回传是必须的：等级会被 ceiling / 角色上限 / `ask`·`plan` 三重钳制，\n只回显一个值就会出现「我明明切了 L4，怎么还是只读」且无从排查（设计 §16.1）。",
+            "nullable": true,
             "type": "string"
           },
           "has_older": {
