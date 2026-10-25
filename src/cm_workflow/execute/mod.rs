@@ -56,6 +56,16 @@ pub enum WorkflowApprovalMode {
         persistent_allowlist: Arc<Mutex<HashSet<String>>>,
         /// 当前聊天回合的协作式取消标志；`None` 时审批仅靠总超时兜底。
         cancel: Option<Arc<AtomicBool>>,
+        /// 本回合生效等级，决定 `AllowAlways` 写进哪个**等级作用域**（设计 §6.3）。
+        ///
+        /// `None` = 未接线等级（无 `caps` 的路径），写裸键，与引入等级前逐字一致。
+        permission_level: Option<crate::cm_types::PermissionLevel>,
+        /// 本回合的越界处理策略（设计 §7.2）：`Deny` = 直接拒（**不弹窗**）、
+        /// `AuditOnly` = 放行（不弹窗）、`Gate` = SSE 人工审批。
+        ///
+        /// 节点层原先只看「有无通道」，于是 L2 也会弹窗（批了再由执行层拒）、
+        /// L4 也会弹窗（而 L4 承诺放行）。`None` = 未接线，按 `Gate` 处理。
+        approval: Option<crate::cm_agent::permission::ApprovalPolicy>,
     },
 }
 

@@ -1,21 +1,34 @@
 // `http_fetch` / `http_request` 共用：前缀白名单、Web 审批与 Docker 分流。
 
-/// URL 是否已由配置前缀或 persistent allowlist 放行。
+/// URL 是否已由**本等级作用域内**的配置前缀或 persistent allowlist 放行。
+///
+/// 前缀只认 `caps.net_scope` 里的那份列表（MB-8「二级执行面不得回读 cfg」）；
+/// `permission = None` 表示该路径未接线等级，回落 `cfg`，与引入等级前逐字一致。
+///
+/// persistent allowlist 的命中键带**等级前缀**（设计 §6.3）：L3 批过的 URL 在 L2 会话
+/// 不得继续命中，否则「L2 = 人工例外通道关闭」名不副实。
 async fn http_tool_url_allowed(
     cfg: &crate::cm_config::AgentConfig,
     web_ctx: Option<&WebToolRuntime>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     url: &reqwest::Url,
     storage_key: &str,
 ) -> bool {
-    let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
-        url,
-        &cfg.http_fetch.http_fetch_allowed_prefixes,
-    );
-    if allowed_by_cfg {
+    use crate::cm_agent::permission::NetScope;
+    let prefixes: &[String] = match permission.map(|c| &c.net_scope) {
+        Some(NetScope::Prefixes(list)) => list.as_slice(),
+        // `Any` / `None` 已由 `http_net_gate` 先行定论。这两个调用点都有
+        // `needs_prefix_lookup` 守卫，所以 `Any` 分支当前不可达；保留它是为了让
+        // 「误加调用点」时失败方向是**更严**（不放行）而不是放宽。
+        Some(_) => &[],
+        None => cfg.http_fetch.http_fetch_allowed_prefixes.as_slice(),
+    };
+    if tools::http_fetch::url_matches_allowed_prefixes(url, prefixes) {
         return true;
     }
+    let key = crate::cm_types::scoped_allowlist_key(permission.map(|c| c.level), storage_key);
     match web_ctx {
-        Some(w) => w.persistent_allowlist_shared.lock().await.contains(storage_key),
+        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
         None => false,
     }
 }
@@ -72,6 +85,7 @@ fn http_net_gate(
 /// 未放行时发起 Web 审批；`Ok(())` 表示可继续本地执行。
 async fn http_tool_gate_url_approval(
     web_ctx: Option<&WebToolRuntime>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     spec: &crate::cm_internal::tool_approval::ApprovalRequestSpec,
     sse_log_label: &'static str,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
@@ -81,7 +95,14 @@ async fn http_tool_gate_url_approval(
             None,
         ));
     }
-    match tool_approval::interactive_gate_web_runtime(web_ctx, spec, sse_log_label).await {
+    match tool_approval::interactive_gate_web_runtime(
+        web_ctx,
+        permission.map(|c| c.level),
+        spec,
+        sse_log_label,
+    )
+    .await
+    {
         Ok(outcome) => tool_approval::interactive_gate_outcome_to_tool_err(outcome)
             .map_err(|msg| (msg, None)),
         Err(e) => Err((e.user_message_zh().to_string(), None)),
@@ -112,12 +133,25 @@ async fn http_tool_preflight(
         matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
     });
     let url_allowed = needs_prefix_lookup
-        && http_tool_url_allowed(cfg.as_ref(), p.web_ctx, p.url, p.storage_key).await;
+        && http_tool_url_allowed(
+            cfg.as_ref(),
+            p.web_ctx,
+            p.env.permission,
+            p.url,
+            p.storage_key,
+        )
+        .await;
     match http_net_gate(p.env.permission, p.url, url_allowed) {
         HttpNetGate::Allow => {}
         HttpNetGate::Deny(msg) => return Err((msg, None)),
         HttpNetGate::NeedApproval => {
-            http_tool_gate_url_approval(p.web_ctx, p.approval_spec, p.sse_log_label).await?;
+            http_tool_gate_url_approval(
+                p.web_ctx,
+                p.env.permission,
+                p.approval_spec,
+                p.sse_log_label,
+            )
+            .await?;
         }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(
@@ -170,8 +204,8 @@ async fn http_fetch_prefetch_approval(
     let needs_prefix_lookup = permission.is_none_or(|c| {
         matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
     });
-    let url_allowed =
-        needs_prefix_lookup && http_tool_url_allowed(cfg, web_ctx, url, storage_key).await;
+    let url_allowed = needs_prefix_lookup
+        && http_tool_url_allowed(cfg, web_ctx, permission, url, storage_key).await;
     match http_net_gate(permission, url, url_allowed) {
         HttpNetGate::Allow => Ok(()),
         HttpNetGate::Deny(msg) => Err(msg),
@@ -179,6 +213,7 @@ async fn http_fetch_prefetch_approval(
             let spec = tool_approval::approval_spec_http_fetch(approval_args, storage_key);
             match http_tool_gate_url_approval(
                 web_ctx,
+                permission,
                 &spec,
                 "tool_registry::http_fetch approval parallel prefetch",
             )
@@ -241,5 +276,72 @@ mod http_net_gate_tests {
         assert!(!msg.contains("secret"), "{msg}");
         assert!(!msg.contains("/a"), "{msg}");
         assert!(msg.contains("https://example.com"), "{msg}");
+    }
+
+    /// 设计 §6.3 + MB-8：allowlist 命中按**等级**判定，且前缀只认 `caps.net_scope`
+    /// （不再回读 `cfg` 的前缀列表）。
+    #[tokio::test]
+    async fn url_allowed_ignores_lower_level_allowlist_keys() {
+        let cfg = test_cfg();
+        let url = reqwest::Url::parse("https://evil.example.org/x").expect("url");
+        let storage_key = "http_fetch:https://evil.example.org/x";
+
+        // 只借 `persistent_allowlist_shared`：本用例完全不走审批，所以自己搭一个最小句柄，
+        // 不复用 `super::tests::approval_fixture`（那会 preseed 一条没人消费的决策）。
+        let (web, _out_rx, _decision_tx) = bare_web_runtime();
+        web.persistent_allowlist_shared
+            .lock()
+            .await
+            .insert(crate::cm_types::scoped_allowlist_key(
+                Some(PermissionLevel::Approved),
+                storage_key,
+            ));
+
+        let l3 = project_caps(PermissionLevel::Approved, &cfg);
+        assert!(
+            http_tool_url_allowed(&cfg, Some(&web), Some(&l3), &url, storage_key).await,
+            "L3 会话应命中自己的键"
+        );
+
+        let l2 = project_caps(PermissionLevel::Workspace, &cfg);
+        assert!(
+            !http_tool_url_allowed(&cfg, Some(&web), Some(&l2), &url, storage_key).await,
+            "L2 会话不得命中 L3 的键"
+        );
+
+        // MB-8：接线后前缀只来自 `caps.net_scope`，另一份 `cfg` 放宽的前缀不生效。
+        let mut wider = test_cfg();
+        wider.http_fetch.http_fetch_allowed_prefixes =
+            vec!["https://evil.example.org".to_string()];
+        assert!(
+            !http_tool_url_allowed(&wider, Some(&web), Some(&l2), &url, storage_key).await,
+            "已接线的等级不得回读 cfg 前缀"
+        );
+    }
+
+    /// 最小 `WebToolRuntime`：两端一并交回调用方，保证 channel 不会提前关闭。
+    fn bare_web_runtime() -> (
+        crate::cm_tools::tool_runtime::WebToolRuntime,
+        tokio::sync::mpsc::Receiver<String>,
+        tokio::sync::mpsc::Sender<crate::cm_types::CommandApprovalDecision>,
+    ) {
+        use tokio::sync::Mutex as TokioMutex;
+        let (out_tx, out_rx) = tokio::sync::mpsc::channel::<String>(2);
+        let (decision_tx, decision_rx) =
+            tokio::sync::mpsc::channel::<crate::cm_types::CommandApprovalDecision>(2);
+        (
+            crate::cm_tools::tool_runtime::WebToolRuntime {
+                out_tx,
+                approval_rx_shared: Arc::new(TokioMutex::new(decision_rx)),
+                approval_request_guard: Arc::new(TokioMutex::new(())),
+                persistent_allowlist_shared: Arc::new(TokioMutex::new(
+                    std::collections::HashSet::new(),
+                )),
+                turn_job_id: None,
+                cancel: None,
+            },
+            out_rx,
+            decision_tx,
+        )
     }
 }

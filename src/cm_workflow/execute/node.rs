@@ -269,8 +269,14 @@ async fn command_already_in_persistent_allowlist(
     match approval_mode {
         WorkflowApprovalMode::Interactive {
             persistent_allowlist,
+            permission_level,
             ..
-        } => persistent_allowlist.lock().await.contains(cmd_lower),
+        } => {
+            // 键带**等级作用域前缀**（设计 §6.3）：L3 批过的命令不得在 L2 的节点里继续命中，
+            // 否则「L2 越界直接拒」会被上层的旧批准绕过。
+            let key = crate::cm_types::scoped_allowlist_key(*permission_level, cmd_lower);
+            persistent_allowlist.lock().await.contains(&key)
+        }
         WorkflowApprovalMode::NoApproval => false,
     }
 }
@@ -286,6 +292,44 @@ fn args_preview_from_node(node: &WorkflowNodeSpec) -> String {
                 .join(" ")
         })
         .unwrap_or_default()
+}
+
+/// 越界时节点该做什么（设计 §7.2）。把「等级 → 动作」收敛成一个纯函数，
+/// 避免在每个节点路径上重复 `match approval` 而顶破 CCN 上限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApprovalDisposition {
+    /// 放行（L4：命令 / 路径面已放宽，不该再拦）。
+    Proceed,
+    /// 直接拒，**不弹窗**（L2 硬边界；或根本没有审批通道）。
+    Deny,
+    /// 走 SSE 人工审批（L3 现状）。
+    Ask,
+}
+
+fn approval_disposition(approval_mode: &WorkflowApprovalMode) -> ApprovalDisposition {
+    match approval_mode {
+        // 无审批通道：越界只能拒（不是「等级禁止」，但动作相同）。
+        WorkflowApprovalMode::NoApproval => ApprovalDisposition::Deny,
+        WorkflowApprovalMode::Interactive { approval, .. } => {
+            match approval.unwrap_or(crate::cm_agent::permission::ApprovalPolicy::Gate) {
+                crate::cm_agent::permission::ApprovalPolicy::Deny => ApprovalDisposition::Deny,
+                crate::cm_agent::permission::ApprovalPolicy::AuditOnly => {
+                    ApprovalDisposition::Proceed
+                }
+                crate::cm_agent::permission::ApprovalPolicy::Gate => ApprovalDisposition::Ask,
+            }
+        }
+    }
+}
+
+/// 节点内 `run_command` 是否落在白名单外。
+///
+/// 与主链路 `cmd_missing_from_allowlist` 同一把尺子：认 `*` 哨兵
+/// （L4 的 `command_scope = Any` 落成 `["*"]`），大小写不敏感。
+/// 少了哨兵这条，L4 下每个命令节点都会被判越界、进而落到审批分支（而 L4 承诺放行）。
+fn command_node_disallowed(allowed: &[String], cmd_lower: &str) -> bool {
+    !crate::cm_tools::tools::allowlist_allows_all(allowed)
+        && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd_lower))
 }
 
 fn command_not_allowed_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
@@ -360,10 +404,13 @@ async fn apply_interactive_allow_decision(
         CommandApprovalDecision::AllowAlways => {
             if let WorkflowApprovalMode::Interactive {
                 persistent_allowlist,
+                permission_level,
                 ..
             } = approval_mode
             {
-                persistent_allowlist.lock().await.insert(cmd_lower.to_string());
+                persistent_allowlist.lock().await.insert(
+                    crate::cm_types::scoped_allowlist_key(*permission_level, cmd_lower),
+                );
             }
             Ok(extend_allowlist_with_cmd(
                 &tool_exec_ctx.cfg_allowed_commands,
@@ -407,21 +454,26 @@ async fn apply_run_command_allowlist_approvals(
         return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     };
     let cmd_lower = cmd.trim().to_lowercase();
-    let disallowed = !tool_exec_ctx
-        .cfg_allowed_commands
-        .as_ref()
-        .iter()
-        .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
-    let already_allowed =
-        command_already_in_persistent_allowlist(approval_mode, &cmd_lower).await;
-    if !disallowed || cmd_lower.is_empty() {
+    let base = tool_exec_ctx.cfg_allowed_commands.as_ref();
+    if !command_node_disallowed(base, &cmd_lower) || cmd_lower.is_empty() {
         return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     }
-    if already_allowed {
+    if command_already_in_persistent_allowlist(approval_mode, &cmd_lower).await {
         return Ok(extend_allowlist_with_cmd(
             &tool_exec_ctx.cfg_allowed_commands,
             &cmd_lower,
         ));
+    }
+    // 等级给出的结论先于「有没有审批通道」：L2 直接拒（不弹窗）、L4 放行（不弹窗）。
+    match approval_disposition(approval_mode) {
+        ApprovalDisposition::Ask => {}
+        ApprovalDisposition::Deny => return Err(command_not_allowed_result(node, &cmd_lower)),
+        ApprovalDisposition::Proceed => {
+            return Ok(extend_allowlist_with_cmd(
+                &tool_exec_ctx.cfg_allowed_commands,
+                &cmd_lower,
+            ));
+        }
     }
     extend_for_new_disallowed_command(node, approval_mode, tool_exec_ctx, cmd, &cmd_lower).await
 }
@@ -436,14 +488,21 @@ async fn apply_generic_workflow_node_approval(
     }
     let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
 
-    match approval_mode {
-        WorkflowApprovalMode::NoApproval => {
+    // 等级先给结论：L4 放行、L2 直接拒，都不弹窗（设计 §7.2 / §13）。
+    match approval_disposition(approval_mode) {
+        ApprovalDisposition::Proceed => return Ok(()),
+        ApprovalDisposition::Deny => {
+            let reason = match approval_mode {
+                WorkflowApprovalMode::NoApproval => "当前未启用审批通道",
+                WorkflowApprovalMode::Interactive { .. } => {
+                    "当前权限等级不提供人工审批（工作区硬边界）"
+                }
+            };
             return Err(NodeRunResult {
                 id: node.id.clone(),
                 status: NodeRunStatus::Failed,
                 output: format!(
-                    "workflow 执行失败：该节点需要人工审批，但当前未启用审批通道：{}",
-                    approval_key
+                    "workflow 执行失败：该节点需要人工审批，但{reason}：{approval_key}"
                 )
                 .into(),
                 workspace_changed: false,
@@ -452,14 +511,24 @@ async fn apply_generic_workflow_node_approval(
                 attempt: 1,
             });
         }
-        WorkflowApprovalMode::Interactive {
-            out_tx,
-            approval_rx,
-            approval_request_guard,
-            persistent_allowlist,
-            cancel,
-        } => {
-            let already_allowed = persistent_allowlist.lock().await.contains(&approval_key);
+        ApprovalDisposition::Ask => {}
+    }
+
+    // 只有 `Ask` 会走到这里（必为 `Interactive` + `Gate`）。
+    if let WorkflowApprovalMode::Interactive {
+        out_tx,
+        approval_rx,
+        approval_request_guard,
+        persistent_allowlist,
+        cancel,
+        permission_level,
+        ..
+    } = approval_mode
+    {
+            // 与 `run_command` 同一把尺子：通用节点键也带等级作用域前缀（设计 §6.3）。
+            let scoped_key =
+                crate::cm_types::scoped_allowlist_key(*permission_level, &approval_key);
+            let already_allowed = persistent_allowlist.lock().await.contains(&scoped_key);
             if !already_allowed {
                 let decision = request_approval(
                     out_tx.clone(),
@@ -488,11 +557,10 @@ async fn apply_generic_workflow_node_approval(
                     }
                     CommandApprovalDecision::AllowOnce => {}
                     CommandApprovalDecision::AllowAlways => {
-                        persistent_allowlist.lock().await.insert(approval_key);
+                        persistent_allowlist.lock().await.insert(scoped_key);
                     }
                 }
             }
-        }
     }
     Ok(())
 }
@@ -746,4 +814,74 @@ async fn request_approval(
     )
     .await
     .unwrap_or(CommandApprovalDecision::Deny)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_agent::permission::ApprovalPolicy;
+
+    fn allowed(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// `WorkflowApprovalMode::Interactive` 里的 channel 必须活着，否则
+    /// `request_approval` 会走「通道不可用」分支；这里把两端一并交回调用方。
+    fn interactive_mode(
+        approval: Option<ApprovalPolicy>,
+    ) -> (
+        WorkflowApprovalMode,
+        mpsc::Receiver<String>,
+        mpsc::Sender<CommandApprovalDecision>,
+    ) {
+        let (out_tx, out_rx) = mpsc::channel::<String>(2);
+        let (decision_tx, decision_rx) = mpsc::channel::<CommandApprovalDecision>(2);
+        let mode = WorkflowApprovalMode::Interactive {
+            out_tx,
+            approval_rx: Arc::new(Mutex::new(decision_rx)),
+            approval_request_guard: Arc::new(Mutex::new(())),
+            persistent_allowlist: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            cancel: None,
+            permission_level: Some(crate::cm_types::PermissionLevel::Approved),
+            approval,
+        };
+        (mode, out_rx, decision_tx)
+    }
+
+    /// L4 的 `command_scope = Any` 落成 `["*"]`：任何命令都不算越界。
+    #[test]
+    fn star_sentinel_is_not_disallowed() {
+        assert!(!command_node_disallowed(&allowed(&["*"]), "echo"));
+    }
+
+    #[test]
+    fn listed_command_matches_case_insensitively() {
+        assert!(!command_node_disallowed(&allowed(&["git", "ls"]), "git"));
+        assert!(command_node_disallowed(&allowed(&["git", "ls"]), "echo"));
+        assert!(command_node_disallowed(&[], "echo"));
+    }
+
+    #[test]
+    fn no_approval_channel_denies_disallowed_commands() {
+        assert_eq!(
+            approval_disposition(&WorkflowApprovalMode::NoApproval),
+            ApprovalDisposition::Deny
+        );
+    }
+
+    #[test]
+    fn approval_disposition_follows_level_policy() {
+        let (deny, _o1, _d1) = interactive_mode(Some(ApprovalPolicy::Deny));
+        assert_eq!(approval_disposition(&deny), ApprovalDisposition::Deny);
+
+        let (gate, _o2, _d2) = interactive_mode(Some(ApprovalPolicy::Gate));
+        assert_eq!(approval_disposition(&gate), ApprovalDisposition::Ask);
+
+        let (audit, _o3, _d3) = interactive_mode(Some(ApprovalPolicy::AuditOnly));
+        assert_eq!(approval_disposition(&audit), ApprovalDisposition::Proceed);
+
+        // 未接线（`None`）保持引入等级前的行为：照旧走人工审批。
+        let (unwired, _o4, _d4) = interactive_mode(None);
+        assert_eq!(approval_disposition(&unwired), ApprovalDisposition::Ask);
+    }
 }
