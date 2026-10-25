@@ -272,7 +272,7 @@ pub enum TableTextAggregateOp {
     Max,
 }
 
-/// [`super::table_text::run`] 入参（按 `action` 分支校验由 runner 完成）。
+/// [`super::table_text::run_try`] 入参（按 `action` 分支校验由 runner 完成）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TableTextArgs {
@@ -321,7 +321,7 @@ fn default_text_diff_max_output_bytes() -> Option<u64> {
     Some(50_000)
 }
 
-/// [`super::text_diff::run`] 入参。
+/// [`super::text_diff::run_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct TextDiffArgs {

@@ -119,6 +119,15 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "search_in_files_workspace_subpath_resolve_failed"
         | "search_in_files_workspace_outside_root"
         | "search_in_files_path_absolute_not_allowed" => ToolFailureCategory::Workspace,
+        // 显式登记：不依赖 `ends_with("_failed")` 兜底，改码名时不至于静默退化成 `Unknown`。
+        "text_diff_io_failed" | "table_text_io_failed" | "table_text_parse_failed" => {
+            ToolFailureCategory::External
+        }
+        // `*_serialize_failed` / `*_internal` 由 [`ToolError::internal_code`] 构造（`category = Internal`），
+        // 必须排在 `ends_with("_failed")` 之前，否则重算分类会得到 `External`，与 `ToolError.category` 冲突。
+        c if c.ends_with("_serialize_failed") || c.ends_with("_internal") => {
+            ToolFailureCategory::Internal
+        }
         c if c.ends_with("_failed") => ToolFailureCategory::External,
         _ => ToolFailureCategory::Unknown,
     }
