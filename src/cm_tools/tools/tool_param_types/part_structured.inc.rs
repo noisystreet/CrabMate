@@ -110,7 +110,7 @@ pub struct StructuredDiffArgs {
     pub max_diff_lines: Option<u64>,
 }
 
-/// [`super::structured_data::structured_patch`] 入参。
+/// [`super::structured_data::structured_patch_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredPatchArgs {

@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde_json::Value as JsonValue;
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::file;
 use crate::cm_tools::tools::tool_param_types::{StructuredPatchAction, StructuredPatchArgs};
@@ -11,64 +12,76 @@ use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 
 use super::super::{
     DataFormat, detect_format, parse_patch_query_tokens, parse_to_json, read_limited,
-    remove_value_at_path, serialize_by_format, set_value_at_path,
+    remove_value_at_path, serialize_by_format, set_value_at_path, structured_io_error,
 };
 
-pub(super) fn run_structured_patch_display(
+/// 执行 `structured_patch`：参数 / 查询 / revision 问题为 `invalid_args`，
+/// 读盘为 `structured_patch_io_failed`，解析为 `structured_patch_parse_failed`，
+/// 写盘为 `structured_patch_write_failed`。
+#[allow(clippy::result_large_err)]
+pub(super) fn run_structured_patch_try(
     args_json: &str,
     working_dir: &Path,
     ctx: &ToolContext<'_>,
-) -> String {
-    match run_structured_patch(args_json, working_dir, ctx) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
+) -> Result<String, ToolError> {
+    run_structured_patch(args_json, working_dir, ctx)
 }
 
-fn detect_structured_patch_format(path: &str, fmt: Option<&str>) -> Result<DataFormat, String> {
+#[allow(clippy::result_large_err)]
+fn detect_structured_patch_format(path: &str, fmt: Option<&str>) -> Result<DataFormat, ToolError> {
     match detect_format(path, fmt) {
-        Ok(DataFormat::Csv | DataFormat::Tsv) => {
-            Err("错误：structured_patch 不支持 csv/tsv，请改用 table_text 或直接编辑".to_string())
-        }
+        Ok(DataFormat::Csv | DataFormat::Tsv) => Err(ToolError::invalid_args(
+            "错误：structured_patch 不支持 csv/tsv，请改用 table_text 或直接编辑".to_string(),
+        )),
         Ok(f) => Ok(f),
-        Err(e) => Err(format!("错误：{}", e)),
+        Err(e) => Err(ToolError::invalid_args(format!("错误：{e}"))),
     }
 }
 
+/// 读盘错误经 [`structured_io_error`] 分流（「文件过大」→ `invalid_args`，其余 → IO）。
+/// 迁移前这里直接透传 `e.to_string()`，首行无关键词 ⇒ 会被判成成功。
+#[allow(clippy::result_large_err)]
 fn read_limited_json_value(
     abs: &Path,
     data_fmt: DataFormat,
-) -> Result<(String, JsonValue), String> {
-    let text = read_limited(abs).map_err(|e| e.to_string())?;
-    let jv = parse_to_json(&text, data_fmt, true).map_err(|e| format!("解析失败: {}", e))?;
+) -> Result<(String, JsonValue), ToolError> {
+    let text = read_limited(abs).map_err(structured_io_error)?;
+    let jv = parse_to_json(&text, data_fmt, true).map_err(|e| {
+        ToolError::external_code("structured_patch_parse_failed", format!("解析失败: {e}"))
+    })?;
     Ok((text, jv))
 }
 
+#[allow(clippy::result_large_err)]
 fn run_structured_patch(
     args_json: &str,
     working_dir: &Path,
     ctx: &ToolContext<'_>,
-) -> Result<String, String> {
-    let raw_args = crate::cm_tools::tools::parse_args_json(args_json)?;
+) -> Result<String, ToolError> {
+    let raw_args =
+        crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let (args, path, query, action) = prepare_structured_patch(&raw_args)?;
     let fmt = args.format.map(|f| f.as_detect_token());
     // 读写共用 `resolve_for_read`：它 `canonicalize()` 后返回**真实路径**，正是原子替换（rename）
     // 需要的目标形态——若换成 `resolve_for_write`（保留符号链接前缀），rename 会把链接本身
     // 替换成普通文件。同时它要求目标已存在，而 patch 本来就必须先读原文，语义吻合。
-    let abs = file::resolve_for_read(working_dir, &path).map_err(|e| format!("错误：{}", e))?;
+    let abs = file::resolve_for_read(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
     let data_fmt = detect_structured_patch_format(&path, fmt)?;
     let (text, mut jv) = read_limited_json_value(&abs, data_fmt)?;
-    let tokens = parse_patch_query_tokens(&query).map_err(|e| format!("query 无效: {}", e))?;
+    let tokens =
+        parse_patch_query_tokens(&query).map_err(|e| ToolError::invalid_args(format!("query 无效: {e}")))?;
 
     // 显式 `base_revision` 在**预览阶段也校验**（与 `modify_file` 一致）：预览若基于过期快照，
     // 应当立刻报错，而不是给出一份「看起来安全」的 diff 让人据此决定写盘。
-    // 写盘路径会在 `write_bytes_with_revision_guard` 里紧贴 rename 前再校验一次。
-    file::verify_write_revision(&raw_args, &abs, ctx, false)?;
+    // 写盘路径会在 `write_bytes_with_revision_guard` 里紧贴 rename 前再校验一次——两次不是
+    // 重复劳动：后者只覆盖「预览 → rename」之间目标被改写的 TOCTOU 窗口。
+    file::verify_write_revision(&raw_args, &abs, ctx, false).map_err(ToolError::invalid_args)?;
 
     apply_patch_mutation(action, &args, &mut jv, tokens.as_slice())?;
-    let serialized =
-        serialize_by_format(&jv, data_fmt).map_err(|e| format!("序列化失败: {}", e))?;
-    Ok(finish_structured_patch(StructuredPatchOutcome {
+    let serialized = serialize_by_format(&jv, data_fmt).map_err(|e| {
+        ToolError::external_code("structured_patch_serialize_failed", format!("序列化失败: {e}"))
+    })?;
+    finish_structured_patch(StructuredPatchOutcome {
         path: &path,
         action,
         query: &query,
@@ -79,19 +92,22 @@ fn run_structured_patch(
         raw_args: &raw_args,
         working_dir,
         ctx,
-    }))
+    })
 }
 
 /// 解析并校验结构化补丁参数，返回规范化后的 `(args, path, query, action 文案)`。
+#[allow(clippy::result_large_err)]
 fn prepare_structured_patch(
     raw: &JsonValue,
-) -> Result<(StructuredPatchArgs, String, String, &'static str), String> {
+) -> Result<(StructuredPatchArgs, String, String, &'static str), ToolError> {
     let args = parse_structured_patch_args(raw)?;
     let path = nonempty_trimmed(&args.path)
-        .ok_or_else(|| "错误：缺少 path".to_string())?
+        .ok_or_else(|| ToolError::invalid_args("错误：缺少 path".to_string()))?
         .to_string();
     let query = nonempty_trimmed(args.query.trim())
-        .ok_or_else(|| "错误：缺少 query（JSON Pointer 或点号路径）".to_string())?
+        .ok_or_else(|| {
+            ToolError::invalid_args("错误：缺少 query（JSON Pointer 或点号路径）".to_string())
+        })?
         .to_string();
     let action = match args.action {
         StructuredPatchAction::Set => "set",
@@ -100,8 +116,9 @@ fn prepare_structured_patch(
     Ok((args, path, query, action))
 }
 
-fn parse_structured_patch_args(raw: &JsonValue) -> Result<StructuredPatchArgs, String> {
-    crate::cm_tools::tools::parse_args_from_value(raw.clone())
+#[allow(clippy::result_large_err)]
+fn parse_structured_patch_args(raw: &JsonValue) -> Result<StructuredPatchArgs, ToolError> {
+    crate::cm_tools::tools::parse_args_from_value(raw.clone()).map_err(ToolError::invalid_args)
 }
 
 fn nonempty_trimmed(s: &str) -> Option<&str> {
@@ -109,21 +126,22 @@ fn nonempty_trimmed(s: &str) -> Option<&str> {
     (!t.is_empty()).then_some(t)
 }
 
+#[allow(clippy::result_large_err)]
 fn apply_patch_mutation(
     action: &str,
     args: &StructuredPatchArgs,
     jv: &mut JsonValue,
     tokens: &[String],
-) -> Result<(), String> {
+) -> Result<(), ToolError> {
     if action == "set" {
         let new_value = args
             .value
             .clone()
-            .ok_or_else(|| "错误：action=set 时必须提供 value".to_string())?;
+            .ok_or_else(|| ToolError::invalid_args("错误：action=set 时必须提供 value".to_string()))?;
         set_value_at_path(jv, tokens, new_value, args.create_missing)
-            .map_err(|e| format!("补丁失败: {}", e))
+            .map_err(|e| ToolError::invalid_args(format!("补丁失败: {e}")))
     } else {
-        remove_value_at_path(jv, tokens).map_err(|e| format!("补丁失败: {}", e))
+        remove_value_at_path(jv, tokens).map_err(|e| ToolError::invalid_args(format!("补丁失败: {e}")))
     }
 }
 
@@ -156,7 +174,8 @@ fn render_patch_diff(path: &str, before: &str, after: &str) -> String {
     )
 }
 
-fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> String {
+#[allow(clippy::result_large_err)]
+fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> Result<String, ToolError> {
     let qdisp = if o.query.is_empty() {
         "(root)"
     } else {
@@ -170,10 +189,10 @@ fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> String {
         } else {
             diff
         };
-        return format!(
+        return Ok(format!(
             "structured_patch 预览成功（未写入）: path={} action={} query={}\n{}",
             o.path, o.action, qdisp, body
-        );
+        ));
     }
     let before = o.text.to_owned();
     // 统一提交入口：tmp → 继承元数据 → fsync → revision 校验 → 原子替换。
@@ -185,7 +204,7 @@ fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> String {
         o.ctx,
         false,
     ) {
-        return e;
+        return Err(ToolError::external_code("structured_patch_write_failed", e));
     }
     record_file_state_after_write(
         o.ctx.workspace_changelist,
@@ -193,8 +212,8 @@ fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> String {
         o.path,
         Some(before),
     );
-    format!(
+    Ok(format!(
         "structured_patch 已写入: path={} action={} query={}",
         o.path, o.action, qdisp
-    )
+    ))
 }

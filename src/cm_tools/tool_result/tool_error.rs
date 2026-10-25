@@ -124,7 +124,9 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "structured_diff_path_b_resolve_failed" => ToolFailureCategory::Workspace,
         // 显式登记：不依赖 `ends_with("_failed")` 兜底，改码名时不至于静默退化成 `Unknown`。
         "text_diff_io_failed" | "table_text_io_failed" | "table_text_parse_failed"
-        | "markdown_check_links_failed" | "structured_io_failed" | "structured_parse_failed" => {
+        | "markdown_check_links_failed" | "structured_io_failed" | "structured_parse_failed"
+        | "structured_patch_write_failed" | "structured_patch_parse_failed"
+        | "structured_patch_serialize_failed" => {
             ToolFailureCategory::External
         }
         // `*_serialize_failed` / `*_internal` 由 [`ToolError::internal_code`] 构造（`category = Internal`），

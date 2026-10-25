@@ -393,10 +393,6 @@ define_runners_cwd_maxlen! {
 
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
 
-define_runners_cwd_ctx! {
-    runner_structured_patch => structured_data::structured_patch,
-}
-
 // `archive-tools` 未启用时 `archive` 模块不参与编译（见 `tools/mod.rs` 的 cfg）。
 #[cfg(feature = "archive-tools")]
 define_runners_cwd_ctx! {
@@ -415,6 +411,7 @@ define_runners_cwd_ctx_try! {
     runner_append_file_try => file::append_file_try,
     runner_search_replace_try => file::search_replace_try,
     runner_delete_files_try => file::delete_files_try,
+    runner_structured_patch_try => structured_data::structured_patch_try,
 }
 
 // ── 同构薄封装实例（形态 3 孪生：f(args, cwd) -> Result）──────
@@ -450,7 +447,12 @@ define_runners_cwd! {
 define_runners_args_only! {
     runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
-    runner_text_transform => text_transform::run,
+}
+
+/// `text_transform`：入参 / 超限 / 解码失败均为 `invalid_args`（args-only 形态的手写 Typed 孪生）。
+#[allow(clippy::result_large_err)]
+pub fn runner_text_transform_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    text_transform::run_try(args)
 }
 
 // ── misc_basic 族（args-only 形态；仅 4 个条目，手写具名 runner，不抽宏）──

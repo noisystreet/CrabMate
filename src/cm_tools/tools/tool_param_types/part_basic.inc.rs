@@ -39,7 +39,7 @@ pub enum TextTransformHashAlgo {
     Sha256,
 }
 
-/// [`super::text_transform::run`] 入参。
+/// [`super::text_transform::run_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextTransformArgs {
