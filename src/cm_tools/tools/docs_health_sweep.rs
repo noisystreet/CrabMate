@@ -362,7 +362,12 @@ fn run_markdown_links_phase(
         Ok(s) => s,
         Err(e) => return Some(e),
     };
-    let r = super::markdown_links::markdown_check_links(&md_args, workspace_root);
+    // 迁移 Typed 后失败是显式 `ToolError`；这里仍取正文拼进报告，
+    // `markdown_links_failed` 判的是「结论: 发现」即查到问题，与执行成败无关，保持不变。
+    let r = match super::markdown_links::markdown_check_links_try(&md_args, workspace_root) {
+        Ok(body) => body,
+        Err(e) => e.message,
+    };
     let failed = markdown_links_failed(&r);
     summary.push((
         "markdown_check_links".to_string(),

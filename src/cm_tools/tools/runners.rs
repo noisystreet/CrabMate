@@ -425,6 +425,10 @@ define_runners_cwd_try! {
     runner_chmod_file_try => file::chmod_file_try,
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
+    runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
+    runner_structured_validate_try => structured_data::structured_validate_try,
+    runner_structured_query_try => structured_data::structured_query_try,
+    runner_structured_diff_try => structured_data::structured_diff_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
@@ -436,10 +440,6 @@ define_runners_cwd! {
     runner_list_tree => file::list_tree,
     runner_read_binary_meta => file::read_binary_meta,
     runner_hash_file => file::hash_file,
-    runner_markdown_check_links => markdown_links::markdown_check_links,
-    runner_structured_validate => structured_data::structured_validate,
-    runner_structured_query => structured_data::structured_query,
-    runner_structured_diff => structured_data::structured_diff,
     runner_code_nav => code_nav_dispatch::dispatch,
     runner_reminder => schedule_dispatch::reminder,
     runner_event => schedule_dispatch::event,

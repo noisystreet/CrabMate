@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksOutputFormat;
 use reqwest::blocking::Client;
 
@@ -408,18 +409,18 @@ fn markdown_check_process_one_link_hit(
 /// - `external_timeout_secs`?: number，默认 10，上限 60
 /// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
 /// - `output_format`?: string，默认 text；可选 text/json/sarif
-pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn markdown_check_links_try(
+    args_json: &str,
+    working_dir: &Path,
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let args: crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksArgs =
-        match serde_json::from_value(v) {
-            Ok(a) => a,
-            Err(e) => return format!("参数 JSON 与 markdown_check_links 形状不一致: {e}"),
-        };
-    match parse_markdown_check_args(&args) {
-        Ok(parsed) => links_inner::markdown_check_links_inner(parsed, working_dir),
-        Err(e) => e,
-    }
+        serde_json::from_value(v).map_err(|e| {
+            ToolError::invalid_args(format!(
+                "参数 JSON 与 markdown_check_links 形状不一致: {e}"
+            ))
+        })?;
+    let parsed = parse_markdown_check_args(&args).map_err(ToolError::invalid_args)?;
+    links_inner::markdown_check_links_inner_try(parsed, working_dir)
 }

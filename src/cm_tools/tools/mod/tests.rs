@@ -662,7 +662,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮：`misc_basic` 整族（`regex_test` / `date_calc` / `json_format` / `env_var_check`）
     // 迁为 Typed（−4）。
     // 本轮（B2 首段）：`text_diff` / `table_text` 迁为 Typed（−2）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 55 } else { 52 };
+    // 本轮（B2 第二段）：`markdown_check_links` / `structured_validate` / `structured_query` /
+    // `structured_diff` 迁为 Typed（−4）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 51 } else { 48 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
