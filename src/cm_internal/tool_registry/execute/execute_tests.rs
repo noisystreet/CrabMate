@@ -92,6 +92,71 @@ pub(super) fn test_policy_context<'a>(
     }
 }
 
+/// 测试专用的 owned 评估结果。
+///
+/// R3 后 [`PolicyDecision`] 只**借用** [`RunCommandCaps`]（借用生命周期绑不住
+/// `evaluate_policy` 的返回值），逐用例声明快照会把噪音铺满矩阵测试；这里把借用结果
+/// 折叠成一份 owned 快照，断言形态与改造前一致（`d.allowed_commands` / `d.skip_arg_safety`）。
+#[derive(Debug)]
+pub(super) struct EvaluatedPolicy {
+    pub(super) allowed_commands: Arc<[String]>,
+    pub(super) skip_arg_safety: bool,
+}
+
+/// 包一层 [`evaluate_policy`]：内部持有快照，对外回 owned 结果。
+pub(super) async fn evaluate_for_test(
+    parsed: &ParsedRunCommandJson,
+    ctx: &PolicyContext<'_>,
+) -> Result<EvaluatedPolicy, PolicyError> {
+    let mut policy_caps = ctx.command_caps();
+    let decision = evaluate_policy(parsed, ctx, &mut policy_caps).await?;
+    Ok(EvaluatedPolicy {
+        allowed_commands: Arc::clone(&decision.caps.allowed_commands),
+        skip_arg_safety: decision.skip_arg_safety,
+    })
+}
+
+/// R3 不变量：快照只在**成功**路径末尾一次性写回。
+///
+/// 失败用例验证「中途可能已发生扩展但整体 `Err`」时快照保持原值——`AllowOnce` 的临时
+/// 批准不该泄漏到调用方的快照里；成功用例验证写回确实生效（否则引用方读到的永远是基白名单）。
+#[tokio::test]
+async fn caps_snapshot_only_updated_on_success() {
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    // 窄白名单且不含 `bash`，保证探针命令必然走审批分支。
+    cfg.command_exec.allowed_commands = vec!["cargo".to_string()].into();
+    let cfg = Arc::new(cfg);
+    let cmd = "crabmate_r3_caps_probe";
+    let parsed = parsed_run_command(&format!(r#"{{"command":"{cmd}","args":[]}}"#));
+
+    // 失败：无审批通道 → unknown-cmd gate 直接 Err。
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let mut policy_caps = ctx.command_caps();
+    let (msg, _) = evaluate_policy(&parsed, &ctx, &mut policy_caps)
+        .await
+        .expect_err("no approval channel")
+        .into_message();
+    assert!(msg.contains("审批通道不可用"), "{msg}");
+    assert_eq!(
+        policy_caps.allowed_commands.as_ref(),
+        cfg.command_exec.allowed_commands.as_ref(),
+        "失败路径不应改写快照"
+    );
+
+    // 成功：AllowOnce 批准 → 扩展结果写回同一快照。
+    let fixture = approval_fixture(CommandApprovalDecision::AllowOnce);
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let mut policy_caps = ctx.command_caps();
+    evaluate_policy(&parsed, &ctx, &mut policy_caps)
+        .await
+        .expect("allow once");
+    assert!(
+        contains_cmd(&policy_caps.allowed_commands, cmd),
+        "{:?}",
+        policy_caps.allowed_commands
+    );
+}
+
 #[tokio::test]
 async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
@@ -101,7 +166,7 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     cfg.command_exec.allow_external_path_with_approval = false;
     let cfg = Arc::new(cfg);
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let d = evaluate_policy(&external, &ctx)
+    let d = evaluate_for_test(&external, &ctx)
         .await
         .expect("disabled → NotNeeded");
     assert!(!d.skip_arg_safety);
@@ -110,7 +175,7 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     cfg.command_exec.allow_external_path_with_approval = true;
     let cfg = Arc::new(cfg);
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let d = evaluate_policy(&git_range, &ctx)
+    let d = evaluate_for_test(&git_range, &ctx)
         .await
         .expect("git range → NotNeeded");
     assert!(!d.skip_arg_safety);
@@ -124,7 +189,7 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     let abs = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&abs, &ctx)
+    let (msg, _) = evaluate_for_test(&abs, &ctx)
         .await
         .expect_err("no channel")
         .into_message();
@@ -135,7 +200,7 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
         .sync_tool_sandbox
         .sync_default_tool_sandbox_mode = crate::cm_config::SyncDefaultToolSandboxMode::Docker;
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&abs, &ctx)
+    let (msg, _) = evaluate_for_test(&abs, &ctx)
         .await
         .expect_err("docker")
         .into_message();
@@ -150,7 +215,7 @@ async fn posix_shell_wrap_gate_errs_without_channel() {
     let parsed = parsed_run_command(r#"{"command":"echo","args":["$HOME"]}"#);
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("no channel")
         .into_message();
@@ -166,7 +231,7 @@ async fn posix_shell_wrap_skips_glob_when_bash_allowlisted() {
     let parsed = parsed_run_command(r#"{"command":"ls","args":["*.rs"]}"#);
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx)
+    let d = evaluate_for_test(&parsed, &ctx)
         .await
         .expect("glob + bash → no extra approval");
     assert!(!d.skip_arg_safety);
@@ -180,7 +245,7 @@ async fn posix_shell_wrap_skips_cd_prefix_without_expansion() {
     let parsed = parsed_run_command(r#"{"command":"cd","args":["src","&&","git","status"]}"#);
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    evaluate_policy(&parsed, &ctx)
+    evaluate_for_test(&parsed, &ctx)
         .await
         .expect("cd peel → git status");
 }
@@ -253,14 +318,14 @@ async fn unknown_cmd_gate_decision_matrix() {
     ));
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("no channel")
         .into_message();
     assert!(msg.contains("审批通道不可用"), "{msg}");
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Async);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("async")
         .into_message();
@@ -268,7 +333,7 @@ async fn unknown_cmd_gate_decision_matrix() {
 
     let fixture = approval_fixture(Deny);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("deny")
         .into_message();
@@ -276,13 +341,13 @@ async fn unknown_cmd_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow once");
     assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
     assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
     assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
     assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
     assert!(
@@ -307,17 +372,17 @@ async fn shell_wrap_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow once");
     assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
     assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(Deny);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("deny")
         .into_message();
@@ -325,7 +390,7 @@ async fn shell_wrap_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Async);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("async")
         .into_message();
@@ -343,17 +408,17 @@ async fn external_path_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow once");
     assert!(d.skip_arg_safety);
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
     assert!(d.skip_arg_safety);
 
     let fixture = approval_fixture(Deny);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("deny")
         .into_message();
@@ -361,7 +426,7 @@ async fn external_path_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Async);
-    let (msg, _) = evaluate_policy(&parsed, &ctx)
+    let (msg, _) = evaluate_for_test(&parsed, &ctx)
         .await
         .expect_err("async")
         .into_message();

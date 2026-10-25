@@ -56,7 +56,10 @@ async fn execute_run_command_impl(
         mode: capabilities.mode,
         sse_command: "run_command",
     };
-    let decision = match evaluate_policy(&parsed, &policy_ctx).await {
+    // 命令能力快照由本层持有：`evaluate_policy` 就地扩展它，`PolicyDecision` 只借用（R3）。
+    // 命名避开 `capabilities`（那是执行形态 `RunCommandCapabilities`）。
+    let mut policy_caps = policy_ctx.command_caps();
+    let decision = match evaluate_policy(&parsed, &policy_ctx, &mut policy_caps).await {
         Ok(d) => d,
         Err(e) => return e.into_message(),
     };

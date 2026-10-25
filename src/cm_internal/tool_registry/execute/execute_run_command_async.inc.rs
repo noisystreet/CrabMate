@@ -5,7 +5,7 @@ struct RunCommandAsyncInvoke<'a> {
     args: &'a str,
     tool_jobs: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
     parsed: ParsedRunCommandJson,
-    decision: PolicyDecision,
+    decision: PolicyDecision<'a>,
     timeout_secs: Option<u64>,
 }
 
@@ -28,7 +28,7 @@ async fn execute_run_command_async(
         timeout_secs,
     } = invoke;
     let cfg = env.cfg;
-    let effective_allowed_arc = decision.allowed_commands;
+    let effective_allowed_arc = Arc::clone(&decision.caps.allowed_commands);
     let skip_arg_safety = decision.skip_arg_safety;
 
     let prepared =
