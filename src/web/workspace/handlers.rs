@@ -23,8 +23,8 @@ use crate::web::http_types::validation::{
     validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
 };
 #[cfg(not(unix))]
-use crate::web::http_types::workspace::WorkspaceEntry;
-use crate::web::http_types::workspace::{
+use crate::cm_api_contract::workspace::WorkspaceEntry;
+use crate::cm_api_contract::workspace::{
     WorkspaceDirCreateBody, WorkspaceDirCreateResponse, WorkspaceDirDeleteQuery,
     WorkspaceDirDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
     WorkspaceFileWriteBody, WorkspaceFileWriteResponse, WorkspacePickResponse,

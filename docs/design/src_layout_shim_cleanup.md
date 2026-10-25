@@ -50,7 +50,7 @@
 |---|---|---|---|
 | **P0** ✅ | 删纯转发壳；合并同名双份；tests 目录归位 | **无** | 否 |
 | **P1a** ✅ | 合并 `agent_turn` 双树：纯逻辑入 `agent/agent_turn/policy/`；目录 `loop/` → `turn_loop/` 去掉 `#[path]` | 无（纯搬家） | 是（已更新 `docs/开发文档.md`、`agent_turn_split.md`） |
-| P1b | 删除 `web/http_types` 的 4 个残留壳（约 40 处 handler import） | 无 | 否 |
+| **P1b** ✅ | 删除 `web/http_types` 的 4 个残留壳（`skills`/`tasks`/`tool_jobs`/`workspace`），18 处引用直连真源 | 无 | 否 |
 | P2 | 拆 `cm_internal`；`crate::tools` 收敛为一级别名 | 无 | 是 |
 | P3 | `cm_tools/tools` 按域分组；`.inc.rs` 收敛为真子模块 | 无 | 否（无顶层模块增减） |
 
@@ -148,16 +148,18 @@ pre-commit run --all-files                   # 全绿（含 lizard / fn-param / 
 
 ## 6. 结果
 
-| 指标 | P0 前 | P0 后 | 变化 |
+| 指标 | 起点 | 当前（P0+P1） | 变化 |
 |---|---|---|---|
 | 目录数 | 115 | 113 | −2 |
-| `.rs` 文件数 | 728 | 721 | −7 |
+| `.rs` 文件数 | 728 | 717 | −11 |
 | HTTP 契约 `use` 跳数 | 3 | 1 | −2 |
 | 同名双份模块 | 3 组 | 0 组 | −3 |
-| `#[path]` 绕名 hack | 3 处 | 0 处（P1a 完成） | −3 |
+| `#[path]` **绕名** hack（`loop/mod.rs`、`lib/tests.rs`、`mod/tests.rs`） | 3 处 | 0 处（P1a 完成） | −3 |
+
+> 其余 `#[path = "xxx_tests.rs"]` / `.inc.rs` 分片是另类用途（拆分测试与超长函数），不在本项统计内。
 
 ## 7. 后续阶段要点（未实施）
 
-- **P1b**：删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳，把约 40 处 `use crate::web::http_types::…` 直连真源（`cm_api_contract` / `cm_tools::workspace::tasks_side`）。机械改动，可单独 PR。
+- **P1b** ✅：已删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳（实际 18 处引用，非预估 40 处），DTO 直连真源。`crate::web::http_types` 现只剩 `chat` / `github` / `memory` / `tools` / `validation`。
 - **P2**：`cm_internal`（18 文件）既是别名表、又转发 12 个 `cm_tools` 模块、又有自身职责（`tool_registry` / `tool_jobs` / `tool_sandbox` / `terminal_session` / `user_data` / `context_bootstrap` / `observability` / `health`）。按职责拆分为工具基建 / 上下文装配 / 可观测三块，并把 `crate::tools` 收敛为一级别名。需同步 `docs/开发文档.md`。
 - **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、语义自洽）保留，其余转真子模块。

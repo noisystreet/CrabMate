@@ -25,7 +25,7 @@ pub(crate) fn validate_chat_request_payload_limits(
 
 #[cfg(test)]
 mod workspace_file_write_directory_tests {
-    use super::super::workspace::WorkspaceFileWriteBody;
+    use crate::cm_api_contract::workspace::WorkspaceFileWriteBody;
     use super::validate_workspace_file_write_request;
 
     #[test]
@@ -61,7 +61,7 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::super::chat::ChatRequestBody;
-    use super::super::workspace::WorkspaceSearchBody;
+    use crate::cm_api_contract::workspace::WorkspaceSearchBody;
     use super::{
         clamp_workspace_search_max_results, validate_workspace_query_encoding_optional,
         workspace_search_pattern_or_error,

@@ -10,7 +10,7 @@ use axum::response::Response;
 use super::handlers::effective_workspace_base_canonical;
 use super::handlers_file_raw::{bytes_ok_response, raw_err, reject_unsafe_rel_path, RawErr};
 use crate::web::app_state::AppStateHttpCore;
-use crate::web::http_types::workspace::WorkspaceDirArchiveQuery;
+use crate::cm_api_contract::workspace::WorkspaceDirArchiveQuery;
 use crate::workspace::path::resolve_web_workspace_read_path;
 
 /// 打包工作区目录为 zip；失败为 JSON `ApiError`。

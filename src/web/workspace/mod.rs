@@ -1,4 +1,4 @@
-//! 工作区浏览、文件读写、搜索、画像等 HTTP handler；JSON 形状见 [`crate::web::http_types::workspace`]（路由表见 [`crate::web::routes::workspace::router`]）。
+//! 工作区浏览、文件读写、搜索、画像等 HTTP handler；JSON 形状见 [`crate::cm_api_contract::workspace`]（路由表见 [`crate::web::routes::workspace::router`]）。
 
 mod clone_stream;
 mod clone_validate;
