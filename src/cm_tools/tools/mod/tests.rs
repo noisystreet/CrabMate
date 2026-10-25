@@ -661,7 +661,8 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 四个只读导航 Legacy 合并为单个 `code_nav`（−3）。
     // 本轮：`misc_basic` 整族（`regex_test` / `date_calc` / `json_format` / `env_var_check`）
     // 迁为 Typed（−4）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 57 } else { 54 };
+    // 本轮（B2 首段）：`text_diff` / `table_text` 迁为 Typed（−2）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 55 } else { 52 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -807,4 +808,32 @@ fn misc_basic_typed_failure_reaches_string_surface_with_code() {
     let parsed = parse_legacy_output("json_format", &out);
     assert!(!parsed.ok, "{out}");
     assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{out}");
+}
+
+#[test]
+fn typed_parameter_error_without_keyword_reaches_string_surface_with_code() {
+    // `text_diff` 缺 `right` 的正文是「inline 模式需要 right（字符串）」，一个关键词都不含 ——
+    // 迁 Typed 之前它被 `parse_legacy_output` 判成 `ok: true`。`run_tool` 只返回 String，
+    // 所以这条修复是否真落地，取决于 `typed_outcome_output` 是否注入了 `crabmate_tool_output` 头。
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("text_diff", r#"{"mode":"inline","left":"a"}"#, &ctx);
+    assert!(out.contains("inline 模式需要 right"), "{out}");
+    let parsed = parse_legacy_output("text_diff", &out);
+    assert!(!parsed.ok, "{out}");
+    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{out}");
+}
+
+#[test]
+fn typed_ok_body_is_not_stamped_with_a_header() {
+    // 成功正文与启发式一致时不注入头，保证既有正文逐字不变。
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool(
+        "table_text",
+        r#"{"action":"preview","text":"a,b\n1,2\n","preview_rows":2}"#,
+        &ctx,
+    );
+    assert!(out.starts_with("delimiter="), "{out}");
+    assert!(!out.contains("crabmate_tool_output"), "{out}");
 }

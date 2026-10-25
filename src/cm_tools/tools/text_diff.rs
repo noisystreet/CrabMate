@@ -9,6 +9,7 @@ use similar::TextDiff;
 use super::file;
 use super::output_util;
 use super::tool_param_types::TextDiffArgs;
+use crate::cm_tools::tool_result::ToolError;
 
 /// 内联模式每侧最大字节
 const MAX_INLINE_BYTES: usize = 256 * 1024;
@@ -54,18 +55,25 @@ fn parse_max_output(v: &Value) -> Result<usize, String> {
     parse_usize(v, "max_output_bytes", DEFAULT_MAX_OUTPUT, 1, ABS_MAX_OUTPUT)
 }
 
-fn read_workspace_text(path: &str, base: &Path) -> Result<String, String> {
-    let pb =
-        file::resolve_for_read(base, path).map_err(|e| format!("错误：{}", e.user_message()))?;
-    let meta = fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
+#[allow(clippy::result_large_err)]
+fn read_workspace_text(path: &str, base: &Path) -> Result<String, ToolError> {
+    let pb = file::resolve_for_read(base, path).map_err(ToolError::path_resolve_failed)?;
+    let meta = fs::metadata(&pb).map_err(|e| {
+        ToolError::external_code("text_diff_io_failed", format!("读取元数据失败: {e}"))
+    })?;
     if meta.len() > MAX_FILE_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "文件过大：{} 字节，上限 {}",
             meta.len(),
             MAX_FILE_BYTES
-        ));
+        )));
     }
-    fs::read_to_string(&pb).map_err(|e| format!("读取文件失败（须为 UTF-8 文本）: {}", e))
+    fs::read_to_string(&pb).map_err(|e| {
+        ToolError::external_code(
+            "text_diff_io_failed",
+            format!("读取文件失败（须为 UTF-8 文本）: {e}"),
+        )
+    })
 }
 
 /// 生成 unified diff；供本工具与 `structured_patch` 的写前预览共用（同一套 diff 渲染）。
@@ -83,28 +91,37 @@ pub(super) fn diff_unified(
         .to_string()
 }
 
-fn load_inline_diff_sources(v: &Value) -> Result<(String, String, String, String), String> {
+#[allow(clippy::result_large_err)]
+fn load_inline_diff_sources(v: &Value) -> Result<(String, String, String, String), ToolError> {
     let left = match v.get("left").and_then(|x| x.as_str()) {
         Some(s) => s,
-        None => return Err("inline 模式需要 left（字符串）".to_string()),
+        None => {
+            return Err(ToolError::invalid_args(
+                "inline 模式需要 left（字符串）".to_string(),
+            ));
+        }
     };
     let right = match v.get("right").and_then(|x| x.as_str()) {
         Some(s) => s,
-        None => return Err("inline 模式需要 right（字符串）".to_string()),
+        None => {
+            return Err(ToolError::invalid_args(
+                "inline 模式需要 right（字符串）".to_string(),
+            ));
+        }
     };
     if left.len() > MAX_INLINE_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "left 过长：{} 字节，上限 {}",
             left.len(),
             MAX_INLINE_BYTES
-        ));
+        )));
     }
     if right.len() > MAX_INLINE_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "right 过长：{} 字节，上限 {}",
             right.len(),
             MAX_INLINE_BYTES
-        ));
+        )));
     }
     Ok((
         left.to_string(),
@@ -114,17 +131,26 @@ fn load_inline_diff_sources(v: &Value) -> Result<(String, String, String, String
     ))
 }
 
+#[allow(clippy::result_large_err)]
 fn load_paths_diff_sources(
     v: &Value,
     workspace_root: &Path,
-) -> Result<(String, String, String, String), String> {
+) -> Result<(String, String, String, String), ToolError> {
     let pa = match v.get("left_path").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return Err("paths 模式需要 left_path（相对工作区的非空路径）".to_string()),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "paths 模式需要 left_path（相对工作区的非空路径）".to_string(),
+            ));
+        }
     };
     let pb = match v.get("right_path").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return Err("paths 模式需要 right_path（相对工作区的非空路径）".to_string()),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "paths 模式需要 right_path（相对工作区的非空路径）".to_string(),
+            ));
+        }
     };
     let left = read_workspace_text(pa, workspace_root)?;
     let right = read_workspace_text(pb, workspace_root)?;
@@ -133,49 +159,45 @@ fn load_paths_diff_sources(
     Ok((left, right, ha, hb))
 }
 
-/// 执行 `text_diff` 工具。
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let args: TextDiffArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
+/// 执行 `text_diff` 工具：参数缺省 / 超限为 `invalid_args`，路径解析走 `path_resolve_failed`。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let args: TextDiffArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    let v = serde_json::to_value(&args).map_err(|e| {
+        ToolError::internal_code("text_diff_serialize_failed", format!("参数序列化错误: {e}"))
+    })?;
 
-    let mode = match parse_mode(&v) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
+    let mode = parse_mode(&v).map_err(ToolError::invalid_args)?;
+    let context = parse_usize(&v, "context_lines", DEFAULT_CONTEXT, 0, MAX_CONTEXT)
+        .map_err(ToolError::invalid_args)?;
+    let max_out = parse_max_output(&v).map_err(ToolError::invalid_args)?;
 
-    let context = match parse_usize(&v, "context_lines", DEFAULT_CONTEXT, 0, MAX_CONTEXT) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
-
-    let max_out = match parse_max_output(&v) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-
-    let resolved = match mode {
-        "inline" => load_inline_diff_sources(&v),
-        "paths" => load_paths_diff_sources(&v, workspace_root),
-        _ => unreachable!(),
-    };
-    let (left, right, ha, hb) = match resolved {
-        Ok(x) => x,
-        Err(e) => return e,
+    let (left, right, ha, hb) = match mode {
+        "inline" => load_inline_diff_sources(&v)?,
+        "paths" => load_paths_diff_sources(&v, workspace_root)?,
+        other => {
+            return Err(ToolError::internal_code(
+                "text_diff_internal",
+                format!("内部错误：未知 mode {other}"),
+            ));
+        }
     };
 
     let unified = diff_unified(&left, &right, &ha, &hb, context);
-    output_util::truncate_output_bytes(&unified, max_out)
+    Ok(output_util::truncate_output_bytes(&unified, max_out))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run_str(args_json: &str) -> String {
+        match run_try(args_json, Path::new("/tmp")) {
+            Ok(s) => s,
+            Err(e) => e.message,
+        }
+    }
 
     #[test]
     fn inline_diff_has_hunk() {
@@ -186,8 +208,36 @@ mod tests {
             "context_lines": 1,
             "max_output_bytes": 10000
         });
-        let s = run(&j.to_string(), Path::new("/tmp"));
+        let s = run_str(&j.to_string());
+        // header 两行逐字 + 成功正文不得被注入 `crabmate_tool_output` 头。
+        assert!(
+            s.starts_with("--- inline/left\n+++ inline/right\n"),
+            "header changed: {s}"
+        );
+        assert!(!s.contains("crabmate_tool_output"), "{s}");
         assert!(s.contains("@@") || s.contains("---"));
         assert!(s.contains("-b") || s.contains("+x"));
+    }
+
+    /// `mode` 的取值集合由 `TextDiffMode` 枚举在反序列化阶段把关，
+    /// 非法值到不了 `parse_mode`（那里的 `mode 仅支持 inline 或 paths` 是不可达的防御分支）。
+    #[test]
+    fn unknown_mode_is_rejected_before_runner() {
+        let j = serde_json::json!({ "mode": "sideways", "left": "a", "right": "b" });
+        let err = run_try(&j.to_string(), Path::new("/tmp")).expect_err("unknown mode must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(
+            err.message.contains("unknown variant") && err.message.contains("sideways"),
+            "expected a serde error naming the variant: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn missing_inline_operand_is_invalid_args() {
+        let j = serde_json::json!({ "mode": "inline", "left": "a" });
+        let err = run_try(&j.to_string(), Path::new("/tmp")).expect_err("missing right must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("inline 模式需要 right"));
     }
 }

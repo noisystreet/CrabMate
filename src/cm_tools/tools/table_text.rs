@@ -6,6 +6,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::cm_tools::tool_result::ToolError;
+
 use super::file;
 use super::tool_param_types::{
     TableTextAction, TableTextAggregateOp, TableTextArgs, TableTextDelimiter,
@@ -80,11 +82,12 @@ fn sniff_delimiter(data: &[u8]) -> u8 {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn read_source_bytes(
     path: Option<&str>,
     text: Option<&str>,
     workspace: &Path,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     if let Some(p) = path {
         let p = p.trim();
         if !p.is_empty() {
@@ -94,39 +97,47 @@ fn read_source_bytes(
     if let Some(t) = text {
         return read_bytes_from_inline(t);
     }
-    Err("须提供 path（相对工作区）或 text（内联，上限 256KiB）".to_string())
+    Err(ToolError::invalid_args(
+        "须提供 path（相对工作区）或 text（内联，上限 256KiB）".to_string(),
+    ))
 }
 
 /// 从工作区内相对路径读取字节（带文件大小上限）。
-fn read_bytes_from_path(p: &str, workspace: &Path) -> Result<Vec<u8>, String> {
-    let pb = file::resolve_for_read(workspace, p)
-        .map_err(|e| format!("错误：{}", e.user_message()))?;
-    let meta = std::fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
+#[allow(clippy::result_large_err)]
+fn read_bytes_from_path(p: &str, workspace: &Path) -> Result<Vec<u8>, ToolError> {
+    let pb = file::resolve_for_read(workspace, p).map_err(ToolError::path_resolve_failed)?;
+    let meta = std::fs::metadata(&pb).map_err(|e| {
+        ToolError::external_code("table_text_io_failed", format!("读取元数据失败: {e}"))
+    })?;
     if meta.len() > MAX_FILE_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "文件过大：{} 字节，上限 {}",
             meta.len(),
             MAX_FILE_BYTES
-        ));
+        )));
     }
     let mut buf = Vec::new();
-    let mut f = File::open(&pb).map_err(|e| format!("打开文件失败: {}", e))?;
-    f.read_to_end(&mut buf)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let mut f = File::open(&pb).map_err(|e| {
+        ToolError::external_code("table_text_io_failed", format!("打开文件失败: {e}"))
+    })?;
+    f.read_to_end(&mut buf).map_err(|e| {
+        ToolError::external_code("table_text_io_failed", format!("读取文件失败: {e}"))
+    })?;
     Ok(buf)
 }
 
 /// 从内联文本读取字节（带长度上限）。
-fn read_bytes_from_inline(t: &str) -> Result<Vec<u8>, String> {
+#[allow(clippy::result_large_err)]
+fn read_bytes_from_inline(t: &str) -> Result<Vec<u8>, ToolError> {
     if t.is_empty() {
-        return Err("text 不能为空".to_string());
+        return Err(ToolError::invalid_args("text 不能为空".to_string()));
     }
     if t.len() > MAX_INLINE_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "text 过长：{} 字节，上限 {}",
             t.len(),
             MAX_INLINE_BYTES
-        ));
+        )));
     }
     Ok(t.as_bytes().to_vec())
 }
@@ -454,6 +465,7 @@ fn parse_f64_cell(s: &str) -> Option<f64> {
     t.parse::<f64>().ok()
 }
 
+#[allow(clippy::result_large_err)]
 fn run_aggregate(
     data: &[u8],
     delim: u8,
@@ -461,18 +473,18 @@ fn run_aggregate(
     op: &str,
     has_header: bool,
     max_scan: usize,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     let cap = max_scan.clamp(1, MAX_ROWS_SCAN);
     let mut rdr = csv_reader(data, delim);
     let mut it = rdr.records();
     if has_header {
-        let _ = it
-            .next()
-            .transpose()
-            .map_err(|e| format!("表头解析失败: {}", e))?;
+        let _ = it.next().transpose().map_err(|e| {
+            ToolError::external_code("table_text_parse_failed", format!("表头解析失败: {e}"))
+        })?;
     }
 
-    let stats = scan_aggregate_stats(it, col, cap)?;
+    let stats = scan_aggregate_stats(it, col, cap)
+        .map_err(|e| ToolError::external_code("table_text_parse_failed", e))?;
 
     let op = op.trim().to_lowercase();
     let summary = match op.as_str() {
@@ -494,11 +506,13 @@ fn run_aggregate(
         }
         "min" => format!("min: {:?}", stats.min_v),
         "max" => format!("max: {:?}", stats.max_v),
+        // 不可达：`op` 的取值集合由 `TableTextAggregateOp` 枚举在反序列化阶段限定。
+        // 保留兜底是防 `op` 来源变更（例如将来允许别名），届时这里会立刻暴露。
         _ => {
-            return Err(format!(
+            return Err(ToolError::invalid_args(format!(
                 "aggregate.op 支持 count、count_non_empty、count_numeric、sum、mean、min、max（当前：{}）",
                 op
-            ));
+            )));
         }
     };
 
@@ -673,114 +687,122 @@ fn set_opt_field<T: Into<Value>>(v: &mut Value, key: &str, val: Option<T>) {
     }
 }
 
-fn table_text_run_preview_action(v: &Value, bytes: &[u8], delim: u8, has_header: bool) -> String {
-    let pr = match parse_usize(v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    match run_preview(bytes, delim, has_header, pr) {
-        Ok(s) => truncate_str(&s),
-        Err(e) => e,
-    }
+#[allow(clippy::result_large_err)]
+fn table_text_run_preview_action(
+    v: &Value,
+    bytes: &[u8],
+    delim: u8,
+    has_header: bool,
+) -> Result<String, ToolError> {
+    let pr = parse_usize(v, "preview_rows", DEFAULT_PREVIEW_ROWS, MAX_PREVIEW_ROWS)
+        .map_err(ToolError::invalid_args)?;
+    let s = run_preview(bytes, delim, has_header, pr)
+        .map_err(|e| ToolError::external_code("table_text_parse_failed", e))?;
+    Ok(truncate_str(&s))
 }
 
-fn table_text_run_validate_action(v: &Value, bytes: &[u8], delim: u8) -> String {
-    let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    match run_validate(bytes, delim, max_scan) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
+#[allow(clippy::result_large_err)]
+fn table_text_run_validate_action(
+    v: &Value,
+    bytes: &[u8],
+    delim: u8,
+) -> Result<String, ToolError> {
+    let max_scan = parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN)
+        .map_err(ToolError::invalid_args)?;
+    run_validate(bytes, delim, max_scan)
+        .map_err(|e| ToolError::external_code("table_text_parse_failed", e))
 }
 
+#[allow(clippy::result_large_err)]
 fn table_text_run_select_columns_action(
     v: &Value,
     bytes: &[u8],
     delim: u8,
     has_header: bool,
-) -> String {
-    let cols = match parse_column_indices(v) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
-    let max_out = match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    match run_select_columns(bytes, delim, &cols, has_header, max_out) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
+) -> Result<String, ToolError> {
+    let cols = parse_column_indices(v).map_err(ToolError::invalid_args)?;
+    let max_out = parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS)
+        .map_err(ToolError::invalid_args)?;
+    run_select_columns(bytes, delim, &cols, has_header, max_out)
+        .map_err(|e| ToolError::external_code("table_text_parse_failed", e))
 }
 
+#[allow(clippy::result_large_err)]
 fn table_text_run_filter_rows_action(
     v: &Value,
     bytes: &[u8],
     delim: u8,
     has_header: bool,
-) -> String {
+) -> Result<String, ToolError> {
     let col = match v.get("column").and_then(|x| x.as_u64()) {
         Some(n) => n as usize,
-        None => return "filter_rows 需要 column（非负整数，0 起）".to_string(),
+        None => {
+            return Err(ToolError::invalid_args(
+                "filter_rows 需要 column（非负整数，0 起）".to_string(),
+            ));
+        }
     };
     let equals = v.get("equals").and_then(|x| x.as_str());
     let contains = v.get("contains").and_then(|x| x.as_str());
-    let max_out = match parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    match run_filter_rows(bytes, delim, col, equals, contains, has_header, max_out) {
-        Ok(s) => s,
-        Err(e) => e,
+    // 参数缺失在这里判为 `invalid_args`；`run_filter_rows` 内部的同名校验只作防御，
+    // 因此其 `Err` 实际只承载 CSV 解析失败（映射为 `table_text_parse_failed`）。
+    if equals.is_none() && contains.is_none() {
+        return Err(ToolError::invalid_args(
+            "filter_rows 需要 equals 或 contains 之一".to_string(),
+        ));
     }
+    let max_out = parse_usize(v, "max_output_rows", DEFAULT_OUTPUT_ROWS, MAX_OUTPUT_ROWS)
+        .map_err(ToolError::invalid_args)?;
+    run_filter_rows(bytes, delim, col, equals, contains, has_header, max_out)
+        .map_err(|e| ToolError::external_code("table_text_parse_failed", e))
 }
 
-fn table_text_run_aggregate_action(v: &Value, bytes: &[u8], delim: u8, has_header: bool) -> String {
+#[allow(clippy::result_large_err)]
+fn table_text_run_aggregate_action(
+    v: &Value,
+    bytes: &[u8],
+    delim: u8,
+    has_header: bool,
+) -> Result<String, ToolError> {
     let col = match v.get("column").and_then(|x| x.as_u64()) {
         Some(n) => n as usize,
-        None => return "aggregate 需要 column（非负整数，0 起）".to_string(),
+        None => {
+            return Err(ToolError::invalid_args(
+                "aggregate 需要 column（非负整数，0 起）".to_string(),
+            ));
+        }
     };
     let op = match v.get("op").and_then(|x| x.as_str()) {
         Some(s) => s,
         None => {
-            return "aggregate 需要 op（如 sum、mean、min、max、count_non_empty）".to_string();
+            return Err(ToolError::invalid_args(
+                "aggregate 需要 op（如 sum、mean、min、max、count_non_empty）".to_string(),
+            ));
         }
     };
-    let max_scan = match parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    match run_aggregate(bytes, delim, col, op, has_header, max_scan) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
+    let max_scan = parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN)
+        .map_err(ToolError::invalid_args)?;
+    run_aggregate(bytes, delim, col, op, has_header, max_scan)
 }
 
-fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
+#[allow(clippy::result_large_err)]
+fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> Result<String, ToolError> {
     let action = match v.get("action").and_then(|x| x.as_str()) {
         Some(s) => s,
-        None => return "内部错误：缺少 action".to_string(),
+        None => {
+            return Err(ToolError::invalid_args("内部错误：缺少 action".to_string()));
+        }
     };
 
     let (path, text) = parse_path_text(v);
     let path_str = path.as_deref();
     let text_str = text.as_deref();
 
-    let bytes = match read_source_bytes(path_str, text_str, workspace_root) {
-        Ok(b) => b,
-        Err(e) => return e,
-    };
+    let bytes = read_source_bytes(path_str, text_str, workspace_root)?;
 
-    let delim_flag = match parse_delimiter(v, path_str) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
-    let delim = match resolve_delimiter_byte(delim_flag, path_str, &bytes) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let delim_flag = parse_delimiter(v, path_str).map_err(ToolError::invalid_args)?;
+    let delim =
+        resolve_delimiter_byte(delim_flag, path_str, &bytes).map_err(ToolError::invalid_args)?;
 
     let has_header = v
         .get("has_header")
@@ -793,17 +815,17 @@ fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
         "select_columns" => table_text_run_select_columns_action(v, &bytes, delim, has_header),
         "filter_rows" => table_text_run_filter_rows_action(v, &bytes, delim, has_header),
         "aggregate" => table_text_run_aggregate_action(v, &bytes, delim, has_header),
-        _ => "内部错误：未知 action".to_string(),
+        other => Err(ToolError::invalid_args(format!(
+            "内部错误：未知 action {other}"
+        ))),
     }
 }
 
-/// 执行 `table_text` 工具。
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let args: TableTextArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-
+/// 执行 `table_text` 工具：参数 / 来源缺省为 `invalid_args`，CSV 解析失败为 `table_text_parse_failed`。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let args: TableTextArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let v = table_text_args_to_json_value(&args);
     run_table_text_from_value(&v, workspace_root)
 }
@@ -831,5 +853,39 @@ mod tests {
         let data = b"h1,h2\n1,10\n2,20\n";
         let s = run_aggregate(data, b',', 1, "sum", true, 100).unwrap();
         assert!(s.contains("30"));
+    }
+
+    #[test]
+    fn missing_source_is_invalid_args() {
+        let j = serde_json::json!({ "action": "preview" });
+        let err = run_try(&j.to_string(), Path::new("/tmp")).expect_err("no source must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("须提供 path"));
+    }
+
+    /// `op` 的取值集合由 `TableTextAggregateOp` 枚举在反序列化时把关（非法值到不了 runner），
+    /// 这里覆盖「缺 `op`」这一层。
+    #[test]
+    fn aggregate_without_op_is_invalid_args() {
+        let j = serde_json::json!({
+            "action": "aggregate",
+            "text": "a,b\n1,2\n",
+            "column": 0
+        });
+        let err = run_try(&j.to_string(), Path::new("/tmp")).expect_err("missing op must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("aggregate 需要 op"));
+    }
+
+    #[test]
+    fn preview_inline_keeps_body_verbatim() {
+        let j = serde_json::json!({
+            "action": "preview",
+            "text": "a,b\n1,2\n",
+            "preview_rows": 2
+        });
+        let s = run_try(&j.to_string(), Path::new("/tmp")).expect("preview should succeed");
+        assert!(s.starts_with("delimiter="), "body head changed: {s}");
+        assert!(s.contains("[header]"));
     }
 }
