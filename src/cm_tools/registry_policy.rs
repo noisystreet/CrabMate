@@ -176,7 +176,7 @@ fn builtin_dedup_cache_exempt_tools() -> &'static HashSet<String> {
 
 /// 是否可参与「同轮只读结果去重缓存」（读取侧与写入侧共用同一判定）。
 ///
-/// 只读工具默认参与；[`builtin_dedup_cache_exempt_tools`] 中的工具除外。
+/// 只读工具默认参与；`builtin_dedup_cache_exempt_tools` 中的工具除外。
 pub fn tool_output_dedup_cache_eligible(cfg: &AgentConfig, name: &str) -> bool {
     is_readonly_tool(cfg, name) && !builtin_dedup_cache_exempt_tools().contains(name)
 }
@@ -265,7 +265,7 @@ pub fn tool_ok_for_parallel_readonly_batch_piece(
         && parallel_batch_eligible_tool(handler_lookup, cfg, name)
 }
 
-/// 本批 **至少 2 个** 工具且全部为语义只读、且均为 [`parallel_batch_eligible_tool`] 时，可在单轮内并行执行。
+/// 本批 **至少 2 个** 工具且全部为语义只读、且均为 `parallel_batch_eligible_tool` 时，可在单轮内并行执行。
 pub fn tool_calls_allow_parallel_sync_batch(
     handler_lookup: &HandlerLookupTable,
     cfg: &AgentConfig,

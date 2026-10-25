@@ -23,7 +23,7 @@ use super::types::{JobFinishedSink, JobOutcome, JobStatus};
 
 pub use super::types::JobSpawn;
 
-/// 实时输出文本回调（已由 [`chunk_sink_from_output`] 完成 UTF-8 组装；每调用一条完整文本）。
+/// 实时输出文本回调（已由 `chunk_sink_from_output` 完成 UTF-8 组装；每调用一条完整文本）。
 pub type JobOutputSink = Arc<dyn Fn(SessionStream, &str) + Send + Sync>;
 
 /// 把文本回调包装成 `subprocess_session` 的字节级 `chunk_sink`：

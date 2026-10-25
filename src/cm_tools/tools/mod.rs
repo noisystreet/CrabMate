@@ -349,7 +349,7 @@ pub fn cached_params_for_tool_name(name: &str) -> Option<serde_json::Value> {
 /// 编译期注册表项的只读投影（`GET /tools` 内置源）。
 ///
 /// 暴露**全部**注册项（含 `fastembed` 特性门剔除者），是否「在场」由调用方按
-/// [`tool_passes_filters`] 语义自行判定，便于报告 `absent_reason`。
+/// `tool_passes_filters` 语义自行判定，便于报告 `absent_reason`。
 pub struct BuiltinToolDescriptor {
     pub name: &'static str,
     pub description: &'static str,
@@ -557,7 +557,7 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
 
 /// 异步工具执行入口（面向非 chat 消费点：tool-replay / MCP / workflow / 容器 runner）。
 ///
-/// **`run_command`** 经本文件新增的异步实现 [`run_command_dispatch_async`]（[`run_tool_async`] 的 String 面）；
+/// **`run_command`** 经本文件新增的异步实现 `run_command_dispatch_async`（[`run_tool_async`] 的 String 面）；
 /// 其余工具直接委派既有同步 [`run_tool`]，行为逐字节保持不变。
 ///
 /// `run_command` 实现体基于 [`tokio::process`] 事件驱动等待（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存），
@@ -573,7 +573,7 @@ pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) 
     }
 }
 
-/// 异步版 [`run_tool_result`]：`run_command` 走 [`run_command_dispatch_async`]，其余委派同步路径。
+/// 异步版 [`run_tool_result`]：`run_command` 走 `run_command_dispatch_async`，其余委派同步路径。
 pub async fn run_tool_result_async(
     name: &str,
     args_json: &str,
@@ -748,7 +748,7 @@ pub fn summarize_tool_call_parsed(name: &str, args_parsed: &serde_json::Value) -
 }
 
 /// 仅 **`cargo test`**：重置少数进程级可变 `static`（`run_command` 秒级限流、**`test_result_cache`** LRU）。
-/// 集成测试可在夹具开头调用 crate 根 **[`crate::cm_tools::reset_process_tool_globals_for_tests`]**。
+/// 集成测试可在夹具开头调用 crate 根 **`crate::cm_tools::reset_process_tool_globals_for_tests`**。
 pub fn reset_process_tool_globals_for_tests() {
     command::reset_run_command_rate_limit_for_tests();
     test_result_cache::reset_test_result_cache_for_tests();

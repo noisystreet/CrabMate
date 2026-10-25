@@ -1,7 +1,7 @@
 //! 单进程内工具调用轻量统计：每次工具完结记录 `ok` / `error_code`（与 `crabmate_tool` 语义一致），
 //! 在新会话首条 `system` 末尾可选附加短 Markdown 提示（不落盘、不按会话分桶）。
 //!
-//! 状态存放在 [`ToolOutcomeRecorder`] 中，由 Web/CLI 入口构造并经 [`crate::cm_internal::RunAgentTurnParams`] 与
+//! 状态存放在 [`ToolOutcomeRecorder`] 中，由 Web/CLI 入口构造并经 `crate::cm_internal::RunAgentTurnParams` 与
 //! [`crate::cm_internal::process_handles::ProcessHandles`] 显式传递，**不**使用模块级 `static`。
 //!
 //! 另维护环形 **[`ToolExecutionLogEntry`]**（与模型可见 `role: tool` 正文独立），供调试与未来的回放/统计。

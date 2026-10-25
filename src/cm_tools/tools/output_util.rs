@@ -101,7 +101,7 @@ pub fn append_notfound_install_hint(
     base
 }
 
-/// 与 [`format_spawn_error`] 相同，但若 `err` 为 **`NotFound`** 且 `program_for_hint` 命中内置表，
+/// 与 `format_spawn_error` 相同，但若 `err` 为 **`NotFound`** 且 `program_for_hint` 命中内置表，
 /// 在文末追加一行安装/验证建议（供模型与用户直接执行下一步）。
 #[must_use]
 pub fn format_spawn_error_with_program(

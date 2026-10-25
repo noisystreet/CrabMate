@@ -57,7 +57,7 @@ pub enum SsePayload {
     ToolRunning {
         tool_running: bool,
     },
-    /// 工具执行中的输出片段（如 PTY / 长命令）；**不**进入模型上下文；最终以 [`ToolResult`] 收束。
+    /// 工具执行中的输出片段（如 PTY / 长命令）；**不**进入模型上下文；最终以 `ToolResult` 收束。
     ToolOutputChunk {
         #[serde(rename = "tool_output_chunk")]
         tool_output_chunk: ToolOutputChunkBody,
@@ -370,7 +370,7 @@ pub struct ThinkingTraceBody {
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。
-/// 委托到当前默认编码器（[`V2Encoder`] / [`default_encoder`]）。
+/// 委托到当前默认编码器（`V2Encoder` / `default_encoder`）。
 pub fn encode_message(payload: SsePayload) -> String {
     let encoder = super::encoder::default_encoder();
     encoder.encode(&payload)

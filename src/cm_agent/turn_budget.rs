@@ -212,7 +212,7 @@ impl TurnBudgetCounter {
         }
     }
 
-    /// 若已超墙钟、LLM 次数或 Token 上限则返回结构化拒绝原因（供 [`complete_chat_retrying`] 等统一门禁）；
+    /// 若已超墙钟、LLM 次数或 Token 上限则返回结构化拒绝原因（供 `complete_chat_retrying` 等统一门禁）；
     /// 用户文案由 [`TurnBudgetDeny::user_message`] 生成。
     #[inline]
     pub fn deny_llm_call_if_exhausted(&self, cfg: &TurnBudgetConfig) -> Result<(), TurnBudgetDeny> {

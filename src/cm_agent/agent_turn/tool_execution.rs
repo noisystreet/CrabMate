@@ -1,4 +1,4 @@
-//! 工具批执行领域类型与模式判定；实际 `dispatch_tool` / workflow 经根包 [`ToolExecutionHost`] 注入。
+//! 工具批执行领域类型与模式判定；实际 `dispatch_tool` / workflow 经根包 `ToolExecutionHost` 注入。
 
 use std::collections::{HashMap, HashSet};
 

@@ -25,7 +25,7 @@ use crate::cm_config::AgentConfig;
 /// Web 与工作区根组合的相对 `path` 参数允许的最大字节数（原始字符串，trim 前测量）。
 pub const WEB_WORKSPACE_REL_SUBPATH_MAX_BYTES: usize = 8192;
 
-/// 工作区路径解析与策略校验失败（可判别类别，供日志与调用方分支；对用户展示用 [`Display`] / [`WorkspacePathError::user_message`]）。
+/// 工作区路径解析与策略校验失败（可判别类别，供日志与调用方分支；对用户展示用 `Display` / [`WorkspacePathError::user_message`]）。
 #[derive(Debug, Error)]
 pub enum WorkspacePathError {
     /// `path` 等入参为空或仅空白。

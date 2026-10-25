@@ -17,7 +17,7 @@ pub const OPENAI_MODELS_REL_PATH: &str = "models";
 /// 单次 `run_agent_turn` / HTTP 请求对 `chat/completions` 的 **`seed`** 覆盖（OpenAI 兼容字段；供应商不支持时通常会忽略）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub enum LlmSeedOverride {
-    /// 使用 [`AgentConfig::llm_seed`]（未配置则请求体不带 `seed`）。
+    /// 使用 `AgentConfig::llm_seed`（未配置则请求体不带 `seed`）。
     #[default]
     FromConfig,
     /// 强制在请求 JSON 中写入该整数 `seed`。

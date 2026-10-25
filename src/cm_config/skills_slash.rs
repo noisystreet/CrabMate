@@ -26,7 +26,7 @@ fn skill_stem(doc: &SkillDoc) -> Option<String> {
     super::skills::skill_path_stem(&doc.display_path)
 }
 
-/// Skill `/` 解析失败（用户可见文案经 [`Display`]；Web 经 [`SkillSlashError::into_turn_err`] 打标）。
+/// Skill `/` 解析失败（用户可见文案经 `Display`；Web 经 [`SkillSlashError::into_turn_err`] 打标）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkillSlashError {
     EmptyId,

@@ -4,7 +4,7 @@
 //!
 //! - **单副本内存实现**：serve 重启即丢（启动 sweep 为空操作），不承诺崩溃恢复；
 //!   孤儿进程无法可靠识别（子进程无标记）。**多副本**需外部代理/持久化，另立项。
-//! - 复用 [`crate::cm_tools::subprocess_session`]（进程组 kill、并发排空管道、墙钟、截断缓冲）。
+//! - 复用 `crate::cm_tools::subprocess_session`（进程组 kill、并发排空管道、墙钟、截断缓冲）。
 //! - 结果**不自动回填模型**：由调用方轮询带回后续回合。
 
 pub mod registry;

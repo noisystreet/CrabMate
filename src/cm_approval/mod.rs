@@ -69,7 +69,7 @@ pub enum ToolApprovalWebError {
     ChannelUnavailable,
     /// 等待审批期间用户取消（例如前端点「停止」）。
     Cancelled,
-    /// 等待审批超时（见 [`APPROVAL_WAIT_TIMEOUT`]），按「拒绝」处理。
+    /// 等待审批超时（见 `APPROVAL_WAIT_TIMEOUT`），按「拒绝」处理。
     TimedOut,
 }
 

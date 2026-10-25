@@ -1,4 +1,4 @@
-//! 敏感工具 **Web 人工审批** 的组装层：Web SSE 往返见 [`crate::cm_approval`]。
+//! 敏感工具 **Web 人工审批** 的组装层：Web SSE 往返见 `crate::cm_approval`。
 //!
 //! - **能力等级** [`SensitiveCapability`]：用于日志、后续策略扩展；当前不单独分支行为。
 //! - **策略**：Web 走 SSE `command_approval` + timeline；无 Web 通道时返回

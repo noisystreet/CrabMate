@@ -1,6 +1,6 @@
 //! 可插拔的 **chat/completions** 调用后端 trait。
 //!
-//! 默认 OpenAI 兼容 HTTP 实现由根包 **`crabmate::llm`** 提供（[`OpenAiCompatBackend`]）。
+//! 默认 OpenAI 兼容 HTTP 实现由根包 **`crabmate::llm`** 提供（`OpenAiCompatBackend`）。
 
 use async_trait::async_trait;
 

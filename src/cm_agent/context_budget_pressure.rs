@@ -1,4 +1,4 @@
-//! 单轮 [`TurnBudgetCounter`] 与 [`crate::cm_agent::message_pipeline`] / 上下文摘要的联动策略。
+//! 单轮 `TurnBudgetCounter` 与 [`crate::cm_agent::message_pipeline`] / 上下文摘要的联动策略。
 //!
 //! 主 Agent 外循环与 Operator ReAct 共用本模块，避免「预算将尽仍按默认 char 预算裁剪」的分叉。
 

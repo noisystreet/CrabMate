@@ -1,5 +1,5 @@
 //! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器、只读类 **`run_command`** 短时 TTL 缓存与 CLI 长期记忆缓存。
-//! 侧栏任务清单（[`workspace::tasks_side`]）与 Web **`GET`/`POST /tasks`** 共用同一内存表。
+//! 侧栏任务清单（`workspace::tasks_side`）与 Web **`GET`/`POST /tasks`** 共用同一内存表。
 //! 由 Web `AppState` 或 CLI 入口构造并注入回合路径；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
 //!
 //! 回合编排只消费 [`TurnProcessHandles`]（经 [`ProcessHandles::turn_handles`]）；侧栏任务与 CLI LTM 仍挂在完整 [`ProcessHandles`] 上。
@@ -95,7 +95,7 @@ impl ProcessHandles {
         }
     }
 
-    /// [`turn_handles`] 的 `Arc` 形式，供 `run_agent_turn` 入参等使用。
+    /// `turn_handles` 的 `Arc` 形式，供 `run_agent_turn` 入参等使用。
     pub fn turn_handles_arc(&self) -> Arc<TurnProcessHandles> {
         Arc::new(self.turn_handles())
     }

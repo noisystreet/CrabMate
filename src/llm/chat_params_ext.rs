@@ -57,7 +57,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
         }
     }
 
-    /// 携带与主 Agent 回合共用的 [`TurnBudgetCounter`]。
+    /// 携带与主 Agent 回合共用的 `TurnBudgetCounter`。
     #[inline]
     pub fn with_turn_budget(mut self, turn_budget: Option<&'a Arc<TurnBudgetCounter>>) -> Self {
         self.turn_budget = turn_budget;

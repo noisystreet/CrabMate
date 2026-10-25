@@ -1,6 +1,6 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的封装层。
 //!
-//! - **重试**：[`complete_chat_retrying`] 实现于 **`cm_llm`**，经 [`retry_hooks::CrabmateLlmRetryHooks`] 注入 turn replay。
+//! - **重试**：[`complete_chat_retrying`] 实现于 **`cm_llm`**，经 `retry_hooks::CrabmateLlmRetryHooks` 注入 turn replay。
 //! - **单次 HTTP**：[`crate::cm_llm::stream_chat`] 经 [`stream_host_impl::CrabmateStreamChatHost`] 注入 SSE 控制面。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。

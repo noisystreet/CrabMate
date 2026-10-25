@@ -1,8 +1,8 @@
 //! e2e 场景定义、指标收集与统一 runner（CLI 子命令 `crabmate e2e` 与集成测试共用）。
 //!
-//! [`TestScenario`] 描述一个测试场景（用户消息 + 可选工作区文件），
+//! `TestScenario` 描述一个测试场景（用户消息 + 可选工作区文件），
 //! 支持 serde 反序列化，场景可从外部 JSON/YAML 文件加载。
-//! [`TestRunMetrics`] 收集执行指标，[`run_scenario`] 封装完整的执行流程。
+//! `TestRunMetrics` 收集执行指标，`run_scenario` 封装完整的执行流程。
 //!
 //! # 使用方式（测试）
 //!
@@ -131,7 +131,7 @@ pub struct TestScenario {
 
 /// 单次 e2e 测试的结构化运行指标。
 ///
-/// 每次 [`run_scenario`] 执行后生成，用于自动化分析、报告生成和多轮对比。
+/// 每次 `run_scenario` 执行后生成，用于自动化分析、报告生成和多轮对比。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestRunMetrics {
     /// 场景名称。
@@ -179,7 +179,7 @@ pub struct TestRunMetrics {
 /// 2. 使用生产路径构建 system prompt + user message
 /// 3. 调用 `run_agent_turn` 执行 agent 回合
 /// 4. 提取结构化指标，导出消息记录到 artifact 目录
-/// 5. 返回 [`TestRunMetrics`]
+/// 5. 返回 `TestRunMetrics`
 pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> TestRunMetrics {
     let start = Instant::now();
     let scenario_name = scenario.name.as_str();
