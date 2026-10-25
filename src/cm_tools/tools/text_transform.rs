@@ -3,6 +3,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64_ENGINE;
 
+use crate::cm_tools::tool_result::ToolError;
+
 /// 单次输入上限（字节）
 const MAX_INPUT_BYTES: usize = 256 * 1024;
 /// 输出上限（字节）；超出则截断并附说明
@@ -30,13 +32,14 @@ fn truncate_output(s: &str) -> String {
     )
 }
 
-fn validate_text(text: &str) -> Result<(), String> {
+#[allow(clippy::result_large_err)]
+fn validate_text(text: &str) -> Result<(), ToolError> {
     if text.len() > MAX_INPUT_BYTES {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "text 过长：{} 字节，上限 {}",
             text.len(),
             MAX_INPUT_BYTES
-        ));
+        )));
     }
     Ok(())
 }
@@ -48,89 +51,86 @@ fn hash_short_hex(text: &str) -> String {
     hex[..16].to_string()
 }
 
-/// Base64 解码；结果非 UTF-8 时附十六进制预览（供 `base64_decode` 分支）。
-fn decode_base64_text(text: &str) -> String {
-    let raw = match B64_ENGINE.decode(text.trim().as_bytes()) {
-        Ok(b) => b,
-        Err(e) => return format!("Base64 解码失败：{}", e),
-    };
+/// Base64 解码；结果非 UTF-8 时附十六进制预览（**仍算成功**，与迁移前一致）。
+#[allow(clippy::result_large_err)]
+fn decode_base64_text(text: &str) -> Result<String, ToolError> {
+    let raw = B64_ENGINE
+        .decode(text.trim().as_bytes())
+        .map_err(|e| ToolError::invalid_args(format!("Base64 解码失败：{e}")))?;
     match String::from_utf8(raw.clone()) {
-        Ok(s) => s,
+        Ok(s) => Ok(s),
         Err(_) => {
             let n = NON_UTF8_HEX_BYTES.min(raw.len());
             let hex = hex::encode(&raw[..n]);
-            format!(
+            Ok(format!(
                 "（解码结果非 UTF-8 文本；以下为前 {} 字节的十六进制，共 {} 字节）\n{}",
                 n,
                 raw.len(),
                 hex
-            )
+            ))
         }
     }
 }
 
 /// 解析 `lines_join` / `lines_split` 分隔符；`allow_empty = false` 时拒绝缺省（split 语义）。
-fn resolve_delimiter(delim: Option<&str>, allow_empty: bool) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+fn resolve_delimiter(delim: Option<&str>, allow_empty: bool) -> Result<String, ToolError> {
     match delim {
         None | Some("") if allow_empty => Ok(" ".to_string()),
-        None | Some("") => Err("lines_split 必须提供非空 delimiter".to_string()),
-        Some(s) if s.len() > MAX_DELIMITER_BYTES => Err(format!(
+        None | Some("") => Err(ToolError::invalid_args(
+            "lines_split 必须提供非空 delimiter".to_string(),
+        )),
+        Some(s) if s.len() > MAX_DELIMITER_BYTES => Err(ToolError::invalid_args(format!(
             "delimiter 过长：{} 字节，上限 {}",
             s.len(),
             MAX_DELIMITER_BYTES
-        )),
+        ))),
         Some(s) => Ok(s.to_string()),
     }
 }
 
-/// 执行 `text_transform` 工具。
-pub fn run(args_json: &str) -> String {
-    let args: super::tool_param_types::TextTransformArgs = match super::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    if let Err(e) = validate_text(&args.text) {
-        return e;
-    }
+/// 执行 `text_transform` 工具：入参校验 / 超限 / 解码失败均为 `invalid_args`。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str) -> Result<String, ToolError> {
+    let args: super::tool_param_types::TextTransformArgs =
+        super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    validate_text(&args.text)?;
     let text = &args.text;
 
     let out = match args.op {
         super::tool_param_types::TextTransformOp::Base64Encode => {
             B64_ENGINE.encode(text.as_bytes())
         }
-        super::tool_param_types::TextTransformOp::Base64Decode => decode_base64_text(text),
+        super::tool_param_types::TextTransformOp::Base64Decode => decode_base64_text(text)?,
         super::tool_param_types::TextTransformOp::UrlEncode => {
             urlencoding::encode(text).into_owned()
         }
-        super::tool_param_types::TextTransformOp::UrlDecode => match urlencoding::decode(text) {
-            Ok(c) => c.into_owned(),
-            Err(e) => return format!("URL 解码失败：{}", e),
-        },
+        super::tool_param_types::TextTransformOp::UrlDecode => urlencoding::decode(text)
+            .map_err(|e| ToolError::invalid_args(format!("URL 解码失败：{e}")))?
+            .into_owned(),
         super::tool_param_types::TextTransformOp::HashShort => {
             format!("sha256:{}", hash_short_hex(text))
         }
         super::tool_param_types::TextTransformOp::LinesJoin => {
-            let delim = match resolve_delimiter(args.delimiter.as_deref(), true) {
-                Ok(d) => d,
-                Err(e) => return e,
-            };
+            let delim = resolve_delimiter(args.delimiter.as_deref(), true)?;
             let lines: Vec<&str> = text.lines().collect();
             lines.join(&delim)
         }
         super::tool_param_types::TextTransformOp::LinesSplit => {
-            let delim = match resolve_delimiter(args.delimiter.as_deref(), false) {
-                Ok(d) => d,
-                Err(e) => return e,
-            };
+            let delim = resolve_delimiter(args.delimiter.as_deref(), false)?;
             let parts: Vec<&str> = text.split(&delim).collect();
             if parts.len() > MAX_SPLIT_PARTS {
-                return format!("切分后段数 {} 超过上限 {}", parts.len(), MAX_SPLIT_PARTS);
+                return Err(ToolError::invalid_args(format!(
+                    "切分后段数 {} 超过上限 {}",
+                    parts.len(),
+                    MAX_SPLIT_PARTS
+                )));
             }
             parts.join("\n")
         }
     };
 
-    truncate_output(&out)
+    Ok(truncate_output(&out))
 }
 
 mod hex {
@@ -149,18 +149,25 @@ mod hex {
 mod tests {
     use super::*;
 
+    fn run_str(args_json: &str) -> String {
+        match run_try(args_json) {
+            Ok(s) => s,
+            Err(e) => e.message,
+        }
+    }
+
     #[test]
     fn base64_roundtrip() {
         let j = serde_json::json!({
             "op": "base64_encode",
             "text": "hello"
         });
-        let enc = run(&j.to_string());
+        let enc = run_str(&j.to_string());
         let j2 = serde_json::json!({
             "op": "base64_decode",
             "text": enc.trim()
         });
-        let dec = run(&j2.to_string());
+        let dec = run_str(&j2.to_string());
         assert!(dec.contains("hello"));
     }
 
@@ -171,7 +178,7 @@ mod tests {
             "text": "x",
             "hash_algo": "sha256"
         });
-        let s = run(&j.to_string());
+        let s = run_str(&j.to_string());
         assert!(s.starts_with("sha256:"));
         assert_eq!(s.len(), "sha256:".len() + 16);
     }
@@ -183,12 +190,33 @@ mod tests {
             "text": "a\nb\nc",
             "delimiter": "|"
         });
-        assert_eq!(run(&j.to_string()), "a|b|c");
+        assert_eq!(run_str(&j.to_string()), "a|b|c");
         let j2 = serde_json::json!({
             "op": "lines_split",
             "text": "a|b|c",
             "delimiter": "|"
         });
-        assert_eq!(run(&j2.to_string()), "a\nb\nc");
+        assert_eq!(run_str(&j2.to_string()), "a\nb\nc");
+    }
+
+    #[test]
+    fn oversized_text_is_invalid_args() {
+        let big = "x".repeat(MAX_INPUT_BYTES + 1);
+        let j = serde_json::json!({ "op": "hash_short", "text": big });
+        let err = run_try(&j.to_string()).expect_err("oversized text must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(err.message.contains("text 过长"), "{}", err.message);
+    }
+
+    #[test]
+    fn lines_split_without_delimiter_is_invalid_args() {
+        let j = serde_json::json!({ "op": "lines_split", "text": "a|b" });
+        let err = run_try(&j.to_string()).expect_err("missing delimiter must fail");
+        assert_eq!(err.code, "invalid_args");
+        assert!(
+            err.message.contains("必须提供非空 delimiter"),
+            "{}",
+            err.message
+        );
     }
 }

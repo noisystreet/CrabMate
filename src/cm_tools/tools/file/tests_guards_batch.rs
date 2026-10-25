@@ -536,11 +536,12 @@ fn test_write_tools_default_to_preview_without_dry_run() {
     // structured_patch：不传 dry_run → 预览，磁盘不变。
     let j = dir.join("c.json");
     std::fs::write(&j, "{\"a\":1}").unwrap();
-    let out = crate::cm_tools::tools::structured_data::structured_patch(
+    let out = crate::cm_tools::tools::structured_data::structured_patch_try(
         r#"{"path":"c.json","query":"/a","value":2}"#,
         &dir,
         &ctx,
-    );
+    )
+    .unwrap_or_else(|e| panic!("预览应成功: {}", e.message));
     assert!(out.contains("dry_run") || out.contains("预览"), "{}", out);
     assert_eq!(std::fs::read_to_string(&j).unwrap(), "{\"a\":1}");
 

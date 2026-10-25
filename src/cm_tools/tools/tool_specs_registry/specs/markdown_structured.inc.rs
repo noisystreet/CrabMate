@@ -36,7 +36,7 @@ ToolSpec {
             description: "对 **JSON / YAML / TOML** 做结构化补丁（`set/remove`），路径支持 JSON Pointer（`/a/b`）或点号（`a.b.0`）。**`dry_run` 默认 `true` 仅预览**；显式 `dry_run=false` 即写盘，不再要求 `confirm`（该字段仅为兼容保留）。适合精确修改配置而非整段文本替换。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::StructuredPatchArgs>,
-            runner: ToolRunner::Legacy(runner_structured_patch),
+            runner: ToolRunner::Typed(runner_structured_patch_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_structured_patch),
         },
 ]
