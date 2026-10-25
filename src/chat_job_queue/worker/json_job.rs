@@ -86,6 +86,13 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         persisted_active_agent_role.as_deref(),
         request_agent_role.as_deref(),
     );
+    // 角色级权限上限：与工具白名单同一角色解析口径（设计 §6.1 的 min 链）。
+    let permission_role_max =
+        crate::cm_internal::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
+            &cfg_turn,
+            persisted_active_agent_role.as_deref(),
+            request_agent_role.as_deref(),
+        );
     let tools_for_job =
         filter_tools_for_agent_role(&queue_deps.tools, turn_allow.as_ref().map(|a| a.as_ref()));
     let executor_override = resolve_executor_llm_for_job(
@@ -123,6 +130,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 request_id,
                 turn_allowed_tool_names: turn_allow,
                 session_mode,
+                permission_role_max,
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),

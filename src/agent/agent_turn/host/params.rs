@@ -78,6 +78,8 @@ pub(crate) struct RunLoopAttach<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     /// 本回合会话工作模式（Ask/Plan/Act）；门控之后挂只读约束。
     pub session_mode: crate::cm_types::SessionMode,
+    /// 本回合权限等级的能力快照（设计 §7.4：各执行点只读 `caps`，不读 `cfg.permission_level`）。
+    pub permission: crate::cm_agent::permission::PermissionCaps,
 }
 
 /// Chrome trace、结构化 tracing、HTTP 审计与进程级句柄。

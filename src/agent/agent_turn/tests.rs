@@ -179,6 +179,10 @@ mod per_reflect_tests {
                     workspace_changelist: None,
                     turn_allowed_tool_names: None,
                     session_mode: crate::types::SessionMode::Act,
+                    permission: crate::cm_agent::permission::project_caps(
+                        crate::cm_types::PermissionLevel::Approved,
+                        cfg.as_ref(),
+                    ),
                 },
                 obs: RunLoopObs {
                     request_chrome_trace: None,

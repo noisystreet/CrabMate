@@ -62,6 +62,8 @@ pub(super) struct SerialEarlyToolPolicyDenyParams<'a> {
     pub(super) step_executor_constraint: Option<PlanStepExecutorKind>,
     pub(super) tools_defs_full: &'a [crate::types::Tool],
     pub(super) turn_allow: Option<&'a HashSet<String>>,
+    /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
+    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 pub(super) struct SerialTtlAfterDispatchParams<'a> {
@@ -90,6 +92,8 @@ pub(super) struct SerialEmitEarlyWithoutDispatchParams<'a> {
     pub(super) step_executor_constraint: Option<PlanStepExecutorKind>,
     pub(super) tools_defs_full: &'a [crate::types::Tool],
     pub(super) turn_allow: Option<&'a HashSet<String>>,
+    /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
+    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
     pub(super) readonly_cache: &'a mut HashMap<(String, String), String>,
     pub(super) readonly_tool_ttl_cache:
         &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,

@@ -134,6 +134,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             read_file_turn_cache: None,
             turn_allowed_tool_names: None,
             session_mode: crabmate::types::SessionMode::Act,
+            permission_role_max: None,
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,
@@ -207,6 +208,7 @@ async fn run_mock_agent_turn(
             read_file_turn_cache: None,
             turn_allowed_tool_names: None,
             session_mode: crabmate::types::SessionMode::Act,
+            permission_role_max: None,
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,
@@ -320,6 +322,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             read_file_turn_cache: None,
             turn_allowed_tool_names: None,
             session_mode: crabmate::types::SessionMode::Act,
+            permission_role_max: None,
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,

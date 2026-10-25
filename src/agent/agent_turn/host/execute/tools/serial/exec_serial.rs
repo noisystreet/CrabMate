@@ -61,6 +61,8 @@ struct SerialToolLoopState<'a> {
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
     tools_defs_full: &'a [crate::types::Tool],
     turn_allow: Option<&'a std::collections::HashSet<String>>,
+    /// 本回合权限能力快照（early-deny / 可见性共用判据）。
+    permission: &'a crate::cm_agent::permission::PermissionCaps,
     long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
@@ -95,6 +97,7 @@ impl<'a> SerialToolLoopState<'a> {
             step_executor_constraint,
             tools_defs_full,
             turn_allow,
+            permission,
             long_term_memory,
             long_term_memory_scope_id,
             tracing_chat_turn,
@@ -123,6 +126,7 @@ impl<'a> SerialToolLoopState<'a> {
             step_executor_constraint,
             tools_defs_full,
             turn_allow,
+            permission,
             long_term_memory,
             long_term_memory_scope_id,
             tracing_chat_turn,
@@ -182,6 +186,7 @@ async fn serial_execute_one_tool_call(
         step_executor_constraint: st.step_executor_constraint,
         tools_defs_full: st.tools_defs_full,
         turn_allow: st.turn_allow,
+        permission: Some(st.permission),
         readonly_cache,
         readonly_tool_ttl_cache: &st.readonly_tool_ttl_cache,
     })

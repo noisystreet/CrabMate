@@ -440,6 +440,14 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 实现上建议：在 `assess_turn_routing` 前加一个 `if caps.tool_visibility == None { … }` 的短路，而不是散改各 gate。
 
+**S2 落地结果**（按上面的「最小短路」实现，未散改 gate）：
+
+1. `turn_loop/run_dispatch.rs` 里 Act 句启发式与 `ReviewReadonly` 挂载一起被 `tool_visibility != None` 包住（L0 下两者都没有对象）；
+2. `run_agent_turn.rs` 在本回合 `cfg` 快照上把 `per_plan_policy.final_plan_requirement` 收敛到 `Never`（只降不升），使验收 / 终答门槛不再等「工具证据」；
+3. `per_plan_semantic_check` 保留。
+
+另外补了一条本设计未预见的约束：**`session_mode` 造成的只读不回灌到投影**（`ResolvedPermission::projection_level`）。`ask` / `plan` 的只读本就由 `ReviewReadonly` 执行，若同时按 L1 投影，默认档的 Plan 会话会连带丢掉 `mcp__*`（`step_executor_policy` 明确放行外部工具），等于让会话模式悄悄改变默认行为。
+
 ### 8.3 L4 的路径放行细节
 
 `PathScope::Any` 不等于“无校验”。规则：

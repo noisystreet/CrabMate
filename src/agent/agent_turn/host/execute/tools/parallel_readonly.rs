@@ -43,6 +43,8 @@ struct ParallelUniqueBatchParts<'a> {
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
     tools_defs_hint: Arc<Vec<crate::types::Tool>>,
     turn_allow: Option<&'a HashSet<String>>,
+    /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
+    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
@@ -116,6 +118,7 @@ async fn parallel_collect_unique_results(
         step_executor_constraint,
         tools_defs_hint,
         turn_allow,
+        permission,
         long_term_memory,
         long_term_memory_scope_id,
         tracing_chat_turn,
@@ -165,6 +168,7 @@ async fn parallel_collect_unique_results(
                 step_executor_constraint: constraint,
                 tools_defs: tools_defs_hint.as_slice(),
                 turn_allow,
+                permission,
             }) {
                 return (name, args, denied);
             }
@@ -440,6 +444,7 @@ pub(super) async fn execute_tools_parallel(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache: _,
         tool_job_registry: _,
+        permission,
     } = ctx;
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
@@ -483,6 +488,7 @@ pub(super) async fn execute_tools_parallel(
             step_executor_constraint,
             tools_defs_hint,
             turn_allow,
+            permission: Some(permission),
             long_term_memory,
             long_term_memory_scope_id,
             tracing_chat_turn,
