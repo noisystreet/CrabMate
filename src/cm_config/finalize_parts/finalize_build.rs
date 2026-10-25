@@ -407,7 +407,9 @@ fn parse_env_u8(key: &str) -> Option<u8> {
 
 fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     let mut cfg = types::TurnBudgetConfig {
-        max_turn_duration_seconds: 600,
+        // 1 小时：单轮常包含多轮工具调用 + 构建/测试，10 分钟在真实仓库上会误杀进行中的长任务。
+        // 仍可用 `CM_MAX_TURN_DURATION_SECONDS` 覆盖，`0` = 不限制（设计见 `cm_agent::turn_budget`）。
+        max_turn_duration_seconds: 3600,
         max_turn_tokens: 0,
         max_llm_calls_per_turn: 0,
         budget_degradation_enabled: false,

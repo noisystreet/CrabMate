@@ -249,6 +249,19 @@ mod tests {
         assert!(!turn_wall_clock_exceeded(0, 999_999));
     }
 
+    /// 默认单轮墙钟为 1 小时：真实任务（多轮工具调用 + 构建/测试）常超过 10 分钟。
+    ///
+    /// 该值可被 `CM_MAX_TURN_DURATION_SECONDS` 覆盖，故仅在未设该环境变量时断言默认值，
+    /// 免得开发机或 CI 的覆盖值让测试假失败。
+    #[test]
+    fn default_wall_clock_is_one_hour() {
+        if std::env::var_os("CM_MAX_TURN_DURATION_SECONDS").is_some() {
+            return;
+        }
+        let cfg = crate::cm_config::load_config(None).expect("embed default config");
+        assert_eq!(cfg.turn_budget.max_turn_duration_seconds, 3600);
+    }
+
     #[test]
     fn exceeded_when_over_cap() {
         assert!(!turn_wall_clock_exceeded(60, 60));
