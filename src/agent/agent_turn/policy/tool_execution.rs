@@ -80,17 +80,28 @@ pub fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
 /// 并行只读批预取审批失败（`name+args` → 错误正文）；由宿主在批前填充。
 pub type ParallelPrefetchFailures = HashMap<ParallelPrefetchFailureKey, String>;
 
-/// 子代理角色 / 多角色白名单的同步 early-deny 正文；`None` 表示可继续 dispatch。
+/// 子代理角色 / 多角色白名单 / 权限等级的同步 early-deny 正文；`None` 表示可继续 dispatch。
 pub struct ToolPolicyEarlyDenyParams<'a> {
     pub cfg: &'a AgentConfig,
     pub name: &'a str,
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
     pub tools_defs: &'a [crate::cm_types::Tool],
     pub turn_allow: Option<&'a HashSet<String>>,
+    /// 本回合权限能力快照；`None` = 调用方尚未接线（等价于不额外限制）。
+    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 /// 串行 / 并行路径共用的策略 early-deny（不含 TTL / run_command 预检）。
 pub fn tool_policy_early_deny_message(p: &ToolPolicyEarlyDenyParams<'_>) -> Option<String> {
+    // 权限等级先行：它比「角色白名单」更硬（L0/L1 下连工具定义都没下发），
+    // 先拒能让模型收到「等级不允许」而不是「角色白名单不允许」这一误导性归因。
+    if let Some(caps) = p.permission
+        && !crate::cm_agent::permission::tool_allowed_by_caps(caps, p.name)
+    {
+        return Some(crate::cm_agent::permission::permission_denied_message(
+            caps, p.name,
+        ));
+    }
     if let Some(k) = p.step_executor_constraint
         && !tool_allowed_for_step_executor_kind(p.cfg, p.name, k)
     {
@@ -166,6 +177,7 @@ mod tests {
             step_executor_constraint: None,
             tools_defs: &[],
             turn_allow: Some(&allow),
+            permission: None,
         });
         assert!(msg.is_some());
         assert!(msg.unwrap().contains("run_command"));

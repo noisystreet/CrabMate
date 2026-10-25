@@ -194,6 +194,22 @@ pub fn turn_allow_for_web_or_cli_job(
     turn_allowed_tool_names_for_role(cfg, id.as_deref())
 }
 
+/// 回合角色级权限上限（`agent_roles[].max_permission_level`）；`None` = 不额外限制。
+///
+/// 与 [`turn_allow_for_web_or_cli_job`] 同一角色解析口径，参与 `resolve_permission_level_for_turn`
+/// 的 min 链（设计 §6.1）。
+pub fn turn_role_max_permission_level_for_web_or_cli_job(
+    cfg: &AgentConfig,
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<crate::cm_types::PermissionLevel> {
+    let id = named_agent_role_for_tool_policy(cfg, persisted_active, request_agent_role)?;
+    cfg.roles_prompts
+        .agent_roles
+        .get(id.as_str())
+        .and_then(|spec| spec.max_permission_level)
+}
+
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
 ///
 /// 实现委托 `crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`，

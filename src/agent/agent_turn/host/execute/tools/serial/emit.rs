@@ -86,6 +86,7 @@ pub(super) async fn serial_emit_early_tool_policy_denials(
         step_executor_constraint: p.step_executor_constraint,
         tools_defs: p.tools_defs_full,
         turn_allow: p.turn_allow,
+        permission: p.permission,
     }) {
         warn!(target: super::super::LOG_TARGET, "{}", denied);
         emit_serial_tool_result(SerialEmitToolResultParams {
@@ -485,6 +486,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         step_executor_constraint: p.step_executor_constraint,
         tools_defs_full: p.tools_defs_full,
         turn_allow: p.turn_allow,
+        permission: p.permission,
     })
     .await
     {

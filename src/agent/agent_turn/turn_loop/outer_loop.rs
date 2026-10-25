@@ -99,7 +99,7 @@ impl PlannerRoundTools {
 }
 
 fn build_planner_round_tools(p: &RunLoopParams<'_>) -> PlannerRoundTools {
-    let definitions = match p.turn.turn_planner_hints.step_executor_constraint {
+    let mut definitions = match p.turn.turn_planner_hints.step_executor_constraint {
         Some(k) => {
             let mut v = filter_tool_defs_for_executor_kind(
                 p.ctx.core.tools_defs,
@@ -118,6 +118,12 @@ fn build_planner_round_tools(p: &RunLoopParams<'_>) -> PlannerRoundTools {
         }
         None => p.ctx.core.tools_defs.to_vec(),
     };
+    // 权限等级可见性（S2）：L0 → 空表；L1 → 只留只读正列表内的；L2–L4 → 不裁剪。
+    // 与 early-deny 共用 [`crate::cm_agent::permission::tool_allowed_by_caps`]，不留第二套判据。
+    let caps = &p.ctx.attach.permission;
+    definitions.retain(|t| {
+        crate::cm_agent::permission::tool_allowed_by_caps(caps, t.function.name.as_str())
+    });
     PlannerRoundTools { definitions }
 }
 
@@ -210,6 +216,7 @@ async fn outer_loop_execute_tools_round(
                 .turn_allowed_tool_names
                 .as_ref()
                 .map(|a| a.as_ref()),
+            permission: &p.ctx.attach.permission,
             long_term_memory: p.ctx.attach.long_term_memory.clone(),
             long_term_memory_scope_id: p.ctx.attach.long_term_memory_scope_id.clone(),
             tracing_chat_turn: p.ctx.obs.tracing_chat_turn.clone(),

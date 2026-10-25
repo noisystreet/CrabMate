@@ -80,6 +80,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub tools_defs_full: &'a [Tool],
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
+    /// 本回合权限能力快照（可见性已在规划侧生效，这里供 early-deny 与执行期判定）。
+    pub permission: &'a crate::cm_agent::permission::PermissionCaps,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
@@ -161,6 +163,7 @@ struct ExecuteToolsCommonCtx<'a> {
     step_executor_constraint: Option<PlanStepExecutorKind>,
     tools_defs_full: &'a [Tool],
     turn_allow: Option<&'a HashSet<String>>,
+    permission: &'a crate::cm_agent::permission::PermissionCaps,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
@@ -329,6 +332,7 @@ pub(crate) async fn per_execute_tools_web(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
         tool_job_registry,
+        permission,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -362,6 +366,7 @@ pub(crate) async fn per_execute_tools_web(
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
         tool_job_registry,
+        permission,
     })
     .await
 }

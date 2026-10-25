@@ -145,6 +145,27 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
     })
 }
 
+/// 是否为**内置**工具（非 `mcp__*` / `plugins/*.json` 动态工具）。
+///
+/// 权限等级的只读判定只认内置工具：外部工具的可用性由 `PermissionCaps::external_tools`
+/// 决定，不能被「只读正列表」顺手放行（设计 §8.1）。
+#[must_use]
+pub fn is_builtin_tool(name: &str) -> bool {
+    tool_origin(name) == ToolOrigin::Builtin
+}
+
+/// 权限语义的「只读」判定（权限等级 L1 的只读正列表推导用）。
+///
+/// **不读** `tool_registry_write_effect_tools`：那是并行只读批的**性能开关**（整体替换式），
+/// 运维为调并行顺手漏配 `run_command` 就会让 L1 放行子进程——不能拿它当安全边界
+/// （设计 `docs/design/permission_levels.md` §4.2 / §7.2）。
+///
+/// 非内置来源（`mcp__*` / `plugins/*.json` 动态工具）一律**不算**只读：L1 下它们必须被
+/// early-deny 拒掉，而不是靠「没进 tools 列表」兜着。
+pub fn is_readonly_tool_for_permission(name: &str) -> bool {
+    is_builtin_tool(name) && !builtin_write_effect_tools().contains(name)
+}
+
 /// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
 pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
     if tool_origin(name) != ToolOrigin::Builtin {

@@ -29,16 +29,22 @@ pub(crate) async fn dispatch_react_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    intent_at_turn_start::run_act_turn_start_heuristics(p);
-    // 会话 Ask/Plan：须在启发式之后挂只读（Ask/Plan 跳过 Act 句启发式；只读由本处 mode 挂载）。
-    if p.ctx.attach.session_mode.requires_readonly_tools() {
-        p.turn.turn_planner_hints.step_executor_constraint =
-            Some(crate::cm_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
-        tracing::info!(
-            target: "crabmate::agent_turn",
-            session_mode = %p.ctx.attach.session_mode,
-            "session_mode applied ReviewReadonly after act heuristics"
-        );
+    // L0（`permission_level = chat`）：本回合没有任何工具可下发，Act 句启发式只会产出
+    // 「打算改代码」的空工具调用，只读挂载也无对象可过滤——两条都跳过（设计 §8.2 的最小短路）。
+    let tools_visible = p.ctx.attach.permission.tool_visibility
+        != crate::cm_agent::permission::ToolVisibility::None;
+    if tools_visible {
+        intent_at_turn_start::run_act_turn_start_heuristics(p);
+        // 会话 Ask/Plan：须在启发式之后挂只读（Ask/Plan 跳过 Act 句启发式；只读由本处 mode 挂载）。
+        if p.ctx.attach.session_mode.requires_readonly_tools() {
+            p.turn.turn_planner_hints.step_executor_constraint =
+                Some(crate::cm_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
+            tracing::info!(
+                target: "crabmate::agent_turn",
+                session_mode = %p.ctx.attach.session_mode,
+                "session_mode applied ReviewReadonly after act heuristics"
+            );
+        }
     }
     let assessed = assess_turn_routing(AssessTurnRoutingParams {
         cfg: p.ctx.core.cfg.as_ref(),

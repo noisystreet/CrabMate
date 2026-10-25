@@ -529,6 +529,7 @@ async fn run_single_agent_turn(
             read_file_turn_cache: None,
             turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
             session_mode: args.session_mode,
+            permission_role_max: None,
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,
