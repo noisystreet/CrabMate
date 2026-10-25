@@ -179,6 +179,11 @@ mod try_macro_typecheck {
 
     define_runners_cwd_try! {
         runner_search_in_files_try_smoke => crate::cm_tools::tools::grep_try::search_in_files_try,
+        runner_read_dir_try_smoke => crate::cm_tools::tools::file::read_dir_try,
+        runner_glob_files_try_smoke => crate::cm_tools::tools::file::glob_files_try,
+        runner_list_tree_try_smoke => crate::cm_tools::tools::file::list_tree_try,
+        runner_read_binary_meta_try_smoke => crate::cm_tools::tools::file::read_binary_meta_try,
+        runner_hash_file_try_smoke => crate::cm_tools::tools::file::hash_file_try,
     }
 }
 
@@ -426,17 +431,18 @@ define_runners_cwd_try! {
     runner_structured_validate_try => structured_data::structured_validate_try,
     runner_structured_query_try => structured_data::structured_query_try,
     runner_structured_diff_try => structured_data::structured_diff_try,
+    // file_core 只读族 B4：显式 ToolError（read_dir 同样覆盖工作区外路径的审批前置场景）。
+    runner_read_dir_try => file::read_dir_try,
+    runner_glob_files_try => file::glob_files_try,
+    runner_list_tree_try => file::list_tree_try,
+    runner_read_binary_meta_try => file::read_binary_meta_try,
+    runner_hash_file_try => file::hash_file_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
 
 define_runners_cwd! {
     runner_rust_analyzer => rust_ide::rust_analyzer,
-    runner_read_dir => file::read_dir,
-    runner_glob_files => file::glob_files,
-    runner_list_tree => file::list_tree,
-    runner_read_binary_meta => file::read_binary_meta,
-    runner_hash_file => file::hash_file,
     runner_code_nav => code_nav_dispatch::dispatch,
     runner_reminder => schedule_dispatch::reminder,
     runner_event => schedule_dispatch::event,

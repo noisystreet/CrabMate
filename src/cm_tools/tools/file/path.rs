@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::workspace::fs::OpenedWorkspaceFile;
 use crate::cm_tools::workspace::path::{
     WorkspacePathError, absolutize_relative_under_root, ensure_canonical_within_root,
@@ -17,6 +18,67 @@ pub use crate::cm_tools::workspace::path::canonical_workspace_root;
 #[must_use]
 pub fn tool_user_error_from_workspace_path(e: WorkspacePathError) -> String {
     e.prefixed_user_message()
+}
+
+/// 只读工具在工作区路径解析失败时要用的两个稳定错误码（由调用方给出，保持各工具的码名前缀）。
+pub(super) struct WorkspacePathCodes {
+    /// 路径落在工作区根之外，或工作区自身不可解析（`workspace` 类别）。
+    pub outside: &'static str,
+    /// 目标不存在、打开失败等 IO 侧原因（`external` 类别）。
+    pub io: &'static str,
+}
+
+/// [`WorkspacePathError`] 的对外分类（决定 `error_code` 与 `failure_category`）。
+enum WorkspacePathErrorClass {
+    /// 路径越界，或工作区自身不可解析。
+    Workspace,
+    /// 目标不存在、打开失败等 IO 侧原因。
+    Io,
+    /// 入参问题（空路径、绝对路径、规范化失败）。
+    InvalidArgs,
+}
+
+fn classify_workspace_path_error(e: &WorkspacePathError) -> WorkspacePathErrorClass {
+    match e {
+        WorkspacePathError::OutsideWorkspaceRoot
+        | WorkspacePathError::WorkspaceResolveFailed(_)
+        | WorkspacePathError::NoExistingAncestor => WorkspacePathErrorClass::Workspace,
+        WorkspacePathError::PathResolveFailed(_) => WorkspacePathErrorClass::Io,
+        _ => WorkspacePathErrorClass::InvalidArgs,
+    }
+}
+
+fn build_workspace_path_error(
+    class: WorkspacePathErrorClass,
+    codes: WorkspacePathCodes,
+    message: String,
+) -> ToolError {
+    match class {
+        WorkspacePathErrorClass::Workspace => ToolError::workspace(codes.outside, message),
+        WorkspacePathErrorClass::Io => ToolError::external_code(codes.io, message),
+        WorkspacePathErrorClass::InvalidArgs => ToolError::invalid_args(message),
+    }
+}
+
+/// 把 [`WorkspacePathError`] 分类为 [`ToolError`]，正文沿用 `错误：…` 文案。
+///
+/// 为什么要分：`resolve_for_read` 对「越界」「文件不存在」「入参非法」返回同一个枚举，
+/// 若统一映射成 `*_workspace_resolve_failed`，模型会把最常见的「文件不存在」误读成工作区配置问题。
+pub(super) fn workspace_path_tool_error(
+    e: WorkspacePathError,
+    codes: WorkspacePathCodes,
+) -> ToolError {
+    let class = classify_workspace_path_error(&e);
+    build_workspace_path_error(class, codes, tool_user_error_from_workspace_path(e))
+}
+
+/// 同 [`workspace_path_tool_error`]，但由调用方给出正文（如 `错误：无法解析目录路径：…`），保持历史文案不变。
+pub(super) fn workspace_path_tool_error_with_message(
+    e: &WorkspacePathError,
+    codes: WorkspacePathCodes,
+    message: String,
+) -> ToolError {
+    build_workspace_path_error(classify_workspace_path_error(e), codes, message)
 }
 
 /// 若 `sub` 为**已落在工作区根下**的绝对路径，则转为工作区相对路径；否则原样返回（并 trim）。  

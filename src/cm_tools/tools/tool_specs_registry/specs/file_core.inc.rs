@@ -44,7 +44,7 @@ ToolSpec {
             description: "在工作区内读取目录下的文件/子目录列表（受控只读）。**path 必须是相对工作目录的路径（如 `.`、`src`、`tmp/dir`），禁止绝对路径和 `..`**。可选包含隐藏项、最大条数、文件大小（include_size）、修改时间（include_mtime）和排序方式（sort_by: name/size/mtime）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ReadDirEnhancedArgs>,
-            runner: ToolRunner::Legacy(runner_read_dir),
+            runner: ToolRunner::Typed(runner_read_dir_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_dir),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "在工作区内从指定子目录起递归扫描，按 glob 模式匹配**文件**相对路径（如 **/*.rs）。带 max_depth、max_results 上限；路径均在工作区内解析，禁止 ..。优先于 run_command find。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::GlobFilesArgs>,
-            runner: ToolRunner::Legacy(runner_glob_files),
+            runner: ToolRunner::Typed(runner_glob_files_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_glob_files),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "在工作区内从指定目录起递归列出子路径（先序、字典序），前缀 dir:/file:；带 max_depth、max_entries。用于快速看目录树而不用 find。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ListTreeArgs>,
-            runner: ToolRunner::Legacy(runner_list_tree),
+            runner: ToolRunner::Typed(runner_list_tree_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_list_tree),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ReadBinaryMetaArgs>,
-            runner: ToolRunner::Legacy(runner_read_binary_meta),
+            runner: ToolRunner::Typed(runner_read_binary_meta_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_binary_meta),
         },
         ToolSpec {
@@ -76,7 +76,7 @@ ToolSpec {
             description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::HashFileArgs>,
-            runner: ToolRunner::Legacy(runner_hash_file),
+            runner: ToolRunner::Typed(runner_hash_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_hash_file),
         },
         ToolSpec {

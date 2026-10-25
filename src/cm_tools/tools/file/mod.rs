@@ -19,8 +19,8 @@ mod write_guard;
 mod write_ops;
 mod write_precheck;
 
-pub use directory::read_dir;
-pub use inspect::{hash_file, read_binary_meta};
+pub use directory::read_dir_try;
+pub use inspect::{hash_file_try, read_binary_meta_try};
 pub use mutate::{
     append_file, append_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
     delete_files, delete_files_try, search_replace, search_replace_try,
@@ -37,7 +37,7 @@ pub use read_tool::read_file;
 pub use read_tool::read_file_try;
 #[cfg(test)]
 pub use read_tool::strip_read_file_output_header_for_tests;
-pub use tree_glob::{glob_files, list_tree};
+pub use tree_glob::{glob_files_try, list_tree_try};
 pub use write_ops::{
     copy_file, copy_file_try, create_file, create_file_try, modify_file, modify_file_try, move_file,
     move_file_try,
@@ -57,5 +57,7 @@ mod tests_metadata;
 mod tests_revision;
 #[cfg(test)]
 mod tests_typed_dir_perm;
+#[cfg(test)]
+mod tests_typed_readonly;
 #[cfg(test)]
 mod tests_typed_write_ops;
