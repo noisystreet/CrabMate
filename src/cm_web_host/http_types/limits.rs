@@ -2,8 +2,8 @@
 
 use serde_json::Value;
 
-use super::chat::ChatRequestBody;
-use super::workspace::{WorkspaceFileWriteBody, WorkspaceSearchBody};
+use crate::cm_api_contract::chat::ChatRequestBody;
+use crate::cm_api_contract::workspace::{WorkspaceFileWriteBody, WorkspaceSearchBody};
 
 /// `clarify_questionnaire_answers.answers` JSON 预算（防畸形嵌套占内存）。
 const CLARIFY_ANSWERS_JSON_MAX_DEPTH: usize = 24;

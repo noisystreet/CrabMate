@@ -1,5 +1,5 @@
-//! CLI 退出码与 `CliExitError` 类型（与 `classify_model_error_message` 分离，
-//! 后者因依赖根包 `agent_errors` / `plan_artifact` 保留在根包）。
+//! CLI 退出码与 `CliExitError` 类型；模型错误文案 → 退出码的归类见
+//! `cm_internal::agent_errors::classify_model_error_message`（`cm_runtime` 保持无根包依赖）。
 
 /// 一般失败（配置、I/O、未分类错误）
 pub const EXIT_GENERAL: i32 = 1;

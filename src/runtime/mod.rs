@@ -3,10 +3,10 @@
 //! 部分独立工具模块已提取到顶层 `crate::cm_runtime` 模块，在此重导出。
 
 pub mod benchmark;
-pub use crate::cm_runtime::chat_export;
+pub use crate::cm_runtime::session_export;
 pub mod cli;
 pub mod cli_doctor;
-pub mod cli_exit;
+pub use crate::cm_runtime::cli_exit;
 pub(crate) mod cli_mcp;
 pub(crate) mod cli_web_bearer;
 pub mod cli_workflow;
