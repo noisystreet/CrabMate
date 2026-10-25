@@ -8,7 +8,7 @@ use super::handlers_file_raw::{
     map_workspace_rel_read_err, raw_err, reject_unsafe_rel_path, RawErr,
 };
 use crate::web::app_state_facets::WebChangelogAppFacet;
-use crate::web::http_types::workspace::WorkspaceFileMoveBody;
+use crate::cm_api_contract::workspace::WorkspaceFileMoveBody;
 use crate::web::normalize_client_conversation_id;
 use crate::workspace::changelist::record_file_state_after_write;
 use crate::workspace::fs::rename_file_under_root;

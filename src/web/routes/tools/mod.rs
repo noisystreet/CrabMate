@@ -2,7 +2,7 @@
 //! `GET /tools/{tool_name}`、`PUT /tools/{tool_name}/enabled`、
 //! `GET /tools/jobs/{tool_job_id}`、`GET /tools/jobs/{tool_job_id}/output`、
 //! `POST /tools/jobs/{tool_job_id}/cancel` 路由；
-//! JSON 见 [`crate::web::http_types::tools`] / [`crate::web::http_types::tool_jobs`]，
+//! JSON 见 [`crate::web::http_types::tools`] / [`crate::cm_api_contract::tool_jobs`]，
 //! handler 见 [`crate::web::tools_handlers`] / [`crate::web::tool_jobs`]。
 
 use std::sync::Arc;

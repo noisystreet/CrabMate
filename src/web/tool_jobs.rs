@@ -16,7 +16,7 @@ use crate::cm_api_contract::error_codes;
 use crate::cm_internal::tool_jobs::registry::{CancelOutcome, GetOutcome, OutputPollOutcome};
 use crate::cm_internal::tool_jobs::types::{JobStatus, OutputLogRead};
 use crate::web::http_types::chat::ApiError;
-use crate::web::http_types::tool_jobs::{
+use crate::cm_api_contract::tool_jobs::{
     ToolJobCancelResponseBody, ToolJobOutputItem, ToolJobOutputResponseBody,
     ToolJobStatusResponseBody,
 };

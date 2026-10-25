@@ -10,7 +10,7 @@ use super::handlers_sync::workspace_file_write_sync_unix;
 use super::handlers_file_raw::{raw_err, reject_unsafe_rel_path, RawErr};
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::validate_workspace_file_write_payload;
-use crate::web::http_types::workspace::WorkspaceFileRawPutQuery;
+use crate::cm_api_contract::workspace::WorkspaceFileRawPutQuery;
 use crate::workspace::path::resolve_web_workspace_write_path;
 
 /// 写入工作区原始字节；成功 **204**。失败为 JSON `ApiError`（与 GET raw 同类）。

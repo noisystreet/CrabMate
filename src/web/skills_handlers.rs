@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::State;
 
 use super::app_state::AppStateHttpCore;
-use super::http_types::skills::{SkillListItem, SkillsListResponse};
+use crate::cm_web_host::http_types::skills::{SkillListItem, SkillsListResponse};
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
 
 pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<SkillsListResponse> {

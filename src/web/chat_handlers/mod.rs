@@ -4,7 +4,7 @@
 //!
 //! | 子模块 | 职责 |
 //! |--------|------|
-//! | JSON 体 | [`crate::web::http_types::chat`] 与 [`crate::web::http_types::workspace`]（changelog） |
+//! | JSON 体 | [`crate::web::http_types::chat`] 与 [`crate::cm_api_contract::workspace`]（changelog） |
 //! | [`parse`] | conversation_id、client_llm、seed、temperature 等校验 |
 //! | [`conflict`] | 会话 revision 冲突的 HTTP/SSE 载荷 |
 //! | [`upload`] | 上传与 uploads 目录清理 |

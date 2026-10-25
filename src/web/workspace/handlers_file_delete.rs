@@ -11,7 +11,7 @@ use super::handlers::effective_workspace_base_canonical;
 use super::handlers_sync::workspace_delete_file_sync_unix;
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::validate_workspace_query_encoding_optional;
-use crate::web::http_types::workspace::{
+use crate::cm_api_contract::workspace::{
     WorkspaceFileDeleteFailure, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
 };
 use crate::workspace::path::resolve_web_workspace_read_path;

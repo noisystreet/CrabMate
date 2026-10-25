@@ -1,4 +1,4 @@
-//! `GET` / `POST /tasks` 路由；JSON 见 [`crate::web::http_types::tasks`]。
+//! `GET` / `POST /tasks` 路由；JSON 见 [`crate::cm_tools::workspace::tasks_side`]。
 
 use std::sync::Arc;
 

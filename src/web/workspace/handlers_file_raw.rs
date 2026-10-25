@@ -11,7 +11,7 @@ use super::handlers::effective_workspace_base_canonical;
 use super::handlers_sync::workspace_read_file_bytes_sync_unix;
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::chat::ApiError;
-use crate::web::http_types::workspace::WorkspaceFileQuery;
+use crate::cm_api_contract::workspace::WorkspaceFileQuery;
 use crate::workspace::path::resolve_web_workspace_read_path;
 
 /// 与 Web `POST /upload` 单张图片上限一致。

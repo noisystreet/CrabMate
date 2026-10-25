@@ -1,7 +1,7 @@
 //! 工作区文件/目录同步路径（Unix `openat2` 等）；从 `handlers.rs` 拆出以控制文件行数与 CCN。
 
 #[cfg(unix)]
-use crate::web::http_types::workspace::WorkspaceEntry;
+use crate::cm_api_contract::workspace::WorkspaceEntry;
 #[cfg(unix)]
 use crate::workspace::fs::{
     open_directory_under_root, open_existing_file_under_root, open_file_write_under_root,

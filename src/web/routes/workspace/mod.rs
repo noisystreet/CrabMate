@@ -1,4 +1,4 @@
-//! `/workspace*` 路由表；handler 在 [`crate::web::workspace`]，JSON 在 [`crate::web::http_types::workspace`]。
+//! `/workspace*` 路由表；handler 在 [`crate::web::workspace`]，JSON 在 [`crate::cm_api_contract::workspace`]。
 
 use std::sync::Arc;
 
