@@ -171,6 +171,43 @@ pub(super) fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, Works
     Ok(normalized)
 }
 
+/// 工作区路径访问器：把「根 + 访问范围」收成一个载体。
+///
+/// R1（设计 §17.1）只收口调用形态：目前仅持有根，行为与直接调用
+/// [`resolve_for_read`] / [`resolve_for_write`] 完全一致；后续引入 `PathScope`
+/// 时只改本结构，不必再触碰各处调用点。
+pub struct PathAccess<'a> {
+    root: &'a Path,
+}
+
+impl<'a> PathAccess<'a> {
+    #[must_use]
+    pub fn new(root: &'a Path) -> Self {
+        Self { root }
+    }
+
+    /// 工作区根（供 `canonical_workspace_root` / `path_for_tool_display` 复用）。
+    #[must_use]
+    pub fn root(&self) -> &'a Path {
+        self.root
+    }
+
+    /// 见 [`resolve_for_read`]。
+    pub fn for_read(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+        resolve_for_read(self.root, sub)
+    }
+
+    /// 见 [`resolve_for_read_open`]（`openat2` / `RESOLVE_IN_ROOT`）。
+    pub fn for_read_open(&self, sub: &str) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
+        resolve_for_read_open(self.root, sub)
+    }
+
+    /// 见 [`resolve_for_write`]。
+    pub fn for_write(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+        resolve_for_write(self.root, sub)
+    }
+}
+
 /// 相对工作区根的 POSIX 风格路径（供工具返回给模型，不暴露绝对路径）。
 fn path_relative_to_workspace(working_dir: &Path, absolute: &Path) -> String {
     let Ok(base) = canonical_workspace_root(working_dir) else {

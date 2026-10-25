@@ -25,7 +25,7 @@ pub use mutate::{
     append_file, append_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
     delete_files, delete_files_try, search_replace, search_replace_try,
 };
-pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
+pub use path::{PathAccess, canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 pub use perm::{chmod_file, chmod_file_try};
 // 写侧统一提交入口：其它工具（`structured_patch`）也要「tmp → 继承元数据 → fsync →
 // revision 校验 → 原子替换」，复用同一实现而不是各自 `fs::write`。

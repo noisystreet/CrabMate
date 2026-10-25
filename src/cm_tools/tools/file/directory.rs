@@ -8,7 +8,7 @@ use crate::cm_tools::tool_result::ToolError;
 
 use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{
-    WorkspacePathCodes, path_for_tool_display, resolve_for_read,
+    PathAccess, WorkspacePathCodes, path_for_tool_display,
     workspace_path_tool_error_with_message,
 };
 
@@ -105,7 +105,7 @@ fn format_dir_entry_line(entry: &DirEntry, include_size: bool, include_mtime: bo
 #[allow(clippy::result_large_err)]
 fn resolve_read_dir_root(
     path: &str,
-    working_dir: &Path,
+    paths: &PathAccess<'_>,
 ) -> Result<std::path::PathBuf, ToolError> {
     if path.starts_with('/') {
         if is_sensitive_external_path(path) {
@@ -120,7 +120,7 @@ fn resolve_read_dir_root(
             "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string(),
         ))
     } else {
-        resolve_for_read(working_dir, path).map_err(|e| {
+        paths.for_read(path).map_err(|e| {
             workspace_path_tool_error_with_message(
                 &e,
                 READ_DIR_PATH_CODES,
@@ -131,7 +131,7 @@ fn resolve_read_dir_root(
 }
 
 #[allow(clippy::result_large_err)]
-pub fn read_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn read_dir_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     let path = v
@@ -141,14 +141,14 @@ pub fn read_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolE
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
 
-    let root = resolve_read_dir_root(path, working_dir)?;
+    let root = resolve_read_dir_root(path, paths)?;
 
     if !root.is_dir() {
         return Err(ToolError::external_code(
             "read_dir_path_not_dir",
             format!(
                 "错误：指定路径不是目录：{}",
-                path_for_tool_display(working_dir, &root, Some(path))
+                path_for_tool_display(paths.root(), &root, Some(path))
             ),
         ));
     }
@@ -179,7 +179,7 @@ pub fn read_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolE
     let mut out = String::new();
     out.push_str(&format!(
         "目录: {}\n",
-        path_for_tool_display(working_dir, &root, Some(path))
+        path_for_tool_display(paths.root(), &root, Some(path))
     ));
     match std::fs::read_dir(&root) {
         Ok(rd) => {
@@ -193,7 +193,7 @@ pub fn read_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolE
                 out.push('\n');
             }
             out.push_str(&format!("总计遍历: {}，展示: {}\n", count, shown));
-            let path_disp = path_for_tool_display(working_dir, &root, Some(path));
+            let path_disp = path_for_tool_display(paths.root(), &root, Some(path));
             Ok(prepend_read_dir_output_header(
                 out.trim_end(),
                 &path_disp,

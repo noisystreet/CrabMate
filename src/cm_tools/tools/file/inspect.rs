@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::cm_tools::tool_result::ToolError;
 
 use super::path::{
-    WorkspacePathCodes, path_for_tool_display, resolve_for_read, workspace_path_tool_error,
+    PathAccess, WorkspacePathCodes, path_for_tool_display, workspace_path_tool_error,
 };
 
 /// read_binary_meta：默认读取文件头参与哈希的字节数
@@ -34,12 +34,12 @@ fn required_json_path(v: &serde_json::Value) -> Result<String, ToolError> {
 
 #[allow(clippy::result_large_err)]
 fn resolve_regular_file(
-    working_dir: &Path,
+    paths: &PathAccess<'_>,
     path: &str,
     codes: WorkspacePathCodes,
     not_file_code: &'static str,
 ) -> Result<std::path::PathBuf, ToolError> {
-    let target = resolve_for_read(working_dir, path)
+    let target = paths.for_read(path)
         .map_err(|e| workspace_path_tool_error(e, codes))?;
     if !target.is_file() {
         return Err(ToolError::external_code(
@@ -78,7 +78,7 @@ fn sha256_file_prefix_hex(target: &Path, to_read: usize) -> Result<String, ToolE
 ///
 /// 参数：`path`（必填）；`prefix_hash_bytes`（可选，默认 8192，0 表示不算哈希，上限 256KiB）。
 #[allow(clippy::result_large_err)]
-pub fn read_binary_meta_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn read_binary_meta_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = required_json_path(&v)?;
 
@@ -90,7 +90,7 @@ pub fn read_binary_meta_try(args_json: &str, working_dir: &Path) -> Result<Strin
         .min(READ_BINARY_META_PREFIX_MAX);
 
     let target = resolve_regular_file(
-        working_dir,
+        paths,
         &path,
         WorkspacePathCodes {
             outside: "read_binary_meta_workspace_resolve_failed",
@@ -107,7 +107,7 @@ pub fn read_binary_meta_try(args_json: &str, working_dir: &Path) -> Result<Strin
     let mut out = String::new();
     out.push_str(&format!(
         "path: {}\n",
-        path_for_tool_display(working_dir, &target, Some(&path))
+        path_for_tool_display(paths.root(), &target, Some(&path))
     ));
     out.push_str(&format!("size_bytes: {}\n", size));
     append_modified_unix(&mut out, &meta);
@@ -135,7 +135,7 @@ pub fn read_binary_meta_try(args_json: &str, working_dir: &Path) -> Result<Strin
 ///
 /// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
 #[allow(clippy::result_large_err)]
-pub fn hash_file_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn hash_file_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = required_json_path(&v)?;
 
@@ -148,7 +148,7 @@ pub fn hash_file_try(args_json: &str, working_dir: &Path) -> Result<String, Tool
     let max_bytes = parse_hash_max_bytes(&v)?;
 
     let target = resolve_regular_file(
-        working_dir,
+        paths,
         &path,
         WorkspacePathCodes {
             outside: "hash_file_workspace_resolve_failed",
@@ -165,7 +165,7 @@ pub fn hash_file_try(args_json: &str, working_dir: &Path) -> Result<String, Tool
 
     let hex_digest = hash_digest_for_algo(&algo, &target, limit)?;
     Ok(format_hash_file_ok(HashFileOkFmt {
-        working_dir,
+        working_dir: paths.root(),
         target: &target,
         path: &path,
         size,

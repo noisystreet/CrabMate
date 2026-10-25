@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use super::tests::make_test_dir;
-use super::{hash_file_try, read_binary_meta_try};
+use super::{PathAccess, hash_file_try, read_binary_meta_try};
 use crate::cm_tools::tool_result::ToolFailureCategory;
 
 /// 在临时工作区的**父目录**造一个真实文件，返回文件名（供 `../<name>` 引用）。
@@ -28,7 +28,7 @@ fn hash_file_try_outside_workspace_is_workspace_resolve_failed() {
     let dir = make_test_dir();
     let name = write_outside_sibling(&dir);
     let args = format!(r#"{{"path":"../{name}","algorithm":"sha256"}}"#);
-    let err = hash_file_try(&args, &dir).expect_err("工作区外路径应显式失败");
+    let err = hash_file_try(&args, &PathAccess::new(&dir)).expect_err("工作区外路径应显式失败");
     assert_eq!(err.code, "hash_file_workspace_resolve_failed");
     assert_eq!(err.category, ToolFailureCategory::Workspace);
     assert_eq!(err.message, "错误：路径不能超出工作目录");
@@ -41,7 +41,7 @@ fn read_binary_meta_try_outside_workspace_is_workspace_resolve_failed() {
     let dir = make_test_dir();
     let name = write_outside_sibling(&dir);
     let args = format!(r#"{{"path":"../{name}"}}"#);
-    let err = read_binary_meta_try(&args, &dir).expect_err("工作区外路径应显式失败");
+    let err = read_binary_meta_try(&args, &PathAccess::new(&dir)).expect_err("工作区外路径应显式失败");
     assert_eq!(err.code, "read_binary_meta_workspace_resolve_failed");
     assert_eq!(err.category, ToolFailureCategory::Workspace);
     assert_eq!(err.message, "错误：路径不能超出工作目录");
@@ -54,7 +54,10 @@ fn read_binary_meta_try_outside_workspace_is_workspace_resolve_failed() {
 #[test]
 fn hash_file_try_missing_file_is_io_failed() {
     let dir = make_test_dir();
-    let err = hash_file_try(r#"{"path":"missing.dat","algorithm":"sha256"}"#, &dir)
+    let err = hash_file_try(
+        r#"{"path":"missing.dat","algorithm":"sha256"}"#,
+        &PathAccess::new(&dir),
+    )
         .expect_err("不存在的文件应显式失败");
     assert_eq!(err.code, "hash_file_io_failed");
     assert_eq!(err.category, ToolFailureCategory::External);
@@ -69,7 +72,7 @@ fn hash_file_try_missing_file_is_io_failed() {
 #[test]
 fn read_binary_meta_try_missing_file_is_io_failed() {
     let dir = make_test_dir();
-    let err = read_binary_meta_try(r#"{"path":"missing.dat"}"#, &dir)
+    let err = read_binary_meta_try(r#"{"path":"missing.dat"}"#, &PathAccess::new(&dir))
         .expect_err("不存在的文件应显式失败");
     assert_eq!(err.code, "read_binary_meta_io_failed");
     assert_eq!(err.category, ToolFailureCategory::External);

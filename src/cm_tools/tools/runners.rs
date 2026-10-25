@@ -124,6 +124,22 @@ macro_rules! define_runners_cwd_try {
     };
 }
 
+/// 形态：`f(args, &PathAccess) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
+///
+/// 与 [`define_runners_cwd_try`] 的差别只在第二参类型：文件类工具走 [`file::PathAccess`]，
+/// 使路径范围（未来 `PathScope`）只需在本宏的构造点处注入，不必逐个工具传导。
+/// 新增文件类 `_try` 工具时加入本组，而不是 `define_runners_cwd_try!`。
+macro_rules! define_runners_paths_try {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+                $func(args, &file::PathAccess::new(ctx.working_dir))
+            }
+        )*
+    };
+}
+
 /// 形态：`f(args)`（不使用 `ctx`）。
 macro_rules! define_runners_args_only {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -179,9 +195,12 @@ mod try_macro_typecheck {
 
     define_runners_cwd_try! {
         runner_search_in_files_try_smoke => crate::cm_tools::tools::grep_try::search_in_files_try,
-        runner_read_dir_try_smoke => crate::cm_tools::tools::file::read_dir_try,
+    }
+
+    define_runners_paths_try! {
         runner_glob_files_try_smoke => crate::cm_tools::tools::file::glob_files_try,
         runner_list_tree_try_smoke => crate::cm_tools::tools::file::list_tree_try,
+        runner_read_dir_try_smoke => crate::cm_tools::tools::file::read_dir_try,
         runner_read_binary_meta_try_smoke => crate::cm_tools::tools::file::read_binary_meta_try,
         runner_hash_file_try_smoke => crate::cm_tools::tools::file::hash_file_try,
     }
@@ -424,14 +443,20 @@ define_runners_cwd_ctx_try! {
 define_runners_cwd_try! {
     runner_delete_dir_try => file::delete_dir_try,
     runner_create_dir_try => file::create_dir_try,
-    runner_chmod_file_try => file::chmod_file_try,
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
     runner_structured_validate_try => structured_data::structured_validate_try,
     runner_structured_query_try => structured_data::structured_query_try,
     runner_structured_diff_try => structured_data::structured_diff_try,
+}
+
+// ── 已改走 `PathAccess` 的文件类工具（R1 收口）──────────────────
+// S3 只需改 `define_runners_paths_try!` 的构造点，即可给全部文件工具注入路径范围。
+
+define_runners_paths_try! {
     // file_core 只读族 B4：显式 ToolError（read_dir 同样覆盖工作区外路径的审批前置场景）。
+    runner_chmod_file_try => file::chmod_file_try,
     runner_read_dir_try => file::read_dir_try,
     runner_glob_files_try => file::glob_files_try,
     runner_list_tree_try => file::list_tree_try,
