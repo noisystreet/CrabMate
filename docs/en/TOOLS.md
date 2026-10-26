@@ -107,6 +107,29 @@ This document describes built-in tools, common function-calling JSON examples, a
   - **Schedule** (writes `.crabmate/reminders.json` / `.crabmate/events.json`; nine tools before the merge): `reminder` (**dispatches on `action`** — `list` read-only, `add` / `update` / `delete` / `complete` write) and `event` (`list` read-only, `add` / `update` / `delete` write). `update` / `delete` / `complete` require `id`; `add` requires a non-empty `title` (`event` also `start_at`). Both count as write side effects, so they stay out of the parallel read-only batch, the read-only TTL cache and the same-turn dedup cache.
   - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
 
+## How permission levels affect tools
+
+`permission_level` (`chat` / `read` / `workspace` / `approved` / `unrestricted`, default **`approved`**) decides both *which tools are advertised* and *whether a registered tool may run*. Design: [`../design/permission_levels.md`](../design/permission_levels.md); keys: `docs/配置说明.md` § 权限等级.
+
+| Level | Tool visibility | MCP / dynamic tools | Path scope | Commands | Outbound network | Out-of-bounds |
+|---|---|---|---|---|---|---|
+| `chat` | **no tool definitions** | denied | unreachable | all denied | all denied | denied |
+| `read` | read-only allowlist | denied | session workspace root | all denied | prefix allowlist | denied |
+| `workspace` | full | **denied** | session workspace root | allowlist | prefix allowlist | **denied, no prompt** |
+| `approved` | full | allowed | session workspace root | allowlist | prefix allowlist | human approval |
+| `unrestricted` | full | allowed | any | allowlist ignored | any | no prompt, audit only |
+
+- `run_command` / `terminal_session` / `python_snippet_run` / `run_executable` follow the **command axis**: hard-denied at `chat` / `read` (even if the model replays an old `tool_call`), denied at `workspace` when outside the allowlist, approval at `approved`, no allowlist check at `unrestricted`.
+- File tools (`read_file` / `write` / `read_dir`, …) share one path carrier: `unrestricted` accepts absolute paths and `..`; `chat`–`approved` stay inside the session workspace root (out-of-bounds at `approved` goes through `WorkspaceExternalPath` approval).
+- `http_fetch` / `http_request` follow the **network axis** (`http_fetch_allowed_prefixes`); on a prefix miss `workspace` denies, `approved` prompts, `unrestricted` allows.
+- `mcp__*` and `plugins/*.json` dynamic tools are **denied at `chat` / `read` / `workspace`**, allowed at `approved` / `unrestricted`.
+- **Irreversible-operation confirms are not waived**: `delete_files` / `delete_dir` still require `confirm` under `unrestricted` (see `permission_confirm_tools`), and `run_command` still gates dangerous argv (`git reset --hard`, `git push --force`).
+- `AllowAlways` keys are level-scoped (e.g. `l3|git`): a hit requires an **exact** level match, so lowering the session level invalidates earlier approvals (same for `http_fetch` / `http_request` permanent keys).
+- Timeline entries (`TOOL_CALL_START.permissionLevel`) and approval dialogs (`command_approval.permissionLevel`) carry the level for **display only**; no allow/deny decision reads them.
+- **Known gap**: `PathScope::AllowedRoots` is not wired yet, so `workspace_allowed_roots` does not widen `workspace` / `approved` paths; the sandbox does not narrow the network axis yet and `clamped_by` never reports `sandbox`.
+
+---
+
 ## GitHub CLI (`gh_*`) examples
 
 - `gh_pr` (**dispatches on `action`**; `checks` / `body_draft` read-only, `create` / `merge` / `review` / `comment` / `edit` **write to GitHub**):

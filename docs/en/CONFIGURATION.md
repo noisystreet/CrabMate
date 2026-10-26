@@ -489,6 +489,27 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 - **vs intent classification**: L2 and intent-gate config keys removed (retirement **R4**); capability bounds come from Ask/Plan/Act; Act also runs utterance keyword readonly heuristics.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 
+## Permission levels (`permission_level`: L0–L4)
+
+One knob projects onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and per-axis equivalence notes: [`../design/permission_levels.md`](../design/permission_levels.md). Chinese source of truth: `docs/配置说明.md` § 权限等级.
+
+| Level | Meaning |
+|---|---|
+| **`chat`** (L0) | Chat only: no tool definitions are sent; any tool call is denied |
+| **`read`** (L1) | Read-only: workspace reads + outbound GET; writes and commands are hard-denied |
+| **`workspace`** (L2) | Hard workspace boundary: writes/commands limited to the workspace + allowlist; out-of-bounds is **denied** with no approval prompt; `mcp__*` / dynamic tools denied |
+| **`approved`** (L3, **default**) | Same baseline as L2, but out-of-bounds actions go through human approval (AllowOnce / AllowAlways) |
+| **`unrestricted`** (L4) | Not limited by workspace paths or the command allowlist; no prompts, audit-only |
+
+- **Default**: **`[agent] permission_level = "approved"`**; env **`CM_PERMISSION_LEVEL`**. Behavior under the default config is unchanged from before this feature.
+- **Precedence (narrow-only)**: request `permission_level` → persisted `active_permission_level` → `min(permission_level, permission_level_max, role max_permission_level)`; `ask` / `plan` additionally clamp the result to ≤ `read`. No step can widen.
+- **Ceiling `permission_level_max`**: omitted ⇒ derived from the bind address (`127.0.0.1` → `unrestricted`, non-loopback → `approved`) and frozen at startup; env **`CM_PERMISSION_LEVEL_MAX`**. Non-loopback L4 additionally requires **`allow_unrestricted_permission_for_non_loopback = true`** (**`CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`**), otherwise **`serve` refuses to start**. `POST /config/reload` can only **lower** it.
+- **Per-role cap**: optional **`max_permission_level`** on `agent_roles.toml` rows (TOML only), combined with `min`.
+- **Web**: optional `permission_level` on **`POST /chat*`** (unknown value → **400** `INVALID_PERMISSION_LEVEL`), persisted as **intent** in `active_permission_level` and re-clamped every turn. **`GET /conversation/messages`** returns `active_permission_level` (intent) **and** `effective_permission_level` (after clamps). **`GET /permission`** is the read-only selector projection (`level` / `level_source` / `ceiling` / `ceiling_source` / `available` / `clamped_by` / `caps`; optional `?agent_role=` / `?conversation_id=`). **`POST /conversation/state`** updates the idle-time intents (`permission_level` / `session_mode` / `agent_role`) without touching messages or bumping `revision`. **`GET /tools`** reports `available_at_level` per tool plus the baseline `permission_level`. **`GET /status?view=shell`** exposes `permission_level_default` and `permission_level_max` only.
+- **No ceiling-writing endpoint, by design**: an HTTP endpoint able to raise `permission_level_max` would defeat the startup gate (design doc §16.3).
+- **Audit**: `unrestricted` records every level-based allow under `target: "permission_audit"`; denials (L0–L2) and human approvals are always recorded.
+- **Not implemented yet**: `PathScope::AllowedRoots` (`workspace_allowed_roots` does not widen `workspace` / `approved` paths), the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`), and the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
+
 ## Multi-role (agent_roles)
 
 Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with a lightweight skills index at finalize; full skills bodies are injected per-turn by L5). Project rules **`AGENTS.md`** are **not** part of role systems: they are appended at runtime to the first `system` from the session workspace root (see below).
