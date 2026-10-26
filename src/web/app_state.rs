@@ -52,6 +52,23 @@ pub(crate) struct MemoryConversationEntry {
     updated_at: std::time::Instant,
 }
 
+impl MemoryConversationEntry {
+    /// 按「`None` = 保持原值」把三列 `active_*` 意图写进条目（与 SQLite 侧 `set_active_state` 同语义）。
+    ///
+    /// 回合结束的整行覆盖**不能**拿旧快照回写：期间 `POST /conversation/state` 可能已经改过这些列。
+    pub(crate) fn apply_active_state(&mut self, role: Option<&str>, mode: Option<&str>, level: Option<&str>) {
+        for (slot, raw) in [
+            (&mut self.active_agent_role, role),
+            (&mut self.active_session_mode, mode),
+            (&mut self.active_permission_level, level),
+        ] {
+            if let Some(v) = conversation_store::active_state_column(raw) {
+                *slot = Some(v.to_string());
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ConversationTurnSeed {
     pub messages: Vec<Message>,
@@ -206,7 +223,7 @@ impl ConversationBacking {
     }
 }
 
-async fn sqlite_conversation_store_op<T>(
+pub(crate) async fn sqlite_conversation_store_op<T>(
     conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
     id_log: String,
     op_zh: &'static str,
@@ -459,17 +476,12 @@ impl AppStateConversationRuntime {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let now = std::time::Instant::now();
-                let role_owned = active_agent_role
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
+                // `None` = 保持原值：回合结束的落盘不该覆盖期间 `POST /conversation/state` 的写入。
+                let role_owned = conversation_store::active_state_column(active_agent_role)
                     .map(str::to_string);
-                let mode_owned = active_session_mode
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
+                let mode_owned = conversation_store::active_state_column(active_session_mode)
                     .map(str::to_string);
-                let level_owned = active_permission_level
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
+                let level_owned = conversation_store::active_state_column(active_permission_level)
                     .map(str::to_string);
                 if let Some(entry) = guard.get_mut(&conversation_id) {
                     match expected_revision {
@@ -478,9 +490,11 @@ impl AppStateConversationRuntime {
                                 &messages,
                             ));
                             entry.messages = messages;
-                            entry.active_agent_role = role_owned;
-                            entry.active_session_mode = mode_owned;
-                            entry.active_permission_level = level_owned;
+                            entry.apply_active_state(
+                                role_owned.as_deref(),
+                                mode_owned.as_deref(),
+                                level_owned.as_deref(),
+                            );
                             entry.revision = entry.revision.saturating_add(1);
                             entry.updated_at = now;
                         }
@@ -546,6 +560,7 @@ impl AppStateConversationRuntime {
             }
         }
     }
+
 
     /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆/变更集/首轮工作区画像等注入），且仅当 `revision` 匹配时成功。
     ///

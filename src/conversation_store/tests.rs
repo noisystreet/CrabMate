@@ -84,7 +84,9 @@ fn save_load_active_agent_role_roundtrip() {
         SaveConversationOutcome::Saved
     );
     let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
-    assert_eq!(loaded3.active_agent_role, "");
+    // `None` = 保持原列（不再是「写空串」）：回合结束的整行覆盖不能把期间
+    // `set_active_state` 写入的值改回旧快照。
+    assert_eq!(loaded3.active_agent_role, "reviewer");
 }
 
 #[test]
@@ -111,7 +113,7 @@ fn save_load_active_session_mode_roundtrip() {
         SaveConversationOutcome::Saved
     );
     let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
-    assert_eq!(loaded3.active_session_mode, "");
+    assert_eq!(loaded3.active_session_mode, "plan");
 }
 #[test]
 fn save_load_active_permission_level_roundtrip() {
@@ -125,14 +127,17 @@ fn save_load_active_permission_level_roundtrip() {
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded.active_permission_level, "read");
 
-    // 不传等级时落空串（= 未指定，读回由调用方回落配置默认），而不是保留上一轮的值。
+    // 不传等级 = 保持原列（不再是「落空串」）：读回由调用方回落配置默认，
+    // 且期间 `POST /conversation/state` 写入的值不会被这轮整行覆盖改回去。
     assert_eq!(
         save_if_revision(&conn, "c1", msgs.clone(), None, None, None, Some(1)).unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
-    assert_eq!(loaded2.active_permission_level, "");
+    assert_eq!(loaded2.active_permission_level, "read");
 }
+
+
 
 /// 旧库（S5b 之前创建、无该列）在 `migrate` 后必须能读写该列。
 #[test]

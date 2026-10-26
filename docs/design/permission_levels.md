@@ -643,7 +643,34 @@ dst.permission.permission_level_max =
 
 **为什么必须回两个字段**：`session_mode` 没有 min 链，而等级会被 ceiling / role cap / `ask`·`plan` / 沙盒四重钳制。只回显一个值，就会出现“我明明切了 L4，怎么还是只读”，且无从排查。
 
-**为什么不加 `POST /conversation/{id}/permission_level`**：`POST /workspace` 之所以是独立端点，是因为它切的是**执行上下文**（工作区根），与请求内容无关；而等级回答的是“这一轮允许什么”，与请求同生共死。且服务端已持久化 `active_*`，客户端不传即沿用上次——UI 的“顶部开关持续生效”在客户端即可实现（Client 现在正是这样处理 `session_mode` 的）。
+**为什么不加 `POST /conversation/{id}/permission_level`**（原始判断，已被 §16.1.1 修订）：`POST /workspace` 之所以是独立端点，是因为它切的是**执行上下文**（工作区根），与请求内容无关；而等级回答的是“这一轮允许什么”，与请求同生共死。且服务端已持久化 `active_*`，客户端不传即沿用上次——UI 的“顶部开关持续生效”在客户端即可实现（Client 现在正是这样处理 `session_mode` 的）。
+
+### 16.1.1 空闲态写入口：`POST /conversation/state`
+
+> §16.1 的“客户端不传即沿用上次”只在**有话可发**时成立。实测缺口：用户在空闲态切档时服务端完全不知情，刷新页面 / 换标签页 / 直接看 `GET /permission` 又回到旧档（`level_source=config`），要等下一轮 `/chat` 才顺带改正。本节补上写入口，并**收回** §16.1 末段“不新增端点”的结论。
+
+端点覆盖三个字段而不只是等级——三者存储形态相同（`active_agent_role` / `active_session_mode` / `active_permission_level`），只补一个会造出“切模式不生效、切等级生效”的不对称。
+
+| 项 | 规格 |
+|---|---|
+| 端点 | `POST /conversation/state`（受保护面，与 `GET /permission` 同层） |
+| 请求 | `{conversation_id, permission_level?, session_mode?, agent_role?}`，至少给一个 |
+| 响应 | 写入后的 `active_*` + 同一份 `PermissionView`（Client 不必再打一次 `GET /permission`） |
+| 错误 | 400 `INVALID_CONVERSATION_ID` / `INVALID_PERMISSION_LEVEL` / `INVALID_SESSION_MODE` / `INVALID_AGENT_ROLE` / `EMPTY_CONVERSATION_STATE_PATCH`；404 `CONVERSATION_NOT_FOUND` |
+
+四条硬约束（缺一条就退化成 bug 或提权面）：
+
+1. **只改 `active_*` 列，不碰 `messages_json`、不 bump `revision`、不动 `updated_at_unix`**（`conversation_store::set_active_state`）。原因：回合结束的落盘是“整行覆盖 + CAS”（`save_if_revision`），用的是回合开始时读到的 `revision`。这里一 bump，进行中那一轮的落盘就判成 `Conflict`——用户只是切了个开关，流式路径这轮不落盘、JSON 路径直接回 `CONVERSATION_CONFLICT`。
+2. **回合结束的回写改为“只写本请求显式申请的字段”**：`request_permission_level` / `request_session_mode` / `request_agent_role` 为 `None` 时该列不进 `SET`（`None` = 保持原值，不再是“写空串”）。否则回合开始时读到的旧快照会把期间新写入的值改回去。这是第 1 条的镜像要求，缺任一条都会丢用户的切换。
+3. **不做 upsert**：会话不存在返回 404。造一个空 `messages_json` 行会污染会话列表、`GET /conversation/messages` 与 TTL 淘汰。Client 在新会话首条消息前切档只需更新本地 state——首轮 `/chat` 请求体本来就会带上该值。
+4. **越界不拒绝、也不提权**：写入的是**意图**，`permission_level` 允许高于 ceiling，生效值仍由回合内 min 链算出，`PermissionView::clamped_by` 负责解释——与 `POST /chat` 对同一个值给出一致结论（不能一处 400、一处接受）。
+
+已知边界（刻意保留）：
+
+- **回合内切档不影响当前回合**：`PermissionCaps` 在 `prepare_turn_cfg_and_permission` 一次算好，新档从下一回合开始。
+- **`/chat/async` 排队中的任务仍用自己的入队快照**：它已在队列里，改意图不该改变已排定的工作。
+- **不提供清空**（空串等同没传）；要“回到配置默认”，写一个与配置默认相同的值即可。
+- 回归：`conversation_store::tests::save_load_active_*_roundtrip`（`None` = 保持原列）、`web::session_state::http_tests::*`（含 `conversation_state_does_not_bump_revision_nor_get_clobbered_by_turn_save`：切档不改 `revision`，且回合结束的落盘不回退刚切的档）。
 
 ### 16.2 只读投影：`GET /permission`（新增）
 

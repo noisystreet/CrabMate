@@ -138,24 +138,6 @@ pub fn parse_optional_permission_level(
     }
 }
 
-/// 回合结束后写入存储的 `active_permission_level`：本请求显式传了等级时用请求值，否则保持 `persisted`。
-///
-/// 与 [`crate::cm_internal::session_mode_turn::persisted_session_mode_after_turn`] 同一取向：
-/// 存的是**意图**，不是生效值——每回合按 §6.1 的 min 链重算，运维调低上限后旧会话才会跟着降级。
-pub fn persisted_permission_level_after_turn(
-    persisted_active: Option<&str>,
-    requested: Option<&str>,
-) -> Option<String> {
-    let req = requested.map(str::trim).filter(|s| !s.is_empty());
-    if req.is_some() {
-        return req.map(str::to_string);
-    }
-    persisted_active
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-}
-
 /// 越界处理策略（六轴投影的 `approval` 轴）。
 ///
 /// 定义在本层而非 [`crate::cm_agent::permission`]：审计事件（[`crate::cm_types::permission_audit`]）
@@ -312,26 +294,6 @@ mod tests {
             PermissionLevel::Workspace
         );
     }
-    #[test]
-    fn persisted_level_after_turn_prefers_request_then_keeps_previous() {
-        assert_eq!(
-            persisted_permission_level_after_turn(Some("chat"), Some("workspace")).as_deref(),
-            Some("workspace"),
-            "请求显式给了等级就覆盖持久意图"
-        );
-        assert_eq!(
-            persisted_permission_level_after_turn(Some("chat"), None).as_deref(),
-            Some("chat"),
-            "请求没给就沿用既有意图"
-        );
-        assert_eq!(
-            persisted_permission_level_after_turn(Some("chat"), Some("  ")).as_deref(),
-            Some("chat"),
-            "空白串等同未给"
-        );
-        assert_eq!(persisted_permission_level_after_turn(None, None), None);
-    }
-
     #[test]
     fn rejects_empty_and_unknown() {
         assert!(parse_permission_level("").is_err());

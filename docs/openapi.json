@@ -727,6 +727,68 @@
         "title": "ConversationMessagesResponseBodyOpenApi",
         "type": "object"
       },
+      "ConversationStatePatch": {
+        "description": "`POST /conversation/state` 请求体：三个字段均可选，但**至少要给一个**。",
+        "properties": {
+          "agent_role": {
+            "description": "命名角色 id（`agent_roles` 里已存在的那个；未知角色 → 400 `INVALID_AGENT_ROLE`）。",
+            "nullable": true,
+            "type": "string"
+          },
+          "conversation_id": {
+            "description": "目标会话（须已持久化；不存在 → 404，不做 upsert：空行会污染会话列表与 TTL 淘汰）。",
+            "type": "string"
+          },
+          "permission_level": {
+            "description": "会话级权限等级**意图**，写法与 `POST /chat` 的 `permission_level` 一致。\n\n允许高于生效上限：越界由回合内 min 链钳制，`PermissionView::clamped_by` 负责解释。",
+            "nullable": true,
+            "type": "string"
+          },
+          "session_mode": {
+            "description": "会话模式（`ask` / `plan` / `act`）。",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id"
+        ],
+        "title": "ConversationStatePatch",
+        "type": "object"
+      },
+      "ConversationStateView": {
+        "description": "`POST /conversation/state` 响应：写入后的会话状态 + 同一份权限投影。\n\n回带 `permission` 是为了让 Client 一次请求就刷新选择器（`available` / `clamped_by`），\n不必再打一次 `GET /permission`；两者的 `level` 都取自同一条 min 链，不会互相矛盾。",
+        "properties": {
+          "active_agent_role": {
+            "description": "落库的命名角色意图。",
+            "nullable": true,
+            "type": "string"
+          },
+          "active_permission_level": {
+            "description": "落库的等级**意图**（原样回显，可能高于上限——钳制结果见 `permission.level`）。",
+            "nullable": true,
+            "type": "string"
+          },
+          "active_session_mode": {
+            "description": "落库的会话模式意图。",
+            "nullable": true,
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/PermissionView",
+            "description": "写入后按当前配置算出的权限投影（与 `GET /permission` 同一份实现）。"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "permission"
+        ],
+        "title": "ConversationStateView",
+        "type": "object"
+      },
       "DeleteUploadsBody": {
         "additionalProperties": false,
         "properties": {
@@ -2356,6 +2418,58 @@
           }
         ],
         "summary": "只读拉取已持久化会话消息与 revision",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/conversation/state": {
+      "post": {
+        "description": "供 Client 在**空闲态**切换权限等级 / 会话模式 / 命名角色后立即落库：只改 `active_*` 意图列，不碰消息、不 bump revision（因此不会让进行中回合的落盘变成 CONVERSATION_CONFLICT）。三个字段至少给一个；未知取值 400；会话不存在 404（不做 upsert）。写入的是**意图**，生效仍按回合内的 min 链重算，故不构成提权通道。响应回带与 `GET /permission` 同一份 `PermissionView`。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationStatePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationStateView"
+                }
+              }
+            },
+            "description": "写入后的会话状态与权限投影"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "参数错误：INVALID_CONVERSATION_ID / INVALID_PERMISSION_LEVEL / INVALID_SESSION_MODE / INVALID_AGENT_ROLE / EMPTY_CONVERSATION_STATE_PATCH"
+          },
+          "404": {
+            "description": "会话不存在或已过期（CONVERSATION_NOT_FOUND）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写入会话级运行态意图（agent_role / session_mode / permission_level）",
         "tags": [
           "chat"
         ]

@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::json;
 
@@ -276,7 +277,33 @@ fn load_row_after_fetch(
     }))
 }
 
+/// `active_*` 列的写入意图：`None` 或空白 = **保持原值**（该列不进 `UPDATE` 的 SET 子句）。
+///
+/// 早期实现把 `None` 落成空串，于是「回合结束的整行覆盖」会拿回合开始时读到的旧快照，
+/// 把期间 `POST /conversation/state` 写入的新值改回去——用户切了档、跑完一轮又被复位。
+#[must_use]
+pub fn active_state_column(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// 把三列 `active_*` 意图收进 `SET` 子句：只加真正要写的列，其余列保持原值。
+fn push_active_assigns(
+    assigns: &mut Vec<&'static str>,
+    values: &mut Vec<Value>,
+    fields: [(&'static str, Option<&str>); 3],
+) {
+    for (assign, raw) in fields {
+        if let Some(v) = active_state_column(raw) {
+            assigns.push(assign);
+            values.push(Value::Text(v.to_string()));
+        }
+    }
+}
+
 /// 与 `AppState::save_conversation_messages_if_revision` 语义一致。
+///
+/// `active_*` 三参传 `None` = 保持该列原值（见 [`active_state_column`]），
+/// 回合结束的落盘因此不会覆盖期间 `POST /conversation/state` 写入的新值。
 pub fn save_if_revision(
     conn: &Connection,
     id: &str,
@@ -287,21 +314,6 @@ pub fn save_if_revision(
     expected_revision: Option<u64>,
 ) -> Result<SaveConversationOutcome, rusqlite::Error> {
     let now = now_unix();
-    let active_col = active_agent_role
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("");
-    let mode_col = active_session_mode
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("");
-    // `active_*` 三件套都是**落盘值**而不是增量更新：`None` / 空白一律写成空串。
-    // 因此调用方必须先合并（等级用 `persisted_permission_level_after_turn`），
-    // 否则「本回合没传等级」会把这个会话已有的意图静默清空。
-    let level_col = active_permission_level
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("");
     let json = match messages_to_json(&messages) {
         Ok(j) => j,
         Err(e) => {
@@ -315,34 +327,96 @@ pub fn save_if_revision(
         }
     };
     let layout_json = layout_meta_json_for_messages(id, &messages);
+    let active_fields = [
+        ("active_agent_role = ?", active_agent_role),
+        ("active_session_mode = ?", active_session_mode),
+        ("active_permission_level = ?", active_permission_level),
+    ];
 
     if let Some(exp) = expected_revision {
-        let n = conn.execute(
-            &format!(
-                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, active_permission_level = ?4, layout_meta_json = ?5, revision = revision + 1, updated_at_unix = ?6 WHERE id = ?7 AND revision = ?8"
-            ),
-            params![json, active_col, mode_col, level_col, layout_json, now, id, exp as i64],
-        )?;
+        let mut assigns: Vec<&'static str> = vec!["messages_json = ?", "layout_meta_json = ?"];
+        let mut values: Vec<Value> = vec![Value::Text(json), Value::Text(layout_json)];
+        push_active_assigns(&mut assigns, &mut values, active_fields);
+        assigns.push("revision = revision + 1");
+        assigns.push("updated_at_unix = ?");
+        values.push(Value::Integer(now));
+        values.push(Value::Text(id.to_string()));
+        values.push(Value::Integer(exp as i64));
+        let sql = format!(
+            "UPDATE {TABLE} SET {} WHERE id = ? AND revision = ?",
+            assigns.join(", ")
+        );
+        let n = conn.execute(&sql, rusqlite::params_from_iter(values))?;
         if n == 0 {
             return Ok(SaveConversationOutcome::Conflict);
         }
-    } else {
+        return Ok(SaveConversationOutcome::Saved);
+    }
+
+    let exists: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM {TABLE} WHERE id = ?1"),
+        params![id],
+        |r| r.get(0),
+    )?;
+    if exists > 0 {
+        return Ok(SaveConversationOutcome::Conflict);
+    }
+    // 新行三列是 `NOT NULL DEFAULT ''`，未申请时写空串，等价于「该会话从未指定」。
+    conn.execute(
+        &format!(
+            "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, active_permission_level, layout_meta_json, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)"
+        ),
+        params![
+            id,
+            json,
+            active_state_column(active_agent_role).unwrap_or(""),
+            active_state_column(active_session_mode).unwrap_or(""),
+            active_state_column(active_permission_level).unwrap_or(""),
+            layout_json,
+            now
+        ],
+    )?;
+    Ok(SaveConversationOutcome::Saved)
+}
+
+/// 只改会话级 `active_*` 意图列：**不**碰 `messages_json`，**不** bump `revision`、**不**动 `updated_at_unix`。
+///
+/// 与 [`save_if_revision`]（整行覆盖 + CAS）分工：那条写消息，这条给 `POST /conversation/state` 用。
+/// 故意不 bump `revision`——进行中的回合结束时拿「回合开始读到的 revision」做 CAS，
+/// 这里一 bump 就会把那轮落盘判成 `Conflict`：用户只是切了个开关，整轮对话却不落盘。
+///
+/// 返回 `false` 表示该会话不存在（调用方据此回 404）。
+pub fn set_active_state(
+    conn: &Connection,
+    id: &str,
+    active_agent_role: Option<&str>,
+    active_session_mode: Option<&str>,
+    active_permission_level: Option<&str>,
+) -> Result<bool, rusqlite::Error> {
+    let mut assigns: Vec<&'static str> = Vec::new();
+    let mut values: Vec<Value> = Vec::new();
+    push_active_assigns(
+        &mut assigns,
+        &mut values,
+        [
+            ("active_agent_role = ?", active_agent_role),
+            ("active_session_mode = ?", active_session_mode),
+            ("active_permission_level = ?", active_permission_level),
+        ],
+    );
+    if assigns.is_empty() {
+        // 三列都没申请：只回答「会话在不在」，避免长出空的 `SET` 子句。
         let exists: i64 = conn.query_row(
             &format!("SELECT COUNT(*) FROM {TABLE} WHERE id = ?1"),
             params![id],
             |r| r.get(0),
         )?;
-        if exists > 0 {
-            return Ok(SaveConversationOutcome::Conflict);
-        }
-        conn.execute(
-            &format!(
-                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, active_permission_level, layout_meta_json, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)"
-            ),
-            params![id, json, active_col, mode_col, level_col, layout_json, now],
-        )?;
+        return Ok(exists > 0);
     }
-    Ok(SaveConversationOutcome::Saved)
+    values.push(Value::Text(id.to_string()));
+    let sql = format!("UPDATE {TABLE} SET {} WHERE id = ?", assigns.join(", "));
+    let n = conn.execute(&sql, rusqlite::params_from_iter(values))?;
+    Ok(n > 0)
 }
 
 /// A3：canonical 落盘与归档 INSERT **同事务**提交（设计文档 §3.8 / §4.2）。

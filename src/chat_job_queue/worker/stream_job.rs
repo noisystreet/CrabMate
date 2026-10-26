@@ -168,11 +168,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             conversation_id: conversation_id.as_str(),
             expected_revision,
             request_agent_role: request_agent_role.as_deref(),
-            persisted_active_agent_role: persisted_active_agent_role.as_deref(),
             request_session_mode: request_session_mode.as_deref(),
-            persisted_active_session_mode: persisted_active_session_mode.as_deref(),
             request_permission_level: request_permission_level.as_deref(),
-            persisted_active_permission_level: persisted_active_permission_level.as_deref(),
             stream_ended_sent: &mut stream_ended_sent,
         })
         .await;

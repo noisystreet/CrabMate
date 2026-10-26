@@ -82,23 +82,6 @@ pub fn session_mode_appendix_relpath(mode: SessionMode) -> &'static str {
     }
 }
 
-/// 回合结束后写入存储的 `active_session_mode`：本请求显式传了 `session_mode` 时用请求值，否则保持 `persisted`。
-pub fn persisted_session_mode_after_turn(
-    persisted_active: Option<&str>,
-    request_session_mode: Option<&str>,
-) -> Option<String> {
-    let req = request_session_mode
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    if req.is_some() {
-        return req.map(str::to_string);
-    }
-    persisted_active
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,23 +121,6 @@ mod tests {
     fn resolve_falls_back_to_default() {
         let m = resolve_session_mode_for_turn(None, None, None, SessionMode::Ask).unwrap();
         assert_eq!(m, SessionMode::Ask);
-    }
-
-    #[test]
-    fn persist_prefers_request_when_present() {
-        assert_eq!(
-            persisted_session_mode_after_turn(Some("act"), Some("ask")).as_deref(),
-            Some("ask")
-        );
-    }
-
-    #[test]
-    fn persist_keeps_previous_when_request_absent() {
-        assert_eq!(
-            persisted_session_mode_after_turn(Some("plan"), None).as_deref(),
-            Some("plan")
-        );
-        assert_eq!(persisted_session_mode_after_turn(None, None), None);
     }
 
     /// 门控关闭会 clear 工具收窄；Ask 必须在其后仍能挂上只读（与 `run_dispatch` 顺序一致）。

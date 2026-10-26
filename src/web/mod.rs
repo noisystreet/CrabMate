@@ -29,6 +29,7 @@ pub mod openapi;
 pub(crate) mod request_id;
 pub mod routes;
 pub mod server;
+mod session_state;
 pub(crate) mod skills_handlers;
 pub mod task;
 pub(crate) mod tool_jobs;
