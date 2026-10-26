@@ -113,7 +113,18 @@ pub(crate) async fn conversation_state_handler(
             patch.session_mode.as_deref(),
             patch.permission_level.as_deref(),
         )
-        .await;
+        .await
+        // 存储层失败（锁中毒 / SQLite 报错 / 阻塞任务崩）→ 500：不能回 404 伪装成
+        // 「会话不存在」，否则磁盘满 / 库锁住会被当成客户端传错了 id。细节只进日志。
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new(
+                    error_codes::CONVERSATION_STORE_ERROR,
+                    "会话状态写入失败",
+                )),
+            )
+        })?;
     if !written {
         return Err(not_found(
             error_codes::CONVERSATION_NOT_FOUND,

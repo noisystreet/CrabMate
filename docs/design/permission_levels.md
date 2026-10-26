@@ -656,7 +656,7 @@ dst.permission.permission_level_max =
 | 端点 | `POST /conversation/state`（受保护面，与 `GET /permission` 同层） |
 | 请求 | `{conversation_id, permission_level?, session_mode?, agent_role?}`：`conversation_id` 必填，其余三个至少给一个 |
 | 响应 | 写入后的 `active_*` + 同一份 `PermissionView`（Client 不必再打一次 `GET /permission`） |
-| 错误 | 400 `INVALID_CONVERSATION_ID` / `INVALID_PERMISSION_LEVEL` / `INVALID_SESSION_MODE` / `INVALID_AGENT_ROLE` / `EMPTY_CONVERSATION_STATE_PATCH`；404 `CONVERSATION_NOT_FOUND`。**缺 / 空 `conversation_id` 同样是 400**：契约层把它声明成 `Option<String>`（`ConversationStatePatch`），缺字段会在 handler 里被判成 `INVALID_CONVERSATION_ID`，而不是被 axum 的 `Json` 提取器回成 422——同一类「参数错误」不该有两种错误体 |
+| 错误 | 400 `INVALID_CONVERSATION_ID` / `INVALID_PERMISSION_LEVEL` / `INVALID_SESSION_MODE` / `INVALID_AGENT_ROLE` / `EMPTY_CONVERSATION_STATE_PATCH`；404 `CONVERSATION_NOT_FOUND`。**缺 / 空 `conversation_id` 同样是 400**：契约层把它声明成 `Option<String>`（`ConversationStatePatch`），缺字段会在 handler 里被判成 `INVALID_CONVERSATION_ID`，而不是被 axum 的 `Json` 提取器回成 422——同一类「参数错误」不该有两种错误体。**存储层失败回 500 `CONVERSATION_STORE_ERROR`**：`AppStateConversationRuntime::set_conversation_active_state` 返回 `Result<bool, String>`（`Ok(false)` = 会话不存在，`Err` = 锁中毒 / SQLite 报错 / 阻塞任务崩），不再借 `sqlite_conversation_store_op` 的 `fallback` 把两者压成同一个值——否则磁盘满对客户端表现为「会话不存在」，排查方向直接被带偏。细节只进日志，回包文案保持通用 |
 
 四条硬约束（缺一条就退化成 bug 或提权面）：
 
