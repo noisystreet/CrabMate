@@ -24,8 +24,60 @@ use super::app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore,
     ApprovalSessionSlot, CachedTiktokenBaseline, ConversationBacking, ConversationTurnSeed,
     WebChatJobAppFacet, effective_workspace_path_from_override, open_conversation_sqlite,
-    workspace_is_set_from_override,
+    sqlite_conversation_store_op, workspace_is_set_from_override,
 };
+
+impl AppStateConversationRuntime {
+    /// 只改会话级 `active_*` 意图列（`POST /conversation/state`）；`false` = 会话不存在。
+    ///
+    /// 与 [`Self::save_conversation_messages_if_revision`]（整行覆盖 + CAS）分工：
+    /// 这条**不**碰 `messages_json`、**不** bump `revision`、**不**动 `updated_at_unix`，
+    /// 理由见 [`crate::conversation_store::set_active_state`]。
+    pub(crate) async fn set_conversation_active_state(
+        &self,
+        conversation_id: String,
+        role: Option<&str>,
+        mode: Option<&str>,
+        level: Option<&str>,
+    ) -> bool {
+        let backing = self.conversation_backing.read().await;
+        match &*backing {
+            ConversationBacking::Memory(map) => {
+                let mut guard = map.write().await;
+                match guard.get_mut(&conversation_id) {
+                    Some(entry) => {
+                        entry.apply_active_state(role, mode, level);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            ConversationBacking::Sqlite(conn) => {
+                let c = Arc::clone(conn);
+                // 闭包要求 `'static`：借用无法跨 `spawn_blocking`，先把三列取值复制成 owned。
+                let role = role.map(str::to_string);
+                let mode = mode.map(str::to_string);
+                let level = level.map(str::to_string);
+                sqlite_conversation_store_op(
+                    c,
+                    conversation_id.clone(),
+                    "写入会话状态",
+                    false,
+                    move |g| {
+                        crate::conversation_store::set_active_state(
+                            g,
+                            &conversation_id,
+                            role.as_deref(),
+                            mode.as_deref(),
+                            level.as_deref(),
+                        )
+                    },
+                )
+                .await
+            }
+        }
+    }
+}
 
 /// `POST /config/reload`：共享配置 + 重载路径。
 #[derive(Clone)]
@@ -190,6 +242,24 @@ impl WebStatusAppFacet {
 }
 
 impl WebChatAppFacet {
+    /// 只改会话级 `active_*` 意图（`POST /conversation/state`）；`false` = 会话不存在。
+    pub(crate) async fn set_conversation_active_state(
+        &self,
+        conversation_id: String,
+        active_agent_role: Option<&str>,
+        active_session_mode: Option<&str>,
+        active_permission_level: Option<&str>,
+    ) -> bool {
+        self.conversation
+            .set_conversation_active_state(
+                conversation_id,
+                active_agent_role,
+                active_session_mode,
+                active_permission_level,
+            )
+            .await
+    }
+
     pub(crate) async fn load_conversation_seed(
         &self,
         conversation_id: &str,

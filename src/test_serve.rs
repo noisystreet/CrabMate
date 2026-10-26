@@ -30,6 +30,9 @@ pub struct TestServeHandle {
     /// 持有后端引用以防过早 drop（`&'static` 引用安全，但保留引用可验证所有权的逻辑关联）。
     #[allow(dead_code)]
     pub(crate) llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
+    /// 本实例的 `AppState`：供 crate 内 HTTP 冒烟直接造前置数据（不必依赖 E2E 夹具开关）。
+    #[allow(dead_code)]
+    pub(crate) state: Arc<AppState>,
     pub(crate) _shutdown_tx: oneshot::Sender<()>,
     _uploads_keep: tempfile::TempDir,
 }
@@ -137,7 +140,7 @@ pub async fn start_test_serve_with_config(
     });
 
     let app = web::server::build_app(
-        state,
+        Arc::clone(&state),
         false,      /* web_api_bearer_layer_enabled */
         Vec::new(), /* cors_allowed_origins */
     );
@@ -167,6 +170,7 @@ pub async fn start_test_serve_with_config(
         chat_queue: chat_queue.clone(),
         uploads_dir,
         llm_backend,
+        state,
         _shutdown_tx: shutdown_tx,
         _uploads_keep: uploads_keep,
     }

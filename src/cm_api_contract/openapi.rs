@@ -18,6 +18,7 @@ use crate::cm_api_contract::chat::{
 };
 use crate::cm_api_contract::health::HealthReportView;
 use crate::cm_api_contract::permission::PermissionView;
+use crate::cm_api_contract::session_state::{ConversationStatePatch, ConversationStateView};
 use crate::cm_api_contract::status::StatusShellView;
 use crate::cm_api_contract::web_ui::WebUiConfigResponse;
 
@@ -190,6 +191,8 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
     insert_adapted_schema::<WebUiConfigResponse>(&mut map, "WebUiConfigResponse");
     insert_adapted_schema::<StatusShellView>(&mut map, "StatusShellView");
     insert_adapted_schema::<PermissionView>(&mut map, "PermissionView");
+    insert_adapted_schema::<ConversationStatePatch>(&mut map, "ConversationStatePatch");
+    insert_adapted_schema::<ConversationStateView>(&mut map, "ConversationStateView");
     insert_adapted_schema::<HealthReportView>(&mut map, "HealthReportView");
     map
 }

@@ -44,21 +44,6 @@ pub fn named_agent_role_for_tool_policy(
         .map(str::to_string)
 }
 
-/// 回合结束后写入存储的 `active_agent_role`：本请求显式传了 `agent_role` 时用请求值，否则保持 `persisted_active`。
-pub fn persisted_agent_role_after_turn(
-    persisted_active: Option<&str>,
-    request_agent_role: Option<&str>,
-) -> Option<String> {
-    let req = request_agent_role.map(str::trim).filter(|s| !s.is_empty());
-    if req.is_some() {
-        return req.map(str::to_string);
-    }
-    persisted_active
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-}
-
 fn last_user_message_text(messages: &[Message]) -> Option<String> {
     messages
         .iter()

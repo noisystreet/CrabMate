@@ -30,6 +30,14 @@ pub const APPROVAL_SESSION_NOT_FOUND: &str = "APPROVAL_SESSION_NOT_FOUND";
 pub const APPROVAL_SESSION_CLOSED: &str = "APPROVAL_SESSION_CLOSED";
 /// 会话 id 无效。
 pub const INVALID_CONVERSATION_ID: &str = "INVALID_CONVERSATION_ID";
+/// `permission_level` 取值非法（`POST /chat*`、`POST /conversation/state`）。
+pub const INVALID_PERMISSION_LEVEL: &str = "INVALID_PERMISSION_LEVEL";
+/// `session_mode` 取值非法。
+pub const INVALID_SESSION_MODE: &str = "INVALID_SESSION_MODE";
+/// `agent_role` 未知或格式非法。
+pub const INVALID_AGENT_ROLE: &str = "INVALID_AGENT_ROLE";
+/// `POST /conversation/state` 没给任何字段（空 patch）。
+pub const EMPTY_CONVERSATION_STATE_PATCH: &str = "EMPTY_CONVERSATION_STATE_PATCH";
 /// 会话不存在。
 pub const CONVERSATION_NOT_FOUND: &str = "CONVERSATION_NOT_FOUND";
 /// 会话 revision 未知。

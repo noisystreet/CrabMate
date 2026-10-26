@@ -8,7 +8,6 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
-use crate::agent_role_turn::persisted_agent_role_after_turn;
 use crate::config::AgentConfig;
 use crate::sse::SseStreamHub;
 use crate::types::{Message, assistant_output_kind, message_content_as_str};
@@ -25,13 +24,9 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
     pub(super) messages: &'a mut Vec<Message>,
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
-    pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
-    pub(super) persisted_active_session_mode: Option<&'a str>,
-    /// 本请求显式申请的权限等级（落盘时优先于 `persisted_active_permission_level`）。
+    /// 本请求显式申请的权限等级；`None` = 本回合没申请，落盘时该列保持原值。
     pub(super) request_permission_level: Option<&'a str>,
-    /// 回合开始前持久化的权限等级意图。
-    pub(super) persisted_active_permission_level: Option<&'a str>,
     /// 本轮结构性提交结果（A2/A3）：canonical 收缩区间，作为归档行落盘。
     pub(super) structural_commit: crate::agent::model_context_view::StructuralCommit,
 }
@@ -64,11 +59,8 @@ pub(super) async fn post_turn_web_prepare_and_save(
         messages,
         expected_revision,
         request_agent_role,
-        persisted_active_agent_role,
         request_session_mode,
-        persisted_active_session_mode,
         request_permission_level,
-        persisted_active_permission_level,
         structural_commit,
     } = p;
     let scope = conversation_id.to_string();
@@ -81,25 +73,21 @@ pub(super) async fn post_turn_web_prepare_and_save(
             .spawn_turn_memory_postprocess(Arc::clone(cfg_snap), scope, to_index);
     }
     strip_persist_injections(messages);
-    let active_save =
-        persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
-    let mode_save = crate::session_mode_turn::persisted_session_mode_after_turn(
-        persisted_active_session_mode,
-        request_session_mode,
-    );
+    // 只回写**本请求显式申请**的意图：`None` 在 store 里表示「该列保持原值」。
+    // 回合开始时读到的 `persisted_active_*` 不能拿来回写——期间 `POST /conversation/state`
+    // 可能已经改过它，用旧快照写回去等于把用户的切换悄悄撤掉。
+    let active_save = request_agent_role;
+    let mode_save = request_session_mode;
     // 只存**意图**：生效值每回合按 min 链重算（运维调低上限后旧会话才会跟着降级）。
-    let level_save = crate::cm_types::persisted_permission_level_after_turn(
-        persisted_active_permission_level,
-        request_permission_level,
-    );
+    let level_save = request_permission_level;
     let archive_rows = crate::conversation_store::archive_rows_from_structural_commit(&structural_commit);
     app.conversation
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
             messages.clone(),
-            active_save.as_deref(),
-            mode_save.as_deref(),
-            level_save.as_deref(),
+            active_save,
+            mode_save,
+            level_save,
             expected_revision,
             archive_rows,
         )
@@ -113,13 +101,9 @@ pub(super) struct CancelledTurnSaveParams<'a> {
     pub(super) messages: &'a mut Vec<Message>,
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
-    pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
-    pub(super) persisted_active_session_mode: Option<&'a str>,
-    /// 本请求显式申请的权限等级（落盘时优先于 `persisted_active_permission_level`）。
+    /// 本请求显式申请的权限等级；`None` = 本回合没申请，落盘时该列保持原值。
     pub(super) request_permission_level: Option<&'a str>,
-    /// 回合开始前持久化的权限等级意图。
-    pub(super) persisted_active_permission_level: Option<&'a str>,
     pub(super) job_id: u64,
     /// 归档行：`Ok(commit)` 取消分支须传结构性提交的归档行（本轮若发生压缩，canonical 已收缩，
     /// 归档行丢了就是数据丢失）；`Err` 取消分支只做仅追加写回，传空。
@@ -143,11 +127,8 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
         messages,
         expected_revision,
         request_agent_role,
-        persisted_active_agent_role,
         request_session_mode,
-        persisted_active_session_mode,
         request_permission_level,
-        persisted_active_permission_level,
         job_id,
         archive_rows,
     } = p;
@@ -172,24 +153,18 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
     if !had_visible_output {
         return;
     }
-    let active_save =
-        persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
-    let mode_save = crate::session_mode_turn::persisted_session_mode_after_turn(
-        persisted_active_session_mode,
-        request_session_mode,
-    );
-    let level_save = crate::cm_types::persisted_permission_level_after_turn(
-        persisted_active_permission_level,
-        request_permission_level,
-    );
+    // 与正常结束路径同规：只回写本请求显式申请的意图，`None` = 保持原列。
+    let active_save = request_agent_role;
+    let mode_save = request_session_mode;
+    let level_save = request_permission_level;
     match app
         .conversation
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
             messages.clone(),
-            active_save.as_deref(),
-            mode_save.as_deref(),
-            level_save.as_deref(),
+            active_save,
+            mode_save,
+            level_save,
             expected_revision,
             archive_rows,
         )
@@ -457,12 +432,9 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) conversation_id: &'a str,
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
-    pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
-    pub(super) persisted_active_session_mode: Option<&'a str>,
-    /// 本请求显式申请的权限等级；与 `persisted_active_permission_level` 一起决定落盘意图。
+    /// 本请求显式申请的权限等级；`None` = 本回合没申请，落盘时该列保持原值。
     pub(super) request_permission_level: Option<&'a str>,
-    pub(super) persisted_active_permission_level: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut bool,
 }
 
@@ -483,11 +455,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         conversation_id,
         expected_revision,
         request_agent_role,
-        persisted_active_agent_role,
         request_session_mode,
-        persisted_active_session_mode,
         request_permission_level,
-        persisted_active_permission_level,
         stream_ended_sent,
     } = ctx;
     match r {
@@ -500,11 +469,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 messages,
                 expected_revision,
                 request_agent_role,
-                persisted_active_agent_role,
                 request_session_mode,
-                persisted_active_session_mode,
                 request_permission_level,
-                persisted_active_permission_level,
                 job_id,
                 archive_rows: crate::conversation_store::archive_rows_from_structural_commit(
                     &commit,
@@ -537,11 +503,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 messages,
                 expected_revision,
                 request_agent_role,
-                persisted_active_agent_role,
                 request_session_mode,
-                persisted_active_session_mode,
                 request_permission_level,
-                persisted_active_permission_level,
                 structural_commit: commit,
             })
             .await
@@ -627,11 +590,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         messages,
                         expected_revision,
                         request_agent_role,
-                        persisted_active_agent_role,
                         request_session_mode,
-                        persisted_active_session_mode,
                         request_permission_level,
-                        persisted_active_permission_level,
                         job_id,
                         archive_rows: Vec::new(),
                     })

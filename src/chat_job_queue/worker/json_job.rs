@@ -159,11 +159,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             messages: &mut messages,
             expected_revision,
             request_agent_role: request_agent_role.as_deref(),
-            persisted_active_agent_role: persisted_active_agent_role.as_deref(),
             request_session_mode: request_session_mode.as_deref(),
-            persisted_active_session_mode: persisted_active_session_mode.as_deref(),
             request_permission_level: request_permission_level.as_deref(),
-            persisted_active_permission_level: persisted_active_permission_level.as_deref(),
         },
     )
     .await;
@@ -228,11 +225,8 @@ struct JsonTurnFinishParams<'a> {
     messages: &'a mut Vec<Message>,
     expected_revision: Option<u64>,
     request_agent_role: Option<&'a str>,
-    persisted_active_agent_role: Option<&'a str>,
     request_session_mode: Option<&'a str>,
-    persisted_active_session_mode: Option<&'a str>,
     request_permission_level: Option<&'a str>,
-    persisted_active_permission_level: Option<&'a str>,
 }
 
 async fn finish_json_queued_job_after_turn(
@@ -248,11 +242,8 @@ async fn finish_json_queued_job_after_turn(
             messages: p.messages,
             expected_revision: p.expected_revision,
             request_agent_role: p.request_agent_role,
-            persisted_active_agent_role: p.persisted_active_agent_role,
             request_session_mode: p.request_session_mode,
-            persisted_active_session_mode: p.persisted_active_session_mode,
             request_permission_level: p.request_permission_level,
-            persisted_active_permission_level: p.persisted_active_permission_level,
             structural_commit: commit,
         })
         .await

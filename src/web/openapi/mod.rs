@@ -6,6 +6,7 @@ mod openapi_paths;
 mod openapi_paths_chat_stream;
 mod openapi_paths_memory;
 mod openapi_paths_permission;
+mod openapi_paths_session_state;
 mod openapi_paths_tool_jobs;
 mod openapi_paths_tools;
 mod openapi_paths_user_data;
