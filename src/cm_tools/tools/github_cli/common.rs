@@ -145,12 +145,31 @@ pub fn attach_json_if_exit_zero(formatted: String, stdout_raw: &str) -> String {
     wrap_with_parsed(formatted, stdout_raw)
 }
 
-pub fn run_gh_vec(
-    argv: Vec<String>,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-) -> String {
+/// `gh_*` 的三件执行上下文：输出上限、命令白名单、工作目录。
+///
+/// 这三个值原本在 18 个工具入口之间逐一手传，`gh_pr` / `gh_run` 的动作分发
+/// 还要原样再转发一遍；抽成一处后，签名与分发点各只出现一次。
+pub struct GhCtx<'a> {
+    pub max_output_len: usize,
+    pub allowed_commands: &'a [String],
+    pub working_dir: &'a Path,
+}
+
+impl<'a> GhCtx<'a> {
+    pub fn new(
+        max_output_len: usize,
+        allowed_commands: &'a [String],
+        working_dir: &'a Path,
+    ) -> Self {
+        Self {
+            max_output_len,
+            allowed_commands,
+            working_dir,
+        }
+    }
+}
+
+pub fn run_gh_vec(argv: Vec<String>, ctx: &GhCtx<'_>) -> String {
     let args_json = match serde_json::to_string(&serde_json::json!({
         "command": "gh",
         "args": argv,
@@ -158,7 +177,7 @@ pub fn run_gh_vec(
         Ok(s) => s,
         Err(e) => return format!("错误：构造 gh 参数失败：{e}"),
     };
-    let spec = match command::parse_command_spec(&args_json, working_dir) {
+    let spec = match command::parse_command_spec(&args_json, ctx.working_dir) {
         Ok(s) => s,
         Err(e) => return e.extended_user_message(),
     };
@@ -166,15 +185,15 @@ pub fn run_gh_vec(
     let out = match command::run(
         &spec,
         command::RunOptions {
-            max_output_len,
-            allowed_commands,
-            working_dir,
+            max_output_len: ctx.max_output_len,
+            allowed_commands: ctx.allowed_commands,
+            working_dir: ctx.working_dir,
             test_cache: None,
             skip_arg_safety: false,
             wait: &wait,
         },
     ) {
-        Ok(outcome) => outcome.render(max_output_len),
+        Ok(outcome) => outcome.render(ctx.max_output_len),
         Err(e) => e.extended_user_message(),
     };
     let stdout = extract_stdout_from_formatted(&out).to_string();

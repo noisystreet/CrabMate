@@ -1,5 +1,6 @@
 //! PR 正文草稿：读取仓库模板 + 可选 `git log` 摘要（只读，不写盘）。
 
+use super::common::GhCtx;
 use std::path::{Path, PathBuf};
 
 use crate::cm_tools::tools::git;
@@ -145,7 +146,7 @@ pub fn build_pr_body_draft(
 }
 
 /// `gh_pr_body_draft` 工具入口（只读）。
-pub fn gh_pr_body_draft(args_json: &str, working_dir: &Path, max_output_len: usize) -> String {
+pub fn gh_pr_body_draft(args_json: &str, ctx: &GhCtx<'_>) -> String {
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
         Ok(x) => x,
         Err(e) => return e,
@@ -165,19 +166,19 @@ pub fn gh_pr_body_draft(args_json: &str, working_dir: &Path, max_output_len: usi
         .unwrap_or(true);
 
     match build_pr_body_draft(
-        working_dir,
+        ctx.working_dir,
         base,
         max_commits,
         include_template,
         include_commit_log,
     ) {
         Ok(body) => {
-            if body.len() > max_output_len {
-                let keep = max_output_len.saturating_sub(80);
+            if body.len() > ctx.max_output_len {
+                let keep = ctx.max_output_len.saturating_sub(80);
                 let truncated = super::super::output_util::truncate_to_char_boundary(&body, keep);
                 format!(
                     "{}\n\n... (输出已按 {} 字节截断)",
-                    truncated, max_output_len
+                    truncated, ctx.max_output_len
                 )
             } else {
                 body

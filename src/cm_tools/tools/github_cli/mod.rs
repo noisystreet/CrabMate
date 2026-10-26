@@ -13,6 +13,7 @@ mod run_ci;
 
 pub mod web_api;
 
+pub use common::GhCtx;
 pub use common::{attach_json_if_exit_zero, gh_allowed, validate_api_path, validate_extra_args};
 
 pub use api::gh_api;
@@ -77,9 +78,7 @@ fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), String> {
 /// `gh_pr`：按 `action` 分发到 `checks` / `create` / `merge` / `review` / `comment` / `edit` / `body_draft`。
 pub fn gh_pr(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
     let parsed: GhPrArgs = match parse_args_typed(args_json) {
         Ok(v) => v,
@@ -90,25 +89,25 @@ pub fn gh_pr(
     }
     match parsed.action {
         GhPrAction::Checks => {
-            pr_workflow::gh_pr_checks(args_json, max_output_len, allowed_commands, working_dir)
+            pr_workflow::gh_pr_checks(args_json, ctx)
         }
         GhPrAction::Create => {
-            pr_workflow::gh_pr_create(args_json, max_output_len, allowed_commands, working_dir)
+            pr_workflow::gh_pr_create(args_json, ctx)
         }
         GhPrAction::Merge => {
-            pr_mutate::gh_pr_merge(args_json, max_output_len, allowed_commands, working_dir)
+            pr_mutate::gh_pr_merge(args_json, ctx)
         }
         GhPrAction::Review => {
-            pr_mutate::gh_pr_review(args_json, max_output_len, allowed_commands, working_dir)
+            pr_mutate::gh_pr_review(args_json, ctx)
         }
         GhPrAction::Comment => {
-            pr_mutate::gh_pr_comment(args_json, max_output_len, allowed_commands, working_dir)
+            pr_mutate::gh_pr_comment(args_json, ctx)
         }
         GhPrAction::Edit => {
-            pr_mutate::gh_pr_edit(args_json, max_output_len, allowed_commands, working_dir)
+            pr_mutate::gh_pr_edit(args_json, ctx)
         }
         GhPrAction::BodyDraft => {
-            pr_body::gh_pr_body_draft(args_json, working_dir, max_output_len)
+            pr_body::gh_pr_body_draft(args_json, ctx)
         }
     }
 }
@@ -116,9 +115,7 @@ pub fn gh_pr(
 /// `gh_run`：按 `action` 分发到 `rerun` / `failure_summary`。
 pub fn gh_run(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
     let parsed: GhRunArgs = match parse_args_typed(args_json) {
         Ok(v) => v,
@@ -126,10 +123,10 @@ pub fn gh_run(
     };
     match parsed.action {
         GhRunAction::Rerun => {
-            run_ci::gh_run_rerun(args_json, max_output_len, allowed_commands, working_dir)
+            run_ci::gh_run_rerun(args_json, ctx)
         }
         GhRunAction::FailureSummary => {
-            run_ci::gh_run_failure_summary(args_json, max_output_len, allowed_commands, working_dir)
+            run_ci::gh_run_failure_summary(args_json, ctx)
         }
     }
 }
@@ -145,11 +142,11 @@ mod dispatch_tests {
     }
 
     fn call_pr(args: &str) -> String {
-        gh_pr(args, 4096, &allowlist_without_gh(), Path::new("."))
+        gh_pr(args, &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")))
     }
 
     fn call_run(args: &str) -> String {
-        gh_run(args, 4096, &allowlist_without_gh(), Path::new("."))
+        gh_run(args, &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")))
     }
 
     #[test]

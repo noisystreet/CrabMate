@@ -1,5 +1,6 @@
 //! `gh run rerun` 与失败 CI 摘要（只读排障）。
 
+use super::common::GhCtx;
 use std::path::Path;
 
 use serde_json::Value as JsonValue;
@@ -134,11 +135,9 @@ fn wrap_with_parsed_if_json(formatted: String, stdout: &str) -> String {
 /// `gh run rerun`（写远端：重新运行 workflow）
 pub fn gh_run_rerun(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -162,7 +161,7 @@ pub fn gh_run_rerun(
     if let Err(e) = push_extra_args_from_json(&v, &mut argv) {
         return e;
     }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+    run_gh_vec(argv, ctx)
 }
 
 fn collect_failed_jobs(parsed: &JsonValue) -> Vec<(String, String)> {
@@ -216,9 +215,7 @@ struct JobLogAppendCtx<'a> {
     run_id: &'a str,
     args: &'a JsonValue,
     tail_lines: usize,
-    max_output_len: usize,
-    allowed_commands: &'a [String],
-    working_dir: &'a Path,
+    gh: &'a GhCtx<'a>,
 }
 
 fn append_job_log_section(
@@ -244,12 +241,7 @@ fn append_job_log_section(
         log_argv.push("-R".into());
         log_argv.push(r.trim().to_string());
     }
-    let log_out = run_gh_vec(
-        log_argv,
-        ctx.max_output_len,
-        ctx.allowed_commands,
-        ctx.working_dir,
-    );
+    let log_out = run_gh_vec(log_argv, ctx.gh);
     let log_text = gh_stdout(&log_out);
     if log_text.is_empty() {
         report.push_str("_（无日志输出或拉取失败）_\n\n");
@@ -275,11 +267,9 @@ fn truncate_report(report: String, max_output_len: usize) -> String {
 /// `gh run failure summary`：解析 failed jobs 并拉取各 job 日志尾部（只读）。
 pub fn gh_run_failure_summary(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -315,7 +305,7 @@ pub fn gh_run_failure_summary(
         return e;
     }
 
-    let view_out = run_gh_vec(view_argv, max_output_len, allowed_commands, working_dir);
+    let view_out = run_gh_vec(view_argv, ctx);
     if parse_exit_code(&view_out) != Some(0) {
         return view_out;
     }
@@ -329,7 +319,7 @@ pub fn gh_run_failure_summary(
     let mut report = failure_summary_header(&parsed, run_id);
     if failed_jobs.is_empty() {
         report.push_str("_未在 JSON 中发现 conclusion=failure 的 job；可能仍在运行或失败发生在 workflow 级。_\n");
-        return truncate_report(report, max_output_len);
+        return truncate_report(report, ctx.max_output_len);
     }
 
     report.push_str(&format!("## 失败 Job（最多 {max_failed_jobs} 个）\n\n"));
@@ -337,14 +327,12 @@ pub fn gh_run_failure_summary(
         run_id,
         args: &v,
         tail_lines: tail_lines_n,
-        max_output_len,
-        allowed_commands,
-        working_dir,
+        gh: ctx,
     };
     for (name, status) in failed_jobs.iter().take(max_failed_jobs) {
         append_job_log_section(&mut report, name, status, &log_ctx);
     }
-    truncate_report(report, max_output_len)
+    truncate_report(report, ctx.max_output_len)
 }
 
 #[cfg(test)]

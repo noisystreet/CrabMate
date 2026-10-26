@@ -1,5 +1,6 @@
 //! `gh pr merge` / `gh pr review` / `gh pr comment`（写远端 PR 状态）。
 
+use super::common::GhCtx;
 use std::path::Path;
 
 use super::common::{
@@ -46,11 +47,9 @@ fn push_extra(v: &serde_json::Value, argv: &mut Vec<String>) -> Result<(), Strin
 /// `gh pr merge`（写远端：合并 PR）
 pub fn gh_pr_merge(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -88,7 +87,7 @@ pub fn gh_pr_merge(
     if let Err(e) = push_extra(&v, &mut argv) {
         return e;
     }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+    run_gh_vec(argv, ctx)
 }
 
 fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, String> {
@@ -126,11 +125,9 @@ fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, String> {
 /// `gh pr review`（写远端：审批 / 请求修改 / 评论）
 pub fn gh_pr_review(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -138,7 +135,7 @@ pub fn gh_pr_review(
         Err(e) => return e,
     };
     match gh_pr_review_argv(&v) {
-        Ok(argv) => run_gh_vec(argv, max_output_len, allowed_commands, working_dir),
+        Ok(argv) => run_gh_vec(argv, ctx),
         Err(e) => e,
     }
 }
@@ -146,11 +143,9 @@ pub fn gh_pr_review(
 /// `gh pr comment`（写远端：在 PR 上评论）
 pub fn gh_pr_comment(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -176,17 +171,15 @@ pub fn gh_pr_comment(
     if let Err(e) = push_extra(&v, &mut argv) {
         return e;
     }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+    run_gh_vec(argv, ctx)
 }
 
 /// `gh pr edit`（写远端：编辑 PR 标题 / 正文 / 标签 / reviewer / assignee / 基线分支 / 草稿状态）。
 pub fn gh_pr_edit(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -202,7 +195,7 @@ pub fn gh_pr_edit(
             return e;
         }
         let (dir, body_path) = match write_workspace_temp_markdown(
-            working_dir,
+            ctx.working_dir,
             "crabmate_pr_body.md",
             b.as_bytes(),
             "PR 正文",
@@ -216,7 +209,7 @@ pub fn gh_pr_edit(
         Ok(a) => a,
         Err(e) => return e,
     };
-    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    let out = run_gh_vec(argv, ctx);
     if let Some((dir, _)) = body_opt {
         drop(dir);
     }
@@ -328,11 +321,12 @@ fn is_safe_token_item(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{build_gh_pr_edit_argv, is_safe_token_item};
+    use crate::cm_tools::tools::github_cli::GhCtx;
 
     #[test]
     fn gh_pr_edit_requires_gh_in_allowlist() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let out = super::gh_pr_edit(r#"{"title":"t"}"#, 4096, &[], dir.path());
+        let out = super::gh_pr_edit(r#"{"title":"t"}"#, &GhCtx::new(4096, &[], dir.path()));
         assert!(out.contains("未包含 gh"), "{}", out);
     }
 

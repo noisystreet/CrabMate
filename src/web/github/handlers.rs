@@ -4,6 +4,7 @@ use axum::Json;
 use axum::extract::State;
 use std::path::Path;
 
+use crate::tools::GhCtx;
 use crate::tools::web_api::{github_pr_current_checks, github_repo_context};
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::github::{
@@ -60,7 +61,8 @@ pub async fn github_repo_context_handler(
         work_dir,
     } = ctx;
     match tokio::task::spawn_blocking(move || {
-        github_repo_context(max_output_len, &allowed_commands, &work_dir)
+        let gh = GhCtx::new(max_output_len, &allowed_commands, &work_dir);
+        github_repo_context(&gh)
     })
     .await
     {
@@ -94,7 +96,8 @@ pub async fn github_pr_current_checks_handler(
         work_dir,
     } = ctx;
     match tokio::task::spawn_blocking(move || {
-        github_pr_current_checks(max_output_len, &allowed_commands, &work_dir)
+        let gh = GhCtx::new(max_output_len, &allowed_commands, &work_dir);
+        github_pr_current_checks(&gh)
     })
     .await
     {

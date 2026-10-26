@@ -1,5 +1,6 @@
 //! GitHub Web API 共享逻辑：结构化 JSON，供 HTTP handler 与日后 CLI/TUI 复用。
 
+use super::common::GhCtx;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -277,13 +278,11 @@ fn parse_check_items(v: &JsonValue) -> Vec<GithubPrCheckItemData> {
 /// `connected` 表示本机 `gh repo view` 成功（CLI 已认证）。即使未连接，仍可能从
 /// `git remote`（`origin` / `upstream`）解析出可打开的仓库 HTTPS URL。
 pub fn github_repo_context(
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> Result<GithubRepoContextData, String> {
-    let gh_available = gh_allowed(allowed_commands).is_ok();
-    let is_git_repo = is_git_repo(working_dir);
-    let current_branch = current_git_branch(working_dir);
+    let gh_available = gh_allowed(ctx.allowed_commands).is_ok();
+    let is_git_repo = is_git_repo(ctx.working_dir);
+    let current_branch = current_git_branch(ctx.working_dir);
     let mut out = GithubRepoContextData {
         connected: false,
         is_git_repo,
@@ -301,7 +300,7 @@ pub fn github_repo_context(
             "--json".into(),
             REPO_VIEW_FIELDS.into(),
         ];
-        let formatted = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+        let formatted = run_gh_vec(argv, ctx);
         if let Ok(v) = parse_gh_json_stdout(&formatted) {
             out.connected = true;
             out.repo = json_str(&v, "nameWithOwner");
@@ -309,18 +308,16 @@ pub fn github_repo_context(
             out.default_branch = v.get("defaultBranchRef").and_then(|b| json_str(b, "name"));
         }
     }
-    fill_repo_from_git_remotes(working_dir, &mut out);
+    fill_repo_from_git_remotes(ctx.working_dir, &mut out);
     Ok(out)
 }
 
 /// 指定 PR（或当前分支关联 PR）的 checks。
 pub fn github_pr_checks(
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
     number: Option<u64>,
 ) -> Result<GithubPrCurrentChecksData, String> {
-    gh_allowed(allowed_commands)?;
+    gh_allowed(ctx.allowed_commands)?;
     let mut out = GithubPrCurrentChecksData::default();
 
     let mut view_argv = vec!["pr".into(), "view".into()];
@@ -332,7 +329,7 @@ pub fn github_pr_checks(
     }
     view_argv.push("--json".into());
     view_argv.push(PR_VIEW_FIELDS.join(","));
-    let view_formatted = run_gh_vec(view_argv, max_output_len, allowed_commands, working_dir);
+    let view_formatted = run_gh_vec(view_argv, ctx);
     if gh_exit_code(&view_formatted) == Some(0)
         && let Ok(v) = parse_gh_json_stdout(&view_formatted)
     {
@@ -345,12 +342,7 @@ pub fn github_pr_checks(
     if let Some(n) = number {
         checks_args["number"] = serde_json::json!(n);
     }
-    let checks_formatted = gh_pr_checks(
-        &checks_args.to_string(),
-        max_output_len,
-        allowed_commands,
-        working_dir,
-    );
+    let checks_formatted = gh_pr_checks(&checks_args.to_string(), ctx);
     let checks_v = parse_gh_json_stdout_exits(&checks_formatted, &[0, 1, 8])?;
     out.checks = parse_check_items(&checks_v);
     out.summary = summarize_checks(&out.checks);
@@ -359,11 +351,9 @@ pub fn github_pr_checks(
 
 /// 当前分支关联 PR 的 checks（省略 PR number 时与 `gh pr checks` 默认一致）。
 pub fn github_pr_current_checks(
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> Result<GithubPrCurrentChecksData, String> {
-    github_pr_checks(max_output_len, allowed_commands, working_dir, None)
+    github_pr_checks(ctx, None)
 }
 
 #[cfg(test)]
@@ -406,7 +396,7 @@ mod tests {
             return;
         }
         let allowed = vec!["gh".to_string()];
-        match github_repo_context(65536, &allowed, &dir) {
+        match github_repo_context(&GhCtx::new(65536, &allowed, &dir)) {
             Ok(ctx) => assert!(ctx.is_git_repo, "subdir inside repo should count as git"),
             Err(e) => {
                 // gh CLI not installed or not authenticated; skip
@@ -422,7 +412,7 @@ mod tests {
             return;
         }
         let allowed = vec!["gh".to_string()];
-        match github_pr_current_checks(65536, &allowed, &dir) {
+        match github_pr_current_checks(&GhCtx::new(65536, &allowed, &dir)) {
             Ok(result) => assert!(!result.checks.is_empty(), "expected CI checks from gh"),
             Err(e) => {
                 // gh CLI not installed or not authenticated; skip
