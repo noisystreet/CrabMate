@@ -51,6 +51,23 @@ pub struct DispatchToolWorkspace<'a> {
         Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
 }
 
+impl<'a> DispatchToolWorkspace<'a> {
+    /// 测试形态：工作区已设置、无变更清单。
+    ///
+    /// `tool_registry::tests` 的 6 个用例都要这一份「正常已设置工作区」上下文，
+    /// 字段值逐字相同。生产侧三处构造（`tool_dispatch` / `exec_serial` /
+    /// `parallel_readonly`）的字段来源互不相同，`&Path` 也没有合理默认值，
+    /// 因此只提供测试入口而不 derive `Default`。
+    #[cfg(test)]
+    pub(crate) fn for_tests(effective_working_dir: &'a Path) -> Self {
+        Self {
+            effective_working_dir,
+            workspace_is_set: true,
+            workspace_changelist: None,
+        }
+    }
+}
+
 /// 配置、白名单与 handler 查找（每次 dispatch 必带）。
 pub struct DispatchToolPolicy<'a> {
     pub cfg: &'a Arc<AgentConfig>,
