@@ -178,18 +178,23 @@ async fn wait_for_cancel(cancel: Option<&Arc<AtomicBool>>) {
 }
 
 /// 仅 Web：发送 `command_approval`、等待决策、再发 timeline（**不在** `approval_request_guard` 内发 timeline）。
+///
+/// `permission_level` 进 SSE 载荷（设计 §16.5）：弹窗要能回答「这是哪一档在请求越界」，
+/// 否则用户点 `AllowAlways` 时不知道在给谁扩大权限。`None` = 未接线等级的旧路径，出站省略该键。
 pub async fn run_web_tool_approval(
     sink: WebApprovalSink<'_>,
     spec: &ApprovalRequestSpec,
     sse_log_label: &'static str,
     channel_mode: WebApprovalChannelMode,
+    permission_level: Option<PermissionLevel>,
 ) -> Result<CommandApprovalDecision, ToolApprovalWebError> {
     debug!(
         target: "crabmate",
-        "tool_approval web round capability={:?} command={} mode={:?}",
+        "tool_approval web round capability={:?} command={} mode={:?} level={:?}",
         spec.capability,
         spec.sse_command,
-        channel_mode
+        channel_mode,
+        permission_level
     );
     let decision = {
         let _guard = sink.approval_request_guard.lock().await;
@@ -199,6 +204,7 @@ pub async fn run_web_tool_approval(
                     command: spec.sse_command.clone(),
                     args: spec.sse_args.clone(),
                     allowlist_key: spec.allowlist_key.clone(),
+                    permission_level: permission_level.map(|l| l.as_str().to_string()),
                 },
             },
         );

@@ -318,6 +318,7 @@ pub(super) async fn emit_tool_call_summary_sse(
     args: &str,
     messages: &[Message],
     encoder: &dyn SseEncoder,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) {
     let args_preview = crate::redact::tool_arguments_preview_for_sse(args);
     let summary = super::batch_dispatch::tool_call_summary_from_args(name, args);
@@ -361,6 +362,8 @@ pub(super) async fn emit_tool_call_summary_sse(
             tool_call_id: Some(tool_call_id.to_string()),
             arguments_preview,
             arguments,
+            // 设计 §11.3：时间线条目带上本回合等级，事后不必回翻请求/配置快照。
+            permission_level: permission.map(|c| c.level.as_str().to_string()),
         },
     };
     let _ = send_sse_control_payload_optional(

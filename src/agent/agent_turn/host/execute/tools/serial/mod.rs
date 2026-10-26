@@ -108,4 +108,6 @@ pub(super) struct SerialToolIterationSsePreface<'a> {
     pub(super) name: &'a str,
     pub(super) args: &'a str,
     pub(super) messages: &'a [crate::types::Message],
+    /// 本回合权限能力快照；`tool_call` 时间线据此带上等级（设计 §11.3），`None` 则省略该字段。
+    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }

@@ -365,6 +365,7 @@ async fn request_disallowed_command_approval(
             approval_rx,
             approval_request_guard,
             cancel,
+            permission_level,
             ..
         } => Ok(request_approval(
             out_tx.clone(),
@@ -373,6 +374,7 @@ async fn request_disallowed_command_approval(
             cancel.clone(),
             cmd_lower,
             &args_preview_from_node(node),
+            *permission_level,
         )
         .await),
         WorkflowApprovalMode::NoApproval => Err(command_not_allowed_result(node, cmd_lower)),
@@ -543,6 +545,7 @@ async fn apply_generic_workflow_node_approval(
                     cancel.clone(),
                     &approval_key,
                     &format!("工具：{}（requires_approval=true）", node.tool_name),
+                    *permission_level,
                 )
                 .await;
                 match decision {
@@ -795,6 +798,7 @@ async fn request_approval(
     cancel: Option<Arc<AtomicBool>>,
     command: &str,
     args: &str,
+    permission_level: Option<crate::cm_types::PermissionLevel>,
 ) -> CommandApprovalDecision {
     let spec = crate::cm_approval::ApprovalRequestSpec {
         capability: crate::cm_approval::SensitiveCapability::WorkflowGate,
@@ -817,6 +821,7 @@ async fn request_approval(
         &spec,
         "workflow::execute approval request",
         crate::cm_approval::WebApprovalChannelMode::Lenient,
+        permission_level,
     )
     .await
     .unwrap_or(CommandApprovalDecision::Deny)

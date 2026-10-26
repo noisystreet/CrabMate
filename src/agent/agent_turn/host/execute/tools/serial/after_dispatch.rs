@@ -188,6 +188,7 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
         name,
         args,
         messages,
+        permission,
     } = p;
     if let Some(t) = tracing_chat_turn {
         t.record_tool_call_id_for_log(id);
@@ -201,6 +202,7 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
         args,
         messages,
         control.sse_encoder.as_ref(),
+        permission,
     )
     .await;
     emit_timeline_log_sse(

@@ -44,6 +44,7 @@ mod tests {
             summary: Some("读取文件".into()),
             args_preview: Some(r#"{"path":"/etc/hosts"}"#.into()),
             arguments: Some(r#"{"path":"/etc/hosts"}"#.into()),
+            permission_level: None,
         };
         let s = encode_ag_ui_event(&event);
         assert!(s.contains(r#""type":"TOOL_CALL_START""#), "got: {s}");
@@ -69,6 +70,7 @@ mod tests {
             summary: None,
             args_preview: None,
             arguments: None,
+            permission_level: None,
         };
         let s = encode_ag_ui_event(&event);
         assert!(!s.contains("summary"), "unexpected summary in: {s}");

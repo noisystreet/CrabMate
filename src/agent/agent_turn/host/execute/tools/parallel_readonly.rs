@@ -316,6 +316,7 @@ async fn parallel_emit_tool_starts(
     cfg: &AgentConfig,
     messages: &[Message],
     control: &crate::agent::agent_turn::TurnControlSink<'_>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> ExecuteToolsBatchOutcome {
     let out = control.out;
     let sse_mirror_ref = control.sse_control_mirror.as_ref();
@@ -340,6 +341,7 @@ async fn parallel_emit_tool_starts(
             &tc.function.arguments,
             messages,
             sse_encoder,
+            permission,
         )
         .await;
         emit_timeline_log_sse(
@@ -471,7 +473,7 @@ pub(super) async fn execute_tools_parallel(
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
     if matches!(
-        parallel_emit_tool_starts(tool_calls, cfg.as_ref(), messages, &control).await,
+        parallel_emit_tool_starts(tool_calls, cfg.as_ref(), messages, &control, Some(permission)).await,
         ExecuteToolsBatchOutcome::AbortedSse
     ) {
         return ExecuteToolsBatchOutcome::AbortedSse;
@@ -554,7 +556,7 @@ mod tests {
             sse_control_mirror: None,
         };
 
-        let outcome = parallel_emit_tool_starts(&calls, &cfg, &[], &control).await;
+        let outcome = parallel_emit_tool_starts(&calls, &cfg, &[], &control, None).await;
 
         assert_eq!(outcome, ExecuteToolsBatchOutcome::Finished);
         let mut emitted = String::new();
