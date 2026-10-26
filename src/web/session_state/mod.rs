@@ -45,7 +45,7 @@ impl ParsedPatch {
     /// 未知取值一律 400：静默回落会把客户端的显式选择当成没发生。
     fn parse(body: &ConversationStatePatch) -> ApiResult<Self> {
         let conversation_id =
-            crate::web::normalize_client_conversation_id(Some(&body.conversation_id))
+            crate::web::normalize_client_conversation_id(body.conversation_id.as_deref())
                 .map_err(|msg| bad_request(error_codes::INVALID_CONVERSATION_ID, msg))?
                 .ok_or_else(|| {
                     bad_request(

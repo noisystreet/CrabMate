@@ -654,9 +654,9 @@ dst.permission.permission_level_max =
 | 项 | 规格 |
 |---|---|
 | 端点 | `POST /conversation/state`（受保护面，与 `GET /permission` 同层） |
-| 请求 | `{conversation_id, permission_level?, session_mode?, agent_role?}`，至少给一个 |
+| 请求 | `{conversation_id, permission_level?, session_mode?, agent_role?}`：`conversation_id` 必填，其余三个至少给一个 |
 | 响应 | 写入后的 `active_*` + 同一份 `PermissionView`（Client 不必再打一次 `GET /permission`） |
-| 错误 | 400 `INVALID_CONVERSATION_ID` / `INVALID_PERMISSION_LEVEL` / `INVALID_SESSION_MODE` / `INVALID_AGENT_ROLE` / `EMPTY_CONVERSATION_STATE_PATCH`；404 `CONVERSATION_NOT_FOUND` |
+| 错误 | 400 `INVALID_CONVERSATION_ID` / `INVALID_PERMISSION_LEVEL` / `INVALID_SESSION_MODE` / `INVALID_AGENT_ROLE` / `EMPTY_CONVERSATION_STATE_PATCH`；404 `CONVERSATION_NOT_FOUND`。**缺 / 空 `conversation_id` 同样是 400**：契约层把它声明成 `Option<String>`（`ConversationStatePatch`），缺字段会在 handler 里被判成 `INVALID_CONVERSATION_ID`，而不是被 axum 的 `Json` 提取器回成 422——同一类「参数错误」不该有两种错误体 |
 
 四条硬约束（缺一条就退化成 bug 或提权面）：
 
@@ -717,7 +717,7 @@ dst.permission.permission_level_max =
 **落地结果（S5b）**——三段式按 `session_mode` 的现成链路逐段对齐，没有新造管理层：
 
 - **写 / 校验**：`ChatRequestBody` + `ChatRequestBodyWire` 加 `permission_level`，`chat_keys` 白名单字母序插在 `"message"` 与 `"readonly_tool_ttl_cache_secs"` 之间（该表 `binary_search`，位置错会静默失效）。解析在 `turn_build::parse_chat_mode_and_permission_level`（与 `session_mode` 合并成一个 helper：`parse_chat_*_request_tail` 的 CCN 已贴上限），未知值 → **400 `INVALID_PERMISSION_LEVEL`**。
-- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入用 `cm_types::persisted_permission_level_after_turn`（请求值优先，否则保留原意图），与 `persisted_session_mode_after_turn` 同规。
+- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入**只写本请求显式申请的字段**：`None` / 空白时该列不进 `SET`（见 §16.1.1 第 2 条）。原先「请求值优先，否则回写回合开始时的快照」的 `persisted_permission_level_after_turn` / `persisted_session_mode_after_turn` / `persisted_agent_role_after_turn` 三个助手已在 S6 删除——那份快照会把期间 `POST /conversation/state` 写入的值改回去，正是 §16.1.1 要堵的缺口。
 - **回合内生效**：`RunAgentTurnAttach.permission_persisted` → `prepare_turn_cfg_and_permission(..., persisted)` → `PermissionTurnInput.persisted`。worker 侧 `worker::resolve_job_permission_persisted` 做「请求优先 → 会话持久 → 无」的选档，坏串回落配置默认并留 warn（与 `session_mode` 解析失败回落 `act` 同取向）。
 - **读**：`GET /conversation/messages` 回 `active_permission_level`（意图）+ `effective_permission_level`（生效），由 `web::permission::permission_levels_for_snapshot` 复用 `resolve_permission_level_for_turn` 算出——**不**另写一套比较，避免第二套判据。`GET /permission` 的 `level_source` 随之能真的报 `persisted`。
 - **兼容性**：客户端不传 `permission_level` 时 `persisted` 档为 `None`，`chosen` 仍落 `fallback`，与 S5b 之前逐字等价；`cron` / `/btw` 等无该字段的入口显式传 `None`。

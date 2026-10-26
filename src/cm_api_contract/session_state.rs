@@ -16,7 +16,12 @@ use crate::cm_api_contract::permission::PermissionView;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ConversationStatePatch {
     /// 目标会话（须已持久化；不存在 → 404，不做 upsert：空行会污染会话列表与 TTL 淘汰）。
-    pub conversation_id: String,
+    ///
+    /// 用 `Option` 而不是必填 `String`：`String` 缺字段会在 axum 的 `Json` 提取阶段变成 **422**
+    /// （axum 自己的错误体），与本端点「400 + 机器可读 code」的契约不一致。缺失 / 空白一律
+    /// 400 `INVALID_CONVERSATION_ID`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
     /// 会话级权限等级**意图**，写法与 `POST /chat` 的 `permission_level` 一致。
     ///
     /// 允许高于生效上限：越界由回合内 min 链钳制，`PermissionView::clamped_by` 负责解释。
