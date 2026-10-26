@@ -1,3 +1,4 @@
+use super::common::GhCtx;
 use std::path::Path;
 
 use serde_json::Value as JsonValue;
@@ -43,15 +44,13 @@ fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec
 
 fn gh_pr_checks_table_fallback(
     v: &JsonValue,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
     let argv = match build_pr_checks_argv(v, false) {
         Ok(a) => a,
         Err(e) => return e,
     };
-    let table = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    let table = run_gh_vec(argv, ctx);
     format!(
         "{}\n\n---\n提示：本机 `gh` 不支持 `pr checks --json`（需 GitHub CLI ≥ 2.50）。已回退为表格输出；请升级 `gh` 后再用 `structured: true`。\n",
         table.trim_end()
@@ -61,11 +60,9 @@ fn gh_pr_checks_table_fallback(
 /// `gh pr checks`（只读）：CI 检查状态；省略 `number` 时使用当前分支关联的 PR（与 `gh` 默认一致）。
 pub fn gh_pr_checks(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -77,12 +74,12 @@ pub fn gh_pr_checks(
         Ok(a) => a,
         Err(e) => return e,
     };
-    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    let out = run_gh_vec(argv, ctx);
     if !structured {
         return out;
     }
     if gh_pr_checks_rejects_json_flag(&out) {
-        return gh_pr_checks_table_fallback(&v, max_output_len, allowed_commands, working_dir);
+        return gh_pr_checks_table_fallback(&v, ctx);
     }
     finalize_structured_pr_checks(out)
 }
@@ -194,18 +191,16 @@ fn write_pr_create_body_temp(
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
 pub fn gh_pr_create(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
-    let (v, title, body_str) = match gh_pr_create_inputs(args_json, working_dir) {
+    let (v, title, body_str) = match gh_pr_create_inputs(args_json, ctx.working_dir) {
         Ok(x) => x,
         Err(e) => return e,
     };
-    let (dir, body_path_str) = match write_pr_create_body_temp(working_dir, body_str.as_bytes()) {
+    let (dir, body_path_str) = match write_pr_create_body_temp(ctx.working_dir, body_str.as_bytes()) {
         Ok(x) => x,
         Err(e) => return e,
     };
@@ -213,7 +208,7 @@ pub fn gh_pr_create(
         Ok(a) => a,
         Err(e) => return e,
     };
-    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    let out = run_gh_vec(argv, ctx);
     drop(dir);
     annotate_gh_pr_create_failure(out)
 }
@@ -221,6 +216,7 @@ pub fn gh_pr_create(
 #[cfg(test)]
 mod tests {
     use super::annotate_gh_pr_create_failure;
+    use crate::cm_tools::tools::github_cli::GhCtx;
 
     fn gh_create_err(stderr: &str) -> String {
         format!(
@@ -256,7 +252,7 @@ mod tests {
     #[test]
     fn gh_pr_checks_requires_gh_in_allowlist() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let out = super::gh_pr_checks("{}", 4096, &[], dir.path());
+        let out = super::gh_pr_checks("{}", &GhCtx::new(4096, &[], dir.path()));
         assert!(out.contains("未包含 gh"), "{}", out);
     }
 

@@ -1,5 +1,6 @@
 //! `gh release create`（写远端 Release）。
 
+use super::common::GhCtx;
 use std::path::Path;
 
 use serde_json::Value as JsonValue;
@@ -96,11 +97,9 @@ fn gh_release_create_build_argv(
 /// `gh release create`（notes 经工作区临时 `--notes-file`）
 pub fn gh_release_create(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -115,7 +114,7 @@ pub fn gh_release_create(
         return e;
     }
 
-    let notes = match resolve_release_notes(&v, working_dir) {
+    let notes = match resolve_release_notes(&v, ctx.working_dir) {
         Ok(n) => n,
         Err(e) => return e,
     };
@@ -124,7 +123,7 @@ pub fn gh_release_create(
     }
 
     let (dir, notes_path) = match write_workspace_temp_markdown(
-        working_dir,
+        ctx.working_dir,
         "crabmate_release_notes.md",
         notes.as_bytes(),
         "release notes",
@@ -136,7 +135,7 @@ pub fn gh_release_create(
         Ok(a) => a,
         Err(e) => return e,
     };
-    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    let out = run_gh_vec(argv, ctx);
     drop(dir);
     out
 }

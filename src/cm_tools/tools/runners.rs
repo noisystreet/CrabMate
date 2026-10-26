@@ -188,16 +188,11 @@ macro_rules! define_git_runners {
     };
 }
 
-/// 生成 `fn runner_gh_* -> github_cli::gh_*(args, max_len, allowed, cwd)`；新增 GitHub 工具时在列表中增一行。
+/// 生成 `fn runner_gh_* -> github_cli::gh_*(args, &GhCtx)`；新增 GitHub 工具时在列表中增一行。
 macro_rules! gh_runner {
     ($name:ident, $fn:path) => {
         pub fn $name(args: &str, ctx: &ToolContext<'_>) -> String {
-            $fn(
-                args,
-                ctx.command_max_output_len,
-                ctx.allowed_commands,
-                ctx.working_dir,
-            )
+            $fn(args, &gh_ctx_of(ctx))
         }
     };
 }
@@ -551,17 +546,16 @@ gh_runner!(runner_gh_api, github_cli::gh_api);
 /// `gh_pr` / `gh_run` 是动作分发器（见 `github_cli::gh_pr` / `gh_run`），
 /// 形参与 `gh_runner!` 生成的一致，但需要独立入口。
 pub fn runner_gh_pr(args: &str, ctx: &ToolContext<'_>) -> String {
-    github_cli::gh_pr(
-        args,
-        ctx.command_max_output_len,
-        ctx.allowed_commands,
-        ctx.working_dir,
-    )
+    github_cli::gh_pr(args, &gh_ctx_of(ctx))
 }
 
 pub fn runner_gh_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    github_cli::gh_run(
-        args,
+    github_cli::gh_run(args, &gh_ctx_of(ctx))
+}
+
+/// `ToolContext` 的三件套投影（`gh_runner!` 与上面两个分发器共用）。
+fn gh_ctx_of<'a>(ctx: &'a ToolContext<'a>) -> github_cli::GhCtx<'a> {
+    github_cli::GhCtx::new(
         ctx.command_max_output_len,
         ctx.allowed_commands,
         ctx.working_dir,

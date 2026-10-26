@@ -1,5 +1,6 @@
 //! `gh api` 子命令实现（与 `run_command` 封装分离以降低 `mod.rs` 体量）。
 
+use super::common::GhCtx;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -169,11 +170,9 @@ fn format_gh_api_process_output(out: std::process::Output, max_output_len: usize
 /// `gh api`（受限 path + 方法；可选 JSON body 经 stdin 传入）
 pub fn gh_api(
     args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
+    ctx: &GhCtx<'_>,
 ) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
+    if let Err(e) = gh_allowed(ctx.allowed_commands) {
         return e;
     }
     let v = match parse_args_json(args_json) {
@@ -194,7 +193,7 @@ pub fn gh_api(
     crate::cm_tools::github_token::apply_gh_token_env(&mut cmd);
     cmd.arg("api");
     cmd.args(&argv);
-    cmd.current_dir(working_dir);
+    cmd.current_dir(ctx.working_dir);
     let body_nonempty = body.is_some_and(|b| !b.is_empty());
     if body_nonempty {
         cmd.stdin(Stdio::piped());
@@ -221,7 +220,7 @@ pub fn gh_api(
         Ok(o) => o,
         Err(e) => return format!("错误：等待 gh 结束失败：{e}"),
     };
-    format_gh_api_process_output(out, max_output_len)
+    format_gh_api_process_output(out, ctx.max_output_len)
 }
 
 #[cfg(test)]
