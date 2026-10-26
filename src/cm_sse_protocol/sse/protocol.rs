@@ -165,6 +165,13 @@ pub struct CommandApprovalBody {
     /// 永久允许时写入进程内白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowlist_key: Option<String>,
+    /// 本次审批发生时所处的权限等级（`chat` / `read` / `workspace` / `approved` / `unrestricted`）。
+    ///
+    /// 设计 `permission_levels.md` §16.5：弹窗要能回答「这是**哪一档**在请求越界」，
+    /// 否则用户点 `AllowAlways` 时不知道自己在给谁扩大权限。缺省省略（未接线等级的旧路径），
+    /// 出站不出现该键，旧客户端按键存在性解析不受影响；不需要提升 `SSE_PROTOCOL_VERSION`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_level: Option<String>,
 }
 
 /// 澄清问卷单题字段（与 `present_clarification_questionnaire` 工具参数对齐）。
@@ -203,6 +210,13 @@ pub struct ToolCallSummary {
     /// 配置 `sse_tool_call_include_arguments` 为真时下发；经 `redact::tool_arguments_redacted_for_sse` 脱敏后截断。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments: Option<String>,
+    /// 本回合生效的权限等级（`chat` / `read` / … / `unrestricted`），设计 §11.3。
+    ///
+    /// 让时间线能回答「这一步是在哪一档下跑的」：事后排查「为什么这个工具被拒」时，
+    /// 不必再去翻当时的 `/chat` 请求或配置快照。缺省省略（未接线等级的旧路径）；
+    /// 属可选字段，**不**提升 `SSE_PROTOCOL_VERSION`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_level: Option<String>,
 }
 
 /// [`SsePayload::ToolOutputChunk`] 内层体：与 `tool_call` / `tool_result` 共用 **`tool_call_id`**。

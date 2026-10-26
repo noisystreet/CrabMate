@@ -312,6 +312,9 @@ async fn request_unknown_cmd_approval(
         Some(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink(web_ctx)),
         &spec,
         "tool_registry::run_command approval",
+        // 与 `allow_handles` 同一档：弹窗上的等级必须就是这次批准将要写入的作用域档，
+        // 否则用户看到的与落库的会不一致（设计 §16.5）。
+        allow_handles.level,
     )
     .await
     {

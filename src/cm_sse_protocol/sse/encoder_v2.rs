@@ -71,6 +71,7 @@ mod tests {
                 tool_call_id: Some("tc-1".into()),
                 arguments_preview: None,
                 arguments: Some(r#"{"path":"/etc/hosts"}"#.into()),
+                permission_level: None,
             },
         });
         let lines: Vec<&str> = s.lines().collect();

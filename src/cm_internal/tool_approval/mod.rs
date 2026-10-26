@@ -76,7 +76,7 @@ pub async fn interactive_gate_after_whitelist_miss(
     sse_log_label: &'static str,
     allowlist: &SharedAllowlistHandles<'_>,
 ) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
-    let decision = request_tool_interactive_approval(web, spec, sse_log_label).await?;
+    let decision = request_tool_interactive_approval(web, spec, sse_log_label, allowlist.level).await?;
     match decision {
         CommandApprovalDecision::Deny => Ok(InteractiveGateOutcome::Denied(format!(
             "用户拒绝 {}：{}",
@@ -98,10 +98,14 @@ pub async fn interactive_gate_after_whitelist_miss(
 }
 
 /// 仅 Web SSE 审批；无通道则 [`ToolApprovalWebError::ChannelUnavailable`]。
+///
+/// `permission_level` 只用于 SSE 载荷展示（设计 §16.5），不参与任何放行判断——
+/// 判据仍在 `cm_agent::permission`，避免审批层长出第二套等级比较。
 pub async fn request_tool_interactive_approval(
     web: Option<WebApprovalSink<'_>>,
     spec: &ApprovalRequestSpec,
     sse_log_label: &'static str,
+    permission_level: Option<crate::cm_types::PermissionLevel>,
 ) -> Result<CommandApprovalDecision, ToolApprovalWebError> {
     if let Some(sink) = web {
         debug!(
@@ -110,8 +114,14 @@ pub async fn request_tool_interactive_approval(
             spec.capability,
             spec.cli_title
         );
-        return run_web_tool_approval(sink, spec, sse_log_label, WebApprovalChannelMode::Strict)
-            .await;
+        return run_web_tool_approval(
+            sink,
+            spec,
+            sse_log_label,
+            WebApprovalChannelMode::Strict,
+            permission_level,
+        )
+        .await;
     }
     Err(ToolApprovalWebError::ChannelUnavailable)
 }

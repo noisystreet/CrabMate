@@ -52,7 +52,7 @@
 | `clarification_questionnaire` | 澄清问卷：模型调用工具 **`present_clarification_questionnaire`** 且成功后，在 **`tool_result` SSE** 之后补发；体含 **`questionnaire_id`**、**`intro`**、**`questions[]`**（`id` / `label` / 可选 `hint` / `required` / `kind`：`text` \| `choice`） | Web：展示表单；用户提交时下一请求体带 **`clarify_questionnaire_answers`**（见 README / OpenAPI）；TUI：`line` 分类为 **ignore** |
 | `thinking_trace` | 调试：运行时**默认开启**下发；**`CM_THINKING_TRACE_ENABLED=0`** 时关闭。**不**从 **`[agent]`** TOML 读入。体须含非空 **`op`**（如 **`reasoning_delta`**、**`answer_phase`**、**`tool_call`**、**`tool_done`**）；可选 **`node_id`** / **`parent_id`** / **`title`**、**`chunk`**（推理片段）、**`context_snapshot`**（工具前后上下文摘要，非全文） | Web：「调试台」侧栏累积展示；TUI：`line` 分类为 **ignore** |
 | `workspace_changed`: `true` | 工作区已被工具更新 | `onWorkspaceChanged` |
-| `tool_call` | 工具调用摘要（执行前）；体含 **`name`**、**`summary`**（与 `summarize_tool_call` 同源）、可选 **`tool_call_id`**（与本轮 `tool_calls[].id` / `tool_result.tool_call_id` 一致，供 Web 将结果写回正确占位气泡）、可选 **`arguments_preview`**（单行截断，与 `execute_tools` 日志同源）、可选 **`arguments`**（配置 **`sse_tool_call_include_arguments`** / **`CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** 为真时：启发式脱敏后更长截断） | `onToolCall`（**`summary`**、**`arguments_preview`**、**`arguments`** 至少一项非空则 **handled**） |
+| `tool_call` | 工具调用摘要（执行前）；体含 **`name`**、**`summary`**（与 `summarize_tool_call` 同源）、可选 **`tool_call_id`**（与本轮 `tool_calls[].id` / `tool_result.tool_call_id` 一致，供 Web 将结果写回正确占位气泡）、可选 **`arguments_preview`**（单行截断，与 `execute_tools` 日志同源）、可选 **`arguments`**（配置 **`sse_tool_call_include_arguments`** / **`CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** 为真时：启发式脱敏后更长截断）、可选 **`permission_level`**（本回合生效等级，设计 §11.3；缺省省略，用于事后回答「这一步在哪一档下跑的」） | `onToolCall`（**`summary`**、**`arguments_preview`**、**`arguments`** 至少一项非空则 **handled**） |
 | `parsing_tool_calls` | 模型正在流式输出 tool_calls | `onParsingToolCallsChange` |
 | `tool_running` | 工具执行中状态 | `onToolStatusChange` |
 | `tool_output_chunk` | 工具执行中的输出片段（如 PTY、宿主 **`run_command`**）；**不**进入模型上下文；体内须含非空 **`tool_call_id`**、非负整数 **`seq`**；可选 **`name`**、**`chunk`**（UTF-8 文本，可多次下发由前端拼接）、**`stream`**（`stdout` / `stderr` / `combined`）；最终以 **`tool_result`** 收束 | Web：**handled**，`onToolOutputChunk` 追加至对应 `tool_call_id` 的工具气泡详情；TUI：控制面镜像展示截断摘要 |
@@ -111,6 +111,7 @@
 | `command` | 命令名（`run_command` 不在白名单时为 argv0，如 `curl`） |
 | `args` | **不含 argv0** 的参数串（客户端按 `command` + 空格 + `args` 拼成一行）。无参为空串。完整脚本只出现在审批 detail / 时间线，不重复写入本字段。 |
 | `allowlist_key` | 可选；永久允许时写入白名单的键 |
+| `permission_level` | 可选；本次审批发生时的权限等级（`chat` / `read` / `workspace` / `approved` / `unrestricted`）。缺省**省略该键**（未接线等级的旧路径），不需要提升 `SSE_PROTOCOL_VERSION`。设计 §16.5：弹窗要能回答「这是哪一档在请求越界」，否则用户点 `AllowAlways` 时不知道在给谁扩大权限 |
 
 ## 流错误 `code` 枚举（`error` + `code`）
 
@@ -275,7 +276,7 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 
 | 事件 | 含义 |
 |------|------|
-| `TOOL_CALL_START` | 工具声明（名称 + id）。可选 CrabMate 扩展字段 **`summary`** / **`argsPreview`** / **`arguments`**（与 v1 `tool_call` 同名面同源；`arguments` 受 `sse_tool_call_include_arguments` 控制可能缺省）——前端在 START 帧即可渲染参数摘要（如 `run_command` 命令行卡片），无需等待 `TOOL_CALL_RESULT` |
+| `TOOL_CALL_START` | 工具声明（名称 + id）。可选 CrabMate 扩展字段 **`summary`** / **`argsPreview`** / **`arguments`** / **`permissionLevel`**（与 v1 `tool_call` 同名面同源；`arguments` 受 `sse_tool_call_include_arguments` 控制可能缺省）——前端在 START 帧即可渲染参数摘要（如 `run_command` 命令行卡片），无需等待 `TOOL_CALL_RESULT` |
 | `TOOL_CALL_ARGS` | 工具参数 |
 | `TOOL_CALL_END` | 工具声明结束 |
 | `TOOL_CALL_RESULT` | 工具执行结果（`metadata.partial` 为 `true` 时表示输出片段） |
@@ -312,6 +313,7 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 | `command` | string | 命令名（`run_command` 不在白名单时为 argv0，如 `curl`） |
 | `args` | string | 不含 argv0 的参数串；无参为空串 |
 | `allowlistKey` | string \| null | 永久允许时写入白名单的键；缺省为 `null`（键保留，不省略） |
+| `permissionLevel` | string \| 缺省 | 本次审批的权限等级；**缺省时省略该键**（与 `allowlistKey` 的 `null` 不同：该键是新加的，省略才与历史逐字节一致） |
 
 ### 状态同步
 

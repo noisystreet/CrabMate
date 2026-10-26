@@ -76,6 +76,10 @@ pub(crate) enum AgUiEvent {
         /// `sse_tool_call_include_arguments` 控制，可能缺省）。
         #[serde(skip_serializing_if = "Option::is_none")]
         arguments: Option<String>,
+        /// CrabMate 扩展：与 v1 `tool_call.permission_level` 同源的本回合权限等级（设计 §11.3）；
+        /// 缺省省略，旧客户端忽略即可。
+        #[serde(rename = "permissionLevel", skip_serializing_if = "Option::is_none")]
+        permission_level: Option<String>,
     },
     ToolCallArgs {
         #[serde(rename = "toolCallId")]

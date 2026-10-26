@@ -1,6 +1,6 @@
 # 工具权限等级（Permission Levels）：设计草案
 
-**状态**：S1–S3 与 S4 的审计事件部分已落地（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计含路径轴全覆盖）。**未做**：§11.3 的 SSE 审计事件与 Client 侧等级 UI。默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
+**状态**：S1–S6 全部落地（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级）。**仍未做**：Client（另仓 `crabmate-client`）侧等级选择器、`clamped_by` 文案与 L4 二次确认（S5d）。默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
 **受众**：维护者、安全评审、Client（Web / `crabmate-tui`）维护者。
 **语言**：中文。
 **维护**：实现或废弃某级能力时同步修订本文、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。
@@ -554,6 +554,7 @@ dst.permission.permission_level_max =
 1. **`GET /permission` / `GET /status` / `self_config_info`**：等级与投影的统一出口。`GET /permission` 的响应形状见 §16.2；`self_config_info` 的 `permission` 小节与其**同源序列化**（同一个 `PermissionCaps`），避免两处漂移。密钥类字段一律不出现（沿用现有“只报是否设置”的规矩）。
 2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，`cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
 3. **SSE（可选，需 Client 同步）**：若采纳审计事件，建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、`fixtures/sse_ag_ui_golden.jsonl`、`docs/SSE协议.md` 与 Client `parser_v2.rs` / `sse_dispatch/types.rs`，并跑双端 golden 测试。
+   **已落地（采纳「复用 control-plane」方案，未新增顶层键、未提升 `SSE_PROTOCOL_VERSION`）**：v1 面 `ToolCallSummary` 新增 `permission_level: Option<String>`（缺省省略），AG-UI 面 `ToolCallStart` 新增 `permissionLevel`（CrabMate 扩展字段，与 `summary` / `argsPreview` / `arguments` 同类）。取值是**本回合生效档**，由 `emit_tool_call_summary_sse` 的 `permission` 参数带入（串行路径经 `SerialToolIterationSsePreface.permission`，并行只读批次直接透传）。`None` 时不出站，旧客户端忽略即可。
 4. **Client（另仓）**：`crabmate-client` 侧在 `session_mode` 选择器旁加等级选择（只列 ≤ ceiling 的项），L4 需二次确认文案。**本次不涉及本仓 `frontend/`（本仓没有前端源码）。**
 
 ---
@@ -715,6 +716,8 @@ dst.permission.permission_level_max =
 ### 16.5 审批弹窗也要带等级
 
 `command_approval_request` 的载荷（`src/cm_internal/tool_approval/approval_specs.rs`）应附当前 `level`，让用户在点 `AllowAlways` 前看到“这是 L3 会话在请求越界”，而不是只看到命令本身。实现上与 §11 第 3 条一致：**复用现有 control-plane 字段，不改 `SSE_PROTOCOL_VERSION`**。
+
+**已落地**：`CommandApprovalBody` 新增 `permission_level: Option<String>`（v1 snake 面，缺省省略），AG-UI 的 `CommandApprovalData` 对应 `permissionLevel`（**带** `skip_serializing_if`——该键是新加的，缺省不出站才与历史逐字节一致，与既有的 `allowlistKey: null` 契约不同）。等级从审批路径上已有的那一份取值，不新增第三套来源：`interactive_gate_after_whitelist_miss` 用 `SharedAllowlistHandles.level`（与 `AllowAlways` 将要写入的作用域档一致）、`run_command` 未知命令用 `allow_handles.level`、工作流节点用 `WorkflowApprovalMode::Interactive.permission_level`。该字段**只用于展示**，不参与任何放行判断——判据仍只在 `cm_agent::permission`。回归由 `cm_sse_protocol::sse::ag_ui_convert::tests::command_approval_data_carries_permission_level_only_when_set` 钉住（有值时出站、无值时不出现该键）。Client 侧渲染在另仓。
 
 ---
 

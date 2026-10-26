@@ -169,6 +169,7 @@ async fn serial_execute_one_tool_call(
         name: &name,
         args: &args,
         messages: st.messages,
+        permission: Some(st.permission),
     })
     .await;
 

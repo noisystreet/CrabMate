@@ -21,6 +21,10 @@ pub struct CommandApprovalData {
     /// 永久允许时写入白名单的键；缺省出站为 `null`。
     #[serde(default)]
     pub allowlist_key: Option<String>,
+    /// 审批发生时的权限等级（设计 §16.5）。与 `allowlist_key` 不同，这里**带** `skip_serializing_if`：
+    /// 该键是本轮新加的，缺省时不出站才是与历史逐字节一致的做法（`allowlist_key` 的 `null` 是既有契约）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_level: Option<String>,
 }
 
 impl From<&CommandApprovalBody> for CommandApprovalData {
@@ -29,6 +33,7 @@ impl From<&CommandApprovalBody> for CommandApprovalData {
             command: body.command.clone(),
             args: body.args.clone(),
             allowlist_key: body.allowlist_key.clone(),
+            permission_level: body.permission_level.clone(),
         }
     }
 }
@@ -78,6 +83,7 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
                     summary: Some(tool_call.summary.clone()),
                     args_preview: tool_call.arguments_preview.clone(),
                     arguments: tool_call.arguments.clone(),
+                    permission_level: tool_call.permission_level.clone(),
                 },
                 AgUiEvent::ToolCallArgs {
                     tool_call_id: tool_call_id.clone(),
@@ -360,6 +366,7 @@ mod tests {
                 tool_call_id: Some("tc-1".into()),
                 arguments_preview: Some("path=/etc/hosts".into()),
                 arguments: Some(r#"{"path":"/etc/hosts"}"#.into()),
+                permission_level: None,
             },
         });
         assert_eq!(events.len(), 3, "ToolCall must split into 3 events");
@@ -677,6 +684,7 @@ mod tests {
                 tool_call_id: None,
                 arguments_preview: None,
                 arguments: None,
+                permission_level: None,
             },
         });
         assert_eq!(events.len(), 3);
@@ -726,6 +734,34 @@ mod tests {
     }
 
     #[test]
+    fn command_approval_data_carries_permission_level_only_when_set() {
+        use super::CommandApprovalData;
+
+        let body = |permission_level: Option<String>| CommandApprovalBody {
+            command: "git".into(),
+            args: "status --short".into(),
+            allowlist_key: Some("git".into()),
+            permission_level,
+        };
+
+        let with_level =
+            serde_json::to_value(CommandApprovalData::from(&body(Some("read".into()))))
+                .expect("CommandApprovalData 必须可序列化");
+        assert_eq!(
+            with_level.get("permissionLevel"),
+            Some(&serde_json::json!("read")),
+            "已接线等级时必须回传，弹窗才能显示「哪一档在请求越界」"
+        );
+
+        let without = serde_json::to_value(CommandApprovalData::from(&body(None)))
+            .expect("CommandApprovalData 必须可序列化");
+        assert!(
+            without.get("permissionLevel").is_none(),
+            "未接线等级的旧路径不得出现该键（旧客户端按键存在性解析不受影响）"
+        );
+    }
+
+    #[test]
     fn command_approval_data_wire_matches_previous_manual_json() {
         // 出站形状必须与历史手写 json! 完全一致：缺省 allowlistKey 序列化为 null（键保留）。
         for allowlist_key in [None, Some("curl".to_string())] {
@@ -733,6 +769,7 @@ mod tests {
                 command: "curl".into(),
                 args: "-sS https://example.com".into(),
                 allowlist_key: allowlist_key.clone(),
+                permission_level: None,
             };
             let expected = serde_json::json!({
                 "command": body.command,
