@@ -3,9 +3,6 @@
 //! 覆盖 `RunAgentTurnError` → 公共码 / HTTP 状态 / SSE 与 `ApiError` 分流，以及
 //! `http_api_constant` 文档对照（队列满、流任务消失等握手类码）。
 
-use std::fs;
-use std::path::PathBuf;
-
 use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
@@ -14,6 +11,7 @@ use crate::agent::agent_turn::host::errors::{
     AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason,
 };
 use crate::llm::{LlmCallError, LlmCompleteError};
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -21,10 +19,6 @@ struct GoldenLine {
     kind: String,
     case: Value,
     expect: Value,
-}
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn parse_phase(s: &str) -> AgentTurnSubPhase {
@@ -185,34 +179,28 @@ fn assert_http_api_constant(row: &GoldenLine, ctx: &str) {
 
 #[test]
 fn golden_http_sse_failure_path_turn_and_constants() {
-    let path = repo_root().join("fixtures/http_sse_failure_path_golden.jsonl");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let mut seen_turn = 0usize;
     let mut seen_const = 0usize;
-    for (line_no, line) in raw.lines().enumerate() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(t).unwrap_or_else(|e| {
-            panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
-        });
-        let ctx = format!("{}:{} ({})", path.display(), line_no + 1, row.id);
-        match row.kind.as_str() {
-            "turn" => {
-                assert_turn_case(&row, &ctx);
-                seen_turn += 1;
+    for_each_jsonl_record::<GoldenLine, _>(
+        "fixtures/http_sse_failure_path_golden.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            match row.kind.as_str() {
+                "turn" => {
+                    assert_turn_case(&row, &ctx);
+                    seen_turn += 1;
+                }
+                "http_api_constant" => {
+                    assert_http_api_constant(&row, &ctx);
+                    seen_const += 1;
+                }
+                "sse_protocol" => {
+                    // 由 `web/chat_handlers` 侧金样消费。
+                }
+                other => panic!("{ctx}: unknown kind {other}"),
             }
-            "http_api_constant" => {
-                assert_http_api_constant(&row, &ctx);
-                seen_const += 1;
-            }
-            "sse_protocol" => {
-                // 由 `web/chat_handlers` 侧金样消费。
-            }
-            other => panic!("{ctx}: unknown kind {other}"),
-        }
-    }
+        },
+    );
     assert!(seen_turn >= 10, "expected turn cases, got {seen_turn}");
     assert!(
         seen_const >= 3,

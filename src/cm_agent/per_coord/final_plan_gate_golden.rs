@@ -4,6 +4,7 @@ use crate::cm_agent::plan_rewrite::PlanRewriteExhaustedReason;
 use crate::cm_agent::plan_semantic::PlanSemanticLlmOutcome;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::{Message, MessageContent};
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
 use super::final_plan_gate::{
     FinalPlanGateArgs, FinalPlanGateEvent, FinalPlanGatePhase, FinalPlanGateRoute,
@@ -13,8 +14,6 @@ use super::final_plan_gate_context::{FinalPlanRequirePlanReason, build_final_pla
 use super::{AfterFinalAssistant, FinalPlanRequirementMode, PlanRequirementSource};
 
 use serde::Deserialize;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -22,10 +21,6 @@ struct GoldenLine {
     case: String,
     #[serde(flatten)]
     body: serde_json::Value,
-}
-
-fn line_ctx(path: &Path, line_no: usize, id: &str) -> String {
-    format!("{}:{} ({})", path.display(), line_no + 1, id)
 }
 
 fn body_str<'a>(body: &'a serde_json::Value, key: &str, ctx: &str) -> &'a str {
@@ -337,19 +332,11 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
 
 #[test]
 fn golden_final_plan_gate_lines_match_mappings() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("src/cm_agent/fixtures/final_plan_gate_golden.jsonl");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-
-    for (line_no, line) in raw.lines().enumerate() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(t).unwrap_or_else(|e| {
-            panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
-        });
-        let ctx = line_ctx(path.as_path(), line_no, &row.id);
-        assert_golden_line(&ctx, &row);
-    }
+    for_each_jsonl_record::<GoldenLine, _>(
+        "src/cm_agent/fixtures/final_plan_gate_golden.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            assert_golden_line(&ctx, &row);
+        },
+    );
 }

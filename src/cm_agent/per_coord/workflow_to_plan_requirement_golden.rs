@@ -2,10 +2,9 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
 
 use super::{FinalPlanRequirementMode, PerCoordinator, PerCoordinatorInit};
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -66,42 +65,34 @@ fn apply_step(c: &mut PerCoordinator, step: &Value, ctx: &str) {
 
 #[test]
 fn golden_workflow_to_plan_requirement() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("fixtures/workflow_to_plan_requirement_golden.jsonl");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-
-    for (line_no, line) in raw.lines().enumerate() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(t).unwrap_or_else(|e| {
-            panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
-        });
-        let ctx = format!("{}:{} ({})", path.display(), line_no + 1, row.id);
-        let mut c = pc(policy_from(&row.policy));
-        for step in &row.steps {
-            apply_step(&mut c, step, &ctx);
-        }
-        assert_eq!(
-            c.plan_requirement_source_label(),
-            row.expect.source.as_str(),
-            "{ctx}"
-        );
-        assert_eq!(
-            c.require_plan_in_final_flag_snapshot(),
-            row.expect.require_plan,
-            "{ctx}"
-        );
-        assert_eq!(
-            c.require_plan_reason_label(),
-            row.expect.require_plan_reason.as_str(),
-            "{ctx}"
-        );
-        assert_eq!(
-            c.gate_phase_label(),
-            row.expect.gate_phase.as_str(),
-            "{ctx}"
-        );
-    }
+    for_each_jsonl_record::<GoldenLine, _>(
+        "fixtures/workflow_to_plan_requirement_golden.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            let mut c = pc(policy_from(&row.policy));
+            for step in &row.steps {
+                apply_step(&mut c, step, &ctx);
+            }
+            assert_eq!(
+                c.plan_requirement_source_label(),
+                row.expect.source.as_str(),
+                "{ctx}"
+            );
+            assert_eq!(
+                c.require_plan_in_final_flag_snapshot(),
+                row.expect.require_plan,
+                "{ctx}"
+            );
+            assert_eq!(
+                c.require_plan_reason_label(),
+                row.expect.require_plan_reason.as_str(),
+                "{ctx}"
+            );
+            assert_eq!(
+                c.gate_phase_label(),
+                row.expect.gate_phase.as_str(),
+                "{ctx}"
+            );
+        },
+    );
 }
