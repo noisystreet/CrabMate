@@ -81,12 +81,24 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ---
 
+## Permission levels (`permission_level`)
+
+**Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices: **`docs/design/permission_levels.md`**. S1–S6 are in; the items below are the wrap-up.
+
+- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist, but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch, so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
+- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping; the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.
+- [ ] **L4 × MB-4 end-to-end test**: the confirm gate is only covered tool-side (`delete_files_requires_confirm` / `delete_dir_try_missing_confirm_is_invalid_input`); there is no case driving "still requires `confirm` / still gates dangerous argv" from `unrestricted` caps, and the planned `tests/permission_matrix.rs` was never created (the matrix is spread over `permission_tests` / `execute_allowlist_scope_tests` / `tests/workflow_permission_levels.rs`).
+- [ ] **R5: fold the three tool-visibility decisions into one**: design §17.5 says "not a prerequisite, open a separate PR"; S3 already routes everything through `caps`, so this is deduplication.
+- [ ] **Client (separate repo `crabmate-client`) S5d**: level selector (fed by `GET /permission`'s `available` / `clamped_by` / `ceiling_source`), the L4 second confirmation, and rendering the already-emitted `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel`; switching while idle must call `POST /conversation/state`, otherwise a refresh falls back to the old level.
+- [ ] **Finer-grained approval for disk-write tools**: extend `tool_approval::SensitiveCapability` and config keys if per-tool / per-operation granularity is needed (`run_command` / `http_fetch` / `http_request` / workflow approvals already go through `tool_approval`). The former "sensitive-operation tiers (continued)" item is now covered by this level system, so it was folded in here.
+
+---
+
 ## `tools/` and `tool_registry.rs`
 
 **Summary**: Table-driven `ToolSpec`, `run_tool`; workflow / timeouts / search policies in `tool_registry`.
 
 - [ ] Long-running tool execution: shared child session (process-group SIGTERM→SIGKILL, concurrent pipe drain); P0 host `run_command` + matching workflow nodes must reap; partial output in timeout envelopes; then `tool_output_chunk`; wall clocks by **tool name** and `timeout_secs`, not `ToolExecutionClass`. Details: **`docs/design/long_running_tool_execution_todo.md`**.
-- [ ] Extend sensitive-operation tiers and `tool_approval::SensitiveCapability` for disk writes if needed.
 - [ ] More stacks under `dev_tag` as needed (whitelist and path safety).
 - [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
 

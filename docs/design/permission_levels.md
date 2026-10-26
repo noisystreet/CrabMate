@@ -1,6 +1,13 @@
 # 工具权限等级（Permission Levels）：设计草案
 
-**状态**：S1–S6 全部落地（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级）。**仍未做**：Client（另仓 `crabmate-client`）侧等级选择器、`clamped_by` 文案与 L4 二次确认（S5d）。默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
+**状态**：**S1–S5c 已落地**（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级），**S6**（空闲态写入口 `POST /conversation/state`，§16.1.1）亦已落地。**仍未做**（逐条对应 §12 切片，勿把本节当“全绿”）：
+
+1. **S7 `PathScope::AllowedRoots`（§15 Q4）**：`cm_types::PathScope::AllowedRoots` 变体与 `as_str` 已在，但 `cm_agent::permission::project_caps` 只产出 `SessionRoot` / `Any`，`PathAccess` 也没有该分支——**投影与判定均未接线**，配置 `workspace_allowed_roots` 的多根放行因此仍不生效；
+2. **沙盒两轴（§6.4 / MB-6）**：`project_caps` 不读 `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，`PermissionClamp` 只有 `ceiling` / `role` / `session_mode`，**没有 `sandbox`**；`unrestricted` × Docker 的启动期「拒绝组合」亦未实现；
+3. **R5 工具可见性三处判定合一**（§17.5，原计划另开 PR）；
+4. **S5d 的 Client 部分**（另仓 `crabmate-client`）：等级选择器、`clamped_by` 文案、L4 二次确认，以及本仓已出站的 `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel` 的**渲染**。
+
+默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
 **受众**：维护者、安全评审、Client（Web / `crabmate-tui`）维护者。
 **语言**：中文。
 **维护**：实现或废弃某级能力时同步修订本文、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。
@@ -291,6 +298,14 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 L4 + 沙盒说不通（要宿主级就别进容器），处理方式是**拒绝组合**（启动期直接报错，二选一），而不是偷偷把 L4 降成 L2。因此 `clamped_by` 里的 `sandbox` **只在 `net_scope` 被收窄时出现**（典型：L3 + Docker + 未配网络名），不静默。
 
+**落地状态（未做）**：本节三件事在代码里都还找不到落点，登记在 [`docs/待办清单.md`](../待办清单.md) 的权限等级章：
+
+1. `cm_agent::permission::project_caps` **不读** `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，因此「未配网络名 → `net_scope = None`」当前不发生（投影出来的 `net_scope` 只由 `http_fetch_allowed_prefixes` 决定）；
+2. `PermissionClamp` 只有 `ceiling` / `role` / `session_mode` 三个取值，**没有 `sandbox`**，`clamped_by` 因此报不出沙盒钳制（MB-6 要求的可见性缺失）；
+3. `unrestricted` × Docker 的「启动期拒绝组合」未实现——即当前可以让 L4 配 Docker 沙盒启动，与本节「二选一」的设计不一致。
+
+在补上之前，**沙盒模式下的 `net_scope` 仍按配置原样投影**，运维不能依赖 `GET /permission` 判断容器是否真的断网。
+
 ---
 
 ## 7. `PermissionCaps` 投影
@@ -494,12 +509,12 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 | 编号 | 规则 |
 |---|---|
-| **MB-1** | 请求体 `permission_level` 只能是**降级**；> `min(ceiling, role cap)` 时钳制到上限，并在 SSE 时间线与 `tracing` **同时**记一条“请求等级被钳制”。禁止静默升级（本设计里不存在升级路径）。 |
+| **MB-1** | 请求体 `permission_level` 只能是**降级**；> `min(ceiling, role cap)` 时钳制到上限，**不静默**：由 `GET /permission` 的 `clamped_by` 对外解释。**落地修订**：早期草案要求「SSE 时间线与 `tracing` 同时记一条被钳制事件」，实现时已撤销该概念——`PermissionDecision` 刻意**没有** `clamped` 变体（钳制发生在 `resolve_permission_level_for_turn`，不属六轴任何一轴），审计事件只记 `allowed` / `denied` / `approved`；授权面本身也已无提权路径（见 §6.1）。 |
 | **MB-2** | `permission_level_max` 只来自服务端（显式 TOML / `CM_PERMISSION_LEVEL_MAX` / §5.1 的启动期推导）。**不得**加入 `/chat` 请求体、`client_llm`、`saved_model_*` 或任何客户端可控槽位。`POST /config/reload` 可**降**（即时生效）不可**升**（启动期冻结，实现形态见 §9.1）。 |
 | **MB-3** | 非 loopback 绑定时 **ceiling 推导值固定为 `approved`**（不因“没配”而变 `unrestricted`）；若**显式**配置 `permission_level_max = "unrestricted"` 而缺少 `CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`，则**启动失败**。共享 Bearer 的 Web 部署不得默认拿到 L4。 |
 | **MB-4** | **L4 不免除不可逆操作确认**：工具级默认见 `permission_confirm_tools`（`["delete_dir", "delete_files"]`）；`run_command` 的危险 argv（`git reset --hard` / `git push --force`）由 policy 单独判定。L4 只免除“路径与命令白名单”，不免除“删库确认”。 |
 | **MB-5** | **审计必须脱敏**：L4 的 argv / URL 审计走 `src/cm_tools/redact.rs`，不得原样落日志（AGENTS.md → Secrets & logging 为硬约束）。 |
-| **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。 |
+| **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。**当前未落地**（§6.4 末尾「落地状态」）：`project_caps` 不读沙盒配置、`PermissionClamp` 无 `sandbox`，故这条规则今天是**待实现**而非既有保证。 |
 | **MB-7** | **L0 不得被绕过**：即便 `tools` 数组为空，执行侧仍有 early-deny（§8.1）；两层都生效，防止模型伪造 `tool_calls` 直穿。 |
 | **MB-8** | **二级执行面不得回读 cfg**：`workflow_execute` 节点、MCP 代理、动态工具的能力参数必须来自 `caps`，禁止在 `cm_workflow` / `cm_mcp` 里重新从 `AgentConfig` 取 `allowed_commands` / `http_fetch_allowed_prefixes`——否则 L2 的“硬边界”只是第一层装饰。 |
 
@@ -570,8 +585,9 @@ dst.permission.permission_level_max =
 | **S5a** | `GET /permission` 只读投影（§16.2，含 `?agent_role=`）+ OpenAPI + `docs/命令行与路由.md` | 无 | ✅ |
 | **S5b** | `POST /chat` 的 `permission_level`（含 `chat_keys` 字母序）+ `GET /conversation/messages` 的 `active` / `effective` 双字段（§16.1） | 客户端不传时无变化 | ✅ |
 | **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |
-| **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
-| **S6** | 可选 `PathScope::AllowedRoots`（见 §15 Q4） | 仅显式配置多根时 | ✅ |
+| **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步（见 §14 状态列）；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
+| **S6** | 空闲态写入口 `POST /conversation/state`（§16.1.1；编号原与 S5d 并行，规划期未列在本表，落地时占用 S6） | 空闲态切档立即生效，不必等下一轮 `/chat` 顺带 | ✅ |
+| **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ❌ **未落地**：`cm_types::PathScope::AllowedRoots` 变体已在，但 `project_caps` 不产出它、`PathAccess` 无该分支（见 §17.5 停止条件） |
 
 排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
 
@@ -587,7 +603,8 @@ dst.permission.permission_level_max =
 | 集成 | `tool_policy_early_deny_message` 在 L0/L1/L3/L4 × `read_file`/`run_command`/`http_request` 的 12 组矩阵 |
 | 集成 | `evaluate_policy` 在 L2（未命中→`Denied`，无审批弹窗）/ L3（逐字等价现状）/ L4（`Any`，永不弹窗）—— 直接扩 `execute_run_command_gate_tests.rs` |
 | 集成 | `resolve_for_read` / `resolve_for_write` 在 `PathScope::Any` 下接受绝对路径与 `..`；L2 下仍拒（现有断言保留不动） |
-| 安全 | `tests/permission_matrix.rs`：`ceiling` 钳制、非 loopback 启动校验（MB-3）、allowlist 等级作用域不跨级命中（§6.3）、L4 仍触发 MB-4 确认 |
+| 安全 | **原计划的 `tests/permission_matrix.rs` 未按该文件名建立**（现状如实）：同一条矩阵目前分散在——`cm_config::permission::tests::{derives_ceiling_by_deployment_shape, non_loopback_unrestricted_requires_explicit_switch, reload_only_lowers_the_ceiling}`（ceiling 推导 / 热重载只降 / MB-3 启动校验）、`cm_agent::permission_tests::{request_above_ceiling_is_clamped, persisted_intent_is_reclamped_against_new_ceiling}`（钳制与持久值重算）、`cm_internal::tool_registry::execute::execute_allowlist_scope_tests::allow_always_key_does_not_cross_permission_levels`（`l{n}|` 键不跨级命中：L3 批过的命令在 L2 落硬拒、不留裸键）、`tests/workflow_permission_levels.rs`（二级执行面：L2 硬拒 / L4 `AuditOnly`） |
+| 安全 | **仍缺的用例**：① **L4 × MB-4** ——「`unrestricted` 下 `delete_files` / `delete_dir` 仍要求 `confirm`、`git reset --hard` 仍触发危险 argv 门」今天只由工具侧 `delete_files_requires_confirm` / `delete_dir_try_missing_confirm_is_invalid_input` 覆盖确认门**本身**，**没有**以 L4 caps 驱动整链的用例；② **沙盒两轴**（`net_scope` 收窄、`clamped_by` 含 `sandbox`）因功能未落地而无从测（§6.4「落地状态」） |
 | 单元 | **ceiling 推导三态**：`bind_ip.is_loopback()` → `unrestricted`；非 loopback → `approved`；显式配置时 → `config`（`ceiling_source` 随之变化） |
 | 集成 | `GET /permission?agent_role=<id>` 的 `available` 随角色 cap 收窄；缺省用 `default_agent_role_id` |
 | 安全 | **L1 不依赖 `is_readonly_tool`**：故意配置 `tool_registry_write_effect_tools` 漏掉 `run_command` 后，L1 仍须拒它（防性能开关变安全开关） |
@@ -597,16 +614,26 @@ dst.permission.permission_level_max =
 
 ---
 
-## 14. 文档同步清单（AGENTS.md 硬要求，实现时逐条勾）
+## 14. 文档同步清单（AGENTS.md 硬要求）
 
-- [ ] `README.md`：新增权限等级速查（默认值、如何开 L4、非 loopback 的额外开关）。
-- [ ] `docs/配置说明.md`：新增「权限等级」小节，位置紧邻「会话工作模式（`session_mode`）」；逐键写默认值与生效顺序。
-- [ ] `docs/工具说明.md`：`run_command` / `terminal_session` / `read_file` / `write` / `read_dir` / `http_fetch` / `http_request` 的“行为随等级变化”段落。
-- [ ] `docs/开发文档.md`：新增 `src/cm_agent/permission.rs` 与 `cm_types/permission_level.rs` 触发「主要模块」表更新；若 `RunLoopAttach` 字段增加导致执行面数据流变化，同步「架构设计」小节。
-- [ ] `docs/命令行与路由.md`：`POST /chat*` 新增 `permission_level`；`GET /conversation/messages` 新增 `active_permission_level` / `effective_permission_level`；新增 `GET /permission`；`GET /status?view=shell` 新增两个默认值字段。
-- [ ] `src/web/openapi/openapi_paths.rs` + `fixtures/status_shell_view_golden.json`：新端点与 `StatusShellView` 新字段必须同步 OpenAPI 与 golden（该结构带 `deny_unknown_fields`，不改 golden 会直接红）。
-- [ ] `docs/SSE协议.md`：仅当采纳独立审计事件时（§11）。
-- [ ] `docs/待办清单.md`：与第 105 条「危险操作分级与确认」、第 141 条「多 profile」合并；实现完成后删除这两条（不要留 `- [x]`）。
+状态口径：✅ = 中文文档已同步（如为「测试锁住」而未跑测试，会在备注里写明依据）；⏳ = 仍缺。
+
+| 项 | 状态 | 落点 / 备注 |
+|---|---|---|
+| `README.md`：权限等级速查（默认值、如何开 L4、非 loopback 的额外开关） | ✅ | 「Permission levels」段，含 S1–S6 进度与 `POST /conversation/state` |
+| `docs/配置说明.md`：新增「权限等级」小节（紧邻 `session_mode`），逐键写默认值与生效顺序 | ✅ | 「权限等级（`permission_level`：L0–L4）」小节 |
+| `docs/工具说明.md`：`run_command` / `terminal_session` / `read_file` / `write` / `read_dir` / `http_fetch` / `http_request` 的「行为随等级变化」段落 | ✅ | 以**独立小节**「权限等级对各工具的影响」呈现（不拆进 7 个工具的超长条目）：一张五档对照表 + 各工具落点，见该文「内置工具」之后 |
+| `docs/开发文档.md`：「主要模块」表新增 `cm_agent/permission.rs`、`cm_types/permission_level.rs`、`web/permission/`；必要时同步「架构设计」 | ✅ | 「主要模块」表新增「权限等级（`permission_levels`）」行；`web/` 行补 `GET /permission` 与 `POST /conversation/state` |
+| `docs/命令行与路由.md`：`POST /chat*` 的 `permission_level`；`GET /conversation/messages` 的 `active_` / `effective_permission_level`；`GET /permission`；`POST /conversation/state`；`GET /status?view=shell` 两个默认值；`GET /tools` 的 `available_at_level` | ✅ | 路由表逐条 |
+| `src/web/openapi/openapi_paths.rs` + `fixtures/status_shell_view_golden.json` | ✅ | 由 `openapi_ops_match_axum_route_source` / `openapi_docs_snapshot_matches_spec` 与 `StatusShellView` 的 `deny_unknown_fields` 锁住（**依据为文档记载与测试存在，撰写本表时未跑测试**） |
+| `docs/SSE协议.md`：仅当采纳独立审计事件时（§11） | ✅（不适用） | 未采纳独立事件，两处展示字段已写进既有条目：`TOOL_CALL_START.permissionLevel`、`command_approval` 的 `permissionLevel` |
+| `docs/待办清单.md`：与「危险操作分级与确认」「多 profile」合并，实现后删除 | ✅ | 「危险操作分级与确认（续）」已删（主体由本文覆盖，残余转入待办清单的**权限等级**章）；「多 profile」**保留**——它还包括成套命名预设与切换入口，不等于六轴，删掉会丢需求 |
+
+| 补充项（本表未列、但同属文档面） | 状态 | 备注 |
+|---|---|---|
+| 本文档头部状态行与 §12 切片编号 | ✅ | 已如实区分 S1–S5c / S6（`POST /conversation/state`）/ **S7（`AllowedRoots`，未落地）**，不再写「S1–S6 全部落地」 |
+| `docs/design/README.md` 索引描述 | ✅ | 改为「已落地 S1–S6；S7 / 沙盒两轴 / Client S5d 未做」 |
+| `docs/en/`（英文镜像） | ✅ | `CONFIGURATION.md` 新增 Permission levels 小节；`TOOLS.md` 新增等级影响段；`CLI.md` 补 `/permission` 与 `/conversation/state`；`TODOLIST.md` 补剩余项 |
 
 ---
 
@@ -617,7 +644,7 @@ dst.permission.permission_level_max =
 | **Q1** | 默认等级是否在**新装**环境从 `approved` 改为 `workspace`？ | **已结案**：保持 `approved`（= 现状）；“更安全”诉求由显式 `permission_level_max = "workspace"` 表达，不动默认等级 |
 | **Q2** | L4 是否允许出现在 Web？ | **已结案**：loopback 默认允许（推导 `unrestricted`，客户端可自由切）；非 loopback 需显式配置 + `CM_ALLOW_…` 开关（§5.3 / MB-3） |
 | **Q3** | `session_mode` 是否折进等级？ | **已结案：不折**（§4.3）。二者职责不同（一个决定提示词附录与编排姿态，一个决定能力天花板），`min()` 组合足够 |
-| **Q4** | 是否实现 `PathScope::AllowedRoots`（S6）？ | **已结案：做**（S6）。能直接消掉 `../crabmate-client` 兄弟仓每次都要审批（AGENTS.md 明确要求本地同级仓）的摩擦 |
+| **Q4** | 是否实现 `PathScope::AllowedRoots`（S7，原编号 S6）？ | **已结案：做**（S7），但**尚未落地**：能直接消掉 `../crabmate-client` 兄弟仓每次都要审批（AGENTS.md 明确要求本地同级仓）的摩擦，因此仍是待办而非可删项（见 [`docs/待办清单.md`](../待办清单.md) 的权限等级章） |
 | **Q5** | L4 下是否保留 `permission_deny_system_paths`？ | **默认清空**（§8.3）：`unrestricted` 名实要相符；加固由运维显式填写 |
 | **Q6** | `AllowAlways` 的等级作用域用前缀键还是结构化元组存储？ | **已结案：前缀键**（§6.3），作为**第一优先级方案**：沿用现有 `HashSet<String>`，不加新类型、不改序列化、不动调用方签名；集合是内存态，零迁移 |
 | **Q7** | `GET /tools` 用每项 `available_at_level: bool`，还是 `?permission_level=` 过滤？ | **已结案：`available_at_level: bool`**（§16.4）：`GET /tools` 是“枚举 + 策略投影”，不是“本回合可用集” |
