@@ -38,6 +38,11 @@ pub const INVALID_SESSION_MODE: &str = "INVALID_SESSION_MODE";
 pub const INVALID_AGENT_ROLE: &str = "INVALID_AGENT_ROLE";
 /// `POST /conversation/state` 没给任何字段（空 patch）。
 pub const EMPTY_CONVERSATION_STATE_PATCH: &str = "EMPTY_CONVERSATION_STATE_PATCH";
+/// 会话存储写入失败（锁中毒 / SQLite 报错 / 阻塞任务崩溃）。
+///
+/// 与 [`CONVERSATION_NOT_FOUND`] 分开：库故障不能伪装成「会话不存在」，
+/// 否则磁盘满、库锁住会被误判成客户端传错了 id。
+pub const CONVERSATION_STORE_ERROR: &str = "CONVERSATION_STORE_ERROR";
 /// 会话不存在。
 pub const CONVERSATION_NOT_FOUND: &str = "CONVERSATION_NOT_FOUND";
 /// 会话 revision 未知。

@@ -33,7 +33,11 @@ pub(super) fn openapi_paths_fragment_conversation_state() -> Value {
                         "description": "参数错误：INVALID_CONVERSATION_ID / INVALID_PERMISSION_LEVEL / INVALID_SESSION_MODE / INVALID_AGENT_ROLE / EMPTY_CONVERSATION_STATE_PATCH",
                         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } }
                     },
-                    "404": { "description": "会话不存在或已过期（CONVERSATION_NOT_FOUND）" }
+                    "404": { "description": "会话不存在或已过期（CONVERSATION_NOT_FOUND）" },
+                    "500": {
+                        "description": "会话存储写入失败（CONVERSATION_STORE_ERROR）：锁中毒 / SQLite 报错 / 阻塞任务崩溃。刻意不伪装成 404，否则磁盘满会被误判成「会话不存在」",
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } }
+                    }
                 }
             }
         },
