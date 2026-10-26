@@ -41,3 +41,7 @@ pub mod cm_types;
 
 #[cfg(feature = "server")]
 include!("lib_server.rs");
+
+/// 金样 fixture 的公共读取工具（仅测试编译）。
+#[cfg(test)]
+mod test_fixtures;

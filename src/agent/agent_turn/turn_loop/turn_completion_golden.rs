@@ -5,10 +5,9 @@ use super::{
     evaluate_turn_suppress_replanning,
 };
 use crate::agent::plan_artifact::PlanStepV1;
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde::Deserialize;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -27,10 +26,6 @@ struct GoldenLine {
     #[serde(default)]
     #[allow(dead_code)]
     via: Option<String>,
-}
-
-fn line_ctx(path: &Path, line_no: usize, id: &str) -> String {
-    format!("{}:{} ({})", path.display(), line_no + 1, id)
 }
 
 fn msg(role: &str, text: &str) -> Message {
@@ -149,21 +144,13 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
     }
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 #[test]
 fn golden_turn_completion_lines_match_decisions() {
-    let path = repo_root().join("fixtures/turn_completion_golden.jsonl");
-    let text = fs::read_to_string(&path).expect("read golden");
-    for (line_no, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(trimmed).expect("parse golden line");
-        let ctx = line_ctx(&path, line_no, &row.id);
-        assert_golden_line(&ctx, &row);
-    }
+    for_each_jsonl_record::<GoldenLine, _>(
+        "fixtures/turn_completion_golden.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            assert_golden_line(&ctx, &row);
+        },
+    );
 }

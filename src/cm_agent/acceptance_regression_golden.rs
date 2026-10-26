@@ -1,8 +1,6 @@
 //! 验收规则金样回归：`fixtures/acceptance_regression.jsonl`。
 
 use serde::Deserialize;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 use crate::cm_agent::acceptance::{
     AcceptanceEvidence, AcceptanceSpec, ExitCodePolicy, FileResolveKind, VerifyOutcome,
@@ -10,6 +8,7 @@ use crate::cm_agent::acceptance::{
     parse_exit_code_from_combined_output, verify_against_spec,
 };
 use crate::cm_agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -17,10 +16,6 @@ struct GoldenLine {
     case: String,
     #[serde(flatten)]
     body: serde_json::Value,
-}
-
-fn line_ctx(path: &Path, line_no: usize, id: &str) -> String {
-    format!("{}:{} ({})", path.display(), line_no + 1, id)
 }
 
 fn body_str<'a>(body: &'a serde_json::Value, key: &str, ctx: &str) -> &'a str {
@@ -165,19 +160,11 @@ fn assert_golden_acceptance_line(ctx: &str, row: &GoldenLine) {
 
 #[test]
 fn golden_acceptance_regression_matches_rules() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("fixtures/acceptance_regression.jsonl");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-
-    for (line_no, line) in raw.lines().enumerate() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(t).unwrap_or_else(|e| {
-            panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
-        });
-        let ctx = line_ctx(path.as_path(), line_no, &row.id);
-        assert_golden_acceptance_line(&ctx, &row);
-    }
+    for_each_jsonl_record::<GoldenLine, _>(
+        "fixtures/acceptance_regression.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            assert_golden_acceptance_line(&ctx, &row);
+        },
+    );
 }

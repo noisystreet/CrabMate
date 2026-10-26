@@ -4,10 +4,9 @@ use crate::agent::agent_turn::policy::{
     AssessTurnRoutingParams, TurnRouteDecisionV1, TurnRouteDriver, TurnStartSnapshot,
     assess_turn_routing,
 };
+use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 use serde::Deserialize;
 use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -60,44 +59,36 @@ fn assert_freeform_because(decision: &TurnRouteDecisionV1, expect: &Value, ctx: 
 
 #[test]
 fn golden_turn_route_decision() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("fixtures/turn_route_decision_golden.jsonl");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    for_each_jsonl_record::<GoldenLine, _>(
+        "fixtures/turn_route_decision_golden.jsonl",
+        |path, line_no, row| {
+            let ctx = line_ctx(path, line_no, &row.id);
+            let cfg = default_cfg();
+            let turn_start = parse_turn_start(&row.turn_start);
 
-    for (line_no, line) in raw.lines().enumerate() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
-            continue;
-        }
-        let row: GoldenLine = serde_json::from_str(t).unwrap_or_else(|e| {
-            panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
-        });
-        let ctx = format!("{}:{} ({})", path.display(), line_no + 1, row.id);
-        let cfg = default_cfg();
-        let turn_start = parse_turn_start(&row.turn_start);
+            let assessed = assess_turn_routing(AssessTurnRoutingParams {
+                cfg: &cfg,
+                turn_start: turn_start.clone(),
+            });
+            let decision = &assessed.decision;
 
-        let assessed = assess_turn_routing(AssessTurnRoutingParams {
-            cfg: &cfg,
-            turn_start: turn_start.clone(),
-        });
-        let decision = &assessed.decision;
-
-        assert_eq!(decision.version, 1, "{ctx}");
-        assert_eq!(
-            decision.orchestration_mode, row.expect.orchestration_mode,
-            "{ctx}"
-        );
-        assert_freeform_because(
-            decision,
-            &row.expect.react_because.clone().unwrap_or(Value::Null),
-            &ctx,
-        );
-        if let Some(driver) = &row.expect.driver {
-            match driver.as_str() {
-                "react" => assert!(matches!(assessed.driver, TurnRouteDriver::ReAct), "{ctx}"),
-                other => panic!("{ctx}: unknown driver expect {other}"),
+            assert_eq!(decision.version, 1, "{ctx}");
+            assert_eq!(
+                decision.orchestration_mode, row.expect.orchestration_mode,
+                "{ctx}"
+            );
+            assert_freeform_because(
+                decision,
+                &row.expect.react_because.clone().unwrap_or(Value::Null),
+                &ctx,
+            );
+            if let Some(driver) = &row.expect.driver {
+                match driver.as_str() {
+                    "react" => assert!(matches!(assessed.driver, TurnRouteDriver::ReAct), "{ctx}"),
+                    other => panic!("{ctx}: unknown driver expect {other}"),
+                }
             }
-        }
-        assert!(decision.to_json().expect("json").contains("\"version\":1"));
-    }
+            assert!(decision.to_json().expect("json").contains("\"version\":1"));
+        },
+    );
 }
