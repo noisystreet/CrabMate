@@ -185,11 +185,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
             args: "{\"text\":\"{\\\"a\\\":1}\"}",
             tc: &tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: std::path::Path::new("."),
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(std::path::Path::new(".")),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
@@ -243,11 +239,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
             args: "{\"text\":\"{\\\"a\\\":1}\"}",
             tc: &tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: std::path::Path::new("."),
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(std::path::Path::new(".")),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
@@ -302,11 +294,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
             args: r#"{"url":"https://example.com/x"}"#,
             tc: &tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: std::path::Path::new("."),
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(std::path::Path::new(".")),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
@@ -368,11 +356,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             args: start_args,
             tc: &start_tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: wd,
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(wd),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
@@ -443,11 +427,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             args: &status_args,
             tc: &status_tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: wd,
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(wd),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
@@ -496,11 +476,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
             args: r#"{"action":"list"}"#,
             tc: &list_tc,
         },
-        workspace: DispatchToolWorkspace {
-            effective_working_dir: wd,
-            workspace_is_set: true,
-            workspace_changelist: None,
-        },
+        workspace: DispatchToolWorkspace::for_tests(wd),
         policy: DispatchToolPolicy {
             cfg: &cfg,
             turn_allow: None,
