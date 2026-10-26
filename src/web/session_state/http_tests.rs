@@ -228,3 +228,83 @@ async fn conversation_state_reports_missing_conversation_as_404() {
     let body: serde_json::Value = resp.json().await.expect("error json");
     assert_eq!(body["code"], "CONVERSATION_NOT_FOUND");
 }
+
+/// 未知 `session_mode` / 未知 `agent_role` 都必须 400：静默回落会让「顶部开关没生效」无从排查。
+#[tokio::test]
+async fn conversation_state_rejects_bad_session_mode_and_unknown_role() {
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+    let cid = "conv_state_smoke_5";
+    seed_conversation(&handle, cid).await;
+
+    let bad_mode = client
+        .post(format!("{}/conversation/state", handle.base_url))
+        .json(&serde_json::json!({ "conversation_id": cid, "session_mode": "yolo" }))
+        .send()
+        .await
+        .expect("POST /conversation/state");
+    assert_eq!(bad_mode.status(), reqwest::StatusCode::BAD_REQUEST);
+    let bad_mode_body: serde_json::Value = bad_mode.json().await.expect("error json");
+    assert_eq!(bad_mode_body["code"], "INVALID_SESSION_MODE");
+
+    // 没人会配这个名字的角色；若本机 config.toml 恰好同名，本用例会在 200 上失败并提示改 id。
+    let bad_role = client
+        .post(format!("{}/conversation/state", handle.base_url))
+        .json(&serde_json::json!({
+            "conversation_id": cid,
+            "agent_role": "__crabmate_no_such_role__"
+        }))
+        .send()
+        .await
+        .expect("POST /conversation/state");
+    assert_eq!(bad_role.status(), reqwest::StatusCode::BAD_REQUEST);
+    let bad_role_body: serde_json::Value = bad_role.json().await.expect("error json");
+    assert_eq!(bad_role_body["code"], "INVALID_AGENT_ROLE");
+}
+
+/// 缺 `conversation_id` 必须是本端点的 **400 `INVALID_CONVERSATION_ID`**，而不是 axum 的 422：
+/// 契约层用 `Option<String>` 接住缺字段，避免「参数错误」长出第二种错误体。
+#[tokio::test]
+async fn conversation_state_missing_conversation_id_is_400() {
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+    let resp = client
+        .post(format!("{}/conversation/state", handle.base_url))
+        .json(&serde_json::json!({ "permission_level": "read" }))
+        .send()
+        .await
+        .expect("POST /conversation/state");
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = resp.json().await.expect("error json");
+    assert_eq!(body["code"], "INVALID_CONVERSATION_ID");
+}
+
+/// 配置里**有**命名角色时，`agent_role` 也要能落库并原样回显（等级 / 模式已有各自的用例）。
+///
+/// 角色从启动配置里取而非写死：`start_test_serve` 会合并本机 `~/.config/crabmate/config.toml`，
+/// 钉死某个 id 会让测试在别的开发机上翻车；配置里一个角色都没有时直接跳过。
+#[tokio::test]
+async fn conversation_state_writes_agent_role_when_configured() {
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+    let cid = "conv_state_smoke_6";
+    seed_conversation(&handle, cid).await;
+
+    let role = {
+        let cfg = handle.state.http.cfg.read().await;
+        cfg.roles_prompts.agent_roles.keys().next().cloned()
+    };
+    let Some(role) = role else {
+        return;
+    };
+
+    let resp = client
+        .post(format!("{}/conversation/state", handle.base_url))
+        .json(&serde_json::json!({ "conversation_id": cid, "agent_role": role }))
+        .send()
+        .await
+        .expect("POST /conversation/state");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.expect("state json");
+    assert_eq!(body["active_agent_role"], role.as_str());
+}

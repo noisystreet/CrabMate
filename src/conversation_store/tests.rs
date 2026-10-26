@@ -137,8 +137,6 @@ fn save_load_active_permission_level_roundtrip() {
     assert_eq!(loaded2.active_permission_level, "read");
 }
 
-
-
 /// 旧库（S5b 之前创建、无该列）在 `migrate` 后必须能读写该列。
 #[test]
 fn migrate_adds_active_permission_level_column_to_legacy_table() {
