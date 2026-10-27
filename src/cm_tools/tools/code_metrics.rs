@@ -8,20 +8,23 @@ use super::tool_param_types::{
     CodeStatsArgs, CodeStatsFormat, CoverageReportArgs, CoverageReportFormat,
 };
 use crate::cm_tools::project_metrics;
+use crate::cm_tools::tool_result::ToolError;
 
 pub(super) const MAX_OUTPUT_LINES: usize = 600;
 
 // ── code_stats：代码行数统计 ────────────────────────────────
 
-pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: CodeStatsArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 code_stats 形状不一致: {e}"),
-    };
+/// 参数 JSON 形状不符 / 路径非法 / 路径不存在统一归 `invalid_args`；
+/// 「该路径下没有源码文件」属**合法答案**，仍返回 `Ok`（模型可据此换路径）。
+#[allow(clippy::result_large_err)]
+pub fn code_stats_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let args: CodeStatsArgs = serde_json::from_value(v)
+        .map_err(|e| ToolError::invalid_args(format!("参数 JSON 与 code_stats 形状不一致: {e}")))?;
     let path = args
         .path
         .as_deref()
@@ -29,11 +32,16 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
     if path.contains("..") || path.starts_with('/') {
-        return "错误：path 不安全（禁止 .. 与绝对路径）".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：path 不安全（禁止 .. 与绝对路径）".to_string(),
+        ));
     }
     let target = workspace_root.join(path);
     if !target.exists() {
-        return format!("错误：路径 {} 不存在", path);
+        return Err(ToolError::invalid_args(format!(
+            "错误：路径 {} 不存在",
+            path
+        )));
     }
 
     let format = match args.format.unwrap_or_default() {
@@ -46,13 +54,13 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         project_metrics::DEFAULT_EXCLUDED_DIRS,
     );
     if stats.languages.is_empty() {
-        return format!("路径 {} 下未找到可识别的源码文件", path);
+        return Ok(format!("路径 {} 下未找到可识别的源码文件", path));
     }
 
     if format == "json" {
-        return format_code_stats_json(&stats, max_output_len);
+        return Ok(format_code_stats_json(&stats, max_output_len));
     }
-    format_code_stats_table(&stats, path, max_output_len)
+    Ok(format_code_stats_table(&stats, path, max_output_len))
 }
 
 fn format_code_stats_json(stats: &project_metrics::WorkspaceCodeStats, max_output_len: usize) -> String {
@@ -131,27 +139,32 @@ fn format_code_stats_table(
 #[path = "code_metrics_dependency_graph.rs"]
 mod code_metrics_dependency_graph;
 
-pub use code_metrics_dependency_graph::dependency_graph;
+pub use code_metrics_dependency_graph::dependency_graph_try;
 
 // ── coverage_report：覆盖率报告解析 ────────────────────────
 
-pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: CoverageReportArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 coverage_report 形状不一致: {e}"),
-    };
+/// 参数/路径问题归 `invalid_args`，读盘失败归 `coverage_report_io_failed`；
+/// 「自动检测未找到覆盖率文件」属**合法答案**，仍返回 `Ok`。
+#[allow(clippy::result_large_err)]
+pub fn coverage_report_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let args: CoverageReportArgs = serde_json::from_value(v).map_err(|e| {
+        ToolError::invalid_args(format!("参数 JSON 与 coverage_report 形状不一致: {e}"))
+    })?;
     let path = match args.path.as_deref().map(str::trim) {
         Some(p) if !p.is_empty() => p.to_string(),
         _ => {
-            return auto_detect_coverage(workspace_root, max_output_len);
+            return Ok(auto_detect_coverage(workspace_root, max_output_len));
         }
     };
     if path.contains("..") || path.starts_with('/') {
-        return "错误：path 不安全（禁止 .. 与绝对路径）".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：path 不安全（禁止 .. 与绝对路径）".to_string(),
+        ));
     }
 
     let format = coverage_format_str(args.format.unwrap_or_default());
@@ -159,15 +172,26 @@ pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: u
 }
 
 /// 读取覆盖率文件并按格式解析；未知格式时输出前 50 行预览。
-fn run_coverage_parse(path: &str, full: &Path, format: &str, max_output_len: usize) -> String {
+#[allow(clippy::result_large_err)]
+fn run_coverage_parse(
+    path: &str,
+    full: &Path,
+    format: &str,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
     if !full.is_file() {
-        return format!("错误：覆盖率文件 {} 不存在", path);
+        return Err(ToolError::invalid_args(format!(
+            "错误：覆盖率文件 {} 不存在",
+            path
+        )));
     }
 
-    let content = match std::fs::read_to_string(full) {
-        Ok(c) => c,
-        Err(e) => return format!("读取覆盖率文件失败：{}", e),
-    };
+    let content = std::fs::read_to_string(full).map_err(|e| {
+        ToolError::external_code(
+            "coverage_report_io_failed",
+            format!("读取覆盖率文件失败：{}", e),
+        )
+    })?;
 
     let actual_format = if format != "auto" {
         format.to_string()
@@ -176,13 +200,13 @@ fn run_coverage_parse(path: &str, full: &Path, format: &str, max_output_len: usi
     };
 
     if let Some(result) = parse_coverage_by_format(&actual_format, &content, max_output_len) {
-        return result;
+        return Ok(result);
     }
     let preview = output_util::truncate_output_lines(&content, max_output_len / 2, 50);
-    format!(
+    Ok(format!(
         "覆盖率文件 {}（格式：{}）前 50 行：\n{}",
         path, actual_format, preview
-    )
+    ))
 }
 
 fn coverage_format_str(format: CoverageReportFormat) -> &'static str {
