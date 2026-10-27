@@ -46,14 +46,12 @@ pub use file::canonical_workspace_root;
 pub(crate) use file::resolve_for_read_open;
 // 审计正文的路径截断：`cm_internal` 的 `read_dir` 工作区外审批也要用它，避免各写一份。
 pub(crate) use file::audit_path_detail;
-mod frontend_tools;
 mod git;
 mod github_cli;
 mod grep_try;
 #[cfg(feature = "web-fetch-tools")]
 pub mod http_fetch;
 mod json_format;
-mod lint;
 mod markdown_links;
 pub mod output_util;
 mod parse_args;
@@ -76,7 +74,6 @@ mod table_text;
 mod test_result_cache;
 #[cfg(feature = "diff-tools")]
 mod text_diff;
-mod text_transform;
 #[cfg(feature = "schema-tools")]
 mod tool_args_validate;
 mod tool_json_schema;

@@ -45,7 +45,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "glob_files"
         | "list_tree"
         | "read_binary_meta"
-        | "hash_file"
         | "apply_patch"
         | "search_in_files"
         | "codebase_semantic_search"
@@ -54,8 +53,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "delete_dir"
         | "append_file"
         | "create_dir"
-        | "search_replace"
-        | "chmod_file" => &[GENERAL],
+        | "search_replace" => &[GENERAL],
         "structured_validate"
         | "structured_query"
         | "structured_diff"
@@ -85,7 +83,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "repo_overview_sweep" | "crate_contract_map" | "docs_health_sweep" => {
             &[GENERAL, QUALITY]
         }
-        "run_lints" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
 

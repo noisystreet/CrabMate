@@ -18,37 +18,6 @@ pub struct WebSearchArgs {
     pub proxy: Option<String>,
 }
 
-/// [`super::regex_test::run`] 入参。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TextTransformOp {
-    Base64Encode,
-    Base64Decode,
-    UrlEncode,
-    UrlDecode,
-    HashShort,
-    LinesJoin,
-    LinesSplit,
-}
-
-/// `hash_short` 所用算法。
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum TextTransformHashAlgo {
-    #[default]
-    Sha256,
-}
-
-/// [`super::text_transform::run_try`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct TextTransformArgs {
-    pub op: TextTransformOp,
-    pub text: String,
-    pub delimiter: Option<String>,
-    #[serde(default)]
-    pub hash_algo: Option<TextTransformHashAlgo>,
-}
 
 /// [`super::regex_test::run`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

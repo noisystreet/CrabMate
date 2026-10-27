@@ -232,50 +232,6 @@ fn test_read_binary_meta_skip_hash() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[test]
-fn test_hash_file_sha256_empty() {
-    let dir = make_test_dir();
-    let file = dir.join("empty.dat");
-    std::fs::write(&file, []).unwrap();
-    let out = out_str(hash_file_try(
-        r#"{"path":"empty.dat","algorithm":"sha256"}"#,
-        &super::PathAccess::new(&dir),
-    ));
-    assert!(out.contains("digest_hex:"), "{}", out);
-    assert!(out.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn test_hash_file_sha256_prefix() {
-    let dir = make_test_dir();
-    let file = dir.join("p.bin");
-    std::fs::write(&file, b"hello world").unwrap();
-    let full = out_str(hash_file_try(
-        r#"{"path":"p.bin","algorithm":"sha256"}"#,
-        &super::PathAccess::new(&dir),
-    ));
-    let prefix = out_str(hash_file_try(
-        r#"{"path":"p.bin","algorithm":"sha256","max_bytes":5}"#,
-        &super::PathAccess::new(&dir),
-    ));
-    assert!(full.contains("digest_hex:"), "{}", full);
-    assert!(prefix.contains("hashed_bytes: 5"), "{}", prefix);
-    assert_ne!(
-        line_digest(&full),
-        line_digest(&prefix),
-        "整文件与前缀哈希应不同"
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-
-fn line_digest(out: &str) -> String {
-    out.lines()
-        .find(|l| l.starts_with("digest_hex:"))
-        .unwrap_or("")
-        .to_string()
-}
 
 #[test]
 fn test_modify_file_ok_ignores_failure_word_inside_diff_preview() {

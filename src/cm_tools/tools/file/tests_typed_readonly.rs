@@ -1,4 +1,4 @@
-//! file_core 只读族（`read_dir` / `glob_files` / `list_tree` / `read_binary_meta` / `hash_file`）
+//! file_core 只读族（`read_dir` / `glob_files` / `list_tree` / `read_binary_meta`）
 //! Typed 迁移后的工作区路径回归钉。
 //!
 //! `resolve_for_read_open` 先 `canonicalize` 再判断是否落在根内，故 `OutsideWorkspaceRoot`
@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use super::tests::make_test_dir;
-use super::{PathAccess, hash_file_try, read_binary_meta_try};
+use super::{PathAccess, read_binary_meta_try};
 use crate::cm_tools::tool_result::ToolFailureCategory;
 
 /// 在临时工作区的**父目录**造一个真实文件，返回文件名（供 `../<name>` 引用）。
@@ -21,19 +21,6 @@ fn write_outside_sibling(dir: &Path) -> String {
     let outside = dir.parent().expect("临时工作区应有父目录").join(&name);
     std::fs::write(&outside, b"outside").expect("写入工作区外文件");
     name
-}
-
-#[test]
-fn hash_file_try_outside_workspace_is_workspace_resolve_failed() {
-    let dir = make_test_dir();
-    let name = write_outside_sibling(&dir);
-    let args = format!(r#"{{"path":"../{name}","algorithm":"sha256"}}"#);
-    let err = hash_file_try(&args, &PathAccess::new(&dir)).expect_err("工作区外路径应显式失败");
-    assert_eq!(err.code, "hash_file_workspace_resolve_failed");
-    assert_eq!(err.category, ToolFailureCategory::Workspace);
-    assert_eq!(err.message, "错误：路径不能超出工作目录");
-    let _ = std::fs::remove_file(dir.parent().expect("父目录").join(&name));
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -49,25 +36,6 @@ fn read_binary_meta_try_outside_workspace_is_workspace_resolve_failed() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// 目标不存在是最常见的一类：必须落到 `*_io_failed`（`external`），不能冒充工作区问题。
-
-#[test]
-fn hash_file_try_missing_file_is_io_failed() {
-    let dir = make_test_dir();
-    let err = hash_file_try(
-        r#"{"path":"missing.dat","algorithm":"sha256"}"#,
-        &PathAccess::new(&dir),
-    )
-        .expect_err("不存在的文件应显式失败");
-    assert_eq!(err.code, "hash_file_io_failed");
-    assert_eq!(err.category, ToolFailureCategory::External);
-    assert!(
-        err.message.starts_with("错误：路径无法解析"),
-        "{}",
-        err.message
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}
 
 #[test]
 fn read_binary_meta_try_missing_file_is_io_failed() {

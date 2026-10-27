@@ -9,7 +9,6 @@ mod edits_batch;
 mod inspect;
 mod mutate;
 mod path;
-mod perm;
 mod read_file_pipeline;
 mod read_tool;
 mod replace_lines_stream;
@@ -20,7 +19,7 @@ mod write_ops;
 mod write_precheck;
 
 pub use directory::read_dir_try;
-pub use inspect::{hash_file_try, read_binary_meta_try};
+pub use inspect::read_binary_meta_try;
 pub use mutate::{
     append_file, append_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
     delete_files, delete_files_try, search_replace, search_replace_try,
@@ -29,7 +28,6 @@ pub use path::{PathAccess, canonical_workspace_root, resolve_for_read, resolve_f
 // 审计正文的路径截断：`read_dir` 的工作区外审批在 `cm_internal` 侧记录，那里不该自己
 // 再写一份「只留末两段」的规则。
 pub(crate) use path::audit_path_detail;
-pub use perm::{chmod_file, chmod_file_try};
 // 写侧统一提交入口：其它工具（`structured_patch`）也要「tmp → 继承元数据 → fsync →
 // revision 校验 → 原子替换」，复用同一实现而不是各自 `fs::write`。
 pub(crate) use commit_guard::write_bytes_with_revision_guard;

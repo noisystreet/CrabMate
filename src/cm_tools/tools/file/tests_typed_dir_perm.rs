@@ -5,8 +5,7 @@
 
 use super::test_support::{make_test_dir, test_ctx, write};
 use super::{
-    chmod_file, chmod_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
-    delete_files, delete_files_try,
+    create_dir, create_dir_try, delete_dir, delete_dir_try, delete_files, delete_files_try,
 };
 use crate::cm_tools::tool_result::ToolFailureCategory;
 use crate::cm_tools::tools::testing::{
@@ -336,88 +335,6 @@ fn create_dir_success_with_failure_wording_stays_ok() {
 
     assert_success_with_failure_wording("create_dir", r#"{"path":"失败"}"#, &test_ctx(&dir));
     assert!(dir.join("失败").is_dir());
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-// ── chmod_file ──────────────────────────────────────────────
-
-#[cfg(unix)]
-#[test]
-#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
-fn chmod_file_try_success_matches_string_face() {
-    let dir_legacy = make_test_dir();
-    let dir_typed = make_test_dir();
-    write(&dir_legacy, "a.txt", "A");
-    write(&dir_typed, "a.txt", "A");
-    let args = r#"{"path":"a.txt","mode":"600","confirm":true}"#;
-
-    let typed = assert_success_parity(
-        &dir_legacy,
-        &dir_typed,
-        || chmod_file(args, &dir_legacy),
-        || chmod_file_try(args, &super::PathAccess::new(&dir_typed)),
-    );
-
-    assert!(typed.contains("已设置权限"), "{typed}");
-    assert!(typed.contains("600"), "{typed}");
-
-    let _ = std::fs::remove_dir_all(&dir_legacy);
-    let _ = std::fs::remove_dir_all(&dir_typed);
-}
-
-#[cfg(unix)]
-#[test]
-fn chmod_file_try_invalid_mode_is_invalid_input() {
-    let dir = make_test_dir();
-    write(&dir, "a.txt", "A");
-
-    let err = chmod_file_try(
-        r#"{"path":"a.txt","mode":"888","confirm":true}"#,
-        &super::PathAccess::new(&dir),
-    )
-        .expect_err("非法八进制权限须失败");
-
-    // 正文含「错误」会被 Legacy 误判为 `chmod_file_failed`，显式头须覆盖为 `invalid_args`。
-    assert_run_tool_error_code(
-        "chmod_file",
-        r#"{"path":"a.txt","mode":"888","confirm":true}"#,
-        &test_ctx(&dir),
-        "invalid_args",
-    );
-    assert_invalid_input(&err);
-    assert!(err.message.contains("不是合法的八进制权限值"), "{}", err.message);
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[cfg(unix)]
-#[test]
-fn chmod_file_try_missing_file_is_workspace_resolve_failed() {
-    let dir = make_test_dir();
-
-    let err = chmod_file_try(
-        r#"{"path":"missing.txt","mode":"600","confirm":true}"#,
-        &super::PathAccess::new(&dir),
-    )
-        .expect_err("缺失文件须失败");
-
-    assert_eq!(err.code, "workspace_resolve_failed");
-    assert_eq!(err.category, ToolFailureCategory::External);
-    assert!(!err.retryable);
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[cfg(unix)]
-#[test]
-fn chmod_file_success_with_failure_wording_stays_ok() {
-    let dir = make_test_dir();
-    write(&dir, "失败.txt", "A");
-
-    assert_success_with_failure_wording(
-        "chmod_file",
-        r#"{"path":"失败.txt","mode":"600","confirm":true}"#,
-        &test_ctx(&dir),
-    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -305,24 +305,6 @@ impl ToolSummaryLine for ListTreeSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct HashFileSummaryArgs {
-    path: String,
-    #[serde(default)]
-    algorithm: Option<String>,
-}
-
-impl ToolSummaryLine for HashFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        let algo = self.algorithm.as_deref().unwrap_or("sha256");
-        Some(format!("file hash {}: {}", algo, path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct ApplyPatchSummaryArgs {
     patch: String,
 }

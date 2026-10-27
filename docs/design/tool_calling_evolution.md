@@ -119,7 +119,7 @@
 
 ### 8.5.3 不可收敛的边界
 
-- **白名单外 CLI**：如 `rust-analyzer` / `pytest` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界。**Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，接受 §8.5.2 的四项只读能力损失。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（见 §8.5.5）。**当时仍保留**：`format_*` / `ruff_check` / `mypy_check` / `uv_*`（与组合工具 `ci_tools` / `quality_tools` 有复用耦合）。**后续演进**：`format_*` 已于 2026-10-20 收敛；`ci_tools` / `quality_tools` 整体删除后，`mypy_check` / `uv_*` 一并移除，`ruff_check` 仍由 `run_lints` 复用。
+- **白名单外 CLI**：如 `rust-analyzer` / `pytest` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界。**Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，接受 §8.5.2 的四项只读能力损失。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（见 §8.5.5）。**当时仍保留**：`format_*` / `ruff_check` / `mypy_check` / `uv_*`（与组合工具 `ci_tools` / `quality_tools` 有复用耦合）。**后续演进**：`format_*` 已于 2026-10-20 收敛；`ci_tools` / `quality_tools` 整体删除后，`mypy_check` / `uv_*` 一并移除；`run_lints` 聚合器亦已于 2026-10-28 删除，`ruff_check` / `mypy_check` 函数体随之移除。
 - **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
 - **Agent / 编排类**：保留。
 - **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），收敛前须确认不破坏该链路。

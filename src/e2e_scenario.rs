@@ -302,11 +302,11 @@ pub fn preset_scenarios() -> Vec<TestScenario> {
         },
         TestScenario {
             name: "orch_single_agent_tool".to_string(),
-            user_message: "请调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。"
+            user_message: "请调用 json_format 工具把 {\"a\":1,\"b\":[2,3]} 格式化为带缩进的 JSON，然后用一句话总结。"
                 .to_string(),
             workspace_files: vec![],
             expected_output_contains: vec![],
-            expected_tool_used: Some("text_transform".to_string()),
+            expected_tool_used: Some("json_format".to_string()),
             allowed_tools: None,
         },
         TestScenario {

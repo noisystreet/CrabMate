@@ -206,23 +206,6 @@ pub struct ReadBinaryMetaArgs {
     pub prefix_hash_bytes: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-pub enum HashFileAlgorithm {
-    #[serde(rename = "sha256", alias = "sha-256")]
-    Sha256,
-    #[serde(rename = "sha512", alias = "sha-512")]
-    Sha512,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct HashFileArgs {
-    pub path: String,
-    pub algorithm: Option<HashFileAlgorithm>,
-    /// 仅哈希前若干字节；整文件时省略
-    #[schemars(range(min = 1, max = 4294967295u64))]
-    pub max_bytes: Option<u64>,
-}
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]

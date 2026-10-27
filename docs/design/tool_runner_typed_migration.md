@@ -40,7 +40,7 @@
 | `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
 | `cargo_rust.inc.rs` | 1 | 5 | 4 个 cargo 主链路已迁；`rust_analyzer` 未迁（`rust_compiler_json` 已整工具删除） |
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
-| `basic_network.inc.rs` | 4 | 1 | 仅 `text_transform` 已迁 |
+| `basic_network.inc.rs` | 0 | 4 | 全部 Typed（`text_transform` 已于 2026-10-28 移除） |
 | `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
 | `diagnostics_docs.inc.rs` | 4 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除（见 §4.4） |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
@@ -86,7 +86,7 @@
 
 ### 3.2 编译期 smoke
 
-`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 7 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta` / `hash_file`）。
+`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）。
 
 新增孪生宏时**应同时在 smoke 里挂一个真实实现**，否则宏本身没有任何类型校验。
 
@@ -209,7 +209,6 @@
 
 | 工具 | 目标实现 | 备注 |
 |---|---|---|
-| `run_lints` | `lint::run` | 聚合器（cargo check + clippy + 前端 lint） |
 | `docs_health_sweep` | `docs_health_sweep::docs_health_sweep` | 聚合器（预览 + 拼写 + 链接） |
 
 ---
@@ -221,7 +220,7 @@
 | 档 | 族 | 理由 |
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
-| **B（中风险）** | `archive` 3 个、`docs_health` / `run_lints` 2 个聚合器、`code_nav` / `reminder` / `event` 3 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；feature gate 需在 CI 覆盖 |
+| **B（中风险）** | `archive` 3 个、`docs_health` 1 个聚合器、`code_nav` / `reminder` / `event` 3 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；feature gate 需在 CI 覆盖 |
 | **C（高风险，须先设计）** | `gh_*` 5 个、`git`、`http_fetch` / `http_request`、`web_search` / `get_weather`、`background_job*`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
