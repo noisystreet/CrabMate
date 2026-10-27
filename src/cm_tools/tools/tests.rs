@@ -678,7 +678,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 顺带修掉四个静默成功分支：dispatch 层的「`add` 缺 title」「缺 id」与「未找到 id」都只返回
     // 不含「错误 / 失败 / 超时」的裸正文，被 `parse_legacy_output` 判成 **成功**；
     // 现在分别是 `invalid_args` / `reminder_not_found` / `event_not_found`。
-    const LEGACY_BASELINE: usize = 23;
+    // 本轮（B 档 · 后台任务 + 工作流同步面）：`background_job` / `background_job_cancel`
+    // 迁为 Typed（−2），`workflow_execute` 的同步面占位亦改 Typed 并返回 `Err`（−1）——
+    // 它原先回「由运行时引擎执行（若你看到这条，说明拦截未生效）」占位句，
+    // 既不含「错误」也不含「失败」，被判成成功。三者合计 −3：23 → 20。
+    const LEGACY_BASELINE: usize = 20;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -687,6 +691,20 @@ fn builtin_legacy_runner_count_matches_baseline() {
         legacy, LEGACY_BASELINE,
         "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
     );
+}
+
+/// `workflow_execute` 的同步面占位必须报错。
+///
+/// 它以前回「由运行时引擎执行（若你看到这条，说明拦截未生效）。」—— 正文不含
+/// 「错误/失败/超时」，被 `parse_legacy_output` 判成**成功**：模型以为工作流已排队，
+/// 实际什么都没做。真实执行在 `tool_dispatch` 的 `Workflow` 入口，走不到这里。
+#[test]
+fn workflow_execute_sync_placeholder_is_an_error() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = runner_workflow_execute_try("{}", &ctx).expect_err("同步面不应返回成功");
+    assert_eq!(e.code, "workflow_execute_not_intercepted");
+    assert!(e.message.contains("运行时引擎"), "{}", e.message);
 }
 
 #[test]

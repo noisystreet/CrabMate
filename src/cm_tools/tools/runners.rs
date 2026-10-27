@@ -212,9 +212,23 @@ mod try_macro_typecheck {
 
 // ── 需要定制逻辑的 runner（不适用同构宏）─────────────────────
 
-pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
-    // 由 runtime 在 run_agent_turn 中拦截实际执行。
-    "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
+/// `workflow_execute` 的同步面占位。
+///
+/// 真实执行由 runtime 在 `run_agent_turn` 中拦截（见 `tool_dispatch` 的
+/// `Workflow` 入口）。走到这里说明拦截没生效 —— 那是内部缺陷，必须**明确失败**：
+/// 从前这里返回「由运行时引擎执行（若你看到这条，说明拦截未生效）。」，正文既不含
+/// 「错误」也不含「失败」，被 `looks_like_failure` 判成 `ok: true`，
+/// 于是「排队一条提示后什么都没做」被报成了成功。
+#[allow(clippy::result_large_err)]
+pub fn runner_workflow_execute_try(
+    _args: &str,
+    _ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    Err(ToolError::internal_code(
+        "workflow_execute_not_intercepted",
+        "workflow_execute 由运行时引擎在对话回合中执行；同步工具路径未拦截（内部缺陷，请报告）。"
+            .to_string(),
+    ))
 }
 
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
@@ -371,8 +385,12 @@ pub fn runner_long_term_memory_list_try(
     dispatch_long_term_tool("long_term_memory_list", args, ctx)
 }
 
-pub fn runner_background_job(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job(
+#[allow(clippy::result_large_err)]
+pub fn runner_background_job_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    background_job_tools::background_job_try(
         args,
         ctx.tool_jobs_host,
         ctx.working_dir,
@@ -380,8 +398,12 @@ pub fn runner_background_job(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_background_job_cancel(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_cancel(args, ctx.tool_jobs_host)
+#[allow(clippy::result_large_err)]
+pub fn runner_background_job_cancel_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    background_job_tools::background_job_cancel_try(args, ctx.tool_jobs_host)
 }
 
 #[allow(clippy::result_large_err)]
