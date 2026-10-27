@@ -117,9 +117,7 @@ fn is_file_path_arg_tool(name: &str) -> bool {
             | "delete_files"
             | "append_file"
             | "search_replace"
-            | "chmod_file"
             | "read_binary_meta"
-            | "hash_file"
     )
 }
 

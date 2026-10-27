@@ -301,17 +301,14 @@ fn test_build_tools_names() {
     assert!(!names.contains(&"codebase_semantic_search"));
     assert!(names.contains(&"list_tree"));
     assert!(names.contains(&"read_binary_meta"));
-    assert!(names.contains(&"hash_file"));
     assert!(names.contains(&"markdown_check_links"));
     assert!(names.contains(&"structured_validate"));
     assert!(names.contains(&"structured_query"));
     assert!(names.contains(&"structured_diff"));
     assert!(names.contains(&"structured_patch"));
-    assert!(names.contains(&"text_transform"));
     assert!(names.contains(&"text_diff"));
     assert!(names.contains(&"table_text"));
     assert!(names.contains(&"code_nav"));
-    assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"apply_patch"));
 }
 
@@ -322,13 +319,12 @@ fn test_build_tools_filtered_basic_vs_development() {
     let full = build_tools();
     assert_eq!(basic.len() + dev.len(), full.len());
     let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
-    assert!(bn.contains(&"text_transform"));
+    assert!(bn.contains(&"env_var_check"));
     assert!(bn.contains(&"reminder"));
     assert!(!bn.contains(&"cargo_check"));
     let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
     assert!(dn.contains(&"cargo_check"));
     assert!(dn.contains(&"text_diff"));
-    assert!(!dn.contains(&"text_transform"));
 }
 
 #[test]
@@ -498,7 +494,7 @@ fn test_search_in_files_try_invalid_regex_error_code() {
 
 #[test]
 fn test_summarize_tool_call_none() {
-    let s = summarize_tool_call("text_transform", "{}");
+    let s = summarize_tool_call("env_var_check", "{}");
     assert_eq!(s, None);
 }
 
@@ -568,7 +564,7 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
         dev_tags: Some(rust_only.as_slice()),
     });
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
-    assert!(names.contains(&"text_transform"));
+    assert!(names.contains(&"env_var_check"));
     assert!(names.contains(&"cargo_check"));
     assert!(!names.contains(&"git_status"));
 }
@@ -651,9 +647,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（B2 首段）：`text_diff` / `table_text` 迁为 Typed（−2）。
     // 本轮（B2 第二段）：`markdown_check_links` / `structured_validate` / `structured_query` /
     // `structured_diff` 迁为 Typed（−4）。
-    // 本轮（B2 第三段）：`text_transform` / `structured_patch` 迁为 Typed（−2）。
+    // 本轮（B2 第三段）：`structured_patch` 迁为 Typed（−1）。
     // 本轮（B4）：file_core 只读族 `read_dir` / `glob_files` / `list_tree` /
-    // `read_binary_meta` / `hash_file` 迁为 Typed（−5）。
+    // `read_binary_meta` 迁为 Typed（−1）。
     // 本轮（A 档首项）：`self_config_info` 迁为 Typed（−1）—— 缺 `AgentConfig` 与非空
     // `sections` 未匹配均改为显式 `ToolError`。同项的 `skill_manage` 暂缓：其内部实现是
     // `Result<_, String>`（约 20 处 `"错误：…"`），需整体换成 `Result<_, ToolError>`，
@@ -675,7 +671,7 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（整工具删除）：`error_output_playbook` / `playbook_run_commands` 一并退场（−2）—— 两者的
     // 建议都来自「生态 × 类别」固定查表模板，不是对具体错误的推理；模型可自行归类后直接调 `run_command`。
     // 实现文件 `error_playbook.rs` 整文件移除（627 行）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 29 } else { 26 };
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 28 } else { 25 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

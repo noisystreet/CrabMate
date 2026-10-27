@@ -1,7 +1,7 @@
 //! 由 `file.rs` 拆分；与拆分前行为一致。
 #![allow(clippy::manual_string_new)]
 
-use sha2::{Digest, Sha256, Sha512};
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -16,11 +16,6 @@ use super::path::{
 const READ_BINARY_META_PREFIX_DEFAULT: usize = 8192;
 /// read_binary_meta：前缀哈希最多读取字节（避免大文件读入过多）
 const READ_BINARY_META_PREFIX_MAX: usize = 256 * 1024;
-
-/// hash_file：`max_bytes` 上限（仅哈希前缀时）
-const HASH_FILE_MAX_PREFIX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
-/// 流式读缓冲区
-const HASH_FILE_BUF_SIZE: usize = 256 * 1024;
 
 #[allow(clippy::result_large_err)]
 fn required_json_path(v: &serde_json::Value) -> Result<String, ToolError> {
@@ -131,141 +126,6 @@ pub fn read_binary_meta_try(args_json: &str, paths: &PathAccess<'_>) -> Result<S
     Ok(out.trim_end().to_string())
 }
 
-/// 计算工作区内**常规文件**的加密哈希（只读，流式读取，不把整文件载入内存）。
-///
-/// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
-#[allow(clippy::result_large_err)]
-pub fn hash_file_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-    let path = required_json_path(&v)?;
-
-    let algo = v
-        .get("algorithm")
-        .and_then(|a| a.as_str())
-        .map(|s| s.trim().to_lowercase())
-        .unwrap_or_else(|| "sha256".to_string());
-
-    let max_bytes = parse_hash_max_bytes(&v)?;
-
-    let target = resolve_regular_file(
-        paths,
-        &path,
-        WorkspacePathCodes {
-            outside: "hash_file_workspace_resolve_failed",
-            io: "hash_file_io_failed",
-        },
-        "hash_file_path_not_file",
-    )?;
-
-    let meta = std::fs::metadata(&target).map_err(|e| {
-        ToolError::external_code("hash_file_io_failed", format!("读取元数据失败: {e}"))
-    })?;
-    let size = meta.len();
-    let limit = max_bytes.map(|m| m.min(size)).unwrap_or(size);
-
-    let hex_digest = hash_digest_for_algo(&algo, &target, limit)?;
-    Ok(format_hash_file_ok(HashFileOkFmt {
-        working_dir: paths.root(),
-        target: &target,
-        path: &path,
-        size,
-        limit,
-        algo: &algo,
-        hex_digest: &hex_digest,
-        prefix_only: max_bytes.is_some() && limit < size,
-    }))
-}
-
-#[allow(clippy::result_large_err)]
-fn parse_hash_max_bytes(v: &serde_json::Value) -> Result<Option<u64>, ToolError> {
-    match v.get("max_bytes").and_then(|n| n.as_u64()) {
-        Some(0) => Err(ToolError::invalid_args(
-            "错误：max_bytes 须大于 0；省略该字段表示哈希整文件".to_string(),
-        )),
-        Some(n) => Ok(Some(n.min(HASH_FILE_MAX_PREFIX_BYTES))),
-        None => Ok(None),
-    }
-}
-
-#[allow(clippy::result_large_err)]
-fn hash_digest_for_algo(algo: &str, target: &Path, limit: u64) -> Result<String, ToolError> {
-    match algo {
-        "sha256" | "sha-256" => hash_file_stream_sha256(target, limit),
-        "sha512" | "sha-512" => hash_file_stream_sha512(target, limit),
-        _ => Err(ToolError::invalid_args(format!(
-            "错误：algorithm 仅支持 sha256、sha512（收到 {algo:?}）"
-        ))),
-    }
-}
-
-struct HashFileOkFmt<'a> {
-    working_dir: &'a Path,
-    target: &'a Path,
-    path: &'a str,
-    size: u64,
-    limit: u64,
-    algo: &'a str,
-    hex_digest: &'a str,
-    prefix_only: bool,
-}
-
-fn format_hash_file_ok(f: HashFileOkFmt<'_>) -> String {
-    let mut out = String::new();
-    out.push_str(&format!(
-        "path: {}\n",
-        path_for_tool_display(f.working_dir, f.target, Some(f.path))
-    ));
-    out.push_str(&format!("size_bytes: {}\n", f.size));
-    out.push_str(&format!("hashed_bytes: {}\n", f.limit));
-    out.push_str(&format!("algorithm: {}\n", f.algo));
-    out.push_str(&format!("digest_hex: {}\n", f.hex_digest));
-    if f.prefix_only {
-        out.push_str("note: 仅前 hashed_bytes 参与哈希，非整文件。\n");
-    }
-    out.trim_end().to_string()
-}
-
-#[allow(clippy::result_large_err)]
-fn hash_file_stream_sha256(path: &Path, max_read: u64) -> Result<String, ToolError> {
-    let mut file = File::open(path)
-        .map_err(|e| ToolError::external_code("hash_file_io_failed", format!("打开文件失败: {e}")))?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
-    let mut remaining = max_read;
-    while remaining > 0 {
-        let chunk = (remaining as usize).min(buf.len());
-        let n = file
-            .read(&mut buf[..chunk])
-            .map_err(|e| ToolError::external_code("hash_file_io_failed", format!("读取文件失败: {e}")))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        remaining -= n as u64;
-    }
-    Ok(bytes_to_hex(&hasher.finalize()))
-}
-
-#[allow(clippy::result_large_err)]
-fn hash_file_stream_sha512(path: &Path, max_read: u64) -> Result<String, ToolError> {
-    let mut file = File::open(path)
-        .map_err(|e| ToolError::external_code("hash_file_io_failed", format!("打开文件失败: {e}")))?;
-    let mut hasher = Sha512::new();
-    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
-    let mut remaining = max_read;
-    while remaining > 0 {
-        let chunk = (remaining as usize).min(buf.len());
-        let n = file
-            .read(&mut buf[..chunk])
-            .map_err(|e| ToolError::external_code("hash_file_io_failed", format!("读取文件失败: {e}")))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        remaining -= n as u64;
-    }
-    Ok(bytes_to_hex(&hasher.finalize()))
-}
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()

@@ -218,7 +218,6 @@ mod try_macro_typecheck {
         runner_list_tree_try_smoke => crate::cm_tools::tools::file::list_tree_try,
         runner_read_dir_try_smoke => crate::cm_tools::tools::file::read_dir_try,
         runner_read_binary_meta_try_smoke => crate::cm_tools::tools::file::read_binary_meta_try,
-        runner_hash_file_try_smoke => crate::cm_tools::tools::file::hash_file_try,
     }
 }
 
@@ -456,7 +455,6 @@ pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
 define_runners_cwd_maxlen! {
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
-    runner_run_lints => lint::run,
 }
 
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
@@ -501,14 +499,12 @@ define_runners_cwd_try! {
 
 define_runners_paths_try! {
     // file_core 只读族 B4：显式 ToolError（read_dir 同样覆盖工作区外路径的审批前置场景）。
-    runner_chmod_file_try => file::chmod_file_try,
     runner_delete_dir_try => file::delete_dir_try,
     runner_create_dir_try => file::create_dir_try,
     runner_read_dir_try => file::read_dir_try,
     runner_glob_files_try => file::glob_files_try,
     runner_list_tree_try => file::list_tree_try,
     runner_read_binary_meta_try => file::read_binary_meta_try,
-    runner_hash_file_try => file::hash_file_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
@@ -524,12 +520,6 @@ define_runners_cwd! {
 
 define_runners_args_only! {
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
-}
-
-/// `text_transform`：入参 / 超限 / 解码失败均为 `invalid_args`（args-only 形态的手写 Typed 孪生）。
-#[allow(clippy::result_large_err)]
-pub fn runner_text_transform_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    text_transform::run_try(args)
 }
 
 // ── misc_basic 族（args-only 形态；仅 4 个条目，手写具名 runner，不抽宏）──

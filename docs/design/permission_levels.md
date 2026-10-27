@@ -784,7 +784,7 @@ dst.permission.permission_level_max =
 **落地结果**（与本节原估算的差异以实测为准）：
 
 - 载体：`file::PathAccess`，仅持 `root`；`for_read` / `for_read_open` / `for_write` 委托现有自由函数，**零行为变化**。
-- **16 个**文件类工具全部接入：`read_file` `read_dir` `glob_files` `list_tree` `read_binary_meta` `hash_file` `chmod_file` `delete_dir` `create_dir` `delete_files` `append_file` `search_replace` `create_file` `copy_file` `move_file` `modify_file`。
+- **14 个**文件类工具全部接入：`read_file` `read_dir` `glob_files` `list_tree` `read_binary_meta` `delete_dir` `create_dir` `delete_files` `append_file` `search_replace` `create_file` `copy_file` `move_file` `modify_file`。
 - 构造点收在 `runners.rs` 两个宏：`define_runners_paths_try!` / `define_runners_paths_ctx_try!`（后者带 `ctx`）。
 - 展示类 helper（`*_display` / `*_body`）仍收 `&Path`，由调用方传 `access.root()`——它们不解析路径，换成载体只增遮蔽风险。
 - 实测踩到的两个点：`mutate.rs` 已有 `paths: &[String]` 形参（访问器必须叫 `access`，否则静默遮蔽）；`read_file` 起初漏转（`read_tool.rs` 直调 `resolve_for_read_open`），第二轮补上。

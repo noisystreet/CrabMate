@@ -158,24 +158,6 @@ impl ToolSummaryLine for SearchReplaceSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct ChmodFileSummaryArgs {
-    path: String,
-    mode: String,
-}
-
-impl ToolSummaryLine for ChmodFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        let mode = self.mode.trim();
-        if path.is_empty() || mode.is_empty() {
-            return None;
-        }
-        Some(format!("chmod: {} → {}", path, mode))
-    }
-}
-
-
 #[cfg(test)]
 mod background_job_summary_tests {
     use super::*;

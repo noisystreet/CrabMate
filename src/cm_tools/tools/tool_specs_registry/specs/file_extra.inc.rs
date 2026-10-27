@@ -39,13 +39,5 @@ ToolSpec {
             runner: ToolRunner::Typed(runner_search_replace_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_search_replace),
         },
-        ToolSpec {
-            name: "chmod_file",
-            description: "修改文件或目录权限（仅 Unix/Linux，受控写入需 confirm=true）。mode 为八进制数字（如 \"755\"、\"644\"）。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::ChmodFileArgs>,
-            runner: ToolRunner::Typed(runner_chmod_file_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_chmod_file),
-        },
         // ── 新增纯内存 / 开发辅助工具 ────────────────────────
 ]

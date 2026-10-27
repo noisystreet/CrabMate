@@ -19,10 +19,10 @@ mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, JsonFormatArgs,
-        CargoTestArgs, ChmodFileArgs, CodeNavArgs, CodeStatsArgs,
+        CargoTestArgs, CodeNavArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
-        PytestRunArgs, RunCommandArgs, RunLintsArgs,
+        PytestRunArgs, RunCommandArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
@@ -94,12 +94,6 @@ mod tests {
         assert!(e.iter().any(|x| x == "auto"));
         assert!(e.iter().any(|x| x == "lcov"));
         assert!(e.iter().any(|x| x == "tarpaulin_json"));
-    }
-
-    #[test]
-    fn run_lints_schema_has_run_cargo_defaults() {
-        let v = tool_parameters_schema_value::<RunLintsArgs>();
-        assert!(v.pointer("/properties/run_cargo").is_some());
     }
 
     #[test]
@@ -333,17 +327,6 @@ mod tests {
                 "{field} 应出现在 GitArgs schema 中"
             );
         }
-    }
-
-    #[test]
-    fn chmod_file_schema_requires_path_and_mode() {
-        let v = tool_parameters_schema_value::<ChmodFileArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "path"));
-        assert!(req.iter().any(|x| x == "mode"));
     }
 
     #[test]

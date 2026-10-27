@@ -412,10 +412,3 @@ pub struct SearchReplaceArgs {
     pub skip_precheck: bool,
 }
 
-/// [`super::file::perm::chmod_file`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct ChmodFileArgs {
-    pub path: String,
-    pub mode: String,
-    pub confirm: Option<bool>,
-}

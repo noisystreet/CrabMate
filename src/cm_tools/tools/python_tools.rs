@@ -1,7 +1,6 @@
 //! Python 生态工具：ruff、pytest、mypy、临时脚本执行（`python_snippet_run`）。
 //!
-//! `ruff_check` 的公开函数体保留，供 `run_lints` 聚合器复用
-//! （其 ToolSpec 已按薄 CLI 封装收敛移除；`ruff` / `mypy` / `uv` 统一改用 `run_command`）。
+//! `ruff` / `mypy` / `uv` 统一改用 `run_command`（原 `ruff_check` 聚合器已随 `run_lints` 一并移除）。
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,34 +27,6 @@ pub fn workspace_has_python_project(root: &Path) -> bool {
         || root.join("requirements.txt").is_file()
 }
 
-/// `ruff check`：可选相对路径列表（默认 `["."]`），路径须在工作区内且不含 `..`。
-pub fn ruff_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    if !workspace_has_python_project(workspace_root) {
-        return "ruff check: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）".to_string();
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let paths = match parse_rel_paths(&v, "paths", &["."]) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = Command::new("ruff");
-    cmd.arg("check").current_dir(&base);
-    for p in &paths {
-        cmd.arg(p);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "ruff check", None)
-}
 
 /// `python3 -m pytest`：可选单一路径、`-k` / `-m`、`-q`、maxfail、是否 nocapture。
 /// `wall_secs = Some(secs)` 时超时对进程组 SIGTERM→SIGKILL 并保留部分输出。
@@ -401,29 +372,6 @@ fn is_safe_py_expr(s: &str) -> bool {
         })
 }
 
-fn parse_rel_paths(
-    v: &serde_json::Value,
-    key: &str,
-    default: &[&str],
-) -> Result<Vec<String>, String> {
-    let arr = match v.get(key) {
-        Some(serde_json::Value::Array(a)) if !a.is_empty() => a
-            .iter()
-            .filter_map(|x| x.as_str().map(str::trim).filter(|s| !s.is_empty()))
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>(),
-        _ => default.iter().map(|s| (*s).to_string()).collect(),
-    };
-    for p in &arr {
-        if !is_safe_rel_path(p) {
-            return Err(format!(
-                "错误：{} 中含非法相对路径（须非空、非绝对、不含 ..）：{}",
-                key, p
-            ));
-        }
-    }
-    Ok(arr)
-}
 
 fn run_and_format(
     cmd: Command,
@@ -544,7 +492,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn run_and_format_timeout_kills_and_keeps_partial_output() {
-        // `pytest_run` / `ruff_check` 等共用 run_and_format：超时对进程组 SIGTERM→SIGKILL，
+        // `pytest_run` 等共用 run_and_format：超时对进程组 SIGTERM→SIGKILL，
         // 返回正文含「超时」说明与已捕获部分输出。
         let marker = format!("cm_py_runfmt_{}", std::process::id());
         let mut cmd = Command::new("bash");

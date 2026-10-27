@@ -127,6 +127,10 @@ allowed_commands = [
     "uniq",
     "wc",
     # 环境变量与路径元数据
+    "chmod",
+    "base64",
+    "sha256sum",
+    "sha512sum",
     "date",
     "df",
     "du",
