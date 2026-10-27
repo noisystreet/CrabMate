@@ -18,7 +18,7 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, JsonFormatArgs,
+        AddReminderArgs, ArchivePackArgs, JsonFormatArgs,
         CargoTestArgs, ChmodFileArgs, CodeNavArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
@@ -179,16 +179,6 @@ mod tests {
             Some(&json!(false)),
             "{v}"
         );
-    }
-
-    #[test]
-    fn backtrace_analyze_schema_requires_backtrace() {
-        let v = tool_parameters_schema_value::<BacktraceAnalyzeArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "backtrace"));
     }
 
     #[test]

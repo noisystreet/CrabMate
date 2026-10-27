@@ -7,12 +7,4 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_workflow_execute),
             summary: ToolSummaryKind::Static("DAG workflow"),
         },
-        ToolSpec {
-            name: "rust_backtrace_analyze",
-            description: "分析 Rust panic/backtrace 文本，提取首个可疑业务帧和模块命中统计。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::BacktraceAnalyzeArgs>,
-            runner: ToolRunner::Legacy(runner_backtrace_analyze),
-            summary: ToolSummaryKind::Static("Rust backtrace analysis"),
-        },
 ]

@@ -263,6 +263,9 @@ fn test_build_tools_names() {
         "changelog_draft",
         "license_notice",
         "rust_compiler_json",
+        // 整工具删除（2026-10-27 后续）：`rust_backtrace_analyze` 的纯计算分析可由模型直接读
+        // panic 文本，或经 `run_command`（`c++filt` 在默认白名单）与 `code_nav` 完成。
+        "rust_backtrace_analyze",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -275,7 +278,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"pytest_run"));
     assert!(names.contains(&"python_snippet_run"));
     assert!(names.contains(&"workflow_execute"));
-    assert!(names.contains(&"rust_backtrace_analyze"));
     assert!(names.contains(&"diagnostic_summary"));
     assert!(names.contains(&"self_config_info"));
     assert!(names.contains(&"error_output_playbook"));
@@ -687,7 +689,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // `release_docs.rs` 一并移除（−2）；平替为 `run_command` /
     // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
     // 随后 `rust_compiler_json` 也整工具删除（−1，见上一条注释）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 32 } else { 29 };
+    // 本轮（整工具删除）：`rust_backtrace_analyze` 退场（−1）—— 纯计算分析器，模型可直接读
+    // panic 文本，或用 `run_command` + `c++filt` / `code_nav`；调试族随 `debug_tools.rs` 整文件移除。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 31 } else { 28 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

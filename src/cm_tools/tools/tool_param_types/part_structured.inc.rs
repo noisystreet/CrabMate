@@ -153,16 +153,6 @@ pub struct WorkflowExecuteArgs {
     pub workflow_file: Option<String>,
 }
 
-// ── 调试（`debug_tools::rust_backtrace_analyze`）──────────────
-
-/// [`super::debug_tools::rust_backtrace_analyze`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BacktraceAnalyzeArgs {
-    pub backtrace: String,
-    pub crate_hint: Option<String>,
-}
-
 // ── 拼写（`spell_tools`，供 `docs_health_sweep` 复用）────
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

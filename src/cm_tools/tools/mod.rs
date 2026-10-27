@@ -30,7 +30,6 @@ mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod contract_map;
 mod date_calc;
-mod debug_tools;
 mod diagnostics;
 mod docs_health_sweep;
 pub use diagnostics::capture_trimmed;

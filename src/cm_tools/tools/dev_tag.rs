@@ -38,7 +38,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "long_term_forget"
         | "long_term_memory_list"
         | "summarize_experience" => &[GENERAL],
-        "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"
         | "modify_file"
         | "copy_file"
