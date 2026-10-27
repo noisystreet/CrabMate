@@ -199,28 +199,21 @@ Structured function-calling JSON examples:
   {"command":"bash","args":["-c","cargo audit && cargo deny check advisories licenses bans sources && git status --porcelain"]}
   ```
   The former aggregators' `fail_fast` / `summary_only` / per-section summary and the "skip when no `Cargo.toml`" guard are **gone** — chain with `&&` and read the full output.
-- `rust_analyzer_goto_definition` / `rust_analyzer_find_references` / `rust_analyzer_hover` (**`rust-analyzer` in PATH**; **0-based** line/char):
+- `rust_analyzer` (one tool with an `action` selector — the eight former `rust_analyzer_*` tools were merged into it; **`rust-analyzer` must be in PATH**; **line/character are 0-based**, as in LSP):
   ```json
-  {"path":"src/cm_tools/mod.rs","line":1195,"character":4,"wait_after_open_ms":500}
+  {"action":"goto_definition","path":"src/cm_tools/mod.rs","line":1195,"character":4,"wait_after_open_ms":500}
   ```
   ```json
-  {"path":"src/cm_tools/mod.rs","line":1195,"character":4,"include_declaration":true}
+  {"action":"find_references","path":"src/cm_tools/mod.rs","line":1195,"character":4,"include_declaration":true}
   ```
   ```json
-  {"path":"src/cm_tools/mod.rs","line":1195,"character":4}
+  {"action":"document_symbol","path":"src/lib.rs","max_symbols":200}
   ```
-- `rust_analyzer_document_symbol`:
   ```json
-  {"path":"src/lib.rs","max_symbols":200}
+  {"action":"workspace_symbol","path":"src/lib.rs","query":"run_agent_turn","max_results":32}
   ```
-- `rust_analyzer_goto_implementation` / `rust_analyzer_goto_type_definition` / `rust_analyzer_document_highlight` (same stdio session; **0-based** line/char; LSP `textDocument/implementation`, `textDocument/typeDefinition`, `textDocument/documentHighlight`):
-  ```json
-  {"path":"src/agent/mod.rs","line":40,"character":8}
-  ```
-- `rust_analyzer_workspace_symbol` (`workspace/symbol`; **path** primes `didOpen` on a Rust file; **query** string; **max_results** default 64, max 500):
-  ```json
-  {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
-  ```
+  **Actions and required fields**: `goto_definition` / `find_references` / `hover` / `goto_implementation` / `goto_type_definition` / `document_highlight` need `path` + `line` (LSP `textDocument/definition`, `/references`, `/hover`, `/implementation`, `/typeDefinition`, `/documentHighlight`); `document_symbol` needs `path` (`max_symbols` default 500, max 5000); `workspace_symbol` needs `path` (primes `didOpen` on a Rust file) + `query` (`max_results` default 64, max 500). A missing or unknown `action` returns an error listing every accepted value.
+  **Failures and error codes** (typed runner, 2026-10-28): success bodies are byte-identical to before; every failure now carries an `error_code` instead of relying on body keywords — `invalid_args` (missing / unknown `action`, malformed argument JSON, missing `path` / `line` / `query`, absolute path or `..`, path escaping the workspace or not a file, file >512 KiB), `rust_analyzer_file_not_found` (target file does not exist: `canonicalize` failed), `rust_analyzer_read_failed` (could not read the source file), `rust_analyzer_spawn_failed` (`rust-analyzer` would not start: not installed / not permitted / wrong `server_path`), `rust_analyzer_lsp_failed` (LSP read/write or protocol error, **and** an `error` object inside the rust-analyzer response, e.g. `method not found`), `rust_analyzer_workspace_resolve_failed` (the workspace root itself is unresolvable — category `Workspace`), `timeout` (LSP read timeout, 25 s), `rust_analyzer_internal` (missing child-process pipes: internal defect). **Two kinds of body used to be classified as success**: `路径无法解析: No such file or directory` and the `LSP error` bodies emitted by the response formatters — the model read "the file does not exist" or "LSP rejected the request" as "no information at this position", which is why this tool needed a typed runner rather than a wording fix.
 - `rust_backtrace_analyze`: **removed** on 2026-10-27 (whole tool) — it was a pure-computation analyzer; the model can read the panic text directly, or locate the suspect frame via `run_command` (`c++filt` is on the default allowlist) and `code_nav`.
 - `frontend_lint` / `frontend_build` / `frontend_test` (frontend lint / build / test): removed per §8.5.4 **track A**; use `run_command` instead (e.g. `npm run lint` / `npm run build` / `npm run test`).
 - `workflow_execute` (DAG: parallelism, approval, SLA, compensation):

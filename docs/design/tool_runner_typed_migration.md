@@ -29,8 +29,9 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 20**（Typed 44 含
-> `archive-tools` 侧的 3 个）。§2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 19**
+> （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`
+> 等陆续迁完后，23 → 19）。§2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
 
@@ -42,7 +43,7 @@
 | `markdown_structured.inc.rs` | 0 | 2 | 已全迁（`structured_*` 四个于此合并为单个 `structured`，2026-10-28，5 → 2） |
 | `misc_basic.inc.rs` | 0 | 4 | 已全迁 |
 | `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
-| `cargo_rust.inc.rs` | 1 | 5 | 4 个 cargo 主链路已迁；`rust_analyzer` 未迁（`rust_compiler_json` 已整工具删除） |
+| `cargo_rust.inc.rs` | 0 | 6 | 已全迁（`rust_analyzer` 于 2026-10-28 迁 Typed，见 §4.10；`rust_compiler_json` 已整工具删除） |
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
 | `basic_network.inc.rs` | 0 | 4 | 全部 Typed（`text_transform` 已于 2026-10-28 移除） |
 | `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
@@ -58,7 +59,7 @@
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | **26** | **47** | |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 19） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -197,11 +198,40 @@
 |---|---|---|---|
 | `codebase_semantic_search` | 手写 | `ctx.codebase_semantic_host.run_search(...)` | 需注入 host + `fastembed` feature；未注入时直接返回错误串 |
 
-### 4.10 `cargo_rust.inc.rs`（1）— 形态 `cwd`
+### 4.10 `cargo_rust.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`）
 
-| 工具 | 形态 | 目标实现 |
+| 工具 | 形态 | 目标实现 | 备注 |
+|---|---|---|---|
+| ~~`rust_analyzer`~~（**已迁**） | `cwd` | `rust_ide::rust_analyzer_try` | action 选择器（8 个 LSP 操作）；runner 是具名函数（需把 `working_dir` 透传到 LSP 子进程） |
+
+`rust_analyzer` 是 **`KNOWN_BUG_BUDGET` 的最后一格**（1 → 0），也是「不能只改措辞」的典型：
+
+1. **`路径无法解析: No such file or directory`**（`resolve_rel_file` 的 `canonicalize` 失败）
+   ——以「路径」开头、不含「失败 / 超时」，legacy 判 `ok: true`。模型会把「文件根本不存在」
+   读成「这个位置没有信息」。
+2. **`rust_analyzer hover: LSP error: …`**（`lsp_response_format` 的 5 个格式化函数）
+   ——同样一条关键词都不命中。审计表只盖住了第 1 处，第 2 处是迁移时读代码才发现的：
+   同一工具、两种触发点、同一个故障模式。
+
+实现层原本已有 `Result<_, String>` 骨架（`lsp_rust_analyzer_handshake` / `read_response_until_id` /
+`parse_ra_lsp_json_inputs` / `load_ra_workspace_sources` / `spawn_rust_analyzer_server`），
+所以这轮是「换错误类型」而不是「补错误返回」。错误码划分：
+
+| 码 | 分类 | 触发点 |
 |---|---|---|
-| `rust_analyzer` | `cwd` | `rust_ide::rust_analyzer` |
+| `invalid_args`（复用） | `InvalidInput` | 缺 / 未知 `action`、参数 JSON 非法、缺 `path` / `line` / `query`、绝对路径与 `..`、路径越界或指向非文件、文件 >512KiB |
+| `rust_analyzer_file_not_found` | `External` | `canonicalize` 失败（绝大多数是目标文件不存在）——**必须显式登记分类表**，它不以 `_failed` 结尾 |
+| `rust_analyzer_read_failed` | `External` | `didOpen` 前读取源文件失败 |
+| `rust_analyzer_spawn_failed` | `External` | `rust-analyzer` 起不来（未安装 / 无权限 / `server_path` 错） |
+| `rust_analyzer_lsp_failed` | `External` | LSP 读写 / 协议错误（`Content-Length` 缺失或非法、JSON 解析失败），以及响应自带 `error` 字段 |
+| `rust_analyzer_workspace_resolve_failed` | `Workspace` | 工作区根自身不可解析（改 `args` 无用） |
+| `timeout`（复用） | `Timeout` | LSP 读取超时（25s） |
+| `rust_analyzer_internal` | `Internal` | `Stdio::piped()` 装配缺失导致取不到 stdin/stdout（内部不变量破坏） |
+
+成功正文逐字未变（`format_lsp_*` 只在 `error` 分支改类型）。回归测试：
+`ra_every_action_fails_on_missing_file`（8 个 action 全覆盖）、
+`ra_lsp_error_response_is_a_failure`（5 个格式化函数）、
+`ra_rejects_absolute_and_parent_paths`、`ra_unresolvable_workspace_is_a_workspace_error`。
 
 ### 4.11 `text_code_nav.inc.rs`（1）— 形态 `cwd`
 

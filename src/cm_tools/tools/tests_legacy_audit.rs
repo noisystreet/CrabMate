@@ -30,10 +30,11 @@ use crate::cm_tools::tool_result::parse_legacy_output;
 
 /// 已知「实现报错但被判成功」的工具数快照。每修好一个就减一 —— 这个数字就是进度条。
 ///
-/// 已从 **4 → 1**：`background_job` / `background_job_cancel`（`参数错误：` 开头）与
-/// `workflow_execute`（同步面占位句）均已迁 `Typed`，各自改为显式 `ToolError`；
-/// 只剩 `rust_analyzer` 的 `路径无法解析: …` 还靠正文措辞。
-const KNOWN_BUG_BUDGET: usize = 1;
+/// 已从 **4 → 0**：`background_job` / `background_job_cancel`（`参数错误：` 开头）与
+/// `workflow_execute`（同步面占位句）迁 `Typed` 后清掉三个，最后一个 `rust_analyzer`
+/// 也随 LSP 族迁 `Typed` 修掉（`路径无法解析: …` 与 `… : LSP error: …` 两处静默成功）。
+/// 归零后本表只保留 `Fails` / `Legal` 两档；再出现 `KnownBug` 说明又开了新洞。
+const KNOWN_BUG_BUDGET: usize = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Expect {
@@ -76,13 +77,8 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
         Expect::Fails,
         "仅允许 http/https",
     ),
-    // ── LSP ─────────────────────────────────────────────────────
-    (
-        "rust_analyzer",
-        r#"{"action":"hover","path":"no_such_file.rs","line":0}"#,
-        Expect::KnownBug,
-        "正文是「路径无法解析: No such file or directory」—— 以「路径」开头、无「失败/超时」，判成功",
-    ),
+    // ── LSP：`rust_analyzer` 已迁 Typed（失败一律显式 `Err(ToolError)`），
+    //    其错误码划分与 8 个 action 的失败分支由 `rust_ide::tests` 直接覆盖，不再经本表 ──
     // ── 控制面 ──────────────────────────────────────────────────
     (
         "present_clarification_questionnaire",

@@ -2,6 +2,8 @@
 
 use serde_json::Value;
 
+use crate::cm_tools::tool_result::ToolError;
+
 pub(super) fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
@@ -11,9 +13,22 @@ pub(super) fn truncate_str(s: &str, max: usize) -> String {
     }
 }
 
-pub(super) fn format_lsp_locations(resp: &Value, title: &str) -> Result<String, String> {
+/// LSP 响应里带 `error` 字段：rust-analyzer 拒绝了该请求或自身报错（`External`）。
+///
+/// 原正文是 `"{title}: LSP error: …"`——既不含「错误」也不含「失败」，legacy 启发式
+/// 会判成 `ok: true`，于是模型看到一句 `LSP error` 却以为请求成功、结果为空。
+#[allow(clippy::result_large_err)]
+fn lsp_error(title: &str, err: &Value) -> ToolError {
+    ToolError::external_code(
+        "rust_analyzer_lsp_failed",
+        format!("错误：{title}: LSP error: {err}"),
+    )
+}
+
+#[allow(clippy::result_large_err)]
+pub(super) fn format_lsp_locations(resp: &Value, title: &str) -> Result<String, ToolError> {
     if let Some(err) = resp.get("error") {
-        return Err(format!("{}: LSP error: {}", title, err));
+        return Err(lsp_error(title, err));
     }
 
     let result = resp.get("result");
@@ -36,10 +51,11 @@ pub(super) fn format_lsp_locations(resp: &Value, title: &str) -> Result<String, 
     Ok(lines.join("\n"))
 }
 
-pub(super) fn format_lsp_document_highlights(resp: &Value) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+pub(super) fn format_lsp_document_highlights(resp: &Value) -> Result<String, ToolError> {
     const TITLE: &str = "rust_analyzer document_highlight";
     if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
+        return Err(lsp_error(TITLE, err));
     }
     let Some(result) = resp.get("result") else {
         return Ok(format!("{TITLE}: (空结果)"));
@@ -94,10 +110,11 @@ fn range_to_1based_span(r: &Value) -> Option<String> {
     Some(format!("{l0}:{c0}–{l1}:{c1}"))
 }
 
-pub(super) fn format_workspace_symbols(resp: &Value, max: usize) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+pub(super) fn format_workspace_symbols(resp: &Value, max: usize) -> Result<String, ToolError> {
     const TITLE: &str = "rust_analyzer workspace_symbol";
     if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
+        return Err(lsp_error(TITLE, err));
     }
     let Some(result) = resp.get("result") else {
         return Ok(format!("{TITLE}: (空结果)"));
@@ -127,10 +144,11 @@ pub(super) fn format_workspace_symbols(resp: &Value, max: usize) -> Result<Strin
     Ok(lines.join("\n"))
 }
 
-pub(super) fn format_lsp_hover(resp: &Value) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+pub(super) fn format_lsp_hover(resp: &Value) -> Result<String, ToolError> {
     const TITLE: &str = "rust_analyzer hover";
     if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
+        return Err(lsp_error(TITLE, err));
     }
     let Some(result) = resp.get("result") else {
         return Ok(format!("{TITLE}: (空结果)"));
@@ -181,13 +199,14 @@ fn format_hover_piece(v: &Value) -> String {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub(super) fn format_lsp_document_symbols(
     resp: &Value,
     max_symbols: usize,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     const TITLE: &str = "rust_analyzer document_symbol";
     if let Some(err) = resp.get("error") {
-        return Err(format!("{TITLE}: LSP error: {err}"));
+        return Err(lsp_error(TITLE, err));
     }
     let result = resp.get("result");
     let Some(result) = result else {

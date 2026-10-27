@@ -682,7 +682,7 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 迁为 Typed（−2），`workflow_execute` 的同步面占位亦改 Typed 并返回 `Err`（−1）——
     // 它原先回「由运行时引擎执行（若你看到这条，说明拦截未生效）」占位句，
     // 既不含「错误」也不含「失败」，被判成成功。三者合计 −3：23 → 20。
-    const LEGACY_BASELINE: usize = 20;
+    const LEGACY_BASELINE: usize = 19;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

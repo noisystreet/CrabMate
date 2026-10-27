@@ -156,6 +156,14 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         // 与 `file_core` 里「不存在 → IO 侧」的口径一致，故同归 `External`。
         "archive_not_found" | "archive_pack_failed" | "archive_unpack_failed"
         | "archive_list_failed" => ToolFailureCategory::External,
+        // `rust_analyzer`（LSP）：目标文件不存在 / 读源码失败 / 子进程起不来 / LSP 协议层或
+        // 响应自带 `error` 都归 `External`；工作区根自身不可解析归 `Workspace`。
+        // `rust_analyzer_file_not_found` 必须显式登记——它不以 `_failed` 结尾，走兜底会变 `Unknown`。
+        "rust_analyzer_file_not_found"
+        | "rust_analyzer_read_failed"
+        | "rust_analyzer_spawn_failed"
+        | "rust_analyzer_lsp_failed" => ToolFailureCategory::External,
+        "rust_analyzer_workspace_resolve_failed" => ToolFailureCategory::Workspace,
         // `reminder` / `event`：`id` 不存在只可能来自调用方给错 id（日程文件里的 id 由工具自己生成），
         // 模型可先 `action=list` 自查后重试，故归 `InvalidInput` 而非 `External`。
         "reminder_not_found" | "event_not_found" => ToolFailureCategory::InvalidInput,
