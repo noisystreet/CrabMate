@@ -258,9 +258,11 @@ fn test_build_tools_names() {
         "find_references",
         "call_graph_sketch",
         // 整工具删除（2026-10-27）：发版辅助两件改用 `run_command` /
-        // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
+        // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`；
+        // `rust_compiler_json` 由只读的 `cargo_check` 与 `run_command` 承担。
         "changelog_draft",
         "license_notice",
+        "rust_compiler_json",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -268,7 +270,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_test"));
     assert!(names.contains(&"cargo_clippy"));
     assert!(names.contains(&"cargo_run"));
-    assert!(names.contains(&"rust_compiler_json"));
     assert!(names.contains(&"rust_analyzer"));
     assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"pytest_run"));
@@ -685,7 +686,8 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（E 档整工具删除）：`changelog_draft` / `license_notice` 连同实现文件
     // `release_docs.rs` 一并移除（−2）；平替为 `run_command` /
     // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 33 } else { 30 };
+    // 随后 `rust_compiler_json` 也整工具删除（−1，见上一条注释）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 32 } else { 29 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

@@ -203,7 +203,6 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
     static S: OnceLock<HashSet<String>> = OnceLock::new();
     S.get_or_init(|| {
         [
-            "rust_compiler_json",
             "repo_overview_sweep",
             "crate_contract_map",
             "codebase_semantic_search",

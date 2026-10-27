@@ -10,7 +10,7 @@
 - 前端模块：**`frontend/src/app/ide_layout.rs`**、**`ide_layout_switch.rs`**、**`ide_codemirror.rs`**、**`ide_tabs.rs`**、**`ide_disk_sync.rs`**、**`ide_find.rs`**、**`app/ide_menu_bar/`**
 - SSE：**`docs/SSE协议.md`**（**`workspace_changed`**）；前端 **`on_workspace_changed`** → **`ide_sync_disk_nonce`**
 - 工作区文件 API：**`GET`/`POST /workspace/file`**（见 **`docs/命令行与路由.md`**）
-- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`rust_compiler_json`**、**`rust_analyzer_*`**）；实现 **`src/cm_tools/tools/rust_ide.rs`**
+- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`cargo_check`** 人类可读诊断、**`rust_analyzer`**）；实现 **`src/cm_tools/tools/rust_ide.rs`**（`rust_compiler_json` 已于 2026-10-27 整工具删除）
 - 并行产品路线（外部编辑器壳）：**`docs/design/vscode_extension.md`**
 - 用户数据偏好：**`docs/design/user_data_dir.md`**（**`editor_layout_mode`**、**`ide_editor_*`**）
 - E2E：Client [`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs)
@@ -54,7 +54,7 @@
 | 读写 | **`GET`/`POST /workspace/file`**；Ctrl/Cmd+S、全部保存、新建文件、关闭标签确认 |
 | 查找 | 当前文件查找、跳转行（**无**替换、**无**工作区搜索结果面板） |
 | Agent 联动 | SSE **`workspace_changed: true`** → 刷新树 + **`spawn_sync_ide_tabs_from_disk`**（脏标签确认后重载）；双击树项插入 **`@相对路径`** 并切回对话 |
-| Agent 工具 | **`rust_analyzer_*`** / **`rust_compiler_json`** 供模型调用；**未**接到编辑器 hover / 定义跳转 / Problems UI |
+| Agent 工具 | **`rust_analyzer`** / **`cargo_check`** 供模型调用；**未**接到编辑器 hover / 定义跳转 / Problems UI |
 | 壳层差异 | IDE 模式下**隐藏**主状态栏；侧栏收起状态进出 IDE 时记忆/恢复 |
 | 测试 | Victauri：进入 IDE、打开文件、编辑保存、回对话 |
 
@@ -161,7 +161,7 @@
 
 ### Phase 4 — 诊断进 UI（P1，可选）
 
-**原则**：复用 **`rust_compiler_json`** / 现有 LSP 工具，**不**在浏览器内嵌语言服务器。
+**原则**：复用 **`cargo_check`**（人类可读编译诊断）/ 现有 **`rust_analyzer`**，**不**在浏览器内嵌语言服务器。
 
 | 子阶段 | 内容 |
 |--------|------|

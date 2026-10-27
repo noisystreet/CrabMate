@@ -203,10 +203,6 @@ Structured function-calling JSON examples:
   {"command":"bash","args":["-c","cargo audit && cargo deny check advisories licenses bans sources && git status --porcelain"]}
   ```
   The former aggregators' `fail_fast` / `summary_only` / per-section summary and the "skip when no `Cargo.toml`" guard are **gone** — chain with `&&` and read the full output.
-- `rust_compiler_json` (`cargo check --message-format=json` diagnostics):
-  ```json
-  {"all_targets":true,"max_diagnostics":80,"message_format":"json"}
-  ```
 - `rust_analyzer_goto_definition` / `rust_analyzer_find_references` / `rust_analyzer_hover` (**`rust-analyzer` in PATH**; **0-based** line/char):
   ```json
   {"path":"src/cm_tools/mod.rs","line":1195,"character":4,"wait_after_open_ms":500}
@@ -302,7 +298,7 @@ The former `release_ready_check` presets (fast / strict) went away with the aggr
   ```
 
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `code_nav`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `code_nav`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
 
 **Python**: `pytest_run`, `python_snippet_run` (`ruff` / `mypy` / `uv` / `pre-commit` now via `run_command`, see above); aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff).
 

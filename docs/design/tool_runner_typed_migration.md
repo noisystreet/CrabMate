@@ -28,7 +28,7 @@
 
 ## 2. 现状（2026-10-27）
 
-77 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 33**（另有 2 个 `AsyncOnly`）。
+76 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 32**（另有 2 个 `AsyncOnly`）。
 
 ### 2.1 按 spec 文件分布
 
@@ -38,7 +38,7 @@
 | `markdown_structured.inc.rs` | 0 | 5 | 已全迁 |
 | `misc_basic.inc.rs` | 0 | 4 | 已全迁 |
 | `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
-| `cargo_rust.inc.rs` | 2 | 5 | 4 个 cargo 主链路已迁；`rust_compiler_json` / `rust_analyzer` 未迁 |
+| `cargo_rust.inc.rs` | 1 | 5 | 4 个 cargo 主链路已迁；`rust_analyzer` 未迁（`rust_compiler_json` 已整工具删除） |
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
 | `basic_network.inc.rs` | 4 | 1 | 仅 `text_transform` 已迁 |
 | `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
@@ -53,14 +53,14 @@
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
-| **合计** | **33** | **44** | |
+| **合计** | **32** | **44** | |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
 - **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、`structured_*`、`markdown_check_links`、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），实现里本来就有清晰的错误分支。
-- **未迁 33 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
+- **未迁 32 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
 
-**结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 33 个都要先改实现层，这是它长期停在半数以下的原因。
+**结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 32 个都要先改实现层，这是它长期停在半数以下的原因。
 
 ---
 
@@ -91,7 +91,7 @@
 
 ---
 
-## 4. 33 个 Legacy 清单
+## 4. 32 个 Legacy 清单
 
 按 spec 文件分组。**「形态」** 指 runner 的转发形态（决定改法），**「目标实现」** 指 runner 最终调用的函数。
 
@@ -175,11 +175,10 @@
 |---|---|---|---|
 | `codebase_semantic_search` | 手写 | `ctx.codebase_semantic_host.run_search(...)` | 需注入 host + `fastembed` feature；未注入时直接返回错误串 |
 
-### 4.10 `cargo_rust.inc.rs`（2）— 形态 `cwd_maxlen` / `cwd`
+### 4.10 `cargo_rust.inc.rs`（1）— 形态 `cwd`
 
 | 工具 | 形态 | 目标实现 |
 |---|---|---|
-| `rust_compiler_json` | `cwd_maxlen` | `rust_ide::rust_compiler_json` |
 | `rust_analyzer` | `cwd` | `rust_ide::rust_analyzer` |
 
 ### 4.11 `text_code_nav.inc.rs`（1）— 形态 `cwd`
@@ -252,3 +251,4 @@
 | 2026-10-27 | **A 档第三项落地**：`metrics` 族三个（`code_stats` / `coverage_report` / `dependency_graph`）迁为 Typed，Legacy 39 → 36。`code_stats` 与 `coverage_report` 在 `code_metrics.rs`，`dependency_graph` 在 `code_metrics_dependency_graph.rs`（经 `code_metrics` re-export），三者的 `*_try` 走同一孪生宏 `define_runners_cwd_maxlen_try!`。新增错误码 `coverage_report_io_failed`（`External`）。同时更新 `part_basic.inc.rs` 里 7 处指向旧函数名的 intra-doc link（否则 `cargo doc -D warnings` 失败）。基线 39/36 → 36/33。 |
 | 2026-10-27 | **A 档第四项落地（A 档清空）**：`skill_manage` 迁为 Typed，Legacy 36 → 35。内部 8 个 `Result<_, String>` helper（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `install_action` / `remove_action` / `remove_pick_target` / `remove_delete` / `layer_dir` / `validate_skill_id`）全部换成 `Result<_, ToolError>`；新增错误码 `skill_manage_io_failed`（`External`）。**原本预估要改 3 处 `starts_with("错误：")` 断言，实际一处未改**——测试 helper 改为成功取 `Ok`、失败取 `e.message`，文案逐字未变，原有 `contains` / `starts_with` 口径继续成立。基线 36/33 → 35/32。 |
 | 2026-10-27 | **E 档：两个工具整工具删除**（`changelog_draft` / `license_notice`）—— 不属任何迁移档，直接退场：Legacy 35 → **33**（实现文件 `release_docs.rs` 整文件移除，含 9 个无其它消费者的 helper）。平替：`gh_release_create` 的 `auto_notes` / `run_command` 的 `git log --pretty` / `cargo deny check licenses`（明细表可走 `cargo metadata` + `jq`）。§2.1 表与 §4.4 清单同步为 6 个（`diagnostics_docs.inc.rs`）。 |
+| 2026-10-27 | **F 档：`rust_compiler_json` 整工具删除**—— 同样不属迁移档：其 JSON 输出里的 `message.rendered` 就是 cargo 自己的人类可读块，spans / children 只是重复它，净增量仅「逐条编号 + `max_diagnostics` 上限」，与只读的 `cargo_check` 重合。Legacy 33 → **32**（`rust_ide.rs` 去掉约 230 行 cargo/rustc JSON 区块及其 smoke test）。同时从 `builtin_parallel_sync_denied_exact` 移除（它本就被排除并行只读批，因会起 cargo 子进程）。§2.1 与 §4.10 同步降为 1 个。 |
