@@ -76,7 +76,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "cargo_run"
         | "rust_test_one"
         | "rust_analyzer" => &[GENERAL, RUST],
-        "cargo_check" | "cargo_test" | "cargo_clippy" | "rust_compiler_json" => {
+        "cargo_check" | "cargo_test" | "cargo_clippy" => {
             &[GENERAL, RUST, QUALITY]
         }
         "code_nav" => &[GENERAL, RUST],

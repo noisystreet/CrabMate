@@ -462,7 +462,6 @@ pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
 // ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
 
 define_runners_cwd_maxlen! {
-    runner_rust_compiler_json => rust_ide::rust_compiler_json,
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
     runner_run_lints => lint::run,
