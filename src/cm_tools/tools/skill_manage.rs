@@ -20,15 +20,27 @@ use crate::cm_config::SkillsConfigSection;
 use crate::cm_tools::tools::tool_param_types::{
     SkillManageAction, SkillManageArgs, SkillManageLayer,
 };
+use crate::cm_tools::tool_result::ToolError;
 
-/// 入口：按 `action` 分发（参数校验错误均返回中文可读文案）。
+/// 参数 / 目标不合法（name 非法、缺 `confirm`、同层冲突、未找到、层歧义）。
+fn invalid(msg: impl Into<String>) -> ToolError {
+    ToolError::invalid_args(msg.into())
+}
+
+/// 目录扫描 / 路径解析 / 文件读写失败（`message` 自带「错误：」前缀）。
+fn io_failed(message: impl Into<String>) -> ToolError {
+    ToolError::external_code("skill_manage_io_failed", message.into())
+}
+
+/// 入口：按 `action` 分发（失败路径全部显式返回 [`ToolError`]，不再依赖正文「错误：」前缀）。
+#[allow(clippy::result_large_err)]
 pub(crate) fn skill_manage(
     args: SkillManageArgs,
     skills: &SkillsConfigSection,
     working_dir: &Path,
-) -> String {
+) -> Result<String, ToolError> {
     let Some(action) = args.action else {
-        return "错误：缺少 action 参数（install | list | remove）".to_string();
+        return Err(invalid("错误：缺少 action 参数（install | list | remove）"));
     };
     match action {
         SkillManageAction::List => list_action(skills, working_dir),
@@ -41,14 +53,14 @@ pub(crate) fn skill_manage(
 // list
 // ---------------------------------------------------------------------------
 
-fn list_action(skills: &SkillsConfigSection, working_dir: &Path) -> String {
-    let entries = match scan_entries(skills, working_dir) {
-        Ok(v) => v,
-        Err(e) => return format!("错误：{e}"),
-    };
+#[allow(clippy::result_large_err)]
+fn list_action(skills: &SkillsConfigSection, working_dir: &Path) -> Result<String, ToolError> {
+    let entries = scan_entries(skills, working_dir).map_err(|e| io_failed(format!("错误：{e}")))?;
     if entries.is_empty() {
-        return "当前没有任何技能文件（系统 / 用户 / 工作区三层均为空）。可用 install 动作安装技能。"
-            .to_string();
+        return Ok(
+            "当前没有任何技能文件（系统 / 用户 / 工作区三层均为空）。可用 install 动作安装技能。"
+                .to_string(),
+        );
     }
     // 跨层覆盖标注：生效优先级 workspace > user > system；倒序遍历（entries 为 system→user→workspace），
     // merge key 首次出现者为生效条目；被**更高优先级层**占据同 key 的条目标记为未生效（同层重复不算覆盖）。
@@ -83,7 +95,7 @@ fn list_action(skills: &SkillsConfigSection, working_dir: &Path) -> String {
     out.push_str(
         "\n\n[提示] 正文用 read_file 读取；删除用 remove 动作（需 confirm=true）；跨工作区常驻技能建议安装到 user 层。",
     );
-    out
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -91,18 +103,19 @@ fn list_action(skills: &SkillsConfigSection, working_dir: &Path) -> String {
 // ---------------------------------------------------------------------------
 
 /// install 参数解析与校验：返回（name、正文、目标层、层目录）。
+#[allow(clippy::result_large_err)]
 fn install_plan(
     args: &SkillManageArgs,
     skills: &SkillsConfigSection,
     working_dir: &Path,
-) -> Result<(String, String, SkillLayer, std::path::PathBuf), String> {
+) -> Result<(String, String, SkillLayer, std::path::PathBuf), ToolError> {
     let name = args
         .name
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            "错误：install 需要 name 参数（技能 id，如 `code-review`；小写连字符风格）".to_string()
+            invalid("错误：install 需要 name 参数（技能 id，如 `code-review`；小写连字符风格）")
         })?;
     validate_skill_id(name)?;
     let content = args
@@ -111,11 +124,11 @@ fn install_plan(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            "错误：install 需要 content 参数（Markdown 正文；frontmatter 由工具自动生成）".to_string()
+            invalid("错误：install 需要 content 参数（Markdown 正文；frontmatter 由工具自动生成）")
         })?;
     // content 自带 frontmatter 会与工具生成的叠加：解析器只认第一个 `---` 块，原块沦为正文。
     if content.lines().next().map(str::trim) == Some("---") {
-        return Err("错误：content 以 `---` frontmatter 开头；请剥离原有 frontmatter 只传 Markdown 正文（name / description 用参数提供，frontmatter 由本工具自动生成）".to_string());
+        return Err(invalid("错误：content 以 `---` frontmatter 开头；请剥离原有 frontmatter 只传 Markdown 正文（name / description 用参数提供，frontmatter 由本工具自动生成）"));
     }
     let layer = install_layer(args.layer)?;
     let dir = layer_dir(skills, working_dir, layer)?;
@@ -123,39 +136,46 @@ fn install_plan(
 }
 
 /// install 目标层：仅 workspace（默认）/ user；system 拒绝。
-fn install_layer(layer: Option<SkillManageLayer>) -> Result<SkillLayer, String> {
+#[allow(clippy::result_large_err)]
+fn install_layer(layer: Option<SkillManageLayer>) -> Result<SkillLayer, ToolError> {
     match layer.unwrap_or(SkillManageLayer::Workspace) {
         SkillManageLayer::Workspace => Ok(SkillLayer::Workspace),
         SkillManageLayer::User => Ok(SkillLayer::User),
-        SkillManageLayer::System => Err(
-            "错误：install 不允许写入系统级层（system）；请用 workspace（默认）或 user".to_string(),
-        ),
+        SkillManageLayer::System => Err(invalid(
+            "错误：install 不允许写入系统级层（system）；请用 workspace（默认）或 user",
+        )),
     }
 }
 
 /// 目标层内同 id（merge key）冲突的技能条目。
+#[allow(clippy::result_large_err)]
 fn install_conflicts(
     skills: &SkillsConfigSection,
     working_dir: &Path,
     layer: SkillLayer,
     key: &str,
-) -> Result<Vec<SkillManagedDoc>, String> {
-    Ok(scan_entries(skills, working_dir)?
+) -> Result<Vec<SkillManagedDoc>, ToolError> {
+    Ok(scan_entries(skills, working_dir)
+        .map_err(|e| io_failed(format!("错误：扫描目标层目录失败：{e}")))?
         .into_iter()
         .filter(|d| d.layer == layer && d.merge_key() == key)
         .collect())
 }
 
-fn install_conflict_error(layer: SkillLayer, name: &str, conflicts: &[SkillManagedDoc]) -> String {
+fn install_conflict_error(
+    layer: SkillLayer,
+    name: &str,
+    conflicts: &[SkillManagedDoc],
+) -> ToolError {
     let listing = conflicts
         .iter()
         .map(|c| format!("`{}`", c.abs_path.display()))
         .collect::<Vec<_>>()
         .join("、");
-    format!(
+    invalid(format!(
         "错误：{} 层已存在同 id 技能 `{name}`：{listing}。传 force=true 覆盖（仅覆盖本工具的规范路径 `<dir>/{name}/SKILL.md`）。",
         layer.label()
-    )
+    ))
 }
 
 /// frontmatter `description:`：参数优先；缺省回退正文首个非空行。
@@ -180,14 +200,20 @@ fn build_skill_file_content(name: &str, description: Option<&str>, content: &str
 }
 
 /// 写盘（含目录创建）。
-fn write_skill_file(target_path: &Path, file_content: &str) -> Result<(), String> {
+#[allow(clippy::result_large_err)]
+fn write_skill_file(target_path: &Path, file_content: &str) -> Result<(), ToolError> {
     let parent = target_path
         .parent()
-        .ok_or_else(|| format!("错误：无效目标路径 `{}`", target_path.display()))?;
-    std::fs::create_dir_all(parent)
-        .map_err(|e| format!("错误：无法创建技能目录 `{}`：{e}", parent.display()))?;
-    std::fs::write(target_path, file_content)
-        .map_err(|e| format!("错误：写入技能文件 `{}` 失败：{e}", target_path.display()))
+        .ok_or_else(|| invalid(format!("错误：无效目标路径 `{}`", target_path.display())))?;
+    std::fs::create_dir_all(parent).map_err(|e| {
+        io_failed(format!("错误：无法创建技能目录 `{}`：{e}", parent.display()))
+    })?;
+    std::fs::write(target_path, file_content).map_err(|e| {
+        io_failed(format!(
+            "错误：写入技能文件 `{}` 失败：{e}",
+            target_path.display()
+        ))
+    })
 }
 
 /// 跨层覆盖提示（install 成功后追加）。
@@ -236,22 +262,17 @@ fn install_footer(out: &mut String, skills: &SkillsConfigSection, name: &str) {
     ));
 }
 
+#[allow(clippy::result_large_err)]
 fn install_action(
     args: &SkillManageArgs,
     skills: &SkillsConfigSection,
     working_dir: &Path,
-) -> String {
-    let (name, content, layer, dir) = match install_plan(args, skills, working_dir) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    let (name, content, layer, dir) = install_plan(args, skills, working_dir)?;
     let key = name.to_ascii_lowercase();
-    let conflicts = match install_conflicts(skills, working_dir, layer, &key) {
-        Ok(v) => v,
-        Err(e) => return format!("错误：扫描目标层目录失败：{e}"),
-    };
+    let conflicts = install_conflicts(skills, working_dir, layer, &key)?;
     if !conflicts.is_empty() && !args.force.unwrap_or(false) {
-        return install_conflict_error(layer, &name, &conflicts);
+        return Err(install_conflict_error(layer, &name, &conflicts));
     }
     let description = install_description(args, &content);
     let file_content = build_skill_file_content(&name, description.as_deref(), &content);
@@ -262,9 +283,7 @@ fn install_action(
         .filter(|c| c.abs_path != target_path)
         .map(|c| format!("`{}`", c.abs_path.display()))
         .collect();
-    if let Err(e) = write_skill_file(&target_path, &file_content) {
-        return e;
-    }
+    write_skill_file(&target_path, &file_content)?;
     let mut out = format!(
         "已{}技能 `{name}` 到 {} 层：`{}`（{} 字符）",
         if canonical_conflict { "覆盖" } else { "安装" },
@@ -283,38 +302,38 @@ fn install_action(
     }
     install_cross_notes(&mut out, skills, working_dir, layer, &key);
     install_footer(&mut out, skills, &name);
-    out
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
 // remove
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::result_large_err)]
 fn remove_action(
     args: &SkillManageArgs,
     skills: &SkillsConfigSection,
     working_dir: &Path,
-) -> String {
+) -> Result<String, ToolError> {
     let Some(name) = args.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
-        return "错误：remove 需要 name 参数（技能 id；可先用 list 动作查看）".to_string();
+        return Err(invalid(
+            "错误：remove 需要 name 参数（技能 id；可先用 list 动作查看）",
+        ));
     };
     if !args.confirm.unwrap_or(false) {
-        return format!("错误：删除技能 `{name}` 需 confirm=true（不可恢复，请先 list 确认目标）。");
+        return Err(invalid(format!(
+            "错误：删除技能 `{name}` 需 confirm=true（不可恢复，请先 list 确认目标）。"
+        )));
     }
-    let entries = match scan_entries(skills, working_dir) {
-        Ok(v) => v,
-        Err(e) => return format!("错误：{e}"),
-    };
+    let entries = scan_entries(skills, working_dir).map_err(|e| io_failed(format!("错误：{e}")))?;
     let key = name.to_ascii_lowercase();
     let cands: Vec<_> = entries.iter().filter(|e| e.merge_key() == key).collect();
     if cands.is_empty() {
-        return remove_not_found(name, &entries);
+        return Err(remove_not_found(name, &entries));
     }
     let scope = remove_scope(args.layer);
-    match remove_pick_target(name, &cands, scope) {
-        Err(e) => e,
-        Ok(target) => remove_delete(skills, working_dir, name, target),
-    }
+    let target = remove_pick_target(name, &cands, scope)?;
+    remove_delete(skills, working_dir, name, target)
 }
 
 /// remove 目标层：缺省即工作区层；系统层需显式 `layer=system`。
@@ -327,7 +346,7 @@ fn remove_scope(layer: Option<SkillManageLayer>) -> SkillLayer {
 }
 
 /// 未找到时的回显：列出当前可调用 id 帮助纠错。
-fn remove_not_found(name: &str, entries: &[SkillManagedDoc]) -> String {
+fn remove_not_found(name: &str, entries: &[SkillManagedDoc]) -> ToolError {
     let hints = entries
         .iter()
         .map(|e| skill_callable_id(&e.doc))
@@ -335,18 +354,19 @@ fn remove_not_found(name: &str, entries: &[SkillManagedDoc]) -> String {
         .collect::<Vec<_>>()
         .join(" · ");
     if hints.is_empty() {
-        format!("错误：未找到技能 `{name}`（目录无技能文件）。")
+        invalid(format!("错误：未找到技能 `{name}`（目录无技能文件）。"))
     } else {
-        format!("错误：未找到技能 `{name}`。当前技能：{hints}。")
+        invalid(format!("错误：未找到技能 `{name}`。当前技能：{hints}。"))
     }
 }
 
 /// layer 消歧：scoped 为 0 → 提示各层分布；1 → 唯一删除目标；多个 → 要求先手动清理。
+#[allow(clippy::result_large_err)]
 fn remove_pick_target<'a>(
     name: &str,
     cands: &[&'a SkillManagedDoc],
     scope: SkillLayer,
-) -> Result<&'a SkillManagedDoc, String> {
+) -> Result<&'a SkillManagedDoc, ToolError> {
     let scoped: Vec<_> = cands.iter().copied().filter(|e| e.layer == scope).collect();
     match scoped.as_slice() {
         [] => Err(remove_scope_mismatch(name, cands)),
@@ -355,7 +375,7 @@ fn remove_pick_target<'a>(
     }
 }
 
-fn remove_scope_mismatch(name: &str, cands: &[&SkillManagedDoc]) -> String {
+fn remove_scope_mismatch(name: &str, cands: &[&SkillManagedDoc]) -> ToolError {
     let listing = cands
         .iter()
         .map(|c| format!("[{}] `{}`", c.layer.label(), c.abs_path.display()))
@@ -366,38 +386,41 @@ fn remove_scope_mismatch(name: &str, cands: &[&SkillManagedDoc]) -> String {
         .map(|c| c.layer.label())
         .collect::<Vec<_>>()
         .join(" / ");
-    format!("错误：技能 `{name}` 存在于 {layers}；请用 layer 参数指定要删除的层：{listing}")
+    invalid(format!(
+        "错误：技能 `{name}` 存在于 {layers}；请用 layer 参数指定要删除的层：{listing}"
+    ))
 }
 
-fn remove_ambiguous(name: &str, many: &[&SkillManagedDoc], scope: SkillLayer) -> String {
+fn remove_ambiguous(name: &str, many: &[&SkillManagedDoc], scope: SkillLayer) -> ToolError {
     let listing = many
         .iter()
         .map(|c| format!("`{}`", c.abs_path.display()))
         .collect::<Vec<_>>()
         .join("；");
-    format!(
+    invalid(format!(
         "错误：{} 层内 `{name}` 匹配多个文件：{listing}；请先手动清理为唯一后再删除。",
         scope.label()
-    )
+    ))
 }
 
 /// 删除目标文件并组装成功回执。
+#[allow(clippy::result_large_err)]
 fn remove_delete(
     skills: &SkillsConfigSection,
     working_dir: &Path,
     name: &str,
     target: &SkillManagedDoc,
-) -> String {
+) -> Result<String, ToolError> {
     let path = &target.abs_path;
-    if let Err(e) = std::fs::remove_file(path) {
-        return format!("错误：删除 `{}` 失败：{e}", path.display());
-    }
+    std::fs::remove_file(path).map_err(|e| {
+        io_failed(format!("错误：删除 `{}` 失败：{e}", path.display()))
+    })?;
     let dir_note = remove_cleanup_dir(skills, working_dir, target);
-    format!(
+    Ok(format!(
         "已删除 {} 层技能 `{name}`：`{}`{dir_note}\n[提示] 下一轮对话起不再注入；若更底层存在同名技能，该层副本将恢复生效。",
         target.layer.label(),
         path.display()
-    )
+    ))
 }
 
 /// 嵌套布局 `<id>/SKILL.md`：目录空则一并清理，返回注释片段（平铺文件无目录可清）。
@@ -439,33 +462,36 @@ fn scan_entries(
 }
 
 /// 解析指定层的 skills 目录。
+#[allow(clippy::result_large_err)]
 fn layer_dir(
     skills: &SkillsConfigSection,
     working_dir: &Path,
     layer: SkillLayer,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, ToolError> {
     let configured = match layer {
         SkillLayer::Workspace => skills.skills_dir.as_str(),
         SkillLayer::User => skills.skills_user_dir.as_str(),
         SkillLayer::System => skills.skills_system_dir.as_str(),
     };
     resolve_skill_layer_dir(working_dir, configured, layer)
+        .map_err(|e| io_failed(format!("错误：{e}")))
 }
 
 /// 技能 id 合法性：仅字母 / 数字 / `-` / `_`，≤64 字符，且不得与内建斜杠命令保留词冲突。
-fn validate_skill_id(name: &str) -> Result<(), String> {
+#[allow(clippy::result_large_err)]
+fn validate_skill_id(name: &str) -> Result<(), ToolError> {
     if name.chars().count() > 64 {
-        return Err("错误：name 过长（≤64 字符）".to_string());
+        return Err(invalid("错误：name 过长（≤64 字符）"));
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err(format!(
+        return Err(invalid(format!(
             "错误：name `{name}` 含非法字符：仅允许字母 / 数字 / `-` / `_`（不含空格与路径分隔符）"
-        ));
+        )));
     }
     if crate::cm_types::is_reserved_slash_head(&name.to_ascii_lowercase()) {
-        return Err(format!(
+        return Err(invalid(format!(
             "错误：name `{name}` 是内建斜杠命令保留词，不能作为技能 id（否则 `/{name}` 无法调用）"
-        ));
+        )));
     }
     Ok(())
 }
@@ -503,9 +529,15 @@ mod tests {
         }
     }
 
+    /// 测试统一取「正文」：成功取 `Ok`，失败取 `ToolError.message`。
+    /// 这样断言仍可沿用 `contains` / `starts_with("错误：")` 的原口径（消息文案逐字未变），
+    /// 同时失败路径已不再依赖正文关键词判定。
     fn run(args_json: &str, skills: &SkillsConfigSection, ws: &Path) -> String {
         let args: SkillManageArgs = super::super::parse_args_typed(args_json).unwrap();
-        skill_manage(args, skills, ws)
+        match skill_manage(args, skills, ws) {
+            Ok(out) => out,
+            Err(e) => e.message,
+        }
     }
 
     fn ws_skills_dir(ws: &Path) -> PathBuf {

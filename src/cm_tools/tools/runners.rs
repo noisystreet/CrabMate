@@ -309,14 +309,16 @@ pub fn runner_self_config_info_try(
     Ok(out)
 }
 
-pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {
+#[allow(clippy::result_large_err)]
+pub fn runner_skill_manage_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     let Some(cfg) = ctx.cfg else {
-        return "错误：工具上下文缺少 AgentConfig".to_string();
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：工具上下文缺少 AgentConfig".to_string(),
+        ));
     };
-    let parsed: super::tool_param_types::SkillManageArgs = match super::parse_args_typed(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let parsed: super::tool_param_types::SkillManageArgs =
+        super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
     skill_manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
 }
 
