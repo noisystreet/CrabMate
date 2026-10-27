@@ -243,6 +243,9 @@ pub fn runner_cargo_check_try(
 define_runners_cwd_maxlen_try! {
     runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
     runner_cargo_run_try => cargo_tools::cargo_run_try,
+    runner_code_stats_try => code_metrics::code_stats_try,
+    runner_dependency_graph_try => code_metrics::dependency_graph_try,
+    runner_coverage_report_try => code_metrics::coverage_report_try,
 }
 
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
@@ -463,9 +466,6 @@ define_runners_cwd_maxlen! {
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
     runner_run_lints => lint::run,
-    runner_code_stats => code_metrics::code_stats,
-    runner_dependency_graph => code_metrics::dependency_graph,
-    runner_coverage_report => code_metrics::coverage_report,
 }
 
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────

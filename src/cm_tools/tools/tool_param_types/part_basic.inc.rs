@@ -196,7 +196,7 @@ pub struct MarkdownCheckLinksArgs {
     pub output_format: Option<MarkdownCheckLinksOutputFormat>,
 }
 
-/// [`super::code_metrics::code_stats`] 的 `format`。
+/// [`super::code_metrics::code_stats_try`] 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CodeStatsFormat {
@@ -205,7 +205,7 @@ pub enum CodeStatsFormat {
     Json,
 }
 
-/// [`super::code_metrics::code_stats`] 入参。
+/// [`super::code_metrics::code_stats_try`] 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct CodeStatsArgs {
@@ -215,7 +215,7 @@ pub struct CodeStatsArgs {
     pub format: Option<CodeStatsFormat>,
 }
 
-/// [`super::code_metrics::dependency_graph`] 的 `format`。
+/// [`super::code_metrics::dependency_graph_try`] 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGraphFormat {
@@ -225,7 +225,7 @@ pub enum DependencyGraphFormat {
     Tree,
 }
 
-/// [`super::code_metrics::dependency_graph`] 的 `kind`。
+/// [`super::code_metrics::dependency_graph_try`] 的 `kind`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGraphKind {
@@ -238,7 +238,7 @@ pub enum DependencyGraphKind {
     Node,
 }
 
-/// [`super::code_metrics::dependency_graph`] 入参。
+/// [`super::code_metrics::dependency_graph_try`] 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DependencyGraphArgs {
@@ -252,7 +252,7 @@ pub struct DependencyGraphArgs {
     pub kind: Option<DependencyGraphKind>,
 }
 
-/// [`super::code_metrics::coverage_report`] 的 `format`。
+/// [`super::code_metrics::coverage_report_try`] 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageReportFormat {
@@ -264,7 +264,7 @@ pub enum CoverageReportFormat {
     Cobertura,
 }
 
-/// [`super::code_metrics::coverage_report`] 入参。
+/// [`super::code_metrics::coverage_report_try`] 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct CoverageReportArgs {

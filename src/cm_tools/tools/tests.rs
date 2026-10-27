@@ -676,7 +676,10 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（A 档第二项）：`long_term_*` 四个（`remember` / `forget` / `memory_list` /
     // `summarize_experience`）迁为 Typed（−4）—— 顺带修掉「`参数 JSON 无效: …` 无
     // `错误：` 前缀会被启发式判成成功」的旧缺陷。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 39 } else { 36 };
+    // 本轮（A 档第三项）：`metrics` 族 `code_stats` / `dependency_graph` / `coverage_report`
+    // 迁为 Typed（−3）—— 划分口径：「没有这个东西」（无源码文件 / 无构建清单 / 未找到
+    // 覆盖率文件）仍返回 `Ok`，属合法答案；只有参数与路径问题才 `Err`。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 36 } else { 33 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

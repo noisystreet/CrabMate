@@ -8,6 +8,7 @@ use crate::cm_tools::tools::output_util;
 use crate::cm_tools::tools::tool_param_types::{
     DependencyGraphArgs, DependencyGraphFormat, DependencyGraphKind,
 };
+use crate::cm_tools::tool_result::ToolError;
 
 #[path = "code_metrics_dep_graph_cargo.rs"]
 mod dep_cargo;
@@ -44,12 +45,17 @@ fn parse_dependency_graph_args(args_json: &str) -> Result<ParsedDepGraph, String
 }
 
 /// 依赖关系可视化（Cargo / Go / npm）。
-pub fn dependency_graph(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let p = match parse_dependency_graph_args(args_json) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    dispatch_dependency_graph(workspace_root, p, max_output_len)
+///
+/// 参数形状不符归 `invalid_args`；「未检测到构建清单」属**合法答案**（说明工作区确实
+/// 没有 `Cargo.toml` / `go.mod` / `package.json`），仍返回 `Ok`。
+#[allow(clippy::result_large_err)]
+pub fn dependency_graph_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let p = parse_dependency_graph_args(args_json).map_err(ToolError::invalid_args)?;
+    Ok(dispatch_dependency_graph(workspace_root, p, max_output_len))
 }
 
 fn dispatch_dependency_graph(
