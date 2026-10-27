@@ -673,7 +673,10 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // `sections` 未匹配均改为显式 `ToolError`。同项的 `skill_manage` 暂缓：其内部实现是
     // `Result<_, String>`（约 20 处 `"错误：…"`），需整体换成 `Result<_, ToolError>`，
     // 单独切片处理（见 `docs/design/tool_runner_typed_migration.md` §4.8）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 43 } else { 40 };
+    // 本轮（A 档第二项）：`long_term_*` 四个（`remember` / `forget` / `memory_list` /
+    // `summarize_experience`）迁为 Typed（−4）—— 顺带修掉「`参数 JSON 无效: …` 无
+    // `错误：` 前缀会被启发式判成成功」的旧缺陷。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 39 } else { 36 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

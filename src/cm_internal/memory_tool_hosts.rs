@@ -18,6 +18,7 @@ use crate::cm_internal::tool_jobs::GetOutcome;
 use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
 use crate::cm_internal::tool_jobs::types::JobStatus;
 use crate::cm_tools::subprocess_session::SessionStream;
+use crate::cm_tools::tool_result::ToolError;
 
 pub struct CodebaseSemanticHost {
     pub params: CodebaseSemanticToolParams,
@@ -57,7 +58,12 @@ impl LongTermMemoryHost {
 }
 
 impl LongTermMemoryToolHost for LongTermMemoryHost {
-    fn dispatch(&self, tool_name: &str, args_json: &str, cfg: &AgentConfig) -> String {
+    fn dispatch(
+        &self,
+        tool_name: &str,
+        args_json: &str,
+        cfg: &AgentConfig,
+    ) -> Result<String, ToolError> {
         let st = LongTermMemoryToolState {
             cfg,
             rt: &self.inner.rt,
@@ -68,7 +74,9 @@ impl LongTermMemoryToolHost for LongTermMemoryHost {
             "long_term_forget" => long_term_forget(args_json, &st),
             "long_term_memory_list" => long_term_memory_list(args_json, &st),
             "summarize_experience" => summarize_experience(args_json, &st),
-            _ => format!("错误：未知长期记忆工具 `{tool_name}`"),
+            _ => Err(ToolError::invalid_args(format!(
+                "错误：未知长期记忆工具 `{tool_name}`"
+            ))),
         }
     }
 }
