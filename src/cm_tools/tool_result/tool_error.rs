@@ -122,6 +122,8 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "list_tree_path_not_dir"
         | "read_binary_meta_path_not_file" => ToolFailureCategory::InvalidInput,
         "read_dir_sensitive_path" => ToolFailureCategory::PolicyDenied,
+        // 临时脚本落到工作区根之外：安全拒绝（不是 IO 故障，也不是参数问题）。
+        "python_snippet_temp_path_outside_workspace" => ToolFailureCategory::PolicyDenied,
         // 仅表示「路径落到工作区根之外」或工作区自身不可解析；「文件不存在」走下面的 `*_io_failed`。
         "read_dir_workspace_resolve_failed"
         | "glob_files_workspace_resolve_failed"
@@ -304,8 +306,9 @@ impl ToolError {
         }
     }
 
-    /// `cargo_*` 等子进程非零退出：`error_code` 为 `{tool_code}_failed`（如 `cargo_check_failed`）。
-    pub fn cargo_subcommand_failed(tool_code: &str, exit_code: i32, message: String) -> Self {
+    /// 子进程非零退出：`error_code` 为 `{tool_code}_failed`（如 `cargo_check_failed` /
+    /// `pytest_failed` / `python_snippet_failed`），并把退出码写进 `legacy_parsed.exit_code`。
+    pub fn subprocess_failed(tool_code: &str, exit_code: i32, message: String) -> Self {
         let code = format!("{tool_code}_failed");
         let parsed = ParsedLegacyOutput {
             ok: false,

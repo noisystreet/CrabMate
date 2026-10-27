@@ -29,10 +29,10 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 13**
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 11**
 > （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`、
-> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api`、`git` 陆续迁完后，
-> 23 → 19 → 14 → 13）。
+> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api`、`git`、
+> `pytest_run` / `python_snippet_run` 陆续迁完后，23 → 19 → 14 → 13 → 11）。
 > §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
@@ -55,13 +55,13 @@
 | `schedule.inc.rs` | 0 | 2 | 已全迁（2026-10-28，`reminder` / `event` 走 `define_runners_cwd_try!`） |
 | `self_config_info.inc.rs` | 0 | 2 | 已全迁（见 §4.8） |
 | `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
-| `frontend_python.inc.rs` | 2 | 0 | 全 Legacy |
+| `frontend_python.inc.rs` | 0 | 2 | 已全迁（2026-10-28，C 档；见 §4.13） |
 | `frontend_audit_ci.inc.rs` | 0 | 1 | 已全迁（2026-10-28：`workflow_execute` 同步面占位改 Typed，返回 `workflow_execute_not_intercepted`；`rust_backtrace_analyze` 已整工具删除，见 §7） |
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 0 | 1 | 已全迁（2026-10-28，C 档；见 §4.12） |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 13） |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 11） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -303,12 +303,42 @@
 `log_in_empty_repository_is_a_failure` 与配对的 `log_after_first_commit_is_success`（证明不是把正常路径判坏）、
 `status_on_repository_is_success`（钉 `Ok` 正文前缀）。审计表删掉 `git` 条目——工具已非 Legacy。
 
-### 4.13 `frontend_python.inc.rs`（2）— 手写
+### 4.13 `frontend_python.inc.rs`（2）— **已迁 2026-10-28**（手写 runner）
 
-| 工具 | 目标实现 | 备注 |
+| 工具 | 实现 | 目标 runner |
 |---|---|---|
-| `pytest_run` | `python_tools::pytest_run(...)` | 关联后台任务装配（`background_job_async_tools`） |
-| `python_snippet_run` | `python_tools::python_snippet_run(...)` | 任意代码执行 |
+| `pytest_run` | `python_tools::pytest_run_try` | 关联后台任务装配（`background_job_async_tools`） |
+| `python_snippet_run` | `python_tools::python_snippet_run_try` | 任意代码执行 |
+
+**两个非失败分支必须先拆出来**，否则迁移会把「正常跳过」翻成「工具故障」：
+
+1. `pytest_run` 在**工作区没有 Python 工程标记**时返回「pytest: 跳过（…）」。旧实现以 `Err(String)`
+   从这个点返回，但正文不含「错误 / 失败」，启发式判为**成功**（审计表按 `Legal` 钉住）。
+   迁移后 `build_pytest_command` 返回 `PytestCommand::{Run, Skipped}`，`Skipped` 走 `Ok(msg)`；
+   后台装配（`pytest_run_background_argv`，返回 `Result<_, String>` 供装配表用）仍把它当错误——
+   没有命令可跑，保持旧行为。
+2. `pytest` 的 **`5`（no tests collected）**：`run_and_format_try` 因此多一个 `allowed_exit` 参数
+   （`PYTEST_OK_EXITS = &[0, 5]`）。**`1` 不在其中**——测试失败与 `cargo_test` 一致归
+   `pytest_failed`；`2`/`3`/`4` 同理。这一点与 `gh pr checks` 的 1/8 是不同的问题：
+   那里 1/8 是「CI 状态」，这里 1 是「断言失败」。
+
+**错误码**：`invalid_args`（缺/空 `code`、`code` 超 256 KiB、`use_uv` 缺 `pyproject.toml`、
+`test_path`/`keyword`/`markers` 非法）；`workspace_resolve_failed`（工作区根不可解析，与
+`path_resolve_failed` 同码）；`python_snippet_temp_file_failed`（临时脚本 IO）；
+**`python_snippet_temp_path_outside_workspace`**（越界，`PolicyDenied`，显式登记）；
+`command_not_found` / `spawn_failed`；`timeout` / `cancelled`（走 `ToolError::session_stop`，
+保留 `legacy_parsed` 的 stdout/stderr）；`pytest_failed` / `python_snippet_failed`
+（`ToolError::subprocess_failed`，由 `cargo_subcommand_failed` 重命名而来——现在三族共用，
+退出码仍写进 `legacy_parsed.exit_code`）。
+
+**未抽取**：`python_tools::run_and_format_try` 与 `cargo_subcommand::run_and_format_try` 仍有
+约 60 行重复（后者无 `allowed_exit`）。注释里已写明「第三次出现即抽公共模块」——现在是第二次，
+抽出去要动已迁移的 cargo 路径，留给后续 slice。
+
+**测试**：`python_tools::tests` 从 3 条扩到 8 条（`python_snippet_nonzero_exit_reports_failed`、
+`python_snippet_missing_code_is_invalid_args`、`pytest_without_project_marker_is_success`、
+`pytest_rejects_shellish_keyword`），超时两条改为断言 `e.code == "timeout"` 且
+`e.legacy_parsed.stdout` 仍含部分输出。审计表删掉 `pytest_run` / `python_snippet_run` 两行。
 
 ### 4.14 `frontend_audit_ci.inc.rs`（2）
 
@@ -332,7 +362,7 @@
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
 | **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
-| **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、`http_fetch` / `http_request`、`web_search` / `get_weather`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
+| **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、`http_fetch` / `http_request`、`web_search` / `get_weather`、~~`pytest_run` / `python_snippet_run`~~（**已迁 2026-10-28**） | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
 **落地约定**：一个切片 = 一族 = 一个 PR；每族改完须同步 `runners.rs` 的 smoke 覆盖（§3.2），并跑 `pre-commit run --all-files` + 该族相关测试。
@@ -364,3 +394,4 @@
 | 2026-10-27 | **整工具删除：`error_output_playbook` / `playbook_run_commands`** —— 两者共用「生态 × 类别」固定查表模板（`error_playbook.rs` 整文件 627 行），建议不是对具体错误的推理：只读那半不执行命令、执行那半又让调用方看不见将要跑什么，模型自行归类后直接调 `run_command` 更透明。Legacy 31 → **29**（基线守卫 29/26）；同步移除 `registry_policy` 的写副作用名单与并行同步拒绝名单、`codebase_semantic_invalidation` 两处、`dev_tag`、`tool_summary` 动态摘要、两个参数结构体、一个白名单过滤测试。同时改写 `AGENTS.md` 与 `tool_calling_evolution.md` 里「缺 CLI 安装提示由 `error_output_playbook` 提供」的旧论证。 |
 | 2026-10-28 | **B 档：`reminder` / `event` 迁为 Typed**（Legacy 25 → **23**，基线守卫同步）。两族共用 `schedule.rs` 的 `ensure_data_dir` / `read_json` / `write_json`，五个 helper 与九个入口一起换成 `Result<_, ToolError>`；runner 侧只是把两行从 `define_runners_cwd!` 挪到已有的 `define_runners_cwd_try!`，**无需新宏**。**迁移动机是四个静默成功分支**：dispatch 层合并时新增的「`add` 缺 `title`」「缺 `id`」两类必填校验，以及 `complete` / `update` / `delete` 的「`未找到提醒/日程：id=…`」，正文都不含「错误 / 失败 / 超时」，被 `parse_legacy_output` 判成 `ok: true` —— 模型传错参数或传错 id 却拿到「成功」。现分别为 `invalid_args` 与 `reminder_not_found` / `event_not_found`。新增错误码：`reminder_not_found` / `event_not_found`（`InvalidInput`，理由是 id 只可能来自调用方，模型可先 `list` 自查，与 `archive_not_found` 的「文件系统状态」口径刻意不同）、`schedule_io_failed` / `schedule_parse_failed`（`External`）、`schedule_serialize_failed`（`Internal`，走既有 `ends_with("_serialize_failed")` 分支）。`ToolError` 顺带加了通用构造器 `with_code`，`workspace` / `external_code` 改为委托它（三份相同实现收敛为一份）。**刻意保留**：`list` 在入参 JSON 坏掉时仍退化为「无过滤条件」（宽容语义不变），成功正文逐字未变，`builtin_write_effect_tools` 无需改动（两者九合一时已登记）。测试：既有 8 个流程/必填用例改为取 `Ok` / `e.code`，新增 `unknown_id_reports_not_found_instead_of_success` / `empty_list_is_success_not_failure` / `io_failure_reports_schedule_io_failed`（后者用「`.crabmate` 建成普通文件」触发，避免 root 下 chmod 造只读目录的 flaky）。 |
 | 2026-10-28 | **C 档：`git` 迁为 Typed**（Legacy 14 → **13**，基线守卫同步）。10 个 action 全部换成 `Result<String, ToolError>`，`helpers::run_and_format` / `run_diff_mode` / `parse_args` / `extract_safe_path` / `require_safe_path` 一起换类型并加 `#[allow(clippy::result_large_err)]`；runner 侧把 `define_git_runners!` 换成孪生 `define_git_runners_try!`（旧的删掉，`unused_macros` 会报），并在 `try_macro_typecheck` 挂上 `git::dispatch` smoke。**关键复用**：在 `output_util` 里加 `run_command_output_try(..., failure_code)`，把渲染抽成私有 `render_process_output` 与前一个函数共用，所以 `Ok` 正文逐字不变、只多「非零退出 → `Err`」一层判定。新增错误码 **`git_not_a_repo`**（`Workspace`，显式登记：不以 `_failed` 结尾）与 `git_{action}_failed`（`External`，由 `external_code_owned` 拼接）。**没有豁免名单**：只读 git 子命令不存在「非零退出但语义正常」，代价是空仓库的 `log` / `show`（128）现在算失败——写入文档与测试（`log_in_empty_repository_is_a_failure` 与配对的 `log_after_first_commit_is_success`）。`ensure_git_repo` 保留 `String` 薄壳供 `github_cli::pr_body` 用，避免把 `gh_git_failed` 的码混进来。审计表删掉 `git` 条目。 |
+| 2026-10-28 | **C 档：`pytest_run` / `python_snippet_run` 迁为 Typed**（Legacy 13 → **11**，基线守卫同步）。`pytest_run_try` / `python_snippet_run_try` 取代旧 `String` 入口，runner 改名为 `runner_pytest_run_try` / `runner_python_snippet_run_try`。**两个「不是失败」的分支先拆出来**：①`build_pytest_command` 现在返回 `PytestCommand::{Run, Skipped}`——工作区没有 Python 工程标记时的「跳过」以前以 `Err(String)` 返回但被启发式判成功（审计表 `Legal`），若塞进 `Err` 就成了迁移引入的假回归；后台装配 `pytest_run_background_argv` 仍把它当错误（没有命令可跑）。②pytest 的 **5（no tests collected）** 算成功：`run_and_format_try` 因此带 `allowed_exit`（`PYTEST_OK_EXITS = &[0, 5]`），而 **1（断言失败）不在其中**，与 `cargo_test` 的 `cargo_test_failed` 同口径——这点与 `gh pr checks` 的 1/8 不同：那里是 CI 状态，这里是真的测试失败。**错误码**：`invalid_args`（缺/空 `code`、`code` 超 256 KiB、`use_uv` 缺 `pyproject.toml`、`test_path`/`keyword`/`markers` 非法）、`workspace_resolve_failed`、`python_snippet_temp_file_failed`、**`python_snippet_temp_path_outside_workspace`**（`PolicyDenied`，显式登记）、`command_not_found` / `spawn_failed`、`timeout` / `cancelled`（`ToolError::session_stop`，保留 `legacy_parsed` 的 stdout/stderr，超时测试因此仍能断言部分输出）、`pytest_failed` / `python_snippet_failed`。顺带把 `ToolError::cargo_subcommand_failed` 重命名为 **`subprocess_failed`**（cargo / pytest / python_snippet 三族共用，退出码仍写进 `legacy_parsed.exit_code`）。**未抽取**：`python_tools::run_and_format_try` 与 `cargo_subcommand::run_and_format_try` 仍重复约 60 行，注释写明「第三次出现即抽公共模块」（现在只是第二次，抽出去要动已迁移的 cargo 路径）。测试 3 → 8 条；审计表删掉这两行。 |

@@ -203,7 +203,7 @@ pub(super) fn run_and_format_try(
                 if session.status.is_some_and(|s| s.success()) {
                     Ok(message)
                 } else {
-                    Err(ToolError::cargo_subcommand_failed(tool_code, exit, message))
+                    Err(ToolError::subprocess_failed(tool_code, exit, message))
                 }
             }
             SessionStopKind::Timeout | SessionStopKind::Cancelled => {

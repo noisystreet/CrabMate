@@ -691,7 +691,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // （`log` 在空仓库、`show` 的 rev 不存在、`blame` 的路径不在索引…）此前只以正文
     // 「退出码：N」存在，靠 `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式
     // `git_{action}_failed`，「不在 Git 仓库」另有 `git_not_a_repo`。14 → 13。
-    const LEGACY_BASELINE: usize = 13;
+    // 本轮（C 档 · Python 族）：`pytest_run` / `python_snippet_run` 迁 Typed（−2）——
+    // `pytest_run` 的 `5`（未收集到用例）与「工作区无 Python 工程标记」仍算成功，
+    // `1`/`2`/`3`/`4` 与脚本非零退出显式成 `pytest_failed` / `python_snippet_failed`。
+    // 13 → 11。
+    const LEGACY_BASELINE: usize = 11;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

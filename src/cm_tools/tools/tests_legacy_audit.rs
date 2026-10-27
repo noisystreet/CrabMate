@@ -119,19 +119,8 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
     ),
     // ── 工作流：`workflow_execute` 已迁 Typed（同步面返回 `Err`），
     //    见 `runners::runner_workflow_execute_try` ──
-    // ── Python 族：故意用类型违规，避免真的跑 pytest / 执行代码 ──
-    (
-        "pytest_run",
-        r#"{"quiet":"not-a-bool"}"#,
-        Expect::Legal,
-        "「pytest: 跳过（未找到 pyproject.toml …）」—— 跳过是正常语义",
-    ),
-    (
-        "python_snippet_run",
-        r#"{"code":"","timeout_secs":100000}"#,
-        Expect::Fails,
-        "缺少非空 code",
-    ),
+    // ── Python 族：`pytest_run` / `python_snippet_run` 均已迁 Typed（失败显式 `Err(ToolError)`），
+    //    错误码由 `python_tools::tests` 覆盖，不再经本表 ──
     // ── Git / GitHub 族：`gh_*` 五个与 `git` 均已迁 Typed（失败显式 `Err(ToolError)`），
     //    码见 `mod.rs` 的 `command_not_allowed` / `gh_{子命令}_failed` / `git_{action}_failed`，
     //    由各文件单测覆盖（`git::read_ops::tests`），不再经本表 ──
