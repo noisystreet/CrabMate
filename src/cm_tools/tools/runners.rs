@@ -242,12 +242,6 @@ pub fn runner_cargo_test_try(args: &str, ctx: &ToolContext<'_>) -> Result<String
     cargo_tools::cargo_test_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
-/// `rust_test_one` 的 Typed runner：额外透传 `ctx`。
-#[allow(clippy::result_large_err)]
-pub fn runner_rust_test_one_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    cargo_tools::rust_test_one_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
-}
-
 pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::pytest_run(
         args,
@@ -480,6 +474,8 @@ define_runners_cwd_try! {
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
+    runner_reminder_try => schedule_dispatch::reminder,
+    runner_event_try => schedule_dispatch::event,
 }
 
 // ── 已改走 `PathAccess` 的文件类工具（R1 收口）──────────────────
@@ -500,8 +496,6 @@ define_runners_paths_try! {
 define_runners_cwd! {
     runner_rust_analyzer => rust_ide::rust_analyzer,
     runner_code_nav => code_nav_dispatch::dispatch,
-    runner_reminder => schedule_dispatch::reminder,
-    runner_event => schedule_dispatch::event,
 }
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────

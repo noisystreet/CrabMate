@@ -160,7 +160,10 @@ pub fn wrap_cache_hit(fingerprint: &str, body: &str) -> String {
     format!("{CACHE_BANNER}{fingerprint}\n---\n{body}")
 }
 
-/// `cargo test` / `rust_test_one` 参数的稳定 JSON 摘要。
+/// `cargo test` 参数的稳定 JSON 摘要。
+///
+/// `test_filter` 是「跑单个测试」的唯一入口：`rust_test_one` 删除前会把 `test_name` 转写进来，
+/// 现在只剩这一条路径（`run_command` 的 `cargo test` 亦按命令串另行指纹）。
 pub fn cargo_test_args_fingerprint(v: &serde_json::Value) -> String {
     let release = v.get("release").and_then(|x| x.as_bool()).unwrap_or(false);
     let all_targets = v
@@ -171,7 +174,6 @@ pub fn cargo_test_args_fingerprint(v: &serde_json::Value) -> String {
     let bin = v.get("bin").and_then(|x| x.as_str()).unwrap_or("");
     let features = v.get("features").and_then(|x| x.as_str()).unwrap_or("");
     let test_filter = v.get("test_filter").and_then(|x| x.as_str()).unwrap_or("");
-    let test_name = v.get("test_name").and_then(|x| x.as_str()).unwrap_or("");
     let nocapture = v
         .get("nocapture")
         .and_then(|x| x.as_bool())
@@ -183,7 +185,6 @@ pub fn cargo_test_args_fingerprint(v: &serde_json::Value) -> String {
         "bin": bin,
         "features": features,
         "test_filter": test_filter,
-        "test_name": test_name,
         "nocapture": nocapture,
     }))
     .unwrap_or_else(|_| "{}".to_string())

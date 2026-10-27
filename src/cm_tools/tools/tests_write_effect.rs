@@ -35,8 +35,6 @@ fn write_effect_list_matches_registered_tools() {
         "apply_patch",
         "search_replace",
         "structured",
-        "archive_pack",
-        "archive_unpack",
         "run_command",
         "terminal_session",
         "cargo_test",
@@ -54,6 +52,16 @@ fn write_effect_list_matches_registered_tools() {
         assert!(
             listed.contains(name),
             "{name} 会写文件 / 执行代码 / 改持久状态，必须在写效应名单里"
+        );
+    }
+
+    // `archive_pack` / `archive_unpack` 只在 `archive-tools` feature 下注册，
+    // 名单与注册表两侧同时 gate（见 `tool_write_effect` 里的 `#[cfg]`）。
+    #[cfg(feature = "archive-tools")]
+    for name in ["archive_pack", "archive_unpack"] {
+        assert!(
+            listed.contains(name),
+            "{name} 会往工作区写文件，必须在写效应名单里"
         );
     }
 

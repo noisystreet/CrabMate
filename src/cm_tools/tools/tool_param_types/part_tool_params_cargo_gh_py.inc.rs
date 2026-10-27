@@ -38,15 +38,6 @@ pub struct CargoRunArgs {
     pub args: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct RustTestOneArgs {
-    pub test_name: String,
-    pub package: Option<String>,
-    pub bin: Option<String>,
-    pub features: Option<String>,
-    pub nocapture: Option<bool>,
-}
-
 /// `rust_analyzer` 入参：`action` 选择器 + 各动作字段的并集（按 action 取用，多余字段被忽略）。
 ///
 /// 合并自原 8 个 `rust_analyzer_*` 工具——它们的 parameters 只是同一组字段的不同子集，

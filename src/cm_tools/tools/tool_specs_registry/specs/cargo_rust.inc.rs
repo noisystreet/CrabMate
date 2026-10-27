@@ -39,12 +39,4 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_rust_analyzer),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer),
         },
-        ToolSpec {
-            name: "rust_test_one",
-            description: "运行单个 Rust 测试（按 test_name 过滤）。用于快速调试具体测试。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::RustTestOneArgs>,
-            runner: ToolRunner::Typed(runner_rust_test_one_try),
-            summary: ToolSummaryKind::Static("single Rust test"),
-        },
 ]

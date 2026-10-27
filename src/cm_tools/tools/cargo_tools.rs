@@ -75,39 +75,6 @@ pub fn cargo_run_try(
     run_cargo_subcommand_str_try("run", args_json, workspace_root, max_output_len, None)
 }
 
-pub fn rust_test_one_try(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-    ctx: Option<&ToolContext<'_>>,
-) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-    let filter = match v.get("test_name").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
-        _ => {
-            return Err(ToolError::invalid_args(
-                "错误：缺少 test_name 参数".to_string(),
-            ));
-        }
-    };
-    let mut merged = v;
-    if let Some(obj) = merged.as_object_mut() {
-        obj.insert("test_filter".to_string(), serde_json::Value::String(filter));
-    }
-    let Some(c) = ctx else {
-        return run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len, None);
-    };
-    maybe_cache_cargo_test_try(&merged, workspace_root, c, || {
-        run_cargo_subcommand_value_try(
-            "test",
-            &merged,
-            workspace_root,
-            max_output_len,
-            Some(c.command_timeout_secs),
-        )
-    })
-}
-
 fn maybe_cache_cargo_test_try(
     v: &serde_json::Value,
     workspace_root: &Path,

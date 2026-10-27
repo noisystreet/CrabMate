@@ -156,6 +156,12 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         // 与 `file_core` 里「不存在 → IO 侧」的口径一致，故同归 `External`。
         "archive_not_found" | "archive_pack_failed" | "archive_unpack_failed"
         | "archive_list_failed" => ToolFailureCategory::External,
+        // `reminder` / `event`：`id` 不存在只可能来自调用方给错 id（日程文件里的 id 由工具自己生成），
+        // 模型可先 `action=list` 自查后重试，故归 `InvalidInput` 而非 `External`。
+        "reminder_not_found" | "event_not_found" => ToolFailureCategory::InvalidInput,
+        // 日程 / 提醒的本地 JSON 持久化（两族共用 `schedule.rs` 的 IO helper）：
+        // 建目录 / 读 / 写失败归 `External`（文件系统状态），文件内容解析失败另有 `_parse_failed`。
+        "schedule_io_failed" | "schedule_parse_failed" => ToolFailureCategory::External,
         // `*_serialize_failed` / `*_internal` 由 [`ToolError::internal_code`] 构造（`category = Internal`），
         // 必须排在 `ends_with("_failed")` 之前，否则重算分类会得到 `External`，与 `ToolError.category` 冲突。
         c if c.ends_with("_serialize_failed") || c.ends_with("_internal") => {
@@ -217,8 +223,11 @@ impl ToolError {
         Self::from_parsed_legacy(tool, &parsed, message)
     }
 
-    /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`failure_category_for_error_code`] 一致。
-    pub fn workspace(code: &'static str, message: String) -> Self {
+    /// 任意错误码的失败（`category` 由 [`failure_category_for_error_code`] 推导）。
+    ///
+    /// 供没有专属构造器的码使用（如 `reminder_not_found` 归 `InvalidInput`、`schedule_io_failed`
+    /// 归 `External`）。`code` 必须在分类表里有显式分支，否则 `category` 会退化为 `Unknown`。
+    pub fn with_code(code: &'static str, message: String) -> Self {
         let parsed = ParsedLegacyOutput {
             ok: false,
             exit_code: None,
@@ -234,6 +243,11 @@ impl ToolError {
             retryable,
             legacy_parsed: parsed,
         }
+    }
+
+    /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`failure_category_for_error_code`] 一致。
+    pub fn workspace(code: &'static str, message: String) -> Self {
+        Self::with_code(code, message)
     }
 
     /// 未知工具名（与历史「未知工具：…」正文一致）。
@@ -320,21 +334,7 @@ impl ToolError {
 
     /// 外部工具/IO 类失败（`error_code` 由调用方指定，须与 [`failure_category_for_error_code`] 一致）。
     pub fn external_code(code: &'static str, message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
-            ok: false,
-            exit_code: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            error_code: Some(code.to_string()),
-        };
-        let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        Self {
-            category: failure_category_for_error_code(code),
-            code: code.to_string(),
-            message,
-            retryable,
-            legacy_parsed: parsed,
-        }
+        Self::with_code(code, message)
     }
 
     /// 逻辑或内部不变量破坏（极少见）；`error_code` 建议 `*_internal`。

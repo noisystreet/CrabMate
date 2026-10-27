@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     EventArgs, EventAction, ReminderAction, ReminderArgs,
 };
@@ -14,11 +15,14 @@ use crate::cm_tools::tools::tool_param_types::{
 use super::schedule;
 
 /// 提醒工具入口：`list` / `add` / `update` / `delete` / `complete`。
-pub fn reminder(args_json: &str, working_dir: &Path) -> String {
-    let args: ReminderArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+///
+/// `add` 缺 `title` 与 `update` / `delete` / `complete` 缺 `id` 在此收敛为 `invalid_args`：
+/// 这两类分支旧版只返回一段既无「错误」前缀也无「失败」关键词的正文，
+/// 会被 `parse_legacy_output` 判成**成功**（模型传错参数却拿到「成功」）。
+#[allow(clippy::result_large_err)]
+pub fn reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: ReminderArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     match args.action {
         ReminderAction::List => schedule::list_reminders(
             &serde_json::json!({
@@ -28,15 +32,18 @@ pub fn reminder(args_json: &str, working_dir: &Path) -> String {
             .to_string(),
             working_dir,
         ),
-        ReminderAction::Add => match non_empty(args.title.as_deref()) {
-            Some(title) => schedule::add_reminder(
+        ReminderAction::Add => {
+            let title = non_empty(args.title.as_deref()).ok_or_else(|| {
+                ToolError::invalid_args("参数错误：`add` 需要非空的 `title`。".to_string())
+            })?;
+            schedule::add_reminder(
                 &serde_json::json!({ "title": title, "due_at": args.due_at }).to_string(),
                 working_dir,
-            ),
-            None => "参数错误：`add` 需要非空的 `title`。".to_string(),
-        },
-        ReminderAction::Update => match require_id(args.id.as_deref(), "reminder") {
-            Ok(id) => schedule::update_reminder(
+            )
+        }
+        ReminderAction::Update => {
+            let id = require_id(args.id.as_deref(), "reminder")?;
+            schedule::update_reminder(
                 &serde_json::json!({
                     "id": id,
                     "title": args.title,
@@ -45,32 +52,33 @@ pub fn reminder(args_json: &str, working_dir: &Path) -> String {
                 })
                 .to_string(),
                 working_dir,
-            ),
-            Err(e) => e,
-        },
-        ReminderAction::Delete => match require_id(args.id.as_deref(), "reminder") {
-            Ok(id) => schedule::delete_reminder(
+            )
+        }
+        ReminderAction::Delete => {
+            let id = require_id(args.id.as_deref(), "reminder")?;
+            schedule::delete_reminder(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,
-            ),
-            Err(e) => e,
-        },
-        ReminderAction::Complete => match require_id(args.id.as_deref(), "reminder") {
-            Ok(id) => schedule::complete_reminder(
+            )
+        }
+        ReminderAction::Complete => {
+            let id = require_id(args.id.as_deref(), "reminder")?;
+            schedule::complete_reminder(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,
-            ),
-            Err(e) => e,
-        },
+            )
+        }
     }
 }
 
 /// 日程工具入口：`list` / `add` / `update` / `delete`。
-pub fn event(args_json: &str, working_dir: &Path) -> String {
-    let args: EventArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+///
+/// 与 [`reminder`] 同：`add` 的必填字段与 `update` / `delete` 的 `id` 在这里收敛为
+/// `invalid_args`，不再返回会被判成「成功」的裸正文。
+#[allow(clippy::result_large_err)]
+pub fn event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: EventArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     match args.action {
         EventAction::List => schedule::list_events(
             &serde_json::json!({
@@ -81,11 +89,16 @@ pub fn event(args_json: &str, working_dir: &Path) -> String {
             .to_string(),
             working_dir,
         ),
-        EventAction::Add => match (
-            non_empty(args.title.as_deref()),
-            non_empty(args.start_at.as_deref()),
-        ) {
-            (Some(title), Some(start_at)) => schedule::add_event(
+        EventAction::Add => {
+            let (Some(title), Some(start_at)) = (
+                non_empty(args.title.as_deref()),
+                non_empty(args.start_at.as_deref()),
+            ) else {
+                return Err(ToolError::invalid_args(
+                    "参数错误：`add` 需要非空的 `title` 与 `start_at`。".to_string(),
+                ));
+            };
+            schedule::add_event(
                 &serde_json::json!({
                     "title": title,
                     "start_at": start_at,
@@ -95,11 +108,11 @@ pub fn event(args_json: &str, working_dir: &Path) -> String {
                 })
                 .to_string(),
                 working_dir,
-            ),
-            _ => "参数错误：`add` 需要非空的 `title` 与 `start_at`。".to_string(),
-        },
-        EventAction::Update => match require_id(args.id.as_deref(), "event") {
-            Ok(id) => schedule::update_event(
+            )
+        }
+        EventAction::Update => {
+            let id = require_id(args.id.as_deref(), "event")?;
+            schedule::update_event(
                 &serde_json::json!({
                     "id": id,
                     "title": args.title,
@@ -110,16 +123,15 @@ pub fn event(args_json: &str, working_dir: &Path) -> String {
                 })
                 .to_string(),
                 working_dir,
-            ),
-            Err(e) => e,
-        },
-        EventAction::Delete => match require_id(args.id.as_deref(), "event") {
-            Ok(id) => schedule::delete_event(
+            )
+        }
+        EventAction::Delete => {
+            let id = require_id(args.id.as_deref(), "event")?;
+            schedule::delete_event(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,
-            ),
-            Err(e) => e,
-        },
+            )
+        }
     }
 }
 
@@ -130,10 +142,13 @@ fn non_empty(raw: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `id` 必填校验：缺失/空白时给出可操作的提示。
-fn require_id(raw: Option<&str>, tool: &str) -> Result<String, String> {
+/// `id` 必填校验：缺失/空白时给出可操作的提示（`invalid_args`）。
+#[allow(clippy::result_large_err)]
+fn require_id(raw: Option<&str>, tool: &str) -> Result<String, ToolError> {
     non_empty(raw).ok_or_else(|| {
-        format!("参数错误：`id` 不能为空；可先用 `{tool}`（`action=list`）查看可用 id。")
+        ToolError::invalid_args(format!(
+            "参数错误：`id` 不能为空；可先用 `{tool}`（`action=list`）查看可用 id。"
+        ))
     })
 }
 
@@ -142,7 +157,25 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use crate::cm_tools::tool_result::ToolError;
+
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// 期望成功；失败时把 `error_code` 与正文一并写进 panic，便于定位。
+    fn ok(r: Result<String, ToolError>) -> String {
+        match r {
+            Ok(s) => s,
+            Err(e) => panic!("期望成功，实际失败[{}]: {}", e.code, e.message),
+        }
+    }
+
+    /// 期望失败，返回 `error_code`；成功即 panic —— 静默成功正是本文件要防的缺陷。
+    fn err_code(r: Result<String, ToolError>) -> String {
+        match r {
+            Ok(s) => panic!("期望失败，实际成功: {s}"),
+            Err(e) => e.code,
+        }
+    }
 
     fn make_temp_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -177,32 +210,49 @@ mod tests {
         let dir = make_temp_dir();
         let ws = dir.as_path();
 
-        let added =
-            super::reminder(r#"{"action":"add","title":"买牛奶","due_at":"2030-01-02"}"#, ws);
+        let added = ok(super::reminder(
+            r#"{"action":"add","title":"买牛奶","due_at":"2030-01-02"}"#,
+            ws,
+        ));
         assert!(added.contains("已添加提醒"), "{added}");
         let id = first_id(ws, "reminders.json");
 
         // `complete`：默认列表随即隐藏，`include_done` 才可见 —— 两条路径都走一遍。
-        let done = super::reminder(&format!(r#"{{"action":"complete","id":"{id}"}}"#), ws);
+        let done = ok(super::reminder(
+            &format!(r#"{{"action":"complete","id":"{id}"}}"#),
+            ws,
+        ));
         assert!(done.contains("已完成提醒"), "{done}");
-        let visible = super::reminder(r#"{"action":"list"}"#, ws);
+        let visible = ok(super::reminder(r#"{"action":"list"}"#, ws));
         assert!(!visible.contains("买牛奶"), "{visible}");
-        let with_done = super::reminder(r#"{"action":"list","include_done":true}"#, ws);
+        let with_done = ok(super::reminder(
+            r#"{"action":"list","include_done":true}"#,
+            ws,
+        ));
         assert!(with_done.contains("买牛奶"), "{with_done}");
 
         // `update`：改标题 + 空串清空 `due_at`（旧实现的既有约定）。
-        let updated = super::reminder(
+        let updated = ok(super::reminder(
             &format!(r#"{{"action":"update","id":"{id}","title":"买燕麦奶","due_at":""}}"#),
             ws,
-        );
+        ));
         assert!(updated.contains("已更新提醒"), "{updated}");
-        let renamed = super::reminder(r#"{"action":"list","include_done":true}"#, ws);
+        let renamed = ok(super::reminder(
+            r#"{"action":"list","include_done":true}"#,
+            ws,
+        ));
         assert!(renamed.contains("买燕麦奶"), "{renamed}");
 
         // `delete`：文件里不应再剩任何条目。
-        let deleted = super::reminder(&format!(r#"{{"action":"delete","id":"{id}"}}"#), ws);
+        let deleted = ok(super::reminder(
+            &format!(r#"{{"action":"delete","id":"{id}"}}"#),
+            ws,
+        ));
         assert!(deleted.contains("已删除提醒"), "{deleted}");
-        let after = super::reminder(r#"{"action":"list","include_done":true}"#, ws);
+        let after = ok(super::reminder(
+            r#"{"action":"list","include_done":true}"#,
+            ws,
+        ));
         assert!(!after.contains("买燕麦奶"), "{after}");
 
         cleanup_dir(&dir);
@@ -214,27 +264,30 @@ mod tests {
         let ws = dir.as_path();
 
         // RFC3339 起点：`list --year` 过滤依赖它可解析。
-        let added = super::event(
+        let added = ok(super::event(
             r#"{"action":"add","title":"体检","start_at":"2030-01-02T10:00:00Z","location":"医院"}"#,
             ws,
-        );
+        ));
         assert!(added.contains("已添加日程"), "{added}");
         let id = first_id(ws, "events.json");
 
         // `update`：改标题 + 空串清空 `location`。
-        let updated = super::event(
+        let updated = ok(super::event(
             &format!(r#"{{"action":"update","id":"{id}","title":"复检","location":""}}"#),
             ws,
-        );
+        ));
         assert!(updated.contains("已更新日程"), "{updated}");
-        let renamed = super::event(r#"{"action":"list","year":2030}"#, ws);
+        let renamed = ok(super::event(r#"{"action":"list","year":2030}"#, ws));
         assert!(renamed.contains("复检"), "{renamed}");
         assert!(!renamed.contains("医院"), "{renamed}");
 
         // `delete`
-        let deleted = super::event(&format!(r#"{{"action":"delete","id":"{id}"}}"#), ws);
+        let deleted = ok(super::event(
+            &format!(r#"{{"action":"delete","id":"{id}"}}"#),
+            ws,
+        ));
         assert!(deleted.contains("已删除日程"), "{deleted}");
-        let after = super::event(r#"{"action":"list","year":2030}"#, ws);
+        let after = ok(super::event(r#"{"action":"list","year":2030}"#, ws));
         assert!(!after.contains("复检"), "{after}");
 
         cleanup_dir(&dir);
@@ -244,13 +297,14 @@ mod tests {
     fn reminder_requires_title_and_id() {
         let dir = make_temp_dir();
         let ws = dir.as_path();
+        // 回归：这两类必填校验旧版只返回裸正文（无「错误」前缀、无「失败」关键词），被判成功。
         let no_title = super::reminder(r#"{"action":"add"}"#, ws);
-        assert!(no_title.contains("title"), "{no_title}");
+        assert_eq!(err_code(no_title), "invalid_args");
         let blank_title = super::reminder(r#"{"action":"add","title":"   "}"#, ws);
-        assert!(blank_title.contains("title"), "{blank_title}");
+        assert_eq!(err_code(blank_title), "invalid_args");
         for action in ["update", "delete", "complete"] {
             let out = super::reminder(&format!(r#"{{"action":"{action}"}}"#), ws);
-            assert!(out.contains("id"), "{action}: {out}");
+            assert_eq!(err_code(out), "invalid_args", "{action}");
         }
         cleanup_dir(&dir);
     }
@@ -260,12 +314,12 @@ mod tests {
         let dir = make_temp_dir();
         let ws = dir.as_path();
         let no_start = super::event(r#"{"action":"add","title":"e1"}"#, ws);
-        assert!(no_start.contains("start_at"), "{no_start}");
+        assert_eq!(err_code(no_start), "invalid_args");
         let blank_start = super::event(r#"{"action":"add","title":"e1","start_at":""}"#, ws);
-        assert!(blank_start.contains("start_at"), "{blank_start}");
+        assert_eq!(err_code(blank_start), "invalid_args");
         for action in ["update", "delete"] {
             let out = super::event(&format!(r#"{{"action":"{action}"}}"#), ws);
-            assert!(out.contains("id"), "{action}: {out}");
+            assert_eq!(err_code(out), "invalid_args", "{action}");
         }
         cleanup_dir(&dir);
     }
@@ -274,10 +328,51 @@ mod tests {
     fn unknown_action_and_missing_action_are_rejected() {
         let dir = make_temp_dir();
         let ws = dir.as_path();
-        assert!(super::reminder(r#"{"action":"nope"}"#, ws).contains("参数解析错误"));
-        assert!(super::reminder(r#"{}"#, ws).contains("参数解析错误"));
+        let bad_action = super::reminder(r#"{"action":"nope"}"#, ws);
+        assert_eq!(err_code(bad_action), "invalid_args");
+        let missing = super::reminder(r#"{}"#, ws);
+        assert_eq!(err_code(missing), "invalid_args");
         // `complete` 是 reminder 的 action，不属于 event。
-        assert!(super::event(r#"{"action":"complete"}"#, ws).contains("参数解析错误"));
+        let wrong_family = super::event(r#"{"action":"complete"}"#, ws);
+        assert_eq!(err_code(wrong_family), "invalid_args");
+        cleanup_dir(&dir);
+    }
+
+    #[test]
+    fn unknown_id_reports_not_found_instead_of_success() {
+        let dir = make_temp_dir();
+        let ws = dir.as_path();
+        // 回归：`未找到提醒：id=…` 不含「错误 / 失败 / 超时」关键词，旧版被判成功。
+        for action in ["complete", "delete"] {
+            let out = super::reminder(
+                &format!(r#"{{"action":"{action}","id":"rem_missing"}}"#),
+                ws,
+            );
+            assert_eq!(err_code(out), "reminder_not_found", "{action}");
+        }
+        let updated = super::reminder(
+            r#"{"action":"update","id":"rem_missing","title":"x"}"#,
+            ws,
+        );
+        assert_eq!(err_code(updated), "reminder_not_found");
+
+        for action in ["update", "delete"] {
+            let out = super::event(
+                &format!(r#"{{"action":"{action}","id":"evt_missing","title":"x"}}"#),
+                ws,
+            );
+            assert_eq!(err_code(out), "event_not_found", "{action}");
+        }
+        cleanup_dir(&dir);
+    }
+
+    #[test]
+    fn empty_list_is_success_not_failure() {
+        let dir = make_temp_dir();
+        let ws = dir.as_path();
+        // 「列表为空」是合法答案，不是失败 —— 迁移不得把它变成 Err。
+        assert!(ok(super::reminder(r#"{"action":"list"}"#, ws)).contains("提醒列表为空"));
+        assert!(ok(super::event(r#"{"action":"list"}"#, ws)).contains("日程列表为空"));
         cleanup_dir(&dir);
     }
 }
