@@ -132,33 +132,9 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
         Expect::Fails,
         "缺少非空 code",
     ),
-    // ── Git / GitHub 族：缺必填或空值（test_ctx 的 allowed_commands 无 gh）──
+    // ── Git / GitHub 族：`gh_*` 五个均已迁 Typed（失败显式 `Err(ToolError)`，码见
+    //    `mod.rs` 的 `command_not_allowed` / `gh_{子命令}_failed`），由各文件单测覆盖，不再经本表 ──
     ("git", r#"{"action":"blame"}"#, Expect::Fails, "缺少合法 path"),
-    (
-        "gh_pr",
-        r#"{"action":"merge"}"#,
-        Expect::Fails,
-        "test_ctx 白名单无 gh",
-    ),
-    (
-        "gh_run",
-        r#"{"action":"rerun"}"#,
-        Expect::Fails,
-        "「参数解析错误: missing field `run_id`」",
-    ),
-    (
-        "gh_issue_create",
-        r#"{"title":""}"#,
-        Expect::Fails,
-        "test_ctx 白名单无 gh",
-    ),
-    (
-        "gh_release_create",
-        r#"{"tag":""}"#,
-        Expect::Fails,
-        "test_ctx 白名单无 gh",
-    ),
-    ("gh_api", r#"{}"#, Expect::Fails, "test_ctx 白名单无 gh"),
     // ── 后台任务：`background_job` / `background_job_cancel` 均已迁 Typed，
     //    其错误码由 `background_job_tools` 的单元测试覆盖，不再经本表 ──
     // ── 导航 ────────────────────────────────────────────────────

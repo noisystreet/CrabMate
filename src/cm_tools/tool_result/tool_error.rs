@@ -345,6 +345,29 @@ impl ToolError {
         Self::with_code(code, message)
     }
 
+    /// 同 [`Self::external_code`]，但 `code` 由运行时拼接（如 `gh_pr_failed`）。
+    ///
+    /// 分类仍按 [`failure_category_for_error_code`] 推导，因此 `code` 必须以 `_failed` 结尾
+    /// 或已在分类表显式登记——否则会退化成 `Unknown`。调用点目前只有 `gh_*` 族
+    /// （子命令名进码名，`&'static str` 表达不了）。
+    pub fn external_code_owned(code: String, message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.clone()),
+        };
+        let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
+        Self {
+            category: failure_category_for_error_code(code.as_str()),
+            code,
+            message,
+            retryable,
+            legacy_parsed: parsed,
+        }
+    }
+
     /// 逻辑或内部不变量破坏（极少见）；`error_code` 建议 `*_internal`。
     pub fn internal_code(code: &'static str, message: String) -> Self {
         let parsed = ParsedLegacyOutput {

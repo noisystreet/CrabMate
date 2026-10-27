@@ -1,5 +1,6 @@
 //! `gh api` 子命令实现（与 `run_command` 封装分离以降低 `mod.rs` 体量）。
 
+use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::io::Write;
 use std::path::Path;
@@ -13,10 +14,10 @@ use crate::cm_tools::tools::parse_args_json;
 
 const TRUNCATE_LINES: usize = 500;
 
-fn validate_gh_api_json(v: &JsonValue) -> Result<(), String> {
+fn validate_gh_api_json(v: &JsonValue) -> Result<(), ToolError> {
     let path = match v.get("path").and_then(|x| x.as_str()) {
         Some(p) => p.trim(),
-        None => return Err("错误：缺少 path".to_string()),
+        None => return Err(ToolError::invalid_args("错误：缺少 path".to_string())),
     };
     validate_api_path(path)?;
     let method = gh_api_method(v);
@@ -24,7 +25,7 @@ fn validate_gh_api_json(v: &JsonValue) -> Result<(), String> {
         method.as_str(),
         "GET" | "HEAD" | "POST" | "PATCH" | "PUT" | "DELETE"
     ) {
-        return Err("错误：method 须为 GET、HEAD、POST、PATCH、PUT 或 DELETE".to_string());
+        return Err(ToolError::invalid_args("错误：method 须为 GET、HEAD、POST、PATCH、PUT 或 DELETE".to_string()));
     }
     validate_gh_api_body(v.get("body").and_then(|x| x.as_str()).map(str::trim), &method)?;
     gh_api_query_pairs(v)?;
@@ -39,15 +40,15 @@ fn validate_gh_api_json(v: &JsonValue) -> Result<(), String> {
 }
 
 /// 校验 `gh api` 的 body：GET 不允许 body，非空 body 须为合法 JSON。
-fn validate_gh_api_body(body: Option<&str>, method: &str) -> Result<(), String> {
+fn validate_gh_api_body(body: Option<&str>, method: &str) -> Result<(), ToolError> {
     let Some(b) = body else {
         return Ok(());
     };
     if !b.is_empty() && method == "GET" {
-        return Err("错误：GET 请求不应带 body".to_string());
+        return Err(ToolError::invalid_args("错误：GET 请求不应带 body".to_string()));
     }
     if !b.is_empty() && serde_json::from_str::<JsonValue>(b).is_err() {
-        return Err("错误：body 须为合法 JSON 字符串".to_string());
+        return Err(ToolError::invalid_args("错误：body 须为合法 JSON 字符串".to_string()));
     }
     Ok(())
 }
@@ -75,7 +76,7 @@ fn gh_api_extra_args(v: &JsonValue) -> Vec<String> {
 ///
 /// `query` 缺失或为 `null` 返回空；非对象报错。键须非空且仅 `字母数字 + - _ .`；
 /// 值须为字符串/数字/布尔，且不得含 `\0` / `\n` / `\r`。
-fn gh_api_query_pairs(v: &JsonValue) -> Result<Vec<(String, String)>, String> {
+fn gh_api_query_pairs(v: &JsonValue) -> Result<Vec<(String, String)>, ToolError> {
     let Some(q) = v.get("query") else {
         return Ok(Vec::new());
     };
@@ -84,18 +85,18 @@ fn gh_api_query_pairs(v: &JsonValue) -> Result<Vec<(String, String)>, String> {
     }
     let obj = q
         .as_object()
-        .ok_or_else(|| "错误：query 须为对象（如 {\"state\":\"open\"}）".to_string())?;
+        .ok_or_else(|| ToolError::invalid_args("错误：query 须为对象（如 {\"state\":\"open\"}）".to_string()))?;
     let mut out = Vec::with_capacity(obj.len());
     for (k, val) in obj {
         let key = k.trim();
         if key.is_empty() {
-            return Err("错误：query 键不能为空".to_string());
+            return Err(ToolError::invalid_args("错误：query 键不能为空".to_string()));
         }
         if !key
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
         {
-            return Err(format!("错误：query 键 {key:?} 仅允许字母数字与 - _ ."));
+            return Err(ToolError::invalid_args(format!("错误：query 键 {key:?} 仅允许字母数字与 - _ .")));
         }
         out.push((key.to_string(), query_scalar_to_string(key, val)?));
     }
@@ -103,15 +104,15 @@ fn gh_api_query_pairs(v: &JsonValue) -> Result<Vec<(String, String)>, String> {
 }
 
 /// `query` 值转为字符串：仅接受字符串/数字/布尔；拒绝换行与空字符。
-fn query_scalar_to_string(key: &str, val: &JsonValue) -> Result<String, String> {
+fn query_scalar_to_string(key: &str, val: &JsonValue) -> Result<String, ToolError> {
     let s = match val {
         JsonValue::String(s) => s.clone(),
         JsonValue::Number(n) => n.to_string(),
         JsonValue::Bool(b) => b.to_string(),
-        _ => return Err(format!("错误：query 值 {key:?} 须为字符串、数字或布尔")),
+        _ => return Err(ToolError::invalid_args(format!("错误：query 值 {key:?} 须为字符串、数字或布尔"))),
     };
     if s.contains('\0') || s.contains('\n') || s.contains('\r') {
-        return Err(format!("错误：query 值 {key:?} 不得含换行或空字符"));
+        return Err(ToolError::invalid_args(format!("错误：query 值 {key:?} 不得含换行或空字符")));
     }
     Ok(s)
 }
@@ -139,7 +140,15 @@ fn build_gh_api_argv(
     argv
 }
 
-fn format_gh_api_process_output(out: std::process::Output, max_output_len: usize) -> String {
+/// 渲染 `gh api` 的输出；**非零退出即失败**（`gh_api_failed`）。
+///
+/// 这条路径不经 `run_gh_vec`（body 要经 stdin 传入），所以退出码判定在这里补：
+/// 以前非零退出只留一个「退出码：N」正文，靠 `parse_legacy_output` 的 `parse_exit_code`
+/// 兜底。
+fn format_gh_api_process_output(
+    out: std::process::Output,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     let code = out.status.code().unwrap_or(-1);
@@ -164,24 +173,21 @@ fn format_gh_api_process_output(out: std::process::Output, max_output_len: usize
     }
 
     let truncated = output_util::truncate_output_lines(&result, max_output_len, TRUNCATE_LINES);
-    attach_json_if_exit_zero(truncated, stdout.as_ref())
+    let body = attach_json_if_exit_zero(truncated, stdout.as_ref());
+    if code == 0 {
+        return Ok(body);
+    }
+    Err(ToolError::external_code("gh_api_failed", body))
 }
 
 /// `gh api`（受限 path + 方法；可选 JSON body 经 stdin 传入）
-pub fn gh_api(
+pub fn gh_api_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let v = match parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    if let Err(e) = validate_gh_api_json(&v) {
-        return e;
-    }
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let v = parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    validate_gh_api_json(&v)?;
     let path = v.get("path").and_then(|x| x.as_str()).expect("validated");
     let method = gh_api_method(&v);
     let body = v.get("body").and_then(|x| x.as_str()).map(str::trim);
@@ -207,7 +213,10 @@ pub fn gh_api(
         Ok(c) => c,
         Err(e) => {
             let base = format!("错误：无法启动 gh：{e}");
-            return output_util::append_notfound_install_hint(base, &e, "gh");
+            return Err(ToolError::external_code(
+                "command_not_found",
+                output_util::append_notfound_install_hint(base, &e, "gh"),
+            ));
         }
     };
     if body_nonempty {
@@ -218,7 +227,12 @@ pub fn gh_api(
     }
     let out = match child.wait_with_output() {
         Ok(o) => o,
-        Err(e) => return format!("错误：等待 gh 结束失败：{e}"),
+        Err(e) => {
+            return Err(ToolError::external_code(
+                "gh_api_failed",
+                format!("错误：等待 gh 结束失败：{e}"),
+            ));
+        }
     };
     format_gh_api_process_output(out, ctx.max_output_len)
 }

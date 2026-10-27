@@ -1,3 +1,4 @@
+use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::path::Path;
 
@@ -6,6 +7,7 @@ use serde_json::Value as JsonValue;
 use super::common::{
     command_formatted_exit_code, extract_stderr_from_formatted, gh_allowed, push_bool_flag,
     push_extra_args_from_json, push_repo_arg, push_trimmed_string_flag, run_gh_vec,
+    run_gh_vec_allow_exit,
     validate_extra_args, validate_pr_body, validate_pr_ref_token, validate_pr_title, validate_repo,
     write_workspace_temp_markdown,
 };
@@ -14,7 +16,7 @@ use super::run_ci::{
     PR_CHECKS_STRUCTURED_JSON_FIELDS, finalize_structured_pr_checks, gh_pr_checks_rejects_json_flag,
 };
 
-fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, String> {
+fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, ToolError> {
     let mut argv = vec!["pr".into(), "checks".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
         validate_repo(r)?;
@@ -23,7 +25,7 @@ fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec
     }
     if let Some(n) = v.get("number").and_then(|x| x.as_u64()) {
         if n == 0 || n > 999_999 {
-            return Err("错误：number 须为 1～999999 的正整数或省略".to_string());
+            return Err(ToolError::invalid_args("错误：number 须为 1～999999 的正整数或省略".to_string()));
         }
         argv.push(n.to_string());
     }
@@ -45,46 +47,39 @@ fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec
 fn gh_pr_checks_table_fallback(
     v: &JsonValue,
     ctx: &GhCtx<'_>,
-) -> String {
-    let argv = match build_pr_checks_argv(v, false) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let table = run_gh_vec(argv, ctx);
-    format!(
+) -> Result<String, ToolError> {
+    let argv = build_pr_checks_argv(v, false)?;
+    let table = run_gh_vec_allow_exit(argv, ctx, &[0, 1, 8])?;
+    Ok(format!(
         "{}\n\n---\n提示：本机 `gh` 不支持 `pr checks --json`（需 GitHub CLI ≥ 2.50）。已回退为表格输出；请升级 `gh` 后再用 `structured: true`。\n",
         table.trim_end()
-    )
+    ))
 }
 
 /// `gh pr checks`（只读）：CI 检查状态；省略 `number` 时使用当前分支关联的 PR（与 `gh` 默认一致）。
-pub fn gh_pr_checks(
+pub fn gh_pr_checks_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let structured = v.get("structured").and_then(|x| x.as_bool()) == Some(true);
-    let argv = match build_pr_checks_argv(&v, structured) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let out = run_gh_vec(argv, ctx);
+    let argv = build_pr_checks_argv(&v, structured)?;
+    // `gh pr checks` 对「有检查失败」返回 1、对「仍有 pending」返回 8，stdout 仍可能是合法
+    // JSON —— 这两种退出码不算工具失败，故走 `run_gh_vec_allow_exit`。
+    let out = run_gh_vec_allow_exit(argv, ctx, &[0, 1, 8])?;
     if !structured {
-        return out;
+        return Ok(out);
     }
+    // `gh` < 2.50 会报 `unknown flag: --json` 并以 1 退出：这条回退表格的兼容路径要保留。
     if gh_pr_checks_rejects_json_flag(&out) {
         return gh_pr_checks_table_fallback(&v, ctx);
     }
-    finalize_structured_pr_checks(out)
+    Ok(finalize_structured_pr_checks(out))
 }
 
-fn resolve_pr_create_body(v: &JsonValue, working_dir: &Path) -> Result<String, String> {
+fn resolve_pr_create_body(v: &JsonValue, working_dir: &Path) -> Result<String, ToolError> {
     let auto_body = v.get("auto_body").and_then(|x| x.as_bool()).unwrap_or(true);
     match v.get("body").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => Ok(s.to_string()),
@@ -96,7 +91,7 @@ fn resolve_pr_create_body(v: &JsonValue, working_dir: &Path) -> Result<String, S
     }
 }
 
-fn gh_pr_create_validate_repo_base_head(v: &JsonValue) -> Result<(), String> {
+fn gh_pr_create_validate_repo_base_head(v: &JsonValue) -> Result<(), ToolError> {
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
         validate_repo(r)?;
     }
@@ -113,7 +108,7 @@ fn gh_pr_create_build_argv(
     v: &JsonValue,
     title: &str,
     body_path_str: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, ToolError> {
     let mut argv = vec![
         "pr".into(),
         "create".into(),
@@ -160,12 +155,13 @@ fn annotate_gh_pr_create_failure(formatted: String) -> String {
 fn gh_pr_create_inputs(
     args_json: &str,
     working_dir: &Path,
-) -> Result<(JsonValue, String, String), String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
+) -> Result<(JsonValue, String, String), ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let title = v
         .get("title")
         .and_then(|x| x.as_str())
-        .ok_or_else(|| "错误：缺少 title".to_string())?
+        .ok_or_else(|| ToolError::invalid_args("错误：缺少 title".to_string()))?
         .to_string();
     validate_pr_title(&title)?;
     let body_str = resolve_pr_create_body(&v, working_dir)?;
@@ -177,40 +173,37 @@ fn gh_pr_create_inputs(
 fn write_pr_create_body_temp(
     working_dir: &Path,
     body: &[u8],
-) -> Result<(tempfile::TempDir, String), String> {
+) -> Result<(tempfile::TempDir, String), ToolError> {
     // 与历史文案对齐：路径非 UTF-8 时固定为「临时文件路径非 UTF-8」（不用带 label 的通用句）。
     match write_workspace_temp_markdown(working_dir, "crabmate_pr_body.md", body, "PR 正文") {
         Ok(x) => Ok(x),
-        Err(e) if e.contains("临时文件路径非 UTF-8") => {
-            Err("错误：临时文件路径非 UTF-8".to_string())
+        Err(e) if e.message.contains("临时文件路径非 UTF-8") => {
+            Err(ToolError::invalid_args("错误：临时文件路径非 UTF-8".to_string()))
         }
         Err(e) => Err(e),
     }
 }
 
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
-pub fn gh_pr_create(
+pub fn gh_pr_create_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let (v, title, body_str) = match gh_pr_create_inputs(args_json, ctx.working_dir) {
-        Ok(x) => x,
-        Err(e) => return e,
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let (v, title, body_str) = gh_pr_create_inputs(args_json, ctx.working_dir)?;
+    let (dir, body_path_str) = write_pr_create_body_temp(ctx.working_dir, body_str.as_bytes())?;
+    let argv = gh_pr_create_build_argv(&v, &title, body_path_str)?;
+    // 失败时仍要追加「如何自救」的提示，所以走 match 而不是 `?`。
+    let out = match run_gh_vec(argv, ctx) {
+        Ok(s) => s,
+        Err(mut e) => {
+            drop(dir);
+            e.message = annotate_gh_pr_create_failure(std::mem::take(&mut e.message));
+            return Err(e);
+        }
     };
-    let (dir, body_path_str) = match write_pr_create_body_temp(ctx.working_dir, body_str.as_bytes()) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let argv = match gh_pr_create_build_argv(&v, &title, body_path_str) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let out = run_gh_vec(argv, ctx);
     drop(dir);
-    annotate_gh_pr_create_failure(out)
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -252,8 +245,10 @@ mod tests {
     #[test]
     fn gh_pr_checks_requires_gh_in_allowlist() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let out = super::gh_pr_checks("{}", &GhCtx::new(4096, &[], dir.path()));
-        assert!(out.contains("未包含 gh"), "{}", out);
+        let err = super::gh_pr_checks_try("{}", &GhCtx::new(4096, &[], dir.path()))
+            .expect_err("白名单无 gh 时必须失败");
+        assert_eq!(err.code, "command_not_allowed");
+        assert!(err.message.contains("未包含 gh"), "{}", err.message);
     }
 
     #[test]

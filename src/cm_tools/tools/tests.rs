@@ -682,7 +682,12 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 迁为 Typed（−2），`workflow_execute` 的同步面占位亦改 Typed 并返回 `Err`（−1）——
     // 它原先回「由运行时引擎执行（若你看到这条，说明拦截未生效）」占位句，
     // 既不含「错误」也不含「失败」，被判成成功。三者合计 −3：23 → 20。
-    const LEGACY_BASELINE: usize = 19;
+    // 本轮（C 档 · rust_analyzer）：迁 Typed（−1）——「路径无法解析: No such file」与
+    // 各格式化函数的「… : LSP error: …」都不命中任何关键词，被判成成功：20 → 19。
+    // 本轮（C 档 · GitHub CLI）：`gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` /
+    // `gh_api` 五个迁 Typed（−5）—— 非零退出此前只有正文里的「退出码：N」，靠
+    // `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式 `gh_{子命令}_failed`。19 → 14。
+    const LEGACY_BASELINE: usize = 14;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

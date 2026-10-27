@@ -177,10 +177,11 @@ macro_rules! define_git_runners {
     };
 }
 
-/// 生成 `fn runner_gh_* -> github_cli::gh_*(args, &GhCtx)`；新增 GitHub 工具时在列表中增一行。
-macro_rules! gh_runner {
+/// 生成 `fn runner_gh_*_try -> github_cli::gh_*_try(args, &GhCtx)`；新增 GitHub 工具时在列表中增一行。
+macro_rules! gh_runner_try {
     ($name:ident, $fn:path) => {
-        pub fn $name(args: &str, ctx: &ToolContext<'_>) -> String {
+        #[allow(clippy::result_large_err)]
+        pub fn $name(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
             $fn(args, &gh_ctx_of(ctx))
         }
     };
@@ -566,21 +567,21 @@ define_git_runners! {
     runner_git => dispatch,
 }
 
-// ── GitHub CLI 工具 ─────────────────────────────────────────
+// ── GitHub CLI 工具 ──────────────────────────────────────
 
-gh_runner!(runner_gh_issue_create, github_cli::gh_issue_create);
-gh_runner!(runner_gh_release_create, github_cli::gh_release_create);
-gh_runner!(runner_gh_api, github_cli::gh_api);
-
-/// `gh_pr` / `gh_run` 是动作分发器（见 `github_cli::gh_pr` / `gh_run`），
-/// 形参与 `gh_runner!` 生成的一致，但需要独立入口。
-pub fn runner_gh_pr(args: &str, ctx: &ToolContext<'_>) -> String {
-    github_cli::gh_pr(args, &gh_ctx_of(ctx))
-}
-
-pub fn runner_gh_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    github_cli::gh_run(args, &gh_ctx_of(ctx))
-}
+// `gh_*` 已全部迁 `Typed`（见 `docs/design/tool_runner_typed_migration.md` §4.3）：
+// `gh` 非零退出、白名单拒绝、起不来都有各自的 `error_code`，不再靠正文关键词。
+gh_runner_try!(runner_gh_pr_try, github_cli::gh_pr_try);
+gh_runner_try!(runner_gh_run_try, github_cli::gh_run_try);
+gh_runner_try!(
+    runner_gh_issue_create_try,
+    github_cli::gh_issue_create_try
+);
+gh_runner_try!(
+    runner_gh_release_create_try,
+    github_cli::gh_release_create_try
+);
+gh_runner_try!(runner_gh_api_try, github_cli::gh_api_try);
 
 /// `ToolContext` 的三件套投影（`gh_runner!` 与上面两个分发器共用）。
 fn gh_ctx_of<'a>(ctx: &'a ToolContext<'a>) -> github_cli::GhCtx<'a> {
