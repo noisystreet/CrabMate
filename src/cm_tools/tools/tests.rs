@@ -679,7 +679,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（A 档第三项）：`metrics` 族 `code_stats` / `dependency_graph` / `coverage_report`
     // 迁为 Typed（−3）—— 划分口径：「没有这个东西」（无源码文件 / 无构建清单 / 未找到
     // 覆盖率文件）仍返回 `Ok`，属合法答案；只有参数与路径问题才 `Err`。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 36 } else { 33 };
+    // 本轮（A 档第四项）：`skill_manage` 迁为 Typed（−1）—— 内部 8 个 `Result<_, String>`
+    // 全部换成 `Result<_, ToolError>`；测试 helper 统一取 `e.message`，故原断言口径不变。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 35 } else { 32 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
