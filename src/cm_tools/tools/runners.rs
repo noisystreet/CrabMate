@@ -78,17 +78,6 @@ macro_rules! define_runners_cwd_maxlen_try {
     };
 }
 
-/// 形态：`f(args, working_dir, ctx)`。
-macro_rules! define_runners_cwd_ctx {
-    ($( $runner:ident => $func:path ),* $(,)?) => {
-        $(
-            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
-                $func(args, ctx.working_dir, ctx)
-            }
-        )*
-    };
-}
-
 /// 形态：`f(args, working_dir, ctx) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
 macro_rules! define_runners_cwd_ctx_try {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -457,17 +446,15 @@ define_runners_cwd_maxlen! {
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
 }
 
-// ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
+// ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
 // `archive-tools` 未启用时 `archive` 模块不参与编译（见 `tools/mod.rs` 的 cfg）。
 #[cfg(feature = "archive-tools")]
-define_runners_cwd_ctx! {
-    runner_archive_pack => archive::archive_pack,
-    runner_archive_unpack => archive::archive_unpack,
-    runner_archive_list => archive::archive_list,
+define_runners_cwd_ctx_try! {
+    runner_archive_pack_try => archive::archive_pack,
+    runner_archive_unpack_try => archive::archive_unpack,
+    runner_archive_list_try => archive::archive_list,
 }
-
-// ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
 define_runners_cwd_ctx_try! {
     runner_structured_try => structured_dispatch::structured_try,

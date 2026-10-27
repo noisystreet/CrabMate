@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::{ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs};
 
@@ -25,11 +26,14 @@ const ARCHIVE_FORMAT_SUFFIXES: &[(&str, &str)] = &[
 ];
 
 /// 创建归档
-pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: ArchivePackArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn archive_pack(
+    args_json: &str,
+    working_dir: &Path,
+    _ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let args: ArchivePackArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
 
     let output = args.output.trim();
     let sources: Vec<String> = args
@@ -42,10 +46,14 @@ pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
     let _ = (&args.exclude, &args.format);
 
     if output.is_empty() {
-        return "错误: 缺少 output 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误: 缺少 output 参数".to_string(),
+        ));
     }
     if sources.is_empty() {
-        return "错误: 缺少 sources 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误: 缺少 sources 参数".to_string(),
+        ));
     }
 
     let output_path = working_dir.join(output);
@@ -60,21 +68,29 @@ pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
         "tar.gz" | "tgz" => pack_tar(working_dir, &output_path, &sources, Some("gzip")),
         "tar.bz2" | "tbz2" => pack_tar(working_dir, &output_path, &sources, Some("bzip2")),
         "tar.xz" | "txz" => pack_tar(working_dir, &output_path, &sources, Some("xz")),
-        _ => return format!("不支持的归档格式: {}", output),
+        // 纯文本无「错误/失败」关键词会被 `parse_legacy_output` 判成成功，故必须走 Typed 错误码。
+        _ => {
+            return Err(ToolError::invalid_args(format!(
+                "不支持的归档格式: {output}"
+            )));
+        }
     };
 
-    match result {
-        Ok(()) => format!("已创建归档: {}", output),
-        Err(e) => format!("创建归档失败: {}", e),
-    }
+    result.map_err(|e| {
+        ToolError::external_code("archive_pack_failed", format!("创建归档失败: {e}"))
+    })?;
+    Ok(format!("已创建归档: {}", output))
 }
 
 /// 解压归档
-pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: ArchiveUnpackArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn archive_unpack(
+    args_json: &str,
+    working_dir: &Path,
+    _ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let args: ArchiveUnpackArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
 
     let archive = args.archive.trim();
     let output_dir = args.output_dir.trim();
@@ -88,12 +104,17 @@ pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_
         .collect();
 
     if archive.is_empty() {
-        return "错误: 缺少 archive 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误: 缺少 archive 参数".to_string(),
+        ));
     }
 
     let archive_path = working_dir.join(archive);
     if !archive_path.exists() {
-        return format!("归档文件不存在: {}", archive);
+        return Err(ToolError::external_code(
+            "archive_not_found",
+            format!("归档文件不存在: {}", archive),
+        ));
     }
 
     let output_path = working_dir.join(output_dir);
@@ -114,21 +135,34 @@ pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_
         "tar.xz" | "txz" => unpack_tar(&archive_path, &output_path, Some("xz"), &unpack_opts),
         "7z" => unpack_7z(&archive_path, &output_path),
         "rar" => unpack_rar(&archive_path, &output_path),
-        _ => return format!("不支持的归档格式: {}", archive),
+        _ => {
+            return Err(ToolError::invalid_args(format!(
+                "不支持的归档格式: {}",
+                archive
+            )));
+        }
     };
 
-    match result {
-        Ok(files) => format_unpack_success(files, output_dir, &output_path, strip_components),
-        Err(e) => format!("解压失败: {}", e),
-    }
+    let files = result.map_err(|e| {
+        ToolError::external_code("archive_unpack_failed", format!("解压失败: {e}"))
+    })?;
+    Ok(format_unpack_success(
+        files,
+        output_dir,
+        &output_path,
+        strip_components,
+    ))
 }
 
 /// 列出归档内容
-pub fn archive_list(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let args: ArchiveListArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+#[allow(clippy::result_large_err)]
+pub fn archive_list(
+    args_json: &str,
+    working_dir: &Path,
+    _ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let args: ArchiveListArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
 
     let archive = args.archive.trim();
     let verbose = args.verbose;
@@ -139,12 +173,17 @@ pub fn archive_list(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
         .max(1);
 
     if archive.is_empty() {
-        return "错误: 缺少 archive 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误: 缺少 archive 参数".to_string(),
+        ));
     }
 
     let archive_path = working_dir.join(archive);
     if !archive_path.exists() {
-        return format!("归档文件不存在: {}", archive);
+        return Err(ToolError::external_code(
+            "archive_not_found",
+            format!("归档文件不存在: {}", archive),
+        ));
     }
 
     // 根据扩展名检测格式
@@ -157,13 +196,17 @@ pub fn archive_list(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
         }
         "7z" => list_7z(&archive_path, verbose),
         "rar" => list_rar(&archive_path, verbose),
-        _ => return format!("不支持的归档格式: {}", archive),
+        _ => {
+            return Err(ToolError::invalid_args(format!(
+                "不支持的归档格式: {}",
+                archive
+            )));
+        }
     };
 
-    match result {
-        Ok(list) => list,
-        Err(e) => format!("列出内容失败: {}", e),
-    }
+    result.map_err(|e| {
+        ToolError::external_code("archive_list_failed", format!("列出内容失败: {e}"))
+    })
 }
 
 struct UnpackOptions<'a> {
