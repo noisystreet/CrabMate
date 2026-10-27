@@ -687,7 +687,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（C 档 · GitHub CLI）：`gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` /
     // `gh_api` 五个迁 Typed（−5）—— 非零退出此前只有正文里的「退出码：N」，靠
     // `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式 `gh_{子命令}_failed`。19 → 14。
-    const LEGACY_BASELINE: usize = 14;
+    // 本轮（C 档 · Git 只读查询）：`git`（10 个 action）迁 Typed（−1）—— 子命令非零退出
+    // （`log` 在空仓库、`show` 的 rev 不存在、`blame` 的路径不在索引…）此前只以正文
+    // 「退出码：N」存在，靠 `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式
+    // `git_{action}_failed`，「不在 Git 仓库」另有 `git_not_a_repo`。14 → 13。
+    const LEGACY_BASELINE: usize = 13;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
