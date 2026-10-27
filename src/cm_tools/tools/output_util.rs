@@ -12,6 +12,8 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Output;
 
+use crate::cm_tools::tool_result::ToolError;
+
 /// 合并 **stdout / stderr** 的策略（不同 CLI 习惯不同）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessOutputMerge {
@@ -338,12 +340,68 @@ pub fn run_command_output_formatted(
 ) -> String {
     let program_hint = spawn_program_display_name(&cmd);
     match cmd.output() {
-        Ok(output) => {
-            let code = output.status.code().unwrap_or(-1);
-            let body = merge_process_output(&output, merge);
-            format_exited_command_output(title, code, &body, max_bytes, max_lines)
-        }
+        Ok(output) => render_process_output(output, title, max_bytes, max_lines, merge).0,
         Err(e) => format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref()),
+    }
+}
+
+/// 一次子进程输出 → （`title (exit=N):` 正文块, 退出码）。
+///
+/// 抽出来是为了让 [`run_command_output_formatted`] 与 [`run_command_output_try`] 共用同一套
+/// 渲染，不会出现「一个截断、另一个不截断」这类漂移。
+fn render_process_output(
+    output: Output,
+    title: &str,
+    max_bytes: usize,
+    max_lines: usize,
+    merge: ProcessOutputMerge,
+) -> (String, i32) {
+    let code = output.status.code().unwrap_or(-1);
+    let body = merge_process_output(&output, merge);
+    (
+        format_exited_command_output(title, code, &body, max_bytes, max_lines),
+        code,
+    )
+}
+
+/// 同 [`run_command_output_formatted`]，但**非零退出即失败**（`error_code = failure_code`）。
+///
+/// 为什么要这个孪生：`run_command_output_formatted` 把退出码写进正文（`title (exit=N)`）之后
+/// 就丢掉了，调用方只能靠 [`crate::cm_tools::tool_result::parse_legacy_output`] 从文本里回捞
+/// 退出码——正文一换形态就可能被读成成功。这里在渲染前读出 `status.code()`，
+/// `Ok`（退出 0）与 `Err` 的正文都与前者逐字一致，只多一层成败判定。
+///
+/// 启动失败按 `err.kind()` 分类：`NotFound` → `command_not_found`，其余 → `spawn_failed`。
+#[allow(clippy::result_large_err)]
+pub fn run_command_output_try(
+    mut cmd: std::process::Command,
+    title: &str,
+    max_bytes: usize,
+    max_lines: usize,
+    merge: ProcessOutputMerge,
+    spawn_style: CommandSpawnErrorStyle,
+    failure_code: &str,
+) -> Result<String, ToolError> {
+    let program_hint = spawn_program_display_name(&cmd);
+    match cmd.output() {
+        Ok(output) => {
+            let (text, code) = render_process_output(output, title, max_bytes, max_lines, merge);
+            if code == 0 {
+                Ok(text)
+            } else {
+                Err(ToolError::external_code_owned(failure_code.to_string(), text))
+            }
+        }
+        Err(e) => {
+            let text =
+                format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref());
+            let code = if e.kind() == ErrorKind::NotFound {
+                "command_not_found"
+            } else {
+                "spawn_failed"
+            };
+            Err(ToolError::external_code(code, text))
+        }
     }
 }
 

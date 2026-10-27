@@ -29,9 +29,10 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 14**
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 13**
 > （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`、
-> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api` 陆续迁完后，23 → 19 → 14）。
+> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api`、`git` 陆续迁完后，
+> 23 → 19 → 14 → 13）。
 > §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
@@ -58,9 +59,9 @@
 | `frontend_audit_ci.inc.rs` | 0 | 1 | 已全迁（2026-10-28：`workflow_execute` 同步面占位改 Typed，返回 `workflow_execute_not_intercepted`；`rust_backtrace_analyze` 已整工具删除，见 §7） |
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
-| `git_read.inc.rs` | 1 | 0 | 全 Legacy |
+| `git_read.inc.rs` | 0 | 1 | 已全迁（2026-10-28，C 档；见 §4.12） |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 19） |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 13） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -87,12 +88,12 @@
 | `f(args, &PathAccess)` | — | `define_runners_paths_try!` |
 | `f(args, &PathAccess, ctx)` | — | `define_runners_paths_ctx_try!` |
 | `f(args)`（args-only） | `define_runners_args_only!` | **无孪生**（4 个 misc 工具均为手写具名 runner） |
-| git 族 | `define_git_runners!` | **无孪生** |
+| git 族 | `define_git_runners!`（迁完后无实例，已删除） | `define_git_runners_try!` |
 | gh 族 | `gh_runner!` | **无孪生** |
 
 ### 3.2 编译期 smoke
 
-`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）。
+`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）加 git 族的 `define_git_runners_try!`（`git::dispatch`）。
 
 新增孪生宏时**应同时在 smoke 里挂一个真实实现**，否则宏本身没有任何类型校验。
 
@@ -264,11 +265,43 @@
 |---|---|---|
 | `code_nav` | `code_nav_dispatch::dispatch` | action 选择器（4 个动作） |
 
-### 4.12 `git_read.inc.rs`（1）— 形态 `define_git_runners!`
+### 4.12 `git_read.inc.rs`（1）— **已迁 2026-10-28**（形态 `define_git_runners_try!`）
 
-| 工具 | 目标实现 | 备注 |
+| 工具 | 实现 | 目标 runner |
 |---|---|---|
-| `git` | `git::read_ops::dispatch(args, max_len, cwd)` | action 选择器（10 个动作）；与 `gh_*` 同类问题：底层是命令输出 |
+| `git` | `git::read_ops::dispatch` → `Result<String, ToolError>` | action 选择器（10 个动作） |
+
+**原先的共同障碍**：与 `gh_*` 同构——每个 action 最后都落到 `helpers::run_and_format` →
+`output_util::run_command_output_formatted`，退出码被写进正文 `title (exit=N)` 后就丢掉。
+
+**怎么解开的**：在 `output_util` 里新增 `run_command_output_try(cmd, …, failure_code)`，
+把「渲染」抽成私有的 `render_process_output`，两个入口共用——`Ok` 与 `Err` 的正文逐字一致，
+只多一层「退出码非 0 即 `Err(external_code_owned(failure_code))`」的判定。
+`helpers::run_and_format` 因此只多一个 `failure_code` 参数，10 个 action 各传自己的码名。
+
+**为什么没有豁免名单**：`gh pr checks` 的 1 / 8 那种情况在只读 git 子命令里不存在——
+需要看退出码的用法（`--exit-code` 等）都是写操作、已收敛到 `run_command`，
+而 `status` / `branch` / `remote` 恒为 0。**代价**要说清楚：空仓库（尚无提交）的
+`log` / `show` 返回 128，现在算失败，git 自己的 `fatal: … does not have any commits yet`
+仍在正文里——这是「统一按非零即失败」换来的确定性，不是疏漏。
+
+**错误码**：
+
+| 码 | 分类 | 触发点 |
+|---|---|---|
+| `invalid_args`（复用） | `InvalidInput` | 缺 / 未知 `action`、参数 JSON 非法、`path` 非相对路径或含 `..`、`mode` 非法 |
+| `git_not_a_repo` | `Workspace` | `rev-parse --is-inside-work-tree` 不为 `true`（**必须显式登记**，不以 `_failed` 结尾） |
+| `command_not_found`（复用） | `External` | 本机无 `git`（带安装提示） |
+| `git_{action}_failed` | `External` | 子命令非零退出（`git_status_failed` / `git_diff_failed` / `git_clean_check_failed` / `git_log_failed` / `git_show_failed` / `git_blame_failed` / `git_file_history_failed` / `git_branch_list_failed` / `git_remote_status_failed` / `git_remote_list_failed`） |
+
+**保留的行为**：成功正文逐字未变（`git status (exit=0):…`、`git clean check (exit=1)：存在未提交改动：…`
+等历史文案都保留）；`ensure_git_repo` 留作 `String` 薄壳供 `github_cli::pr_body` 使用
+（那边把失败包成自己的 `gh_git_failed`，不动它以免混淆两族的码）。
+
+**测试**：`git::read_ops::tests` 从 3 条扩到 8 条——`non_repo_directory_reports_git_not_a_repo`、
+`nonzero_exit_reports_git_action_failed`（`git show deadbeef` → `git_show_failed`）、
+`log_in_empty_repository_is_a_failure` 与配对的 `log_after_first_commit_is_success`（证明不是把正常路径判坏）、
+`status_on_repository_is_success`（钉 `Ok` 正文前缀）。审计表删掉 `git` 条目——工具已非 Legacy。
 
 ### 4.13 `frontend_python.inc.rs`（2）— 手写
 
@@ -299,7 +332,7 @@
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
 | **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
-| **C（高风险，须先设计）** | `gh_*` 5 个、`git`、`http_fetch` / `http_request`、`web_search` / `get_weather`、`background_job*`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
+| **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、`http_fetch` / `http_request`、`web_search` / `get_weather`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
 **落地约定**：一个切片 = 一族 = 一个 PR；每族改完须同步 `runners.rs` 的 smoke 覆盖（§3.2），并跑 `pre-commit run --all-files` + 该族相关测试。
@@ -330,3 +363,4 @@
 | 2026-10-27 | **整工具删除：`rust_backtrace_analyze`** —— 不属迁移档：纯计算分析器（`debug_tools.rs` 整文件 100 行、单函数、无配置键、无外部调用），模型可直读 panic 文本，或用 `run_command`（`c++filt` 在默认白名单）+ `code_nav` 定位帧。Legacy 32 → **31**（基线守卫同步 32/29 → 31/28）；同时从 `tests.rs` 的 `build_tools_names` 移除正断言、加入「已移除不应复活」名单。§2.1 表 `frontend_audit_ci.inc.rs` 降为 1，并补上此前缺失的 `exec_package.inc.rs` 行（2 个 `AsyncOnly`），§4.14 同步。 |
 | 2026-10-27 | **整工具删除：`error_output_playbook` / `playbook_run_commands`** —— 两者共用「生态 × 类别」固定查表模板（`error_playbook.rs` 整文件 627 行），建议不是对具体错误的推理：只读那半不执行命令、执行那半又让调用方看不见将要跑什么，模型自行归类后直接调 `run_command` 更透明。Legacy 31 → **29**（基线守卫 29/26）；同步移除 `registry_policy` 的写副作用名单与并行同步拒绝名单、`codebase_semantic_invalidation` 两处、`dev_tag`、`tool_summary` 动态摘要、两个参数结构体、一个白名单过滤测试。同时改写 `AGENTS.md` 与 `tool_calling_evolution.md` 里「缺 CLI 安装提示由 `error_output_playbook` 提供」的旧论证。 |
 | 2026-10-28 | **B 档：`reminder` / `event` 迁为 Typed**（Legacy 25 → **23**，基线守卫同步）。两族共用 `schedule.rs` 的 `ensure_data_dir` / `read_json` / `write_json`，五个 helper 与九个入口一起换成 `Result<_, ToolError>`；runner 侧只是把两行从 `define_runners_cwd!` 挪到已有的 `define_runners_cwd_try!`，**无需新宏**。**迁移动机是四个静默成功分支**：dispatch 层合并时新增的「`add` 缺 `title`」「缺 `id`」两类必填校验，以及 `complete` / `update` / `delete` 的「`未找到提醒/日程：id=…`」，正文都不含「错误 / 失败 / 超时」，被 `parse_legacy_output` 判成 `ok: true` —— 模型传错参数或传错 id 却拿到「成功」。现分别为 `invalid_args` 与 `reminder_not_found` / `event_not_found`。新增错误码：`reminder_not_found` / `event_not_found`（`InvalidInput`，理由是 id 只可能来自调用方，模型可先 `list` 自查，与 `archive_not_found` 的「文件系统状态」口径刻意不同）、`schedule_io_failed` / `schedule_parse_failed`（`External`）、`schedule_serialize_failed`（`Internal`，走既有 `ends_with("_serialize_failed")` 分支）。`ToolError` 顺带加了通用构造器 `with_code`，`workspace` / `external_code` 改为委托它（三份相同实现收敛为一份）。**刻意保留**：`list` 在入参 JSON 坏掉时仍退化为「无过滤条件」（宽容语义不变），成功正文逐字未变，`builtin_write_effect_tools` 无需改动（两者九合一时已登记）。测试：既有 8 个流程/必填用例改为取 `Ok` / `e.code`，新增 `unknown_id_reports_not_found_instead_of_success` / `empty_list_is_success_not_failure` / `io_failure_reports_schedule_io_failed`（后者用「`.crabmate` 建成普通文件」触发，避免 root 下 chmod 造只读目录的 flaky）。 |
+| 2026-10-28 | **C 档：`git` 迁为 Typed**（Legacy 14 → **13**，基线守卫同步）。10 个 action 全部换成 `Result<String, ToolError>`，`helpers::run_and_format` / `run_diff_mode` / `parse_args` / `extract_safe_path` / `require_safe_path` 一起换类型并加 `#[allow(clippy::result_large_err)]`；runner 侧把 `define_git_runners!` 换成孪生 `define_git_runners_try!`（旧的删掉，`unused_macros` 会报），并在 `try_macro_typecheck` 挂上 `git::dispatch` smoke。**关键复用**：在 `output_util` 里加 `run_command_output_try(..., failure_code)`，把渲染抽成私有 `render_process_output` 与前一个函数共用，所以 `Ok` 正文逐字不变、只多「非零退出 → `Err`」一层判定。新增错误码 **`git_not_a_repo`**（`Workspace`，显式登记：不以 `_failed` 结尾）与 `git_{action}_failed`（`External`，由 `external_code_owned` 拼接）。**没有豁免名单**：只读 git 子命令不存在「非零退出但语义正常」，代价是空仓库的 `log` / `show`（128）现在算失败——写入文档与测试（`log_in_empty_repository_is_a_failure` 与配对的 `log_after_first_commit_is_success`）。`ensure_git_repo` 保留 `String` 薄壳供 `github_cli::pr_body` 用，避免把 `gh_git_failed` 的码混进来。审计表删掉 `git` 条目。 |

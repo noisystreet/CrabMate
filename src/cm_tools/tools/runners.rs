@@ -161,19 +161,20 @@ macro_rules! define_runners_args_only {
     };
 }
 
-/// 生成 `fn runner_git -> git::dispatch(args, max_len, cwd)`。`git` 是 action 选择器，
-/// 新增只读子命令时改 `GitAction` + `git::read_ops::dispatch`，这里不必增行。
-macro_rules! define_git_runner {
+/// 生成 `fn runner_git_try -> git::dispatch(args, max_len, cwd) -> Result`。`git` 是 action
+/// 选择器，新增只读子命令时改 `GitAction` + `git::read_ops::dispatch`，这里不必增行。
+macro_rules! define_git_runner_try {
     ($runner:ident, $git_fn:ident) => {
-        pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+        #[allow(clippy::result_large_err)]
+        pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
             git::$git_fn(args, ctx.command_max_output_len, ctx.working_dir)
         }
     };
 }
 
-macro_rules! define_git_runners {
+macro_rules! define_git_runners_try {
     ($( $runner:ident => $git_fn:ident ),* $(,)? ) => {
-        $( define_git_runner!($runner, $git_fn); )*
+        $( define_git_runner_try!($runner, $git_fn); )*
     };
 }
 
@@ -189,7 +190,8 @@ macro_rules! gh_runner_try {
 
 /// 编译期 smoke：用真实的 `_try` 实现展开 Typed 孪生宏，防止签名漂移后宏静默失效。
 ///
-/// git / gh / args-only 形态尚无返回 `Result` 的实现，对应宏留到各自迁移 PR 再引入。
+/// args-only 形态尚无返回 `Result` 的实现，对应宏留到该族迁移 PR 再引入
+/// （`git` 族已于 `git` 迁 `Typed` 时挂上）。
 #[cfg(test)]
 #[allow(dead_code)]
 mod try_macro_typecheck {
@@ -208,6 +210,10 @@ mod try_macro_typecheck {
         runner_list_tree_try_smoke => crate::cm_tools::tools::file::list_tree_try,
         runner_read_dir_try_smoke => crate::cm_tools::tools::file::read_dir_try,
         runner_read_binary_meta_try_smoke => crate::cm_tools::tools::file::read_binary_meta_try,
+    }
+
+    define_git_runners_try! {
+        runner_git_try_smoke => dispatch,
     }
 }
 
@@ -563,8 +569,10 @@ pub fn runner_env_var_check_try(args: &str, _ctx: &ToolContext<'_>) -> Result<St
 
 // ── Git 工具 ────────────────────────────────────────────────
 
-define_git_runners! {
-    runner_git => dispatch,
+// `git` 已迁 `Typed`（见 `docs/design/tool_runner_typed_migration.md` §4.12）：
+// 子命令非零退出、白名单外目录、起不来都有各自的 `error_code`，不再靠正文关键词。
+define_git_runners_try! {
+    runner_git_try => dispatch,
 }
 
 // ── GitHub CLI 工具 ──────────────────────────────────────

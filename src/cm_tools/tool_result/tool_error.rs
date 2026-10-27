@@ -90,9 +90,12 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         "workflow_semaphore_closed"
         | "workflow_node_missing_result"
         | "workflow_tool_join_error" => ToolFailureCategory::External,
-        "workspace_not_set" | "workspace_no_cargo_toml" | "codebase_semantic_unconfigured" => {
-            ToolFailureCategory::Workspace
-        }
+        // 「工作区不具备该工具的前置条件」：未设置工作区 / 无 `Cargo.toml` / 工作目录不是 Git 仓库
+        // （`git` 族的 `rev-parse --is-inside-work-tree` 不成立）——换参数无用，须换目录。
+        "workspace_not_set"
+        | "workspace_no_cargo_toml"
+        | "codebase_semantic_unconfigured"
+        | "git_not_a_repo" => ToolFailureCategory::Workspace,
         "timeout" => ToolFailureCategory::Timeout,
         "cancelled" => ToolFailureCategory::Timeout,
         "http_timeout" => ToolFailureCategory::Timeout,
@@ -348,8 +351,8 @@ impl ToolError {
     /// 同 [`Self::external_code`]，但 `code` 由运行时拼接（如 `gh_pr_failed`）。
     ///
     /// 分类仍按 [`failure_category_for_error_code`] 推导，因此 `code` 必须以 `_failed` 结尾
-    /// 或已在分类表显式登记——否则会退化成 `Unknown`。调用点目前只有 `gh_*` 族
-    /// （子命令名进码名，`&'static str` 表达不了）。
+    /// 或已在分类表显式登记——否则会退化成 `Unknown`。调用点目前是 `gh_*` 与 `git` 族
+    /// （子命令名 / `action` 名进码名，`&'static str` 表达不了）。
     pub fn external_code_owned(code: String, message: String) -> Self {
         let parsed = ParsedLegacyOutput {
             ok: false,
