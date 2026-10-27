@@ -67,6 +67,8 @@ mod skill_manage;
 mod spell_tools;
 #[cfg(feature = "csv-tools")]
 mod structured_data;
+#[cfg(feature = "csv-tools")]
+mod structured_dispatch;
 pub mod structured_preview;
 mod symbol;
 #[cfg(feature = "csv-tools")]

@@ -116,7 +116,11 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "create_dir",
             "search_replace",
             "apply_patch",
-            "structured_patch",
+            // `structured` 把只读的 `validate` / `query` / `diff` 与写侧的 `patch` 合并在
+            // 同一个工具名里，故整工具按写处理——三个只读 action 因此失去并行只读批 /
+            // 只读重试 / `Ask`·`Plan` 只读门控 / L1 只读正列表。这是合并的既定代价
+            // （见 `CHANGELOG.md`）；按名字判定的结构不支持 action 级粒度。
+            "structured",
             "long_term_remember",
             "long_term_forget",
             "run_command",

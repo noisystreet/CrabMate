@@ -16,7 +16,7 @@ fn default_patch_write_tool_names() -> &'static HashSet<&'static str> {
         [
             "apply_patch",
             "search_replace",
-            "structured_patch",
+            "structured",
             "create_file",
             "modify_file",
             "append_file",

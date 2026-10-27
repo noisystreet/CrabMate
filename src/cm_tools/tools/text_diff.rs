@@ -76,7 +76,7 @@ fn read_workspace_text(path: &str, base: &Path) -> Result<String, ToolError> {
     })
 }
 
-/// 生成 unified diff；供本工具与 `structured_patch` 的写前预览共用（同一套 diff 渲染）。
+/// 生成 unified diff；供本工具与 `structured`（`action=patch`）的写前预览共用（同一套 diff 渲染）。
 pub(super) fn diff_unified(
     left: &str,
     right: &str,

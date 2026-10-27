@@ -220,72 +220,47 @@ impl ToolSummaryLine for MarkdownCheckLinksSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct StructuredValidateSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for StructuredValidateSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("structured validate: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct StructuredQuerySummaryArgs {
-    path: String,
-    query: String,
-}
-
-impl ToolSummaryLine for StructuredQuerySummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        let q = self.query.trim();
-        if path.is_empty() || q.is_empty() {
-            return None;
-        }
-        Some(format!("structured query: {} [{}]", path, q))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct StructuredDiffSummaryArgs {
-    path_a: String,
-    path_b: String,
-}
-
-impl ToolSummaryLine for StructuredDiffSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let a = self.path_a.trim();
-        let b = self.path_b.trim();
-        if a.is_empty() || b.is_empty() {
-            return None;
-        }
-        Some(format!("structured diff: {} vs {}", a, b))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct StructuredPatchSummaryArgs {
-    path: String,
-    query: String,
+pub(super) struct StructuredSummaryArgs {
     #[serde(default)]
     action: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    path_a: Option<String>,
+    #[serde(default)]
+    path_b: Option<String>,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    mutation: Option<String>,
 }
 
-impl ToolSummaryLine for StructuredPatchSummaryArgs {
+impl ToolSummaryLine for StructuredSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        let p = self.path.trim();
-        let q = self.query.trim();
-        if p.is_empty() || q.is_empty() {
-            return None;
+        let path = trimmed_opt(self.path.as_deref());
+        match self.action.as_deref().unwrap_or("").trim() {
+            "validate" => Some(format!("structured validate: {}", path?)),
+            "query" => {
+                let q = trimmed_opt(self.query.as_deref())?;
+                Some(format!("structured query: {} [{}]", path?, q))
+            }
+            "diff" => {
+                let a = trimmed_opt(self.path_a.as_deref())?;
+                let b = trimmed_opt(self.path_b.as_deref())?;
+                Some(format!("structured diff: {} vs {}", a, b))
+            }
+            "patch" => {
+                let q = trimmed_opt(self.query.as_deref())?;
+                let m = self.mutation.as_deref().unwrap_or("set").trim();
+                Some(format!("structured patch: {} [{} @ {}]", path?, m, q))
+            }
+            _ => None,
         }
-        let a = self.action.as_deref().unwrap_or("set");
-        Some(format!("structured patch: {} [{} @ {}]", p, a, q))
     }
+}
+
+fn trimmed_opt(v: Option<&str>) -> Option<&str> {
+    v.map(str::trim).filter(|s| !s.is_empty())
 }
 
 #[derive(Debug, Deserialize)]

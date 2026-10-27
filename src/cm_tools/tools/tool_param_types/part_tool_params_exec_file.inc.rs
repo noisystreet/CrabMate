@@ -133,7 +133,7 @@ pub struct ModifyFileArgs {
     pub guard: Option<WriteGuard>,
     /// 批量局部编辑：一次调用基于**同一磁盘快照**自底向上应用全部编辑，行号互不偏移；与 `mode`/`content`/`start_line`/`end_line`/`after_line` 互斥。
     pub edits: Option<Vec<ModifyFileEditArgs>>,
-    /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入（与 `search_replace` / `structured_patch` 一致）。
+    /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入（与 `search_replace` / `structured` 一致）。
     pub dry_run: Option<bool>,
     /// 可选写前校验：最近一次 `read_file` 成功输出头中的 `revision`。与当前磁盘内容不一致时**拒绝写入**
     /// （`错误[stale_revision]`），避免基于过期快照按已漂移的行号误改；适用于所有 `mode` 与 `edits`。
@@ -224,7 +224,7 @@ pub struct ApplyPatchArgs {
     /// 直接报错——一个 revision 无法表达多个文件的基线。
     ///
     /// **此字段仅用于 schema 声明与文档**：取值由写侧守卫（`file::verify_write_revision`）
-    /// 从**原始入参 JSON** 读取，与 `modify_file` / `structured_patch` 同模式。
+    /// 从**原始入参 JSON** 读取，与 `modify_file` / `structured`（`action=patch`）同模式。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_revision: Option<String>,
 }

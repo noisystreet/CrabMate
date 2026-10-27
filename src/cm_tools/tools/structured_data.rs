@@ -499,7 +499,7 @@ fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String>
             toml::to_string_pretty(&tv).map_err(|e| e.to_string())?
         }
         DataFormat::Csv | DataFormat::Tsv => {
-            return Err("structured_patch 仅支持 json/yaml/toml，不支持 csv/tsv".to_string());
+            return Err("structured patch 仅支持 json/yaml/toml，不支持 csv/tsv".to_string());
         }
     };
     if !out.ends_with('\n') {

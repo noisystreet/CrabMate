@@ -35,7 +35,7 @@
 | `specs/*.inc.rs` | Legacy | Typed | 说明 |
 |---|---:|---:|---|
 | `file_extra.inc.rs` | 0 | 6 | 已全迁 |
-| `markdown_structured.inc.rs` | 0 | 5 | 已全迁 |
+| `markdown_structured.inc.rs` | 0 | 2 | 已全迁（`structured_*` 四个于此合并为单个 `structured`，2026-10-28，5 → 2） |
 | `misc_basic.inc.rs` | 0 | 4 | 已全迁 |
 | `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
 | `cargo_rust.inc.rs` | 1 | 5 | 4 个 cargo 主链路已迁；`rust_analyzer` 未迁（`rust_compiler_json` 已整工具删除） |
@@ -58,7 +58,7 @@
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
-- **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、`structured_*`、`markdown_check_links`、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），实现里本来就有清晰的错误分支。
+- **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、`structured`（原 `structured_*` 四个已合并为单工具 + `action`）、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），实现里本来就有清晰的错误分支。
 - **未迁 32 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
 
 **结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 32 个都要先改实现层，这是它长期停在半数以下的原因。

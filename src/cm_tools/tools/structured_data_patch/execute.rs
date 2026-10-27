@@ -31,7 +31,7 @@ pub(super) fn run_structured_patch_try(
 fn detect_structured_patch_format(path: &str, fmt: Option<&str>) -> Result<DataFormat, ToolError> {
     match detect_format(path, fmt) {
         Ok(DataFormat::Csv | DataFormat::Tsv) => Err(ToolError::invalid_args(
-            "错误：structured_patch 不支持 csv/tsv，请改用 table_text 或直接编辑".to_string(),
+            "错误：structured patch 不支持 csv/tsv，请改用 table_text 或直接编辑".to_string(),
         )),
         Ok(f) => Ok(f),
         Err(e) => Err(ToolError::invalid_args(format!("错误：{e}"))),
@@ -190,7 +190,7 @@ fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> Result<String, 
             diff
         };
         return Ok(format!(
-            "structured_patch 预览成功（未写入）: path={} action={} query={}\n{}",
+            "structured patch 预览成功（未写入）: path={} action={} query={}\n{}",
             o.path, o.action, qdisp, body
         ));
     }
@@ -213,7 +213,7 @@ fn finish_structured_patch(o: StructuredPatchOutcome<'_, '_>) -> Result<String, 
         Some(before),
     );
     Ok(format!(
-        "structured_patch 已写入: path={} action={} query={}",
+        "structured patch 已写入: path={} action={} query={}",
         o.path, o.action, qdisp
     ))
 }
