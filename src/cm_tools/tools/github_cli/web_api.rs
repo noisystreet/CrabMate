@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use super::common::{
     command_formatted_exit_code, extract_stdout_from_formatted, gh_allowed, run_gh_vec,
 };
-use super::pr_workflow::gh_pr_checks;
+use super::pr_workflow::gh_pr_checks_try;
 
 const REPO_VIEW_FIELDS: &str = "nameWithOwner,url,defaultBranchRef";
 const PR_VIEW_FIELDS: &[&str] = &[
@@ -41,6 +41,25 @@ fn gh_tool_error(formatted: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
+}
+
+/// Web 侧「尽力取数」：`gh` 失败时退回 `Err.message` 当正文（里面仍有退出码与 stderr），
+/// 让调用方按「没有数据」处理，而不是把整页拉红。
+///
+/// 抽出来还顺手压低了 `github_pr_checks` 的分支数（lizard CCN≤10）。
+fn run_gh_vec_lenient(argv: Vec<String>, ctx: &GhCtx<'_>) -> String {
+    match run_gh_vec(argv, ctx) {
+        Ok(s) => s,
+        Err(e) => e.message,
+    }
+}
+
+/// 同上，用于 `gh_pr_checks_try`（Web 侧只取其中的 JSON 与退出码）。
+fn gh_pr_checks_lenient(args_json: &str, ctx: &GhCtx<'_>) -> String {
+    match gh_pr_checks_try(args_json, ctx) {
+        Ok(s) => s,
+        Err(e) => e.message,
+    }
 }
 
 fn parse_gh_json_stdout(formatted: &str) -> Result<JsonValue, String> {
@@ -300,7 +319,7 @@ pub fn github_repo_context(
             "--json".into(),
             REPO_VIEW_FIELDS.into(),
         ];
-        let formatted = run_gh_vec(argv, ctx);
+        let formatted = run_gh_vec_lenient(argv, ctx);
         if let Ok(v) = parse_gh_json_stdout(&formatted) {
             out.connected = true;
             out.repo = json_str(&v, "nameWithOwner");
@@ -317,7 +336,7 @@ pub fn github_pr_checks(
     ctx: &GhCtx<'_>,
     number: Option<u64>,
 ) -> Result<GithubPrCurrentChecksData, String> {
-    gh_allowed(ctx.allowed_commands)?;
+    gh_allowed(ctx.allowed_commands).map_err(|e| e.message)?;
     let mut out = GithubPrCurrentChecksData::default();
 
     let mut view_argv = vec!["pr".into(), "view".into()];
@@ -329,7 +348,7 @@ pub fn github_pr_checks(
     }
     view_argv.push("--json".into());
     view_argv.push(PR_VIEW_FIELDS.join(","));
-    let view_formatted = run_gh_vec(view_argv, ctx);
+    let view_formatted = run_gh_vec_lenient(view_argv, ctx);
     if gh_exit_code(&view_formatted) == Some(0)
         && let Ok(v) = parse_gh_json_stdout(&view_formatted)
     {
@@ -342,7 +361,7 @@ pub fn github_pr_checks(
     if let Some(n) = number {
         checks_args["number"] = serde_json::json!(n);
     }
-    let checks_formatted = gh_pr_checks(&checks_args.to_string(), ctx);
+    let checks_formatted = gh_pr_checks_lenient(&checks_args.to_string(), ctx);
     let checks_v = parse_gh_json_stdout_exits(&checks_formatted, &[0, 1, 8])?;
     out.checks = parse_check_items(&checks_v);
     out.summary = summarize_checks(&out.checks);

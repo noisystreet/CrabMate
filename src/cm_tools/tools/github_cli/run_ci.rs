@@ -1,5 +1,6 @@
 //! `gh run rerun` 与失败 CI 摘要（只读排障）。
 
+use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::path::Path;
 
@@ -133,34 +134,24 @@ fn wrap_with_parsed_if_json(formatted: String, stdout: &str) -> String {
 }
 
 /// `gh run rerun`（写远端：重新运行 workflow）
-pub fn gh_run_rerun(
+pub fn gh_run_rerun_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
-        None => return "错误：缺少 run_id".to_string(),
+        None => return Err(ToolError::invalid_args("错误：缺少 run_id".to_string())),
     };
-    if let Err(e) = validate_run_id(run_id) {
-        return e;
-    }
+    validate_run_id(run_id)?;
     let mut argv = vec!["run".into(), "rerun".into(), run_id.to_string()];
-    if let Err(e) = push_repo_arg(&v, &mut argv) {
-        return e;
-    }
+    push_repo_arg(&v, &mut argv)?;
     if v.get("failed").and_then(|x| x.as_bool()) == Some(true) {
         argv.push("--failed".into());
     }
-    if let Err(e) = push_extra_args_from_json(&v, &mut argv) {
-        return e;
-    }
+    push_extra_args_from_json(&v, &mut argv)?;
     run_gh_vec(argv, ctx)
 }
 
@@ -225,7 +216,7 @@ fn append_job_log_section(
     ctx: &JobLogAppendCtx<'_>,
 ) {
     if let Err(e) = validate_job_name(name) {
-        report.push_str(&format!("### {name}\n\n_跳过日志：{e}_\n\n"));
+        report.push_str(&format!("### {name}\n\n_跳过日志：{}_\n\n", e.message));
         return;
     }
     report.push_str(&format!("### {name} ({status})\n\n"));
@@ -241,7 +232,12 @@ fn append_job_log_section(
         log_argv.push("-R".into());
         log_argv.push(r.trim().to_string());
     }
-    let log_out = run_gh_vec(log_argv, ctx.gh);
+    // 单个 job 的日志拉取失败不该让整份摘要失败：保留原语义（正文里标注），
+    // 但把 `Err.message` 当作输出正文，失败原因仍可见。
+    let log_out = match run_gh_vec(log_argv, ctx.gh) {
+        Ok(s) => s,
+        Err(e) => e.message,
+    };
     let log_text = gh_stdout(&log_out);
     if log_text.is_empty() {
         report.push_str("_（无日志输出或拉取失败）_\n\n");
@@ -265,24 +261,18 @@ fn truncate_report(report: String, max_output_len: usize) -> String {
 }
 
 /// `gh run failure summary`：解析 failed jobs 并拉取各 job 日志尾部（只读）。
-pub fn gh_run_failure_summary(
+pub fn gh_run_failure_summary_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
-        None => return "错误：缺少 run_id".to_string(),
+        None => return Err(ToolError::invalid_args("错误：缺少 run_id".to_string())),
     };
-    if let Err(e) = validate_run_id(run_id) {
-        return e;
-    }
+    validate_run_id(run_id)?;
     let tail_lines_n = v
         .get("tail_lines")
         .and_then(|x| x.as_u64())
@@ -301,25 +291,27 @@ pub fn gh_run_failure_summary(
         "--json".into(),
         "jobs,conclusion,displayTitle,url,status,workflowName".into(),
     ];
-    if let Err(e) = push_repo_arg(&v, &mut view_argv) {
-        return e;
-    }
+    push_repo_arg(&v, &mut view_argv)?;
 
-    let view_out = run_gh_vec(view_argv, ctx);
-    if parse_exit_code(&view_out) != Some(0) {
-        return view_out;
-    }
+    // 没有 JSON 就无从汇总，`run view` 失败即整份摘要失败（原先靠 `return view_out`
+    // 把失败正文当结果返回，等于告诉模型「摘要生成成功」）。
+    let view_out = run_gh_vec(view_argv, ctx)?;
     let stdout = gh_stdout(&view_out);
     let parsed: JsonValue = match serde_json::from_str(&stdout) {
         Ok(j) => j,
-        Err(e) => return format!("错误：无法解析 run view JSON：{e}\n原始输出：\n{stdout}"),
+        Err(e) => {
+            return Err(ToolError::external_code(
+                "gh_run_json_failed",
+                format!("错误：无法解析 run view JSON：{e}\n原始输出：\n{stdout}"),
+            ));
+        }
     };
 
     let failed_jobs = collect_failed_jobs(&parsed);
     let mut report = failure_summary_header(&parsed, run_id);
     if failed_jobs.is_empty() {
         report.push_str("_未在 JSON 中发现 conclusion=failure 的 job；可能仍在运行或失败发生在 workflow 级。_\n");
-        return truncate_report(report, ctx.max_output_len);
+        return Ok(truncate_report(report, ctx.max_output_len));
     }
 
     report.push_str(&format!("## 失败 Job（最多 {max_failed_jobs} 个）\n\n"));
@@ -332,7 +324,7 @@ pub fn gh_run_failure_summary(
     for (name, status) in failed_jobs.iter().take(max_failed_jobs) {
         append_job_log_section(&mut report, name, status, &log_ctx);
     }
-    truncate_report(report, ctx.max_output_len)
+    Ok(truncate_report(report, ctx.max_output_len))
 }
 
 #[cfg(test)]

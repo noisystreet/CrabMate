@@ -1,5 +1,6 @@
 //! PR 正文草稿：读取仓库模板 + 可选 `git log` 摘要（只读，不写盘）。
 
+use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::path::{Path, PathBuf};
 
@@ -54,17 +55,17 @@ fn is_safe_git_ref(s: &str) -> bool {
         })
 }
 
-fn run_git_stdout(working_dir: &Path, args: &[&str]) -> Result<String, String> {
+fn run_git_stdout(working_dir: &Path, args: &[&str]) -> Result<String, ToolError> {
     let mut cmd = std::process::Command::new("git");
     cmd.args(args).current_dir(working_dir);
-    let out = cmd.output().map_err(|e| format!("无法执行 git: {e}"))?;
+    let out = cmd.output().map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}")))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "git 失败 (exit={}): {}",
             out.status.code().unwrap_or(-1),
             stderr.trim()
-        ));
+        )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
@@ -73,9 +74,9 @@ fn commit_lines_since_base(
     working_dir: &Path,
     base: &str,
     max_commits: usize,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, ToolError> {
     if !is_safe_git_ref(base) {
-        return Err("错误：base 含非法字符".to_string());
+        return Err(ToolError::invalid_args("错误：base 含非法字符".to_string()));
     }
     let range = format!("{base}..HEAD");
     let max = max_commits.to_string();
@@ -103,12 +104,13 @@ pub fn build_pr_body_draft(
     max_commits: usize,
     include_template: bool,
     include_commit_log: bool,
-) -> Result<String, String> {
-    git::ensure_git_repo(working_dir)?;
+) -> Result<String, ToolError> {
+    git::ensure_git_repo(working_dir)
+        .map_err(|m| ToolError::external_code("gh_git_failed", m))?;
     let max_commits = max_commits.clamp(1, MAX_COMMITS_CAP);
     let base_ref = base.unwrap_or("main").trim();
     if base_ref.is_empty() {
-        return Err("错误：base 不能为空".to_string());
+        return Err(ToolError::invalid_args("错误：base 不能为空".to_string()));
     }
 
     let mut parts: Vec<String> = Vec::new();
@@ -146,11 +148,9 @@ pub fn build_pr_body_draft(
 }
 
 /// `gh_pr_body_draft` 工具入口（只读）。
-pub fn gh_pr_body_draft(args_json: &str, ctx: &GhCtx<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+pub fn gh_pr_body_draft_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let base = v.get("base").and_then(|x| x.as_str());
     let max_commits = v
         .get("max_commits")
@@ -176,15 +176,15 @@ pub fn gh_pr_body_draft(args_json: &str, ctx: &GhCtx<'_>) -> String {
             if body.len() > ctx.max_output_len {
                 let keep = ctx.max_output_len.saturating_sub(80);
                 let truncated = super::super::output_util::truncate_to_char_boundary(&body, keep);
-                format!(
+                Ok(format!(
                     "{}\n\n... (输出已按 {} 字节截断)",
                     truncated, ctx.max_output_len
-                )
+                ))
             } else {
-                body
+                Ok(body)
             }
         }
-        Err(e) => e,
+        Err(e) => Err(e),
     }
 }
 

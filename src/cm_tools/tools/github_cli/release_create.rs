@@ -1,5 +1,6 @@
 //! `gh release create`（写远端 Release）。
 
+use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::path::Path;
 
@@ -10,11 +11,11 @@ use super::common::{
     run_gh_vec, validate_pr_body, validate_release_tag, write_workspace_temp_markdown,
 };
 
-fn git_notes_since_last_tag(working_dir: &Path, max_commits: usize) -> Result<String, String> {
+fn git_notes_since_last_tag(working_dir: &Path, max_commits: usize) -> Result<String, ToolError> {
     let mut cmd = std::process::Command::new("git");
     cmd.args(["describe", "--tags", "--abbrev=0"])
         .current_dir(working_dir);
-    let tag_out = cmd.output().map_err(|e| format!("无法执行 git: {e}"))?;
+    let tag_out = cmd.output().map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}")))?;
     let since = if tag_out.status.success() {
         let t = String::from_utf8_lossy(&tag_out.stdout).trim().to_string();
         if t.is_empty() {
@@ -40,15 +41,15 @@ fn git_notes_since_last_tag(working_dir: &Path, max_commits: usize) -> Result<St
     }
     let out = log_cmd
         .output()
-        .map_err(|e| format!("无法执行 git log: {e}"))?;
+        .map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git log: {e}")))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("git log 失败: {}", stderr.trim()));
+        return Err(ToolError::invalid_args(format!("git log 失败: {}", stderr.trim())));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn resolve_release_notes(v: &JsonValue, working_dir: &Path) -> Result<String, String> {
+fn resolve_release_notes(v: &JsonValue, working_dir: &Path) -> Result<String, ToolError> {
     let explicit = v.get("notes").and_then(|x| x.as_str()).unwrap_or("").trim();
     if !explicit.is_empty() {
         return Ok(explicit.to_string());
@@ -76,7 +77,7 @@ fn gh_release_create_build_argv(
     v: &JsonValue,
     tag: &str,
     notes_path: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, ToolError> {
     let mut argv = vec![
         "release".into(),
         "create".into(),
@@ -95,46 +96,29 @@ fn gh_release_create_build_argv(
 }
 
 /// `gh release create`（notes 经工作区临时 `--notes-file`）
-pub fn gh_release_create(
+pub fn gh_release_create_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    if let Err(e) = gh_allowed(ctx.allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    gh_allowed(ctx.allowed_commands)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
     let tag = match v.get("tag").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
-        None => return "错误：缺少 tag".to_string(),
+        None => return Err(ToolError::invalid_args("错误：缺少 tag".to_string())),
     };
-    if let Err(e) = validate_release_tag(tag) {
-        return e;
-    }
+    validate_release_tag(tag)?;
 
-    let notes = match resolve_release_notes(&v, ctx.working_dir) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
-    if let Err(e) = validate_pr_body(&notes) {
-        return e;
-    }
+    let notes = resolve_release_notes(&v, ctx.working_dir)?;
+    validate_pr_body(&notes)?;
 
-    let (dir, notes_path) = match write_workspace_temp_markdown(
+    let (dir, notes_path) = write_workspace_temp_markdown(
         ctx.working_dir,
         "crabmate_release_notes.md",
         notes.as_bytes(),
         "release notes",
-    ) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let argv = match gh_release_create_build_argv(&v, tag, notes_path) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+    )?;
+    let argv = gh_release_create_build_argv(&v, tag, notes_path)?;
     let out = run_gh_vec(argv, ctx);
     drop(dir);
     out

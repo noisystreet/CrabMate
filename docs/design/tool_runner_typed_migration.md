@@ -29,9 +29,10 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 19**
-> （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`
-> 等陆续迁完后，23 → 19）。§2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 14**
+> （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`、
+> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api` 陆续迁完后，23 → 19 → 14）。
+> §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
 
@@ -46,7 +47,7 @@
 | `cargo_rust.inc.rs` | 0 | 6 | 已全迁（`rust_analyzer` 于 2026-10-28 迁 Typed，见 §4.10；`rust_compiler_json` 已整工具删除） |
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
 | `basic_network.inc.rs` | 0 | 4 | 全部 Typed（`text_transform` 已于 2026-10-28 移除） |
-| `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
+| `github_cli.inc.rs` | 0 | 5 | 已全迁（2026-10-28，C 档；见 §4.3） |
 | `diagnostics_docs.inc.rs` | 4 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除（见 §4.4） |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
 | `process.inc.rs` | 0 | 2 | 已全迁（2026-10-28：`background_job` / `background_job_cancel` 走手写 try runner；原先 `参数错误：…` 开头被判成功） |
@@ -124,17 +125,41 @@
 
 归档本体的 7z / unrar 子进程失败仍属外部工具输出，未拆更细的 code。
 
-### 4.3 `github_cli.inc.rs`（5）— 形态 `gh_runner!`（参数为 `GhCtx`）
+### 4.3 `github_cli.inc.rs`（5）— **已迁 2026-10-28**（形态 `gh_runner_try!`，参数为 `GhCtx`）
 
-| 工具 | 目标实现 | 备注 |
+| 工具 | 实现 | 目标 runner |
 |---|---|---|
-| `gh_pr` | `github_cli::gh_pr` | action 分发器（7 个动作） |
-| `gh_run` | `github_cli::gh_run` | action 分发器（2 个动作） |
-| `gh_issue_create` | `github_cli::gh_issue_create` | |
-| `gh_release_create` | `github_cli::gh_release_create` | |
-| `gh_api` | `github_cli::gh_api` | 校验密集（path 白名单 + method 白名单 + body JSON） |
+| `gh_pr` | `github_cli::gh_pr_try` | action 分发器（7 个动作） |
+| `gh_run` | `github_cli::gh_run_try` | action 分发器（2 个动作） |
+| `gh_issue_create` | `github_cli::gh_issue_create_try` | |
+| `gh_release_create` | `github_cli::gh_release_create_try` | |
+| `gh_api` | `github_cli::gh_api_try` | 校验密集（path 白名单 + method 白名单 + body JSON） |
 
-> 共同阻碍：这族底层统一走 `run_gh_vec` → `command::run`，返回的是一段格式化命令输出，失败靠正文判定。要迁 Typed，须让 `run_gh_vec` 能区分「`gh` 非零退出」与「参数构造/解析失败」。
+**原先的共同障碍**：这族底层统一走 `run_gh_vec` → `command::run`，返回的是一段格式化命令输出，
+失败靠正文判定。
+
+**怎么解开的**：`CommandOutcome` 本来就带 `status: ExitStatusKind`，`status.exit_code()` 一直可用，
+只是旧代码把它 `render` 成文本就丢掉了。于是 `run_gh_vec` 改成 `Result<String, ToolError>`：
+
+- `parse_command_spec` / `command::run` 的 `RunCommandError` 直接 `into_tool_error()`（现成方法，
+  含 `command_not_found` 的安装提示）；
+- `exit_code == -1` → `timeout`（`ExitStatusKind::exit_code` 对超时/取消的历史约定）；
+- 其它非零 → `gh_{子命令}_failed`，子命令取自 `argv[0]`，所以 17 个调用点签名不变，只改返回类型。
+
+**两个不能一刀切的地方**：
+
+1. **`gh pr checks` 的 1 / 8**：它对「有检查失败」返回 1、「仍有 pending」返回 8，stdout 仍是合法
+   JSON。一律当失败会把正常的 CI 状态读成工具故障，于是拆出
+   `run_gh_vec_allow_exit(argv, ctx, &[0, 1, 8])`，**只有**它用。
+2. **`gh < 2.50` 的 `unknown flag: --json`**：它同样以非零退出，而 `gh_pr_checks` 原先靠「输出里
+   有没有这句话」回退表格。现在改为先看 `Err.message` 再决定回退，兼容路径与提示文案都保住。
+
+另外 `gh_api` 不经 `run_gh_vec`（body 要经 stdin 传入，自己 `spawn`），退出码判定补在
+`format_gh_api_process_output` 里，码为 `gh_api_failed`。
+
+**审计表**：`gh_*` 五条从 `LEGACY_BASELINE` 用例中删除（工具已非 Legacy），失败分支改由各文件单测
+钉住：`gh_pr_edit` / `gh_pr_checks` 断言 `code == "command_not_allowed"`，`dispatch_tests::call_pr` /
+`call_run` 取 `err.message` 后原断言一行未改。
 
 ### 4.4 `diagnostics_docs.inc.rs`（8）
 

@@ -1,6 +1,13 @@
 //! 内置 GitHub CLI（`gh`）封装：结构化参数；**退出码 0** 且 **stdout 整段为合法 JSON** 时附加格式化块（与是否传入 `--json` 字段无关）。
 //!
 //! 须 **`allowed_commands` 含 `gh`**（嵌入默认已含）。对外暴露 5 个工具：**`gh_pr`** / **`gh_run`**（按 `action` 分发的合并工具）、**`gh_issue_create`**、**`gh_release_create`**、**`gh_api`**。其中 **`gh_pr`** / **`gh_run`** / **`gh_issue_create`** / **`gh_release_create`** / **`gh_api`**（变更类 HTTP）整体列入写副作用工具集——`gh_pr` / `gh_run` 内部虽有只读动作，但工具粒度上仍按写效应处理。
+//!
+//! 五个工具自 C 档迁移起一律走 `Typed` runner（`*_try -> Result<String, ToolError>`），
+//! 非零退出显式化为 `gh_{子命令}_failed`。
+
+// `ToolError` 约 144 字节（含分类 + 消息 + 结构化正文），整个子模块都是
+// `Result<_, ToolError>`；逐函数 `#[allow]` 只会淹没真正的告警，故在模块级别豁免。
+#![allow(clippy::result_large_err)]
 
 mod api;
 mod common;
@@ -16,13 +23,13 @@ pub mod web_api;
 pub use common::GhCtx;
 pub use common::{attach_json_if_exit_zero, gh_allowed, validate_api_path, validate_extra_args};
 
-pub use api::gh_api;
-pub use issue_create::gh_issue_create;
-pub use pr_body::gh_pr_body_draft;
-pub use pr_mutate::{gh_pr_comment, gh_pr_edit, gh_pr_merge, gh_pr_review};
-pub use pr_workflow::{gh_pr_checks, gh_pr_create};
-pub use release_create::gh_release_create;
-pub use run_ci::{gh_run_failure_summary, gh_run_rerun};
+pub use api::gh_api_try;
+pub use issue_create::gh_issue_create_try;
+pub use pr_body::gh_pr_body_draft_try;
+pub use pr_mutate::{gh_pr_comment_try, gh_pr_edit_try, gh_pr_merge_try, gh_pr_review_try};
+pub use pr_workflow::{gh_pr_checks_try, gh_pr_create_try};
+pub use release_create::gh_release_create_try;
+pub use run_ci::{gh_run_failure_summary_try, gh_run_rerun_try};
 
 // ── 动作分发工具 ────────────────────────────────────────────────
 //
@@ -33,6 +40,7 @@ pub use run_ci::{gh_run_failure_summary, gh_run_rerun};
 
 use std::path::Path;
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::parse_args_typed;
 use crate::cm_tools::tools::tool_param_types::{
     GhPrAction, GhPrArgs, GhPrReviewEvent, GhRunAction, GhRunArgs,
@@ -40,33 +48,38 @@ use crate::cm_tools::tools::tool_param_types::{
 
 /// 合并后 schema 里 `title` / `event` / `body` 都是 `Option`（否则无法与其它动作共用一份 schema），
 /// 因此「某动作下必填」只能在分派层补校验，避免把明显缺参的调用放进子实现白跑一轮。
-fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), String> {
+#[allow(clippy::result_large_err)]
+fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), ToolError> {
     let is_blank = |s: &Option<String>| s.as_deref().unwrap_or("").trim().is_empty();
     match parsed.action {
         GhPrAction::Create => {
             if is_blank(&parsed.title) {
-                return Err("错误：action=create 需要非空 title".to_string());
+                return Err(ToolError::invalid_args(
+                    "错误：action=create 需要非空 title".to_string(),
+                ));
             }
         }
         GhPrAction::Review => match parsed.event {
             None => {
-                return Err(
+                return Err(ToolError::invalid_args(
                     "错误：action=review 需要 event（approve / request-changes / comment）".to_string(),
-                );
+                ));
             }
             Some(GhPrReviewEvent::Comment) | Some(GhPrReviewEvent::RequestChanges) => {
                 if is_blank(&parsed.body) {
-                    return Err(
+                    return Err(ToolError::invalid_args(
                         "错误：action=review 且 event 为 comment / request-changes 时须提供 body"
                             .to_string(),
-                    );
+                    ));
                 }
             }
             Some(GhPrReviewEvent::Approve) => {}
         },
         GhPrAction::Comment => {
             if is_blank(&parsed.body) {
-                return Err("错误：action=comment 需要非空 body".to_string());
+                return Err(ToolError::invalid_args(
+                    "错误：action=comment 需要非空 body".to_string(),
+                ));
             }
         }
         // checks / merge / edit / body_draft 没有跨字段必填约束（merge 的 number 可省略＝当前分支）。
@@ -76,58 +89,34 @@ fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), String> {
 }
 
 /// `gh_pr`：按 `action` 分发到 `checks` / `create` / `merge` / `review` / `comment` / `edit` / `body_draft`。
-pub fn gh_pr(
+#[allow(clippy::result_large_err)]
+pub fn gh_pr_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    let parsed: GhPrArgs = match parse_args_typed(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = validate_pr_action_fields(&parsed) {
-        return e;
-    }
+) -> Result<String, ToolError> {
+    let parsed: GhPrArgs = parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    validate_pr_action_fields(&parsed)?;
     match parsed.action {
-        GhPrAction::Checks => {
-            pr_workflow::gh_pr_checks(args_json, ctx)
-        }
-        GhPrAction::Create => {
-            pr_workflow::gh_pr_create(args_json, ctx)
-        }
-        GhPrAction::Merge => {
-            pr_mutate::gh_pr_merge(args_json, ctx)
-        }
-        GhPrAction::Review => {
-            pr_mutate::gh_pr_review(args_json, ctx)
-        }
-        GhPrAction::Comment => {
-            pr_mutate::gh_pr_comment(args_json, ctx)
-        }
-        GhPrAction::Edit => {
-            pr_mutate::gh_pr_edit(args_json, ctx)
-        }
-        GhPrAction::BodyDraft => {
-            pr_body::gh_pr_body_draft(args_json, ctx)
-        }
+        GhPrAction::Checks => pr_workflow::gh_pr_checks_try(args_json, ctx),
+        GhPrAction::Create => pr_workflow::gh_pr_create_try(args_json, ctx),
+        GhPrAction::Merge => pr_mutate::gh_pr_merge_try(args_json, ctx),
+        GhPrAction::Review => pr_mutate::gh_pr_review_try(args_json, ctx),
+        GhPrAction::Comment => pr_mutate::gh_pr_comment_try(args_json, ctx),
+        GhPrAction::Edit => pr_mutate::gh_pr_edit_try(args_json, ctx),
+        GhPrAction::BodyDraft => pr_body::gh_pr_body_draft_try(args_json, ctx),
     }
 }
 
 /// `gh_run`：按 `action` 分发到 `rerun` / `failure_summary`。
-pub fn gh_run(
+#[allow(clippy::result_large_err)]
+pub fn gh_run_try(
     args_json: &str,
     ctx: &GhCtx<'_>,
-) -> String {
-    let parsed: GhRunArgs = match parse_args_typed(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    let parsed: GhRunArgs = parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     match parsed.action {
-        GhRunAction::Rerun => {
-            run_ci::gh_run_rerun(args_json, ctx)
-        }
-        GhRunAction::FailureSummary => {
-            run_ci::gh_run_failure_summary(args_json, ctx)
-        }
+        GhRunAction::Rerun => run_ci::gh_run_rerun_try(args_json, ctx),
+        GhRunAction::FailureSummary => run_ci::gh_run_failure_summary_try(args_json, ctx),
     }
 }
 
@@ -142,11 +131,23 @@ mod dispatch_tests {
     }
 
     fn call_pr(args: &str) -> String {
-        gh_pr(args, &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")))
+        match gh_pr_try(
+            args,
+            &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")),
+        ) {
+            Ok(s) => s,
+            Err(e) => e.message,
+        }
     }
 
     fn call_run(args: &str) -> String {
-        gh_run(args, &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")))
+        match gh_run_try(
+            args,
+            &GhCtx::new(4096, &allowlist_without_gh(), Path::new(".")),
+        ) {
+            Ok(s) => s,
+            Err(e) => e.message,
+        }
     }
 
     #[test]
