@@ -29,7 +29,11 @@ use super::*;
 use crate::cm_tools::tool_result::parse_legacy_output;
 
 /// 已知「实现报错但被判成功」的工具数快照。每修好一个就减一 —— 这个数字就是进度条。
-const KNOWN_BUG_BUDGET: usize = 4;
+///
+/// 已从 **4 → 1**：`background_job` / `background_job_cancel`（`参数错误：` 开头）与
+/// `workflow_execute`（同步面占位句）均已迁 `Typed`，各自改为显式 `ToolError`；
+/// 只剩 `rust_analyzer` 的 `路径无法解析: …` 还靠正文措辞。
+const KNOWN_BUG_BUDGET: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Expect {
@@ -117,13 +121,8 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
         Expect::Fails,
         "test_ctx 未注入语义检索宿主",
     ),
-    // ── 工作流 ──────────────────────────────────────────────────
-    (
-        "workflow_execute",
-        r#"{}"#,
-        Expect::KnownBug,
-        "同步面只回「由运行时引擎执行（若你看到这条，说明拦截未生效）」占位句，却判成功",
-    ),
+    // ── 工作流：`workflow_execute` 已迁 Typed（同步面返回 `Err`），
+    //    见 `runners::runner_workflow_execute_try` ──
     // ── Python 族：故意用类型违规，避免真的跑 pytest / 执行代码 ──
     (
         "pytest_run",
@@ -164,19 +163,8 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
         "test_ctx 白名单无 gh",
     ),
     ("gh_api", r#"{}"#, Expect::Fails, "test_ctx 白名单无 gh"),
-    // ── 后台任务：`test_ctx.tool_jobs_host` 为 None，必走「不可用」分支 ──
-    (
-        "background_job",
-        r#"{"action":"status"}"#,
-        Expect::KnownBug,
-        "正文以「参数错误：…」开头 —— 首字不是「错误」，`starts_with(\"错误\")` 不成立 ⇒ 判成功",
-    ),
-    (
-        "background_job_cancel",
-        r#"{"tool_job_id":""}"#,
-        Expect::KnownBug,
-        "同上：`参数错误：`tool_job_id` 不能为空` 被判成功",
-    ),
+    // ── 后台任务：`background_job` / `background_job_cancel` 均已迁 Typed，
+    //    其错误码由 `background_job_tools` 的单元测试覆盖，不再经本表 ──
     // ── 导航 ────────────────────────────────────────────────────
     (
         "code_nav",

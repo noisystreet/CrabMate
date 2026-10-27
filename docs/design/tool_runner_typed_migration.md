@@ -29,7 +29,7 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 23**（Typed 41 含
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 20**（Typed 44 含
 > `archive-tools` 侧的 3 个）。§2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
@@ -48,12 +48,12 @@
 | `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
 | `diagnostics_docs.inc.rs` | 4 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除（见 §4.4） |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
-| `process.inc.rs` | 2 | 0 | 全 Legacy |
+| `process.inc.rs` | 0 | 2 | 已全迁（2026-10-28：`background_job` / `background_job_cancel` 走手写 try runner；原先 `参数错误：…` 开头被判成功） |
 | `schedule.inc.rs` | 0 | 2 | 已全迁（2026-10-28，`reminder` / `event` 走 `define_runners_cwd_try!`） |
 | `self_config_info.inc.rs` | 0 | 2 | 已全迁（见 §4.8） |
 | `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 2 | 0 | 全 Legacy |
-| `frontend_audit_ci.inc.rs` | 1 | 0 | 仅 `workflow_execute`（`rust_backtrace_analyze` 已整工具删除，见 §7） |
+| `frontend_audit_ci.inc.rs` | 0 | 1 | 已全迁（2026-10-28：`workflow_execute` 同步面占位改 Typed，返回 `workflow_execute_not_intercepted`；`rust_backtrace_analyze` 已整工具删除，见 §7） |
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
