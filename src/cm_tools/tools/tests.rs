@@ -669,7 +669,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（B2 第三段）：`text_transform` / `structured_patch` 迁为 Typed（−2）。
     // 本轮（B4）：file_core 只读族 `read_dir` / `glob_files` / `list_tree` /
     // `read_binary_meta` / `hash_file` 迁为 Typed（−5）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 44 } else { 41 };
+    // 本轮（A 档首项）：`self_config_info` 迁为 Typed（−1）—— 缺 `AgentConfig` 与非空
+    // `sections` 未匹配均改为显式 `ToolError`。同项的 `skill_manage` 暂缓：其内部实现是
+    // `Result<_, String>`（约 20 处 `"错误：…"`），需整体换成 `Result<_, ToolError>`，
+    // 单独切片处理（见 `docs/design/tool_runner_typed_migration.md` §4.8）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 43 } else { 40 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
