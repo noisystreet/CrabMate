@@ -690,8 +690,10 @@ fn archive_tools_report_typed_errors() {
     let ctx = test_ctx(&allowed);
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("a.tar.zst"), b"x").expect("write fixture");
+    std::fs::write(dir.path().join("a.txt"), b"x").expect("write fixture");
+    let access = super::file::PathAccess::new(dir.path());
 
-    let err = super::archive::archive_list(r#"{"archive":"a.tar.zst"}"#, dir.path(), &ctx)
+    let err = super::archive::archive_list(r#"{"archive":"a.tar.zst"}"#, &access, &ctx)
         .expect_err("未知后缀必须报错而不是静默成功");
     assert_eq!(err.code, "invalid_args");
     assert!(
@@ -700,13 +702,49 @@ fn archive_tools_report_typed_errors() {
         err.message
     );
 
-    let err = super::archive::archive_unpack(r#"{"archive":"nope.zip"}"#, dir.path(), &ctx)
+    let err = super::archive::archive_unpack(r#"{"archive":"nope.zip"}"#, &access, &ctx)
         .expect_err("归档不存在必须报错");
     assert_eq!(err.code, "archive_not_found");
 
-    let err = super::archive::archive_pack(r#"{"sources":["a.txt"]}"#, dir.path(), &ctx)
+    let err = super::archive::archive_pack(r#"{"sources":["a.txt"]}"#, &access, &ctx)
         .expect_err("缺 output 必须报错");
     assert_eq!(err.code, "invalid_args");
+}
+
+/// 归档的读写路径都要过 `PathAccess`：`..` 逃出工作区必须被拦，且不留下文件。
+#[cfg(feature = "archive-tools")]
+#[test]
+fn archive_paths_outside_workspace_are_rejected() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.txt"), b"x").expect("write fixture");
+    std::fs::write(dir.path().join("a.tar"), b"").expect("write fixture");
+    let access = super::file::PathAccess::new(dir.path());
+
+    let err =
+        super::archive::archive_pack(r#"{"output":"../escape.tar","sources":["a.txt"]}"#, &access, &ctx)
+            .expect_err("越界 output 必须被拒");
+    assert_eq!(err.code, "workspace_resolve_failed");
+    assert!(
+        !dir.path().join("..").join("escape.tar").exists(),
+        "越界路径不得留下文件"
+    );
+
+    let err = super::archive::archive_unpack(
+        r#"{"archive":"a.tar","output_dir":"../out"}"#,
+        &access,
+        &ctx,
+    )
+    .expect_err("越界 output_dir 必须被拒");
+    assert_eq!(err.code, "workspace_resolve_failed");
+
+    // `../a.tar` 归一化后落在工作区外，但父目录里没有该文件，`canonicalize` 只会给
+    // `NotFound`，与「名字写错」不可区分（存在时才会被 `ensure_canonical_within_root`
+    // 判成越界）。故这里用绝对路径钉住越界分支。
+    let err = super::archive::archive_list(r#"{"archive":"/etc/passwd"}"#, &access, &ctx)
+        .expect_err("绝对路径必须被拒");
+    assert_eq!(err.code, "workspace_resolve_failed");
 }
 
 #[test]

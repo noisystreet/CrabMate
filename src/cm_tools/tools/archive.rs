@@ -6,7 +6,9 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
+use crate::cm_tools::tools::file::PathAccess;
 use crate::cm_tools::tools::tool_param_types::{ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs};
+use crate::cm_tools::workspace::path::WorkspacePathError;
 
 /// 超大归档列表默认最多输出的条目数（避免灌满上下文）。
 const ARCHIVE_LIST_MAX_ENTRIES: usize = 250;
@@ -25,11 +27,36 @@ const ARCHIVE_FORMAT_SUFFIXES: &[(&str, &str)] = &[
     (".rar", "rar"),
 ];
 
+/// 已通过 [`PathAccess`] 解析的打包源。
+///
+/// `rel` 保留调用方传入的相对名 —— 它决定条目在归档内的路径（`tar` 的
+/// `append_path_with_name` / `append_dir_all` 直接用这个名字）；`path` 是解析后的
+/// 绝对路径，已确认落在允许范围内。
+struct ResolvedSource {
+    rel: String,
+    path: PathBuf,
+}
+
+/// 解析 `archive` 参数指向的归档文件。
+///
+/// 目标不存在仍报 `archive_not_found`（与迁 Typed 前的口径一致）；越界、绝对路径等
+/// 交给 `workspace_resolve_failed` —— 二者对调用方是不同的事：一个是「名字写错了」，
+/// 一个是「不允许碰那里」。
+#[allow(clippy::result_large_err)]
+fn resolve_archive_read(access: &PathAccess<'_>, archive: &str) -> Result<PathBuf, ToolError> {
+    access.for_read(archive).map_err(|e| match &e {
+        WorkspacePathError::PathResolveFailed(io) if io.kind() == std::io::ErrorKind::NotFound => {
+            ToolError::external_code("archive_not_found", format!("归档文件不存在: {archive}"))
+        }
+        _ => ToolError::path_resolve_failed(e),
+    })
+}
+
 /// 创建归档
 #[allow(clippy::result_large_err)]
 pub fn archive_pack(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     _ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let args: ArchivePackArgs =
@@ -56,18 +83,27 @@ pub fn archive_pack(
         ));
     }
 
-    let output_path = working_dir.join(output);
+    let output_path = access
+        .for_write(output)
+        .map_err(ToolError::path_resolve_failed)?;
+    // 源路径同样走 `PathAccess`：越界 / 绝对路径在这里挡住，不再是裸 `join`。
+    // 旧实现在源既非文件也非目录时静默跳过，现在由 `for_read` 直接报缺失。
+    let sources: Vec<ResolvedSource> = sources
+        .into_iter()
+        .map(|rel| access.for_read(&rel).map(|path| ResolvedSource { rel, path }))
+        .collect::<Result<_, _>>()
+        .map_err(ToolError::path_resolve_failed)?;
 
     // 根据扩展名检测格式
     let format = detect_format(output);
 
     // 构建命令
     let result = match format.as_str() {
-        "zip" => pack_zip(working_dir, &output_path, &sources),
-        "tar" => pack_tar(working_dir, &output_path, &sources, None),
-        "tar.gz" | "tgz" => pack_tar(working_dir, &output_path, &sources, Some("gzip")),
-        "tar.bz2" | "tbz2" => pack_tar(working_dir, &output_path, &sources, Some("bzip2")),
-        "tar.xz" | "txz" => pack_tar(working_dir, &output_path, &sources, Some("xz")),
+        "zip" => pack_zip(&output_path, &sources),
+        "tar" => pack_tar(&output_path, &sources, None),
+        "tar.gz" | "tgz" => pack_tar(&output_path, &sources, Some("gzip")),
+        "tar.bz2" | "tbz2" => pack_tar(&output_path, &sources, Some("bzip2")),
+        "tar.xz" | "txz" => pack_tar(&output_path, &sources, Some("xz")),
         // 纯文本无「错误/失败」关键词会被 `parse_legacy_output` 判成成功，故必须走 Typed 错误码。
         _ => {
             return Err(ToolError::invalid_args(format!(
@@ -86,7 +122,7 @@ pub fn archive_pack(
 #[allow(clippy::result_large_err)]
 pub fn archive_unpack(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     _ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let args: ArchiveUnpackArgs =
@@ -109,15 +145,10 @@ pub fn archive_unpack(
         ));
     }
 
-    let archive_path = working_dir.join(archive);
-    if !archive_path.exists() {
-        return Err(ToolError::external_code(
-            "archive_not_found",
-            format!("归档文件不存在: {}", archive),
-        ));
-    }
-
-    let output_path = working_dir.join(output_dir);
+    let archive_path = resolve_archive_read(access, archive)?;
+    let output_path = access
+        .for_write(output_dir)
+        .map_err(ToolError::path_resolve_failed)?;
 
     // 根据扩展名检测格式
     let format = detect_format(archive);
@@ -158,7 +189,7 @@ pub fn archive_unpack(
 #[allow(clippy::result_large_err)]
 pub fn archive_list(
     args_json: &str,
-    working_dir: &Path,
+    access: &PathAccess<'_>,
     _ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let args: ArchiveListArgs =
@@ -178,13 +209,7 @@ pub fn archive_list(
         ));
     }
 
-    let archive_path = working_dir.join(archive);
-    if !archive_path.exists() {
-        return Err(ToolError::external_code(
-            "archive_not_found",
-            format!("归档文件不存在: {}", archive),
-        ));
-    }
+    let archive_path = resolve_archive_read(access, archive)?;
 
     // 根据扩展名检测格式
     let format = detect_format(archive);
@@ -384,28 +409,24 @@ fn maybe_push_list_line(lines: &mut Vec<String>, max_entries: usize, line: Strin
 
 // ============ 打包实现 ============
 
-fn pack_zip(
-    working_dir: &Path,
-    output: &Path,
-    sources: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
+fn pack_zip(output: &Path, sources: &[ResolvedSource]) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::create(output)?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
     for source in sources {
-        let source_path = working_dir.join(source);
-        if source_path.is_file() {
-            let name = source_path
+        if source.path.is_file() {
+            let name = source
+                .path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(source);
+                .unwrap_or(source.rel.as_str());
             zip.start_file(name, options)?;
-            let content = std::fs::read(&source_path)?;
+            let content = std::fs::read(&source.path)?;
             zip.write_all(&content)?;
-        } else if source_path.is_dir() {
-            add_dir_to_zip(&mut zip, &source_path, source, options)?;
+        } else if source.path.is_dir() {
+            add_dir_to_zip(&mut zip, &source.path, &source.rel, options)?;
         }
     }
 
@@ -433,9 +454,8 @@ fn add_dir_to_zip(
 }
 
 fn pack_tar(
-    working_dir: &Path,
     output: &Path,
-    sources: &[String],
+    sources: &[ResolvedSource],
     compress: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::create(output)?;
@@ -456,11 +476,10 @@ fn pack_tar(
     let mut tar = tar::Builder::new(enc);
 
     for source in sources {
-        let source_path = working_dir.join(source);
-        if source_path.is_file() {
-            tar.append_path_with_name(&source_path, source)?;
-        } else if source_path.is_dir() {
-            tar.append_dir_all(source, &source_path)?;
+        if source.path.is_file() {
+            tar.append_path_with_name(&source.path, &source.rel)?;
+        } else if source.path.is_dir() {
+            tar.append_dir_all(&source.rel, &source.path)?;
         }
     }
 
