@@ -115,7 +115,7 @@
 |---|--------|------|------|
 | 1 | `background_job_async_tools` **按工具名匹配** | `tool_registry/execute/execute_background_tool_async.inc.rs`（`"cargo_test" => Some(…)`） | 合并后工具名只剩 `cargo`；用户既有配置 `background_job_async_tools = ["cargo_test"]` 会**静默失效**，属配置行为回归而非重构。需把配置语义扩为「工具 + 动作」，或保留 `cargo_test` 别名 |
 | 2 | 按工具名覆盖的墙钟超时 | `registry_policy::parallel_tool_wall_timeout_secs(cfg, "cargo_test")` | 同上，按名查表 |
-| 3 | 只读身份变粗 | `builtin_write_effect_tools()` **不含**任何 `cargo_*` | 四个工具当前**全部算只读**（`cargo_run` 亦然，属既有分类瑕疵）。合并后要么整族维持只读（`cargo_run` 混入更别扭），要么整个 `cargo` 进写名单——后者让 `check` / `clippy` / `test` 丢掉只读重试、`Plan`·`Ask` 门控与 TTL 缓存（与 `gh_*` 合并同型代价） |
+| 3 | 只读身份变粗 | 写效应名单只含 `cargo_test` / `cargo_run`（2026-10-28 起；`check` / `clippy` 仍算只读） | `check` / `clippy` 当前算只读，`test` / `run` 算写。合并成单个 `cargo` 后整族只能按写处理（按工具名判定），`check` / `clippy` 会丢掉只读重试、`Plan`·`Ask` 门控与 TTL 缓存（与 `gh_*` 合并同型代价） |
 | 4 | 并行只读批前缀失配 | `builtin_parallel_sync_prefix_hit` 的前缀表含 `"cargo_"`（带下划线） | 改名成 `cargo` 后**不再命中**，会重新进入并行批判定，须同步补 `"cargo"` |
 | 5 | 工作流 / fixtures 大面积引用 | `cm_workflow/workflow_templates.rs`（`rust_ci_light` 三节点）、`cm_workflow/tests.rs`、`examples/workflows/*.yaml`、`fixtures/workflows/*.yaml` | 10+ 处 `tool: cargo_check` / `cargo_clippy` / `cargo_test` 需逐一改写，并同步 `.expected.json` |
 | 6 | 按名 `match` 的语义分支 | `auto_summarize_experience.rs`、`outer_loop_build_idle.rs`、`dev_tag.rs`、`step_executor_policy.rs` | 构建/质量识别、经验提炼、计划执行器测试运行器名单各有一份工具名清单 |

@@ -771,4 +771,7 @@ pub use github_cli::web_api;
 mod tests;
 
 #[cfg(test)]
+mod tests_write_effect;
+
+#[cfg(test)]
 mod testing;

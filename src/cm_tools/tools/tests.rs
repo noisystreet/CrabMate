@@ -6,7 +6,7 @@ use crate::cm_tools::tool_result::{ToolFailureCategory, parse_legacy_output};
 
 const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
-fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
+pub(super) fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
     ToolContext {
         cfg: None,
         codebase_semantic_host: None,
@@ -32,7 +32,7 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         tool_jobs_host: None,
     }
 }
-fn test_allowed_commands() -> Vec<String> {
+pub(super) fn test_allowed_commands() -> Vec<String> {
     vec![
         "ls".into(),
         "pwd".into(),
@@ -680,71 +680,6 @@ fn builtin_legacy_runner_count_matches_baseline() {
         legacy, LEGACY_BASELINE,
         "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
     );
-}
-
-/// `archive_*` 迁 Typed 的回归：格式不支持原是无关键词纯文本，会被判成成功。
-#[cfg(feature = "archive-tools")]
-#[test]
-fn archive_tools_report_typed_errors() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("a.tar.zst"), b"x").expect("write fixture");
-    std::fs::write(dir.path().join("a.txt"), b"x").expect("write fixture");
-    let access = super::file::PathAccess::new(dir.path());
-
-    let err = super::archive::archive_list(r#"{"archive":"a.tar.zst"}"#, &access, &ctx)
-        .expect_err("未知后缀必须报错而不是静默成功");
-    assert_eq!(err.code, "invalid_args");
-    assert!(
-        err.message.contains("不支持的归档格式"),
-        "正文应保留原提示: {}",
-        err.message
-    );
-
-    let err = super::archive::archive_unpack(r#"{"archive":"nope.zip"}"#, &access, &ctx)
-        .expect_err("归档不存在必须报错");
-    assert_eq!(err.code, "archive_not_found");
-
-    let err = super::archive::archive_pack(r#"{"sources":["a.txt"]}"#, &access, &ctx)
-        .expect_err("缺 output 必须报错");
-    assert_eq!(err.code, "invalid_args");
-}
-
-/// 归档的读写路径都要过 `PathAccess`：`..` 逃出工作区必须被拦，且不留下文件。
-#[cfg(feature = "archive-tools")]
-#[test]
-fn archive_paths_outside_workspace_are_rejected() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("a.txt"), b"x").expect("write fixture");
-    std::fs::write(dir.path().join("a.tar"), b"").expect("write fixture");
-    let access = super::file::PathAccess::new(dir.path());
-
-    let err =
-        super::archive::archive_pack(r#"{"output":"../escape.tar","sources":["a.txt"]}"#, &access, &ctx)
-            .expect_err("越界 output 必须被拒");
-    assert_eq!(err.code, "workspace_resolve_failed");
-    assert!(
-        !dir.path().join("..").join("escape.tar").exists(),
-        "越界路径不得留下文件"
-    );
-
-    let err = super::archive::archive_unpack(
-        r#"{"archive":"a.tar","output_dir":"../out"}"#,
-        &access,
-        &ctx,
-    )
-    .expect_err("越界 output_dir 必须被拒");
-    assert_eq!(err.code, "workspace_resolve_failed");
-
-    // `../a.tar` 归一化后落在工作区外，但父目录里没有该文件，`canonicalize` 只会给
-    // `NotFound`，与「名字写错」不可区分（存在时才会被 `ensure_canonical_within_root`
-    // 判成越界）。故这里用绝对路径钉住越界分支。
-    let err = super::archive::archive_list(r#"{"archive":"/etc/passwd"}"#, &access, &ctx)
-        .expect_err("绝对路径必须被拒");
-    assert_eq!(err.code, "workspace_resolve_failed");
 }
 
 #[test]

@@ -1,10 +1,10 @@
 //! 工作区写操作后使代码语义索引失效（删除 SQLite 中对应块或整表），与 `read_file` 缓存清空语义对齐。
 
-use std::collections::HashSet;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use rusqlite::params;
+
+use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
 
 use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
@@ -16,53 +16,16 @@ use crate::cm_memory::tool_check;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
-/// 内建写副作用工具名表，用于判断工具是否只读。
-fn builtin_write_effect_tools() -> HashSet<&'static str> {
-    HashSet::from([
-        "apply_diff",
-        "create_file",
-        "write_file",
-        "edit_file",
-        "edit_and_apply",
-        "delete_dir",
-        "delete_files",
-        "move_file",
-        "copy_file",
-        "create_symlink",
-        "set_env_var",
-        "set_dot_env_var",
-        "upsert_secret_file",
-        "append_lines",
-        "create_symbolic_link",
-        "write",
-        "mkdir",
-        "long_term_remember",
-        "long_term_forget",
-        "run_command",
-        "terminal_session",
-        "python_snippet_run",
-        "run_executable",
-        "workflow_execute",
-        "http_request",
-        "gh_api",
-        "gh_pr",
-        "gh_run",
-        "gh_issue_create",
-        "gh_release_create",
-    ])
-}
+// 写效应名单的唯一来源在 [`crate::cm_config::tool_write_effect`]：本模块曾自带一份副本，
+// 结果长期停留在已删除的工具名上（`apply_diff` / `write_file` / `mkdir` …），同时漏掉
+// `structured` / `reminder` / `event` / `archive_*`——语义索引因此对真正写盘的工具不作废。
+// 现在两处共用同一份，写工具一增一删不再需要改两个地方。
 
 /// 判断工具是否为只读（不修改工作区文件系统），供失效决策使用。
 /// 写操作工具及未知语义工具（MCP 代理、动态工具）返回 false。
 fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
-    static BUILTIN: LazyLock<HashSet<String>> = LazyLock::new(|| {
-        builtin_write_effect_tools()
-            .into_iter()
-            .map(String::from)
-            .collect()
-    });
     let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
-        None => &BUILTIN,
+        None => builtin_write_effect_tools(),
         Some(arc) => arc.as_ref(),
     };
     // MCP 代理工具与动态工具语义不可静态证明，默认按写副作用处理。

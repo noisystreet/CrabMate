@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
 use crate::cm_config::{AgentConfig, WebSearchProvider};
 use crate::cm_types::ToolCall;
 
@@ -102,54 +103,8 @@ pub fn terminal_session_outer_wall_secs(cfg: &AgentConfig) -> u64 {
         .saturating_add(TERMINAL_SESSION_OUTER_GRACE_SECS)
 }
 
-fn builtin_write_effect_tools() -> &'static HashSet<String> {
-    static W: OnceLock<HashSet<String>> = OnceLock::new();
-    W.get_or_init(|| {
-        [
-            "create_file",
-            "modify_file",
-            "copy_file",
-            "move_file",
-            "delete_files",
-            "delete_dir",
-            "append_file",
-            "create_dir",
-            "search_replace",
-            "apply_patch",
-            // `structured` 把只读的 `validate` / `query` / `diff` 与写侧的 `patch` 合并在
-            // 同一个工具名里，故整工具按写处理——三个只读 action 因此失去并行只读批 /
-            // 只读重试 / `Ask`·`Plan` 只读门控 / L1 只读正列表。这是合并的既定代价
-            // （见 `CHANGELOG.md`）；按名字判定的结构不支持 action 级粒度。
-            "structured",
-            // 归档解压与打包都会往工作区写文件（解压目录 / 新建归档）；`archive_list` 只读，
-            // 不列入。此前两条都不在名单里，写操作被当只读，进了并行只读批与只读 TTL 缓存。
-            "archive_pack",
-            "archive_unpack",
-            "long_term_remember",
-            "long_term_forget",
-            "run_command",
-            "terminal_session",
-            "python_snippet_run",
-            "run_executable",
-            "workflow_execute",
-            "http_request",
-            "gh_api",
-            "gh_pr",
-            "gh_run",
-            "gh_issue_create",
-            "gh_release_create",
-            "skill_manage",
-            "background_job_cancel",
-            // 日程/提醒：除 `list` 外都会写 `.crabmate/*.json`；整工具按写处理（合并前这两族
-            // 九个工具全被漏掉，写操作被当只读进了只读 TTL / 同轮去重缓存）。
-            "reminder",
-            "event",
-        ]
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect()
-    })
-}
+// 写效应名单唯一来源在 `crate::cm_config::tool_write_effect`（`cm_memory` 的语义索引失效
+// 判定共用同一份）；本模块只负责「按配置替换」与「非内置一律不算只读」的策略。
 
 /// 是否为**内置**工具（非 `mcp__*` / `plugins/*.json` 动态工具）。
 ///

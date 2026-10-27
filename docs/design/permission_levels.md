@@ -130,7 +130,7 @@
 - **L0 `chat`**：模型只能说话。`tools` 数组不下发或为空；**默认**连“澄清问卷”工具也不下发，符合“最低等级只允许对话”。若确实需要多轮澄清，可显式配置 `permission_chat_control_tools = ["present_clarification_questionnaire"]`（§10）。
   - 长期记忆**召回**（`ltm.prepare_messages` 的只读注入）保留；写入类工具（`long_term_remember` / `long_term_forget`）随“无工具”一并消失。
 - **L1 `read`**：能看不能动。无写盘、无子进程、无 PTY；`http_fetch` 仍可用（属只读），`http_request` 被排除。
-  - 判据是**独立正列表** `permission_read_tools`，**不用** `is_readonly_tool`：后者是并行只读批的**性能判据**，且其写集合可被 `tool_registry_write_effect_tools` **整体替换**（`registry_policy.rs:156`）——拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
+  - 判据是**独立正列表** `permission_read_tools`，**不用** `is_readonly_tool`：后者是并行只读批的**性能判据**，且其写集合可被 `tool_registry_write_effect_tools` **整体替换**（`registry_policy::is_readonly_tool`）——拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
 - **L2 `workspace`**：能干活的**硬边界**档。越界不是“弹个窗”，而是明确报错并说明原因（文案须点出 `permission_level = workspace`），供无人值守场景安全使用。
   - **同时禁用 MCP 与动态工具**（`external_tools = Denied`）：`mcp__*` 与 `plugins/*.json` 的实际能力由**外部进程**决定，宿主侧的路径 / 命令 / 网络三轴**管不到**它们——放进来就等于没有硬边界。要 MCP 就用 L3（审批）或 L4（放行 + 审计），并接受它们不受 caps 约束。
 - **L3 `approved`**：**默认档**，与今天完全一致。越界弹审批，`AllowAlways` 在会话内持续有效。
@@ -399,7 +399,7 @@ pub struct PermissionCaps {
 - `path_scope = Any` → 等价于 `skip_arg_safety = true` + 文件工具走 `resolve_any`（§8.3）；
 - `net_scope = Any` → 等价于 `http_fetch_allowed_prefixes = ["*"]`（默认已是此值）。
 
-> `ToolVisibility::Readonly` 的判据是**独立正列表** `permission_read_tools`（默认 = `builtin_write_effect_tools()` 的补集，见 `registry_policy.rs:105`），**不受** `tool_registry_write_effect_tools` 覆盖影响。那个键是性能开关（整体替换式）；拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
+> `ToolVisibility::Readonly` 的判据是**独立正列表** `permission_read_tools`（默认 = `builtin_write_effect_tools()` 的补集，见 `cm_config::tool_write_effect`），**不受** `tool_registry_write_effect_tools` 覆盖影响。那个键是性能开关（整体替换式）；拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
 
 ### 7.3 为什么不写 `if level >= Approved`
 
@@ -550,7 +550,7 @@ dst.permission.permission_level_max =
 | `permission_level` | `CM_PERMISSION_LEVEL` | `approved` | 会话默认等级；可被请求降级 |
 | `permission_level_max` | `CM_PERMISSION_LEVEL_MAX` | **推导**（loopback → `unrestricted`；非 loopback → `approved`） | 服务端上限；显式配置则覆盖推导（§5.1 / §5.3） |
 | `permission_chat_control_tools` | `CM_PERMISSION_CHAT_CONTROL_TOOLS` | `[]` | L0 下允许的零副作用控制面工具（如澄清问卷），仅 `chat` 级生效 |
-| `permission_read_tools` | `CM_PERMISSION_READ_TOOLS` | **推导**：`builtin_write_effect_tools()` 的补集（`registry_policy.rs:105`） | L1 的只读**正列表**；显式写出即覆盖推导。**不受** `tool_registry_write_effect_tools` 影响（§4.2 / §7.2） |
+| `permission_read_tools` | `CM_PERMISSION_READ_TOOLS` | **推导**：`builtin_write_effect_tools()` 的补集（`cm_config::tool_write_effect`） | L1 的只读**正列表**；显式写出即覆盖推导。**不受** `tool_registry_write_effect_tools` 影响（§4.2 / §7.2） |
 | `permission_deny_system_paths` | `CM_PERMISSION_DENY_SYSTEM_PATHS` | `[]` | 仅 L4 生效的**可选**敏感前缀加固（默认关，§8.3） |
 | `permission_confirm_tools` | `CM_PERMISSION_CONFIRM_TOOLS` | `["delete_dir", "delete_files"]` | 任何等级都不豁免的不可逆操作确认；`run_command` 的危险 argv 另由 policy 判定（MB-4） |
 | `allow_unrestricted_permission_for_non_loopback` | `CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK` | `false` | 非 loopback 下显式允许把 ceiling 提到 `unrestricted`（§5.3 / MB-3）；与既有 `allow_insecure_no_auth_for_non_loopback` 同形 |

@@ -48,7 +48,7 @@
 
 | 分组 | 字段（节选） | 语义 |
 |------|--------------|------|
-| 写类工具集 | `write_effect_tools` | 判定写盘效应（[registry_policy.rs](../../src/cm_tools/registry_policy.rs#L105) 内置 34 项，含 `skill_manage`） |
+| 写类工具集 | `write_effect_tools` | 判定写盘效应（[tool_write_effect.rs](../../src/cm_config/tool_write_effect.rs) 内置 33 项，含 `skill_manage`、`cargo_test` / `cargo_run` / `pytest_run`） |
 | 并行拒绝集 | `parallel_sync_denied_tools` / `parallel_sync_denied_prefixes` | 禁止并行（[L186](../../src/cm_tools/registry_policy.rs#L186) 内置 8 项精确 + 17 前缀） |
 | 内联集 | `sync_default_inline_tools` | 免 spawn（[L292](../../src/cm_tools/registry_policy.rs#L292) 内置 2 项） |
 | 墙上时钟 | `parallel_wall_timeout_secs` 等 3 项 | 外圈超时覆盖 |
@@ -151,7 +151,7 @@
   | 字段 | 来源 |
   |------|------|
   | `read_only` | `is_readonly_tool`（[L151](../../src/cm_tools/registry_policy.rs#L151)） |
-  | `write_effect` | `write_effect_tools` 命中（内置 34 项，[L105](../../src/cm_tools/registry_policy.rs#L105)） |
+  | `write_effect` | `write_effect_tools` 命中（内置 33 项，[tool_write_effect.rs](../../src/cm_config/tool_write_effect.rs)） |
   | `parallel_readonly_batch_allowed` | `tool_ok_for_parallel_readonly_batch_piece`（[L266](../../src/cm_tools/registry_policy.rs#L266)）与并行拒绝集（内置 8 精确 + 17 前缀，[L186](../../src/cm_tools/registry_policy.rs#L186)） |
   | `sync_default_inline` | `sync_default_runs_inline`（[L303](../../src/cm_tools/registry_policy.rs#L303)） |
   | `wall_timeout_secs` | 生效后的墙上时钟（含 `parallel_wall_timeout_secs` 覆盖） |
