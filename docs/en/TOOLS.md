@@ -225,10 +225,7 @@ Structured function-calling JSON examples:
   ```json
   {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
   ```
-- `rust_backtrace_analyze`:
-  ```json
-  {"backtrace":"thread 'main' panicked at src/main.rs:10:5\nstack backtrace:\n   0: ...","crate_hint":"crabmate"}
-  ```
+- `rust_backtrace_analyze`: **removed** on 2026-10-27 (whole tool) — it was a pure-computation analyzer; the model can read the panic text directly, or locate the suspect frame via `run_command` (`c++filt` is on the default allowlist) and `code_nav`.
 - `frontend_lint` / `frontend_build` / `frontend_test` (frontend lint / build / test): removed per §8.5.4 **track A**; use `run_command` instead (e.g. `npm run lint` / `npm run build` / `npm run test`).
 - `workflow_execute` (DAG: parallelism, approval, SLA, compensation):
   - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`run_command` (`cargo fmt --check`) → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.

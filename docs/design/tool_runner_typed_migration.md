@@ -17,7 +17,7 @@
 | 变体 | 签名 | 成败判定 | 当前数量 |
 |---|---|---|---|
 | `Typed` | `fn(&str, &ToolContext<'_>) -> Result<String, ToolError>` | `Ok` 即成功；失败路径显式，`error_code` 来自 `ToolError` | **44** |
-| `Legacy` | `fn(&str, &ToolContext<'_>) -> String` | 失败由 `parse_legacy_output` 从**正文关键词**推断 | **33** |
+| `Legacy` | `fn(&str, &ToolContext<'_>) -> String` | 失败由 `parse_legacy_output` 从**正文关键词**推断 | **31** |
 | `AsyncOnly` | 无执行体 | 仅 spec 占位（工具名 / schema / 摘要仍可用），须由异步调度执行 | **2**（`run_command`、`terminal_session`） |
 
 **为什么要迁**：`Legacy` 的失败判定是启发式的——实现只返回一段文本，编排层靠关键词猜「这次算不算失败」。同一段输出换个措辞就可能翻车（"错误：xxx" 被写进正常结果、或 `exit 1` 的说明文字被当成成功）。`Typed` 把失败变成类型，`error_code` 可直接派生（如 `cargo_check_failed`），不再猜。
@@ -28,7 +28,7 @@
 
 ## 2. 现状（2026-10-27）
 
-76 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 32**（另有 2 个 `AsyncOnly`）。
+75 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 31**（另有 2 个 `AsyncOnly`）。
 
 ### 2.1 按 spec 文件分布
 
@@ -49,11 +49,12 @@
 | `self_config_info.inc.rs` | 0 | 2 | 已全迁（见 §4.8） |
 | `archive.inc.rs` | 3 | 0 | 全 Legacy（受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 2 | 0 | 全 Legacy |
-| `frontend_audit_ci.inc.rs` | 2 | 0 | 全 Legacy |
+| `frontend_audit_ci.inc.rs` | 1 | 0 | 仅 `workflow_execute`（`rust_backtrace_analyze` 已整工具删除，见 §7） |
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
-| **合计** | **32** | **44** | |
+| `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
+| **合计** | **31** | **44** | |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -205,7 +206,6 @@
 | 工具 | 形态 | 目标实现 | 备注 |
 |---|---|---|---|
 | `workflow_execute` | 手写 **stub** | 不执行，返回提示串 | 由 runtime 在 `run_agent_turn` 拦截，**迁移意义存疑**：同步面本就没有执行体，更接近 `AsyncOnly` |
-| `rust_backtrace_analyze` | `args_only` | `debug_tools::rust_backtrace_analyze` | |
 
 ### 4.15 `format_lint.inc.rs` / `docs_health.inc.rs`（各 1）— 形态 `cwd_maxlen`
 
@@ -252,3 +252,4 @@
 | 2026-10-27 | **A 档第四项落地（A 档清空）**：`skill_manage` 迁为 Typed，Legacy 36 → 35。内部 8 个 `Result<_, String>` helper（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `install_action` / `remove_action` / `remove_pick_target` / `remove_delete` / `layer_dir` / `validate_skill_id`）全部换成 `Result<_, ToolError>`；新增错误码 `skill_manage_io_failed`（`External`）。**原本预估要改 3 处 `starts_with("错误：")` 断言，实际一处未改**——测试 helper 改为成功取 `Ok`、失败取 `e.message`，文案逐字未变，原有 `contains` / `starts_with` 口径继续成立。基线 36/33 → 35/32。 |
 | 2026-10-27 | **E 档：两个工具整工具删除**（`changelog_draft` / `license_notice`）—— 不属任何迁移档，直接退场：Legacy 35 → **33**（实现文件 `release_docs.rs` 整文件移除，含 9 个无其它消费者的 helper）。平替：`gh_release_create` 的 `auto_notes` / `run_command` 的 `git log --pretty` / `cargo deny check licenses`（明细表可走 `cargo metadata` + `jq`）。§2.1 表与 §4.4 清单同步为 6 个（`diagnostics_docs.inc.rs`）。 |
 | 2026-10-27 | **F 档：`rust_compiler_json` 整工具删除**—— 同样不属迁移档：其 JSON 输出里的 `message.rendered` 就是 cargo 自己的人类可读块，spans / children 只是重复它，净增量仅「逐条编号 + `max_diagnostics` 上限」，与只读的 `cargo_check` 重合。Legacy 33 → **32**（`rust_ide.rs` 去掉约 230 行 cargo/rustc JSON 区块及其 smoke test）。同时从 `builtin_parallel_sync_denied_exact` 移除（它本就被排除并行只读批，因会起 cargo 子进程）。§2.1 与 §4.10 同步降为 1 个。 |
+| 2026-10-27 | **整工具删除：`rust_backtrace_analyze`** —— 不属迁移档：纯计算分析器（`debug_tools.rs` 整文件 100 行、单函数、无配置键、无外部调用），模型可直读 panic 文本，或用 `run_command`（`c++filt` 在默认白名单）+ `code_nav` 定位帧。Legacy 32 → **31**（基线守卫同步 32/29 → 31/28）；同时从 `tests.rs` 的 `build_tools_names` 移除正断言、加入「已移除不应复活」名单。§2.1 表 `frontend_audit_ci.inc.rs` 降为 1，并补上此前缺失的 `exec_package.inc.rs` 行（2 个 `AsyncOnly`），§4.14 同步。 |

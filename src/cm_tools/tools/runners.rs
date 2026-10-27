@@ -531,7 +531,6 @@ define_runners_cwd! {
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
 
 define_runners_args_only! {
-    runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
 }
 
