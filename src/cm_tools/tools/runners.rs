@@ -279,22 +279,31 @@ pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir, &[])
 }
 
-pub fn runner_self_config_info(args: &str, ctx: &ToolContext<'_>) -> String {
+/// `self_config_info` 的 Typed runner：缺 `AgentConfig` 与参数解析失败均为显式错误。
+///
+/// 「`sections` 未匹配任何小节」归 `invalid_args`（属调用方给了不存在的节名），
+/// 正文保持原文案（含可用小节列表），便于模型自我纠正。
+#[allow(clippy::result_large_err)]
+pub fn runner_self_config_info_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     let Some(cfg) = ctx.cfg else {
-        return "错误：工具上下文缺少 AgentConfig".to_string();
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：工具上下文缺少 AgentConfig".to_string(),
+        ));
     };
-    let parsed: super::tool_param_types::SelfConfigInfoArgs = match super::parse_args_typed(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let parsed: super::tool_param_types::SelfConfigInfoArgs =
+        super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
     let out = self_config_info::self_config_info(cfg, parsed.sections.as_deref());
     if out.is_empty() {
-        return format!(
+        return Err(ToolError::invalid_args(format!(
             "未匹配到任何配置小节；可用小节：{}。",
             self_config_info::SECTION_NAMES.join("、")
-        );
+        )));
     }
-    out
+    Ok(out)
 }
 
 pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {

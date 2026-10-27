@@ -144,7 +144,10 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "search_in_files_path_absolute_not_allowed"
         | "markdown_check_links_workspace_failed"
         | "structured_diff_path_a_resolve_failed"
-        | "structured_diff_path_b_resolve_failed" => ToolFailureCategory::Workspace,
+        | "structured_diff_path_b_resolve_failed"
+        // `ToolContext` 未注入该工具所需运行时（如 `cfg` / semantic host / 长期记忆 host）；
+        // 属执行环境缺失而非参数错误，故不归 `InvalidInput`。
+        | "tool_context_incomplete" => ToolFailureCategory::Workspace,
         // 显式登记：不依赖 `ends_with("_failed")` 兜底，改码名时不至于静默退化成 `Unknown`。
         "text_diff_io_failed" | "table_text_io_failed" | "table_text_parse_failed"
         | "markdown_check_links_failed" | "structured_io_failed" | "structured_parse_failed"
