@@ -152,6 +152,10 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "structured_patch_serialize_failed" => {
             ToolFailureCategory::External
         }
+        // `archive_*` 仅在 `archive-tools` feature 下注册；`not_found` 表示「目标不存在」，
+        // 与 `file_core` 里「不存在 → IO 侧」的口径一致，故同归 `External`。
+        "archive_not_found" | "archive_pack_failed" | "archive_unpack_failed"
+        | "archive_list_failed" => ToolFailureCategory::External,
         // `*_serialize_failed` / `*_internal` 由 [`ToolError::internal_code`] 构造（`category = Internal`），
         // 必须排在 `ends_with("_failed")` 之前，否则重算分类会得到 `External`，与 `ToolError.category` 冲突。
         c if c.ends_with("_serialize_failed") || c.ends_with("_internal") => {

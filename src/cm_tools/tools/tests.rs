@@ -632,7 +632,10 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 #[test]
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
-    // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
+    // 本轮（B 档首段）：`archive_pack` / `archive_unpack` / `archive_list` 迁为 Typed
+    // （−3，仅 `archive-tools` feature 侧生效：28 → 25），顺带修掉「`不支持的归档格式: …`
+    // 既无「错误」也无「失败」关键词、被 `parse_legacy_output` 判成成功」的旧缺陷。
+    // 因此两侧基线现已同值。
     // 本轮下调：`add_reminder` / `list_reminders` / `complete_reminder` / `delete_reminder` /
     // `update_reminder` / `add_event` / `list_events` / `delete_event` / `update_event`
     // 九个 Legacy 合并为 `reminder` + `event`（−7）。
@@ -668,7 +671,7 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（整工具删除）：`error_output_playbook` / `playbook_run_commands` 一并退场（−2）—— 两者的
     // 建议都来自「生态 × 类别」固定查表模板，不是对具体错误的推理；模型可自行归类后直接调 `run_command`。
     // 实现文件 `error_playbook.rs` 整文件移除（627 行）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 28 } else { 25 };
+    const LEGACY_BASELINE: usize = 25;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -677,6 +680,33 @@ fn builtin_legacy_runner_count_matches_baseline() {
         legacy, LEGACY_BASELINE,
         "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
     );
+}
+
+/// `archive_*` 迁 Typed 的回归：格式不支持原是无关键词纯文本，会被判成成功。
+#[cfg(feature = "archive-tools")]
+#[test]
+fn archive_tools_report_typed_errors() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.tar.zst"), b"x").expect("write fixture");
+
+    let err = super::archive::archive_list(r#"{"archive":"a.tar.zst"}"#, dir.path(), &ctx)
+        .expect_err("未知后缀必须报错而不是静默成功");
+    assert_eq!(err.code, "invalid_args");
+    assert!(
+        err.message.contains("不支持的归档格式"),
+        "正文应保留原提示: {}",
+        err.message
+    );
+
+    let err = super::archive::archive_unpack(r#"{"archive":"nope.zip"}"#, dir.path(), &ctx)
+        .expect_err("归档不存在必须报错");
+    assert_eq!(err.code, "archive_not_found");
+
+    let err = super::archive::archive_pack(r#"{"sources":["a.txt"]}"#, dir.path(), &ctx)
+        .expect_err("缺 output 必须报错");
+    assert_eq!(err.code, "invalid_args");
 }
 
 #[test]

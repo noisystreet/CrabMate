@@ -47,14 +47,14 @@
 | `process.inc.rs` | 2 | 0 | 全 Legacy |
 | `schedule.inc.rs` | 2 | 0 | 全 Legacy |
 | `self_config_info.inc.rs` | 0 | 2 | 已全迁（见 §4.8） |
-| `archive.inc.rs` | 3 | 0 | 全 Legacy（受 `archive-tools` feature gate） |
+| `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 2 | 0 | 全 Legacy |
 | `frontend_audit_ci.inc.rs` | 1 | 0 | 仅 `workflow_execute`（`rust_backtrace_analyze` 已整工具删除，见 §7） |
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | **29** | **44** | |
+| **合计** | **26** | **47** | |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -102,13 +102,21 @@
 |---|---|---|
 | ~~`code_stats`~~ / ~~`dependency_graph`~~ / ~~`coverage_report`~~（**已迁 2026-10-27**） | 三个均已改 `*_try` | 口径：「没有这个东西」（无源码文件 / 无构建清单 / 未找到覆盖率文件）仍返回 `Ok`（合法答案，模型可据此换路径）；参数与路径问题才 `Err(invalid_args)`，读盘失败 → `coverage_report_io_failed` |
 
-### 4.2 `archive.inc.rs`（3）— 形态 `cwd_ctx`，受 `archive-tools` feature gate
+### 4.2 `archive.inc.rs`（3）— **已迁 2026-10-28**
 
-| 工具 | 目标实现 |
-|---|---|
-| `archive_pack` | `archive::archive_pack` |
-| `archive_unpack` | `archive::archive_unpack` |
-| `archive_list` | `archive::archive_list` |
+`archive_pack` / `archive_unpack` / `archive_list` 三个入口改为 `Result<String, ToolError>`
+（`define_runners_cwd_ctx_try!`，随 `archive-tools` feature gate）。
+
+迁移动机不是「形状统一」，而是**静默成功**：`detect_format` 对表外后缀（`.tar.zst` /
+`.tar.lz` / `.rar5` …）返回 `unknown`，三个入口都答 `不支持的归档格式: {name}`——这段正文
+既无 `错误` 也无 `失败`，`parse_legacy_output` 的关键词表因此判成 **`ok: true`**，调用方
+无法区分「已打包」与「不认识这个格式」。
+
+错误码：参数 / 未知格式 → `invalid_args`；归档不存在 → **`archive_not_found`**；打包 / 解压 /
+列目录失败 → **`archive_pack_failed`** / **`archive_unpack_failed`** / **`archive_list_failed`**
+（四者均在 `failure_category_for_error_code` 显式登记为 `external`）。成功正文逐字未变。
+
+归档本体的 7z / unrar 子进程失败仍属外部工具输出，未拆更细的 code。
 
 ### 4.3 `github_cli.inc.rs`（5）— 形态 `gh_runner!`（参数为 `GhCtx`）
 
@@ -220,7 +228,7 @@
 | 档 | 族 | 理由 |
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
-| **B（中风险）** | `archive` 3 个、`docs_health` 1 个聚合器、`code_nav` / `reminder` / `event` 3 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；feature gate 需在 CI 覆盖 |
+| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` / `reminder` / `event` 3 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
 | **C（高风险，须先设计）** | `gh_*` 5 个、`git`、`http_fetch` / `http_request`、`web_search` / `get_weather`、`background_job*`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
