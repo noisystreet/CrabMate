@@ -772,6 +772,8 @@ mod tests;
 
 #[cfg(test)]
 mod tests_write_effect;
+#[cfg(test)]
+mod tests_legacy_audit;
 
 #[cfg(test)]
 mod testing;
