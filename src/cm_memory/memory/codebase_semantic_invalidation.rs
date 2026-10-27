@@ -40,7 +40,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "long_term_forget",
         "run_command",
         "terminal_session",
-        "playbook_run_commands",
         "python_snippet_run",
         "run_executable",
         "workflow_execute",
@@ -231,7 +230,6 @@ pub fn invalidation_for_tool_call(
         name,
         "run_command"
             | "run_executable"
-            | "playbook_run_commands"
             | "workflow_execute"
             | "http_request"
     ) || name.starts_with("git_")

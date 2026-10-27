@@ -122,15 +122,6 @@ pub struct CrateContractMapArgs {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ErrorOutputPlaybookArgs {
-    pub error_text: String,
-    pub ecosystem: Option<String>,
-    #[schemars(range(min = 1, max = 100_000))]
-    pub max_chars: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct LongTermRememberArgs {
     pub text: String,
     #[serde(default)]
@@ -165,15 +156,4 @@ pub struct SummarizeExperienceArgs {
     #[serde(default)]
     #[schemars(range(min = 0))]
     pub ttl_secs: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PlaybookRunCommandsArgs {
-    pub error_text: String,
-    pub ecosystem: Option<String>,
-    #[schemars(range(min = 1, max = 100_000))]
-    pub max_chars: Option<u32>,
-    #[schemars(range(min = 1, max = 3))]
-    pub max_commands: Option<u32>,
 }

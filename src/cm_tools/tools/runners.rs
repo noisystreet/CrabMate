@@ -447,14 +447,6 @@ pub fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
     http_fetch::run_request_direct(args, ctx)
 }
 
-pub fn runner_playbook_run_commands(args: &str, ctx: &ToolContext<'_>) -> String {
-    error_playbook::playbook_run_commands(args, ctx)
-}
-
-pub fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
-    error_playbook::error_output_playbook(args, ctx.allowed_commands)
-}
-
 pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
     contract_map::crate_contract_map(args, ctx)
 }

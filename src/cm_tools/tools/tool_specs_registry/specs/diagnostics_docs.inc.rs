@@ -16,22 +16,6 @@
             summary: ToolSummaryKind::Static("Environment/toolchain diagnostic summary (redacted)"),
         },
         ToolSpec {
-            name: "error_output_playbook",
-            description: "只读：对**已脱敏**的 rustc/cargo/npm/pytest 等错误输出做启发式**归类**（依赖/网络/权限/磁盘/语法与类型/测试等），并给出 **2～3 条**可经 **`run_command`** 执行的排查命令**建议字符串**（**不执行**；仅包含当前 `allowed_commands` 白名单内的命令）。可选 `ecosystem`：`auto`（默认）/ `rust` / `node` / `python` / `generic`；可选 `max_chars` 限制输入长度。内置轻度掩码常见 `API_KEY=` 样式；**粘贴前仍须人工脱敏**。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::ErrorOutputPlaybookArgs>,
-            runner: ToolRunner::Legacy(runner_error_output_playbook),
-            summary: ToolSummaryKind::Dynamic(ts::summary_error_output_playbook),
-        },
-        ToolSpec {
-            name: "playbook_run_commands",
-            description: "与 **`error_output_playbook`** 相同的启发式归类后，**依次**将 **1～3 条**建议命令经 **`run_command`** 在工作区**真实执行**（白名单、参数安全规则与 `run_command` 一致；可能触发 cargo/npm 等构建锁）。参数同 `error_output_playbook`，另可选 **`max_commands`**（默认 3）。**须可信工作区**；错误文本请先脱敏。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::PlaybookRunCommandsArgs>,
-            runner: ToolRunner::Legacy(runner_playbook_run_commands),
-            summary: ToolSummaryKind::Static("Run error playbook suggestions via run_command"),
-        },
-        ToolSpec {
             name: "repo_overview_sweep",
             description: "只读聚合：可选**项目画像**（与 Web `GET /workspace/profile` 同源：清单与 tokei 等，默认开启，见 `include_project_profile` / `project_profile_max_chars`）；依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
             category: ToolCategory::Development,

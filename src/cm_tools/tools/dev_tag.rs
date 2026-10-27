@@ -32,8 +32,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "workflow_execute" => &[GENERAL, RUST, QUALITY],
         "diagnostic_summary"
         | "self_config_info"
-        | "error_output_playbook"
-        | "playbook_run_commands"
         | "long_term_remember"
         | "long_term_forget"
         | "long_term_memory_list"

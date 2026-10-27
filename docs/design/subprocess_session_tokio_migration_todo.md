@@ -200,7 +200,6 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 | `python_snippet_run` | [python_tools.rs](../../src/cm_tools/tools/python_tools.rs#L357-L372) | 同步 `prepare_piped_process_group` + `wait_child_session` |
 | `pytest_run` | [python_tools.rs](../../src/cm_tools/tools/python_tools.rs#L471) | `run_and_capture` |
 | `cargo_test` 等 | [cargo_subcommand.rs](../../src/cm_tools/tools/cargo_subcommand.rs#L182) | `run_and_capture` |
-| `error_output_playbook` | [error_playbook.rs](../../src/cm_tools/tools/error_playbook.rs#L480) | `run_checked_wait` |
 
 **路线决策（PR0 二选一，须写进 PR 描述）**：
 

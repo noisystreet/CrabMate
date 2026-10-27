@@ -122,7 +122,6 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "long_term_forget",
             "run_command",
             "terminal_session",
-            "playbook_run_commands",
             "python_snippet_run",
             "run_executable",
             "workflow_execute",
@@ -207,7 +206,6 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
             "crate_contract_map",
             "codebase_semantic_search",
             "docs_health_sweep",
-            "playbook_run_commands",
         ]
         .into_iter()
         .map(|s| s.to_string())

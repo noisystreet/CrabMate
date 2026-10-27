@@ -130,11 +130,11 @@
 - **代码导航 / 度量**：`code_nav`（`find_symbol` / `find_references` / `file_outline` / `call_graph_sketch` 四个只读工具已于 2026-10-25 合并为一个 `action` 选择器）、`code_stats` / `dependency_graph` / `coverage_report`。
 - **归档**：`archive_pack` / `archive_unpack` / `archive_list`（用 Rust crate，非 CLI）。
 - **状态 / 记忆 / 配置**：`reminder` / `event`（reminders / events，2026-10-24 由九个工具合并为两个 `action` 选择器）、`long_term_*`、`self_config_info`、`skill_manage`。
-- **诊断 / 文档渲染**：`diagnostic_summary` / `error_output_playbook` / `present_clarification_questionnaire` / `repo_overview_sweep` / `crate_contract_map` / `summarize_experience` / `gh_pr_body_draft`（`changelog_draft` / `license_notice` 已于 2026-10-27 **整工具删除**，平替为 `run_command` / `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`）。
+- **诊断 / 文档渲染**：`diagnostic_summary` / `present_clarification_questionnaire` / `repo_overview_sweep` / `crate_contract_map` / `summarize_experience` / `gh_pr_body_draft`（`changelog_draft` / `license_notice` 已于 2026-10-27 **整工具删除**，平替为 `run_command` / `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`；`error_output_playbook` 同日整工具删除，平替为模型自行归类 + `run_command`）。
 - **Rust 专属**：`rust_analyzer_*`（LSP stdio，非白名单 CLI，不可替代）。`rust_compiler_json` 已于 2026-10-27 **整工具删除**（其 JSON 输出里的 `rendered` 就是 cargo 自己的人类可读块，与只读的 `cargo_check` 重合）；`rust_backtrace_analyze` 同日**整工具删除**（纯计算分析器，模型可直读 panic 文本，或用 `run_command`（`c++filt` 在白名单）+ `code_nav` 定位帧）。
 - **纯计算 / 文本**：`text_transform` / `json_format` / `regex_test` / `env_var_check` / `text_diff` / `table_text` / `date_calc`（`todo_scan` 已于 2026-10-18 移除，改用 `search_in_files`）。原 `get_current_time` / `calc` / `convert_units` 已于 2026-10-24 **整体移除**（`date` 已在白名单可代 `get_current_time`；`calc` / `convert_units` 由 `python_snippet_run` 或 `run_command` 承担 —— 代价是每次计算多一轮工具往返，且失去 `bc` 的任意精度与 `uom` 的类型安全）。**`date_calc` 保留**：它不止取当前时间，还提供 `offset`（`+30d` / `-2w` / `+1m`）与 `diff`（两日期间隔）两种模式，`date` 单条命令无法表达，且纯计算无 CLI 依赖。
 - **网络 / 执行 / 会话**：`get_weather` / `web_search` / `http_fetch` / `http_request` / `terminal_session` / `background_job`（`status` / `list` / `output` 三个只读动作已合并为一个 `action` 选择器，2026-10-24）+ `background_job_cancel`（写副作用，保持独立） / `workflow_execute` / `run_command`。
-- **聚合编排**：`run_lints` / `docs_health_sweep` / `playbook_run_commands`（后者是 `error_output_playbook` 启发式的**执行半体**，含多命令编排与启发式归类，非单条 CLI 薄封装）；原 `ci_pipeline_local` / `release_ready_check` / `quality_workspace` 已于后续整体删除，改用 `run_command`。
+- **聚合编排**：`run_lints` / `docs_health_sweep`；原 `ci_pipeline_local` / `release_ready_check` / `quality_workspace` 已于后续整体删除，改用 `run_command`；`playbook_run_commands`（原 `error_output_playbook` 启发式的执行半体）已于 2026-10-27 整工具删除。
 - **校验密集 / 安全面敏感**：`gh_api`——含 `validate_api_path`（禁 `/` 开头、禁 `..`、字符白名单）+ 方法白名单（GET/HEAD/POST/PATCH/PUT/DELETE）+ body 须合法 JSON + **body 经 stdin 传入**；降级 `run_command` 无 stdin 通道、无 path 限制，属**扩大安全面**，不收敛（`src/cm_tools/tools/github_cli/api.rs:101-157`）。
 
 ---
@@ -148,7 +148,7 @@
 5. ~~**`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。~~ **读类纯薄封装 10 个已落地 2026-10-07**（`gh_pr_list` / `gh_pr_view` / `gh_pr_diff` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_run_view` / `gh_release_list` / `gh_release_view` / `gh_search`，接受 §2.1 代价；`gh_` 前缀本就不在并行只读批）。保留读类增值 2 个（`gh_pr_checks` / `gh_run_failure_summary`）、写类 8 个与 `gh_pr_body_draft` / `gh_api`；写类因类型化参数价值高，**暂缓**。
 6. ~~**白名单外 CLI（`typos` / `codespell` / `ast-grep`）**：仅在决定扩白名单后再评估（风险最高，暂不推进）。~~ **已落地 2026-10-18**：先向 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装；typos/codespell 函数体保留供 `docs_health_sweep` 复用。
 
-保留项（§3.3，含 `gh_api` / `playbook_run_commands`）不动；Git 只读（§3.2）维持 §8.5 的**保留**决策。
+保留项（§3.3，含 `gh_api`）不动（`playbook_run_commands` 已于 2026-10-27 整工具删除）；Git 只读（§3.2）维持 §8.5 的**保留**决策。
 
 ---
 
