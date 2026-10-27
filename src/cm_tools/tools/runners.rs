@@ -448,16 +448,20 @@ define_runners_cwd_maxlen! {
 
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
-// `archive-tools` 未启用时 `archive` 模块不参与编译（见 `tools/mod.rs` 的 cfg）。
-#[cfg(feature = "archive-tools")]
 define_runners_cwd_ctx_try! {
+    runner_structured_try => structured_dispatch::structured_try,
+}
+
+// ── 同构薄封装实例（形态 paths_ctx：f(args, &PathAccess, ctx) -> Result）──
+
+// `archive-tools` 未启用时 `archive` 模块不参与编译（见 `tools/mod.rs` 的 cfg）。
+// 归档的读（源目录 / 待解压文件）与写（输出归档 / 解压目录）都要过 `PathAccess`：
+// 越界与绝对路径在校验层挡住，故走 `paths_ctx` 形态而非 `cwd_ctx`。
+#[cfg(feature = "archive-tools")]
+define_runners_paths_ctx_try! {
     runner_archive_pack_try => archive::archive_pack,
     runner_archive_unpack_try => archive::archive_unpack,
     runner_archive_list_try => archive::archive_list,
-}
-
-define_runners_cwd_ctx_try! {
-    runner_structured_try => structured_dispatch::structured_try,
 }
 
 define_runners_paths_ctx_try! {

@@ -121,6 +121,10 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             // 只读重试 / `Ask`·`Plan` 只读门控 / L1 只读正列表。这是合并的既定代价
             // （见 `CHANGELOG.md`）；按名字判定的结构不支持 action 级粒度。
             "structured",
+            // 归档解压与打包都会往工作区写文件（解压目录 / 新建归档）；`archive_list` 只读，
+            // 不列入。此前两条都不在名单里，写操作被当只读，进了并行只读批与只读 TTL 缓存。
+            "archive_pack",
+            "archive_unpack",
             "long_term_remember",
             "long_term_forget",
             "run_command",

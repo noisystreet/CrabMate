@@ -105,7 +105,8 @@
 ### 4.2 `archive.inc.rs`（3）— **已迁 2026-10-28**
 
 `archive_pack` / `archive_unpack` / `archive_list` 三个入口改为 `Result<String, ToolError>`
-（`define_runners_cwd_ctx_try!`，随 `archive-tools` feature gate）。
+（`define_runners_paths_ctx_try!`，随 `archive-tools` feature gate）——归档的读（源目录 / 待解压
+文件）与写（输出归档 / 解压目录）都过 `PathAccess`，越界与绝对路径在校验层挡住。
 
 迁移动机不是「形状统一」，而是**静默成功**：`detect_format` 对表外后缀（`.tar.zst` /
 `.tar.lz` / `.rar5` …）返回 `unknown`，三个入口都答 `不支持的归档格式: {name}`——这段正文
