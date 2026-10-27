@@ -139,6 +139,73 @@ pub struct StructuredPatchArgs {
     pub base_revision: Option<String>,
 }
 
+// ── `structured` 单入口（四个子动作合并为一个工具）─────────────
+
+/// `structured` 的 `action` 选择器：四个子动作合并成一个工具名。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StructuredAction {
+    Validate,
+    Query,
+    Diff,
+    Patch,
+}
+
+/// [`super::structured_dispatch::structured_try`] 入参。
+///
+/// 字段是四个子动作的**并集**：只有本 `action` 用到的键会被转发给子实现，
+/// 其余键静默忽略（与 `code_nav` 同一约定）。必填项按 `action` 在分发层校验。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StructuredArgs {
+    /// **必填**：`validate` / `query` / `diff` / `patch`。
+    pub action: StructuredAction,
+    /// `validate` / `query` / `patch`：目标文件（工作区相对路径）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// `diff`：左侧文件。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_a: Option<String>,
+    /// `diff`：右侧文件。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_b: Option<String>,
+    /// `query` / `patch`：JSON Pointer（`/a/b`）或点号路径（`a.b.0`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    /// `patch`：`set`（默认，需同时给 `value`）或 `remove`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation: Option<StructuredPatchAction>,
+    /// `patch` + `mutation=set`：写入的新值（任意 JSON）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<JsonValue>,
+    /// 显式格式（`auto` / `json` / `yaml` / `yml` / `toml` / `csv` / `tsv`）；省略按扩展名推断。
+    /// `patch` 不接受 `csv` / `tsv`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<StructuredDataFormat>,
+    /// `validate` / `query` / `diff`：CSV/TSV 首行是否为表头（默认 `true`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_header: Option<bool>,
+    /// `validate`：是否输出顶层摘要（默认 `true`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summarize: Option<bool>,
+    /// `diff`：最多输出多少条差异（默认 200，上限 2000）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 2000))]
+    pub max_diff_lines: Option<u64>,
+    /// `patch`：父级缺失时是否创建（默认 `true`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create_missing: Option<bool>,
+    /// `patch`：**默认 `true` 仅预览**；显式 `false` 才写盘。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_run: Option<bool>,
+    /// `patch`：**已废弃**（仅为兼容保留，不再校验）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm: Option<bool>,
+    /// `patch`：写前 CAS 基线（`read_file` 输出头里的 `revision`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<String>,
+}
+
 // ── 工作流执行（`workflow_execute` 占位 runner）───────────────
 
 /// [`super::runners::runner_workflow_execute`] 对应 parameters（DAG 由运行时解析）。

@@ -302,10 +302,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"list_tree"));
     assert!(names.contains(&"read_binary_meta"));
     assert!(names.contains(&"markdown_check_links"));
-    assert!(names.contains(&"structured_validate"));
-    assert!(names.contains(&"structured_query"));
-    assert!(names.contains(&"structured_diff"));
-    assert!(names.contains(&"structured_patch"));
+    assert!(names.contains(&"structured"));
     assert!(names.contains(&"text_diff"));
     assert!(names.contains(&"table_text"));
     assert!(names.contains(&"code_nav"));

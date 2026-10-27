@@ -470,7 +470,7 @@ define_runners_cwd_ctx! {
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
 define_runners_cwd_ctx_try! {
-    runner_structured_patch_try => structured_data::structured_patch_try,
+    runner_structured_try => structured_dispatch::structured_try,
 }
 
 define_runners_paths_ctx_try! {
@@ -489,9 +489,6 @@ define_runners_cwd_try! {
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
-    runner_structured_validate_try => structured_data::structured_validate_try,
-    runner_structured_query_try => structured_data::structured_query_try,
-    runner_structured_diff_try => structured_data::structured_diff_try,
 }
 
 // ── 已改走 `PathAccess` 的文件类工具（R1 收口）──────────────────

@@ -176,7 +176,7 @@ fn fill_structured_doc_tools(
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !matches!(name, "structured_patch" | "markdown_check_links") {
+    if !matches!(name, "structured" | "markdown_check_links") {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);

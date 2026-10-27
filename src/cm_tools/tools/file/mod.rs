@@ -28,10 +28,10 @@ pub use path::{PathAccess, canonical_workspace_root, resolve_for_read, resolve_f
 // 审计正文的路径截断：`read_dir` 的工作区外审批在 `cm_internal` 侧记录，那里不该自己
 // 再写一份「只留末两段」的规则。
 pub(crate) use path::audit_path_detail;
-// 写侧统一提交入口：其它工具（`structured_patch`）也要「tmp → 继承元数据 → fsync →
+// 写侧统一提交入口：其它工具（`structured` 的 `action=patch`）也要「tmp → 继承元数据 → fsync →
 // revision 校验 → 原子替换」，复用同一实现而不是各自 `fs::write`。
 pub(crate) use commit_guard::write_bytes_with_revision_guard;
-// 只校验不写：`structured_patch` 的**预览**也要按显式 `base_revision` 早失败，
+// 只校验不写：`structured`（`action=patch`）的**预览**也要按显式 `base_revision` 早失败，
 // 否则预览会基于过期快照给出一份「看起来安全」的 diff。
 pub(crate) use revision::verify_write_revision;
 pub use read_tool::read_file;

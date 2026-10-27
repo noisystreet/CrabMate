@@ -374,7 +374,7 @@ fn modify_file_display(working_dir: &Path, target: &Path, path: &str) -> String 
 ///
 /// `modify_file` 的四个分发分支（`replace_lines` / `insert_after_line` / 批量 `edits` /
 /// 整文件覆盖）都走这里，避免默认值散落在各处、新增分支时漏改；`append_file` /
-/// `search_replace` / `structured_patch` 已由 typed 结构提供同一个默认值。
+/// `search_replace` / `structured` 已由 typed 结构提供同一个默认值。
 pub(super) fn dry_run_arg(v: &serde_json::Value) -> bool {
     v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true)
 }

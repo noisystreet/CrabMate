@@ -23,7 +23,7 @@ mod tests {
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, RunCommandArgs,
-        StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
+        StructuredArgs, TableTextArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -142,13 +142,32 @@ mod tests {
     }
 
     #[test]
-    fn structured_validate_schema_requires_path() {
-        let v = tool_parameters_schema_value::<StructuredValidateArgs>();
+    fn structured_schema_requires_action_and_exposes_the_union() {
+        let v = tool_parameters_schema_value::<StructuredArgs>();
         let req = v
             .pointer("/required")
             .and_then(|r| r.as_array())
             .expect("required");
-        assert!(req.iter().any(|x| x == "path"));
+        assert!(req.iter().any(|x| x == "action"), "{v}");
+        let props = v
+            .pointer("/properties")
+            .and_then(|p| p.as_object())
+            .expect("properties");
+        for key in [
+            "action",
+            "path",
+            "path_a",
+            "path_b",
+            "query",
+            "mutation",
+            "value",
+            "format",
+            "dry_run",
+            "base_revision",
+        ] {
+            assert!(props.contains_key(key), "缺少 {key}: {v}");
+        }
+        assert_eq!(v.pointer("/additionalProperties"), Some(&json!(false)));
     }
 
     #[test]

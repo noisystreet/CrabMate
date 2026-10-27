@@ -10,7 +10,7 @@ This document describes built-in tools, common function-calling JSON examples, a
 
 **`run_command` + Web diff preview**: When the **stdout** section (after CrabMate’s `run_command` framing) looks like a **git unified diff** (first non-empty line starts with **`diff --git`** or **`diff --cc`**), or the invocation is **`git … status`** (after skipping common globals like **`-C` / `--git-dir`**) and stdout looks like typical **`git status`** output (e.g. **`On branch` / `##`**, **`nothing to commit`**, **`Changes not staged`**, short **`XY `** porcelain lines, …), SSE **`tool_result.structured_preview`** also attaches the same **`workspace_write_diff`**-shaped header as file-write tools, and the Web tool card reuses the “Change preview (unified diff)” block (subject to the same preview size cap).
 
-**Session workspace changelist** (default on, `session_workspace_changelist_*`): Successful writes from **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** accumulate **relative paths** and a unified diff vs first touch this session; before **each** model request a **`user`** is injected (**`name=crabmate_workspace_changelist`**). Web strips this before saving sessions (like long-term memory injection). Tools inside **`workflow_execute`** DAG use a separate `ToolContext` and **do not** hit this table.
+**Session workspace changelist** (default on, `session_workspace_changelist_*`): Successful writes from **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `append_file` / `search_replace` / `apply_patch` / `structured` (`action=patch`)** accumulate **relative paths** and a unified diff vs first touch this session; before **each** model request a **`user`** is injected (**`name=crabmate_workspace_changelist`**). Web strips this before saving sessions (like long-term memory injection). Tools inside **`workflow_execute`** DAG use a separate `ToolContext` and **do not** hit this table.
 
 **Final answer `agent_reply_plan` v1** (validated on workflow reflection / final-plan gate paths): `steps[].id` must be unique and match stable character rules (enforced by validators alongside **`workflow_execute`**; see JSON examples below). Optional **`workflow_node_id`** aligns with **`nodes[].id`** from the latest **`workflow_execute`** tool result (subset check). Optional **`steps[].executor_kind`** (`review_readonly` / `patch_write` / `test_runner`) may still appear in plan JSON for tooling/docs; the **staged step runner / `step_verifier` path has been removed**—runtime orchestration is **session_mode → (Act utterance heuristics) → ReAct**. See **`docs/en/CONFIGURATION.md`**.
 
@@ -81,9 +81,9 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `codebase_semantic_search`: **Hybrid** code search (SQLite **FTS5** + **fastembed** vectors, separate from long-term memory; **`crabmate_codebase_chunks_fts`** external-content table + triggers; **`crabmate_codebase_files`** fingerprints). **`rebuild_index: true`** → **`.crabmate/codebase_semantic.sqlite`** (schema **v4**+). **Incremental** workspace-wide rebuild by default; subtree **`path`** replaces that prefix only. **Rust** symbol hint lines before embed. **`query`** default **`retrieve_mode: hybrid`** (BM25 + cosine via **`hybrid_alpha`**); **`semantic_only`** / **`fts_only`**. **`fts_top_n`**, **`hybrid_semantic_pool`**, **`query_max_chunks`** tune cost. **`codebase_semantic_rebuild_max_files`** caps re-embeds. Not read-only. Disable: `codebase_semantic_search_enabled = false`. Invalidation: chunk deletes sync FTS via triggers; broad tools may full-clear.
   - `markdown_check_links`: Scan Markdown (default `README.md`, `docs/`) for relative links and `#fragment` anchors; `output_format=text|json|sarif`. External `http(s)://` default offline; optional `allowed_external_prefixes` enables HEAD probes (deduped cache).
   - **Spell / AST search**: `typos`, `codespell`, and `ast-grep` are on the `run_command` allowlist—call them via `run_command` (spell check needs the CLI installed; `ast-grep run --rewrite` needs an explicit `--update-all` to write, with no `confirm` gate).
-  - `structured_validate` / `structured_query` / `structured_diff` / `structured_patch`: Validate/query/diff JSON·YAML·TOML; `structured_patch` point `set/remove` (default dry-run; write needs `confirm=true`). CSV/TSV validate/query/diff only—no structured write-back.
-  - `table_text`: Preview/validate/filter/aggregate delimiter tables (CSV/TSV/; / |, streaming, 4 MiB/file); complements `structured_*` “load whole table as JSON”.
-  - `text_diff`: Line unified diff for two UTF-8 strings or two workspace files (not Git); complements `structured_diff`.
+  - `structured`: Structured-data tool dispatching on **`action`** (`validate` / `query` / `diff` / `patch`) — validate, path lookup, key-level structured diff, and point `set`/`remove` on **JSON / YAML / TOML** (`action=patch` defaults to dry-run; `dry_run=false` writes; the sub-verb is **`mutation`**=`set`/`remove`). CSV/TSV stay validate/query/diff only — no structured write-back. **The whole tool counts as a write** (the accepted cost of the merge): `action=validate` / `query` / `diff` no longer get the parallel read-only batch, read-only retry, or `Ask`·`Plan` read-only gating, and `ReviewReadonly` steps cannot call it.
+  - `table_text`: Preview/validate/filter/aggregate delimiter tables (CSV/TSV/; / |, streaming, 4 MiB/file); complements `structured` (`action=validate|query|diff`) “load whole table as JSON”.
+  - `text_diff`: Line unified diff for two UTF-8 strings or two workspace files (not Git); complements `structured` (`action=diff`).
   - `repo_overview_sweep`: Read-only **rollup**: optional **project profile** (same as sidebar / `GET /workspace/profile`: `Cargo.toml` / workspace, `package.json`, top dirs, tokei, optional `cargo metadata --no-deps`; `include_project_profile`, `project_profile_max_chars`, default on, 6000 cap; **not** gated by the `project_profile_inject_enabled` master switch, and **not injected on the first turn**); doc previews (default `README.md`, `AGENTS.md`, `docs/开发文档.md`, …); `list_tree` on `src` (`source_roots`); globs for manifests/CI; ends with an **outline for conclusions**. **No LLM inside**—the model writes analysis from this output. Options: `doc_paths`, `doc_preview_max_lines`, `list_tree_*`, `build_globs`, ….
   - `crate_contract_map`: Read-only **contract map**: fixed anchors for **HTTP/SSE/config** (e.g. `src/lib.rs`, `docs/SSE协议.md`, `src/cm_sse_protocol/control_classify.rs`, `fixtures/sse_control_golden.jsonl`, `config/default_config.toml`, `docs/配置说明.md`, `docs/命令行与路由.md`) with **short file heads** and **keyword line excerpts** per section (no subprocess, no network, no `.env`). Official UI parsers live in the Client repo `frontend/src/api/` (this workspace has no `frontend/`). Options: `head_lines_per_file`, `keyword_hits_per_file`, `extra_paths` (relative, head-only), `max_extra_paths`. Complements `repo_overview_sweep` (repo skeleton vs protocol/routing entrypoints).
   - `docs_health_sweep`: Doc previews + spell check (typos / codespell) + `markdown_check_links`. Missing CLIs → **skipped** steps. **External links**: only if **`md_allowed_external_prefixes`** non-empty does `markdown_check_links` use the **built-in HTTP client** for HEAD; **not** `http_fetch`/`http_request`, **not** `http_fetch_allowed_prefixes`, **no** Web SSE approval. Empty prefix → count only, no network. Options: `fail_fast`, `summary_only`, `spell_paths`, per-step toggles, ….
@@ -439,20 +439,26 @@ Typical `run_command` invocations of `cargo audit` / `cargo deny check` issues:
   {"roots":["README.md","docs"],"max_files":300,"check_fragments":true,"output_format":"text","allowed_external_prefixes":["https://example.com/docs/"],"external_timeout_secs":10}
   ```
   Default roots: `README.md` and `docs/`.
-- `structured_validate`:
+- `structured` (dispatch on **`action`**; minimal payloads below):
+  - `action=validate`:
   ```json
-  {"path":"frontend/Cargo.toml","format":"auto","summarize":true}
+  {"action":"validate","path":"frontend/Cargo.toml","format":"auto","summarize":true}
   ```
-- `structured_query`:
+  - `action=query`:
   ```json
-  {"path":"Cargo.toml","query":"/package/name","format":"toml"}
+  {"action":"query","path":"Cargo.toml","query":"/package/name","format":"toml"}
   ```
-  Dot path: `{"path":"frontend/Cargo.toml","query":"dependencies.leptos"}`.
-- `structured_diff`:
+  Dot path: `{"action":"query","path":"frontend/Cargo.toml","query":"dependencies.leptos"}`.
+  - `action=diff`:
   ```json
-  {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}
+  {"action":"diff","path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}
   ```
-  **CSV/TSV**: `format` `csv`/`tsv` or by extension; `has_header=false` → array-of-arrays; query example `{"path":"data/sample.csv","query":"/0/name"}`.
+  **CSV/TSV**: `format` `csv`/`tsv` or by extension; `has_header=false` → array-of-arrays; query example `{"action":"query","path":"data/sample.csv","query":"/0/name"}`.
+  - `action=patch` (JSON/YAML/TOML, key-path `set`/`remove`):
+  ```json
+  {"action":"patch","path":"config/app.toml","query":"/llm/model","value":"glm-5","dry_run":false}
+  ```
+  `mutation` defaults to `set` (`remove` deletes the path); `create_missing` defaults to `true`; omitted `dry_run` previews only. Fields belonging to other actions are ignored; `format=csv|tsv` is rejected for `action=patch`.
 - `table_text`: preview `{"action":"preview","path":"data/foo.tsv","preview_rows":15}`; filter `{"action":"filter_rows","path":"data/foo.csv","column":2,"contains":"ERR","max_output_rows":100}`.
 - `diagnostic_summary` (**no env values**):
   ```json

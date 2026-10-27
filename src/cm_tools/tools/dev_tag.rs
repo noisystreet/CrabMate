@@ -54,10 +54,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "append_file"
         | "create_dir"
         | "search_replace" => &[GENERAL],
-        "structured_validate"
-        | "structured_query"
-        | "structured_diff"
-        | "structured_patch"
+        "structured"
         | "text_diff"
         | "table_text" => &[GENERAL],
 
