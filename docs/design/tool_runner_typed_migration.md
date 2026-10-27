@@ -17,7 +17,7 @@
 | 变体 | 签名 | 成败判定 | 当前数量 |
 |---|---|---|---|
 | `Typed` | `fn(&str, &ToolContext<'_>) -> Result<String, ToolError>` | `Ok` 即成功；失败路径显式，`error_code` 来自 `ToolError` | **44** |
-| `Legacy` | `fn(&str, &ToolContext<'_>) -> String` | 失败由 `parse_legacy_output` 从**正文关键词**推断 | **35** |
+| `Legacy` | `fn(&str, &ToolContext<'_>) -> String` | 失败由 `parse_legacy_output` 从**正文关键词**推断 | **33** |
 | `AsyncOnly` | 无执行体 | 仅 spec 占位（工具名 / schema / 摘要仍可用），须由异步调度执行 | **2**（`run_command`、`terminal_session`） |
 
 **为什么要迁**：`Legacy` 的失败判定是启发式的——实现只返回一段文本，编排层靠关键词猜「这次算不算失败」。同一段输出换个措辞就可能翻车（"错误：xxx" 被写进正常结果、或 `exit 1` 的说明文字被当成成功）。`Typed` 把失败变成类型，`error_code` 可直接派生（如 `cargo_check_failed`），不再猜。
@@ -28,7 +28,7 @@
 
 ## 2. 现状（2026-10-27）
 
-79 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 35**（另有 2 个 `AsyncOnly`）。
+77 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 33**（另有 2 个 `AsyncOnly`）。
 
 ### 2.1 按 spec 文件分布
 
@@ -42,7 +42,7 @@
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
 | `basic_network.inc.rs` | 4 | 1 | 仅 `text_transform` 已迁 |
 | `github_cli.inc.rs` | 5 | 0 | 全 Legacy |
-| `diagnostics_docs.inc.rs` | 8 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁 |
+| `diagnostics_docs.inc.rs` | 6 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` 已整工具删除（见 §4.4） |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
 | `process.inc.rs` | 2 | 0 | 全 Legacy |
 | `schedule.inc.rs` | 2 | 0 | 全 Legacy |
@@ -53,14 +53,14 @@
 | `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 1 | 0 | 全 Legacy |
-| **合计** | **35** | **44** | |
+| **合计** | **33** | **44** | |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
 - **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、`structured_*`、`markdown_check_links`、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），实现里本来就有清晰的错误分支。
-- **未迁 35 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
+- **未迁 33 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
 
-**结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 35 个都要先改实现层，这是它长期停在半数以下的原因。
+**结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 33 个都要先改实现层，这是它长期停在半数以下的原因。
 
 ---
 
@@ -91,7 +91,7 @@
 
 ---
 
-## 4. 35 个 Legacy 清单
+## 4. 33 个 Legacy 清单
 
 按 spec 文件分组。**「形态」** 指 runner 的转发形态（决定改法），**「目标实现」** 指 runner 最终调用的函数。
 
@@ -121,15 +121,13 @@
 
 > 共同阻碍：这族底层统一走 `run_gh_vec` → `command::run`，返回的是一段格式化命令输出，失败靠正文判定。要迁 Typed，须让 `run_gh_vec` 能区分「`gh` 非零退出」与「参数构造/解析失败」。
 
-### 4.4 `diagnostics_docs.inc.rs`（12）
+### 4.4 `diagnostics_docs.inc.rs`（10）
 
 | 工具 | 形态 | 目标实现 | 备注 |
 |---|---|---|---|
 | `diagnostic_summary` | 手写 | `diagnostics::diagnostic_summary(args, cwd, &[])` | |
 | `error_output_playbook` | 手写 | `error_playbook::error_output_playbook(args, ctx.allowed_commands)` | 需 `allowed_commands` |
 | `playbook_run_commands` | 手写 | `error_playbook::playbook_run_commands(args, ctx)` | 内含多命令编排 |
-| `changelog_draft` | `cwd_maxlen` | `release_docs::changelog_draft` | |
-| `license_notice` | `cwd_maxlen` | `release_docs::license_notice` | |
 | `repo_overview_sweep` | `cwd_maxlen` | `repo_overview::repo_overview_sweep` | |
 | `crate_contract_map` | 手写 | `contract_map::crate_contract_map(args, ctx)` | |
 | ~~`long_term_remember`~~ / ~~`long_term_forget`~~ / ~~`long_term_memory_list`~~ / ~~`summarize_experience`~~（**已迁 2026-10-27**） | 手写 | `dispatch_long_term_tool(...)` | 四个共用入口，一次改造覆盖；`LongTermMemoryToolHost::dispatch` 契约改为 `Result<String, ToolError>`；缺 `cfg` / host → `tool_context_incomplete`，记忆库 IO → `long_term_memory_io_failed` |
@@ -253,3 +251,4 @@
 | 2026-10-27 | **A 档第二项落地**：`long_term_remember` / `long_term_forget` / `long_term_memory_list` / `summarize_experience` 四个迁为 `Typed`，Legacy 43 → 39。改动穿过三层：`cm_internal/long_term_memory_tools.rs`（4 个函数改返回 `Result<String, ToolError>`）、trait `LongTermMemoryToolHost::dispatch`（`String` → `Result`，唯一实现者同步）、`runners::dispatch_long_term_tool` 与 4 个 `*_try` runner。新增错误码 `long_term_memory_io_failed`（`External`）。**顺带修缺陷**：JSON 解析失败原返回「`参数 JSON 无效: …`」（无「错误：」前缀），被启发式判成成功；现稳定为 `invalid_args`。基线 43/40 → 39/36。 |
 | 2026-10-27 | **A 档第三项落地**：`metrics` 族三个（`code_stats` / `coverage_report` / `dependency_graph`）迁为 Typed，Legacy 39 → 36。`code_stats` 与 `coverage_report` 在 `code_metrics.rs`，`dependency_graph` 在 `code_metrics_dependency_graph.rs`（经 `code_metrics` re-export），三者的 `*_try` 走同一孪生宏 `define_runners_cwd_maxlen_try!`。新增错误码 `coverage_report_io_failed`（`External`）。同时更新 `part_basic.inc.rs` 里 7 处指向旧函数名的 intra-doc link（否则 `cargo doc -D warnings` 失败）。基线 39/36 → 36/33。 |
 | 2026-10-27 | **A 档第四项落地（A 档清空）**：`skill_manage` 迁为 Typed，Legacy 36 → 35。内部 8 个 `Result<_, String>` helper（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `install_action` / `remove_action` / `remove_pick_target` / `remove_delete` / `layer_dir` / `validate_skill_id`）全部换成 `Result<_, ToolError>`；新增错误码 `skill_manage_io_failed`（`External`）。**原本预估要改 3 处 `starts_with("错误：")` 断言，实际一处未改**——测试 helper 改为成功取 `Ok`、失败取 `e.message`，文案逐字未变，原有 `contains` / `starts_with` 口径继续成立。基线 36/33 → 35/32。 |
+| 2026-10-27 | **E 档：两个工具整工具删除**（`changelog_draft` / `license_notice`）—— 不属任何迁移档，直接退场：Legacy 35 → **33**（实现文件 `release_docs.rs` 整文件移除，含 9 个无其它消费者的 helper）。平替：`gh_release_create` 的 `auto_notes` / `run_command` 的 `git log --pretty` / `cargo deny check licenses`（明细表可走 `cargo metadata` + `jq`）。§2.1 表与 §4.4 清单同步为 6 个（`diagnostics_docs.inc.rs`）。 |

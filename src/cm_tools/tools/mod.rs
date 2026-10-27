@@ -62,7 +62,6 @@ mod parse_args;
 mod patch;
 pub(crate) mod python_tools;
 mod regex_test;
-mod release_docs;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
