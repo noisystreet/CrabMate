@@ -8,6 +8,7 @@
 - 内置工具契约与信封：**`docs/工具说明.md`**
 - 未完成待办：**`docs/待办清单.md`** → **`tools/` 与 `tool_registry.rs`** 章
 - 安全面：**`docs/配置说明.md`**（`allowed_commands`、审批、沙盒）
+- **另一条正交的收敛方向**（`ToolRunner` Legacy → Typed，与本文件的「收敛为 `run_command`」不是一回事）：**`docs/design/tool_runner_typed_migration.md`**
 
 ---
 
