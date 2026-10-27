@@ -516,8 +516,16 @@ define_runners_paths_try! {
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
 
 define_runners_cwd! {
-    runner_rust_analyzer => rust_ide::rust_analyzer,
     runner_code_nav => code_nav_dispatch::dispatch,
+}
+
+/// `rust_analyzer`：8 个 action 的 LSP 请求，失败一律显式 [`ToolError`]。
+///
+/// 成功正文保持原样（golden 与下游子串匹配依赖它），只把失败路径从「文本猜」换成
+/// `Err`。见 `rust_ide::rust_analyzer_try`。
+#[allow(clippy::result_large_err)]
+pub fn runner_rust_analyzer_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    rust_ide::rust_analyzer_try(args, ctx.working_dir)
 }
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
