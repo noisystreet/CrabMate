@@ -37,7 +37,6 @@ pub use parse_args::parse_args_from_value;
 pub use parse_args::parse_args_json;
 pub use parse_args::parse_args_typed;
 mod env_var_check;
-mod error_playbook;
 mod exec;
 pub use exec::{
     resolve_workspace_executable, run_command_invocation_targets_workspace_script_or_executable,

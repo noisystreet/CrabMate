@@ -298,24 +298,6 @@ impl ToolSummaryLine for PythonSnippetRunSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct ErrorOutputPlaybookSummaryArgs {
-    #[serde(default)]
-    ecosystem: Option<String>,
-}
-
-impl ToolSummaryLine for ErrorOutputPlaybookSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let eco = self
-            .ecosystem
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("auto");
-        Some(format!("error playbook ({})", eco))
-    }
-}
-
 fn default_true() -> bool {
     true
 }

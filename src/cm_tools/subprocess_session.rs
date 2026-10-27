@@ -2,7 +2,7 @@
 //!
 //! 提供 **sync + async 两条并行入口**（strangler 过渡；见 `docs/design/subprocess_session_tokio_migration_todo.md`）：
 //! - **同步** [`wait_child_session`] / [`run_and_capture`]：`std::process` + 阻塞轮询，供仍在 `spawn_blocking`
-//!   内运行的同步工具（`python_snippet_run` / `pytest_run` / `error_output_playbook` 等）复用。
+//!   内运行的同步工具（`python_snippet_run` / `pytest_run` 等）复用。
 //! - **异步** [`wait_child_session_async`]：`tokio::process` + `tokio::time`，供 chat 宿主 / async funnel 直接 `.await`，
 //!   不再占用阻塞线程。
 //!

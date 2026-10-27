@@ -266,6 +266,10 @@ fn test_build_tools_names() {
         // 整工具删除（2026-10-27 后续）：`rust_backtrace_analyze` 的纯计算分析可由模型直接读
         // panic 文本，或经 `run_command`（`c++filt` 在默认白名单）与 `code_nav` 完成。
         "rust_backtrace_analyze",
+        // 整工具删除：错误输出启发式查表两件（一件只出建议、一件真执行）—— 建议来自
+        // 「生态 × 类别」固定模板而非对具体错误的推理，模型可直接调 `run_command`。
+        "error_output_playbook",
+        "playbook_run_commands",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -280,8 +284,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"workflow_execute"));
     assert!(names.contains(&"diagnostic_summary"));
     assert!(names.contains(&"self_config_info"));
-    assert!(names.contains(&"error_output_playbook"));
-    assert!(names.contains(&"playbook_run_commands"));
     assert!(names.contains(&"repo_overview_sweep"));
     assert!(names.contains(&"crate_contract_map"));
     assert!(names.contains(&"docs_health_sweep"));
@@ -559,27 +561,6 @@ fn test_summarize_tool_call_unknown_tool() {
 }
 
 #[test]
-fn test_error_output_playbook_respects_command_whitelist() {
-    let allowed = vec!["cargo".to_string()];
-    let ctx = test_ctx(&allowed);
-    let out = run_tool(
-        "error_output_playbook",
-        r#"{"error_text":"error[E0599]: no method named `x`","ecosystem":"rust"}"#,
-        &ctx,
-    );
-    assert!(
-        out.contains("cargo check") || out.contains("cargo build"),
-        "应建议 cargo 子命令，得到: {}",
-        out
-    );
-    assert!(
-        !out.contains("python3"),
-        "白名单无 python3 时不应出现 python3 建议: {}",
-        out
-    );
-}
-
-#[test]
 fn test_build_tools_dev_tags_basic_plus_rust() {
     let rust_only = [dev_tag::RUST];
     let tools = build_tools_with_options(ToolsBuildOptions {
@@ -691,7 +672,10 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 随后 `rust_compiler_json` 也整工具删除（−1，见上一条注释）。
     // 本轮（整工具删除）：`rust_backtrace_analyze` 退场（−1）—— 纯计算分析器，模型可直接读
     // panic 文本，或用 `run_command` + `c++filt` / `code_nav`；调试族随 `debug_tools.rs` 整文件移除。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 31 } else { 28 };
+    // 本轮（整工具删除）：`error_output_playbook` / `playbook_run_commands` 一并退场（−2）—— 两者的
+    // 建议都来自「生态 × 类别」固定查表模板，不是对具体错误的推理；模型可自行归类后直接调 `run_command`。
+    // 实现文件 `error_playbook.rs` 整文件移除（627 行）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 29 } else { 26 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

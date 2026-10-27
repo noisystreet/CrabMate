@@ -25,7 +25,6 @@ define_summaries! {
     summary_terminal_session => TerminalSessionSummaryArgs,
     summary_rust_analyzer => RustAnalyzerSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
-    summary_error_output_playbook => ErrorOutputPlaybookSummaryArgs,
     summary_git => GitSummaryArgs,
     summary_create_file => CreateFileSummaryArgs,
     summary_modify_file => ModifyFileSummaryArgs,
