@@ -1,35 +1,5 @@
 // `diagnostics` 工具参数（原 `tool_params/diagnostics.rs`）。
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct ChangelogDraftArgs {
-    pub since: Option<String>,
-    pub until: Option<String>,
-    #[schemars(range(min = 1, max = 2000))]
-    pub max_commits: Option<u32>,
-    pub group_by: Option<ChangelogGroupBy>,
-    #[schemars(range(min = 1, max = 100))]
-    pub max_tag_sections: Option<u32>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ChangelogGroupBy {
-    Date,
-    Flat,
-    #[serde(rename = "tag_ranges")]
-    TagRanges,
-    Tags,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct LicenseNoticeArgs {
-    pub workspace_only: Option<bool>,
-    #[schemars(range(min = 1, max = 3000))]
-    pub max_crates: Option<u32>,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClarifyQuestionnaireQuestion {

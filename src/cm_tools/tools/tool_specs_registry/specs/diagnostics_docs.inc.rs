@@ -32,22 +32,6 @@
             summary: ToolSummaryKind::Static("Run error playbook suggestions via run_command"),
         },
         ToolSpec {
-            name: "changelog_draft",
-            description: "根据 **git log** 生成 **Markdown 变更说明草稿**（**不写仓库**）。支持按提交日聚合 subject、`flat` 平铺、或 `tag_ranges` 按 semver 降序相邻 tag 分段（`--no-merges`）。可选 since/until 与 max_commits。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::ChangelogDraftArgs>,
-            runner: ToolRunner::Legacy(runner_changelog_draft),
-            summary: ToolSummaryKind::Static("Generate changelog Markdown draft"),
-        },
-        ToolSpec {
-            name: "license_notice",
-            description: "运行 **cargo metadata** 解析依赖图，生成 **crate → license** 的 Markdown 表（**只读**；未在 Cargo.toml 声明的显示占位说明）。可选仅工作区成员、限制行数。非法律意见，发版前需人工核对。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::LicenseNoticeArgs>,
-            runner: ToolRunner::Legacy(runner_license_notice),
-            summary: ToolSummaryKind::Static("Dependency license summary (cargo metadata)"),
-        },
-        ToolSpec {
             name: "repo_overview_sweep",
             description: "只读聚合：可选**项目画像**（与 Web `GET /workspace/profile` 同源：清单与 tokei 等，默认开启，见 `include_project_profile` / `project_profile_max_chars`）；依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
             category: ToolCategory::Development,

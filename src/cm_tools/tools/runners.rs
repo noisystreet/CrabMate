@@ -463,8 +463,6 @@ pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
 
 define_runners_cwd_maxlen! {
     runner_rust_compiler_json => rust_ide::rust_compiler_json,
-    runner_changelog_draft => release_docs::changelog_draft,
-    runner_license_notice => release_docs::license_notice,
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
     runner_run_lints => lint::run,

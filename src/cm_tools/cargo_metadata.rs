@@ -1,6 +1,6 @@
 //! 工作区内 **`cargo metadata`** 子进程构造的单一真源。
 //!
-//! 供 `cargo_metadata` 工具、首轮项目画像 / 依赖摘要、`license_notice` 等共用，避免各处参数分叉。
+//! 供 `cargo_metadata` 工具、首轮项目画像 / 依赖摘要等共用，避免各处参数分叉。
 
 use std::path::Path;
 use std::process::Command;

@@ -34,8 +34,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "self_config_info"
         | "error_output_playbook"
         | "playbook_run_commands"
-        | "changelog_draft"
-        | "license_notice"
         | "long_term_remember"
         | "long_term_forget"
         | "long_term_memory_list"

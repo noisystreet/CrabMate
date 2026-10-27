@@ -257,7 +257,10 @@ fn test_build_tools_names() {
         "find_symbol",
         "find_references",
         "call_graph_sketch",
-        "rust_file_outline",
+        // 整工具删除（2026-10-27）：发版辅助两件改用 `run_command` /
+        // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
+        "changelog_draft",
+        "license_notice",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -276,8 +279,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"self_config_info"));
     assert!(names.contains(&"error_output_playbook"));
     assert!(names.contains(&"playbook_run_commands"));
-    assert!(names.contains(&"changelog_draft"));
-    assert!(names.contains(&"license_notice"));
     assert!(names.contains(&"repo_overview_sweep"));
     assert!(names.contains(&"crate_contract_map"));
     assert!(names.contains(&"docs_health_sweep"));
@@ -681,7 +682,10 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 覆盖率文件）仍返回 `Ok`，属合法答案；只有参数与路径问题才 `Err`。
     // 本轮（A 档第四项）：`skill_manage` 迁为 Typed（−1）—— 内部 8 个 `Result<_, String>`
     // 全部换成 `Result<_, ToolError>`；测试 helper 统一取 `e.message`，故原断言口径不变。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 35 } else { 32 };
+    // 本轮（E 档整工具删除）：`changelog_draft` / `license_notice` 连同实现文件
+    // `release_docs.rs` 一并移除（−2）；平替为 `run_command` /
+    // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 33 } else { 30 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
