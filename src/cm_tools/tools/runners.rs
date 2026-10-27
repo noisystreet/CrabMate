@@ -263,8 +263,11 @@ pub fn runner_cargo_test_try(args: &str, ctx: &ToolContext<'_>) -> Result<String
     cargo_tools::cargo_test_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
-pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::pytest_run(
+/// `pytest_run` 的 Typed runner：pytest 的 `5`（未收集到用例）不算失败，见
+/// `python_tools::PYTEST_OK_EXITS`。
+#[allow(clippy::result_large_err)]
+pub fn runner_pytest_run_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    python_tools::pytest_run_try(
         args,
         ctx.working_dir,
         ctx.command_max_output_len,
@@ -272,8 +275,13 @@ pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_python_snippet_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::python_snippet_run(
+/// `python_snippet_run` 的 Typed runner：任意代码执行，脚本非零退出即 `python_snippet_failed`。
+#[allow(clippy::result_large_err)]
+pub fn runner_python_snippet_run_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    python_tools::python_snippet_run_try(
         args,
         ctx.working_dir,
         ctx.command_max_output_len,
