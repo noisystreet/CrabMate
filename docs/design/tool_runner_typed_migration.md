@@ -28,6 +28,10 @@
 
 ## 2. 现状（2026-10-27）
 
+> **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 23**（Typed 41 含
+> `archive-tools` 侧的 3 个）。§2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
+
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
 
 ### 2.1 按 spec 文件分布
@@ -45,7 +49,7 @@
 | `diagnostics_docs.inc.rs` | 4 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除（见 §4.4） |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
 | `process.inc.rs` | 2 | 0 | 全 Legacy |
-| `schedule.inc.rs` | 2 | 0 | 全 Legacy |
+| `schedule.inc.rs` | 0 | 2 | 已全迁（2026-10-28，`reminder` / `event` 走 `define_runners_cwd_try!`） |
 | `self_config_info.inc.rs` | 0 | 2 | 已全迁（见 §4.8） |
 | `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 2 | 0 | 全 Legacy |
@@ -161,12 +165,22 @@
 | `background_job` | `background_job_tools::background_job(args, host, cwd, max_len)` | 需 `ctx.tool_jobs_host` |
 | `background_job_cancel` | `background_job_tools::background_job_cancel(args, host)` | 写副作用（保持独立工具） |
 
-### 4.7 `schedule.inc.rs`（2）— 形态 `cwd`
+### 4.7 `schedule.inc.rs`（2）— **已迁 2026-10-28**（形态 `cwd`）
 
 | 工具 | 目标实现 | 备注 |
 |---|---|---|
-| `reminder` | `schedule_dispatch::reminder` | action 选择器（5 个动作）；`list` 只读、其余写 `.crabmate/*.json` |
-| `event` | `schedule_dispatch::event` | action 选择器（4 个动作） |
+| ~~`reminder`~~（**已迁**） | `schedule_dispatch::reminder` | action 选择器（5 个动作）；`list` 只读、其余写 `.crabmate/*.json` |
+| ~~`event`~~（**已迁**） | `schedule_dispatch::event` | action 选择器（4 个动作） |
+
+两族共用 `schedule.rs` 的 `ensure_data_dir` / `read_json` / `write_json`，一次改造覆盖两者，
+签名统一为 `Result<String, ToolError>`（runner 侧直接进 `define_runners_cwd_try!`，无需新宏）。
+**迁移动机是静默成功**：dispatch 层新增的三类必填校验（`add` 缺 `title`、缺 `id`）与
+「`id` 未命中」分支的正文都不含「错误 / 失败 / 超时」，`parse_legacy_output` 因此判成
+**`ok: true`**——模型传错参数却拿到「成功」。新增错误码：`invalid_args`（复用）、
+**`reminder_not_found`** / **`event_not_found`**（`InvalidInput`：id 只可能来自调用方，
+模型可先 `list` 自查）、**`schedule_io_failed`** / **`schedule_parse_failed`**（`External`）、
+`schedule_serialize_failed`（`Internal`，由既有 `ends_with("_serialize_failed")` 分支归类）。
+`list` 的「参数 JSON 坏掉 → 退化为无过滤条件」宽容语义**刻意保留**；成功正文逐字未变。
 
 ### 4.8 `self_config_info.inc.rs`（2）— 手写，需 `ctx.cfg`
 
@@ -229,7 +243,7 @@
 | 档 | 族 | 理由 |
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
-| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` / `reminder` / `event` 3 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
+| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
 | **C（高风险，须先设计）** | `gh_*` 5 个、`git`、`http_fetch` / `http_request`、`web_search` / `get_weather`、`background_job*`、`pytest_run` | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
@@ -260,3 +274,4 @@
 | 2026-10-27 | **F 档：`rust_compiler_json` 整工具删除**—— 同样不属迁移档：其 JSON 输出里的 `message.rendered` 就是 cargo 自己的人类可读块，spans / children 只是重复它，净增量仅「逐条编号 + `max_diagnostics` 上限」，与只读的 `cargo_check` 重合。Legacy 33 → **32**（`rust_ide.rs` 去掉约 230 行 cargo/rustc JSON 区块及其 smoke test）。同时从 `builtin_parallel_sync_denied_exact` 移除（它本就被排除并行只读批，因会起 cargo 子进程）。§2.1 与 §4.10 同步降为 1 个。 |
 | 2026-10-27 | **整工具删除：`rust_backtrace_analyze`** —— 不属迁移档：纯计算分析器（`debug_tools.rs` 整文件 100 行、单函数、无配置键、无外部调用），模型可直读 panic 文本，或用 `run_command`（`c++filt` 在默认白名单）+ `code_nav` 定位帧。Legacy 32 → **31**（基线守卫同步 32/29 → 31/28）；同时从 `tests.rs` 的 `build_tools_names` 移除正断言、加入「已移除不应复活」名单。§2.1 表 `frontend_audit_ci.inc.rs` 降为 1，并补上此前缺失的 `exec_package.inc.rs` 行（2 个 `AsyncOnly`），§4.14 同步。 |
 | 2026-10-27 | **整工具删除：`error_output_playbook` / `playbook_run_commands`** —— 两者共用「生态 × 类别」固定查表模板（`error_playbook.rs` 整文件 627 行），建议不是对具体错误的推理：只读那半不执行命令、执行那半又让调用方看不见将要跑什么，模型自行归类后直接调 `run_command` 更透明。Legacy 31 → **29**（基线守卫 29/26）；同步移除 `registry_policy` 的写副作用名单与并行同步拒绝名单、`codebase_semantic_invalidation` 两处、`dev_tag`、`tool_summary` 动态摘要、两个参数结构体、一个白名单过滤测试。同时改写 `AGENTS.md` 与 `tool_calling_evolution.md` 里「缺 CLI 安装提示由 `error_output_playbook` 提供」的旧论证。 |
+| 2026-10-28 | **B 档：`reminder` / `event` 迁为 Typed**（Legacy 25 → **23**，基线守卫同步）。两族共用 `schedule.rs` 的 `ensure_data_dir` / `read_json` / `write_json`，五个 helper 与九个入口一起换成 `Result<_, ToolError>`；runner 侧只是把两行从 `define_runners_cwd!` 挪到已有的 `define_runners_cwd_try!`，**无需新宏**。**迁移动机是四个静默成功分支**：dispatch 层合并时新增的「`add` 缺 `title`」「缺 `id`」两类必填校验，以及 `complete` / `update` / `delete` 的「`未找到提醒/日程：id=…`」，正文都不含「错误 / 失败 / 超时」，被 `parse_legacy_output` 判成 `ok: true` —— 模型传错参数或传错 id 却拿到「成功」。现分别为 `invalid_args` 与 `reminder_not_found` / `event_not_found`。新增错误码：`reminder_not_found` / `event_not_found`（`InvalidInput`，理由是 id 只可能来自调用方，模型可先 `list` 自查，与 `archive_not_found` 的「文件系统状态」口径刻意不同）、`schedule_io_failed` / `schedule_parse_failed`（`External`）、`schedule_serialize_failed`（`Internal`，走既有 `ends_with("_serialize_failed")` 分支）。`ToolError` 顺带加了通用构造器 `with_code`，`workspace` / `external_code` 改为委托它（三份相同实现收敛为一份）。**刻意保留**：`list` 在入参 JSON 坏掉时仍退化为「无过滤条件」（宽容语义不变），成功正文逐字未变，`builtin_write_effect_tools` 无需改动（两者九合一时已登记）。测试：既有 8 个流程/必填用例改为取 `Ok` / `e.code`，新增 `unknown_id_reports_not_found_instead_of_success` / `empty_list_is_success_not_failure` / `io_failure_reports_schedule_io_failed`（后者用「`.crabmate` 建成普通文件」触发，避免 root 下 chmod 造只读目录的 flaky）。 |

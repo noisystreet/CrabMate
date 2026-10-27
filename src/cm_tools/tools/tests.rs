@@ -270,6 +270,10 @@ fn test_build_tools_names() {
         // 「生态 × 类别」固定模板而非对具体错误的推理，模型可直接调 `run_command`。
         "error_output_playbook",
         "playbook_run_commands",
+        // 曾被当成只读：它只是 `cargo_test` + 必填 `test_filter` 的语法糖，却不在
+        // `builtin_write_effect_tools()` 里 —— 于是「执行用户代码」的工具被判成只读，
+        // 能进并行只读批、只读缓存与 `ReviewReadonly` 步。删除比补登记更省事。
+        "rust_test_one",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -278,7 +282,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_clippy"));
     assert!(names.contains(&"cargo_run"));
     assert!(names.contains(&"rust_analyzer"));
-    assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"pytest_run"));
     assert!(names.contains(&"python_snippet_run"));
     assert!(names.contains(&"workflow_execute"));
@@ -671,7 +674,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（整工具删除）：`error_output_playbook` / `playbook_run_commands` 一并退场（−2）—— 两者的
     // 建议都来自「生态 × 类别」固定查表模板，不是对具体错误的推理；模型可自行归类后直接调 `run_command`。
     // 实现文件 `error_playbook.rs` 整文件移除（627 行）。
-    const LEGACY_BASELINE: usize = 25;
+    // 本轮（B 档）：`reminder`（5 个 action）+ `event`（4 个 action）迁为 Typed（−2）——
+    // 顺带修掉四个静默成功分支：dispatch 层的「`add` 缺 title」「缺 id」与「未找到 id」都只返回
+    // 不含「错误 / 失败 / 超时」的裸正文，被 `parse_legacy_output` 判成 **成功**；
+    // 现在分别是 `invalid_args` / `reminder_not_found` / `event_not_found`。
+    const LEGACY_BASELINE: usize = 23;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

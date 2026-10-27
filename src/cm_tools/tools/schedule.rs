@@ -6,6 +6,7 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     AddEventArgs, AddReminderArgs, IdOnlyArgs, ListEventsArgs, ListRemindersArgs, UpdateEventArgs,
     UpdateReminderArgs,
@@ -77,24 +78,47 @@ fn events_path(root: &Path) -> PathBuf {
     data_dir(root).join(EVENTS_FILE)
 }
 
-fn ensure_data_dir(root: &Path) -> Result<(), String> {
+#[allow(clippy::result_large_err)]
+fn ensure_data_dir(root: &Path) -> Result<(), ToolError> {
     let dir = data_dir(root);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("创建数据目录失败：{}（{}）", dir.display(), e))
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ToolError::external_code(
+            "schedule_io_failed",
+            format!("创建数据目录失败：{}（{}）", dir.display(), e),
+        )
+    })
 }
 
-fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T, String> {
+#[allow(clippy::result_large_err)]
+fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T, ToolError> {
     if !path.exists() {
         return Ok(T::default());
     }
-    let s = std::fs::read_to_string(path)
-        .map_err(|e| format!("读取失败：{}（{}）", path.display(), e))?;
-    serde_json::from_str(&s).map_err(|e| format!("解析失败：{}（{}）", path.display(), e))
+    let s = std::fs::read_to_string(path).map_err(|e| {
+        ToolError::external_code(
+            "schedule_io_failed",
+            format!("读取失败：{}（{}）", path.display(), e),
+        )
+    })?;
+    serde_json::from_str(&s).map_err(|e| {
+        ToolError::external_code(
+            "schedule_parse_failed",
+            format!("解析失败：{}（{}）", path.display(), e),
+        )
+    })
 }
 
-fn write_json<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
-    let s = serde_json::to_string_pretty(data).map_err(|e| format!("序列化失败：{}", e))?;
-    std::fs::write(path, s.as_bytes()).map_err(|e| format!("写入失败：{}（{}）", path.display(), e))
+#[allow(clippy::result_large_err)]
+fn write_json<T: Serialize>(path: &Path, data: &T) -> Result<(), ToolError> {
+    let s = serde_json::to_string_pretty(data).map_err(|e| {
+        ToolError::internal_code("schedule_serialize_failed", format!("序列化失败：{}", e))
+    })?;
+    std::fs::write(path, s.as_bytes()).map_err(|e| {
+        ToolError::external_code(
+            "schedule_io_failed",
+            format!("写入失败：{}（{}）", path.display(), e),
+        )
+    })
 }
 
 fn parse_datetime_to_rfc3339(s: &str) -> Option<String> {
@@ -140,14 +164,14 @@ fn parse_rfc3339_utc(s: &str) -> Option<DateTime<Utc>> {
 
 // ---------------- Reminders ----------------
 
-pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
-    let args: AddReminderArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// 新增提醒（`add`）。
+#[allow(clippy::result_large_err)]
+pub fn add_reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: AddReminderArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let title = match args.title.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 title 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 title 参数".to_string())),
     };
     let due_at_raw = args.due_at.as_deref().unwrap_or("").trim();
     let due_at = if due_at_raw.is_empty() {
@@ -158,14 +182,9 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
     // 用于返回消息（title 会在构造 Reminder 时 move 进去）
     let title_for_return = title.clone();
 
-    if let Err(e) = ensure_data_dir(working_dir) {
-        return e;
-    }
+    ensure_data_dir(working_dir)?;
     let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: RemindersData = read_json(&path)?;
     let now = now_rfc3339();
     let item = Reminder {
         id: gen_id("rem"),
@@ -177,26 +196,23 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
     };
     let id = item.id.clone();
     data.items.push(item);
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已添加提醒：{}（id={}）", title_for_return, id)
+    write_json(&path, &data)?;
+    Ok(format!("已添加提醒：{}（id={}）", title_for_return, id))
 }
 
-pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
-    let args: ListRemindersArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+/// 列出提醒（`list`，只读）。
+#[allow(clippy::result_large_err)]
+pub fn list_reminders(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    // 保持既有宽容语义：入参 JSON 坏掉时退化为「无过滤条件」，由 dispatch 层负责严格校验。
+    let v =
+        crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let args: ListRemindersArgs = serde_json::from_value(v)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误: {e}")))?;
     let include_done = args.include_done;
     let future_days = args.future_days.map(|d| d as i64);
 
     let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: RemindersData = read_json(&path)?;
 
     // 按到期时间排序（无到期时间排后）
     data.items.sort_by(|a, b| {
@@ -227,7 +243,7 @@ pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
         })
         .collect();
     if items.is_empty() {
-        return "提醒列表为空。".to_string();
+        return Ok("提醒列表为空。".to_string());
     }
     let mut out = String::new();
     out.push_str(&format!("提醒（{} 条）：\n", items.len()));
@@ -244,23 +260,20 @@ pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
             status, r.title, r.id, due
         ));
     }
-    out.trim_end().to_string()
+    Ok(out.trim_end().to_string())
 }
 
-pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// 标记提醒完成（`complete`）。
+#[allow(clippy::result_large_err)]
+pub fn complete_reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: IdOnlyArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 id 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 id 参数".to_string())),
     };
     let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: RemindersData = read_json(&path)?;
     let mut found = None;
     for r in &mut data.items {
         if r.id == id {
@@ -272,12 +285,15 @@ pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
     }
     let title = match found {
         Some(t) => t,
-        None => return format!("未找到提醒：id={}", id),
+        None => {
+            return Err(ToolError::with_code(
+                "reminder_not_found",
+                format!("未找到提醒：id={}", id),
+            ));
+        }
     };
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已完成提醒：{}（id={}）", title, id)
+    write_json(&path, &data)?;
+    Ok(format!("已完成提醒：{}（id={}）", title, id))
 }
 
 fn apply_update_reminder_fields(
@@ -303,28 +319,25 @@ fn apply_update_reminder_fields(
     r.updated_at = Some(now_rfc3339());
 }
 
-pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
-    let args = match crate::cm_tools::tools::parse_args_typed::<UpdateReminderArgs>(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let f = match parse_update_reminder_fields(&args) {
-        Ok(f) => f,
-        Err(e) => return e,
-    };
+/// 更新提醒字段（`update`）。
+#[allow(clippy::result_large_err)]
+pub fn update_reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args = crate::cm_tools::tools::parse_args_typed::<UpdateReminderArgs>(args_json)
+        .map_err(ToolError::invalid_args)?;
+    let f = parse_update_reminder_fields(&args)?;
     let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: RemindersData = read_json(&path)?;
     let title = match apply_reminder_update(&mut data.items, &f.id, &f.title, &f.due_at, f.done) {
         Some(t) => t,
-        None => return format!("未找到提醒：id={}", f.id),
+        None => {
+            return Err(ToolError::with_code(
+                "reminder_not_found",
+                format!("未找到提醒：id={}", f.id),
+            ));
+        }
     };
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已更新提醒：{}（id={}）", title, f.id)
+    write_json(&path, &data)?;
+    Ok(format!("已更新提醒：{}（id={}）", title, f.id))
 }
 
 /// 提醒更新的规范化字段集合。
@@ -336,12 +349,13 @@ struct UpdateReminderFields {
 }
 
 /// 解析并校验更新字段。
+#[allow(clippy::result_large_err)]
 fn parse_update_reminder_fields(
     args: &UpdateReminderArgs,
-) -> Result<UpdateReminderFields, String> {
+) -> Result<UpdateReminderFields, ToolError> {
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return Err("错误：缺少 id 参数".to_string()),
+        _ => return Err(ToolError::invalid_args("错误：缺少 id 参数".to_string())),
     };
     let title = args
         .title
@@ -352,7 +366,9 @@ fn parse_update_reminder_fields(
     let due_at = args.due_at.as_deref().map(|s| s.trim().to_string());
     let done = args.done;
     if title.is_none() && due_at.is_none() && done.is_none() {
-        return Err("错误：至少提供 title/due_at/done 中的一个用于更新".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：至少提供 title/due_at/done 中的一个用于更新".to_string(),
+        ));
     }
     Ok(UpdateReminderFields {
         id,
@@ -379,68 +395,57 @@ fn apply_reminder_update(
     None
 }
 
-pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// 删除提醒（`delete`）。
+#[allow(clippy::result_large_err)]
+pub fn delete_reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: IdOnlyArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 id 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 id 参数".to_string())),
     };
     let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: RemindersData = read_json(&path)?;
     let before = data.items.len();
     data.items.retain(|r| r.id != id);
     if data.items.len() == before {
-        return format!("未找到提醒：id={}", id);
+        return Err(ToolError::with_code(
+            "reminder_not_found",
+            format!("未找到提醒：id={}", id),
+        ));
     }
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已删除提醒：id={}", id)
+    write_json(&path, &data)?;
+    Ok(format!("已删除提醒：id={}", id))
 }
 
 // ---------------- Events ----------------
 
-pub fn add_event(args_json: &str, working_dir: &Path) -> String {
-    let args = match crate::cm_tools::tools::parse_args_typed::<AddEventArgs>(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let item = match prepare_new_event(&args) {
-        Ok(e) => e,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_data_dir(working_dir) {
-        return e;
-    }
+/// 新增日程（`add`）。
+#[allow(clippy::result_large_err)]
+pub fn add_event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args = crate::cm_tools::tools::parse_args_typed::<AddEventArgs>(args_json)
+        .map_err(ToolError::invalid_args)?;
+    let item = prepare_new_event(&args)?;
+    ensure_data_dir(working_dir)?;
     let path = events_path(working_dir);
-    let mut data: EventsData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: EventsData = read_json(&path)?;
     let id = item.id.clone();
     let title_for_return = item.title.clone();
     data.items.push(item);
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已添加日程：{}（id={}）", title_for_return, id)
+    write_json(&path, &data)?;
+    Ok(format!("已添加日程：{}（id={}）", title_for_return, id))
 }
 
 /// 解析并校验新建日程字段，构造 `Event`（含时间归一化）。
-fn prepare_new_event(args: &AddEventArgs) -> Result<Event, String> {
+#[allow(clippy::result_large_err)]
+fn prepare_new_event(args: &AddEventArgs) -> Result<Event, ToolError> {
     let title = match args.title.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return Err("错误：缺少 title 参数".to_string()),
+        _ => return Err(ToolError::invalid_args("错误：缺少 title 参数".to_string())),
     };
     let start_at_raw = match args.start_at.trim() {
         s if !s.is_empty() => s,
-        _ => return Err("错误：缺少 start_at 参数".to_string()),
+        _ => return Err(ToolError::invalid_args("错误：缺少 start_at 参数".to_string())),
     };
     let start_at =
         parse_datetime_to_rfc3339(start_at_raw).unwrap_or_else(|| start_at_raw.to_string());
@@ -474,21 +479,20 @@ fn prepare_new_event(args: &AddEventArgs) -> Result<Event, String> {
     })
 }
 
-pub fn list_events(args_json: &str, working_dir: &Path) -> String {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
-    let args: ListEventsArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+/// 列出日程（`list`，只读）。
+#[allow(clippy::result_large_err)]
+pub fn list_events(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    // 保持既有宽容语义：入参 JSON 坏掉时退化为「无过滤条件」，由 dispatch 层负责严格校验。
+    let v =
+        crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let args: ListEventsArgs = serde_json::from_value(v)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误: {e}")))?;
     let year = args.year;
     let month = args.month;
     let future_days = args.future_days.map(|d| d as i64);
 
     let path = events_path(working_dir);
-    let mut data: EventsData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: EventsData = read_json(&path)?;
 
     // 按开始时间排序（无法解析的排后）
     data.items.sort_by(|a, b| {
@@ -525,7 +529,7 @@ pub fn list_events(args_json: &str, working_dir: &Path) -> String {
         .collect();
 
     if items.is_empty() {
-        return "日程列表为空。".to_string();
+        return Ok("日程列表为空。".to_string());
     }
     let mut out = String::new();
     out.push_str(&format!("日程（{} 条）：\n", items.len()));
@@ -546,32 +550,30 @@ pub fn list_events(args_json: &str, working_dir: &Path) -> String {
             e.title, e.id, when, loc
         ));
     }
-    out.trim_end().to_string()
+    Ok(out.trim_end().to_string())
 }
 
-pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
-    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// 删除日程（`delete`）。
+#[allow(clippy::result_large_err)]
+pub fn delete_event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: IdOnlyArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 id 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 id 参数".to_string())),
     };
     let path = events_path(working_dir);
-    let mut data: EventsData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: EventsData = read_json(&path)?;
     let before = data.items.len();
     data.items.retain(|e| e.id != id);
     if data.items.len() == before {
-        return format!("未找到日程：id={}", id);
+        return Err(ToolError::with_code(
+            "event_not_found",
+            format!("未找到日程：id={}", id),
+        ));
     }
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已删除日程：id={}", id)
+    write_json(&path, &data)?;
+    Ok(format!("已删除日程：id={}", id))
 }
 
 struct EventUpdateFields {
@@ -638,34 +640,36 @@ fn apply_event_clearable_text(
     }
 }
 
-pub fn update_event(args_json: &str, working_dir: &Path) -> String {
-    let args = match crate::cm_tools::tools::parse_args_typed::<UpdateEventArgs>(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// 更新日程字段（`update`）。
+#[allow(clippy::result_large_err)]
+pub fn update_event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args = crate::cm_tools::tools::parse_args_typed::<UpdateEventArgs>(args_json)
+        .map_err(ToolError::invalid_args)?;
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 id 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 id 参数".to_string())),
     };
     let patch = event_update_fields_from_args(&args);
 
     if !event_update_fields_any_set(&patch) {
-        return "错误：至少提供 title/start_at/end_at/location/notes 中的一个用于更新".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：至少提供 title/start_at/end_at/location/notes 中的一个用于更新".to_string(),
+        ));
     }
 
     let path = events_path(working_dir);
-    let mut data: EventsData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
+    let mut data: EventsData = read_json(&path)?;
     let title = match apply_event_update(&mut data.items, &id, &patch) {
         Some(t) => t,
-        None => return format!("未找到日程：id={}", id),
+        None => {
+            return Err(ToolError::with_code(
+                "event_not_found",
+                format!("未找到日程：id={}", id),
+            ));
+        }
     };
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已更新日程：{}（id={}）", title, id)
+    write_json(&path, &data)?;
+    Ok(format!("已更新日程：{}（id={}）", title, id))
 }
 
 /// 在 `items` 中按 `id` 应用更新并返回新标题；未命中返回 `None`。
@@ -709,40 +713,43 @@ mod tests {
     #[test]
     fn reminder_add_list_complete_update_delete_flow() {
         let dir = make_temp_dir();
-        let out = add_reminder(r#"{"title":"买牛奶"}"#, &dir);
+        let out = add_reminder(r#"{"title":"买牛奶"}"#, &dir).expect("add_reminder");
         assert!(out.contains("已添加提醒"));
 
-        let out = list_reminders(r#"{}"#, &dir);
+        let out = list_reminders(r#"{}"#, &dir).expect("list_reminders");
         assert!(out.contains("买牛奶"));
 
         // extract id from file
-        let data: RemindersData = read_json(&reminders_path(&dir)).unwrap();
+        let data: RemindersData = read_json(&reminders_path(&dir)).expect("读提醒文件");
         assert_eq!(data.items.len(), 1);
         let id = data.items[0].id.clone();
 
-        let out = complete_reminder(&serde_json::json!({ "id": id }).to_string(), &dir);
+        let out = complete_reminder(&serde_json::json!({ "id": id }).to_string(), &dir)
+            .expect("complete_reminder");
         assert!(out.contains("已完成提醒"));
 
         // 默认不包含已完成
-        let out = list_reminders(r#"{}"#, &dir);
+        let out = list_reminders(r#"{}"#, &dir).expect("list_reminders");
         assert!(!out.contains("买牛奶"));
 
-        let out = list_reminders(r#"{"include_done":true}"#, &dir);
+        let out = list_reminders(r#"{"include_done":true}"#, &dir).expect("list_reminders");
         assert!(out.contains("买牛奶"));
 
         // update title + clear due_at
-        let data: RemindersData = read_json(&reminders_path(&dir)).unwrap();
+        let data: RemindersData = read_json(&reminders_path(&dir)).expect("读提醒文件");
         let id = data.items[0].id.clone();
         let out = update_reminder(
             &serde_json::json!({ "id": id, "title": "买燕麦奶", "due_at": "" }).to_string(),
             &dir,
-        );
+        )
+        .expect("update_reminder");
         assert!(out.contains("已更新提醒"));
 
         let out = delete_reminder(
             &serde_json::json!({ "id": data.items[0].id }).to_string(),
             &dir,
-        );
+        )
+        .expect("delete_reminder");
         assert!(out.contains("已删除提醒"));
 
         cleanup_dir(&dir);
@@ -756,20 +763,23 @@ mod tests {
         let soon = (now + chrono::Duration::days(1)).to_rfc3339();
         let later = (now + chrono::Duration::days(10)).to_rfc3339();
 
-        let _ = add_reminder(
+        add_reminder(
             &serde_json::json!({ "title": "过期", "due_at": past }).to_string(),
             &dir,
-        );
-        let _ = add_reminder(
+        )
+        .expect("add_reminder 过期");
+        add_reminder(
             &serde_json::json!({ "title": "近期", "due_at": soon }).to_string(),
             &dir,
-        );
-        let _ = add_reminder(
+        )
+        .expect("add_reminder 近期");
+        add_reminder(
             &serde_json::json!({ "title": "远期", "due_at": later }).to_string(),
             &dir,
-        );
+        )
+        .expect("add_reminder 远期");
 
-        let out = list_reminders(r#"{"future_days":3}"#, &dir);
+        let out = list_reminders(r#"{"future_days":3}"#, &dir).expect("list_reminders");
         assert!(out.contains("近期"));
         assert!(!out.contains("过期"));
         assert!(!out.contains("远期"));
@@ -794,33 +804,54 @@ mod tests {
             })
             .to_string(),
             &dir,
-        );
+        )
+        .expect("add_event");
         assert!(out.contains("已添加日程"));
 
-        let data: EventsData = read_json(&events_path(&dir)).unwrap();
+        let data: EventsData = read_json(&events_path(&dir)).expect("读日程文件");
         assert_eq!(data.items.len(), 1);
         let id = data.items[0].id.clone();
 
         // future filter should include
-        let out = list_events(r#"{"future_days":3}"#, &dir);
+        let out = list_events(r#"{"future_days":3}"#, &dir).expect("list_events");
         assert!(out.contains("开会"));
 
         // clear end_at + notes
         let out = update_event(
             &serde_json::json!({ "id": id, "end_at": "", "notes": "" }).to_string(),
             &dir,
-        );
+        )
+        .expect("update_event");
         assert!(out.contains("已更新日程"));
-        let data: EventsData = read_json(&events_path(&dir)).unwrap();
+        let data: EventsData = read_json(&events_path(&dir)).expect("读日程文件");
         assert!(data.items[0].end_at.is_none());
         assert!(data.items[0].notes.is_none());
 
         let out = delete_event(
             &serde_json::json!({ "id": data.items[0].id }).to_string(),
             &dir,
-        );
+        )
+        .expect("delete_event");
         assert!(out.contains("已删除日程"));
 
+        cleanup_dir(&dir);
+    }
+
+    #[test]
+    fn io_failure_reports_schedule_io_failed() {
+        let dir = make_temp_dir();
+        // 让 `.crabmate` 是普通文件：`create_dir_all` 必然失败，与运行身份无关
+        // （用 chmod 造只读目录在 root 下不生效，会变成 flaky 测试）。
+        std::fs::write(dir.join(".crabmate"), b"not a dir").expect("写占位文件");
+
+        let err = add_reminder(r#"{"title":"x"}"#, &dir).expect_err("建目录失败应为 Err");
+        assert_eq!(err.code, "schedule_io_failed");
+        assert_eq!(
+            err.category,
+            crate::cm_tools::tool_result::ToolFailureCategory::External
+        );
+
+        let _ = std::fs::remove_file(dir.join(".crabmate"));
         cleanup_dir(&dir);
     }
 }

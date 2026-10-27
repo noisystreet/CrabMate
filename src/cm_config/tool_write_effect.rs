@@ -52,7 +52,12 @@ pub fn builtin_write_effect_tools() -> &'static HashSet<String> {
             // 合并后整工具算写（见模块文档）。
             "structured",
             // 解压 / 打包都会往工作区写文件；`archive_list` 只读，不列入。
+            // 这两个工具只在 `archive-tools` feature 下注册（`SPECS_ARCHIVE` 受 gate），
+            // 名单必须同步 gate —— 否则默认构建里「名单有、注册表无」会被
+            // `write_effect_list_matches_registered_tools` 判成死项（它检查的正是二者一致）。
+            #[cfg(feature = "archive-tools")]
             "archive_pack",
+            #[cfg(feature = "archive-tools")]
             "archive_unpack",
             "long_term_remember",
             "long_term_forget",
