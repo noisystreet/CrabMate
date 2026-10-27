@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_tools::tool_result::ToolError;
 
 /// `codebase_semantic_search` 执行面。
 pub trait CodebaseSemanticToolHost: Send + Sync {
@@ -10,8 +11,18 @@ pub trait CodebaseSemanticToolHost: Send + Sync {
 }
 
 /// `long_term_*` / `summarize_experience` 执行面。
+///
+/// 返回 [`ToolError`] 而非纯文本：这些工具的失败（参数 JSON 无效、内容为空/过短、
+/// 记忆库 IO 失败）须显式透传，不能靠正文关键词推断（历史实现里 `参数 JSON 无效: …`
+/// 没有「错误：」前缀，会被启发式判成**成功**）。
 pub trait LongTermMemoryToolHost: Send + Sync {
-    fn dispatch(&self, tool_name: &str, args_json: &str, cfg: &AgentConfig) -> String;
+    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    fn dispatch(
+        &self,
+        tool_name: &str,
+        args_json: &str,
+        cfg: &AgentConfig,
+    ) -> Result<String, ToolError>;
 }
 
 /// `background_job_status` / `background_job_list` 执行面（只读查询后台任务注册表）。

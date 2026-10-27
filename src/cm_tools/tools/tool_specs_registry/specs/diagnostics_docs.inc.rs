@@ -68,7 +68,7 @@
             description: "将短文本**显式**写入本会话长期记忆（SQLite，与自动回合索引分源）；可选 `tags` 与 `ttl_secs`（0=不过期）。须启用 `long_term_memory_enabled` 且本会话已挂载记忆库。勿写入密钥或隐私原文。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermRememberArgs>,
-            runner: ToolRunner::Legacy(runner_long_term_remember),
+            runner: ToolRunner::Typed(runner_long_term_remember_try),
             summary: ToolSummaryKind::Static("Explicit long-term memory write"),
         },
         ToolSpec {
@@ -76,7 +76,7 @@
             description: "按 `memory_id` 或正文精确匹配删除长期记忆条目；可选 `explicit_only` 仅删显式记忆。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermForgetArgs>,
-            runner: ToolRunner::Legacy(runner_long_term_forget),
+            runner: ToolRunner::Typed(runner_long_term_forget_try),
             summary: ToolSummaryKind::Static("Delete long-term memory entry"),
         },
         ToolSpec {
@@ -84,7 +84,7 @@
             description: "列出本会话最近若干条未过期记忆（含 id、来源、过期时间与标签摘要）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermMemoryListArgs>,
-            runner: ToolRunner::Legacy(runner_long_term_memory_list),
+            runner: ToolRunner::Typed(runner_long_term_memory_list_try),
             summary: ToolSummaryKind::Static("List recent long-term memory rows"),
         },
         ToolSpec {
@@ -92,7 +92,7 @@
             description: "将本轮对话中提炼出的核心经验写入长期记忆。适用于：解决了一个有价值的问题、发现了一个通用模式、记录了一个重要踩坑。模型应自主判断何时调用，避免滥用。须启用 long_term_memory_enabled。经验文本应简洁（1-3 句话），聚焦\"怎么做\"和\"为什么有效\"，避免复述原问题。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::SummarizeExperienceArgs>,
-            runner: ToolRunner::Legacy(runner_summarize_experience),
+            runner: ToolRunner::Typed(runner_summarize_experience_try),
             summary: ToolSummaryKind::Static("Summarize and save useful experience to long-term memory"),
         },
 ]

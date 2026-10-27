@@ -330,29 +330,57 @@ pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> Str
     host.run_search(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
-fn dispatch_long_term_tool(name: &str, args: &str, ctx: &ToolContext<'_>) -> String {
+/// `long_term_*` / `summarize_experience` 共用入口。
+///
+/// 缺 `cfg` / 缺长期记忆运行时统一归 `tool_context_incomplete`（执行环境未注入，
+/// 非调用方参数问题）；其余错误由 host 显式返回，不再从正文推断。
+#[allow(clippy::result_large_err)]
+fn dispatch_long_term_tool(
+    name: &str,
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     let Some(cfg) = ctx.cfg else {
-        return "错误：工具上下文缺少 AgentConfig".to_string();
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：工具上下文缺少 AgentConfig".to_string(),
+        ));
     };
     let Some(host) = ctx.long_term_memory_host else {
-        return "错误：当前会话未挂载长期记忆运行时（或未启用持久化）".to_string();
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：当前会话未挂载长期记忆运行时（或未启用持久化）".to_string(),
+        ));
     };
     host.dispatch(name, args, cfg)
 }
 
-pub fn runner_long_term_remember(args: &str, ctx: &ToolContext<'_>) -> String {
+#[allow(clippy::result_large_err)]
+pub fn runner_long_term_remember_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     dispatch_long_term_tool("long_term_remember", args, ctx)
 }
 
-pub fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
+#[allow(clippy::result_large_err)]
+pub fn runner_summarize_experience_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     dispatch_long_term_tool("summarize_experience", args, ctx)
 }
 
-pub fn runner_long_term_forget(args: &str, ctx: &ToolContext<'_>) -> String {
+#[allow(clippy::result_large_err)]
+pub fn runner_long_term_forget_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     dispatch_long_term_tool("long_term_forget", args, ctx)
 }
 
-pub fn runner_long_term_memory_list(args: &str, ctx: &ToolContext<'_>) -> String {
+#[allow(clippy::result_large_err)]
+pub fn runner_long_term_memory_list_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     dispatch_long_term_tool("long_term_memory_list", args, ctx)
 }
 
