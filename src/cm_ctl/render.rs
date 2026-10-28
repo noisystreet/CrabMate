@@ -124,8 +124,16 @@ fn identity_str(p: &Probe) -> &str {
     }
 }
 
+/// 预检提示：走 stderr，不污染 `--json` 的 stdout。
+pub fn warn(items: &[String]) {
+    for w in items {
+        eprintln!("WARN: {w}");
+    }
+}
+
 /// `up` 输出。
 pub fn up(out: &UpOutcome) {
+    warn(&out.warnings);
     let rec = &out.record;
     if out.already_running {
         println!(

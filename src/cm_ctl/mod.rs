@@ -15,6 +15,7 @@ pub(crate) mod lock;
 pub(crate) mod ops;
 pub(crate) mod paths;
 pub(crate) mod port_pool;
+pub(crate) mod preflight;
 pub(crate) mod probe;
 pub(crate) mod readiness;
 pub(crate) mod record;

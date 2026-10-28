@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::CtlError;
+use super::paths;
 
 /// 默认透传的环境变量（进程运行必需 + 代理/CA 这类高频漏项）。
 ///
@@ -81,6 +82,9 @@ pub fn build_env(
 pub struct SpawnSpec {
     pub workspace: PathBuf,
     /// 交给子 serve 的 `--config`；`None` 表示让 serve 按自身 XDG 顺序解析。
+    ///
+    /// 相对路径在 spawn 时按 **ctl 的 cwd** 绝对化后再交给子进程：子进程 cwd 是
+    /// 实例目录，原样传 `rel.toml` 会解析到 `<实例目录>/rel.toml`。
     pub serve_config: Option<PathBuf>,
     pub port: u16,
     /// `--yes`（跳过命令白名单）：必须由实例声明显式给出，绝不隐式继承。
@@ -112,13 +116,13 @@ impl Spawned {
     }
 }
 
-fn build_args(spec: &SpawnSpec) -> Vec<String> {
+fn build_args(spec: &SpawnSpec, serve_config: Option<&Path>) -> Vec<String> {
     let mut args: Vec<String> = vec!["serve".to_string()];
     args.push("--port".to_string());
     args.push(spec.port.to_string());
     args.push("--workspace".to_string());
     args.push(spec.workspace.display().to_string());
-    if let Some(cfg) = &spec.serve_config {
+    if let Some(cfg) = serve_config {
         args.push("--config".to_string());
         args.push(cfg.display().to_string());
     }
@@ -165,21 +169,39 @@ fn open_log(path: &Path) -> Result<File, CtlError> {
     Ok(f)
 }
 
+/// 子进程的 stdout/stderr：前台模式继承调用方，脱管模式重定向到实例日志。
+///
+/// 与 [`resolve_serve_config`] 同理独立成函数，替 `spawn_serve` 守住 CCN ≤ 10。
+fn open_stdio(spec: &SpawnSpec) -> Result<(Stdio, Stdio), CtlError> {
+    if spec.inherit_io {
+        return Ok((Stdio::inherit(), Stdio::inherit()));
+    }
+    let log = open_log(&spec.log_path)?;
+    let log_err = log.try_clone().map_err(|e| {
+        CtlError::general("log_unwritable", format!("复制日志句柄失败：{e}"))
+    })?;
+    Ok((Stdio::from(log), Stdio::from(log_err)))
+}
+
+/// 交给子进程的 `--config`：相对路径按 **ctl 的 cwd** 绝对化（子进程 cwd 是实例目录）。
+///
+/// 独立成函数而非内联：`spawn_serve` 已经装满早退分支，内联这层 `match` 会把它的
+/// CCN 推过 10（仓库上限）。
+fn resolve_serve_config(spec: &SpawnSpec) -> Result<Option<PathBuf>, CtlError> {
+    match spec.serve_config.as_deref() {
+        Some(p) => Ok(Some(paths::absolutize(&p.to_string_lossy())?)),
+        None => Ok(None),
+    }
+}
+
 /// 启动一个 `serve` 子进程（脱管：ctl 退出后继续运行）。
 pub fn spawn_serve(spec: &SpawnSpec) -> Result<Spawned, CtlError> {
     let exe = std::env::current_exe().map_err(|e| {
         CtlError::general("spawn_failed", format!("无法定位当前可执行文件：{e}"))
     })?;
     let (env, env_keys) = build_env(&spec.env)?;
-    let (stdout, stderr) = if spec.inherit_io {
-        (Stdio::inherit(), Stdio::inherit())
-    } else {
-        let log = open_log(&spec.log_path)?;
-        let log_err = log.try_clone().map_err(|e| {
-            CtlError::general("log_unwritable", format!("复制日志句柄失败：{e}"))
-        })?;
-        (Stdio::from(log), Stdio::from(log_err))
-    };
+    let serve_config = resolve_serve_config(spec)?;
+    let (stdout, stderr) = open_stdio(spec)?;
 
     std::fs::create_dir_all(&spec.home).map_err(|e| {
         CtlError::general(
@@ -202,7 +224,7 @@ pub fn spawn_serve(spec: &SpawnSpec) -> Result<Spawned, CtlError> {
     }
 
     let mut cmd = Command::new(exe);
-    cmd.args(build_args(spec))
+    cmd.args(build_args(spec, serve_config.as_deref()))
         .current_dir(&spec.home)
         .env_clear()
         .envs(&env)
@@ -247,7 +269,7 @@ mod tests {
             inherit_io: false,
             own_process_group: true,
         };
-        let args = build_args(&spec);
+        let args = build_args(&spec, spec.serve_config.as_deref());
         assert_eq!(args[0], "serve");
         assert!(args.windows(2).any(|w| w == ["--port", "8080"]));
         assert!(args.windows(2).any(|w| w == ["--workspace", "/w"]));
@@ -270,7 +292,7 @@ mod tests {
             inherit_io: false,
             own_process_group: true,
         };
-        let args = build_args(&spec);
+        let args = build_args(&spec, spec.serve_config.as_deref());
         assert!(!args.iter().any(|a| a == "--config"), "不应隐式传 --config");
         assert!(!args.iter().any(|a| a == "--yes"), "不应隐式开 --yes");
     }

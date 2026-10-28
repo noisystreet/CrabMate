@@ -10,6 +10,7 @@ use super::identity;
 use super::lock;
 use super::paths::{self, CtlPaths};
 use super::port_pool::PortPool;
+use super::preflight;
 use super::probe::{self, Observed, Probe};
 use super::readiness::{self, WaitOutcome};
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
@@ -68,6 +69,9 @@ pub struct UpOutcome {
     /// 已有健康实例、本次未重复启动。
     pub already_running: bool,
     pub observed: Observed,
+    /// 预检提示（如「未指定 --serve-config」）：可继续，但值得让用户看见。
+    /// 由输出层打印，`ops` 自身不打印。
+    pub warnings: Vec<String>,
 }
 
 /// `down` 结果。
@@ -200,6 +204,7 @@ fn up_once(
     args: &UpArgs,
     workspace: &Path,
     port: u16,
+    warnings: &[String],
 ) -> Result<UpOutcome, CtlError> {
     let rec = spawn_and_record(ctx, args, workspace, port)?;
 
@@ -209,6 +214,7 @@ fn up_once(
             observed: Observed::Ready,
             record: rec,
             already_running: true,
+            warnings: warnings.to_vec(),
         });
     }
 
@@ -221,6 +227,7 @@ fn up_once(
                 record: rec,
                 already_running: false,
                 observed: Observed::Ready,
+                warnings: warnings.to_vec(),
             })
         }
         WaitOutcome::Timeout => {
@@ -236,6 +243,7 @@ fn up_once(
                 record: rec,
                 already_running: false,
                 observed: Observed::Starting,
+                warnings: warnings.to_vec(),
             })
         }
         WaitOutcome::Exited => {
@@ -267,7 +275,12 @@ enum Launch {
     /// 已存在且健康：直接复用，不再 spawn。
     Existing(Box<InstanceRecord>),
     /// 需要启动。
-    New { workspace: PathBuf, port: u16 },
+    New {
+        workspace: PathBuf,
+        port: u16,
+        /// 预检提示，透传到 `UpOutcome` 由输出层打印。
+        warnings: Vec<String>,
+    },
 }
 
 /// 校验参数、判幂等、选定端口（不含 spawn；拆出来压 `up` 的复杂度）。
@@ -290,28 +303,40 @@ fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
         Some(p) => p,
         None => ctx.pool.first_free()?,
     };
-    Ok(Launch::New { workspace, port })
+    // 友好预检：越界才阻断（`workspace_out_of_roots`），未给 `--serve-config` 只提示。
+    // 这不是授权判断——预检通过不等于 serve 会接受该 workspace，且绝不自动加白。
+    let pf = preflight::check(args.serve_config.as_deref(), &workspace)?;
+    Ok(Launch::New {
+        workspace,
+        port,
+        warnings: pf.warnings,
+    })
 }
 
 /// 启动实例；同名且健康时幂等返回。
 pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
-    let (workspace, port) = match prepare_up(ctx, args)? {
+    let (workspace, port, warnings) = match prepare_up(ctx, args)? {
         Launch::Existing(rec) => {
             return Ok(UpOutcome {
                 record: *rec,
                 already_running: true,
                 observed: Observed::Ready,
+                warnings: Vec::new(),
             });
         }
-        Launch::New { workspace, port } => (workspace, port),
+        Launch::New {
+            workspace,
+            port,
+            warnings,
+        } => (workspace, port, warnings),
     };
 
-    match up_once(ctx, args, &workspace, port) {
+    match up_once(ctx, args, &workspace, port, &warnings) {
         Ok(out) => Ok(out),
         // 端口竞争：池内顺延重试一次，仍失败则把两个原因都说清
         Err(e) if e.error_code == "readiness_failed" && args.port.is_none() => {
             let retry = ctx.pool.next_free_from(port)?;
-            up_once(ctx, args, &workspace, retry).map_err(|e2| {
+            up_once(ctx, args, &workspace, retry, &warnings).map_err(|e2| {
                 CtlError::general(
                     "port_race",
                     format!("端口 {port} 启动失败，顺延到 {retry} 仍失败：{}", e2.message),
