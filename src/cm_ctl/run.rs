@@ -11,6 +11,7 @@ use crate::config::cli::ctl::{CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RunCmd, UpCmd
 use super::identity;
 use super::ops::{self, Ctx, UpArgs, DEFAULT_GRACE};
 use super::paths;
+use super::preflight;
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::render;
 use super::spawn::{self, SpawnSpec};
@@ -116,7 +117,7 @@ fn prepare_run(
     ctx: &Ctx,
     c: &RunCmd,
     workspace_cli: Option<&str>,
-) -> Result<(PathBuf, u16), CtlError> {
+) -> Result<(PathBuf, u16, Vec<String>), CtlError> {
     paths::validate_name(&c.name)?;
     let workspace = paths::absolutize(&require_workspace(workspace_cli, "ctl run")?)?;
     if !workspace.is_dir() {
@@ -131,7 +132,9 @@ fn prepare_run(
         Some(p) => p,
         None => ctx.pool.first_free()?,
     };
-    Ok((workspace, port))
+    // 与 `up` 同一套友好预检（越界才阻断）；`run` 是前台模式，预检同样适用。
+    let pf = preflight::check(c.serve_config.as_deref(), &workspace)?;
+    Ok((workspace, port, pf.warnings))
 }
 
 fn foreground_spec(
@@ -196,7 +199,8 @@ fn mark_run_stopped(path: &std::path::Path) -> Result<(), CtlError> {
 
 /// 前台运行：与 `up` 的区别是**不脱管**——ctl 阻塞到子进程退出。
 fn run_foreground(ctx: &Ctx, c: &RunCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
-    let (workspace, port) = prepare_run(ctx, c, workspace_cli)?;
+    let (workspace, port, warnings) = prepare_run(ctx, c, workspace_cli)?;
+    render::warn(&warnings);
     let spec = foreground_spec(ctx, c, &workspace, port);
     let mut spawned = spawn::spawn_serve(&spec)?;
     let pid = spawned.pid();

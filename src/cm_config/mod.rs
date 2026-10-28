@@ -29,6 +29,7 @@ mod workspace_roots;
 mod xdg;
 
 pub use web_cors::{DEFAULT_SHELL_CORS_ORIGINS, resolve_web_cors_allowed_origins};
+pub use workspace_roots::is_within_allowed_roots;
 
 pub use final_plan_requirement_mode::FinalPlanRequirementMode;
 pub use gateway_hints::{
