@@ -55,17 +55,6 @@ pub fn tool_spec_requires_fastembed(name: &str) -> bool {
 // 这里按调用形态各定义一个宏；新增同类工具时只需在对应表中增一行 `runner_x => module::fn`。
 // 注意：形态相近（签名一致）的表若写错配对，编译器无法发现，新增条目时务必核对右侧路径。
 
-/// 形态：`f(args, working_dir, command_max_output_len)`。
-macro_rules! define_runners_cwd_maxlen {
-    ($( $runner:ident => $func:path ),* $(,)?) => {
-        $(
-            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
-                $func(args, ctx.working_dir, ctx.command_max_output_len)
-            }
-        )*
-    };
-}
-
 /// 形态：`f(args, working_dir, command_max_output_len) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
 macro_rules! define_runners_cwd_maxlen_try {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -150,11 +139,12 @@ macro_rules! define_runners_paths_ctx_try {
     };
 }
 
-/// 形态：`f(args)`（不使用 `ctx`）。
-macro_rules! define_runners_args_only {
+/// 形态：`f(args) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生；不使用 `ctx`）。
+macro_rules! define_runners_args_only_try {
     ($( $runner:ident => $func:path ),* $(,)?) => {
         $(
-            pub fn $runner(args: &str, _ctx: &ToolContext<'_>) -> String {
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
                 $func(args)
             }
         )*
@@ -190,12 +180,17 @@ macro_rules! gh_runner_try {
 
 /// 编译期 smoke：用真实的 `_try` 实现展开 Typed 孪生宏，防止签名漂移后宏静默失效。
 ///
-/// args-only 形态尚无返回 `Result` 的实现，对应宏留到该族迁移 PR 再引入
-/// （`git` 族已于 `git` 迁 `Typed` 时挂上）。
+/// 每种形态都挂一个真实实现；`git` 族随 `git` 迁 `Typed`、args-only 形态随
+/// `present_clarification_questionnaire` 迁 `Typed` 时补上。
 #[cfg(test)]
 #[allow(dead_code)]
 mod try_macro_typecheck {
     use super::*;
+
+    define_runners_args_only_try! {
+        runner_present_clarification_questionnaire_try_smoke
+            => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
+    }
 
     define_runners_paths_ctx_try! {
         runner_read_file_try_smoke => crate::cm_tools::tools::file::read_file_try,
@@ -256,6 +251,7 @@ define_runners_cwd_maxlen_try! {
     runner_dependency_graph_try => code_metrics::dependency_graph_try,
     runner_coverage_report_try => code_metrics::coverage_report_try,
     runner_repo_overview_sweep_try => repo_overview::repo_overview_sweep_try,
+    runner_docs_health_sweep_try => docs_health_sweep::docs_health_sweep_try,
 }
 
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
@@ -491,12 +487,6 @@ pub fn runner_crate_contract_map_try(
     contract_map::crate_contract_map_try(args, ctx)
 }
 
-// ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
-
-define_runners_cwd_maxlen! {
-    runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
-}
-
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
 
 define_runners_cwd_ctx_try! {
@@ -565,8 +555,9 @@ pub fn runner_rust_analyzer_try(args: &str, ctx: &ToolContext<'_>) -> Result<Str
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
 
-define_runners_args_only! {
-    runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
+define_runners_args_only_try! {
+    runner_present_clarification_questionnaire_try
+        => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
 }
 
 // ── misc_basic 族（args-only 形态；仅 4 个条目，手写具名 runner，不抽宏）──

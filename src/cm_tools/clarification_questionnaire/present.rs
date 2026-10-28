@@ -5,6 +5,7 @@ use super::{
     MIN_QUESTIONS,
     id_validation::{valid_question_id, valid_questionnaire_id},
 };
+use crate::cm_tools::tool_result::ToolError;
 
 #[derive(Debug, Deserialize)]
 struct PresentArgs {
@@ -129,35 +130,41 @@ pub fn parse_present_clarification_body(
 }
 
 /// 内置工具 `present_clarification_questionnaire`：校验参数；Web 流式下 `execute_tools` 会据此补发 SSE。
-pub fn run_present_clarification_questionnaire(args_json: &str) -> String {
-    match parse_present_clarification_body(args_json) {
-        Ok(body) => {
-            let mut lines: Vec<String> = Vec::new();
-            lines.push("退出码：0".to_string());
-            lines.push(format!(
-                "已登记澄清问卷 `{}`（共 {} 题）。Web 客户端将收到 `clarification_questionnaire` 控制面事件；用户下一条消息请附带 clarify_questionnaire_answers。",
-                body.questionnaire_id,
-                body.questions.len()
-            ));
-            lines.push("---".to_string());
-            lines.push(format!("**说明**：{}", body.intro));
-            for q in &body.questions {
-                let req = if q.required == Some(true) {
-                    "（必填）"
-                } else {
-                    ""
-                };
-                let hint = q
-                    .hint
-                    .as_deref()
-                    .map(|h| format!(" — {h}"))
-                    .unwrap_or_default();
-                let k = q.kind.as_deref().unwrap_or("text");
-                lines.push(format!("- `{id}`{req} [{k}]{hint}", id = q.id));
-                lines.push(format!("  {}", q.label));
-            }
-            lines.join("\n")
-        }
-        Err(e) => format!("退出码：1\n{e}\n"),
+///
+/// **成功正文逐字不变**：`cm_internal::clarification_sse_bridge` 用
+/// `tool_output.trim_start().starts_with("退出码：0")` 判断「这是一份登记成功的问卷」，
+/// 改动首行会让 SSE 控制面静默失效。
+///
+/// 失败改为显式 `Err(invalid_args)`：从前返回的 `退出码：1\n…` 要经 `parse_legacy_output`
+/// 的 exit-code 分支才被认成失败，`{}` 这类「连字段都缺」的入参全靠这个兜底。
+#[allow(clippy::result_large_err)]
+pub fn run_present_clarification_questionnaire(args_json: &str) -> Result<String, ToolError> {
+    let body = parse_present_clarification_body(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("退出码：0".to_string());
+    lines.push(format!(
+        "已登记澄清问卷 `{}`（共 {} 题）。Web 客户端将收到 `clarification_questionnaire` 控制面事件；用户下一条消息请附带 clarify_questionnaire_answers。",
+        body.questionnaire_id,
+        body.questions.len()
+    ));
+    lines.push("---".to_string());
+    lines.push(format!("**说明**：{}", body.intro));
+    for q in &body.questions {
+        let req = if q.required == Some(true) {
+            "（必填）"
+        } else {
+            ""
+        };
+        let hint = q
+            .hint
+            .as_deref()
+            .map(|h| format!(" — {h}"))
+            .unwrap_or_default();
+        let k = q.kind.as_deref().unwrap_or("text");
+        lines.push(format!("- `{id}`{req} [{k}]{hint}", id = q.id));
+        lines.push(format!("  {}", q.label));
     }
+    Ok(lines.join("\n"))
 }
