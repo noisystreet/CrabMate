@@ -169,7 +169,7 @@ These paths and concepts are **coupled** — when one changes, verify the Rust r
 
 Adding or renaming a tool — check in order:
 
-1. `src/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
+1. `src/cm_tools/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). **`name` must reference a constant from `src/cm_tools/tool_names.rs` — never a string literal — and the tool must also be added to `tool_names::ALL`** (the `all_tool_names_match_specs` guard test fails otherwise). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
 2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.
 3. `tool_summary_args.rs` + `tool_summary.rs`: `Deserialize` struct + `ToolSummaryLine` impl, then a `summary_xxx` wrapper calling `summarize_from_value::<…>`.
 4. Args structs (`Deserialize` + `schemars::JsonSchema`) live in `src/cm_tools/tools/tool_param_types/` (`mod.rs` + `part_*.inc.rs`); the schema and the runtime parse share one definition.

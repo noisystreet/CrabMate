@@ -2,6 +2,7 @@
 
 use std::sync::OnceLock;
 
+use crate::cm_tools::tool_names;
 use crate::cm_tools::tools::http_fetch::{HttpFetchArgs, HttpRequestArgs};
 use crate::cm_tools::tools::tool_json_schema::tool_parameters_schema_value as schema_of;
 use crate::cm_tools::tools::tool_param_types as args;
@@ -77,4 +78,42 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_SELF_CONFIG);
         Box::leak(v.into_boxed_slice())
     })
+}
+
+#[cfg(test)]
+mod name_consistency_tests {
+    use super::*;
+    use crate::cm_tools::tool_names::ALL;
+    use std::collections::HashSet;
+
+    /// `tool_names::ALL` 与注册表必须**双向一致**。
+    ///
+    /// 只改 `specs` 不改 `ALL`（或反之）会让所有以 `ALL` 驱动的遍历静默漏项，
+    /// 且不会有任何编译错误——这正是把工具名收敛到单一真源要防的那类缺陷。
+    #[test]
+    fn all_tool_names_match_specs() {
+        let registered: HashSet<&str> = tool_specs().iter().map(|s| s.name).collect();
+        let declared: HashSet<&str> = ALL.iter().copied().collect();
+
+        let missing_in_all: Vec<&str> = registered.difference(&declared).copied().collect();
+        let missing_in_specs: Vec<&str> = declared.difference(&registered).copied().collect();
+
+        assert!(
+            missing_in_all.is_empty(),
+            "以下工具已在 specs 注册，但未在 tool_names::ALL 声明：{missing_in_all:?}"
+        );
+        assert!(
+            missing_in_specs.is_empty(),
+            "以下工具已在 tool_names::ALL 声明，但未在 specs 注册：{missing_in_specs:?}"
+        );
+    }
+
+    /// 注册表内部不得有重名（重名会让 `tools_for_name` 类查找取到任意一个）。
+    #[test]
+    fn spec_names_are_unique() {
+        let mut seen = HashSet::new();
+        for spec in tool_specs() {
+            assert!(seen.insert(spec.name), "specs 中工具名重复：{}", spec.name);
+        }
+    }
 }

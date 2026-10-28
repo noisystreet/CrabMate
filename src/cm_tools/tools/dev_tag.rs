@@ -1,5 +1,7 @@
 //! Development 工具子域标签：按语言栈 / 职责过滤，与 [`super::ToolCategory::Development`] 配合使用。
 
+use crate::cm_tools::tool_names;
+
 /// 与工作区、壳命令、编排、元数据等相关，**不绑定**特定语言运行时。
 pub const GENERAL: &str = "general";
 /// Rust / Cargo 生态工具。
@@ -27,67 +29,67 @@ pub const DOCKER: &str = "docker";
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
-        "run_command" | "run_executable" | "terminal_session" => &[GENERAL, CPP],
+        tool_names::RUN_COMMAND | tool_names::TERMINAL_SESSION => &[GENERAL, CPP],
         // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
-        "workflow_execute" => &[GENERAL, RUST, QUALITY],
-        "diagnostic_summary"
-        | "self_config_info"
-        | "long_term_remember"
-        | "long_term_forget"
-        | "long_term_memory_list"
-        | "summarize_experience" => &[GENERAL],
-        "create_file"
-        | "modify_file"
-        | "copy_file"
-        | "move_file"
-        | "read_file"
-        | "read_dir"
-        | "glob_files"
-        | "list_tree"
-        | "read_binary_meta"
-        | "apply_patch"
-        | "search_in_files"
-        | "codebase_semantic_search"
-        | "markdown_check_links"
-        | "delete_files"
-        | "delete_dir"
-        | "append_file"
-        | "create_dir"
-        | "search_replace" => &[GENERAL],
-        "structured"
-        | "text_diff"
-        | "table_text" => &[GENERAL],
+        tool_names::WORKFLOW_EXECUTE => &[GENERAL, RUST, QUALITY],
+        tool_names::DIAGNOSTIC_SUMMARY
+        | tool_names::SELF_CONFIG_INFO
+        | tool_names::LONG_TERM_REMEMBER
+        | tool_names::LONG_TERM_FORGET
+        | tool_names::LONG_TERM_MEMORY_LIST
+        | tool_names::SUMMARIZE_EXPERIENCE => &[GENERAL],
+        tool_names::CREATE_FILE
+        | tool_names::MODIFY_FILE
+        | tool_names::COPY_FILE
+        | tool_names::MOVE_FILE
+        | tool_names::READ_FILE
+        | tool_names::READ_DIR
+        | tool_names::GLOB_FILES
+        | tool_names::LIST_TREE
+        | tool_names::READ_BINARY_META
+        | tool_names::APPLY_PATCH
+        | tool_names::SEARCH_IN_FILES
+        | tool_names::CODEBASE_SEMANTIC_SEARCH
+        | tool_names::MARKDOWN_CHECK_LINKS
+        | tool_names::DELETE_FILES
+        | tool_names::DELETE_DIR
+        | tool_names::APPEND_FILE
+        | tool_names::CREATE_DIR
+        | tool_names::SEARCH_REPLACE => &[GENERAL],
+        tool_names::STRUCTURED
+        | tool_names::TEXT_DIFF
+        | tool_names::TABLE_TEXT => &[GENERAL],
 
         // --- Git ---
-        "git" => &[GENERAL, VCS],
-        "gh_pr" | "gh_run" | "gh_issue_create" | "gh_release_create" | "gh_api" => {
+        tool_names::GIT => &[GENERAL, VCS],
+        tool_names::GH_PR | tool_names::GH_RUN | tool_names::GH_ISSUE_CREATE | tool_names::GH_RELEASE_CREATE | tool_names::GH_API => {
             &[GENERAL, VCS]
         }
 
         // --- Rust / Cargo ---
-        "cargo_run" | "rust_analyzer" => &[GENERAL, RUST],
-        "cargo_check" | "cargo_test" | "cargo_clippy" => {
+        tool_names::CARGO_RUN | tool_names::RUST_ANALYZER => &[GENERAL, RUST],
+        tool_names::CARGO_CHECK | tool_names::CARGO_TEST | tool_names::CARGO_CLIPPY => {
             &[GENERAL, RUST, QUALITY]
         }
-        "code_nav" => &[GENERAL, RUST],
+        tool_names::CODE_NAV => &[GENERAL, RUST],
 
         // --- Python ---
-        "pytest_run" | "python_snippet_run" => &[GENERAL, PYTHON],
+        tool_names::PYTEST_RUN | tool_names::PYTHON_SNIPPET_RUN => &[GENERAL, PYTHON],
 
         // --- 质量聚合（跨栈）---
-        "repo_overview_sweep" | "crate_contract_map" | "docs_health_sweep" => {
+        tool_names::REPO_OVERVIEW_SWEEP | tool_names::CRATE_CONTRACT_MAP | tool_names::DOCS_HEALTH_SWEEP => {
             &[GENERAL, QUALITY]
         }
 
         // --- 格式化（多语言由实现按扩展名分流）---
 
         // --- 后台任务查询 ---
-        "background_job" | "background_job_cancel" => &[GENERAL],
+        tool_names::BACKGROUND_JOB | tool_names::BACKGROUND_JOB_CANCEL => &[GENERAL],
 
         // --- 代码度量与分析 ---
-        "code_stats" => &[GENERAL],
-        "dependency_graph" => &[GENERAL, RUST, FRONTEND, GO, JVM],
-        "coverage_report" => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
+        tool_names::CODE_STATS => &[GENERAL],
+        tool_names::DEPENDENCY_GRAPH => &[GENERAL, RUST, FRONTEND, GO, JVM],
+        tool_names::COVERAGE_REPORT => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
 
         _ => &[GENERAL],
     }
@@ -196,19 +198,19 @@ mod tests {
 
     #[test]
     fn workflow_execute_tags_rust_and_quality() {
-        let t = tags_for_tool_name("workflow_execute");
+        let t = tags_for_tool_name(tool_names::WORKFLOW_EXECUTE);
         assert!(t.contains(&RUST) && t.contains(&QUALITY) && t.contains(&GENERAL));
     }
 
     #[test]
     fn cargo_check_is_rust_and_quality() {
-        let t = tags_for_tool_name("cargo_check");
+        let t = tags_for_tool_name(tool_names::CARGO_CHECK);
         assert!(t.contains(&RUST) && t.contains(&QUALITY));
     }
 
     #[test]
     fn git_is_vcs() {
-        let t = tags_for_tool_name("git");
+        let t = tags_for_tool_name(tool_names::GIT);
         assert!(t.contains(&VCS));
     }
 

@@ -1,6 +1,6 @@
 [
 ToolSpec {
-            name: "cargo_check",
+            name: tool_names::CARGO_CHECK,
             description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。\n\n【cargo check 常用模式】检查整个项目：`cargo check`；检查特定包：`cargo check -p <package>`。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoCommonCliArgs>,
@@ -8,7 +8,7 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo check"),
         },
         ToolSpec {
-            name: "cargo_test",
+            name: tool_names::CARGO_TEST,
             description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。\n\n【cargo test 常用模式】运行所有测试：`cargo test`；运行特定测试：`cargo test <test_name>`；显示 println!：`cargo test -- --nocapture`；运行集成测试：`cargo test --test <integration_test_name>`。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoTestArgs>,
@@ -16,7 +16,7 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo test"),
         },
         ToolSpec {
-            name: "cargo_clippy",
+            name: tool_names::CARGO_CLIPPY,
             description: "运行 cargo clippy（结构化参数）。用于检查 Rust 代码潜在问题。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoCommonCliArgs>,
@@ -24,7 +24,7 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo clippy"),
         },
         ToolSpec {
-            name: "cargo_run",
+            name: tool_names::CARGO_RUN,
             description: "运行 cargo run（结构化参数）。用于启动 Rust 可执行程序。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoRunArgs>,
@@ -32,7 +32,7 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo run"),
         },
         ToolSpec {
-            name: "rust_analyzer",
+            name: tool_names::RUST_ANALYZER,
             description: "启动 **rust-analyzer**（stdio LSP）发一次请求。**`action` 必填**：`goto_definition` / `find_references` / `hover` / `goto_implementation` / `goto_type_definition` / `document_highlight` 需 `path` + **0-based** `line`（可选 `character`）；`document_symbol` 需 `path`（`max_symbols` ≤ 5000）；`workspace_symbol` 需 `path` + `query`（`max_results` ≤ 500）。需本机已安装 rust-analyzer；大文件 >512KiB 请换 read_file 分段。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::RustAnalyzerArgs>,
