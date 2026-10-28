@@ -10,6 +10,7 @@ pub(crate) mod cargo_tools;
 mod code_metrics;
 mod code_nav;
 mod code_nav_dispatch;
+mod code_nav_paths;
 mod command;
 mod command_error;
 mod command_exec;

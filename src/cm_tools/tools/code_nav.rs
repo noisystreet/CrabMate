@@ -3,6 +3,7 @@
 #[path = "code_nav_outline.rs"]
 mod code_nav_outline;
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::symbol;
 use crate::cm_tools::tools::tool_param_types::FindReferencesArgs;
 use code_nav_outline::collect_outline;
@@ -11,20 +12,27 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use super::code_nav_paths::{resolve_search_root, resolve_workspace_file, search_io_failed};
+
 const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 80;
 const MAX_RESULTS_LIMIT: usize = 300;
 const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
 
-/// 在工作区内搜索某标识符的「引用」（基于词边界；默认跳过疑似定义行）。
-pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
-    let args: FindReferencesArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+/// `find_references`：在工作区内搜索某标识符的「引用」（词边界匹配，默认跳过疑似定义行）。
+///
+/// 迁 `Typed` 后 `walk_rs` 的 IO 故障是显式 `code_nav_search_failed`：旧实现把它写成
+/// `搜索过程中发生错误：…`，该措辞不命中 `looks_like_failure` 的任何关键词，
+/// 于是「没读到文件」被当成「没有引用」。
+#[allow(clippy::result_large_err)]
+pub fn find_references_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let args: FindReferencesArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let symbol = args.symbol.trim().to_string();
     if symbol.is_empty() {
-        return "错误：缺少 symbol 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：缺少 symbol 参数".to_string(),
+        ));
     }
 
     let sub_path = args
@@ -47,20 +55,20 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
 
     let include_hidden = args.include_hidden;
 
-    let root = match resolve_root(workspace_root, sub_path.as_deref()) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let root = resolve_search_root(workspace_root, sub_path.as_deref())?;
 
     let esc = regex::escape(&symbol);
     let ref_pat = format!(r"\b{}\b", esc);
-    let ref_re = match regex::RegexBuilder::new(&ref_pat)
+    let ref_re = regex::RegexBuilder::new(&ref_pat)
         .case_insensitive(case_insensitive)
         .build()
-    {
-        Ok(r) => r,
-        Err(e) => return format!("错误：无法构建引用搜索规则：{}", e),
-    };
+        .map_err(|e| {
+            // 规则由 `regex::escape` 后的符号名拼出，编译失败即内部不变量破坏。
+            ToolError::internal_code(
+                "code_nav_regex_failed",
+                format!("错误：无法构建引用搜索规则：{e}"),
+            )
+        })?;
 
     let mut results: Vec<(PathBuf, usize, String)> = Vec::new();
     let mut visited = 0usize;
@@ -74,17 +82,15 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
         max_results,
         ignore_hidden_dirs: include_hidden,
     };
-    if let Err(e) = walk_rs(&root, &mut walk_ctx) {
-        return format!("搜索过程中发生错误：{}", e);
-    }
+    walk_rs(&root, &mut walk_ctx)?;
 
     if results.is_empty() {
-        return format!(
+        return Ok(format!(
             "未找到引用：\"{}\"（遍历 {} 个 .rs 文件，根：{}）",
             symbol,
             visited,
             root.display()
-        );
+        ));
     }
 
     let mut out = String::new();
@@ -104,22 +110,29 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
             truncate_line(&line, 320)
         ));
     }
-    out.trim_end().to_string()
+    Ok(out.trim_end().to_string())
 }
 
 /// 列出单个 Rust 源文件中的模块级结构（fn/mod/struct/enum/trait/impl 等行摘要）。
-pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+///
+/// 三条失败分支各有码：`path` 不是文件 / 不是 `.rs` 属 `InvalidInput`（换参数可修），
+/// 读盘失败属 `External`。旧实现把它们写成 `错误：…` / `读取文件失败：…`，
+/// 前者靠前缀偶然判对、后者只因为正文恰好含「失败」二字。
+#[allow(clippy::result_large_err)]
+pub fn rust_file_outline_try(
+    args_json: &str,
+    workspace_root: &Path,
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = v
         .get("path")
         .and_then(|p| p.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let Some(rel) = path else {
-        return "错误：缺少 path 参数".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：缺少 path 参数".to_string(),
+        ));
     };
 
     let include_use = v
@@ -134,31 +147,36 @@ pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
         .unwrap_or(DEFAULT_MAX_OUTLINE_ITEMS)
         .min(500);
 
-    let target = match resolve_file(workspace_root, rel) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let target = resolve_workspace_file(workspace_root, rel)?;
     if !target.is_file() {
-        return "错误：path 必须是已存在的文件".to_string();
+        return Err(ToolError::with_code(
+            "code_nav_path_not_file",
+            "错误：path 必须是已存在的文件".to_string(),
+        ));
     }
     if target.extension().and_then(|e| e.to_str()) != Some("rs") {
-        return "错误：当前仅支持 .rs 文件大纲".to_string();
+        return Err(ToolError::with_code(
+            "code_nav_path_not_rust_file",
+            "错误：当前仅支持 .rs 文件大纲".to_string(),
+        ));
     }
 
     let mut buf = String::new();
-    if let Err(e) = fs::File::open(&target).and_then(|mut f| f.read_to_string(&mut buf)) {
-        return format!("读取文件失败：{}", e);
-    }
+    fs::File::open(&target)
+        .and_then(|mut f| f.read_to_string(&mut buf))
+        .map_err(|e| {
+            ToolError::external_code("code_nav_read_failed", format!("错误：读取文件失败：{e}"))
+        })?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
         buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }
 
     let items = collect_outline(&buf, include_use, max_items);
     if items.is_empty() {
-        return format!(
+        return Ok(format!(
             "文件 {} 中未匹配到常见顶层结构（可尝试 include_use=true）",
             rel
-        );
+        ));
     }
 
     let mut out = String::new();
@@ -171,54 +189,7 @@ pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
     for (line_no, summary) in items {
         out.push_str(&format!("{:>5}: {}\n", line_no, summary));
     }
-    out.trim_end().to_string()
-}
-
-fn resolve_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String> {
-    match sub {
-        None => Ok(base.to_path_buf()),
-        Some(s) => {
-            let sub_path = Path::new(s);
-            if sub_path.is_absolute() {
-                return Err("路径必须为工作区内相对路径，不能使用绝对路径".to_string());
-            }
-            if s.contains("..") {
-                return Err("路径不能包含 ..".to_string());
-            }
-            let joined = base.join(sub_path);
-            let canon_base = base
-                .canonicalize()
-                .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
-            let canon_joined = joined
-                .canonicalize()
-                .map_err(|e| format!("搜索路径无法解析: {}", e))?;
-            if !canon_joined.starts_with(&canon_base) {
-                return Err("搜索路径不能超出工作区根目录".to_string());
-            }
-            Ok(canon_joined)
-        }
-    }
-}
-
-fn resolve_file(base: &Path, sub: &str) -> Result<PathBuf, String> {
-    let sub_path = Path::new(sub);
-    if sub_path.is_absolute() {
-        return Err("路径必须为工作区内相对路径，不能使用绝对路径".to_string());
-    }
-    if sub.contains("..") {
-        return Err("路径不能包含 ..".to_string());
-    }
-    let joined = base.join(sub_path);
-    let canon_base = base
-        .canonicalize()
-        .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
-    let canonical = joined
-        .canonicalize()
-        .map_err(|e| format!("目标文件路径无法解析: {}", e))?;
-    if !canonical.starts_with(&canon_base) {
-        return Err("目标路径不能超出工作区根目录".to_string());
-    }
-    Ok(canonical)
+    Ok(out.trim_end().to_string())
 }
 
 struct RsWalkCtx<'a> {
@@ -232,7 +203,8 @@ struct RsWalkCtx<'a> {
     ignore_hidden_dirs: bool,
 }
 
-fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
     if !root.exists() {
         return Ok(());
     }
@@ -243,9 +215,10 @@ fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
 }
 
 /// 目录递归主体：隐藏目录/非 `.rs` 文件由 [`is_rs_entry_visitable`] 过滤，命中上限即停止。
-fn walk_rs_dir(dir: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
-    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+fn walk_rs_dir(dir: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
+    for entry in fs::read_dir(dir).map_err(|e| search_io_failed(&e.to_string()))? {
+        let entry = entry.map_err(|e| search_io_failed(&e.to_string()))?;
         let path = entry.path();
         let name = entry.file_name();
         if !is_rs_entry_visitable(&path, &name, ctx) {
@@ -274,7 +247,8 @@ fn is_rs_entry_visitable(path: &Path, name: &std::ffi::OsStr, ctx: &RsWalkCtx<'_
     path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs")
 }
 
-fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
     if path.extension().and_then(|e| e.to_str()) != Some("rs") {
         return Ok(());
     }
@@ -290,6 +264,7 @@ fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> 
     )
 }
 
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn search_refs_in_file(
     path: &Path,
     ref_re: &Regex,
@@ -298,10 +273,11 @@ fn search_refs_in_file(
     case_insensitive: bool,
     results: &mut Vec<(PathBuf, usize, String)>,
     max_results: usize,
-) -> Result<(), String> {
+) -> Result<(), ToolError> {
     let mut buf = String::new();
-    let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
-    f.read_to_string(&mut buf).map_err(|e| e.to_string())?;
+    let mut f = fs::File::open(path).map_err(|e| search_io_failed(&e.to_string()))?;
+    f.read_to_string(&mut buf)
+        .map_err(|e| search_io_failed(&e.to_string()))?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
         buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }

@@ -3,6 +3,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::cm_tools::tool_result::ToolError;
+
 #[cfg(feature = "fastembed")]
 use std::collections::HashMap;
 
@@ -616,22 +618,26 @@ fn rebuild_index_in_open_db(
     Ok(format_rebuild_success_message(&p, subtree, &scan, chunks_total))
 }
 
-pub fn rebuild_index(p: RebuildIndexParams<'_>) -> String {
+/// 重建索引。
+///
+/// 迁 `Typed`（2026-10-28）：失败不再以「一段自带 `错误：` 的字符串」返回。
+/// 缺 `fastembed` 构建能力是**环境前置**问题（`codebase_semantic_requires_fastembed`，
+/// `Workspace`：换构建才修），其余 SQLite / 事务 / 扫描 / 嵌入失败归
+/// `codebase_semantic_index_failed`（`External`，正文沿用原措辞）。
+#[allow(clippy::result_large_err)]
+pub fn rebuild_index(p: RebuildIndexParams<'_>) -> Result<String, ToolError> {
     #[cfg(not(feature = "fastembed"))]
     {
         let _ = p;
-        return "错误：rebuild_index 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请使用带 fastembed 的构建，或关闭 codebase_semantic_search。".to_string();
+        return Err(ToolError::workspace(
+            "codebase_semantic_requires_fastembed",
+            "错误：rebuild_index 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请使用带 fastembed 的构建，或关闭 codebase_semantic_search。".to_string(),
+        ));
     }
 
     #[cfg(feature = "fastembed")]
     {
-        let mut conn = match open_codebase_semantic_db(p.index_path) {
-            Ok(c) => c,
-            Err(e) => return e,
-        };
-        match rebuild_index_in_open_db(&mut conn, p) {
-            Ok(msg) => msg,
-            Err(e) => e,
-        }
+        let mut conn = open_codebase_semantic_db(p.index_path).map_err(super::index_failed)?;
+        rebuild_index_in_open_db(&mut conn, p).map_err(super::index_failed)
     }
 }

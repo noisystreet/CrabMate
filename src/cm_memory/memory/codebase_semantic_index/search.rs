@@ -10,6 +10,8 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use crate::cm_tools::tool_result::ToolError;
+
 use super::{TABLE, TABLE_FTS, fts5_match_expression, norm_scores_bm25, open_codebase_semantic_db};
 #[cfg(feature = "fastembed")]
 use super::{bytes_to_f32_slice, cosine_sim, ensure_embedder};
@@ -510,20 +512,27 @@ fn load_fts_norm_scores(
     (norm_scores_bm25(&raw), n)
 }
 
+/// 查询索引。
+///
+/// 迁 `Typed`（2026-10-28）：两条真失败各有码 —— 索引库打不开 / 查询失败是
+/// `codebase_semantic_index_failed`（`External`）；`semantic_only` 却缺 `fastembed`
+/// 构建能力是环境前置问题（`codebase_semantic_requires_fastembed`，`Workspace`）。
+/// 内部降级（FTS / 向量子查询读不动就当成空结果）**刻意保留**：那是宽容，不是失败。
+#[allow(clippy::result_large_err)]
 pub(super) fn search_index(
     ws_key: &str,
     index_path: &Path,
     query: &str,
     q: SearchQueryParams,
-) -> String {
-    let conn = match open_codebase_semantic_db(index_path) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    let conn = open_codebase_semantic_db(index_path).map_err(super::index_failed)?;
 
     #[cfg(not(feature = "fastembed"))]
     if matches!(q.mode, RetrieveMode::SemanticOnly) {
-        return "错误：retrieve_mode=semantic_only 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请改用 fts_only，或使用带 fastembed 的构建。".to_string();
+        return Err(ToolError::workspace(
+            "codebase_semantic_requires_fastembed",
+            "错误：retrieve_mode=semantic_only 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请改用 fts_only，或使用带 fastembed 的构建。".to_string(),
+        ));
     }
 
     let mode = retrieve_mode_for_build(q.mode);
@@ -531,16 +540,34 @@ pub(super) fn search_index(
         load_fts_norm_scores(&conn, ws_key, query, mode, q.fts_top_n);
 
     if mode == RetrieveMode::FtsOnly {
-        return search_index_fts_only_branch(&conn, ws_key, &fts_by_id, &q, fts_rows_fetched);
+        return Ok(search_index_fts_only_branch(
+            &conn,
+            ws_key,
+            &fts_by_id,
+            &q,
+            fts_rows_fetched,
+        ));
     }
 
     #[cfg(not(feature = "fastembed"))]
     {
-        return "（内部错误）search_index：无 fastembed 时不应到达此分支".to_string();
+        // 上面已拦住 `SemanticOnly`；走到这里说明 `retrieve_mode_for_build` 与
+        // `q.mode` 的分支不再一致（内部不变量破坏），不是调用方能修的。
+        Err(ToolError::internal_code(
+            "codebase_semantic_internal",
+            "（内部错误）search_index：无 fastembed 时不应到达此分支".to_string(),
+        ))
     }
 
     #[cfg(feature = "fastembed")]
     {
-        search_index_semantic_fastembed(&conn, ws_key, query, &q, &fts_by_id, fts_rows_fetched)
+        Ok(search_index_semantic_fastembed(
+            &conn,
+            ws_key,
+            query,
+            &q,
+            &fts_by_id,
+            fts_rows_fetched,
+        ))
     }
 }

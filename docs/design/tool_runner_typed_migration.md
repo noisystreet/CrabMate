@@ -37,7 +37,8 @@
 > 陆续迁完后，23 → 19 → 14 → 13 → 11 → 8 → 6 → 4）。
 > §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
-73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
+全部 73 个 `ToolSpec`：**Legacy 已清零（2026-10-28）**，其余为 `Typed`，另有 2 个 `AsyncOnly`。
+历史进度见文末变更记录；当前数量以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准。
 
 ### 2.1 按 spec 文件分布
 
@@ -46,9 +47,9 @@
 | `file_extra.inc.rs` | 0 | 6 | 已全迁 |
 | `markdown_structured.inc.rs` | 0 | 2 | 已全迁（`structured_*` 四个于此合并为单个 `structured`，2026-10-28，5 → 2） |
 | `misc_basic.inc.rs` | 0 | 4 | 已全迁 |
-| `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
+| `file_core.inc.rs` | 0 | 13 | 已全迁（`codebase_semantic_search` 于 2026-10-28 迁 Typed，见 §4.22） |
 | `cargo_rust.inc.rs` | 0 | 6 | 已全迁（`rust_analyzer` 于 2026-10-28 迁 Typed，见 §4.10；`rust_compiler_json` 已整工具删除） |
-| `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
+| `text_code_nav.inc.rs` | 0 | 3 | 已全迁（`code_nav` 于 2026-10-28 迁 Typed，见 §4.21） |
 | `basic_network.inc.rs` | 0 | 4 | 已全迁（`get_weather` / `web_search` 于 2026-10-28 迁 Typed，见 §4.17；`http_fetch` / `http_request` 同日迁 Typed，见 §4.18。`text_transform` 已于 2026-10-28 移除） |
 | `github_cli.inc.rs` | 0 | 5 | 已全迁（2026-10-28，C 档；见 §4.3） |
 | `diagnostics_docs.inc.rs` | 1 | 7 | `long_term_*` ×3 + `summarize_experience` 已迁；`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map` 于 2026-10-28 迁 Typed（见 §4.16），仅剩 `present_clarification_questionnaire`；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除 |
@@ -59,10 +60,10 @@
 | `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 0 | 2 | 已全迁（2026-10-28，C 档；见 §4.13） |
 | `frontend_audit_ci.inc.rs` | 0 | 1 | 已全迁（2026-10-28：`workflow_execute` 同步面占位改 Typed，返回 `workflow_execute_not_intercepted`；`rust_backtrace_analyze` 已整工具删除，见 §7） |
-| `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
+| `docs_health.inc.rs` | 0 | 1 | 已全迁（2026-10-28，见 §4.19） |
 | `git_read.inc.rs` | 0 | 1 | 已全迁（2026-10-28，C 档；见 §4.12） |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 8） |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 0，守卫从此只防「新增 Legacy」） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -70,6 +71,8 @@
 - **未迁 32 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
 
 **结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 32 个都要先改实现层，这是它长期停在半数以下的原因。
+
+**2026-10-28 收尾**：上段列的 32 个已全部迁完，Legacy 清零。规律仍成立——它们确实是最后一批，代价也确实集中在「先改实现层」：`code_nav` 要先把四个子实现的 `Result<_, String>` 换成 `ToolError`（顺带清掉三处静默成功），`codebase_semantic_search` 要把 host trait 契约连同 `rebuild_index` / `search_index` 一起换类型。
 
 ---
 
@@ -85,7 +88,7 @@
 |---|---|---|
 | `f(args, cwd, max_len)` | `define_runners_cwd_maxlen!`（无实例，已删除） | `define_runners_cwd_maxlen_try!` |
 | `f(args, cwd, ctx)` | `define_runners_cwd_ctx!` | `define_runners_cwd_ctx_try!` |
-| `f(args, cwd)` | `define_runners_cwd!` | `define_runners_cwd_try!` |
+| `f(args, cwd)` | `define_runners_cwd!`（迁完后无实例，已删除） | `define_runners_cwd_try!` |
 | `f(args, &PathAccess)` | — | `define_runners_paths_try!` |
 | `f(args, &PathAccess, ctx)` | — | `define_runners_paths_ctx_try!` |
 | `f(args)`（args-only） | `define_runners_args_only!`（无实例，已删除） | `define_runners_args_only_try!` |
@@ -220,11 +223,11 @@
 
 > **修正（2026-10-27，实测）**：原先估计「两个都几乎零成本」只对 `self_config_info` 成立——它只有 runner 层两个分支。`skill_manage` 内部虽已大量使用 `Result<T, String>`（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `scan_entries` / `resolve_remove_target`），但错误类型是 `String`，**换类型要触及约 20 个错误点 + 3 处测试断言**，工作量与本档其余项不是一个量级，故单独切片。
 
-### 4.9 `file_core.inc.rs`（1）
+### 4.9 `file_core.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`，见 §4.22）
 
 | 工具 | 形态 | 目标实现 | 备注 |
 |---|---|---|---|
-| `codebase_semantic_search` | 手写 | `ctx.codebase_semantic_host.run_search(...)` | 需注入 host + `fastembed` feature；未注入时直接返回错误串 |
+| ~~`codebase_semantic_search`~~（**已迁**） | 手写 | `ctx.codebase_semantic_host.run_search(...)` → `Result` | 需注入 host + `fastembed` feature；缺 host → `tool_context_incomplete`，其余码见 §4.22 |
 
 ### 4.10 `cargo_rust.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`）
 
@@ -261,11 +264,11 @@
 `ra_lsp_error_response_is_a_failure`（5 个格式化函数）、
 `ra_rejects_absolute_and_parent_paths`、`ra_unresolvable_workspace_is_a_workspace_error`。
 
-### 4.11 `text_code_nav.inc.rs`（1）— 形态 `cwd`
+### 4.11 `text_code_nav.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`，见 §4.21）
 
 | 工具 | 目标实现 | 备注 |
 |---|---|---|
-| `code_nav` | `code_nav_dispatch::dispatch` | action 选择器（4 个动作） |
+| ~~`code_nav`~~（**已迁**） | `code_nav_dispatch::dispatch_try` | action 选择器（4 个动作）；路径解析收敛到 `code_nav_paths` |
 
 ### 4.12 `git_read.inc.rs`（1）— **已迁 2026-10-28**（形态 `define_git_runners_try!`）
 
@@ -443,8 +446,9 @@
 `http_fetch_url_not_allowed`（且 `!retryable`）、`http_request` 用自己的码。真实请求（超时 /
 非 2xx / 解码）仍无单测，依赖既有实网与手工验证。
 
-**棘轮**：6 → 4；审计表两条变注释，本族清零。剩余 Legacy 为
-`present_clarification_questionnaire` / `docs_health_sweep` / `code_nav` / `codebase_semantic_search`。
+**棘轮**：6 → 4；审计表两条变注释，本族清零。当时剩余 Legacy 为
+`present_clarification_questionnaire` / `docs_health_sweep` / `code_nav` / `codebase_semantic_search`
+（其后两个已于同日迁完，见 §4.21 / §4.22）。
 
 ### 4.19 B 档：`docs_health_sweep`（聚合器）— **已迁 2026-10-28**
 
@@ -497,6 +501,72 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 
 **棘轮**：3 → 2。剩余 Legacy 仅 `code_nav`（B 档，action 选择器，需在分发层收敛未知 action、
 并把四个子实现一并换类型）与 `codebase_semantic_search`（D 档，受 host 注入 + feature 限制）。
+两者已于 2026-10-28 迁完，见 §4.21 / §4.22。
+
+### 4.21 B 档收尾：`code_nav`（action 选择器）— **已迁 2026-10-28**
+
+| 工具 | 形态 | 目标实现 |
+|---|---|---|
+| `code_nav` | `f(args, cwd)` | `code_nav_dispatch::dispatch_try` → `symbol::run_try` / `code_nav::find_references_try` / `code_nav::rust_file_outline_try` / `call_graph_sketch::run_try` |
+
+**四处静默成功**（都是「正文以路径或过程措辞开头，一个判定关键词都不命中」）：
+
+1. `resolve_root` / `resolve_file` 的绝对路径、`..`、越界拒绝 —— 旧实现 `return e` 直接回正文；
+2. `walk_rs` / `walk_and_match` 的 `搜索过程中发生错误：…`（IO 故障被读成「没有匹配」）。
+
+同时把 `symbol` / `code_nav` / `call_graph_sketch` 各复制过一份的
+`resolve_root` / `resolve_file` 收敛到新模块 `src/cm_tools/tools/code_nav_paths.rs`
+（第三次出现即抽），三者的拒绝语义与码从此只在一处定义。
+
+| 码 | 分类 | 触发点 |
+|---|---|---|
+| `invalid_args`（复用） | `InvalidInput` | 参数 JSON 坏、缺 / 未知 `action`、per-action 必填缺失 |
+| `code_nav_path_absolute_not_allowed` / `code_nav_path_parent_not_allowed` / `code_nav_path_outside_workspace` | `PolicyDenied` | 绝对路径 / 含 `..` / 规范化后越界 |
+| `code_nav_path_not_file` / `code_nav_path_not_rust_file` | `InvalidInput` | `file_outline` 的 `path` 不是文件 / 不是 `.rs` |
+| `code_nav_workspace_resolve_failed` | `Workspace` | 工作区根或目标路径 `canonicalize` 失败（换目录才修） |
+| `code_nav_search_failed` / `code_nav_read_failed` | `External` | 遍历 / 读源码失败；`file_outline` 读盘失败 |
+| `code_nav_regex_failed` | `Internal` | 自建正则（`regex::escape` 后的符号名）编译失败——不变量破坏 |
+
+**刻意保留**：`call_graph_sketch` 的遍历仍逐条容错（`Err(_) => continue`）：某些文件读不动
+不该让整张草图变成工具故障；`find_symbol` / `find_references` 的 `search_file` 在目录遍历里
+同样沿用 `.unwrap_or(false)` 的宽容口径，只有 `read_dir` 与顶层单文件读取会报 `code_nav_search_failed`。
+
+**棘轮**：2 → 1。`define_runners_cwd!` 失去最后一个实例（连带删除），`try_macro_typecheck`
+挂上 `dispatch_try`。测试：`code_nav_paths::tests`（三个拒绝分支 + 无 `sub` 时不 canonicalize）、
+`code_nav_dispatch::tests` 六条改为取 `e.code`（含 `fields_of_other_actions_are_ignored` 断言
+`code_nav_path_not_rust_file`）。
+
+### 4.22 D 档收尾：`codebase_semantic_search` — **已迁 2026-10-28**
+
+| 工具 | 形态 | 目标实现 |
+|---|---|---|
+| `codebase_semantic_search` | 手写（host 注入） | `runner_codebase_semantic_search_try` → `ctx.codebase_semantic_host.run_search(...) -> Result` → `codebase_semantic_index::run_tool_try` |
+
+**契约一路改到底**：`CodebaseSemanticToolHost::run_search` 由 `-> String` 改为
+`-> Result<String, ToolError>`，`cm_internal` 的 impl、`run_tool_try`、
+`rebuild::rebuild_index`、`search::search_index` 随之换类型。深层 helper（`rebuild_index_in_open_db`
+等）仍是 `Result<_, String>`，在**两个入口**用 `index_failed` 统一包成 `ToolError`——
+这样不必重写几十处 SQLite / 扫描分支，也不再回到「正文关键词」判定。
+
+| 码 | 分类 | 触发点 |
+|---|---|---|
+| `invalid_args`（复用） | `InvalidInput` | 参数 JSON 坏（旧正文 `参数 JSON 无效: …` **无**前缀，被判成成功）、`query` 空、`retrieve_mode` 非法 |
+| `codebase_semantic_unconfigured`（复用） | `Workspace` | 配置里关掉该工具 |
+| `codebase_semantic_workspace_resolve_failed` | `Workspace` | 工作区根 / 索引文件路径不可解析（`index_path_for_workspace` 的串原先原样回吐 = 静默成功） |
+| `codebase_semantic_requires_fastembed` | `Workspace` | 缺 `fastembed` 构建能力（`rebuild_index`、`semantic_only`） |
+| `codebase_semantic_index_failed` | `External` | SQLite 打开 / 事务 / 扫描 / 嵌入 / 查询失败 |
+| `codebase_semantic_internal` | `Internal` | 无 `fastembed` 时的不可达分支（`retrieve_mode_for_build` 与 `q.mode` 不一致） |
+| `tool_context_incomplete`（复用） | `Workspace` | runner 侧未注入 host（如部分工作流节点路径） |
+
+**刻意保留的宽容**：FTS / 向量子查询读不动时仍返回空结果（`let Ok(...) else { return (...) }`），
+这是降级而不是失败；`rebuild_index` 与 `search_index` 的成功正文逐字未变。
+
+**测试**：`codebase_semantic_index::tests` 增三条（坏 JSON ⇒ `invalid_args`、空 `query` ⇒
+`invalid_args`、`enabled=false` ⇒ `codebase_semantic_unconfigured` 且分类 `Workspace`）；
+`tools::tests` 增 `codebase_semantic_search_without_host_is_tool_context_incomplete`。
+`cargo check --features fastembed` 单独验过（两条 `cfg` 分支都参与编译）。
+
+**棘轮**：1 → 0。`LEGACY_BASELINE = 0`，`LEGACY_AUDIT` 表清空（守卫保留，从此只防新增）。
 
 ---
 
@@ -507,9 +577,9 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 | 档 | 族 | 理由 |
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`、**只读聚合三兄弟**（`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`，2026-10-28 已迁，见 §4.16）（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
-| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、~~`docs_health` 1 个聚合器~~（**已迁 2026-10-28**，见 §4.19）、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；聚合器须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
-| **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、~~`http_fetch` / `http_request`~~（**已迁 2026-10-28**，见 §4.18）、~~`pytest_run` / `python_snippet_run`~~（**已迁 2026-10-28**）、~~`web_search` / `get_weather`~~（**已迁 2026-10-28**，见 §4.17） | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
-| **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
+| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、~~`docs_health` 1 个聚合器~~（**已迁 2026-10-28**，见 §4.19）、~~`code_nav` 1 个 action 选择器~~（**已迁 2026-10-28**，见 §4.21）（**全部已迁，B 档已清空**） | action 选择器需在分发层做「未知 action」的错误收敛；聚合器须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
+| **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、~~`http_fetch` / `http_request`~~（**已迁 2026-10-28**，见 §4.18）、~~`pytest_run` / `python_snippet_run`~~（**已迁 2026-10-28**）、~~`web_search` / `get_weather`~~（**已迁 2026-10-28**，见 §4.17）（**全部已迁，C 档已清空**） | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
+| **D（不建议迁）** | ~~`workflow_execute`~~（**同步面已迁 2026-10-28**）、~~`codebase_semantic_search`~~（**已迁 2026-10-28**，见 §4.22）（**D 档已清空**） | 两处「不建议迁」都被推翻了：前者同步面本就是 stub，改成显式 `Err` 反而更正确；后者换 host 契约后收益明显——它原先有两个静默成功 |
 
 **落地约定**：一个切片 = 一族 = 一个 PR；每族改完须同步 `runners.rs` 的 smoke 覆盖（§3.2），并跑 `pre-commit run --all-files` + 该族相关测试。
 
@@ -519,7 +589,7 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 
 1. **错误码变化**：`Legacy` → `Typed` 后，`error_code` 从正文推断变为显式，可能**改变**已有错误码取值（如从 `tool_failed` 变成 `xxx_invalid_args`）。凡是按 `error_code` 分支的逻辑（重试策略、经验提炼）都要复查。
 2. **`Ok` 路径必须逐字不变**：迁移只改失败路径；正文一旦变化，`fixtures/` 与 SSE 金样可能失配。
-3. **手写 runner 里的隐式失败**：`self_config_info` / `skill_manage` / `codebase_semantic_search` 都存在「缺 `ctx.xxx` → 返回错误字符串」的分支，这些是 `Typed` 化的**首选目标**（改造成本最低、语义最正确）。
+3. **手写 runner 里的隐式失败**：`self_config_info` / `skill_manage` / `codebase_semantic_search` 都存在「缺 `ctx.xxx` → 返回错误字符串」的分支，这些是 `Typed` 化的**首选目标**（改造成本最低、语义最正确）。三者均已迁完（`codebase_semantic_search` 见 §4.22）。
 4. **`#[allow(clippy::result_large_err)]`**：所有 `Typed` runner 都要加（`ToolError` 含 legacy 解析快照），漏加会被 `-D warnings` 拦下。
 5. **`AsyncOnly` 不是本文件的迁移目标**：`run_command` / `terminal_session` 跳过同步面，与 Legacy 无关。
 
@@ -546,3 +616,5 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 | 2026-10-28 | **C 档：受控 HTTP 族迁 Typed**（`http_fetch` / `http_request`，Legacy 6 → **4**，见 §4.18）。核心是共用内核 `fetch_with_method` / `request_with_json_body` 一次换类型，四个调用面（runner、并行只读批、审批后异步路径、Docker 沙盒 runner）统一展平 `Err`，正文逐字不变。**关键判断**：同步路径没有审批通道，「URL 未匹配白名单」是**策略拒绝**而非执行失败 → 新码 `http_fetch_url_not_allowed` / `http_request_url_not_allowed`（`PolicyDenied`、`retryable=false`），两个工具各用各的码；另有 `http_client_failed`（`External`）。Web SSE 审批与 CLI 异步路径不经过这两个函数，行为不变。审计表两条变注释，本族清零；剩余 4 个 Legacy 见 §4.18 末。 |
 | 2026-10-28 | **B 档：`docs_health_sweep` 迁 Typed**（Legacy 4 → **3**，见 §4.19）。核心是把它混在 `String` 里的**三种「失败」拆开**：入参坏 → `invalid_args`；子阶段执行故障（`markdown_check_links_try` 的 `Err`，工作区解析 / 扫描 IO）从「拼进正文并记 passed」改为上抛；子阶段**检查出问题**（拼写 / 坏链接）保持正文 `### 步骤汇总` + `整体: 存在失败项` 不变，但整体 `Ok`——此前正文里的「失败」二字会让 `parse_legacy_output` 把一次跑完的扫查判成工具故障。新增码 `docs_health_serialize_failed`（`Internal`，阶段参数二次序列化）。测试 1 → 4：`content_findings_stay_ok`（坏链接 ⇒ `Ok` 且含 `存在失败项`）与 `markdown_phase_error_fails_the_sweep`（缺工作区 ⇒ `markdown_check_links_workspace_failed`）成对。**踩坑记录**：`md_roots: ["../outside"]` 是「发现一条本地问题」，不返回 `Err`，故障注入必须换「工作区根不存在」。`define_runners_cwd_maxlen!` 失去最后实例，连带删除。 |
 | 2026-10-28 | **控制面：`present_clarification_questionnaire` 迁 Typed**（Legacy 3 → **2**，见 §4.20）。失败从 `退出码：1\n{e}\n`（只有 `parse_legacy_output` 的 exit-code 分支认得）改为显式 `invalid_args`；成功正文逐字不变，首行 `退出码：0` 是 `clarification_sse_bridge` 判定「登记成功」的依据，由 `present_runner_keeps_exit_zero_header_and_reports_invalid_args` 钉住。args-only 形态的宏随之改名为 `define_runners_args_only_try!` 并挂进 `try_macro_typecheck`。剩余 Legacy **2**：`code_nav`（B 档，下一批）与 `codebase_semantic_search`（D 档）。 |
+| 2026-10-28 | **B 档收尾：`code_nav` 迁 Typed**（Legacy 2 → **1**，见 §4.21）。四个 action 的实现（`symbol::run` / `code_nav::find_references` / `code_nav::rust_file_outline` / `call_graph_sketch::run`）统一改 `*_try` 并返回 `Result<String, ToolError>`；清掉三处静默成功（路径拒绝原先 `return e`、`搜索过程中发生错误：…`），三份重复的 `resolve_root` / `resolve_file` 收敛到新模块 `code_nav_paths`（第三次出现即抽）。新增码：`code_nav_path_absolute_not_allowed` / `_path_parent_not_allowed` / `_path_outside_workspace`（`PolicyDenied`）、`code_nav_path_not_file` / `_path_not_rust_file`（`InvalidInput`）、`code_nav_workspace_resolve_failed`（`Workspace`）、`code_nav_search_failed` / `_read_failed`（`External`）、`code_nav_regex_failed`（`Internal`）。`define_runners_cwd!` 失去最后实例（连带删除）；`try_macro_typecheck` 挂 `dispatch_try`。**踩坑**：`tests.rs` 撞 `fn-nloc` 的 920 行上限，靠压缩注释与测试体腾出空间。 |
+| 2026-10-28 | **D 档收尾：`codebase_semantic_search` 迁 Typed ⇒ Legacy 清零**（1 → **0**，见 §4.22）。`CodebaseSemanticToolHost::run_search` 契约改 `Result<String, ToolError>`，`run_tool_try` / `rebuild_index` / `search_index` 一并换类型；深层 `Result<_, String>` helper 用 `index_failed` 在两个入口统一包装（不重写几十处 SQLite / 扫描分支，也不回到关键词判定）。修掉「参数 JSON 无效: …」与「`index_path_for_workspace` 错误串」两处静默成功。新增码：`codebase_semantic_workspace_resolve_failed` / `_requires_fastembed`（`Workspace`）、`_index_failed`（`External`）、`_internal`（`Internal`）。`LEGACY_BASELINE = 0`，`LEGACY_AUDIT` 表清空但守卫保留（从此只防「新增 Legacy」）。`cargo clippy --all-targets --all-features` 与 `cargo check --features fastembed` 均单验。 |

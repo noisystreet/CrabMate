@@ -92,7 +92,7 @@ ToolSpec {
             description: "工作区内**混合**代码检索（SQLite **FTS5** 全文 + **fastembed** 向量，与长期记忆分库）。默认 `retrieve_mode: hybrid`：BM25 与余弦相似度按 `hybrid_alpha` 加权；可改 `semantic_only` / `fts_only`。首次或大改后请先 `rebuild_index: true`（schema v4 起自动维护 FTS）。整库重建默认**增量**（mtime+size+SHA256；`incremental:false` 强制全量）；子目录 `path` 仍为子树全量替换。`.rs` 块嵌入前有符号提示行。精确正则仍优先 `search_in_files`。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CodebaseSemanticSearchArgs>,
-            runner: ToolRunner::Legacy(runner_codebase_semantic_search),
+            runner: ToolRunner::Typed(runner_codebase_semantic_search_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_codebase_semantic_search),
         },
 ]

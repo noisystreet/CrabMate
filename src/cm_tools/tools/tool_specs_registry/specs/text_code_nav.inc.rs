@@ -20,7 +20,7 @@ ToolSpec {
             description: "在 Rust 源码中导航。**`action` 必填**：`find_symbol`（递归定位符号定义位置，可 `kind` 过滤与 `context_lines` 上下文）、`find_references`（按词边界搜标识符引用，默认跳过疑似定义行）、`file_outline`（单个 `.rs` 文件的顶层结构大纲，需 `path`）、`call_graph_sketch`（改 API 前的**启发式**影响面草图：扫描 `use` + 非定义行词边界命中并按目录聚合；**非** rustc 真调用图）。`find_symbol` / `find_references` / `call_graph_sketch` 需 `symbol`（后者也可用 `symbols` 批量），`file_outline` 需 `path`；与 `action` 无关的字段被忽略，但 schema 的取值区间（如 `max_results` 的 1–300）对每次调用都校验。需要 LSP 级精度请用 `rust_analyzer`。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CodeNavArgs>,
-            runner: ToolRunner::Legacy(runner_code_nav),
+            runner: ToolRunner::Typed(runner_code_nav_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_code_nav),
         },
 ]

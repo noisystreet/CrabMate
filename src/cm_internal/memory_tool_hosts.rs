@@ -13,7 +13,7 @@ use crate::cm_internal::long_term_memory_tools::{
     LongTermMemoryHostInner, LongTermMemoryToolState, long_term_forget, long_term_memory_list,
     long_term_remember, summarize_experience,
 };
-use crate::cm_internal::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool};
+use crate::cm_internal::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
 use crate::cm_internal::tool_jobs::GetOutcome;
 use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
 use crate::cm_internal::tool_jobs::types::JobStatus;
@@ -37,8 +37,14 @@ impl CodebaseSemanticHost {
 }
 
 impl CodebaseSemanticToolHost for CodebaseSemanticHost {
-    fn run_search(&self, args_json: &str, working_dir: &Path, max_output_len: usize) -> String {
-        run_tool(args_json, working_dir, &self.params, max_output_len)
+    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    fn run_search(
+        &self,
+        args_json: &str,
+        working_dir: &Path,
+        max_output_len: usize,
+    ) -> Result<String, ToolError> {
+        run_tool_try(args_json, working_dir, &self.params, max_output_len)
     }
 }
 

@@ -138,6 +138,28 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "list_tree_path_not_dir"
         | "read_binary_meta_path_not_file" => ToolFailureCategory::InvalidInput,
         "read_dir_sensitive_path" => ToolFailureCategory::PolicyDenied,
+        // `code_nav`（4 个只读 action，2026-10-28 迁 Typed）：路径拒绝三类都是**策略拒绝**
+        // （换参数能修，但换的不是工具能做错的事）；工作区根 / 目标不可解析归 `Workspace`
+        // （要换目录）；「不是文件 / 不是 .rs」是参数选错；遍历与读盘失败归 `External`。
+        "code_nav_path_absolute_not_allowed"
+        | "code_nav_path_parent_not_allowed"
+        | "code_nav_path_outside_workspace" => ToolFailureCategory::PolicyDenied,
+        "code_nav_path_not_file" | "code_nav_path_not_rust_file" => {
+            ToolFailureCategory::InvalidInput
+        }
+        "code_nav_workspace_resolve_failed" => ToolFailureCategory::Workspace,
+        "code_nav_search_failed" | "code_nav_read_failed" => ToolFailureCategory::External,
+        // 匹配规则由 `code_nav` 自己用 `regex::escape` 后的符号名拼出，编译失败即内部
+        // 不变量破坏 ⇒ `Internal`。必须排在 `ends_with("_failed")` 之前，否则重算分类会得到
+        // `External`，与 `ToolError::internal_code` 写入的 `category` 冲突。
+        "code_nav_regex_failed" => ToolFailureCategory::Internal,
+        // `codebase_semantic_search`（2026-10-28 迁 Typed）：索引库 / 索引路径不可解析属**工作区
+        // 环境**（换配置或目录才修），缺 `fastembed` 构建同属「当前二进制做不到」；
+        // 索引侧 IO / SQLite 失败（打开、事务、扫描、嵌入、查询）归 `External`。
+        "codebase_semantic_workspace_resolve_failed" | "codebase_semantic_requires_fastembed" => {
+            ToolFailureCategory::Workspace
+        }
+        "codebase_semantic_index_failed" => ToolFailureCategory::External,
         // 临时脚本落到工作区根之外：安全拒绝（不是 IO 故障，也不是参数问题）。
         "python_snippet_temp_path_outside_workspace" => ToolFailureCategory::PolicyDenied,
         // 仅表示「路径落到工作区根之外」或工作区自身不可解析；「文件不存在」走下面的 `*_io_failed`。
