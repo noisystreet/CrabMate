@@ -68,7 +68,7 @@ With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer
 | **`plugin`** | **`init`** / **`list`** / **`validate`**: workspace **`plugins/*.json`** (**`dyn__`** prefix). |
 | **`workflow`** | **`compile`** / **`validate`** / **`run`**: workspace YAML/Markdown workflows (**no** `API_KEY`); [docs/工作流编写教程.md](docs/工作流编写教程.md). |
 | **`tool-replay`** | Export or replay tool fixtures (**no** `API_KEY`; trusted workspace only). |
-| **`ctl`** | Local multi-instance **`serve`** supervisor (**Unix-only**, **no** `API_KEY`): `up` / `down` / `restart` / `run` / `ls` / `status` / `logs` / `prune`. Each instance gets its own cwd, conversation DB and port from the **8080-8089** pool; state lives under **`$XDG_STATE_HOME/crabmate/instances/`**. See [docs/命令行与路由.md](docs/命令行与路由.md). |
+| **`crabmatectl`** | **Separate binary** (**Unix-only**, **no** `API_KEY`), not a `crabmate` subcommand: local multi-instance **`serve`** supervisor — `up` / `down` / `restart` / `run` / `ls` / `status` / `logs` / `prune`. Each instance gets its own cwd, conversation DB and port from the **8080-8089** pool; state lives under **`$XDG_STATE_HOME/crabmate/instances/`**. Needs a sibling `crabmate` (or `CRABMATECTL_BIN`). See [docs/命令行与路由.md](docs/命令行与路由.md). |
 
 Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 

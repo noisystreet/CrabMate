@@ -1,4 +1,4 @@
-//! `crabmate ctl`：本地多实例 `serve` 进程管理器（Unix-only）。
+//! `crabmatectl`：本地多实例 `serve` 进程管理器（Unix-only）。
 //!
 //! 设计要点（见 `docs/命令行与路由.md` 与 `docs/开发文档.md`）：
 //!
@@ -8,7 +8,7 @@
 //!   故子进程 cwd 一律指向该实例专属目录；
 //! - **状态文件是缓存，`--json` 才是契约**：记录只增不删、容忍未知与缺失字段；
 //! - **发信号前先验身份**：`pid` / `pgid` 是历史值，PID 复用会误杀无关进程组，
-//!   故 `boot_id` + `pid_start_ticks` + `cmdline` 三重校验（见 [`identity`]）。
+//!   故 `boot_id` + `pid_start_ticks` + `cmdline` 三重校验（见 `identity` 模块）。
 
 pub(crate) mod identity;
 pub(crate) mod lock;

@@ -825,13 +825,6 @@ pub(super) async fn run_cli_from_parsed(
 
     args.config_path = finalize_cli_config_path(args.config_path.take());
 
-    // `ctl` 最早处理：本地进程管理，不加载 LLM 配置、不要求 API_KEY，也不进 agent 循环。
-    // 放在 `run_early_commands` 之前，避免给那个已接近复杂度上限的分派函数再加分支。
-    if let Some(ctl) = args.ctl.as_ref() {
-        crate::cm_ctl_entry::run_ctl(ctl, args.workspace_cli.as_deref())?;
-        return Ok(());
-    }
-
     if run_early_commands(
         EarlyCliDispatch {
             config_path: &args.config_path,

@@ -1,4 +1,4 @@
-//! `crabmate ctl` 的 clap 定义（执行在 `crate::cm_ctl`）。
+//! `crabmatectl` 的 clap 定义（执行在 `crate::cm_ctl`）。
 //!
 //! 注意两个 `--config` 的区别：
 //!

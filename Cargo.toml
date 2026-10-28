@@ -117,6 +117,7 @@ systemd-units = { unit-scripts = "packaging/systemd", enable = false, start = fa
 assets = [
     # 二进制：安装到 /usr/bin
     ["target/release/crabmate", "usr/bin/crabmate", "755"],
+    ["target/release/crabmatectl", "usr/bin/crabmatectl", "755"],
     # 默认配置分片
     ["config/default_config.toml", "etc/crabmate/default_config.toml", "644"],
     ["config/session.toml", "etc/crabmate/session.toml", "644"],
@@ -332,6 +333,13 @@ nix = { workspace = true, optional = true, features = ["fs", "dir", "signal", "t
 [[bin]]
 name = "crabmate"
 path = "src/main.rs"
+required-features = ["server"]
+
+# 运维用：本地多实例 serve 进程管理（Unix-only）。独立二进制而非 `crabmate ctl`
+# 子命令——它管理的是别的进程，不是一次 agent 调用，入口分开才能一眼看出用途。
+[[bin]]
+name = "crabmatectl"
+path = "src/bin/crabmatectl.rs"
 required-features = ["server"]
 
 [[bin]]
