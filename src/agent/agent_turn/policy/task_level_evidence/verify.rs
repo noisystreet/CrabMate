@@ -160,7 +160,7 @@ fn maybe_mark_ran_program(
     lower: &str,
 ) {
     let parsed =
-        crate::cm_tools::tool_result::parse_legacy_output(env.name.as_str(), env.output.as_str());
+        crate::cm_tools::tool_result::parse_tool_output(env.name.as_str(), env.output.as_str());
     let stdout_nonempty = structured_stdout_nonempty(env) || !parsed.stdout.trim().is_empty();
     if looks_like_build_artifact_run(invocation, lower) && stdout_nonempty {
         evidence.ran_program = true;
@@ -242,7 +242,7 @@ fn tool_message_has_success_evidence(raw: &str) -> bool {
     if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
         return env.ok || env.exit_code == Some(0);
     }
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("generic_tool", raw);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("generic_tool", raw);
     if parsed.ok || parsed.exit_code == Some(0) {
         return true;
     }
@@ -398,7 +398,7 @@ fn update_generic_tool_evidence_from_raw(evidence: &mut GenericToolEvidence, raw
         update_generic_tool_evidence_from_tool_text(evidence, env.name.as_str(), &text, ok);
         return;
     }
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("generic_tool", raw);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("generic_tool", raw);
     let ok = parsed.ok || parsed.exit_code == Some(0) || tool_message_has_success_evidence(raw);
     update_generic_tool_evidence_from_tool_text(evidence, "generic_tool", raw, ok);
 }
@@ -572,7 +572,7 @@ mod tests {
     }
 
     fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-        let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, output);
+        let parsed = crate::cm_tools::tool_result::parse_tool_output(name, output);
         msg(
             "tool",
             &crate::cm_tools::tool_result::encode_tool_message_envelope_v1(

@@ -99,7 +99,7 @@ pub fn run_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolErr
     Ok(out.trim_end().to_string())
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn parse_params(args_json: &str) -> Result<SymbolParams, ToolError> {
     let args: FindSymbolArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
@@ -194,7 +194,7 @@ fn build_symbol_regex(
         .map_err(|e| e.to_string())
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn walk_and_match(
     root: &Path,
     re: &regex::Regex,
@@ -214,7 +214,7 @@ fn walk_and_match(
     walk_and_match_dir(root, re, results, visited_files, max_results, ignore_hidden)
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn walk_and_match_dir(
     root: &Path,
     re: &regex::Regex,
@@ -260,7 +260,7 @@ fn visit_walk_match_file(
     search_file(path, re, results, max_results).unwrap_or(false) && results.len() >= max_results
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn search_file(
     path: &Path,
     re: &regex::Regex,

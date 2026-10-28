@@ -1,5 +1,5 @@
 //! Rust 开发工具：cargo check/test/clippy/run。
-#![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
+#![allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 `run_tool_dispatch` 一致
 
 use std::path::Path;
 

@@ -367,7 +367,7 @@ fn render_process_output(
 /// 同 [`run_command_output_formatted`]，但**非零退出即失败**（`error_code = failure_code`）。
 ///
 /// 为什么要这个孪生：`run_command_output_formatted` 把退出码写进正文（`title (exit=N)`）之后
-/// 就丢掉了，调用方只能靠 [`crate::cm_tools::tool_result::parse_legacy_output`] 从文本里回捞
+/// 就丢掉了，调用方只能靠 [`crate::cm_tools::tool_result::parse_tool_output`] 从文本里回捞
 /// 退出码——正文一换形态就可能被读成成功。这里在渲染前读出 `status.code()`，
 /// `Ok`（退出 0）与 `Err` 的正文都与前者逐字一致，只多一层成败判定。
 ///
@@ -440,7 +440,7 @@ pub(super) fn truncate_output_lines(s: &str, max_bytes: usize, max_lines: usize)
     )
 }
 
-/// 带 `标准输出：` / `标准错误：` 标记的部分输出块，供 `parse_legacy_output` 提取到 `stdout`/`stderr`；
+/// 带 `标准输出：` / `标准错误：` 标记的部分输出块，供 `parse_tool_output` 提取到 `stdout`/`stderr`；
 /// 超时/取消信封与 `run_command` 的 `CommandOutcome::render` 同构。
 #[must_use]
 pub fn format_marked_streams_block(stdout: &str, stderr: &str, max_bytes: usize, max_lines: usize) -> String {

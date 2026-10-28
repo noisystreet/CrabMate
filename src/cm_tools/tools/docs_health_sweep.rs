@@ -572,7 +572,7 @@ mod tests {
 
     /// 内容问题 ≠ 工具失败：坏链接只写进汇总，返回值仍是 `Ok`。
     ///
-    /// 迁移前正文含「存在失败项」会被 `parse_legacy_output` 的 `contains("失败")` 规则
+    /// 迁移前正文含「存在失败项」会被 `parse_tool_output` 的 `contains("失败")` 规则
     /// 判成失败 —— 工具明明跑完了，调用方却收到「失败」，接着可能去重试一次已经成功的扫查。
     #[test]
     fn content_findings_stay_ok() {

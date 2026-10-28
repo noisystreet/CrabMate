@@ -143,7 +143,7 @@ fn build_gh_api_argv(
 /// 渲染 `gh api` 的输出；**非零退出即失败**（`gh_api_failed`）。
 ///
 /// 这条路径不经 `run_gh_vec`（body 要经 stdin 传入），所以退出码判定在这里补：
-/// 以前非零退出只留一个「退出码：N」正文，靠 `parse_legacy_output` 的 `parse_exit_code`
+/// 以前非零退出只留一个「退出码：N」正文，靠 `parse_tool_output` 的 `parse_exit_code`
 /// 兜底。
 fn format_gh_api_process_output(
     out: std::process::Output,

@@ -1,11 +1,11 @@
-//! 工具失败时的结构化错误（与既有「整段 String + `parse_legacy_output`」并存，供编排与后续 runner 迁移）。
+//! 工具失败时的结构化错误（与既有「整段 String + `parse_tool_output`」并存，供编排与后续 runner 迁移）。
 //!
-//! 当前各 `tools::runner` 仍返回 `String`；[`super::parse_legacy_output`] 从正文推断 `ok` / `error_code`。
-//! [`ToolError::from_parsed_legacy`] 将一次解析结果升为显式 `Err`，[`crate::cm_tools::tools::run_tool_try`] 在边界上返回 [`Result`]。
+//! 当前各 `tools::runner` 仍返回 `String`；[`super::parse_tool_output`] 从正文推断 `ok` / `error_code`。
+//! [`ToolError::from_parsed`] 将一次解析结果升为显式 `Err`，[`crate::cm_tools::tools::run_tool_try`] 在边界上返回 [`Result`]。
 
 use std::fmt;
 
-use super::{ParsedLegacyOutput, tool_error_retryable_heuristic};
+use super::{ParsedToolOutput, tool_error_retryable_heuristic};
 
 /// 粗粒度失败分类（便于指标、重试策略与日志聚合；**不**保证与上游 HTTP 码一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,8 +58,8 @@ pub struct ToolError {
     /// 与 [`super::tool_error_retryable_heuristic`] 一致；编排/信封侧可读取（库内主路径尚未消费该字段）。
     #[allow(dead_code)]
     pub retryable: bool,
-    /// 与 `message` 对应的 [`super::parse_legacy_output`] 结果（供 `run_tool_result` 等失败路径免再解析）。
-    pub legacy_parsed: ParsedLegacyOutput,
+    /// 与 `message` 对应的 [`super::parse_tool_output`] 结果（供 `run_tool_result` 等失败路径免再解析）。
+    pub parsed: ParsedToolOutput,
 }
 
 impl fmt::Display for ToolError {
@@ -224,10 +224,10 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
 }
 
 impl ToolError {
-    /// 由 [`super::parse_legacy_output`] 的结果构造（`raw_output` 为完整 `run_tool` 字符串）。
-    pub fn from_parsed_legacy(
+    /// 由 [`super::parse_tool_output`] 的结果构造（`raw_output` 为完整 `run_tool` 字符串）。
+    pub fn from_parsed(
         tool_name: &str,
-        parsed: &ParsedLegacyOutput,
+        parsed: &ParsedToolOutput,
         raw_output: String,
     ) -> Self {
         let code = parsed
@@ -241,13 +241,13 @@ impl ToolError {
             code,
             message: raw_output,
             retryable,
-            legacy_parsed: parsed.clone(),
+            parsed: parsed.clone(),
         }
     }
 
     /// 参数 / JSON 校验失败（`error_code`：`invalid_args`）。
     pub fn invalid_args(message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -259,7 +259,7 @@ impl ToolError {
             code: "invalid_args".to_string(),
             message,
             retryable: false,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
@@ -268,10 +268,10 @@ impl ToolError {
         Self::external_code("workspace_resolve_failed", e.prefixed_user_message())
     }
 
-    /// 写盘前校验失败：正文沿用 Legacy 文案，并按正文推断 `write_precheck_failed` 等错误码。
+    /// 写盘前校验失败：正文沿用历史文案，并按正文推断 `write_precheck_failed` 等错误码。
     pub fn write_precheck_failed(tool: &str, message: String) -> Self {
-        let parsed = super::parse_legacy_output(tool, &message);
-        Self::from_parsed_legacy(tool, &parsed, message)
+        let parsed = super::parse_tool_output(tool, &message);
+        Self::from_parsed(tool, &parsed, message)
     }
 
     /// 任意错误码的失败（`category` 由 [`failure_category_for_error_code`] 推导）。
@@ -279,7 +279,7 @@ impl ToolError {
     /// 供没有专属构造器的码使用（如 `reminder_not_found` 归 `InvalidInput`、`schedule_io_failed`
     /// 归 `External`）。`code` 必须在分类表里有显式分支，否则 `category` 会退化为 `Unknown`。
     pub fn with_code(code: &'static str, message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -292,7 +292,7 @@ impl ToolError {
             code: code.to_string(),
             message,
             retryable,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
@@ -304,13 +304,13 @@ impl ToolError {
     /// 未知工具名（与历史「未知工具：…」正文一致）。
     pub fn unknown_tool(name: &str) -> Self {
         let message = format!("未知工具：{}", name);
-        let parsed = super::parse_legacy_output(name, &message);
-        Self::from_parsed_legacy(name, &parsed, message)
+        let parsed = super::parse_tool_output(name, &message);
+        Self::from_parsed(name, &parsed, message)
     }
 
     /// `run_command` 每秒限流等业务策略（`error_code`：`rate_limited`）。
     pub fn rate_limited(message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -322,13 +322,13 @@ impl ToolError {
             code: "rate_limited".to_string(),
             message,
             retryable: true,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
     /// 需要用户审批（`error_code`：`approval_required`）。
     pub fn approval_required(message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -340,15 +340,15 @@ impl ToolError {
             code: "approval_required".to_string(),
             message,
             retryable: false,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
     /// 子进程非零退出：`error_code` 为 `{tool_code}_failed`（如 `cargo_check_failed` /
-    /// `pytest_failed` / `python_snippet_failed`），并把退出码写进 `legacy_parsed.exit_code`。
+    /// `pytest_failed` / `python_snippet_failed`），并把退出码写进 `parsed.exit_code`。
     pub fn subprocess_failed(tool_code: &str, exit_code: i32, message: String) -> Self {
         let code = format!("{tool_code}_failed");
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: Some(exit_code),
             stdout: String::new(),
@@ -361,14 +361,14 @@ impl ToolError {
             code,
             message,
             retryable,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
     /// 无法启动子进程（如找不到 `cargo` 可执行文件）。
     pub fn subprocess_spawn_error(title: &str, err: std::io::Error) -> Self {
         let message = format!("{}: 执行失败（{}）", title, err);
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -380,7 +380,7 @@ impl ToolError {
             code: "cargo_spawn_failed".to_string(),
             message,
             retryable: false,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
@@ -395,7 +395,7 @@ impl ToolError {
     /// 或已在分类表显式登记——否则会退化成 `Unknown`。调用点目前是 `gh_*` 与 `git` 族
     /// （子命令名 / `action` 名进码名，`&'static str` 表达不了）。
     pub fn external_code_owned(code: String, message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -408,13 +408,13 @@ impl ToolError {
             code,
             message,
             retryable,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
     /// 逻辑或内部不变量破坏（极少见）；`error_code` 建议 `*_internal`。
     pub fn internal_code(code: &'static str, message: String) -> Self {
-        let parsed = ParsedLegacyOutput {
+        let parsed = ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
@@ -426,15 +426,15 @@ impl ToolError {
             code: code.to_string(),
             message,
             retryable: false,
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 
     /// 子进程会话超时 / 取消（供 `run_command` 与 `run_and_format*` 类工具复用）：
     /// `code` 为 `timeout` / `cancelled`，`message` 已含截断后的部分输出；
-    /// `legacy_parsed` 保留 stdout/stderr（供信封失败路径免再解析）。
+    /// `parsed` 保留 stdout/stderr（供信封失败路径免再解析）。
     pub fn session_stop(code: &'static str, message: String) -> Self {
-        let mut parsed = super::parse_legacy_output(code, &message);
+        let mut parsed = super::parse_tool_output(code, &message);
         parsed.ok = false;
         parsed.error_code = Some(code.to_string());
         Self {
@@ -442,7 +442,7 @@ impl ToolError {
             code: code.to_string(),
             message,
             retryable: code == "timeout",
-            legacy_parsed: parsed,
+            parsed,
         }
     }
 }
@@ -450,14 +450,14 @@ impl ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_tools::tool_result::parse_legacy_output;
+    use crate::cm_tools::tool_result::parse_tool_output;
 
     #[test]
     fn tool_error_from_unknown_tool_legacy() {
         let raw = "未知工具：foo".to_string();
-        let p = parse_legacy_output("foo", &raw);
+        let p = parse_tool_output("foo", &raw);
         assert!(!p.ok);
-        let e = ToolError::from_parsed_legacy("foo", &p, raw.clone());
+        let e = ToolError::from_parsed("foo", &p, raw.clone());
         assert_eq!(e.code, "unknown_tool");
         assert_eq!(e.category, ToolFailureCategory::Unknown);
         assert!(!e.retryable);
@@ -467,8 +467,8 @@ mod tests {
     #[test]
     fn tool_error_timeout_retryable() {
         let raw = "错误：超时\n".to_string();
-        let p = parse_legacy_output("run_command", &raw);
-        let e = ToolError::from_parsed_legacy("run_command", &p, raw);
+        let p = parse_tool_output("run_command", &raw);
+        let e = ToolError::from_parsed("run_command", &p, raw);
         assert_eq!(e.code, "timeout");
         assert!(e.retryable);
         assert_eq!(e.category, ToolFailureCategory::Timeout);

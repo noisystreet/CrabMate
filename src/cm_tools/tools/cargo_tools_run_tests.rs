@@ -21,9 +21,9 @@ fn run_and_format_try_timeout_returns_timeout_error_with_partial_output() {
         err.message
     );
     assert!(
-        err.legacy_parsed.stdout.contains("partial-cargo-out"),
-        "legacy_parsed 应保留部分 stdout: {:?}",
-        err.legacy_parsed.stdout
+        err.parsed.stdout.contains("partial-cargo-out"),
+        "parsed 应保留部分 stdout: {:?}",
+        err.parsed.stdout
     );
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(

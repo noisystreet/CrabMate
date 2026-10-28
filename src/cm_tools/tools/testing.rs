@@ -1,6 +1,6 @@
 //! 工具迁移测试共用的脚手架（仅 `#[cfg(test)]`）。
 //!
-//! 目标：让 Legacy 面（`String`）与 Typed 面（`Result<String, ToolError>`）的契约断言
+//! 目标：让 String 面（`run_tool` 返回的 `String`）与 Typed 面（`Result<String, ToolError>`）的契约断言
 //! 只写一次——正文逐字节一致、失败码 / 分类 / 可重试一致、成功正文含失败字样仍判成功。
 
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::ToolContext;
 use crate::cm_config::WebSearchProvider;
 use crate::cm_tools::tool_result::{
-    ToolError, ToolFailureCategory, parse_legacy_output, ToolResult,
+    ToolError, ToolFailureCategory, parse_tool_output, ToolResult,
 };
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -108,7 +108,7 @@ pub(crate) fn assert_success_parity(
     typed
 }
 
-/// 失败路径经主 `run_tool` 往返：Legacy 解析出的错误码须与 Typed 显式码一致。
+/// 失败路径经主 `run_tool` 往返：从正文解析出的错误码须与 Typed 显式码一致。
 ///
 /// 用于验证 `crabmate_tool_output` 头确实覆盖了正文启发式（如正文不含失败词却被判失败）。
 pub(crate) fn assert_run_tool_error_code(
@@ -118,12 +118,12 @@ pub(crate) fn assert_run_tool_error_code(
     expected_code: &str,
 ) -> String {
     let output = super::run_tool(name, args_json, ctx);
-    let parsed = parse_legacy_output(name, &output);
+    let parsed = parse_tool_output(name, &output);
     assert!(!parsed.ok, "应判失败: {output}");
     assert_eq!(
         parsed.error_code.as_deref(),
         Some(expected_code),
-        "Legacy 解析错误码不一致: {output}"
+        "从正文解析出的错误码不一致: {output}"
     );
     output
 }
@@ -135,7 +135,7 @@ pub(crate) fn assert_success_with_failure_wording(
     ctx: &ToolContext<'_>,
 ) -> String {
     let output = super::run_tool(name, args_json, ctx);
-    let parsed = parse_legacy_output(name, &output);
+    let parsed = parse_tool_output(name, &output);
     assert!(
         parsed.ok,
         "成功正文含失败字样不得被判失败: error_code={:?} {output}",

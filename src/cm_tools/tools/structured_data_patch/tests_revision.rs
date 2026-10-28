@@ -205,7 +205,7 @@ fn structured_patch_over_long_query_segment_is_invalid_args() {
         &dir,
     );
     // 单段 > 256 字符 ⇒ `parse_patch_query_tokens` 返回 `query 路径片段过长…`，外层再包装成
-    // `query 无效: …`。迁移前该首行不含 `parse_legacy_output` 的任何关键词，会被判成成功。
+    // `query 无效: …`。迁移前该首行不含 `parse_tool_output` 的任何关键词，会被判成成功。
     let long = "x".repeat(257);
     let args = format!(r#"{{"path":"c.json","query":"/{}","value":1}}"#, long);
     let err = structured_patch_execute_try(&args, &dir, &ctx)

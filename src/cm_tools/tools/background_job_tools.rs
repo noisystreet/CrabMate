@@ -31,7 +31,7 @@ const HOST_UNAVAILABLE: &str =
     "错误：后台任务查询不可用——当前执行路径未注入后台任务注册表。请在主对话回合中直接调用本工具。";
 
 /// 后台任务只读入口（String 面薄壳）：按 `action` 分派到 `status` / `list` / `output`。
-#[allow(clippy::result_large_err)] // 与 crate 内 `*_try` 约定一致（`ToolError` 含 legacy 解析快照）
+#[allow(clippy::result_large_err)] // 与 crate 内 `*_try` 约定一致（`ToolError` 含正文解析快照 `parsed`）
 pub fn background_job(
     args_json: &str,
     host: Option<&dyn ToolJobsToolHost>,

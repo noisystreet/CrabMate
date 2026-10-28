@@ -816,7 +816,7 @@ mod tests {
             "写入文件失败：x\n",
             "写盘应已成功"
         );
-        let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("search_replace", out);
+        let r = crate::cm_tools::tool_result::ToolResult::from_output("search_replace", out);
         assert!(
             r.ok,
             "文件已成功写入，工具结果不应判失败: error_code={:?}",

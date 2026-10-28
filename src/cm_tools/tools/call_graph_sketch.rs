@@ -34,7 +34,7 @@ struct Edge {
     line_trim: String,
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn parse_params(args_json: &str) -> Result<SketchParams, ToolError> {
     let args: CallGraphSketchArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;

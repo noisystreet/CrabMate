@@ -118,7 +118,7 @@
 - [x] chat：把 `cancel` / SSE closed **穿进** wait 循环，不要只在工具间隙 `abort_tool_batch_if_sse_closed`。
 - [x] workflow：`tool=run_command` 的节点超时走同一套 kill；删掉「请手动检查孤儿进程」作为 **run_command** 的唯一出路。其它工具节点仍可孤儿，日志须写明范围。
 - [x] **`run_tool_result` / `run_tool_dispatch` 必须走 `run_try_wait` + `ctx.command_timeout_secs`**，不能只用无墙钟的 `run_try`。workflow 跳过外圈 `tokio::time::timeout` 后，否则节点会无限挂起。
-- [x] 超时/取消返回已截断输出 + 稳定 `error_code`（现启发式可保留作兜底）；`ToolError.legacy_parsed` 保留部分 stdout/stderr。
+- [x] 超时/取消返回已截断输出 + 稳定 `error_code`（现启发式可保留作兜底）；`ToolError.parsed` 保留部分 stdout/stderr。
 - [x] 杀进程后 **drain join / `try_wait` 失败路径须有界**（孤儿占管不得让 `spawn_blocking` 永久卡住）。
 
 **关联文件**：`command.rs`、`execute_run_command.inc.rs`、`exec_serial.rs`（传 cancel）、`cm_workflow/execute/node.rs`、新建会话模块、`python_tools.rs`（迁入时对照删除 hard_kill）。

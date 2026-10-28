@@ -104,7 +104,7 @@ pub fn archive_pack(
         "tar.gz" | "tgz" => pack_tar(&output_path, &sources, Some("gzip")),
         "tar.bz2" | "tbz2" => pack_tar(&output_path, &sources, Some("bzip2")),
         "tar.xz" | "txz" => pack_tar(&output_path, &sources, Some("xz")),
-        // 纯文本无「错误/失败」关键词会被 `parse_legacy_output` 判成成功，故必须走 Typed 错误码。
+        // 纯文本无「错误/失败」关键词会被 `parse_tool_output` 判成成功，故必须走 Typed 错误码。
         _ => {
             return Err(ToolError::invalid_args(format!(
                 "不支持的归档格式: {output}"

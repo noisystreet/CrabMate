@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use super::tool_error::failure_category_for_error_code;
 use super::{
-    ParsedLegacyOutput, ToolEnvelopeContext, parse_legacy_output, tool_error_retryable_heuristic,
+    ParsedToolOutput, ToolEnvelopeContext, parse_tool_output, tool_error_retryable_heuristic,
 };
 
 /// 当前实现的 `crabmate_tool.v` 值；与 `encode_tool_message_envelope_v1` 写入一致。
@@ -42,7 +42,7 @@ impl NormalizedToolEnvelope {
     pub fn from_tool_run(
         tool_name: &str,
         summary: String,
-        parsed: &ParsedLegacyOutput,
+        parsed: &ParsedToolOutput,
         raw_output: &str,
         envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
         structured_payload: Option<Value>,
@@ -106,7 +106,7 @@ impl NormalizedToolEnvelope {
         let ok = ct
             .get("ok")
             .and_then(|x| x.as_bool())
-            .unwrap_or_else(|| parse_legacy_output(name.as_str(), output.as_str()).ok);
+            .unwrap_or_else(|| parse_tool_output(name.as_str(), output.as_str()).ok);
         let exit_code = ct
             .get("exit_code")
             .and_then(|x| x.as_i64())

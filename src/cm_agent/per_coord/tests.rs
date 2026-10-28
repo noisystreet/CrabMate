@@ -844,7 +844,7 @@ fn workflow_validate_layer_cache_invalidates_on_context_mutation() {
 #[test]
 fn workflow_validate_layer_from_crabmate_tool_envelope() {
     let inner = r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"x"},{"id":"y"},{"id":"z"}]}"#;
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("workflow_execute", inner);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("workflow_execute", inner);
     let wrapped = crate::cm_tools::tool_result::encode_tool_message_envelope_v1(
         "workflow_execute",
         "wf".into(),

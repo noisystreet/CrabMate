@@ -178,7 +178,7 @@ impl<'a> GhCtx<'a> {
 ///   （`pr` / `run` / `issue` / `release` / `api`），所以调用点不必额外传参。
 ///
 /// 最后一条是本次迁移的实质改动：以前非零退出只体现为正文里的「退出码：N」，
-/// 靠 `parse_legacy_output` 的 `parse_exit_code` 兜底；正文换成别的形态就可能被读成成功。
+/// 靠 `parse_tool_output` 的 `parse_exit_code` 兜底；正文换成别的形态就可能被读成成功。
 #[allow(clippy::result_large_err)]
 pub fn run_gh_vec(argv: Vec<String>, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     run_gh_vec_allow_exit(argv, ctx, &[0])

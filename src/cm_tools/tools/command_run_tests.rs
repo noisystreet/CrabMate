@@ -726,7 +726,7 @@ fn run_command_timeout_includes_partial_output_and_kills() {
 
 #[cfg(unix)]
 #[test]
-fn run_command_timeout_legacy_parsed_keeps_stdout() {
+fn run_command_timeout_parsed_keeps_stdout() {
     use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
     let outcome = run_checked_wait(
         r#"{"command":"bash","args":["-c","echo partial-out; sleep 60"]}"#,
@@ -744,9 +744,9 @@ fn run_command_timeout_legacy_parsed_keeps_stdout() {
         .expect("timeout tool error");
     assert_eq!(te.code, "timeout");
     assert!(
-        te.legacy_parsed.stdout.contains("partial-out"),
+        te.parsed.stdout.contains("partial-out"),
         "stdout={:?}",
-        te.legacy_parsed.stdout
+        te.parsed.stdout
     );
 }
 

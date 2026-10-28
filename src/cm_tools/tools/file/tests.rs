@@ -248,7 +248,7 @@ fn test_modify_file_ok_ignores_failure_word_inside_diff_preview() {
     );
     assert!(out.contains("已按行替换"), "{}", out);
     // 工具实际写盘成功；即使 diff 预览内容行里恰好含「失败」字样，也不应被误判为失败。
-    let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("modify_file", out);
+    let r = crate::cm_tools::tool_result::ToolResult::from_output("modify_file", out);
     assert!(r.ok, "工具成功却判失败: error_code={:?}", r.error_code);
     assert_eq!(r.error_code, None);
     let _ = std::fs::remove_dir_all(&dir);

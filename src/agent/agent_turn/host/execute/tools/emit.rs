@@ -8,7 +8,7 @@ use crate::sse::{
     SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary,
     TurnSegmentStartBody, send_sse_control_payload_optional,
 };
-use crate::tool_result::{self, parse_legacy_output};
+use crate::tool_result::{self, parse_tool_output};
 use crate::types::{Message, message_content_byte_len_for_estimate};
 
 use super::emit_common::{emit_sse_tool_result, summarize_tool_call_args};
@@ -124,7 +124,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     let out = control.out;
     let sse_control_mirror = control.sse_control_mirror;
     let tool_summary = summarize_tool_call_args(name, args);
-    let parsed_for_timeline = parse_legacy_output(name, result.as_str());
+    let parsed_for_timeline = parse_tool_output(name, result.as_str());
 
     emit_sse_tool_result(
         out,
@@ -222,7 +222,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     );
 
     let content_for_model = if tool_result_envelope_v1 {
-        let parsed = parse_legacy_output(name, &result);
+        let parsed = parse_tool_output(name, &result);
         let summary_str = tool_summary
             .clone()
             .unwrap_or_else(|| format!("tool: {name}"));

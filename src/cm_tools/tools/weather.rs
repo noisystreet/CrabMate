@@ -61,7 +61,7 @@ fn weather_code_text(code: f64) -> &'static str {
 /// - 参数：缺 / 过短的 `city` / `location` → `invalid_args`；
 /// - 客户端构造失败 → `weather_client_failed`；网络超时 → `timeout`；其余网络 / HTTP / 解析失败 → `weather_api_error`；
 /// - **查不到该地名** → `weather_city_not_found`。旧实现返回 `未找到与「…」匹配的地点…`，
-///   正文既不以「错误」开头也不含「失败 / 超时」，被 `parse_legacy_output` 判成**成功**；
+///   正文既不以「错误」开头也不含「失败 / 超时」，被 `parse_tool_output` 判成**成功**；
 /// - 上游未给 `current` → `weather_no_current_data`，旧实现同样是静默成功。
 #[allow(clippy::result_large_err)]
 pub fn run_try(args_json: &str, timeout_secs: u64) -> Result<String, ToolError> {

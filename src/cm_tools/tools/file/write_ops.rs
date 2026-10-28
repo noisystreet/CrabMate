@@ -506,7 +506,7 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 /// [`modify_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 ///
 /// 顶层参数 / 路径 / 非文件判定直接返回 [`ToolError`]；行号替换、批量 `edits` 与
-/// 整文件覆盖仍以正文返回，这里用 `parse_legacy_output` 兜底，保留正文可识别的
+/// 整文件覆盖仍以正文返回，这里用 `parse_tool_output` 兜底，保留正文可识别的
 /// 精确码（如 `stale_revision` / `write_precheck_failed`）。
 #[allow(clippy::result_large_err)]
 pub fn modify_file_try(
@@ -535,16 +535,16 @@ pub fn modify_file_try(
 
     let output =
         modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode);
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("modify_file", &output);
     if parsed.ok {
         return Ok(output);
     }
-    Err(ToolError::from_parsed_legacy("modify_file", &parsed, output))
+    Err(ToolError::from_parsed("modify_file", &parsed, output))
 }
 
 /// dispatch 内部仍返回正文：失败码由正文可识别标记保留（如 `错误[stale_revision]`）。
 #[allow(clippy::result_large_err)]
 fn modify_file_legacy_body_error(output: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
-    ToolError::from_parsed_legacy("modify_file", &parsed, output)
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("modify_file", &output);
+    ToolError::from_parsed("modify_file", &parsed, output)
 }

@@ -109,7 +109,7 @@ fn format_structured_plain_tool(raw: &str, include_raw: bool) -> String {
     if !include_raw {
         return String::new();
     }
-    let structured = ToolResult::from_legacy_output("tool", raw.to_string());
+    let structured = ToolResult::from_output("tool", raw.to_string());
     let mut status_parts = Vec::new();
     status_parts.push(if structured.ok {
         "成功".to_string()

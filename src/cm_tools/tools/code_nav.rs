@@ -203,7 +203,7 @@ struct RsWalkCtx<'a> {
     ignore_hidden_dirs: bool,
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
     if !root.exists() {
         return Ok(());
@@ -215,7 +215,7 @@ fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
 }
 
 /// 目录递归主体：隐藏目录/非 `.rs` 文件由 [`is_rs_entry_visitable`] 过滤，命中上限即停止。
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn walk_rs_dir(dir: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
     for entry in fs::read_dir(dir).map_err(|e| search_io_failed(&e.to_string()))? {
         let entry = entry.map_err(|e| search_io_failed(&e.to_string()))?;
@@ -247,7 +247,7 @@ fn is_rs_entry_visitable(path: &Path, name: &std::ffi::OsStr, ctx: &RsWalkCtx<'_
     path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs")
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolError> {
     if path.extension().and_then(|e| e.to_str()) != Some("rs") {
         return Ok(());
@@ -264,7 +264,7 @@ fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), ToolErro
     )
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn search_refs_in_file(
     path: &Path,
     ref_re: &Regex,

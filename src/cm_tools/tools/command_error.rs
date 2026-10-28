@@ -6,7 +6,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use super::output_util;
-use crate::cm_tools::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
+use crate::cm_tools::tool_result::{ParsedToolOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::CdPeelError;
 
@@ -76,7 +76,7 @@ impl RunCommandError {
                 code: "missing_command".to_string(),
                 message: msg,
                 retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
+                parsed: ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -104,7 +104,7 @@ impl RunCommandError {
                 code: "shell_variable_detected".to_string(),
                 message: msg,
                 retryable: true,
-                legacy_parsed: ParsedLegacyOutput {
+                parsed: ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -118,7 +118,7 @@ impl RunCommandError {
                 code: "command_not_found".to_string(),
                 message: msg,
                 retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
+                parsed: ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -131,7 +131,7 @@ impl RunCommandError {
                 code: "permission_denied".to_string(),
                 message: msg,
                 retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
+                parsed: ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -144,7 +144,7 @@ impl RunCommandError {
                 code: "spawn_failed".to_string(),
                 message: msg,
                 retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
+                parsed: ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -202,7 +202,7 @@ fn invalid_input_with_code(code: &'static str, message: String) -> ToolError {
         code: code.to_string(),
         message,
         retryable: false,
-        legacy_parsed: ParsedLegacyOutput {
+        parsed: ParsedToolOutput {
             ok: false,
             exit_code: None,
             stdout: String::new(),
