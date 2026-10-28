@@ -389,7 +389,7 @@ fn down_record(
         return Err(CtlError::general(
             "identity_mismatch",
             format!(
-                "拒绝终止实例 {name}：{}。记录可能与实际进程不符，请人工确认后执行 `crabmate ctl prune`",
+                "拒绝终止实例 {name}：{}。记录可能与实际进程不符，请人工确认后执行 `crabmatectl prune`",
                 ident.reason().unwrap_or("进程身份校验未通过")
             ),
         ));
@@ -419,7 +419,7 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
     let Some(rec) = record::read_optional(&path)? else {
         return Err(CtlError::general(
             "instance_not_found",
-            format!("实例 {name} 不存在；请先 `crabmate ctl up {name} ...`"),
+            format!("实例 {name} 不存在；请先 `crabmatectl up {name} ...`"),
         ));
     };
     let workspace = rec.workspace.clone().ok_or_else(|| {

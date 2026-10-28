@@ -94,12 +94,19 @@ if [[ ! -f target/release/crabmate ]]; then
   exit 1
 fi
 
+if [[ ! -f target/release/crabmatectl ]]; then
+  echo "错误: 未找到 target/release/crabmatectl" >&2
+  exit 1
+fi
+
 mkdir -p dist
 
 if [[ "$SKIP_TAR" -eq 0 ]]; then
   echo "==> 组装 tar 内容"
   cp target/release/crabmate "$STAGE_DIR/"
   chmod 755 "$STAGE_DIR/crabmate"
+  cp target/release/crabmatectl "$STAGE_DIR/"
+  chmod 755 "$STAGE_DIR/crabmatectl"
   [[ -f LICENSE ]] && cp LICENSE "$STAGE_DIR/"
   [[ -f README.md ]] && cp README.md "$STAGE_DIR/"
   cp -R config "$STAGE_DIR/"

@@ -169,6 +169,38 @@ fn open_log(path: &Path) -> Result<File, CtlError> {
     Ok(f)
 }
 
+/// 定位 `crabmate`（**不是** `crabmatectl`）可执行文件。
+///
+/// 不能用 `current_exe()`：`crabmatectl` 是独立二进制，拿它当子进程会得到
+/// 「unrecognized subcommand 'serve'」。发行包（tar / deb）把两者放在同一 bin 目录，
+/// 故优先取同目录的 `crabmate`；自定义布局用 `CRABMATECTL_BIN` 覆盖。
+fn resolve_serve_binary() -> Result<PathBuf, CtlError> {
+    if let Some(raw) = std::env::var_os("CRABMATECTL_BIN").filter(|v| !v.is_empty()) {
+        let path = PathBuf::from(raw);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(CtlError::general(
+            "serve_binary_missing",
+            format!("CRABMATECTL_BIN 指向的文件不存在：{}", path.display()),
+        ));
+    }
+    let exe = std::env::current_exe().map_err(|e| {
+        CtlError::general("spawn_failed", format!("无法定位当前可执行文件：{e}"))
+    })?;
+    let sibling = exe.with_file_name("crabmate");
+    if sibling.is_file() {
+        return Ok(sibling);
+    }
+    Err(CtlError::general(
+        "serve_binary_missing",
+        format!(
+            "找不到 crabmate 可执行文件（期望同目录下的 {}）；请把 crabmate 与 crabmatectl 放在一起，或用 CRABMATECTL_BIN 指定",
+            sibling.display()
+        ),
+    ))
+}
+
 /// 子进程的 stdout/stderr：前台模式继承调用方，脱管模式重定向到实例日志。
 ///
 /// 与 [`resolve_serve_config`] 同理独立成函数，替 `spawn_serve` 守住 CCN ≤ 10。
@@ -196,9 +228,7 @@ fn resolve_serve_config(spec: &SpawnSpec) -> Result<Option<PathBuf>, CtlError> {
 
 /// 启动一个 `serve` 子进程（脱管：ctl 退出后继续运行）。
 pub fn spawn_serve(spec: &SpawnSpec) -> Result<Spawned, CtlError> {
-    let exe = std::env::current_exe().map_err(|e| {
-        CtlError::general("spawn_failed", format!("无法定位当前可执行文件：{e}"))
-    })?;
+    let exe = resolve_serve_binary()?;
     let (env, env_keys) = build_env(&spec.env)?;
     let serve_config = resolve_serve_config(spec)?;
     let (stdout, stderr) = open_stdio(spec)?;
