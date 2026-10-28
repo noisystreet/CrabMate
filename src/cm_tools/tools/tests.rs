@@ -702,7 +702,10 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮（C 档 · 外部 API）：`get_weather` / `web_search` 迁 Typed（−2）—— 两者原先
     // 靠正文首行 `错误[码]：` 标记让 `parse_legacy_output` 反解错误码，现在直接给 `Err`；
     // 顺带把 weather 的两条静默成功（查不到地名 / 上游无 `current`）改成显式失败。8 → 6。
-    const LEGACY_BASELINE: usize = 6;
+    // 再说受控 HTTP 族：`http_fetch` / `http_request` 迁 Typed（−2）—— 共用
+    // `fetch_with_method` / `request_with_json_body`，`Err` 的正文与旧文本逐字一致，
+    // 差异只在「URL 未匹配白名单」从普通错误升为 `PolicyDenied`。6 → 4。
+    const LEGACY_BASELINE: usize = 4;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

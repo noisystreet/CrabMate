@@ -165,7 +165,8 @@ impl CrabmateParallelToolDispatch {
                 // 并行 `http_fetch` 路径不涉及后台任务查询。
                 None,
             );
-            crate::tools::http_fetch::run_direct(&args, &ctx)
+            // 并行只读批把正文交给编排层：这里只展平 `Err`（正文与迁移前逐字一致）。
+            crate::tools::http_fetch::run_direct(&args, &ctx).unwrap_or_else(|e| e.message)
         })
         .await
         .unwrap_or_else(|e| format!("工具执行 panic：{}", e))

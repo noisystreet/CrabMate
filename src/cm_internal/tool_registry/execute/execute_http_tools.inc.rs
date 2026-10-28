@@ -44,6 +44,8 @@ async fn execute_http_fetch_impl(
             timeout_secs,
             max_body,
         )
+        // 审批后的异步路径仍把正文交给编排层：只展平 `Err`，正文逐字不变。
+        .unwrap_or_else(|e| e.message)
     })
     .await;
     (s, None)
@@ -100,6 +102,8 @@ async fn execute_http_request_impl(
             timeout_secs,
             max_body,
         )
+        // 同上：只展平 `Err`。
+        .unwrap_or_else(|e| e.message)
     })
     .await;
     (s, None)

@@ -199,6 +199,7 @@ async fn dispatch_tool_runner_kind(
 
 fn run_tool_runner_http_fetch(inv: &ToolInvocationLine, http: &ToolRunnerHttpCfg) -> String {
     match http_fetch::parse_http_fetch_args(&inv.args_json) {
+        // 沙盒 runner 与宿主同进程：`Err` 的正文仍是那段 `错误[码]：…`，直接展平即可。
         Ok((u, m, fmt)) => http_fetch::fetch_with_method(
             &u,
             m,
@@ -206,7 +207,8 @@ fn run_tool_runner_http_fetch(inv: &ToolInvocationLine, http: &ToolRunnerHttpCfg
             &http.user_agent,
             http.timeout_secs.max(1),
             http.max_response_bytes,
-        ),
+        )
+        .unwrap_or_else(|e| e.message),
         Err(e) => format!("错误：{}", e),
     }
 }
@@ -221,7 +223,8 @@ fn run_tool_runner_http_request(inv: &ToolInvocationLine, http: &ToolRunnerHttpC
             &http.user_agent,
             http.timeout_secs.max(1),
             http.max_response_bytes,
-        ),
+        )
+        .unwrap_or_else(|e| e.message),
         Err(e) => format!("错误：{}", e),
     }
 }

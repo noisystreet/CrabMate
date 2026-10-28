@@ -56,22 +56,11 @@ enum Expect {
 /// 选参原则：只踩**实现层自己的校验与查找失败**，不触发网络、子进程编译、
 /// 真实测试执行等副作用（绕开 schema 校验后，`{}` 可能直接走到 `unwrap`）。
 const CASES: &[(&str, &str, Expect, &str)] = &[
-    // ── 外部 API 族：`get_weather` / `web_search` 已迁 Typed（2026-10-28）——
-    //    原先在这里靠「city 太短」「无 API Key」两条正文关键词判定，现在由各自单测
-    //    按 `error_code` 断言（`weather::tests` / `web_search` 的 provider 分支）──
-    // ── HTTP 族：非法 scheme，闸门与 URL 解析都在实现层 ─────────
-    (
-        "http_fetch",
-        r#"{"url":"ftp://nope.invalid/x"}"#,
-        Expect::Fails,
-        "仅允许 http/https",
-    ),
-    (
-        "http_request",
-        r#"{"method":"POST","url":"ftp://nope.invalid/x"}"#,
-        Expect::Fails,
-        "仅允许 http/https",
-    ),
+    // ── 外部 API 族（`get_weather` / `web_search`）与受控 HTTP 族（`http_fetch` / `http_request`）
+    //    均已迁 Typed（2026-10-28）—— 原先在这里靠「city 太短」「无 API Key」「非法 scheme」
+    //    这类正文关键词判定，现在由各自单测按 `error_code` 断言：
+    //    `weather::tests`、`web_search::tests` 的 provider 分支、`http_fetch/tests.rs` 的
+    //    `run_direct` / `run_request_direct`（非法 scheme、白名单拒绝）──
     // ── LSP：`rust_analyzer` 已迁 Typed（失败一律显式 `Err(ToolError)`），
     //    其错误码划分与 8 个 action 的失败分支由 `rust_ide::tests` 直接覆盖，不再经本表 ──
     // ── 控制面 ──────────────────────────────────────────────────

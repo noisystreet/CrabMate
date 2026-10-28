@@ -469,11 +469,15 @@ pub fn runner_web_search_try(args: &str, ctx: &ToolContext<'_>) -> Result<String
     web_search::run_try(args, ctx)
 }
 
-pub fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
+/// `http_fetch` 的 Typed runner：同步路径只允许白名单 URL，未匹配即策略拒绝。
+#[allow(clippy::result_large_err)]
+pub fn runner_http_fetch_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     http_fetch::run_direct(args, ctx)
 }
 
-pub fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
+/// `http_request` 的 Typed runner：同上，审批键按 METHOD 区分。
+#[allow(clippy::result_large_err)]
+pub fn runner_http_request_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     http_fetch::run_request_direct(args, ctx)
 }
 

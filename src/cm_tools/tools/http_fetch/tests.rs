@@ -1,11 +1,45 @@
 use reqwest::Url;
 
 use super::decode::{apply_text_format_if_requested, decode_http_body_text_for_tool};
+use super::sync_fetch::{run_direct, run_request_direct};
 use super::{
     FetchMethod, HttpBodyTextFormat, RequestMethod, approval_args_display,
     approval_args_display_request, html_to_readable_text, parse_http_fetch_args,
     parse_http_request_args, request_storage_key, url_matches_allowed_prefixes,
 };
+use crate::cm_tools::tools::tests::{test_allowed_commands, test_ctx};
+
+/// 非 http/https 是**参数**问题（`invalid_args`），正文仍以「错误：」开头。
+#[test]
+fn run_direct_rejects_non_http_scheme_as_invalid_args() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = run_direct(r#"{"url":"ftp://nope.invalid/x"}"#, &ctx).expect_err("非法 scheme 应失败");
+    assert_eq!(e.code, "invalid_args");
+    assert!(e.message.starts_with("错误："), "{}", e.message);
+}
+
+/// 白名单不匹配是**策略拒绝**：同步路径没有审批通道，重试同一 URL 也不会变。
+#[test]
+fn run_direct_rejects_url_outside_allowlist_as_policy_denied() {
+    let allowed = test_allowed_commands();
+    // `test_ctx` 的 `http_fetch_allowed_prefixes` 为空 = 全部要走审批 ⇒ 同步路径一律拒绝。
+    let ctx = test_ctx(&allowed);
+    let e = run_direct(r#"{"url":"https://example.com/x"}"#, &ctx).expect_err("白名单外应拒绝");
+    assert_eq!(e.code, "http_fetch_url_not_allowed");
+    assert!(!e.retryable, "策略拒绝不该被自动重试：{:?}", e);
+}
+
+/// `http_request` 用自己的码：审批键按 METHOD 区分，错误码也不合并。
+#[test]
+fn run_request_direct_rejects_url_outside_allowlist_as_policy_denied() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = run_request_direct(r#"{"method":"POST","url":"https://example.com/x"}"#, &ctx)
+        .expect_err("白名单外应拒绝");
+    assert_eq!(e.code, "http_request_url_not_allowed");
+    assert!(!e.retryable, "策略拒绝不该被自动重试：{:?}", e);
+}
 
 #[test]
 fn parse_defaults_to_get() {
