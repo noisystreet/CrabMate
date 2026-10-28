@@ -457,12 +457,16 @@ pub fn runner_search_in_files_try(
 
 // ── 转发参数较少、单独列出更直观的 runner ───────────────────
 
-pub fn runner_get_weather(args: &str, ctx: &ToolContext<'_>) -> String {
-    weather::run(args, ctx.weather_timeout_secs)
+/// `get_weather` 的 Typed runner：外部 API（Open-Meteo）失败显式成 `Err`。
+#[allow(clippy::result_large_err)]
+pub fn runner_get_weather_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    weather::run_try(args, ctx.weather_timeout_secs)
 }
 
-pub fn runner_web_search(args: &str, ctx: &ToolContext<'_>) -> String {
-    web_search::run(args, ctx)
+/// `web_search` 的 Typed runner：worbrow / Brave / Tavily 的失败分支显式成 `Err`。
+#[allow(clippy::result_large_err)]
+pub fn runner_web_search_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    web_search::run_try(args, ctx)
 }
 
 pub fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {

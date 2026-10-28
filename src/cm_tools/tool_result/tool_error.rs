@@ -101,6 +101,16 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         "http_timeout" => ToolFailureCategory::Timeout,
         "http_network_error" | "http_body_read_error" => ToolFailureCategory::External,
         "weather_api_error" | "web_search_api_error" => ToolFailureCategory::External,
+        // 外部 API 族（2026-10-28 迁 Typed runner）显式登记的码：
+        // 「查不到地名」换一个城市名就能成 → `InvalidInput`；
+        // 「没配 API Key」是配置前置条件缺失（换配置可修，不是参数问题）→ `Workspace`；
+        // 客户端构造失败、上游缺字段、无可用浏览器都属外部原因 → `External`。
+        "weather_city_not_found" => ToolFailureCategory::InvalidInput,
+        "web_search_not_configured" => ToolFailureCategory::Workspace,
+        "weather_client_failed"
+        | "weather_no_current_data"
+        | "web_search_client_failed"
+        | "web_search_browser_unavailable" => ToolFailureCategory::External,
         "rate_limited" => ToolFailureCategory::PolicyDenied,
         "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
             ToolFailureCategory::External
