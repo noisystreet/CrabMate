@@ -1,6 +1,6 @@
 [
 ToolSpec {
-            name: "delete_files",
+            name: tool_names::DELETE_FILES,
             description: "删除工作区内一个或多个文件（受控写入，需 confirm=true）。`paths` 为相对路径列表（最多 32 个，同路径去重）；任一路径非法则整批拒绝、不产生部分删除；不能删除目录（请用 delete_dir）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DeleteFilesArgs>,
@@ -8,7 +8,7 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_delete_files),
         },
         ToolSpec {
-            name: "delete_dir",
+            name: tool_names::DELETE_DIR,
             description: "删除工作区内的目录（受控写入，需 confirm=true）。默认仅删除空目录；recursive=true 时递归删除含子目录和文件。不能删除工作区根目录。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DeleteDirArgs>,
@@ -16,7 +16,7 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_delete_dir),
         },
         ToolSpec {
-            name: "append_file",
+            name: tool_names::APPEND_FILE,
             description: "在工作区内文件末尾追加内容。默认文件须已存在；create_if_missing=true 时不存在则创建。不覆盖已有内容。支持 dry_run 预览；**dry_run 默认 true 只预览**，显式 dry_run=false 才写盘。默认 ensure_leading_newline=true，会在原文件非空且末尾无换行时先补一个换行，避免新内容接在旧末行后。`content` 可用 body/text/code 等别名。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::AppendFileArgs>,
@@ -24,7 +24,7 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_append_file),
         },
         ToolSpec {
-            name: "create_dir",
+            name: tool_names::CREATE_DIR,
             description: "在工作区内创建目录。默认 parents=true（递归创建父目录，类似 mkdir -p）。目录已存在时不报错。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CreateDirArgs>,
@@ -32,7 +32,7 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_create_dir),
         },
         ToolSpec {
-            name: "search_replace",
+            name: tool_names::SEARCH_REPLACE,
             description: "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配。**dry_run 默认 true 仅预览变更**（显示行级替换对比）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可限制最大替换次数。文件上限 4MiB。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::SearchReplaceArgs>,

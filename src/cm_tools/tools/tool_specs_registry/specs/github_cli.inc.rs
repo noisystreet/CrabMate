@@ -1,6 +1,6 @@
 [
     ToolSpec {
-        name: "gh_pr",
+        name: tool_names::GH_PR,
         description: "PR 操作（封装 **`gh pr`**），由 **`action`** 选择：**`checks`**（只读；可选 **`structured: true`** 附加 JSON + 失败/进行中摘要，需 **`gh` ≥ 2.50**）/ **`create`**（**写远端**；**`title`** 必填，省略 **`body`** 时默认 **`auto_body`** 从 PR 模板 + `base..HEAD` git log 生成正文）/ **`merge`**（**写**；**`merge_method`** 默认 `rebase`，可选 **`auto`**、**`delete_branch`**、**`admin`**）/ **`review`**（**写**；**`event`** 必填，`comment` 与 `request-changes` 须 **`body`**）/ **`comment`**（**写**；**`body`** 必填）/ **`edit`**（**写**；`title` / `body` / `base` / `draft` / `undraft` / 标签 / reviewer / assignee）/ **`body_draft`**（只读；正文草稿，可附 `base` 的 commit 摘要）。通用可选 **`repo`**、**`number`**、**`extra_args`**。须已 `git push` 源分支且本机 **`gh auth`** 有效。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhPrArgs>,
@@ -8,7 +8,7 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr),
     },
     ToolSpec {
-        name: "gh_run",
+        name: tool_names::GH_RUN,
         description: "Actions 操作（封装 **`gh run`**），由 **`action`** 选择：**`rerun`**（**写远端**；**`failed: true`** 只重跑失败 job）/ **`failure_summary`**（只读；解析 `gh run view --json jobs` 中失败的 job 并拉取日志尾部，**`tail_lines`** 默认 60、**`max_failed_jobs`** 默认 5，比整段 `--log` 更适合排障）。必填 **`run_id`**；通用可选 **`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhRunArgs>,
@@ -16,7 +16,7 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_run),
     },
     ToolSpec {
-        name: "gh_issue_create",
+        name: tool_names::GH_ISSUE_CREATE,
         description: "在 GitHub **创建 Issue**（封装 **`gh issue create`**；**写远端**）。必填 **`title`**；可选 **`body`**（经工作区临时 `--body-file`）、**`labels`**、**`assignee`**、**`repo`**、**`web`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhIssueCreateArgs>,
@@ -24,7 +24,7 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_issue_create),
     },
     ToolSpec {
-        name: "gh_release_create",
+        name: tool_names::GH_RELEASE_CREATE,
         description: "在 GitHub **创建 Release**（封装 **`gh release create`**；**写远端**）。必填 **`tag`**；可选 **`title`**、**`notes`**（经工作区临时 `--notes-file`）；**`auto_notes: true`** 且 notes 为空时，自最近 tag 至 HEAD 的 commit 列表生成 notes 草稿；可选 **`target`**、**`draft`**、**`prerelease`**、**`repo`**、**`web`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhReleaseCreateArgs>,
@@ -32,7 +32,7 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_release_create),
     },
     ToolSpec {
-        name: "gh_api",
+        name: tool_names::GH_API,
         description: "调用 **`gh api`**（受限）：`path` 为**无前导 /** 的相对端点路径（如 `repos/owner/repo/pulls`），字符集受限（仅字母数字与 `/ _ . @ - :`），**不得含查询串 `?`**——查询参数请改用 **`query`** 对象（如 `{\"state\":\"open\",\"per_page\":50}`），工具会自动转成 `-f key=value` 并**显式传 `--method`**（避免 `gh` 见到 `-f` 默认改用 POST）。`method` 默认 GET，支持 HEAD/POST/PATCH/PUT/DELETE；可选 JSON `body`（经 stdin 传入）；`extra_args` 用于 `query` 未覆盖的少量 flag。**写操作**（POST 等）可能修改远端资源，属非只读工具。勿在 body 中放入密钥。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhApiArgs>,

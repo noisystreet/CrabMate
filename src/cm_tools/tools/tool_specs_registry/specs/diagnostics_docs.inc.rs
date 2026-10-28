@@ -1,6 +1,6 @@
 [
         ToolSpec {
-            name: "present_clarification_questionnaire",
+            name: tool_names::PRESENT_CLARIFICATION_QUESTIONNAIRE,
             description: "向 Web 客户端下发**澄清问卷**控制面（SSE `clarification_questionnaire`）：当信息不足需用户逐项回答时调用。须提供稳定 `questionnaire_id` 与 1～12 道题目（`id`/`label`/可选 `hint`/`required`/`kind`）。**仅 Web 流式**会弹出问卷 UI；CLI/TUI 仍收到工具正文。用户下一条 `POST /chat` 或 `/chat/stream` 须在 JSON 中带 `clarify_questionnaire_answers`（与 `questionnaire_id` 及题目 `id` 对齐）。**禁止**在 `intro`/`label` 中要求用户粘贴密钥或隐私原文。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::PresentClarificationQuestionnaireArgs>,
@@ -8,7 +8,7 @@
             summary: ToolSummaryKind::Static("Present clarification questionnaire (Web SSE)"),
         },
         ToolSpec {
-            name: "diagnostic_summary",
+            name: tool_names::DIAGNOSTIC_SUMMARY,
             description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `crates/` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `CM_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。业务 UI 在 Client 仓（`serve` 永远纯 API，不托管 UI）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DiagnosticSummaryArgs>,
@@ -16,7 +16,7 @@
             summary: ToolSummaryKind::Static("Environment/toolchain diagnostic summary (redacted)"),
         },
         ToolSpec {
-            name: "repo_overview_sweep",
+            name: tool_names::REPO_OVERVIEW_SWEEP,
             description: "只读聚合：可选**项目画像**（与 Web `GET /workspace/profile` 同源：清单与 tokei 等，默认开启，见 `include_project_profile` / `project_profile_max_chars`）；依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::RepoOverviewSweepArgs>,
@@ -24,7 +24,7 @@
             summary: ToolSummaryKind::Static("repo docs + tree + build files sweep"),
         },
         ToolSpec {
-            name: "crate_contract_map",
+            name: tool_names::CRATE_CONTRACT_MAP,
             description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`src/cm_sse_protocol/control_classify.rs`、`fixtures/sse_ag_ui_golden.jsonl`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。官方 UI 解析在 Client 仓 `frontend/src/api/`（本工作区无 `frontend/`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CrateContractMapArgs>,
@@ -32,7 +32,7 @@
             summary: ToolSummaryKind::Static("SSE/HTTP/config contract anchor map (read-only)"),
         },
         ToolSpec {
-            name: "long_term_remember",
+            name: tool_names::LONG_TERM_REMEMBER,
             description: "将短文本**显式**写入本会话长期记忆（SQLite，与自动回合索引分源）；可选 `tags` 与 `ttl_secs`（0=不过期）。须启用 `long_term_memory_enabled` 且本会话已挂载记忆库。勿写入密钥或隐私原文。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermRememberArgs>,
@@ -40,7 +40,7 @@
             summary: ToolSummaryKind::Static("Explicit long-term memory write"),
         },
         ToolSpec {
-            name: "long_term_forget",
+            name: tool_names::LONG_TERM_FORGET,
             description: "按 `memory_id` 或正文精确匹配删除长期记忆条目；可选 `explicit_only` 仅删显式记忆。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermForgetArgs>,
@@ -48,7 +48,7 @@
             summary: ToolSummaryKind::Static("Delete long-term memory entry"),
         },
         ToolSpec {
-            name: "long_term_memory_list",
+            name: tool_names::LONG_TERM_MEMORY_LIST,
             description: "列出本会话最近若干条未过期记忆（含 id、来源、过期时间与标签摘要）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::LongTermMemoryListArgs>,
@@ -56,7 +56,7 @@
             summary: ToolSummaryKind::Static("List recent long-term memory rows"),
         },
         ToolSpec {
-            name: "summarize_experience",
+            name: tool_names::SUMMARIZE_EXPERIENCE,
             description: "将本轮对话中提炼出的核心经验写入长期记忆。适用于：解决了一个有价值的问题、发现了一个通用模式、记录了一个重要踩坑。模型应自主判断何时调用，避免滥用。须启用 long_term_memory_enabled。经验文本应简洁（1-3 句话），聚焦\"怎么做\"和\"为什么有效\"，避免复述原问题。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::SummarizeExperienceArgs>,
