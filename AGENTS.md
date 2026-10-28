@@ -17,6 +17,9 @@ CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/complet
 
 - Use **GitHub Flow** as the default delivery model: branch from `main` for each change, open a PR, and merge back to `main` after checks pass and review is done.
 - Keep `main` always releasable: avoid direct pushes to `main` for feature work; prefer short-lived branches and small PRs.
+- **Start from an Issue**: new plans, designs, and non-trivial refactors must have a tracking Issue first (`gh issue create`). The body states the problem, the intended scope, and the explicit non-goals, and cites the relevant `docs/` anchor. Trivial fixes (typo, one-line bug fix) may skip the Issue; a design draft stays in `agent_space/` until the Issue settles it, then graduates into `docs/design/`.
+- **Link the PR to its Issue**: before merging, the PR body references the tracking Issue — `Closes #123` when the PR completes it, `Refs #123` when it only advances it (keep the Issue open in that case). Do not silently widen scope inside a PR; file a follow-up Issue instead.
+- **Branch naming**: `type/short-slug`, where `type` is the commit type (`feat` / `fix` / `docs` / `refactor` / `test` / `perf` / `build` / `ci` / `chore`). Include the Issue number when one exists (`feat/842-ltm-hybrid-retrieval`). `main` is the only long-lived branch; delete the branch after merge.
 - Before opening or merging PRs, run required local checks (at least `pre-commit run --all-files`) and ensure GitHub Actions CI is green.
 - Commit messages must follow repository rules (Conventional Commits + bilingual subject); do not bypass hooks unless explicitly approved.
 - **`--no-verify` is strictly prohibited.** Never use `git commit --no-verify` or `git push --no-verify` to bypass pre-commit hooks. All commits must pass the full pre-commit check suite. If hooks are slow, use `git commit -m "message"` without `--no-verify` and let hooks run to completion. This rule applies to all code generation and automation tools in this workspace.
@@ -83,6 +86,20 @@ Standard commands from `README.md`:
 ## Repository engineering rules
 
 **This section is authoritative for agents and is the only rule source.** The former `.cursor/rules/*.mdc` files (and the `.trae/rules/` copy) are deleted — do not reintroduce them; edit this section instead.
+
+### Local quality entry points
+
+Three entry points exist and they are **not** interchangeable — running the wrong one is how “local was green, CI went red” happens:
+
+| When | Command | Covers |
+|------|---------|--------|
+| Before every commit | `pre-commit run --all-files` | `cargo fmt`, `cargo clippy -D warnings`, `cargo doc` (rustdoc warnings denied), crate-dep policy, lizard CCN, fn param/nloc ratchets, `taplo` |
+| Build / package | `make backend` / `make package` (see `make help`) | Compilation and release artifacts; **not** a gate |
+| Full test suite | `make test` (i.e. `cargo test --workspace`) | Also run in CI |
+
+- **`pre-commit` deliberately does not run `cargo test`** (goldens included); `cargo test` runs in CI (`ci.yml`, `code-complexity.yml`). So “pre-commit passed” never means “tests passed”.
+- `ci.yml` runs `cargo check --workspace --all-targets --all-features`, `cargo check -p crabmate`, the crate-dep policy script, `cargo clippy … -D warnings` and `cargo test --workspace`. Pick the matching local command from the test-scope table in **Commit & push** rather than guessing.
+- Do not add a slower check to the pre-commit hooks just to mirror CI; keep the commit hook fast and let CI own the expensive jobs.
 
 ### Commit & push
 
@@ -161,6 +178,25 @@ Adding or renaming a tool — check in order:
 7. Whitelist/approval: if it runs commands, touches the network, or writes to disk, keep it consistent with the `run_command` allowlist, `http_fetch` prefixes, and TUI `CommandApproval` — do not widen the attack surface.
 8. Docs: user-visible capability ⇒ `README.md` + `docs/工具说明.md`; do not dump per-tool implementation notes back into `docs/开发文档.md`.
 9. Only update the「主要模块」table when the tool system's responsibilities/boundaries change.
+
+### Release & versioning
+
+**Single source of version truth: `Cargo.toml` → `[package] version`.** There is no separate version file to keep in sync.
+
+- **Tag format**: `vX.Y.Z`, optionally `vX.Y.Z-rc.N`. `.github/workflows/release.yml` rejects anything not matching `^v[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$`, and **fails the run** when the tag's core `X.Y.Z` does not match `Cargo.toml`. A prerelease tag (`v0.1.0-rc.1`) is allowed while `Cargo.toml` stays at `0.1.0`.
+- **Cut the CHANGELOG before tagging**: the workflow extracts the `## [X.Y.Z]` section from `CHANGELOG.md` as the GitHub Release body; a missing section yields a stub body plus a warning. So “move `[Unreleased]` into `## [X.Y.Z]`” is part of the release, not an afterthought.
+- **Pushing the tag is the release**: it builds the `tar.gz` / `.deb` artifacts and creates or updates the GitHub Release (re-running the same tag updates the existing one; `workflow_dispatch` accepts an existing tag for a manual rebuild). Local equivalent for verification: `make package` → `dist/`.
+- `client-contract-v*` tags belong to the **Client repo** (`crabmate-client`) contract pin and are outside this repo's release flow — do not reuse this repo's `v*.*.*` tags for it.
+- A change that breaks config keys, SSE/HTTP contracts or the public CLI is a **breaking change**: mark it in the commit subject (`!` or `BREAKING CHANGE:` footer) **and** call it out in the CHANGELOG entry. See **Architecture & documentation sync** for the docs that must move with it.
+
+### CHANGELOG
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and is **English-primary** (matching `README.md`). Entries accumulate under `## [Unreleased]`, grouped as `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`; the release step moves them into a version section (see **Release & versioning**).
+
+- **Must be recorded**: user-visible behavior (CLI flags, routes, config keys, `CM_*` env vars, tool add/remove/rename, SSE/HTTP contract changes), behavior fixes, dependency changes with user impact, and every breaking change.
+- **Need not be recorded**: internal refactors with no behavior change, comments, tests, formatting, typo fixes in docs, and `agent_space/` drafts.
+- Write the **why and the user-visible consequence**, not a restatement of the diff. Long entries are acceptable here (existing entries run to a full paragraph); keep secrets, keys and internal hostnames out.
+- Going forward from a deleted/deprecated capability, say so explicitly (`Removed`) rather than silently dropping the line — the D2.2 `repl` / `chat` / `tui` removal is the reference case.
 
 ### Dependencies & licenses
 
