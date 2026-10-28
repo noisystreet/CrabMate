@@ -1,7 +1,7 @@
 //! 工具结果 SSE 信封规范化（并行/串行批共用）。
 
 use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
-use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
+use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
 use crate::tools;
 
 /// 按执行模式构造 [`ToolEnvelopeContext`]。
@@ -39,7 +39,7 @@ pub(super) async fn emit_sse_tool_result(
     reflection_inject: Option<&serde_json::Value>,
     encoder: &dyn SseEncoder,
 ) {
-    let parsed = parse_legacy_output(name, result);
+    let parsed = parse_tool_output(name, result);
     let structured_payload = tool_result::structured_payload_for_tool(name, result);
     let summary_for_norm = tool_summary
         .clone()

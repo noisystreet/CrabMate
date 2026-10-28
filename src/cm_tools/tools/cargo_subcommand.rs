@@ -2,7 +2,7 @@
 //!
 //! 执行走共享子进程会话（`subprocess_session`）：进程组 kill、并发排空、截断、会话统计；
 //! `wall_secs = None` 表示无墙钟（保持既有「靠外圈 `spawn_blocking` timeout」语义）。
-#![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `cargo_tools` 一致
+#![allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 `cargo_tools` 一致
 
 use std::path::Path;
 use std::process::Command;

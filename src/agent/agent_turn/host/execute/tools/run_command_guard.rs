@@ -40,7 +40,7 @@ pub(super) fn classify_run_command_failure_family_from_invocation(
 pub(super) fn classify_run_command_failure_family_from_result(
     args_json: &str,
     effective_working_dir: &Path,
-    parsed: &crate::cm_tools::tool_result::ParsedLegacyOutput,
+    parsed: &crate::cm_tools::tool_result::ParsedToolOutput,
 ) -> Option<&'static str> {
     if parsed.exit_code.is_some() {
         // `ctest` 的“无测试”只能从输出识别：退出码无法区分“无测试”与普通测试失败。
@@ -190,11 +190,11 @@ mod tests {
         classify_run_command_failure_family_from_result,
         classify_run_command_failure_family_from_spec, run_command_cargo_workdir_preflight_error,
     };
-    use crate::cm_tools::tool_result::ParsedLegacyOutput;
+    use crate::cm_tools::tool_result::ParsedToolOutput;
     use crate::cm_tools::tools::parse_command_spec;
 
-    fn launch_failure(exit_code: Option<i32>) -> ParsedLegacyOutput {
-        ParsedLegacyOutput {
+    fn launch_failure(exit_code: Option<i32>) -> ParsedToolOutput {
+        ParsedToolOutput {
             ok: false,
             exit_code,
             stdout: String::new(),
@@ -203,7 +203,7 @@ mod tests {
         }
     }
 
-    fn launch_failure_with_code(code: &str) -> ParsedLegacyOutput {
+    fn launch_failure_with_code(code: &str) -> ParsedToolOutput {
         let mut parsed = launch_failure(None);
         parsed.error_code = Some(code.to_string());
         parsed

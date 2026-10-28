@@ -538,7 +538,7 @@ fn run_and_format_try(
                             format!("{} 命令已取消；子进程已发送终止信号。", title),
                         )
                     };
-                    // `session_stop` 保留 `legacy_parsed` 的 stdout/stderr（供信封失败路径免再解析）。
+                    // `session_stop` 保留 `parsed` 的 stdout/stderr（供信封失败路径免再解析）。
                     Err(ToolError::session_stop(
                         code,
                         format!(
@@ -684,9 +684,9 @@ mod tests {
         assert!(e.message.contains("命令执行超时"), "{}", e.message);
         assert!(e.message.contains("partial-py-out"), "{}", e.message);
         assert!(
-            e.legacy_parsed.stdout.contains("partial-py-out"),
+            e.parsed.stdout.contains("partial-py-out"),
             "legacy 解析应保留部分 stdout: {:?}",
-            e.legacy_parsed
+            e.parsed
         );
         std::thread::sleep(std::time::Duration::from_millis(200));
         assert!(

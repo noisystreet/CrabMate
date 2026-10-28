@@ -409,7 +409,7 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
             }
             match spec.runner {
                 // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
-                // 显式 `ok` 头，供下游 `parse_legacy_output` 复用（见 `typed_outcome_output`）。
+                // 显式 `ok` 头，供下游 `parse_tool_output` 复用（见 `typed_outcome_output`）。
                 ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
                     Ok(output) => typed_outcome_output(name, true, None, output),
                     Err(e) => typed_outcome_output(name, false, Some(e.code.as_str()), e.message),
@@ -431,7 +431,7 @@ fn run_tool_dispatch(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
     if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(name) {
         return Err(ToolError::invalid_args(
             "codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。".to_string(),
@@ -460,7 +460,7 @@ fn run_tool_dispatch_fallback(
     args_ref: &str,
     spec: &ToolSpec,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
     match spec.runner {
         ToolRunner::Typed(f) => {
             f(args_ref, ctx).map(|output| finish_dispatch_typed_ok(name, args_ref, output))
@@ -481,7 +481,7 @@ fn async_only_sync_error(name: &str) -> String {
 /// Typed 结果 → String 面：仅在正文启发式与真实成败/错误码不一致时注入显式头。
 ///
 /// 主 Agent 路径（[`run_tool`]）丢失了 [`ToolError`]，下游 `dispatch_tool` 重试判定、
-/// timeline / 模型信封、统计与验收又都用 `parse_legacy_output` 重新推断。正文一致时
+/// timeline / 模型信封、统计与验收又都用 `parse_tool_output` 重新推断。正文一致时
 /// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败与 `error_code`。
 fn typed_outcome_output(
     name: &str,
@@ -489,7 +489,7 @@ fn typed_outcome_output(
     error_code: Option<&str>,
     output: String,
 ) -> String {
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
     if parsed.ok == ok
         && (ok || error_code.is_none() || parsed.error_code.as_deref() == error_code)
     {
@@ -507,14 +507,14 @@ fn typed_outcome_output(
 /// Typed 收尾：`Ok` 即成功，正文只用于抽取 `exit_code/stdout/stderr`。
 ///
 /// 成功正文（如搜索结果）可能含「失败」「超时」等词，因此**不能**再把正文交给
-/// [`crate::cm_tools::tool_result::parse_legacy_output`] 推断 `ok`；失败必须由执行体
+/// [`crate::cm_tools::tool_result::parse_tool_output`] 推断 `ok`；失败必须由执行体
 /// 返回 [`ToolError`]。返回值同样注入显式 `ok` 头（若必要），保证下游再次解析一致。
 fn finish_dispatch_typed_ok(
     name: &str,
     args_json: &str,
     output: String,
-) -> (String, crate::cm_tools::tool_result::ParsedLegacyOutput) {
-    let mut parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+) -> (String, crate::cm_tools::tool_result::ParsedToolOutput) {
+    let mut parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
     parsed.ok = true;
     parsed.error_code = None;
     if parsed.exit_code.is_some_and(|code| code != 0) {
@@ -525,19 +525,19 @@ fn finish_dispatch_typed_ok(
     (output, parsed)
 }
 
-/// 文本收尾（`Legacy` 是历史命名，现由异步 `run_command` 复用）：先按原始正文推断成功/失败（**早于**图片提示附加），`ok` 时附加工作区图片提示，否则转 [`ToolError`]。
+/// 文本收尾：先按原始正文推断成功/失败（**早于**图片提示附加），`ok` 时附加工作区图片提示，否则转 [`ToolError`]。异步 `run_command` 也复用本函数。
 #[allow(clippy::result_large_err)]
-fn finish_dispatch_legacy(
+fn finish_dispatch_text(
     name: &str,
     args_json: &str,
     output: String,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
     if parsed.ok {
         let output = workspace_image_chat_hint::append_if_needed(args_json, output);
         Ok((output, parsed))
     } else {
-        Err(ToolError::from_parsed_legacy(name, &parsed, output))
+        Err(ToolError::from_parsed(name, &parsed, output))
     }
 }
 
@@ -558,7 +558,7 @@ pub fn run_tool_try(
 pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> ToolResult {
     match run_tool_dispatch(name, args_json, ctx) {
         Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
-        Err(e) => ToolResult::from_parsed(e.message, e.legacy_parsed),
+        Err(e) => ToolResult::from_parsed(e.message, e.parsed),
     }
 }
 
@@ -589,7 +589,7 @@ pub async fn run_tool_result_async(
     if name == "run_command" {
         match run_command_dispatch_async(name, args_json, ctx).await {
             Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
-            Err(e) => ToolResult::from_parsed(e.message, e.legacy_parsed),
+            Err(e) => ToolResult::from_parsed(e.message, e.parsed),
         }
     } else {
         run_tool_result(name, args_json, ctx)
@@ -602,13 +602,13 @@ pub async fn run_tool_result_async(
 /// [`command::run_async`]（不占用阻塞线程）；
 /// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以延长生命周期；github token 经
 /// [`with_request_github_token`](crate::cm_tools::github_token::with_request_github_token) 以 async 作用域注入
-/// （命令构建与等待同一 async 任务，task-local 自然可用）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
+/// （命令构建与等待同一 async 任务，task-local 自然可用）；成功/失败收尾复用 [`finish_dispatch_text`]。
 #[allow(clippy::result_large_err)]
 async fn run_command_dispatch_async(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
     let name_owned = name.to_string();
     let spec = command::parse_command_spec(args_json, ctx.working_dir)
         .map_err(RunCommandError::into_tool_error)?;
@@ -644,7 +644,7 @@ async fn run_command_dispatch_async(
             let rendered = outcome.render(max_out);
             match outcome.session_stop_tool_error(&rendered) {
                 Some(e) => Err(e),
-                None => finish_dispatch_legacy(&name_owned, &spec.args_json, rendered),
+                None => finish_dispatch_text(&name_owned, &spec.args_json, rendered),
             }
         })
     };
@@ -665,7 +665,7 @@ pub fn is_compile_command_success_spec(spec: &CommandSpec, result: &str) -> bool
     if !is_compile_command_spec(spec) {
         return false;
     }
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("run_command", result);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("run_command", result);
     parsed.ok && parsed.exit_code == Some(0)
 }
 

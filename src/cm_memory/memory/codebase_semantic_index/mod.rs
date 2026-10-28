@@ -90,7 +90,7 @@ fn index_failed(msg: String) -> ToolError {
     ToolError::external_code("codebase_semantic_index_failed", msg)
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn resolve_run_tool_paths(
     workspace_root: &Path,
     index_sqlite_path: &str,
@@ -110,7 +110,7 @@ fn resolve_run_tool_paths(
     Ok((ws_root, ws_key, index_path))
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn parse_search_query_params(
     v: &serde_json::Value,
     p: &CodebaseSemanticToolParams,

@@ -465,7 +465,7 @@ pub(super) fn modify_file_batch_edits(
     // 统一提交入口：临时文件写满并 fsync 后、rename 前一刻校验 revision（TOCTOU 窗口最小化）。
     match super::commit_guard::write_bytes_with_revision_guard(target, out.as_bytes(), v, ctx, true) {
         Ok(()) => finish_batch_success(ctx, working_dir, path, &edits, &original, target),
-        // 直接返回：`错误[...]` 必须在首行才能被 parse_legacy_output 提取精确码，
+        // 直接返回：`错误[...]` 必须在首行才能被 parse_tool_output 提取精确码，
         // 加 `写入文件失败:` 前缀会把 stale_revision / missing_revision_baseline 推到第二行而丢失。
         Err(e) => e,
     }

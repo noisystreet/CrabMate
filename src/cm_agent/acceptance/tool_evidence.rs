@@ -16,12 +16,12 @@ pub fn verify_plan_step_acceptance_for_tool_message(
     let spec = AcceptanceSpec::from(acceptance);
     let tool_name = tool_msg.name.as_deref().unwrap_or("");
     let tool_output = message_content_as_str(&tool_msg.content).unwrap_or("");
-    let parsed = tool_result::parse_legacy_output(tool_name, tool_output);
+    let parsed = tool_result::parse_tool_output(tool_name, tool_output);
     let tool_error_opt = parsed.exit_code.map(|code| tool_result::ToolError {
         code: code.to_string(),
         category: tool_result::ToolFailureCategory::External,
         message: "Verification fake error".to_string(),
-        legacy_parsed: parsed.clone(),
+        parsed: parsed.clone(),
         retryable: false,
     });
     let ev = super::AcceptanceEvidence {

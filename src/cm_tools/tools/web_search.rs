@@ -54,7 +54,7 @@ struct TavilyResult {
 /// - 请求超时 → `timeout`（瞬时、可重试）；其余引擎 / HTTP / 解析失败 → `web_search_api_error`。
 ///
 /// 与迁移前相比，正文文案逐字未变（含 `错误[码]：` 首行标记）；区别是失败不再依赖
-/// `parse_legacy_output` 从正文里猜，而是显式 `Err`。
+/// `parse_tool_output` 从正文里猜，而是显式 `Err`。
 #[allow(clippy::result_large_err)]
 pub fn run_try(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     let args: super::tool_param_types::WebSearchArgs =

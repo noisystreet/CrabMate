@@ -58,7 +58,7 @@ goto_implementation / goto_type_definition / document_highlight / workspace_symb
 ///
 /// Typed 迁移：失败一律以 [`ToolError`] 返回，成功正文保持不变，
 /// 判定改由 `e.code` 承载。此前「路径无法解析: …」与「… : LSP error: …」两类正文既不含
-/// 「错误」也不含「失败」，`parse_legacy_output` 会把它们判成 `ok: true`——模型拿到空结果，
+/// 「错误」也不含「失败」，`parse_tool_output` 会把它们判成 `ok: true`——模型拿到空结果，
 /// 还以为「该位置确实没有信息」。错误码划分见 [`resolve_rel_file`] 与 [`lsp_io_error`]。
 #[allow(clippy::result_large_err)]
 pub fn rust_analyzer_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
@@ -520,7 +520,7 @@ mod tests {
     /// 8 个 `action` 在「目标文件不存在」时都必须显式失败。
     ///
     /// 这是迁移前最危险的一处静默成功：正文「路径无法解析: No such file or directory」
-    /// 既不以「错误」开头、也不含「失败 / 超时」，`parse_legacy_output` 判 `ok: true`，
+    /// 既不以「错误」开头、也不含「失败 / 超时」，`parse_tool_output` 判 `ok: true`，
     /// 模型于是把「文件根本不存在」读成「这个位置没有信息」。
     #[test]
     fn ra_every_action_fails_on_missing_file() {

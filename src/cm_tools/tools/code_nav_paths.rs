@@ -57,7 +57,7 @@ pub(super) fn search_io_failed(e: &str) -> ToolError {
 }
 
 /// 解析搜索根：`sub` 为空时直接返回工作区根（**不做** `canonicalize`，保持旧行为）。
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 pub(super) fn resolve_search_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, ToolError> {
     let Some(s) = sub else {
         return Ok(base.to_path_buf());
@@ -66,12 +66,12 @@ pub(super) fn resolve_search_root(base: &Path, sub: Option<&str>) -> Result<Path
 }
 
 /// 解析单个文件目标（`file_outline` 的 `path`）：解析与越界两侧的文案不同，故分开传。
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 pub(super) fn resolve_workspace_file(base: &Path, sub: &str) -> Result<PathBuf, ToolError> {
     resolve_under(base, sub, "目标文件路径", "目标路径")
 }
 
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与 runner 契约一致
 fn resolve_under(
     base: &Path,
     sub: &str,

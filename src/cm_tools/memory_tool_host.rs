@@ -11,7 +11,7 @@ use crate::cm_tools::tool_result::ToolError;
 /// 参数 JSON 坏都必须显式透传（历史实现里 `参数 JSON 无效: …` 与
 /// `index_path_for_workspace` 的错误串都没有「错误：」前缀，会被启发式判成**成功**）。
 pub trait CodebaseSemanticToolHost: Send + Sync {
-    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    #[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与工具 runner 一致
     fn run_search(
         &self,
         args_json: &str,
@@ -26,7 +26,7 @@ pub trait CodebaseSemanticToolHost: Send + Sync {
 /// 记忆库 IO 失败）须显式透传，不能靠正文关键词推断（历史实现里 `参数 JSON 无效: …`
 /// 没有「错误：」前缀，会被启发式判成**成功**）。
 pub trait LongTermMemoryToolHost: Send + Sync {
-    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    #[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与工具 runner 一致
     fn dispatch(
         &self,
         tool_name: &str,

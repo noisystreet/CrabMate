@@ -6,7 +6,7 @@ use log::info;
 use crate::agent::per_coord::PerCoordinator;
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
-use crate::tool_result::parse_legacy_output;
+use crate::tool_result::parse_tool_output;
 
 use super::super::run_command_guard::classify_run_command_failure_family_from_result;
 use super::super::{emit_timeline_log_sse, emit_tool_call_summary_sse};
@@ -23,7 +23,7 @@ pub(super) fn serial_bookkeep_run_command_failure(
     if name != "run_command" {
         return;
     }
-    let parsed = parse_legacy_output(name, result);
+    let parsed = parse_tool_output(name, result);
     if parsed.ok {
         per_coord.clear_tool_failure_signature(name, args);
         per_coord.clear_tool_failure_families_for_tool(name);
@@ -76,7 +76,7 @@ pub(super) fn serial_clear_run_command_failures_after_workspace_mutation(
     if is_readonly && !workspace_changed {
         return;
     }
-    let parsed = parse_legacy_output(name, result);
+    let parsed = parse_tool_output(name, result);
     if !parsed.ok && !tool_message_has_success_evidence(result) {
         return;
     }

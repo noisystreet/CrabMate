@@ -135,7 +135,7 @@ pub fn parse_present_clarification_body(
 /// `tool_output.trim_start().starts_with("退出码：0")` 判断「这是一份登记成功的问卷」，
 /// 改动首行会让 SSE 控制面静默失效。
 ///
-/// 失败改为显式 `Err(invalid_args)`：从前返回的 `退出码：1\n…` 要经 `parse_legacy_output`
+/// 失败改为显式 `Err(invalid_args)`：从前返回的 `退出码：1\n…` 要经 `parse_tool_output`
 /// 的 exit-code 分支才被认成失败，`{}` 这类「连字段都缺」的入参全靠这个兜底。
 #[allow(clippy::result_large_err)]
 pub fn run_present_clarification_questionnaire(args_json: &str) -> Result<String, ToolError> {

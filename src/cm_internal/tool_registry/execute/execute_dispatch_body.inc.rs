@@ -234,7 +234,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<ser
     loop {
         let (out, payload) = dispatch_tool_inner(&mut p).await;
         let error_code =
-            crate::cm_tools::tool_result::parse_legacy_output(p.call.name, &out).error_code;
+            crate::cm_tools::tool_result::parse_tool_output(p.call.name, &out).error_code;
         if !spec.should_retry(error_code.as_deref(), attempt) {
             return (out, payload);
         }

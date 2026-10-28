@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(meta.ok, Some(false));
         assert_eq!(meta.error_code.as_deref(), Some("invalid_args"));
 
-        let parsed = crate::cm_tools::tool_result::parse_legacy_output("create_file", &output);
+        let parsed = crate::cm_tools::tool_result::parse_tool_output("create_file", &output);
         assert!(!parsed.ok);
         assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"));
     }

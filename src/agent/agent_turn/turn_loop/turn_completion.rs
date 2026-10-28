@@ -168,7 +168,7 @@ mod tests {
     }
 
     fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-        let parsed = crate::tool_result::parse_legacy_output(name, output);
+        let parsed = crate::tool_result::parse_tool_output(name, output);
         msg(
             "tool",
             &crate::tool_result::encode_tool_message_envelope_v1(

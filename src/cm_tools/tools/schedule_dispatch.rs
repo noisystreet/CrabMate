@@ -18,7 +18,7 @@ use super::schedule;
 ///
 /// `add` 缺 `title` 与 `update` / `delete` / `complete` 缺 `id` 在此收敛为 `invalid_args`：
 /// 这两类分支旧版只返回一段既无「错误」前缀也无「失败」关键词的正文，
-/// 会被 `parse_legacy_output` 判成**成功**（模型传错参数却拿到「成功」）。
+/// 会被 `parse_tool_output` 判成**成功**（模型传错参数却拿到「成功」）。
 #[allow(clippy::result_large_err)]
 pub fn reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     let args: ReminderArgs =

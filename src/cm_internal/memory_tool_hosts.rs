@@ -37,7 +37,7 @@ impl CodebaseSemanticHost {
 }
 
 impl CodebaseSemanticToolHost for CodebaseSemanticHost {
-    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    #[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照（`parsed`），与工具 runner 一致
     fn run_search(
         &self,
         args_json: &str,

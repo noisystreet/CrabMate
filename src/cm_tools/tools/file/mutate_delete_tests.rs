@@ -97,7 +97,7 @@ fn delete_files_partial_failure_continues() {
     assert!(out.contains("删除失败（1 个）"), "{out}");
     assert!(!tmp.path().join("a.txt").exists());
     assert!(tmp.path().join("ro/x.txt").exists());
-    let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("delete_files", out);
+    let r = crate::cm_tools::tool_result::ToolResult::from_output("delete_files", out);
     assert!(!r.ok, "删除阶段有失败项时应判失败");
     assert_eq!(r.error_code.as_deref(), Some("delete_files_failed"));
 }
@@ -123,7 +123,7 @@ fn delete_files_all_failures_report_failure() {
     assert!(out.contains("删除失败（2 个）"), "{out}");
     assert!(tmp.path().join("ro/x.txt").exists());
     assert!(tmp.path().join("ro/y.txt").exists());
-    let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("delete_files", out);
+    let r = crate::cm_tools::tool_result::ToolResult::from_output("delete_files", out);
     assert!(!r.ok, "全部删除失败不得判成功");
     assert_eq!(r.error_code.as_deref(), Some("delete_files_failed"));
 }

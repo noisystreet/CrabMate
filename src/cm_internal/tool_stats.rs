@@ -10,7 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::cm_internal::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
+use crate::cm_internal::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
 use crate::cm_config::AgentConfig;
 
 #[derive(Debug)]
@@ -102,7 +102,7 @@ impl ToolOutcomeRecorder {
         if !cfg.agent_tool_stats.agent_tool_stats_enabled {
             return;
         }
-        let parsed = parse_legacy_output(tool_name, result_raw);
+        let parsed = parse_tool_output(tool_name, result_raw);
         let summary = tool_summary.unwrap_or_else(|| format!("tool: {tool_name}"));
         let structured_payload =
             crate::cm_internal::tool_result::structured_payload_for_tool(tool_name, result_raw);
@@ -261,7 +261,7 @@ mod tests {
         c
     }
 
-    /// 与 [`parse_legacy_output`] 一致：首行即可判定失败并得到 `error_code`。
+    /// 与 [`parse_tool_output`] 一致：首行即可判定失败并得到 `error_code`。
     fn fake_read_fail() -> &'static str {
         "退出码：1\n"
     }

@@ -74,7 +74,7 @@ fn tool_exit_ok_from_raw(raw: &str) -> bool {
     if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
         return env.ok || env.exit_code == Some(0);
     }
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("run_command", raw);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output("run_command", raw);
     parsed.ok || parsed.exit_code == Some(0)
 }
 
@@ -117,7 +117,7 @@ pub fn successful_run_command_keys_from_messages(messages: &[Message]) -> HashSe
         }
         let args_json = run_command_args_from_tool_message(raw).or_else(|| {
             if raw.contains("命令：") || raw.starts_with('$') {
-                infer_args_json_from_legacy_run_output(raw)
+                infer_args_json_from_run_output(raw)
             } else {
                 None
             }
@@ -135,7 +135,7 @@ pub fn successful_run_command_keys_from_messages(messages: &[Message]) -> HashSe
 ///
 /// 禁止新代码依赖此函数；新输出必须经 [`run_command_args_from_tool_message`] 读取结构化字段。
 /// 保留它是为了让跨版本的历史会话仍能参与同轮去重。
-fn infer_args_json_from_legacy_run_output(raw: &str) -> Option<String> {
+fn infer_args_json_from_run_output(raw: &str) -> Option<String> {
     let line = raw
         .lines()
         .find(|l| l.starts_with('$') || l.starts_with("命令："))?;

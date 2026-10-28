@@ -2,7 +2,7 @@ use super::*;
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::{ToolFailureCategory, parse_legacy_output};
+use crate::cm_tools::tool_result::{ToolFailureCategory, parse_tool_output};
 
 const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
@@ -661,7 +661,7 @@ fn codebase_semantic_search_without_host_is_tool_context_incomplete() {
 /// `workflow_execute` 的同步面占位必须报错。
 ///
 /// 它以前回「由运行时引擎执行（若你看到这条，说明拦截未生效）。」—— 正文不含
-/// 「错误/失败/超时」，被 `parse_legacy_output` 判成**成功**：模型以为工作流已排队，
+/// 「错误/失败/超时」，被 `parse_tool_output` 判成**成功**：模型以为工作流已排队，
 /// 实际什么都没做。真实执行在 `tool_dispatch` 的 `Workflow` 入口，走不到这里。
 #[test]
 fn workflow_execute_sync_placeholder_is_an_error() {
@@ -679,7 +679,7 @@ fn typed_ok_is_success_even_if_body_looks_like_failure() {
     assert!(parsed.ok, "Typed Ok 必须判定为成功");
     assert_eq!(parsed.error_code, None);
     // 正文启发式会误判失败，故输出须带显式 `ok` 头，供下游再次解析时保持一致。
-    let reparsed = parse_legacy_output("demo_tool", &output);
+    let reparsed = parse_tool_output("demo_tool", &output);
     assert!(reparsed.ok, "下游再次解析仍应为成功: {output}");
     assert!(output.ends_with("失败：示例正文\n超时 3s"), "正文应保留: {output}");
 }
@@ -701,7 +701,7 @@ fn typed_outcome_output_only_prepends_header_on_mismatch() {
 
     let looks_ok_but_failed =
         typed_outcome_output("demo_tool", false, None, "无法解析路径".to_string());
-    assert!(!parse_legacy_output("demo_tool", &looks_ok_but_failed).ok);
+    assert!(!parse_tool_output("demo_tool", &looks_ok_but_failed).ok);
 }
 
 #[test]
@@ -729,7 +729,7 @@ fn typed_error_without_failure_keywords_is_still_failed_on_string_surface() {
     let ctx = test_ctx(&allowed);
     let out = run_tool("read_file", r#"{"path":"   "}"#, &ctx);
     assert!(out.contains("缺少 path 参数"), "{out}");
-    let parsed = parse_legacy_output("read_file", &out);
+    let parsed = parse_tool_output("read_file", &out);
     assert!(!parsed.ok, "无关键词的 Typed 失败必须判失败: {out}");
     assert!(parsed.error_code.is_some(), "失败时应能分类错误码: {out}");
 }
@@ -805,7 +805,7 @@ fn misc_basic_typed_failure_reaches_string_surface_with_code() {
     let ctx = test_ctx(&allowed);
     let out = run_tool("json_format", r#"{"text":"{oops"}"#, &ctx);
     assert!(out.contains("JSON 解析失败"), "{out}");
-    let parsed = parse_legacy_output("json_format", &out);
+    let parsed = parse_tool_output("json_format", &out);
     assert!(!parsed.ok, "{out}");
     assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{out}");
 }
@@ -813,13 +813,13 @@ fn misc_basic_typed_failure_reaches_string_surface_with_code() {
 #[test]
 fn typed_parameter_error_without_keyword_reaches_string_surface_with_code() {
     // `text_diff` 缺 `right` 的正文是「inline 模式需要 right（字符串）」，一个关键词都不含 ——
-    // 迁 Typed 之前它被 `parse_legacy_output` 判成 `ok: true`。`run_tool` 只返回 String，
+    // 迁 Typed 之前它被 `parse_tool_output` 判成 `ok: true`。`run_tool` 只返回 String，
     // 所以这条修复是否真落地，取决于 `typed_outcome_output` 是否注入了 `crabmate_tool_output` 头。
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool("text_diff", r#"{"mode":"inline","left":"a"}"#, &ctx);
     assert!(out.contains("inline 模式需要 right"), "{out}");
-    let parsed = parse_legacy_output("text_diff", &out);
+    let parsed = parse_tool_output("text_diff", &out);
     assert!(!parsed.ok, "{out}");
     assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{out}");
 }

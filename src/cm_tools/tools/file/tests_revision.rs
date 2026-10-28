@@ -120,7 +120,7 @@ fn test_modify_file_rejects_stale_base_revision_without_writing() {
     for args in &cases {
         let out = modify_file(args, &dir, &ctx);
         assert!(out.contains("stale_revision"), "args={args}\nout={out}");
-        let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("modify_file", out);
+        let r = crate::cm_tools::tool_result::ToolResult::from_output("modify_file", out);
         assert_eq!(
             r.error_code.as_deref(),
             Some("stale_revision"),

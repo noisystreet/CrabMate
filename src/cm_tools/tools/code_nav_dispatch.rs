@@ -28,7 +28,7 @@ pub const CODE_NAV_ACTIONS: &str = "find_symbol / find_references / file_outline
 /// `code_nav` 唯一入口：按 `action` 分派到四个只读实现。
 ///
 /// 迁 `Typed` 后 per-action 必填缺失是显式 `invalid_args`（旧版本靠「错误：」前缀让
-/// `parse_legacy_output` 恰好判对），子实现失败则原样透传各自的码
+/// `parse_tool_output` 恰好判对），子实现失败则原样透传各自的码
 /// （`code_nav_path_*` 属策略拒绝、`code_nav_search_failed` / `code_nav_read_failed` 属 IO）。
 #[allow(clippy::result_large_err)]
 pub fn dispatch_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {

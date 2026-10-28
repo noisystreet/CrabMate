@@ -10,7 +10,7 @@ use crate::agent::agent_turn::run_command_dedupe::{
 use crate::agent::per_coord::PerCoordinator;
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
-use crate::tool_result::parse_legacy_output;
+use crate::tool_result::parse_tool_output;
 
 use super::super::batch_dispatch::emit_tool_batch_result;
 use super::super::run_command_guard::{
@@ -116,7 +116,7 @@ pub(super) fn serial_bookkeep_readonly_tool_ttl_cache_after_tool(
     let ttl_secs = p.cfg.chat_queues_cache.readonly_tool_ttl_cache_secs;
     let mut ttl_run_command_success_cache: Option<String> = None;
     if ttl_secs > 0 && p.name == "run_command" {
-        let parsed_tool = parse_legacy_output(p.name, p.result);
+        let parsed_tool = parse_tool_output(p.name, p.result);
         if parsed_tool.ok
             && crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(p.args)
         {

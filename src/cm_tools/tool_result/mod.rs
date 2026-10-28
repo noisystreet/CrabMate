@@ -58,7 +58,7 @@ pub struct ToolResult {
 
 /// 兼容旧字符串输出的解析结果（不复制整段 `message`）。
 #[derive(Debug, Clone)]
-pub struct ParsedLegacyOutput {
+pub struct ParsedToolOutput {
     pub ok: bool,
     pub exit_code: Option<i32>,
     pub stdout: String,
@@ -91,7 +91,7 @@ fn structured_header_output_ok(header: &CrabmateToolOutputMeta, body: &str) -> b
 }
 
 /// 解析旧格式工具输出，仅返回状态与分流字段，避免复制完整 message。
-pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput {
+pub fn parse_tool_output(tool_name: &str, output: &str) -> ParsedToolOutput {
     let body = strip_leading_command_invocation_line(output);
     let first = body.lines().next().unwrap_or("").trim();
     // 首行通常即 `退出码：N`；多行 `命令：` 回显会让首行落在参数正文上，故再扫头部区域。
@@ -121,7 +121,7 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
             .or_else(|| Some(classify_error_code(first, tool_name)))
     };
 
-    ParsedLegacyOutput {
+    ParsedToolOutput {
         ok,
         exit_code,
         stdout,
@@ -132,13 +132,13 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
 
 impl ToolResult {
     /// 将既有“字符串工具输出”转换为结构化结果。
-    pub fn from_legacy_output(tool_name: &str, output: String) -> Self {
-        let parsed = parse_legacy_output(tool_name, &output);
+    pub fn from_output(tool_name: &str, output: String) -> Self {
+        let parsed = parse_tool_output(tool_name, &output);
         Self::from_parsed(output, parsed)
     }
 
-    /// 已由 [`parse_legacy_output`] 解析过的输出（与 `tools::run_tool_result` 单次解析路径共用）。
-    pub fn from_parsed(output: String, parsed: ParsedLegacyOutput) -> Self {
+    /// 已由 [`parse_tool_output`] 解析过的输出（与 `tools::run_tool_result` 单次解析路径共用）。
+    pub fn from_parsed(output: String, parsed: ParsedToolOutput) -> Self {
         Self {
             ok: parsed.ok,
             exit_code: parsed.exit_code,
@@ -342,7 +342,7 @@ pub struct ToolEnvelopeContext<'a> {
 pub fn encode_tool_message_envelope_v1(
     tool_name: &str,
     summary: String,
-    parsed: &ParsedLegacyOutput,
+    parsed: &ParsedToolOutput,
     raw_output: &str,
     envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
 ) -> String {
@@ -367,13 +367,13 @@ pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str
     Cow::Borrowed(content.trim())
 }
 
-/// 从已写入对话历史的 `role: tool` `content` 判断工具是否**成功**（与信封 `ok` 或 `parse_legacy_output` 一致）。
-/// `tool_name_fallback` 在非信封正文时用于 `parse_legacy_output` 的错误码归类。
+/// 从已写入对话历史的 `role: tool` `content` 判断工具是否**成功**（与信封 `ok` 或 `parse_tool_output` 一致）。
+/// `tool_name_fallback` 在非信封正文时用于 `parse_tool_output` 的错误码归类。
 pub fn tool_message_content_ok_for_model(content: &str, tool_name_fallback: &str) -> bool {
     if let Some(env) = normalize_tool_message_content(content) {
         return env.ok;
     }
-    parse_legacy_output(tool_name_fallback, content.trim()).ok
+    parse_tool_output(tool_name_fallback, content.trim()).ok
 }
 
 /// 为 `output` 字段生成首尾采样正文（Unicode 标量计数），`max_output_chars` 为**整个**替换后 `output` 字符串的字符上限。
@@ -443,7 +443,7 @@ mod tests {
         let raw = r##"{"files":[{"path":"conf.py","unified_diff":"--- a/conf.py\n+++ b/conf.py\n-构建失败重试说明\n+新内容\n","truncated":false}],"kind":"crabmate_tool_output","preview":"workspace_write_diff","preview_truncated":false,"tool":"modify_file","version":1}
 路径：conf.py
 已按行替换（行 4-15，共删除 12 行，写入新内容 763 字节）"##;
-        let parsed = parse_legacy_output("modify_file", raw);
+        let parsed = parse_tool_output("modify_file", raw);
         assert!(parsed.ok);
         assert_eq!(parsed.error_code, None);
     }
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn explicit_error_code_marker_parsed_and_classified() {
         // 网络工具错误正文首行 `错误[码]：` 显式标记：原样提取、数字码、向后兼容、非法格式拒绝、retryable。
-        let code = |l: &str| parse_legacy_output("http_fetch", l).error_code.map(|s| s.to_string());
+        let code = |l: &str| parse_tool_output("http_fetch", l).error_code.map(|s| s.to_string());
         assert_eq!(code("错误[http_timeout]：请求失败: timed out").as_deref(), Some("http_timeout"));
         assert_eq!(code("错误[http_network_error]：请求失败: dns").as_deref(), Some("http_network_error"));
         assert_eq!(code("错误[http_body_read_error]：读取响应体失败: io").as_deref(), Some("http_body_read_error"));
@@ -481,7 +481,7 @@ mod tests {
 1|print("ok")
 2|raise RuntimeError("请求失败")
 3|# 超时重试"#;
-        let parsed = parse_legacy_output("read_file", raw);
+        let parsed = parse_tool_output("read_file", raw);
         assert!(parsed.ok, "short successful read must stay ok");
         assert_eq!(parsed.error_code, None);
     }
@@ -492,7 +492,7 @@ mod tests {
 搜索："Error"
 范围：.
 a.py:10: raise RuntimeError("请求失败")"#;
-        let parsed = parse_legacy_output("search_in_files", raw);
+        let parsed = parse_tool_output("search_in_files", raw);
         assert!(parsed.ok);
         assert_eq!(parsed.error_code, None);
     }
@@ -502,7 +502,7 @@ a.py:10: raise RuntimeError("请求失败")"#;
         // 不靠工具名白名单：无 write-diff preview 的载荷头，正文含「失败」仍为成功。
         let raw = r#"{"kind":"crabmate_tool_output","tool":"future_list","version":1}
 条目：构建失败.log"#;
-        let parsed = parse_legacy_output("future_list", raw);
+        let parsed = parse_tool_output("future_list", raw);
         assert!(parsed.ok);
         assert_eq!(parsed.error_code, None);
     }
@@ -511,13 +511,13 @@ a.py:10: raise RuntimeError("请求失败")"#;
     fn parse_respects_explicit_ok_on_header() {
         let fail = r#"{"kind":"crabmate_tool_output","ok":false,"tool":"read_file","version":1}
 文件: a.txt"#;
-        let parsed = parse_legacy_output("read_file", fail);
+        let parsed = parse_tool_output("read_file", fail);
         assert!(!parsed.ok);
 
         let ok_write = r##"{"kind":"crabmate_tool_output","ok":true,"preview":"workspace_write_diff","tool":"modify_file","version":1}
 路径：a
 错误：不应再扫正文"##;
-        let parsed = parse_legacy_output("modify_file", ok_write);
+        let parsed = parse_tool_output("modify_file", ok_write);
         assert!(parsed.ok);
     }
 
@@ -527,7 +527,7 @@ a.py:10: raise RuntimeError("请求失败")"#;
         let raw = r##"{"files":[{"path":"conf.py","unified_diff":"--- a/conf.py\n+++ b/conf.py\n-旧\n+新\n","truncated":false}],"kind":"crabmate_tool_output","preview":"workspace_write_diff","preview_truncated":false,"tool":"modify_file","version":1}
 路径：conf.py
 错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。"##;
-        let parsed = parse_legacy_output("modify_file", raw);
+        let parsed = parse_tool_output("modify_file", raw);
         assert!(!parsed.ok);
         assert_eq!(parsed.error_code.as_deref(), Some("modify_file_failed"));
     }
@@ -541,7 +541,7 @@ a.py:10: raise RuntimeError("请求失败")"#;
 a.rs
 失败：
 b.rs"##;
-        let parsed = parse_legacy_output("apply_patch", raw);
+        let parsed = parse_tool_output("apply_patch", raw);
         assert!(!parsed.ok);
     }
 
@@ -553,7 +553,7 @@ b.rs"##;
 
     #[test]
     fn parse_exit_code_from_chinese_prefix() {
-        let r = ToolResult::from_legacy_output(
+        let r = ToolResult::from_output(
             "run_command",
             "退出码：0\n标准输出：\nhello\n".to_string(),
         );
@@ -565,7 +565,7 @@ b.rs"##;
     #[test]
     fn parse_skips_command_invocation_prefix() {
         let raw = "命令：pwd\n退出码：0\n标准输出：\n/\n";
-        let r = ToolResult::from_legacy_output("run_command", raw.to_string());
+        let r = ToolResult::from_output("run_command", raw.to_string());
         assert!(r.ok);
         assert_eq!(r.exit_code, Some(0));
         assert_eq!(r.stdout, "/");
@@ -573,7 +573,7 @@ b.rs"##;
 
     #[test]
     fn parse_exit_code_from_exit_pattern() {
-        let r = ToolResult::from_legacy_output(
+        let r = ToolResult::from_output(
             "cargo_test",
             "cargo test (exit=1):\nfailed".to_string(),
         );
@@ -584,7 +584,7 @@ b.rs"##;
 
     #[test]
     fn classify_workspace_error_without_exit_code() {
-        let r = ToolResult::from_legacy_output("run_command", "错误：未设置工作区".to_string());
+        let r = ToolResult::from_output("run_command", "错误：未设置工作区".to_string());
         assert!(!r.ok);
         assert_eq!(r.exit_code, None);
         assert_eq!(r.error_code.as_deref(), Some("workspace_not_set"));
@@ -592,7 +592,7 @@ b.rs"##;
 
     #[test]
     fn classify_repeated_tool_short_circuit_errors() {
-        let r = ToolResult::from_legacy_output(
+        let r = ToolResult::from_output(
             "run_command",
             "错误：检测到同命令重复失败，已短路本次调用（error=run_command_failed）。".to_string(),
         );
@@ -602,7 +602,7 @@ b.rs"##;
             Some("repeated_tool_failure_short_circuit")
         );
 
-        let r = ToolResult::from_legacy_output(
+        let r = ToolResult::from_output(
             "run_command",
             "错误：检测到同类失败已发生（family=cargo_manifest_missing），已短路本次调用。"
                 .to_string(),
@@ -616,11 +616,11 @@ b.rs"##;
     #[test]
     fn tool_message_content_ok_reads_envelope_ok() {
         let raw = "错误：不允许的命令\n";
-        let parsed = parse_legacy_output("run_command", raw);
+        let parsed = parse_tool_output("run_command", raw);
         let env = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
         assert!(!tool_message_content_ok_for_model(&env, "run_command"));
         let ok_raw = "退出码：0\n标准输出：\nhi\n";
-        let ok_parsed = parse_legacy_output("run_command", ok_raw);
+        let ok_parsed = parse_tool_output("run_command", ok_raw);
         let ok_env =
             encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw, None);
         assert!(tool_message_content_ok_for_model(&ok_env, "run_command"));
@@ -629,7 +629,7 @@ b.rs"##;
     #[test]
     fn envelope_includes_structured_payload_subprocess_cargo() {
         let raw = "cargo check (exit=0):\n(check output)";
-        let parsed = parse_legacy_output("cargo_check", raw);
+        let parsed = parse_tool_output("cargo_check", raw);
         let s = encode_tool_message_envelope_v1("cargo_check", "s".into(), &parsed, raw, None);
         let v: Value = serde_json::from_str(&s).unwrap();
         let sp = v["crabmate_tool"]["structured_payload"]
@@ -650,7 +650,7 @@ Content-Type: text/plain
 
 正文:
 hi"#;
-        let parsed = parse_legacy_output("http_fetch", raw);
+        let parsed = parse_tool_output("http_fetch", raw);
         let s = encode_tool_message_envelope_v1("http_fetch", "s".into(), &parsed, raw, None);
         let v: Value = serde_json::from_str(&s).unwrap();
         let sp = v["crabmate_tool"]["structured_payload"]
@@ -678,7 +678,7 @@ hi"#;
     #[test]
     fn envelope_includes_structured_payload_run_command() {
         let raw = "命令：echo hi\n退出码：0\n标准输出：\nhi\n";
-        let parsed = parse_legacy_output("run_command", raw);
+        let parsed = parse_tool_output("run_command", raw);
         let s = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
         let v: Value = serde_json::from_str(&s).unwrap();
         let ct = v.get("crabmate_tool").unwrap();
@@ -691,7 +691,7 @@ hi"#;
     #[test]
     fn envelope_roundtrip_and_inner_payload() {
         let raw = "退出码：0\n标准输出：\nhi\n";
-        let parsed = parse_legacy_output("run_command", raw);
+        let parsed = parse_tool_output("run_command", raw);
         let s = encode_tool_message_envelope_v1("run_command", "true".into(), &parsed, raw, None);
         assert!(s.contains("crabmate_tool"));
         assert!(s.contains("\"summary\":\"true\""));
@@ -712,7 +712,7 @@ hi"#;
     #[test]
     fn compress_envelope_truncates_output_only() {
         let long = "x".repeat(500);
-        let parsed = parse_legacy_output("x", &long);
+        let parsed = parse_tool_output("x", &long);
         let env = encode_tool_message_envelope_v1("x", "s".into(), &parsed, &long, None);
         let out = maybe_compress_tool_message_content(&env, 100).expect("compress");
         assert!(out.len() < env.len());
@@ -740,7 +740,7 @@ hi"#;
     #[test]
     fn envelope_includes_retryable_on_failure() {
         let raw = "错误：超时\n";
-        let parsed = parse_legacy_output("run_command", raw);
+        let parsed = parse_tool_output("run_command", raw);
         let s = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
         let v: Value = serde_json::from_str(&s).unwrap();
         let ct = v.get("crabmate_tool").unwrap();
@@ -754,7 +754,7 @@ hi"#;
     #[test]
     fn envelope_includes_tool_call_id_and_batch() {
         let raw = "退出码：0\n";
-        let parsed = parse_legacy_output("read_file", raw);
+        let parsed = parse_tool_output("read_file", raw);
         let ctx = ToolEnvelopeContext {
             tool_call_id: "call_abc",
             execution_mode: "parallel_readonly_batch",
