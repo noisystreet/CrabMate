@@ -56,19 +56,9 @@ enum Expect {
 /// 选参原则：只踩**实现层自己的校验与查找失败**，不触发网络、子进程编译、
 /// 真实测试执行等副作用（绕开 schema 校验后，`{}` 可能直接走到 `unwrap`）。
 const CASES: &[(&str, &str, Expect, &str)] = &[
-    // ── 外部 API 族 ──────────────────────────────────────────────
-    (
-        "get_weather",
-        r#"{"city":""}"#,
-        Expect::Fails,
-        "city / location 至少 2 字符",
-    ),
-    (
-        "web_search",
-        r#"{"query":"crabmate-audit-probe"}"#,
-        Expect::Fails,
-        "test_ctx 无 API Key ⇒ 报「未配置联网搜索 API Key」",
-    ),
+    // ── 外部 API 族：`get_weather` / `web_search` 已迁 Typed（2026-10-28）——
+    //    原先在这里靠「city 太短」「无 API Key」两条正文关键词判定，现在由各自单测
+    //    按 `error_code` 断言（`weather::tests` / `web_search` 的 provider 分支）──
     // ── HTTP 族：非法 scheme，闸门与 URL 解析都在实现层 ─────────
     (
         "http_fetch",

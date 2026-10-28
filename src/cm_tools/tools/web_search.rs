@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::cm_config::WebSearchProvider;
 use crate::cm_tools::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
+use crate::cm_tools::tool_result::ToolError;
 use log::warn;
 use serde::Deserialize;
 use worbrow::{search, BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind};
@@ -44,18 +45,29 @@ struct TavilyResult {
 }
 
 /// 执行 `web_search` 工具：参数 JSON 含 `query`，可选 `max_results`（1～20）。
-pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let args: super::tool_param_types::WebSearchArgs = match super::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+///
+/// 失败语义：
+/// - 参数（缺 / 过短 `query`）→ `invalid_args`；
+/// - `brave` / `tavily` 未配 API Key → `web_search_not_configured`（换配置可修，属前置条件缺失，不是参数错误）；
+/// - 本机无可用浏览器（`worbrow`）→ `web_search_browser_unavailable`；
+/// - HTTP 客户端构造失败 → `web_search_client_failed`；
+/// - 请求超时 → `timeout`（瞬时、可重试）；其余引擎 / HTTP / 解析失败 → `web_search_api_error`。
+///
+/// 与迁移前相比，正文文案逐字未变（含 `错误[码]：` 首行标记）；区别是失败不再依赖
+/// `parse_legacy_output` 从正文里猜，而是显式 `Err`。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    let args: super::tool_param_types::WebSearchArgs =
+        super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let query = args.query.trim();
     let query = if query.len() >= 2 {
         query.to_string()
     } else if query.is_empty() {
-        return "错误：缺少 query 参数".to_string();
+        return Err(ToolError::invalid_args("错误：缺少 query 参数".to_string()));
     } else {
-        return "错误：query 至少 2 个字符".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：query 至少 2 个字符".to_string(),
+        ));
     };
 
     let max_results = args
@@ -75,15 +87,20 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
         WebSearchProvider::Brave | WebSearchProvider::Tavily => {
             proxy_ignored_warning = proxy_arg_present(args.proxy.as_deref());
             if ctx.web_search_api_key.trim().is_empty() {
-                return "错误：未配置联网搜索 API Key。请在配置中设置 web_search_api_key，或设置环境变量 CM_WEB_SEARCH_API_KEY；并设置 web_search_provider 为 brave 或 tavily。若希望免 Key，请使用默认的 worbrow（本机浏览器）或将 web_search_provider 设为 worbrow。".to_string();
+                return Err(ToolError::with_code(
+                    "web_search_not_configured",
+                    "错误：未配置联网搜索 API Key。请在配置中设置 web_search_api_key，或设置环境变量 CM_WEB_SEARCH_API_KEY；并设置 web_search_provider 为 brave 或 tavily。若希望免 Key，请使用默认的 worbrow（本机浏览器）或将 web_search_provider 设为 worbrow。".to_string(),
+                ));
             }
-            let client = match reqwest::blocking::Client::builder()
+            let client = reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(ctx.web_search_timeout_secs))
                 .build()
-            {
-                Ok(c) => c,
-                Err(e) => return format!("HTTP 客户端创建失败：{}", e),
-            };
+                .map_err(|e| {
+                    ToolError::external_code(
+                        "web_search_client_failed",
+                        format!("HTTP 客户端创建失败：{}", e),
+                    )
+                })?;
             match ctx.web_search_provider {
                 WebSearchProvider::Brave => {
                     search_brave(&client, ctx.web_search_api_key, &query, max_results)
@@ -94,12 +111,7 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
                 WebSearchProvider::Worbrow => unreachable!("worbrow 已在上方分支处理"),
             }
         }
-    };
-
-    let raw = match raw {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
+    }?;
 
     let raw = if proxy_ignored_warning {
         format!(
@@ -111,7 +123,7 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
         raw
     };
 
-    truncate_output(&raw, ctx.command_max_output_len)
+    Ok(truncate_output(&raw, ctx.command_max_output_len))
 }
 
 /// 首选 Bing，验证码/低质低产时降级 DuckDuckGo（worbrow 引擎链）。
@@ -126,12 +138,13 @@ fn proxy_arg_present(arg: Option<&str>) -> bool {
     arg.map(str::trim).is_some_and(|s| !s.is_empty())
 }
 
+#[allow(clippy::result_large_err)]
 fn search_worbrow(
     query: &str,
     max_results: u32,
     timeout_secs: u64,
     proxy: &str,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     let browser = resolve_worbrow_browser()?;
     // 空串 = 直连/系统代理（worbrow `None` 语义）；非空则透传为浏览器启动参数。
     let proxy = proxy.trim();
@@ -151,7 +164,8 @@ fn search_worbrow(
 }
 
 /// 优先 Firefox（与 worbrow 默认一致），其次 Chrome/Edge/Chromium。
-fn resolve_worbrow_browser() -> Result<BrowserKind, String> {
+#[allow(clippy::result_large_err)]
+fn resolve_worbrow_browser() -> Result<BrowserKind, ToolError> {
     let report = DoctorReport::collect();
     for preferred in [BrowserKind::Firefox, BrowserKind::Chrome] {
         if report
@@ -162,19 +176,26 @@ fn resolve_worbrow_browser() -> Result<BrowserKind, String> {
             return Ok(preferred);
         }
     }
-    Err(
+    Err(ToolError::external_code(
+        "web_search_browser_unavailable",
         "错误：未找到可用的本机浏览器（需 Firefox，或 Chrome/Edge/Chromium）。\
 请安装浏览器后重试，或将 web_search_provider 设为 brave/tavily 并配置 web_search_api_key / CM_WEB_SEARCH_API_KEY。"
             .to_string(),
-    )
+    ))
 }
 
-fn format_worbrow_error(err: &worbrow::Error) -> String {
-    format!(
+fn format_worbrow_error(err: &worbrow::Error) -> ToolError {
+    let text = format!(
         "worbrow 搜索失败（{}）：{}。若环境无浏览器或遇验证码，可改用 brave/tavily 并配置 API Key。",
         err.code_str(),
         err
-    )
+    );
+    // 引擎侧超时属瞬时错误：给 `timeout` 码，只读重试策略才认得出；其余归外部 API 失败。
+    if err.code_str().to_ascii_lowercase().contains("timeout") {
+        ToolError::with_code("timeout", text)
+    } else {
+        web_search_api_error(text)
+    }
 }
 
 fn format_worbrow_outcome(outcome: &Outcome, browser: BrowserKind) -> String {
@@ -277,22 +298,27 @@ fn append_worbrow_meta_notes(out: &mut String, outcome: &Outcome) {
     out.push('。');
 }
 
+/// 搜索 API 的 HTTP / 解析失败（外部，不重试）。正文保留既有的 `错误[码]：` 首行标记。
+fn web_search_api_error(text: String) -> ToolError {
+    ToolError::with_code("web_search_api_error", text)
+}
+
 /// reqwest 发送失败：超时归 `timeout`（瞬时、可重试），其余归 `web_search_api_error`（外部、不重试）。
-/// 首行显式错误码标记供下游 `classify_error_code` 提取。
-fn format_search_network_error(provider: &str, e: &reqwest::Error) -> String {
+fn format_search_network_error(provider: &str, e: &reqwest::Error) -> ToolError {
     if e.is_timeout() {
-        format!("错误[timeout]：{provider} 搜索请求超时：{}", e)
+        ToolError::with_code("timeout", format!("错误[timeout]：{provider} 搜索请求超时：{}", e))
     } else {
-        format!("错误[web_search_api_error]：{provider} 搜索请求失败：{}", e)
+        web_search_api_error(format!("错误[web_search_api_error]：{provider} 搜索请求失败：{}", e))
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn search_brave(
     client: &reqwest::blocking::Client,
     api_key: &str,
     query: &str,
     max_results: u32,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     let res = client
         .get(BRAVE_SEARCH_URL)
         .header("X-Subscription-Token", api_key.trim())
@@ -312,15 +338,15 @@ fn search_brave(
             body.len(),
             preview
         );
-        return Err(format!(
+        return Err(web_search_api_error(format!(
             "错误[web_search_api_error]：Brave 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
             status.as_u16()
-        ));
+        )));
     }
 
-    let parsed: BraveWebSearchResponse = res
-        .json()
-        .map_err(|e| format!("错误[web_search_api_error]：解析 Brave 响应失败：{}", e))?;
+    let parsed: BraveWebSearchResponse = res.json().map_err(|e| {
+        web_search_api_error(format!("错误[web_search_api_error]：解析 Brave 响应失败：{}", e))
+    })?;
 
     let results = parsed.web.and_then(|w| w.results).unwrap_or_default();
 
@@ -344,12 +370,13 @@ fn search_brave(
     Ok(out.trim_end().to_string())
 }
 
+#[allow(clippy::result_large_err)]
 fn search_tavily(
     client: &reqwest::blocking::Client,
     api_key: &str,
     query: &str,
     max_results: u32,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     let body = serde_json::json!({
         "api_key": api_key.trim(),
         "query": query,
@@ -375,15 +402,15 @@ fn search_tavily(
             text.len(),
             preview
         );
-        return Err(format!(
+        return Err(web_search_api_error(format!(
             "错误[web_search_api_error]：Tavily 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
             status.as_u16()
-        ));
+        )));
     }
 
-    let parsed: TavilySearchResponse = res
-        .json()
-        .map_err(|e| format!("错误[web_search_api_error]：解析 Tavily 响应失败：{}", e))?;
+    let parsed: TavilySearchResponse = res.json().map_err(|e| {
+        web_search_api_error(format!("错误[web_search_api_error]：解析 Tavily 响应失败：{}", e))
+    })?;
 
     let results = parsed.results.unwrap_or_default();
     if results.is_empty() {
@@ -484,6 +511,35 @@ mod tests {
         assert!(!proxy_arg_present(Some("")));
         assert!(!proxy_arg_present(Some("   ")));
         assert!(!proxy_arg_present(None));
+    }
+
+    /// 未配 API Key 是**显式前置条件失败**：旧实现正文以「错误：未配置…」开头，
+    /// 靠 `starts_with("错误")` 才判成失败；现在直接给码，不依赖文案。
+    #[test]
+    fn missing_api_key_reports_not_configured() {
+        let allowed = crate::cm_tools::tools::tests::test_allowed_commands();
+        let ctx = crate::cm_tools::tools::tests::test_ctx(&allowed);
+        let e = run_try(r#"{"query":"crabmate"}"#, &ctx).expect_err("无 Key 应失败");
+        assert_eq!(e.code, "web_search_not_configured");
+    }
+
+    /// 过短 / 缺失 `query` 仍是参数错误（与「未配置」区分开：一个改参数、一个改配置）。
+    #[test]
+    fn short_or_missing_query_is_invalid_args() {
+        let allowed = crate::cm_tools::tools::tests::test_allowed_commands();
+        let ctx = crate::cm_tools::tools::tests::test_ctx(&allowed);
+        assert_eq!(
+            run_try(r#"{"query":"x"}"#, &ctx)
+                .expect_err("过短 query 应失败")
+                .code,
+            "invalid_args"
+        );
+        assert_eq!(
+            run_try(r#"{"query":"   "}"#, &ctx)
+                .expect_err("空白 query 应失败")
+                .code,
+            "invalid_args"
+        );
     }
 
     /// 实网：本机 Firefox/Chrome + Bing。默认忽略；本地：  

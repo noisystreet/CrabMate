@@ -1,4 +1,4 @@
-/// [`super::weather::run`] 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。
+/// [`super::weather::run_try`] 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GetWeatherArgs {
@@ -6,7 +6,7 @@ pub struct GetWeatherArgs {
     pub location: Option<String>,
 }
 
-/// [`super::web_search::run`] 入参。
+/// [`super::web_search::run_try`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WebSearchArgs {

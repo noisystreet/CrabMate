@@ -4,7 +4,7 @@
             description: "获取指定城市或地区的当前天气（使用 Open-Meteo，无需 API Key）。用于回答「某地天气怎么样」「北京今天天气」等问题。参数 city 或 location 为城市/地区名，如北京、上海、Tokyo、New York。",
             category: ToolCategory::Basic,
             parameters: schema_of::<args::GetWeatherArgs>,
-            runner: ToolRunner::Legacy(runner_get_weather),
+            runner: ToolRunner::Typed(runner_get_weather_try),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -12,7 +12,7 @@
             description: "联网搜索网页：根据关键词返回若干条结果的标题、URL 与摘要。默认 web_search_provider=worbrow（本机 Firefox/Chrome headless，无需 API Key）。亦可设为 brave / tavily（需 web_search_api_key）。可选 `proxy` 参数为本次调用指定 worbrow 代理（`http://host:port`；省略时用配置 web_search_proxy）。适合查新闻、文档、事实类问题；代码仓库内查找请优先用 search_in_files。",
             category: ToolCategory::Basic,
             parameters: schema_of::<args::WebSearchArgs>,
-            runner: ToolRunner::Legacy(runner_web_search),
+            runner: ToolRunner::Typed(runner_web_search_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_web_search),
         },
         ToolSpec {
