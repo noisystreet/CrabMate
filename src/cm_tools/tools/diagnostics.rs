@@ -5,6 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::file;
+use crate::cm_tools::tool_result::ToolError;
 
 /// 与 `config/mod.rs`、README、AGENTS 中常见项对齐；按字母序输出。
 const TRACKED_ENV_VARS: &[&str] = &[
@@ -135,11 +136,18 @@ fn is_safe_extra_env_name(name: &str) -> bool {
 /// 参数 JSON（均可选）：`include_toolchain`（默认 true）、`include_workspace_paths`（默认 true）、`include_env`（默认 true）、`extra_env_vars`（额外大写变量名数组，仅允许 `[A-Z0-9_]+`）
 ///
 /// `extra_lines` 用于上层调用者注入额外诊断信息（如 LLM 缓存统计）。
-pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[String]) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+/// 失败语义：**只有参数 JSON 不合法**才是 `invalid_args`。
+///
+/// 其余都是「降级而不是失败」：`sections` 不是数组 ⇒ 忽略、退化为输出全部小节；
+/// `extra_env_vars` 不是数组 ⇒ 忽略；工作区根无法解析 ⇒ 正文写一行、工具链与环境变量
+/// 部分照常输出。两条降级路径由 `diagnostic_summary_*` 用例钉住。
+#[allow(clippy::result_large_err)]
+pub fn diagnostic_summary_try(
+    args_json: &str,
+    working_dir: &Path,
+    extra_lines: &[String],
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let inc_tc = v
         .get("include_toolchain")
         .and_then(|x| x.as_bool())
@@ -285,7 +293,7 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[St
         out.push_str(line);
         out.push('\n');
     }
-    out.trim_end().to_string()
+    Ok(out.trim_end().to_string())
 }
 
 #[cfg(test)]
@@ -306,5 +314,28 @@ mod tests {
     fn extra_name_filter() {
         assert!(!is_safe_extra_env_name("API-KEY"));
         assert!(is_safe_extra_env_name("MY_VAR_1"));
+    }
+
+    /// 字段类型不对只被忽略（退化为默认值），不是失败 —— 审计曾按 `Legal` 钉住这条。
+    ///
+    /// 关掉子进程与 env 扫描，让用例只测「容忍」本身。
+    #[test]
+    fn diagnostic_summary_tolerates_non_array_args() {
+        let dir = std::env::temp_dir();
+        let body = diagnostic_summary_try(
+            r#"{"sections":1,"extra_env_vars":"nope","include_toolchain":false,"include_env":false}"#,
+            &dir,
+            &[],
+        )
+        .expect("非法字段类型只降级，不该报失败");
+        assert!(body.contains("诊断摘要"), "{body}");
+    }
+
+    /// 真正该失败的是参数 JSON 本身：显式 `invalid_args`，不再靠正文关键词。
+    #[test]
+    fn diagnostic_summary_bad_args_is_invalid_args() {
+        let e = diagnostic_summary_try("{not json", std::path::Path::new("."), &[])
+            .expect_err("非法 JSON 应失败");
+        assert_eq!(e.code, "invalid_args");
     }
 }

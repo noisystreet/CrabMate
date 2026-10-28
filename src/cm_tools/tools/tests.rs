@@ -695,7 +695,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // `pytest_run` 的 `5`（未收集到用例）与「工作区无 Python 工程标记」仍算成功，
     // `1`/`2`/`3`/`4` 与脚本非零退出显式成 `pytest_failed` / `python_snippet_failed`。
     // 13 → 11。
-    const LEGACY_BASELINE: usize = 11;
+    // 本轮（D 档 · 只读聚合）：`diagnostic_summary` / `repo_overview_sweep` /
+    // `crate_contract_map` 迁 Typed（−3）—— 三者唯一的真失败都是参数 JSON 不合法
+    // （`invalid_args`）；越界阈值走 clamp、非法 / 缺失路径只标注降级，仍算成功。
+    // 顺序照旧：先把「容忍」写进各自 `*_tolerates_*` 用例，再改返回类型。11 → 8。
+    const LEGACY_BASELINE: usize = 8;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

@@ -255,6 +255,7 @@ define_runners_cwd_maxlen_try! {
     runner_code_stats_try => code_metrics::code_stats_try,
     runner_dependency_graph_try => code_metrics::dependency_graph_try,
     runner_coverage_report_try => code_metrics::coverage_report_try,
+    runner_repo_overview_sweep_try => repo_overview::repo_overview_sweep_try,
 }
 
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
@@ -289,8 +290,14 @@ pub fn runner_python_snippet_run_try(
     )
 }
 
-pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
-    diagnostics::diagnostic_summary(args, ctx.working_dir, &[])
+/// `diagnostic_summary` 的 Typed runner：只有参数 JSON 非法才是失败，
+/// 「工作区根无法解析」「字段类型不对」都在正文里降级（见 `diagnostics`）。
+#[allow(clippy::result_large_err)]
+pub fn runner_diagnostic_summary_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    diagnostics::diagnostic_summary_try(args, ctx.working_dir, &[])
 }
 
 /// `self_config_info` 的 Typed runner：缺 `AgentConfig` 与参数解析失败均为显式错误。
@@ -466,14 +473,19 @@ pub fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
     http_fetch::run_request_direct(args, ctx)
 }
 
-pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
-    contract_map::crate_contract_map(args, ctx)
+/// `crate_contract_map` 的 Typed runner：只有参数 JSON 非法才是失败，
+/// 越界阈值与非法 `extra_paths` 只降级（见 `contract_map`）。
+#[allow(clippy::result_large_err)]
+pub fn runner_crate_contract_map_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    contract_map::crate_contract_map_try(args, ctx)
 }
 
 // ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
 
 define_runners_cwd_maxlen! {
-    runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
 }
 

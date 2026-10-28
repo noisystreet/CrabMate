@@ -29,10 +29,11 @@
 ## 2. 现状（2026-10-27）
 
 > **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 11**
+> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 8**
 > （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`、
 > `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api`、`git`、
-> `pytest_run` / `python_snippet_run` 陆续迁完后，23 → 19 → 14 → 13 → 11）。
+> `pytest_run` / `python_snippet_run`、`diagnostic_summary` / `repo_overview_sweep` /
+> `crate_contract_map` 陆续迁完后，23 → 19 → 14 → 13 → 11 → 8）。
 > §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
 73 个带 runner 的 `ToolSpec`：**Typed 44 / Legacy 29**（另有 2 个 `AsyncOnly`）。
@@ -47,9 +48,9 @@
 | `file_core.inc.rs` | 1 | 12 | 仅 `codebase_semantic_search` 未迁 |
 | `cargo_rust.inc.rs` | 0 | 6 | 已全迁（`rust_analyzer` 于 2026-10-28 迁 Typed，见 §4.10；`rust_compiler_json` 已整工具删除） |
 | `text_code_nav.inc.rs` | 1 | 2 | 仅 `code_nav` 未迁 |
-| `basic_network.inc.rs` | 0 | 4 | 全部 Typed（`text_transform` 已于 2026-10-28 移除） |
+| `basic_network.inc.rs` | 4 | 0 | **全是 Legacy**：`get_weather` / `web_search` / `http_fetch` / `http_request`（本行旧版误写为「0 / 4 全部 Typed」，与代码不符，已按实际清单修正；`text_transform` 已于 2026-10-28 移除） |
 | `github_cli.inc.rs` | 0 | 5 | 已全迁（2026-10-28，C 档；见 §4.3） |
-| `diagnostics_docs.inc.rs` | 4 | 4 | `long_term_*` ×3 + `summarize_experience` 已迁；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除（见 §4.4） |
+| `diagnostics_docs.inc.rs` | 1 | 7 | `long_term_*` ×3 + `summarize_experience` 已迁；`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map` 于 2026-10-28 迁 Typed（见 §4.16），仅剩 `present_clarification_questionnaire`；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除 |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
 | `process.inc.rs` | 0 | 2 | 已全迁（2026-10-28：`background_job` / `background_job_cancel` 走手写 try runner；原先 `参数错误：…` 开头被判成功） |
 | `schedule.inc.rs` | 0 | 2 | 已全迁（2026-10-28，`reminder` / `event` 走 `define_runners_cwd_try!`） |
@@ -57,11 +58,10 @@
 | `archive.inc.rs` | 0 | 3 | 已全迁（2026-10-28，B 档首段，受 `archive-tools` feature gate） |
 | `frontend_python.inc.rs` | 0 | 2 | 已全迁（2026-10-28，C 档；见 §4.13） |
 | `frontend_audit_ci.inc.rs` | 0 | 1 | 已全迁（2026-10-28：`workflow_execute` 同步面占位改 Typed，返回 `workflow_execute_not_intercepted`；`rust_backtrace_analyze` 已整工具删除，见 §7） |
-| `format_lint.inc.rs` | 1 | 0 | 全 Legacy |
 | `docs_health.inc.rs` | 1 | 0 | 全 Legacy |
 | `git_read.inc.rs` | 0 | 1 | 已全迁（2026-10-28，C 档；见 §4.12） |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 11） |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 8） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -166,9 +166,9 @@
 
 | 工具 | 形态 | 目标实现 | 备注 |
 |---|---|---|---|
-| `diagnostic_summary` | 手写 | `diagnostics::diagnostic_summary(args, cwd, &[])` | |
-| `repo_overview_sweep` | `cwd_maxlen` | `repo_overview::repo_overview_sweep` | |
-| `crate_contract_map` | 手写 | `contract_map::crate_contract_map(args, ctx)` | |
+| ~~`diagnostic_summary`~~（**已迁 2026-10-28**） | 手写 | `diagnostics::diagnostic_summary_try(args, cwd, &[])` | 只有参数 JSON 非法才是 `invalid_args`；`sections` / `extra_env_vars` 类型不对、工作区根不可解析都只降级（见 §4.16） |
+| ~~`repo_overview_sweep`~~（**已迁 2026-10-28**） | `cwd_maxlen_try` | `repo_overview::repo_overview_sweep_try` | 同上；字段类型不对退回默认值、缺失路径在正文标「不存在」 |
+| ~~`crate_contract_map`~~（**已迁 2026-10-28**） | 手写 | `contract_map::crate_contract_map_try(args, ctx)` | 同上；越界阈值 clamp、非法 `extra_paths` 只跳过 |
 | ~~`long_term_remember`~~ / ~~`long_term_forget`~~ / ~~`long_term_memory_list`~~ / ~~`summarize_experience`~~（**已迁 2026-10-27**） | 手写 | `dispatch_long_term_tool(...)` | 四个共用入口，一次改造覆盖；`LongTermMemoryToolHost::dispatch` 契约改为 `Result<String, ToolError>`；缺 `cfg` / host → `tool_context_incomplete`，记忆库 IO → `long_term_memory_io_failed` |
 | `present_clarification_questionnaire` | `args_only` | `clarification_questionnaire::run_present_clarification_questionnaire` | 控制面，非普通工具 |
 
@@ -346,11 +346,38 @@
 |---|---|---|---|
 | `workflow_execute` | 手写 **stub** | 不执行，返回提示串 | 由 runtime 在 `run_agent_turn` 拦截，**迁移意义存疑**：同步面本就没有执行体，更接近 `AsyncOnly` |
 
-### 4.15 `format_lint.inc.rs` / `docs_health.inc.rs`（各 1）— 形态 `cwd_maxlen`
+### 4.15 `docs_health.inc.rs`（1）— 形态 `cwd_maxlen`
+
+> 旧标题写作 `format_lint.inc.rs / docs_health.inc.rs（各 1）`，但 `format_lint.inc.rs` 这个 spec 文件已不存在，按实际清单修正。
 
 | 工具 | 目标实现 | 备注 |
 |---|---|---|
 | `docs_health_sweep` | `docs_health_sweep::docs_health_sweep` | 聚合器（预览 + 拼写 + 链接） |
+
+### 4.16 只读聚合三兄弟 — **已迁 2026-10-28**
+
+| 工具 | 形态 | 目标实现 | 失败码 |
+|---|---|---|---|
+| `diagnostic_summary` | 手写（多参数转发 `&[]`） | `diagnostics::diagnostic_summary_try` | `invalid_args` |
+| `repo_overview_sweep` | 孪生宏 `define_runners_cwd_maxlen_try!` | `repo_overview::repo_overview_sweep_try` | `invalid_args` |
+| `crate_contract_map` | 手写 | `contract_map::crate_contract_map_try` | `invalid_args` |
+
+**为什么这一批要「先钉测试、再改类型」**：三个工具各自唯一的真失败点是 `parse_args_json`，其余全是**有意容忍**
+（审计表原按 `Legal` 钉住）。容忍清单：
+
+- `diagnostic_summary`：`sections` / `extra_env_vars` 类型不对 ⇒ 忽略（`sections` 退化为「输出全部小节」）；工作区根无法解析 ⇒ 正文写一行 `无法解析工作区根: …`，工具链 / env 小节照常输出。
+- `repo_overview_sweep`：`doc_paths` / `source_roots` 等字段类型不对 ⇒ 退回默认值；文档 / 源码根不存在 ⇒ 正文标「不存在」。
+- `crate_contract_map`：`head_lines_per_file` / `keyword_hits_per_file` 越界 ⇒ clamp（`5..=120` / `5..=200`）；非法 / 越界 / 不存在的 `extra_paths` ⇒ 跳过。
+
+迁移时若把这些分支「顺手」改成 `Err`，模型会收到一次莫名其妙的失败，而它给的参数其实已被合理降级 ——
+这是 §6 第 2 条（`Ok` 正文不得变）的镜像：**「容忍」也是成功语义的一部分**。因此每模块都留一对用例：
+`*_tolerates_*`（非法字段 / 越界值 ⇒ `Ok`）与 `*_bad_args_is_invalid_args`（非法 JSON ⇒ `Err`），后者保证不是「全都成功」。
+
+**没有新错误码**：三者都没有 IO / 网络失败分支（缺文件、缺路径一律写进正文），所以只用到既有 `invalid_args`；
+不产生 `_failed` 码，也就不需要往 `failure_category_for_error_code` 里加分支。
+
+**棘轮与审计表**：`LEGACY_BASELINE` 11 → 8；审计表三条换成一段注释；`Expect::Legal` 失去最后一个 Legacy 用例，
+变体保留并加 `#[allow(dead_code)]` + 理由，供下一个「容忍非法入参」的 Legacy 工具使用。
 
 ---
 
@@ -360,7 +387,7 @@
 
 | 档 | 族 | 理由 |
 |---|---|---|
-| **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
+| **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`、**只读聚合三兄弟**（`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`，2026-10-28 已迁，见 §4.16）（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
 | **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
 | **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、`http_fetch` / `http_request`、`web_search` / `get_weather`、~~`pytest_run` / `python_snippet_run`~~（**已迁 2026-10-28**） | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
@@ -395,3 +422,4 @@
 | 2026-10-28 | **B 档：`reminder` / `event` 迁为 Typed**（Legacy 25 → **23**，基线守卫同步）。两族共用 `schedule.rs` 的 `ensure_data_dir` / `read_json` / `write_json`，五个 helper 与九个入口一起换成 `Result<_, ToolError>`；runner 侧只是把两行从 `define_runners_cwd!` 挪到已有的 `define_runners_cwd_try!`，**无需新宏**。**迁移动机是四个静默成功分支**：dispatch 层合并时新增的「`add` 缺 `title`」「缺 `id`」两类必填校验，以及 `complete` / `update` / `delete` 的「`未找到提醒/日程：id=…`」，正文都不含「错误 / 失败 / 超时」，被 `parse_legacy_output` 判成 `ok: true` —— 模型传错参数或传错 id 却拿到「成功」。现分别为 `invalid_args` 与 `reminder_not_found` / `event_not_found`。新增错误码：`reminder_not_found` / `event_not_found`（`InvalidInput`，理由是 id 只可能来自调用方，模型可先 `list` 自查，与 `archive_not_found` 的「文件系统状态」口径刻意不同）、`schedule_io_failed` / `schedule_parse_failed`（`External`）、`schedule_serialize_failed`（`Internal`，走既有 `ends_with("_serialize_failed")` 分支）。`ToolError` 顺带加了通用构造器 `with_code`，`workspace` / `external_code` 改为委托它（三份相同实现收敛为一份）。**刻意保留**：`list` 在入参 JSON 坏掉时仍退化为「无过滤条件」（宽容语义不变），成功正文逐字未变，`builtin_write_effect_tools` 无需改动（两者九合一时已登记）。测试：既有 8 个流程/必填用例改为取 `Ok` / `e.code`，新增 `unknown_id_reports_not_found_instead_of_success` / `empty_list_is_success_not_failure` / `io_failure_reports_schedule_io_failed`（后者用「`.crabmate` 建成普通文件」触发，避免 root 下 chmod 造只读目录的 flaky）。 |
 | 2026-10-28 | **C 档：`git` 迁为 Typed**（Legacy 14 → **13**，基线守卫同步）。10 个 action 全部换成 `Result<String, ToolError>`，`helpers::run_and_format` / `run_diff_mode` / `parse_args` / `extract_safe_path` / `require_safe_path` 一起换类型并加 `#[allow(clippy::result_large_err)]`；runner 侧把 `define_git_runners!` 换成孪生 `define_git_runners_try!`（旧的删掉，`unused_macros` 会报），并在 `try_macro_typecheck` 挂上 `git::dispatch` smoke。**关键复用**：在 `output_util` 里加 `run_command_output_try(..., failure_code)`，把渲染抽成私有 `render_process_output` 与前一个函数共用，所以 `Ok` 正文逐字不变、只多「非零退出 → `Err`」一层判定。新增错误码 **`git_not_a_repo`**（`Workspace`，显式登记：不以 `_failed` 结尾）与 `git_{action}_failed`（`External`，由 `external_code_owned` 拼接）。**没有豁免名单**：只读 git 子命令不存在「非零退出但语义正常」，代价是空仓库的 `log` / `show`（128）现在算失败——写入文档与测试（`log_in_empty_repository_is_a_failure` 与配对的 `log_after_first_commit_is_success`）。`ensure_git_repo` 保留 `String` 薄壳供 `github_cli::pr_body` 用，避免把 `gh_git_failed` 的码混进来。审计表删掉 `git` 条目。 |
 | 2026-10-28 | **C 档：`pytest_run` / `python_snippet_run` 迁为 Typed**（Legacy 13 → **11**，基线守卫同步）。`pytest_run_try` / `python_snippet_run_try` 取代旧 `String` 入口，runner 改名为 `runner_pytest_run_try` / `runner_python_snippet_run_try`。**两个「不是失败」的分支先拆出来**：①`build_pytest_command` 现在返回 `PytestCommand::{Run, Skipped}`——工作区没有 Python 工程标记时的「跳过」以前以 `Err(String)` 返回但被启发式判成功（审计表 `Legal`），若塞进 `Err` 就成了迁移引入的假回归；后台装配 `pytest_run_background_argv` 仍把它当错误（没有命令可跑）。②pytest 的 **5（no tests collected）** 算成功：`run_and_format_try` 因此带 `allowed_exit`（`PYTEST_OK_EXITS = &[0, 5]`），而 **1（断言失败）不在其中**，与 `cargo_test` 的 `cargo_test_failed` 同口径——这点与 `gh pr checks` 的 1/8 不同：那里是 CI 状态，这里是真的测试失败。**错误码**：`invalid_args`（缺/空 `code`、`code` 超 256 KiB、`use_uv` 缺 `pyproject.toml`、`test_path`/`keyword`/`markers` 非法）、`workspace_resolve_failed`、`python_snippet_temp_file_failed`、**`python_snippet_temp_path_outside_workspace`**（`PolicyDenied`，显式登记）、`command_not_found` / `spawn_failed`、`timeout` / `cancelled`（`ToolError::session_stop`，保留 `legacy_parsed` 的 stdout/stderr，超时测试因此仍能断言部分输出）、`pytest_failed` / `python_snippet_failed`。顺带把 `ToolError::cargo_subcommand_failed` 重命名为 **`subprocess_failed`**（cargo / pytest / python_snippet 三族共用，退出码仍写进 `legacy_parsed.exit_code`）。**未抽取**：`python_tools::run_and_format_try` 与 `cargo_subcommand::run_and_format_try` 仍重复约 60 行，注释写明「第三次出现即抽公共模块」（现在只是第二次，抽出去要动已迁移的 cargo 路径）。测试 3 → 8 条；审计表删掉这两行。 |
+| 2026-10-28 | **A 档收尾：只读聚合三兄弟迁为 Typed**（`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`，Legacy 11 → **8**）。三者唯一的真失败点都是 `parse_args_json`，其余全是有意容忍（审计表原按 `Legal` 钉住）：`sections` / `extra_env_vars` 类型不对只忽略、工作区根不可解析只写一行、字段类型不对退回默认值、越界阈值 clamp、非法 `extra_paths` 跳过。因此**先在三处 `tests` 里把「容忍 ⇒ `Ok`」写成用例，再改返回类型**（每处配一条 `*_bad_args_is_invalid_args`，防「全都成功」）—— 这是 §6 第 2 条的镜像：`Ok` 正文不能变，**「容忍」本身也是成功语义**。错误码只用既有 `invalid_args`，无新增分类分支。runner 侧两个手写（多参数转发）+ 一个并入 `define_runners_cwd_maxlen_try!`；审计表三条变注释，`Expect::Legal` 失去最后一个 Legacy 用例，保留变体并加 `#[allow(dead_code)]` + 理由。顺带修正 §2.1 两处过期行（`basic_network` 实际全是 Legacy、`format_lint.inc.rs` 文件已不存在）。 |

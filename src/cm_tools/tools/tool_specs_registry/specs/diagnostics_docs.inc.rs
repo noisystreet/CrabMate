@@ -12,7 +12,7 @@
             description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `crates/` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `CM_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。业务 UI 在 Client 仓（`serve` 永远纯 API，不托管 UI）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DiagnosticSummaryArgs>,
-            runner: ToolRunner::Legacy(runner_diagnostic_summary),
+            runner: ToolRunner::Typed(runner_diagnostic_summary_try),
             summary: ToolSummaryKind::Static("Environment/toolchain diagnostic summary (redacted)"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@
             description: "只读聚合：可选**项目画像**（与 Web `GET /workspace/profile` 同源：清单与 tokei 等，默认开启，见 `include_project_profile` / `project_profile_max_chars`）；依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::RepoOverviewSweepArgs>,
-            runner: ToolRunner::Legacy(runner_repo_overview_sweep),
+            runner: ToolRunner::Typed(runner_repo_overview_sweep_try),
             summary: ToolSummaryKind::Static("repo docs + tree + build files sweep"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@
             description: "只读**契约地图**：对工作区内 `src/lib.rs`、`docs/SSE协议.md`、`src/cm_sse_protocol/control_classify.rs`、`fixtures/sse_ag_ui_golden.jsonl`、`fixtures/sse_control_golden.jsonl`、`config/default_config.toml`、`docs/配置说明.md`、`docs/命令行与路由.md` 等锚点做**短文件头**与少量**关键字行节选**（不执行命令、不联网、不读 `.env`）。官方 UI 解析在 Client 仓 `frontend/src/api/`（本工作区无 `frontend/`）。用于复杂任务前快速对齐 HTTP/SSE/配置入口；细节仍请 `read_file`。可选 `extra_paths` 追加更多相对路径。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CrateContractMapArgs>,
-            runner: ToolRunner::Legacy(runner_crate_contract_map),
+            runner: ToolRunner::Typed(runner_crate_contract_map_try),
             summary: ToolSummaryKind::Static("SSE/HTTP/config contract anchor map (read-only)"),
         },
         ToolSpec {
