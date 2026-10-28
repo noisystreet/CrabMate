@@ -6,6 +6,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 
 use super::super::ToolContext;
+use crate::cm_tools::tool_result::ToolError;
 use super::args::{
     ABS_MAX_BODY_BYTES, FetchMethod, HttpBodyTextFormat, RequestMethod, parse_http_fetch_args,
     parse_http_request_args,
@@ -25,11 +26,12 @@ fn resolve_user_agent(cfg: Option<&crate::cm_config::AgentConfig>) -> String {
         .unwrap_or_else(default_user_agent)
 }
 
+#[allow(clippy::result_large_err)]
 fn build_client(
     timeout_secs: u64,
     redirect_hops: Arc<Mutex<Vec<String>>>,
     user_agent: &str,
-) -> Result<reqwest::blocking::Client, String> {
+) -> Result<reqwest::blocking::Client, ToolError> {
     let timeout_secs = timeout_secs.max(1);
     let hops = redirect_hops;
     let policy = Policy::custom(move |attempt| {
@@ -50,7 +52,9 @@ fn build_client(
         .default_headers(default_headers)
         .user_agent(user_agent)
         .build()
-        .map_err(|e| format!("HTTP 客户端构建失败: {}", e))
+        .map_err(|e| {
+            ToolError::external_code("http_client_failed", format!("HTTP 客户端构建失败: {}", e))
+        })
 }
 
 /// 格式化 reqwest 错误并附带 `source()` 链（如代理连接失败的具体原因），便于诊断代理/网络问题。
@@ -58,9 +62,8 @@ fn build_client(
 /// reqwest 0.13 仅支持 HTTP(S) 代理，SOCKS 需 curl 等原生客户端。
 ///
 /// 错误正文首行嵌入**显式错误码标记**（`错误[http_timeout]` / `错误[http_network_error]`），
-/// 供下游 [`crate::cm_tools::tool_result::classify_error_code`] 提取精确错误码：
-/// 超时归 `http_timeout`（瞬时、可重试），其余网络/连接失败归 `http_network_error`。
-fn format_reqwest_error(e: &reqwest::Error) -> String {
+/// 与迁移前的正文逐字一致；码本身由 `ToolError` 携带，标记仅供对照旧日志与信封文本路径。
+fn format_reqwest_error(e: &reqwest::Error) -> ToolError {
     let code = if e.is_timeout() {
         "http_timeout"
     } else {
@@ -79,7 +82,7 @@ fn format_reqwest_error(e: &reqwest::Error) -> String {
         );
     }
     s.push_str(&chain);
-    s
+    ToolError::with_code(code, s)
 }
 
 fn format_redirect_section(hops: &[String]) -> String {
@@ -95,19 +98,26 @@ fn format_redirect_section(hops: &[String]) -> String {
 
 /// 读取响应体、按 `max_body_bytes` 截断、解码并可选转纯文本；返回正文输出段（含截断/解码说明）。
 /// 读取失败区分超时（`http_timeout`）与其它（`http_body_read_error`），正文首行带显式错误码标记。
+#[allow(clippy::result_large_err)]
 fn read_body_section(
     resp: reqwest::blocking::Response,
     ctype: &str,
     max_body_bytes: usize,
     text_format: HttpBodyTextFormat,
-) -> Result<String, String> {
+) -> Result<String, ToolError> {
     let bytes = match resp.bytes() {
         Ok(b) => b,
         Err(e) => {
             if e.is_timeout() {
-                return Err(format!("错误[http_timeout]：读取响应体超时: {}", e));
+                return Err(ToolError::with_code(
+                    "http_timeout",
+                    format!("错误[http_timeout]：读取响应体超时: {}", e),
+                ));
             }
-            return Err(format!("错误[http_body_read_error]：读取响应体失败: {}", e));
+            return Err(ToolError::with_code(
+                "http_body_read_error",
+                format!("错误[http_body_read_error]：读取响应体失败: {}", e),
+            ));
         }
     };
     let truncated = bytes.len() > max_body_bytes;
@@ -136,6 +146,7 @@ fn read_body_section(
 }
 
 /// 同步 GET 或 HEAD（阻塞）；HEAD 不读取正文，输出状态码、Content-Type、Content-Length 与重定向链。
+#[allow(clippy::result_large_err)]
 pub fn fetch_with_method(
     url: &reqwest::Url,
     method: FetchMethod,
@@ -143,23 +154,17 @@ pub fn fetch_with_method(
     user_agent: &str,
     timeout_secs: u64,
     max_body_bytes: usize,
-) -> String {
+) -> Result<String, ToolError> {
     let max_body_bytes = max_body_bytes.clamp(1024, ABS_MAX_BODY_BYTES);
     let hops: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let client = match build_client(timeout_secs, hops.clone(), user_agent) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
+    let client = build_client(timeout_secs, hops.clone(), user_agent)?;
 
     let req = match method {
         FetchMethod::Get => client.get(url.clone()),
         FetchMethod::Head => client.head(url.clone()),
     };
 
-    let resp = match req.send() {
-        Ok(r) => r,
-        Err(e) => return format_reqwest_error(&e),
-    };
+    let resp = req.send().map_err(|e| format_reqwest_error(&e))?;
 
     let status = resp.status();
     let final_url = resp.url().clone();
@@ -192,24 +197,23 @@ pub fn fetch_with_method(
 
     if method == FetchMethod::Head {
         out.push_str("\n(HEAD：未下载响应体)\n");
-        return out.trim_end().to_string();
+        return Ok(out.trim_end().to_string());
     }
 
-    match read_body_section(resp, &ctype, max_body_bytes, text_format) {
-        Ok(section) => out.push_str(&section),
-        Err(e) => return e,
-    }
-    out
+    out.push_str(&read_body_section(resp, &ctype, max_body_bytes, text_format)?);
+    Ok(out)
 }
 
+#[allow(clippy::result_large_err)]
 fn attach_optional_json_body(
     req: reqwest::blocking::RequestBuilder,
     json_body: Option<&serde_json::Value>,
-) -> Result<(reqwest::blocking::RequestBuilder, usize), String> {
+) -> Result<(reqwest::blocking::RequestBuilder, usize), ToolError> {
     let Some(body) = json_body else {
         return Ok((req, 0));
     };
-    let v = serde_json::to_vec(body).map_err(|e| format!("json_body 序列化失败: {}", e))?;
+    let v = serde_json::to_vec(body)
+        .map_err(|e| ToolError::invalid_args(format!("json_body 序列化失败: {}", e)))?;
     let n = v.len();
     Ok((req.header(CONTENT_TYPE, "application/json").body(v), n))
 }
@@ -231,6 +235,7 @@ fn append_content_length_line(out: &mut String, clen: &str) {
 }
 
 /// 同步 HTTP 请求（POST/PUT/PATCH/DELETE + 可选 JSON body）。
+#[allow(clippy::result_large_err)]
 pub fn request_with_json_body(
     url: &reqwest::Url,
     method: RequestMethod,
@@ -239,23 +244,14 @@ pub fn request_with_json_body(
     user_agent: &str,
     timeout_secs: u64,
     max_body_bytes: usize,
-) -> String {
+) -> Result<String, ToolError> {
     let max_body_bytes = max_body_bytes.clamp(1024, ABS_MAX_BODY_BYTES);
     let hops: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let client = match build_client(timeout_secs, hops.clone(), user_agent) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
+    let client = build_client(timeout_secs, hops.clone(), user_agent)?;
 
     let req = client.request(method.into_reqwest(), url.clone());
-    let (req, body_bytes) = match attach_optional_json_body(req, json_body) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let resp = match req.send() {
-        Ok(r) => r,
-        Err(e) => return format_reqwest_error(&e),
-    };
+    let (req, body_bytes) = attach_optional_json_body(req, json_body)?;
+    let resp = req.send().map_err(|e| format_reqwest_error(&e))?;
 
     let status = resp.status();
     let final_url = resp.url().clone();
@@ -282,21 +278,22 @@ pub fn request_with_json_body(
     out.push_str(&format!("Content-Type: {}\n", ctype));
     append_content_length_line(&mut out, clen);
 
-    match read_body_section(resp, &ctype, max_body_bytes, text_format) {
-        Ok(section) => out.push_str(&section),
-        Err(e) => return e,
-    }
-    out
+    out.push_str(&read_body_section(resp, &ctype, max_body_bytes, text_format)?);
+    Ok(out)
 }
 
-/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（`*` 或同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`tool_approval`**）。
-pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let (url, method, text_format) = match parse_http_fetch_args(args_json) {
-        Ok(x) => x,
-        Err(e) => return format!("错误：{}", e),
-    };
+/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（`*` 或同源 + 路径前缀边界）时才请求；
+/// 未匹配时返回**策略拒绝**（`http_fetch_url_not_allowed`，`PolicyDenied`）——本同步路径没有审批通道，
+/// 拒绝不等于「执行失败」，重试同一 URL 也没意义。CLI 异步 / Web 流式路径另走 `tool_approval`。
+#[allow(clippy::result_large_err)]
+pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    let (url, method, text_format) = parse_http_fetch_args(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("错误：{}", e)))?;
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可人工审批。".to_string();
+        return Err(ToolError::with_code(
+            "http_fetch_url_not_allowed",
+            "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可人工审批。".to_string(),
+        ));
     }
     let user_agent = resolve_user_agent(ctx.cfg);
     fetch_with_method(
@@ -310,13 +307,16 @@ pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 /// `http_request` 同步路径：仅匹配 `http_fetch_allowed_prefixes`（`*` 或前缀）的 URL 才允许执行。
-pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let (url, method, json_body, text_format) = match parse_http_request_args(args_json) {
-        Ok(x) => x,
-        Err(e) => return format!("错误：{}", e),
-    };
+/// 未匹配同样是**策略拒绝**（`http_request_url_not_allowed`）；不用 `http_fetch` 的码，两者审批键不同。
+#[allow(clippy::result_large_err)]
+pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    let (url, method, json_body, text_format) = parse_http_request_args(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("错误：{}", e)))?;
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可对 http_request 人工审批。".to_string();
+        return Err(ToolError::with_code(
+            "http_request_url_not_allowed",
+            "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可对 http_request 人工审批。".to_string(),
+        ));
     }
     let user_agent = resolve_user_agent(ctx.cfg);
     request_with_json_body(

@@ -100,6 +100,12 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         "cancelled" => ToolFailureCategory::Timeout,
         "http_timeout" => ToolFailureCategory::Timeout,
         "http_network_error" | "http_body_read_error" => ToolFailureCategory::External,
+        // 受控 HTTP 族（2026-10-28 迁 Typed runner）：URL 未匹配 `http_fetch_allowed_prefixes`
+        // 是**策略拒绝**（同步路径没有审批通道），不是执行失败、重试同一 URL 也无意义（不可重试）。
+        "http_fetch_url_not_allowed" | "http_request_url_not_allowed" => {
+            ToolFailureCategory::PolicyDenied
+        }
+        "http_client_failed" => ToolFailureCategory::External,
         "weather_api_error" | "web_search_api_error" => ToolFailureCategory::External,
         // 外部 API 族（2026-10-28 迁 Typed runner）显式登记的码：
         // 「查不到地名」换一个城市名就能成 → `InvalidInput`；
