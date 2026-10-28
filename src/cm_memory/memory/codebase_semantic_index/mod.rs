@@ -24,6 +24,7 @@ pub use schema::{
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_types::path_utils::canonical_workspace_root;
 use numeric::default_code_extensions;
 use rebuild::{RebuildIndexParams, rebuild_index};
@@ -71,24 +72,52 @@ fn parse_query_max_chunks(v: &serde_json::Value, default: usize) -> usize {
     n
 }
 
+/// 工作区根或索引文件路径不可解析：换路径才行，属 `Workspace`。
+fn workspace_resolve_failed(msg: String) -> ToolError {
+    ToolError::workspace("codebase_semantic_workspace_resolve_failed", msg)
+}
+
+/// 索引侧失败（SQLite 打开 / 事务 / 扫描 / 嵌入）：`External`，正文保持原措辞。
+///
+/// 只在缺少 `错误：` 前缀时补上——旧实现把这些 `String` 原样回正文，
+/// 没有前缀的那些会被 `looks_like_failure` 判成**成功**。
+fn index_failed(msg: String) -> ToolError {
+    let msg = if msg.starts_with("错误") {
+        msg
+    } else {
+        format!("错误：{msg}")
+    };
+    ToolError::external_code("codebase_semantic_index_failed", msg)
+}
+
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn resolve_run_tool_paths(
     workspace_root: &Path,
     index_sqlite_path: &str,
-) -> Result<(std::path::PathBuf, String, std::path::PathBuf), String> {
+) -> Result<(std::path::PathBuf, String, std::path::PathBuf), ToolError> {
     let ws_root = canonical_workspace_root(workspace_root)
-        .map_err(|e| format!("错误：{}", e.user_message()))?;
+        .map_err(|e| workspace_resolve_failed(format!("错误：{}", e.user_message())))?;
     let ws_key = ws_root.to_string_lossy().to_string();
-    let index_path = index_path_for_workspace(workspace_root, index_sqlite_path)?;
+    let index_path = index_path_for_workspace(workspace_root, index_sqlite_path).map_err(|e| {
+        // 旧实现把这条 `String` 原样回正文（无「错误：」前缀）⇒ 被判成**成功**。
+        let msg = if e.starts_with("错误") {
+            e
+        } else {
+            format!("错误：{e}")
+        };
+        workspace_resolve_failed(msg)
+    })?;
     Ok((ws_root, ws_key, index_path))
 }
 
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn parse_search_query_params(
     v: &serde_json::Value,
     p: &CodebaseSemanticToolParams,
     top_k: usize,
     query_max_chunks: usize,
     max_output_chars: usize,
-) -> Result<search::SearchQueryParams, String> {
+) -> Result<search::SearchQueryParams, ToolError> {
     let retrieve_mode = v
         .get("retrieve_mode")
         .and_then(|x| x.as_str())
@@ -118,41 +147,46 @@ fn parse_search_query_params(
         top_k,
         query_max_chunks,
         max_out_chars: max_output_chars.max(4096),
-        mode: search::RetrieveMode::parse(retrieve_mode)?,
+        mode: search::RetrieveMode::parse(retrieve_mode).map_err(ToolError::invalid_args)?,
         fts_top_n,
         hybrid_semantic_pool,
         hybrid_alpha,
     })
 }
-
-/// `rebuild_index=true` 时扫描工作区并写入向量；否则仅查询（需已有索引）。
-pub fn run_tool(
+/// `codebase_semantic_search` 执行面：`rebuild_index=true` 时重建索引，否则只查询。
+///
+/// 迁 `Typed`（2026-10-28）时清掉四处**静默成功**：参数 JSON 坏的 `参数 JSON 无效: …`、
+/// `index_path_for_workspace` 原样回吐的路径错误、以及 `rebuild_index` / `search_index`
+/// 内部以 `错误：…` 之外措辞返回的失败。前三者现在分别是 `invalid_args` /
+/// `codebase_semantic_workspace_resolve_failed`；后者由两个入口的 `Result` 承载。
+#[allow(clippy::result_large_err)]
+pub fn run_tool_try(
     args_json: &str,
     workspace_root: &Path,
     p: &CodebaseSemanticToolParams,
     max_output_chars: usize,
-) -> String {
+) -> Result<String, ToolError> {
     if !p.enabled {
-        return "错误：代码语义检索已在配置中关闭（codebase_semantic_search_enabled=false）"
-            .to_string();
+        return Err(ToolError::workspace(
+            "codebase_semantic_unconfigured",
+            "错误：代码语义检索已在配置中关闭（codebase_semantic_search_enabled=false）".to_string(),
+        ));
     }
 
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(x) => x,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
-    };
+    let v: serde_json::Value = serde_json::from_str(args_json).map_err(|e| {
+        ToolError::invalid_args(format!("错误：参数 JSON 无效: {e}"))
+    })?;
 
     let rebuild = json_bool(&v, "rebuild_index", false);
     let query = v.get("query").and_then(|q| q.as_str()).unwrap_or("").trim();
     if !rebuild && query.is_empty() {
-        return "错误：query 不能为空（除非 rebuild_index=true）".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：query 不能为空（除非 rebuild_index=true）".to_string(),
+        ));
     }
 
     let (ws_root, ws_key, index_path) =
-        match resolve_run_tool_paths(workspace_root, &p.index_sqlite_path) {
-            Ok(x) => x,
-            Err(e) => return e,
-        };
+        resolve_run_tool_paths(workspace_root, &p.index_sqlite_path)?;
 
     let top_k_req = v
         .get("top_k")
@@ -183,10 +217,8 @@ pub fn run_tool(
         });
     }
 
-    match parse_search_query_params(&v, p, top_k_req, query_max_chunks, max_output_chars) {
-        Ok(q) => search::search_index(&ws_key, &index_path, query, q),
-        Err(e) => e,
-    }
+    let q = parse_search_query_params(&v, p, top_k_req, query_max_chunks, max_output_chars)?;
+    search::search_index(&ws_key, &index_path, query, q)
 }
 mod search;
 
@@ -196,6 +228,61 @@ mod tests {
         chunk_text_lines, cosine_sim, fts5_match_expression, norm_scores_bm25,
         posix_subdir_prefix_for_delete, rust_symbol_hints_for_chunk, sqlite_like_escape,
     };
+
+    /// 参数校验用的最小配置（三条用例都在打开索引库之前返回，不碰磁盘）。
+    fn test_params(enabled: bool) -> super::CodebaseSemanticToolParams {
+        super::CodebaseSemanticToolParams {
+            enabled,
+            invalidate_on_workspace_change: true,
+            index_sqlite_path: String::new(),
+            max_file_bytes: 1,
+            chunk_max_chars: 1,
+            top_k: 4,
+            query_max_chunks: 64,
+            rebuild_max_files: 1,
+            rebuild_incremental: true,
+            hybrid_alpha: 0.5,
+            fts_top_n: 8,
+            hybrid_semantic_pool: 8,
+        }
+    }
+
+    /// 坏 JSON 从前回 `参数 JSON 无效: …`（**无**「错误：」前缀）⇒ `looks_like_failure`
+    /// 判 `ok: true`：模型传错参数却拿到「成功」。现在稳定为 `invalid_args`。
+    #[test]
+    fn bad_args_is_invalid_args_not_success() {
+        let e = super::run_tool_try("{", std::path::Path::new("."), &test_params(true), 4096)
+            .expect_err("坏 JSON 必须失败");
+        assert_eq!(e.code, "invalid_args");
+        assert!(e.message.contains("参数 JSON 无效"), "{}", e.message);
+    }
+
+    /// `query` 缺失 / 全空白且不重建索引：是参数问题，不是「空结果」。
+    #[test]
+    fn blank_query_is_invalid_args() {
+        for args in [r#"{}"#, r#"{"query":"   "}"#] {
+            let e = super::run_tool_try(args, std::path::Path::new("."), &test_params(true), 4096)
+                .expect_err(args);
+            assert_eq!(e.code, "invalid_args", "{args}");
+        }
+    }
+
+    /// 配置里关掉该工具：属**工作区前置条件**（换配置才修），不是参数错误。
+    #[test]
+    fn disabled_is_unconfigured_and_classified_as_workspace() {
+        let e = super::run_tool_try(
+            r#"{"query":"x"}"#,
+            std::path::Path::new("."),
+            &test_params(false),
+            4096,
+        )
+        .expect_err("关闭时应失败");
+        assert_eq!(e.code, "codebase_semantic_unconfigured");
+        assert_eq!(
+            e.category,
+            crate::cm_tools::tool_result::ToolFailureCategory::Workspace
+        );
+    }
 
     #[test]
     fn chunk_lines_respects_max() {

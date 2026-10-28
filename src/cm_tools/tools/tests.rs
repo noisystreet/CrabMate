@@ -713,7 +713,11 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 同批（控制面）：`present_clarification_questionnaire` 迁 Typed（−1）——失败从
     // 「正文 `退出码：1` 让 `parse_legacy_output` 走 exit-code 分支」变成显式
     // `Err(invalid_args)`；成功正文逐字不变（SSE 桥靠首行 `退出码：0` 判定）。3 → 2。
-    const LEGACY_BASELINE: usize = 2;
+    // 本轮（B 档收尾）：`code_nav` 迁 Typed（−1）—— 路径拒绝与 `搜索过程中发生错误：…`
+    // 原先是**静默成功**；重复的路径解析收敛到 `code_nav_paths`，`define_runners_cwd!` 随之删除。
+    // 本轮（D 档收尾）：`codebase_semantic_search` 迁 Typed（−1）—— host 契约与
+    // `run_tool_try` / `rebuild_index` / `search_index` 一并换 `Result`；至此清零（2 → 0）。
+    const LEGACY_BASELINE: usize = 0;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -722,6 +726,15 @@ fn builtin_legacy_runner_count_matches_baseline() {
         legacy, LEGACY_BASELINE,
         "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
     );
+}
+
+/// 缺语义检索宿主是显式 `tool_context_incomplete`（`Workspace`：执行环境未注入）。
+#[test]
+fn codebase_semantic_search_without_host_is_tool_context_incomplete() {
+    let allowed = test_allowed_commands();
+    let e = runner_codebase_semantic_search_try("{}", &test_ctx(&allowed)).expect_err("缺宿主");
+    assert_eq!(e.code, "tool_context_incomplete");
+    assert!(e.message.contains("未注入代码语义检索配置"), "{}", e.message);
 }
 
 /// `workflow_execute` 的同步面占位必须报错。

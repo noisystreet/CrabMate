@@ -7,7 +7,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::FindSymbolArgs;
+
+use super::code_nav_paths::{resolve_search_root, search_io_failed};
 
 const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024; // 2MB
 const DEFAULT_MAX_RESULTS: usize = 30;
@@ -24,45 +27,48 @@ struct SymbolParams {
     kind: Option<String>,
 }
 
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let params = match parse_params(args_json) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+/// `find_symbol`：在工作区内定位符号定义行。
+///
+/// 迁 `Typed` 时顺带清掉一处**静默成功**：`resolve_root` 的路径拒绝（绝对路径 / `..` /
+/// 越界）旧实现直接 `return e`，正文以「路径」开头、不含「失败 / 超时」，
+/// `looks_like_failure` 因此判 `ok: true` —— 模型会把「路径被拒」读成
+/// 「这个符号在工作区里没有定义」。现在分别是三个 `PolicyDenied` 码。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let params = parse_params(args_json)?;
 
-    let root = match resolve_root(workspace_root, params.sub_path.as_deref()) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let root = resolve_search_root(workspace_root, params.sub_path.as_deref())?;
 
     let kind = params.kind.as_deref().map(|s| s.trim().to_lowercase());
-    let re = match build_symbol_regex(&params.symbol, kind.as_deref(), params.case_insensitive) {
-        Ok(r) => r,
-        Err(e) => return format!("错误：无效的符号搜索规则：{}", e),
-    };
+    let re = build_symbol_regex(&params.symbol, kind.as_deref(), params.case_insensitive).map_err(
+        |e| {
+            // 规则由本模块用 `regex::escape` 后的符号名拼出，编译失败即内部不变量破坏。
+            ToolError::internal_code(
+                "code_nav_regex_failed",
+                format!("错误：无效的符号搜索规则：{e}"),
+            )
+        },
+    )?;
 
     let mut results: Vec<(PathBuf, usize, String)> = Vec::new();
     let mut visited = 0usize;
 
-    let res = walk_and_match(
+    walk_and_match(
         &root,
         &re,
         &mut results,
         &mut visited,
         params.max_results,
         params.include_hidden,
-    );
-    if let Err(e) = res {
-        return format!("搜索过程中发生错误：{}", e);
-    }
+    )?;
 
     if results.is_empty() {
-        return format!(
+        return Ok(format!(
             "未找到符号：\"{}\"（遍历 {} 个文件，搜索根目录：{}）",
             params.symbol,
             visited,
             root.display()
-        );
+        ));
     }
 
     let mut out = String::new();
@@ -90,15 +96,19 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         out.push('\n');
     }
 
-    out.trim_end().to_string()
+    Ok(out.trim_end().to_string())
 }
 
-fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
-    let args: FindSymbolArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+fn parse_params(args_json: &str) -> Result<SymbolParams, ToolError> {
+    let args: FindSymbolArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
 
     let symbol = args.symbol.trim().to_string();
     if symbol.is_empty() {
-        return Err("缺少 symbol 参数".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：缺少 symbol 参数".to_string(),
+        ));
     }
 
     let sub_path = args
@@ -138,32 +148,6 @@ fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
         context_lines,
         kind,
     })
-}
-
-fn resolve_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String> {
-    match sub {
-        None => Ok(base.to_path_buf()),
-        Some(s) => {
-            let sub_path = Path::new(s);
-            if sub_path.is_absolute() {
-                return Err("路径必须为工作区内相对路径，不能使用绝对路径".to_string());
-            }
-            if s.contains("..") {
-                return Err("路径不能包含 ..".to_string());
-            }
-            let joined = base.join(sub_path);
-            let canon_base = base
-                .canonicalize()
-                .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
-            let canon_joined = joined
-                .canonicalize()
-                .map_err(|e| format!("搜索路径无法解析: {}", e))?;
-            if !canon_joined.starts_with(&canon_base) {
-                return Err("搜索路径不能超出工作区根目录".to_string());
-            }
-            Ok(canon_joined)
-        }
-    }
 }
 
 /// 判断单行是否像 Rust 中某符号的「定义」行（与 `find_symbol` 规则一致），供 `find_references` 排除定义处重复命中。
@@ -210,6 +194,7 @@ fn build_symbol_regex(
         .map_err(|e| e.to_string())
 }
 
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn walk_and_match(
     root: &Path,
     re: &regex::Regex,
@@ -217,7 +202,7 @@ fn walk_and_match(
     visited_files: &mut usize,
     max_results: usize,
     ignore_hidden: bool,
-) -> Result<(), String> {
+) -> Result<(), ToolError> {
     if !root.exists() {
         return Ok(());
     }
@@ -229,6 +214,7 @@ fn walk_and_match(
     walk_and_match_dir(root, re, results, visited_files, max_results, ignore_hidden)
 }
 
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn walk_and_match_dir(
     root: &Path,
     re: &regex::Regex,
@@ -236,9 +222,9 @@ fn walk_and_match_dir(
     visited_files: &mut usize,
     max_results: usize,
     ignore_hidden: bool,
-) -> Result<(), String> {
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
+) -> Result<(), ToolError> {
+    for entry in fs::read_dir(root).map_err(|e| search_io_failed(&e.to_string()))? {
+        let entry = entry.map_err(|e| search_io_failed(&e.to_string()))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if ignore_hidden && name.starts_with('.') {
@@ -274,15 +260,17 @@ fn visit_walk_match_file(
     search_file(path, re, results, max_results).unwrap_or(false) && results.len() >= max_results
 }
 
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
 fn search_file(
     path: &Path,
     re: &regex::Regex,
     results: &mut Vec<(PathBuf, usize, String)>,
     max_results: usize,
-) -> Result<bool, String> {
+) -> Result<bool, ToolError> {
     let mut buf = String::new();
-    let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
-    f.read_to_string(&mut buf).map_err(|e| e.to_string())?;
+    let mut f = fs::File::open(path).map_err(|e| search_io_failed(&e.to_string()))?;
+    f.read_to_string(&mut buf)
+        .map_err(|e| search_io_failed(&e.to_string()))?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
         buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
     }

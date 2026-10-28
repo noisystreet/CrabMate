@@ -79,17 +79,6 @@ macro_rules! define_runners_cwd_ctx_try {
     };
 }
 
-/// 形态：`f(args, working_dir)`。
-macro_rules! define_runners_cwd {
-    ($( $runner:ident => $func:path ),* $(,)?) => {
-        $(
-            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
-                $func(args, ctx.working_dir)
-            }
-        )*
-    };
-}
-
 /// 形态：`f(args, working_dir) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
 macro_rules! define_runners_cwd_try {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -198,6 +187,7 @@ mod try_macro_typecheck {
 
     define_runners_cwd_try! {
         runner_search_in_files_try_smoke => crate::cm_tools::tools::grep_try::search_in_files_try,
+        runner_code_nav_try_smoke => code_nav_dispatch::dispatch_try,
     }
 
     define_runners_paths_try! {
@@ -341,10 +331,20 @@ pub fn runner_apply_patch_try(args: &str, ctx: &ToolContext<'_>) -> Result<Strin
     patch::run_with_changelist_try(args, ctx)
 }
 
-pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
+/// `codebase_semantic_search`：缺 host 属执行环境未注入（`tool_context_incomplete`），
+/// 其余错误由 host 显式返回（`invalid_args` / `codebase_semantic_*`）。
+///
+/// 迁 `Typed`（2026-10-28）顺带修掉「参数 JSON 无效」与「索引路径不可解析」两处静默成功。
+#[allow(clippy::result_large_err)]
+pub fn runner_codebase_semantic_search_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
     let Some(host) = ctx.codebase_semantic_host else {
-        return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
-            .to_string();
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）".to_string(),
+        ));
     };
     host.run_search(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -523,6 +523,8 @@ define_runners_cwd_try! {
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
     runner_reminder_try => schedule_dispatch::reminder,
     runner_event_try => schedule_dispatch::event,
+    // `code_nav`：action 选择器（4 个只读动作），失败码由 `code_nav_paths` / 各实现给出。
+    runner_code_nav_try => code_nav_dispatch::dispatch_try,
 }
 
 // ── 已改走 `PathAccess` 的文件类工具（R1 收口）──────────────────
@@ -536,12 +538,6 @@ define_runners_paths_try! {
     runner_glob_files_try => file::glob_files_try,
     runner_list_tree_try => file::list_tree_try,
     runner_read_binary_meta_try => file::read_binary_meta_try,
-}
-
-// ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
-
-define_runners_cwd! {
-    runner_code_nav => code_nav_dispatch::dispatch,
 }
 
 /// `rust_analyzer`：8 个 action 的 LSP 请求，失败一律显式 [`ToolError`]。

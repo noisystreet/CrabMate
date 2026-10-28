@@ -8,7 +8,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::CallGraphSketchArgs;
+
+use super::code_nav_paths::resolve_search_root;
 
 const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_MAX_EDGES: usize = 400;
@@ -31,8 +34,10 @@ struct Edge {
     line_trim: String,
 }
 
-fn parse_params(args_json: &str) -> Result<SketchParams, String> {
-    let args: CallGraphSketchArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 runner 契约一致
+fn parse_params(args_json: &str) -> Result<SketchParams, ToolError> {
+    let args: CallGraphSketchArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
 
     let mut symbols: Vec<String> = args
         .symbols
@@ -49,7 +54,9 @@ fn parse_params(args_json: &str) -> Result<SketchParams, String> {
         symbols.push(s.to_string());
     }
     if symbols.is_empty() {
-        return Err("缺少 symbols（或非空 symbol）".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：缺少 symbols（或非空 symbol）".to_string(),
+        ));
     }
     symbols.sort();
     symbols.dedup();
@@ -76,32 +83,6 @@ fn parse_params(args_json: &str) -> Result<SketchParams, String> {
         max_files,
         include_hidden,
     })
-}
-
-fn resolve_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String> {
-    match sub {
-        None => Ok(base.to_path_buf()),
-        Some(s) => {
-            let sub_path = Path::new(s);
-            if sub_path.is_absolute() {
-                return Err("路径必须为工作区内相对路径，不能使用绝对路径".to_string());
-            }
-            if s.contains("..") {
-                return Err("路径不能包含 ..".to_string());
-            }
-            let joined = base.join(sub_path);
-            let canon_base = base
-                .canonicalize()
-                .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
-            let canon_joined = joined
-                .canonicalize()
-                .map_err(|e| format!("搜索路径无法解析: {}", e))?;
-            if !canon_joined.starts_with(&canon_base) {
-                return Err("搜索路径不能超出工作区根目录".to_string());
-            }
-            Ok(canon_joined)
-        }
-    }
 }
 
 fn rel_path_under_workspace(workspace_root: &Path, abs: &Path) -> String {
@@ -492,16 +473,17 @@ fn sketch_render_report(
     out.trim_end().to_string()
 }
 
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let params = match parse_params(args_json) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{e}"),
-    };
+/// `call_graph_sketch`：启发式变更影响面草图。
+///
+/// 失败只有两类：入参（缺符号、JSON 坏）与路径解析（拒绝绝对路径 / `..` / 越界）。
+/// 遍历阶段**刻意宽容**——单个条目读不动就跳过（`Err(_) => continue`），
+/// 因为「某些文件读不了」不该让整张草图变成工具故障；这一点与 `find_symbol` /
+/// `find_references` 的 `code_nav_search_failed` 不同，保持不变。
+#[allow(clippy::result_large_err)]
+pub fn run_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
+    let params = parse_params(args_json)?;
 
-    let root = match resolve_root(workspace_root, params.sub_path.as_deref()) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{e}"),
-    };
+    let root = resolve_search_root(workspace_root, params.sub_path.as_deref())?;
 
     let mut symbol_res: Vec<(String, Regex)> = Vec::new();
     for sym in &params.symbols {
@@ -509,12 +491,18 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         let pat = format!(r"\b{esc}\b");
         match RegexBuilder::new(&pat).build() {
             Ok(r) => symbol_res.push((sym.clone(), r)),
-            Err(e) => return format!("错误：无法为符号 \"{sym}\" 构建匹配规则：{e}"),
+            Err(e) => {
+                // 规则由 `regex::escape` 后的符号名拼出，编译失败即内部不变量破坏。
+                return Err(ToolError::internal_code(
+                    "code_nav_regex_failed",
+                    format!("错误：无法为符号 \"{sym}\" 构建匹配规则：{e}"),
+                ));
+            }
         }
     }
 
     let (edges, files_seen) = sketch_collect_edges(workspace_root, &root, &params, &symbol_res);
-    sketch_render_report(&params, &root, &edges, files_seen)
+    Ok(sketch_render_report(&params, &root, &edges, files_seen))
 }
 
 #[cfg(test)]

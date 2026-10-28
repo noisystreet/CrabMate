@@ -6,8 +6,18 @@ use crate::cm_config::AgentConfig;
 use crate::cm_tools::tool_result::ToolError;
 
 /// `codebase_semantic_search` 执行面。
+///
+/// 返回 [`ToolError`] 而非纯文本：索引库打不开、`semantic_only` 缺 `fastembed` 构建、
+/// 参数 JSON 坏都必须显式透传（历史实现里 `参数 JSON 无效: …` 与
+/// `index_path_for_workspace` 的错误串都没有「错误：」前缀，会被启发式判成**成功**）。
 pub trait CodebaseSemanticToolHost: Send + Sync {
-    fn run_search(&self, args_json: &str, working_dir: &Path, max_output_len: usize) -> String;
+    #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与工具 runner 一致
+    fn run_search(
+        &self,
+        args_json: &str,
+        working_dir: &Path,
+        max_output_len: usize,
+    ) -> Result<String, ToolError>;
 }
 
 /// `long_term_*` / `summarize_experience` 执行面。

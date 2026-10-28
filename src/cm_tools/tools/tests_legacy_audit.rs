@@ -74,12 +74,9 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
     // `docs_health_sweep::tests::bad_args_is_invalid_args` 按 `invalid_args` 断言；
     // 「内容发现不是工具故障」与「阶段执行故障要上抛」由同文件 `content_findings_stay_ok`
     // / `markdown_phase_error_fails_the_sweep` 守住，不再经本表。
-    (
-        "codebase_semantic_search",
-        r#"{"query":""}"#,
-        Expect::Fails,
-        "test_ctx 未注入语义检索宿主",
-    ),
+    // `codebase_semantic_search` 已迁 Typed（2026-10-28）：`{"query":""}` 现由
+    // `run_tool_try` 直接给 `invalid_args`，缺 host 由 runner 给 `tool_context_incomplete`，
+    // 两者的分工在 `runners` / `codebase_semantic_index` 的单测里守；本表已无 Legacy 对象。
     // ── 工作流：`workflow_execute` 已迁 Typed（同步面返回 `Err`），
     //    见 `runners::runner_workflow_execute_try` ──
     // ── Python 族：`pytest_run` / `python_snippet_run` 均已迁 Typed（失败显式 `Err(ToolError)`），
@@ -89,13 +86,9 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
     //    由各文件单测覆盖（`git::read_ops::tests`），不再经本表 ──
     // ── 后台任务：`background_job` / `background_job_cancel` 均已迁 Typed，
     //    其错误码由 `background_job_tools` 的单元测试覆盖，不再经本表 ──
-    // ── 导航 ────────────────────────────────────────────────────
-    (
-        "code_nav",
-        r#"{"action":"find_symbol"}"#,
-        Expect::Fails,
-        "`find_symbol` 需要非空 symbol",
-    ),
+    // ── 导航：`code_nav` 已迁 Typed（2026-10-28）—— 4 个 action 的入参校验由
+    //    `code_nav_dispatch::tests` 按 `invalid_args` 断言；路径拒绝与遍历失败由
+    //    `code_nav_paths::tests` 与 `code_nav` / `symbol` 的实现守，不再经本表 ──
 ];
 
 /// 取某 Legacy 工具的实现函数；已迁 `Typed` / 不存在时返回 `None`。

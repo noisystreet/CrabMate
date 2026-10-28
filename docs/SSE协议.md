@@ -203,6 +203,7 @@
 | `workflow_node_missing_result` | 工作流节点缺结果 |
 | `workflow_tool_join_error` | 工作流工具任务 join 失败 |
 | `{tool_name}_failed` | 通用：某工具失败（如 `run_command_failed`） |
+| `code_nav_*` / `codebase_semantic_*` | 代码导航与语义检索族（2026-10-28 迁 `Typed` 后新增，如 `code_nav_path_outside_workspace`（`policy_denied`）、`codebase_semantic_index_failed`（`external`））；完整清单见 `docs/design/tool_runner_typed_migration.md` §4.21 / §4.22 |
 
 完整启发式见 `src/cm_tools/tool_result/mod.rs`（`classify_error_code`）；**`error_code` → `failure_category`** 映射见 **`src/cm_tools/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/cm_workflow/execute/`。
 
