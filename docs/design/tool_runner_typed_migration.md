@@ -12,33 +12,35 @@
 
 ## 1. 三个变体与语义差异
 
-`ToolRunner`（`src/cm_tools/tools/runners.rs`）三变体并存，是 strangler 迁移期的中间态：
+`ToolRunner`（`src/cm_tools/tools/runners.rs`）原为三变体并存，是 strangler 迁移期的中间态；**`Legacy` 变体已于 2026-10-28 删除，现只剩 `Typed` / `AsyncOnly`**：
 
 | 变体 | 签名 | 成败判定 | 当前数量 |
 |---|---|---|---|
-| `Typed` | `fn(&str, &ToolContext<'_>) -> Result<String, ToolError>` | `Ok` 即成功；失败路径显式，`error_code` 来自 `ToolError` | **48** |
-| `Legacy` | `fn(&str, &ToolContext<'_>) -> String` | 失败由 `parse_legacy_output` 从**正文关键词**推断 | **25** |
+| `Typed` | `fn(&str, &ToolContext<'_>) -> Result<String, ToolError>` | `Ok` 即成功；失败路径显式，`error_code` 来自 `ToolError` | 其余全部 |
+| ~~`Legacy`~~（**已删除**） | ~~`fn(&str, &ToolContext<'_>) -> String`~~ | ~~失败由 `parse_legacy_output` 从**正文关键词**推断~~ | **0**（变体已移除，见 §7 末条） |
 | `AsyncOnly` | 无执行体 | 仅 spec 占位（工具名 / schema / 摘要仍可用），须由异步调度执行 | **2**（`run_command`、`terminal_session`） |
 
 **为什么要迁**：`Legacy` 的失败判定是启发式的——实现只返回一段文本，编排层靠关键词猜「这次算不算失败」。同一段输出换个措辞就可能翻车（"错误：xxx" 被写进正常结果、或 `exit 1` 的说明文字被当成成功）。`Typed` 把失败变成类型，`error_code` 可直接派生（如 `cargo_check_failed`），不再猜。
 
-> 枚举注释里写明：**「strangler 迁移期并存；全部工具迁完后删除 `ToolRunner::Legacy`」**，且「**PR3+ 按族迁移**」。但截至本文件创建，`docs/` 下**没有**这份迁移计划的正文——本文件补上这一块。
+> 枚举注释原写明「**strangler 迁移期并存；全部工具迁完后删除 `ToolRunner::Legacy`**」以及「**PR3+ 按族迁移**」。后一条的收尾已执行：`Legacy` 变体在最后一个工具迁完后即删除（见 §7 末条）。本文件最初是为了给这条「只存在于枚举注释里的迁移计划」补正文。
 
 ---
 
 ## 2. 现状（2026-10-27）
 
-> **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。以基线守卫
-> `builtin_legacy_runner_count_matches_baseline` 为准，**当前 Legacy = 4**
-> （2026-10-28：`reminder` / `event`、`background_job*`、`workflow_execute`、`rust_analyzer`、
-> `gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` / `gh_api`、`git`、
-> `pytest_run` / `python_snippet_run`、`diagnostic_summary` / `repo_overview_sweep` /
-> `crate_contract_map`、`get_weather` / `web_search`、`http_fetch` / `http_request`
-> 陆续迁完后，23 → 19 → 14 → 13 → 11 → 8 → 6 → 4）。
+> **计数已过期**：本节的 44/29 与 §2.1 的分表是 2026-10-27 的快照。
+> **当前 Legacy = 0，且变体本身已删除**（2026-10-28：`reminder` / `event`、`background_job*`、
+> `workflow_execute`、`rust_analyzer`、`gh_pr` / `gh_run` / `gh_issue_create` /
+> `gh_release_create` / `gh_api`、`git`、`pytest_run` / `python_snippet_run`、`get_weather` /
+> `web_search`、`http_fetch` / `http_request`、`diagnostic_summary` / `repo_overview_sweep` /
+> `crate_contract_map`、`docs_health_sweep`、`present_clarification_questionnaire`、`code_nav`、
+> `codebase_semantic_search` 先后迁完后：23 → 19 → 14 → 13 → 11 → 8 → 6 → 4 → 3 → 2 → 1 → 0）。
 > §2.1 各行的「已迁 / 未迁」结论仍可参考，但数字不要再引用。
 
-全部 73 个 `ToolSpec`：**Legacy 已清零（2026-10-28）**，其余为 `Typed`，另有 2 个 `AsyncOnly`。
-历史进度见文末变更记录；当前数量以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准。
+全部 `ToolSpec`：**Legacy 已清零，且变体已删除（2026-10-28）**，其余为 `Typed`，另有 2 个 `AsyncOnly`。
+「不会再有 Legacy 工具」现在由**编译期**保证（`ToolRunner` 里没有那个构造器）：原基线守卫
+`builtin_legacy_runner_count_matches_baseline` 随之删除，只留
+`async_only_specs_are_exactly_the_async_tools` 防止把普通工具误标成 `AsyncOnly`。历史进度见 §7。
 
 ### 2.1 按 spec 文件分布
 
@@ -52,7 +54,7 @@
 | `text_code_nav.inc.rs` | 0 | 3 | 已全迁（`code_nav` 于 2026-10-28 迁 Typed，见 §4.21） |
 | `basic_network.inc.rs` | 0 | 4 | 已全迁（`get_weather` / `web_search` 于 2026-10-28 迁 Typed，见 §4.17；`http_fetch` / `http_request` 同日迁 Typed，见 §4.18。`text_transform` 已于 2026-10-28 移除） |
 | `github_cli.inc.rs` | 0 | 5 | 已全迁（2026-10-28，C 档；见 §4.3） |
-| `diagnostics_docs.inc.rs` | 1 | 7 | `long_term_*` ×3 + `summarize_experience` 已迁；`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map` 于 2026-10-28 迁 Typed（见 §4.16），仅剩 `present_clarification_questionnaire`；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除 |
+| `diagnostics_docs.inc.rs` | 0 | 8 | 已全迁：`long_term_*` ×3 + `summarize_experience`、`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`（2026-10-28，见 §4.16）、`present_clarification_questionnaire`（同日，见 §4.20）；`changelog_draft` / `license_notice` / `error_output_playbook` / `playbook_run_commands` 已整工具删除 |
 | `metrics.inc.rs` | 0 | 3 | 已全迁 |
 | `process.inc.rs` | 0 | 2 | 已全迁（2026-10-28：`background_job` / `background_job_cancel` 走手写 try runner；原先 `参数错误：…` 开头被判成功） |
 | `schedule.inc.rs` | 0 | 2 | 已全迁（2026-10-28，`reminder` / `event` 走 `define_runners_cwd_try!`） |
@@ -63,7 +65,7 @@
 | `docs_health.inc.rs` | 0 | 1 | 已全迁（2026-10-28，见 §4.19） |
 | `git_read.inc.rs` | 0 | 1 | 已全迁（2026-10-28，C 档；见 §4.12） |
 | `exec_package.inc.rs` | 0 | 0 | 全 `AsyncOnly`（`run_command` / `terminal_session`） |
-| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；以基线守卫 `builtin_legacy_runner_count_matches_baseline` 为准（当前 Legacy = 0，守卫从此只防「新增 Legacy」） |
+| **合计** | — | — | 表内各行是 2026-10-27 快照且已局部过期（且与 `AsyncOnly` 混算），**不要引用合计**；Legacy 变体已删除，「不会再有 Legacy 工具」由编译期保证（见 §2 与 §7 末条） |
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
@@ -618,3 +620,4 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 | 2026-10-28 | **控制面：`present_clarification_questionnaire` 迁 Typed**（Legacy 3 → **2**，见 §4.20）。失败从 `退出码：1\n{e}\n`（只有 `parse_legacy_output` 的 exit-code 分支认得）改为显式 `invalid_args`；成功正文逐字不变，首行 `退出码：0` 是 `clarification_sse_bridge` 判定「登记成功」的依据，由 `present_runner_keeps_exit_zero_header_and_reports_invalid_args` 钉住。args-only 形态的宏随之改名为 `define_runners_args_only_try!` 并挂进 `try_macro_typecheck`。剩余 Legacy **2**：`code_nav`（B 档，下一批）与 `codebase_semantic_search`（D 档）。 |
 | 2026-10-28 | **B 档收尾：`code_nav` 迁 Typed**（Legacy 2 → **1**，见 §4.21）。四个 action 的实现（`symbol::run` / `code_nav::find_references` / `code_nav::rust_file_outline` / `call_graph_sketch::run`）统一改 `*_try` 并返回 `Result<String, ToolError>`；清掉三处静默成功（路径拒绝原先 `return e`、`搜索过程中发生错误：…`），三份重复的 `resolve_root` / `resolve_file` 收敛到新模块 `code_nav_paths`（第三次出现即抽）。新增码：`code_nav_path_absolute_not_allowed` / `_path_parent_not_allowed` / `_path_outside_workspace`（`PolicyDenied`）、`code_nav_path_not_file` / `_path_not_rust_file`（`InvalidInput`）、`code_nav_workspace_resolve_failed`（`Workspace`）、`code_nav_search_failed` / `_read_failed`（`External`）、`code_nav_regex_failed`（`Internal`）。`define_runners_cwd!` 失去最后实例（连带删除）；`try_macro_typecheck` 挂 `dispatch_try`。**踩坑**：`tests.rs` 撞 `fn-nloc` 的 920 行上限，靠压缩注释与测试体腾出空间。 |
 | 2026-10-28 | **D 档收尾：`codebase_semantic_search` 迁 Typed ⇒ Legacy 清零**（1 → **0**，见 §4.22）。`CodebaseSemanticToolHost::run_search` 契约改 `Result<String, ToolError>`，`run_tool_try` / `rebuild_index` / `search_index` 一并换类型；深层 `Result<_, String>` helper 用 `index_failed` 在两个入口统一包装（不重写几十处 SQLite / 扫描分支，也不回到关键词判定）。修掉「参数 JSON 无效: …」与「`index_path_for_workspace` 错误串」两处静默成功。新增码：`codebase_semantic_workspace_resolve_failed` / `_requires_fastembed`（`Workspace`）、`_index_failed`（`External`）、`_internal`（`Internal`）。`LEGACY_BASELINE = 0`，`LEGACY_AUDIT` 表清空但守卫保留（从此只防「新增 Legacy」）。`cargo clippy --all-targets --all-features` 与 `cargo check --features fastembed` 均单验。 |
+| 2026-10-28 | **删除 `ToolRunner::Legacy` 变体（迁移收尾）**。清零后变体零实例，枚举注释里那句「全部工具迁完后删除」执行：`runners.rs` 删变体、`mod.rs` 删 `run_tool` 与 `run_tool_dispatch_fallback` 两处 match 臂、删整个 `tests_legacy_audit.rs`（`CASES` 空、`KNOWN_BUG_BUDGET = 0`，只剩注释与一个 `#[ignore]` 探针）、`builtin_legacy_runner_count_matches_baseline` 换成 `async_only_specs_are_exactly_the_async_tools`。**「不会再有 Legacy 工具」从运行时断言升级为编译期保证**（再写不出那个构造器）。**刻意不动**：`finish_dispatch_legacy`（异步 `run_command` 收尾仍复用，仅改文档措辞）、`parse_legacy_output` / `ParsedLegacyOutput` / `ToolError.legacy_parsed`（服务 `AsyncOnly` 与 Typed 下游回读，是否改名见 issue #1142）。§1 表、§2 计数注记、§2.1 两行（`diagnostics_docs` 实际已全迁）同步校正。 |

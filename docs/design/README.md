@@ -39,7 +39,7 @@
 |---|---|
 | [tool_calling_evolution.md](tool_calling_evolution.md) | 工具调用层：对标开源 Agent 的演进方向（含薄封装收敛 §8.5） |
 | [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) | 工具薄 CLI 封装：剩余家族候选盘点与判定（§8.5 配套） |
-| [tool_runner_typed_migration.md](tool_runner_typed_migration.md) | `ToolRunner` Legacy → Typed 迁移：现状（32/44/2）、孪生宏对照与 32 个逐条清单（A 档已清空） |
+| [tool_runner_typed_migration.md](tool_runner_typed_migration.md) | `ToolRunner` Legacy → Typed 迁移：**已清零（2026-10-28）且 `Legacy` 变体已删除**（「不新增 Legacy」改由编译期保证）；保留孪生宏对照与逐条清单作历史。注意 `parse_legacy_output` 仍在服役（服务 `AsyncOnly` 与 Typed 下游回读），别当残留删掉 |
 | [tool_management_api.md](tool_management_api.md) | 设计草案：工具管理 API 补齐 |
 | [permission_levels.md](permission_levels.md) | 工具权限等级（L0–L4）：S1–S6 已落地；**S7 `AllowedRoots`、沙盒两轴、Client S5d 未做**（见该文头部状态与 §12） |
 
