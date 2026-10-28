@@ -3,7 +3,7 @@
 mod parse;
 mod sweep;
 
-pub use sweep::repo_overview_sweep;
+pub use sweep::repo_overview_sweep_try;
 
 /// 与 `docs_health_sweep` 默认文档预览列表相同（供文档健康聚合复用）。
 pub fn default_health_sweep_doc_paths() -> Vec<String> {

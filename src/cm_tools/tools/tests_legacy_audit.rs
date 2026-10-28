@@ -43,6 +43,11 @@ enum Expect {
     /// **已知缺陷**：实现在报错，但措辞不含判定关键词 ⇒ 现在被判成功。
     KnownBug,
     /// 合法成功：入参虽不合语义，实现选择容忍或跳过，本身不算失败。
+    ///
+    /// 表内目前已无 Legacy 用例命中这一档 —— 只读聚合三兄弟迁 `Typed` 后，它们的
+    /// `Legal` 语义搬进了各自单测。保留变体是因为三档结构要能表达这种情况，
+    /// 下一个「容忍非法入参」的 Legacy 工具进来时直接用它。
+    #[allow(dead_code)]
     Legal,
 }
 
@@ -86,25 +91,10 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
         Expect::Fails,
         "缺 questionnaire_id / intro / questions（当前连正文都缺，靠「退出码：1」兜底）",
     ),
-    // ── 诊断 / 聚合（只读；失败发生在参数解析层）───────────────
-    (
-        "diagnostic_summary",
-        r#"{"sections":1}"#,
-        Expect::Legal,
-        "非数组 sections 被忽略，退化为「输出全部小节」—— 容忍而非失败",
-    ),
-    (
-        "repo_overview_sweep",
-        r#"{"doc_paths":"not-an-array"}"#,
-        Expect::Legal,
-        "非法类型被忽略，照常跑完整只读聚合",
-    ),
-    (
-        "crate_contract_map",
-        r#"{"head_lines_per_file":0}"#,
-        Expect::Legal,
-        "越界值被忽略/clamp，照常输出契约地图",
-    ),
+    // ── 诊断 / 聚合：`diagnostic_summary` / `repo_overview_sweep` /
+    //    `crate_contract_map` 均已迁 Typed（2026-10-28，D 档）—— 它们原先在这里按
+    //    `Legal` 钉住「非法字段只降级」，现在那条语义由各自 `*_tolerates_*` 用例守，
+    //    不再经本表 ──
     (
         "docs_health_sweep",
         r#"{"md_roots":"not-an-array"}"#,

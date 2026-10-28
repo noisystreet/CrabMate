@@ -11,6 +11,7 @@ use crate::cm_tools::tools::file::{
     canonical_workspace_root, glob_files_try, list_tree_try, read_file,
 };
 use crate::cm_tools::tools::output_util::truncate_output_bytes;
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::workspace::path::{
     absolutize_relative_under_root, ensure_existing_ancestor_within_root,
 };
@@ -271,15 +272,17 @@ fn sweep_append_conclusion_prompt(out: &mut String, section: usize) {
 }
 
 /// 只读：汇总文档头、目录树与构建相关路径，便于模型一次性获得仓库骨架上下文。
-pub fn repo_overview_sweep(
+///
+/// 失败语义：**只有参数 JSON 不合法**才是 `invalid_args`。字段类型不对（如
+/// `doc_paths: "not-an-array"`）只被忽略并退回默认值；不存在的 `doc_paths` /
+/// `source_roots` 在正文里标「不存在」，都不算失败（审计曾按 `Legal` 钉住）。
+#[allow(clippy::result_large_err)]
+pub fn repo_overview_sweep_try(
     args_json: &str,
     workspace_root: &Path,
     max_output_len: usize,
-) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let params = RepoSweepParams::from_json(&v);
     let ctx = tool_ctx_stub(workspace_root, max_output_len);
 
@@ -294,7 +297,7 @@ pub fn repo_overview_sweep(
     sweep_append_build_section(&mut out, workspace_root, &mut section, &params);
     sweep_append_conclusion_prompt(&mut out, section);
 
-    truncate_output_bytes(&out, max_output_len)
+    Ok(truncate_output_bytes(&out, max_output_len))
 }
 
 #[cfg(test)]
@@ -316,7 +319,7 @@ mod tests {
         )
         .expect("write");
 
-        let out = repo_overview_sweep("{}", &root, 50_000);
+        let out = repo_overview_sweep_try("{}", &root, 50_000).expect("概览应成功");
         let _ = fs::remove_dir_all(&root);
 
         assert!(out.contains("README.md"));
@@ -338,7 +341,8 @@ mod tests {
             "[package]\nname = \"y\"\nversion = \"0.1.0\"\n",
         )
         .expect("write");
-        let out2 = repo_overview_sweep(r#"{"include_project_profile":false}"#, &root2, 50_000);
+        let out2 = repo_overview_sweep_try(r#"{"include_project_profile":false}"#, &root2, 50_000)
+            .expect("关掉项目画像仍应成功");
         let _ = fs::remove_dir_all(&root2);
         assert!(!out2.contains("项目画像"));
     }
@@ -353,16 +357,47 @@ mod tests {
         fs::create_dir_all(&root).expect("mkdir");
         fs::write(root.join("README.md"), "# T\n").expect("write");
 
-        let out = repo_overview_sweep(
+        let out = repo_overview_sweep_try(
             r#"{"doc_paths":["AGENTS.md"],"source_roots":["src"],"include_project_profile":false}"#,
             &root,
             50_000,
-        );
+        )
+        .expect("缺失路径只标注，不该报失败");
         let _ = fs::remove_dir_all(&root);
 
         assert!(out.contains("AGENTS.md") && out.contains("不存在"));
         assert!(out.contains("src") && out.contains("目录不存在"));
         assert!(!out.contains("路径非法或越界"));
         assert!(!out.contains("路径越界"));
+    }
+
+    /// 字段类型不对只被忽略（退回默认列表），不是失败 —— 审计曾按 `Legal` 钉住这条。
+    #[test]
+    fn sweep_tolerates_non_array_args() {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_repo_overview_badargs_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("mkdir");
+        fs::write(root.join("README.md"), "# T\n").expect("write");
+
+        let out = repo_overview_sweep_try(
+            r#"{"doc_paths":"not-an-array","source_roots":42,"include_project_profile":false}"#,
+            &root,
+            50_000,
+        )
+        .expect("非法字段类型只降级，不该报失败");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(out.contains("repo_overview_sweep"), "{out}");
+    }
+
+    /// 真正该失败的是参数 JSON 本身：显式 `invalid_args`，不再靠正文关键词。
+    #[test]
+    fn sweep_bad_args_is_invalid_args() {
+        let root = std::env::temp_dir();
+        let e = repo_overview_sweep_try("{not json", &root, 50_000).expect_err("非法 JSON 应失败");
+        assert_eq!(e.code, "invalid_args");
     }
 }

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use super::ToolContext;
 use super::file::canonical_workspace_root;
 use super::output_util::truncate_output_bytes;
+use crate::cm_tools::tool_result::ToolError;
 
 fn rel_path_ok(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
     let rel = rel.trim();
@@ -89,11 +90,17 @@ fn section_file(
 }
 
 /// 只读：输出 Markdown 形式的「契约地图」，锚定 HTTP/SSE/配置/金样等路径，降低模型幻觉。
-pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+/// 失败语义：**只有参数 JSON 不合法**才是 `invalid_args`。
+///
+/// 越界阈值（`head_lines_per_file: 0`、`keyword_hits_per_file: 9999`）走 clamp，
+/// 非法 / 越界 / 不存在的 `extra_paths` 只被跳过 —— 这些是**容忍**，不是失败，
+/// 由 `contract_map_tolerates_out_of_range_and_bad_paths` 钉住。
+#[allow(clippy::result_large_err)]
+pub fn crate_contract_map_try(
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     let head_lines = v
         .get("head_lines_per_file")
@@ -238,13 +245,86 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
         }
     }
 
-    truncate_output_bytes(&out, ctx.command_max_output_len)
+    Ok(truncate_output_bytes(&out, ctx.command_max_output_len))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    /// 只读聚合的 `ToolContext`：除 `working_dir` 外都没有意义。
+    ///
+    /// 抽成 helper 是因为本轮新增的两条用例要复用同一套字段（`ToolContext` 增字段
+    /// 时只需改这里一处）。
+    fn contract_ctx(root: &Path) -> ToolContext<'_> {
+        ToolContext {
+            cfg: None,
+            codebase_semantic_host: None,
+            command_max_output_len: 30_000,
+            weather_timeout_secs: 0,
+            allowed_commands: &[],
+            working_dir: root,
+            path_scope: crate::cm_types::PathScope::SessionRoot,
+            web_search_timeout_secs: 0,
+            web_search_provider: crate::cm_config::WebSearchProvider::Brave,
+            web_search_api_key: "",
+            web_search_max_results: 0,
+            web_search_proxy: "",
+            http_fetch_allowed_prefixes: &[],
+            http_fetch_timeout_secs: 0,
+            http_fetch_max_response_bytes: 0,
+            command_timeout_secs: 30,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            test_result_cache_enabled: false,
+            test_result_cache_max_entries: 8,
+            long_term_memory_host: None,
+            tool_jobs_host: None,
+        }
+    }
+
+    /// 越界阈值被 clamp、非法 / 越界 `extra_paths` 只跳过 —— 都是**容忍**，不是失败。
+    ///
+    /// 审计曾把它按 `Legal` 钉住：迁 `Typed` 时若顺手把这些改成 `Err`，模型会收到一次
+    /// 莫名其妙的失败，而它给的参数其实已被合理降级。这条用例就是那个语义的守卫。
+    #[test]
+    fn contract_map_tolerates_out_of_range_and_bad_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_contract_map_legal_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).expect("mkdir");
+        fs::write(root.join("src/lib.rs"), "// x\n").expect("write");
+        let ctx = contract_ctx(&root);
+
+        let body = crate_contract_map_try(
+            r#"{"head_lines_per_file":0,"keyword_hits_per_file":9999,"extra_paths":["../etc/passwd","missing.md"]}"#,
+            &ctx,
+        )
+        .expect("越界阈值与非法路径只降级，不该报失败");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(body.contains("crabmate_contract_map_v1"), "{body}");
+    }
+
+    /// 真正该失败的是参数 JSON 本身：显式 `invalid_args`，不再靠正文关键词。
+    #[test]
+    fn contract_map_bad_args_is_invalid_args() {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_contract_map_badargs_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("mkdir");
+        let ctx = contract_ctx(&root);
+
+        let e = crate_contract_map_try("{not json", &ctx).expect_err("非法 JSON 应失败");
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(e.code, "invalid_args");
+    }
 
     #[test]
     fn contract_map_minimal_workspace() {
@@ -262,35 +342,13 @@ mod tests {
         fs::create_dir_all(root.join("config")).expect("mkdir");
         fs::write(root.join("config/default_config.toml"), "[agent]\nx = 1\n").expect("write");
 
-        let ctx = ToolContext {
-            cfg: None,
-            codebase_semantic_host: None,
-            command_max_output_len: 30_000,
-            weather_timeout_secs: 0,
-            allowed_commands: &[],
-            working_dir: &root,
-            path_scope: crate::cm_types::PathScope::SessionRoot,
-            web_search_timeout_secs: 0,
-            web_search_provider: crate::cm_config::WebSearchProvider::Brave,
-            web_search_api_key: "",
-            web_search_max_results: 0,
-            web_search_proxy: "",
-            http_fetch_allowed_prefixes: &[],
-            http_fetch_timeout_secs: 0,
-            http_fetch_max_response_bytes: 0,
-            command_timeout_secs: 30,
-            read_file_turn_cache: None,
-            workspace_changelist: None,
-            test_result_cache_enabled: false,
-            test_result_cache_max_entries: 8,
-            long_term_memory_host: None,
-            tool_jobs_host: None,
-        };
+        let ctx = contract_ctx(&root);
 
-        let body = crate_contract_map(
+        let body = crate_contract_map_try(
             r#"{"extra_paths":["src/lib.rs","docs/SSE协议.md","config/default_config.toml"]}"#,
             &ctx,
-        );
+        )
+        .expect("契约地图应成功");
         let _ = fs::remove_dir_all(&root);
 
         assert!(body.contains("crate_contract_map"));

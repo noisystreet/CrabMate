@@ -2,7 +2,7 @@
 //! 热重载、Web 密钥注入等均已生效）序列化为模型可读文本，供模型回答「自身配置」
 //! 类问题（用什么模型 / 网关地址 / 采样参数 / 超时 / 工作区根等）。
 //!
-//! 与 [`super::diagnostics::diagnostic_summary`]（环境与工具链状态）互补。
+//! 与 [`super::diagnostics::diagnostic_summary_try`]（环境与工具链状态）互补。
 //! **密钥类字段一律只报是否已设置，绝不输出值**（沿用 `diagnostic_summary` 的脱敏约定）。
 
 use crate::cm_config::{AgentConfig, ExposeSecret};
