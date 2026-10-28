@@ -408,7 +408,6 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
                 return format!("错误：{e}");
             }
             match spec.runner {
-                ToolRunner::Legacy(f) => f(args_eff.as_ref(), ctx),
                 // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
                 // 显式 `ok` 头，供下游 `parse_legacy_output` 复用（见 `typed_outcome_output`）。
                 ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
@@ -422,8 +421,7 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// 按 `spec.runner` 执行：已迁移的 [`ToolRunner::Typed`] 显式透传 [`ToolError`]，
-/// [`ToolRunner::Legacy`] 经 `parse_legacy_output` 从正文推断；
+/// 按 `spec.runner` 执行：[`ToolRunner::Typed`] 显式透传 [`ToolError`]；
 /// [`ToolRunner::AsyncOnly`] 在同步面无执行体，返回提示性 [`ToolError`]。
 ///
 /// **`run_command` 不在本函数执行**：它经专用异步入口 [`run_tool_async`] / [`run_tool_result_async`]
@@ -455,7 +453,6 @@ fn run_tool_dispatch(
 /// dispatch 兜底：按 `spec.runner` 执行。
 ///
 /// Typed：`Ok` 即成功（正文只用于抽取流/退出码），`Err(ToolError)` 显式透传；
-/// Legacy：正文推断失败状态（与历史 `run_tool` fallback 行为一致）；
 /// AsyncOnly：同步面不可执行。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch_fallback(
@@ -468,7 +465,6 @@ fn run_tool_dispatch_fallback(
         ToolRunner::Typed(f) => {
             f(args_ref, ctx).map(|output| finish_dispatch_typed_ok(name, args_ref, output))
         }
-        ToolRunner::Legacy(f) => finish_dispatch_legacy(name, args_ref, f(args_ref, ctx)),
         ToolRunner::AsyncOnly => Err(ToolError::invalid_args(async_only_message(name))),
     }
 }
@@ -529,7 +525,7 @@ fn finish_dispatch_typed_ok(
     (output, parsed)
 }
 
-/// Legacy 收尾：先按原始正文推断成功/失败（**早于**图片提示附加），`ok` 时附加工作区图片提示，否则转 [`ToolError`]。
+/// 文本收尾（`Legacy` 是历史命名，现由异步 `run_command` 复用）：先按原始正文推断成功/失败（**早于**图片提示附加），`ok` 时附加工作区图片提示，否则转 [`ToolError`]。
 #[allow(clippy::result_large_err)]
 fn finish_dispatch_legacy(
     name: &str,
@@ -548,7 +544,7 @@ fn finish_dispatch_legacy(
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
 /// `run_command` / `terminal_session` 的 spec runner 为 [`ToolRunner::AsyncOnly`]（须经服务端异步调度）；
-/// 其余工具按 `spec.runner` 执行：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
+/// 其余工具按 `spec.runner` 执行，[`ToolRunner::Typed`] 的失败显式透传。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,
@@ -773,8 +769,6 @@ mod tests;
 
 #[cfg(test)]
 mod tests_write_effect;
-#[cfg(test)]
-mod tests_legacy_audit;
 
 #[cfg(test)]
 mod testing;

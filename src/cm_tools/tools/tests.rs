@@ -632,100 +632,21 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
     assert!(run_tool("self_config_info", r#"{"sections":1}"#, &ctx).contains("参数与工具 JSON Schema 不一致"));
 }
 
+/// `AsyncOnly` 目前只有 `run_command` / `terminal_session`。
+///
+/// 取代已删除的 `builtin_legacy_runner_count_matches_baseline`：`ToolRunner::Legacy`
+/// 变体已移除，「不会再有 Legacy 工具」改由**编译期**保证（写不出那个构造器）。
+/// 这里只防另一类回归——把普通工具误标成 `AsyncOnly`：那会让 `run_tool` 同步面
+/// 只回一句「须由服务端异步调度执行」，模型在同步上下文里拿不到任何结果。
 #[test]
-fn builtin_legacy_runner_count_matches_baseline() {
-    // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
-    // 本轮（B 档首段）：`archive_pack` / `archive_unpack` / `archive_list` 迁为 Typed
-    // （−3，仅 `archive-tools` feature 侧生效：28 → 25），顺带修掉「`不支持的归档格式: …`
-    // 既无「错误」也无「失败」关键词、被 `parse_legacy_output` 判成成功」的旧缺陷。
-    // 因此两侧基线现已同值。
-    // 本轮下调：`add_reminder` / `list_reminders` / `complete_reminder` / `delete_reminder` /
-    // `update_reminder` / `add_event` / `list_events` / `delete_event` / `update_event`
-    // 九个 Legacy 合并为 `reminder` + `event`（−7）。
-    // 再下调：`get_current_time` / `calc` / `convert_units` 三个 Legacy 整体移除（−3）。
-    // 本轮：`find_symbol` / `find_references` / `rust_file_outline` / `call_graph_sketch`
-    // 四个只读导航 Legacy 合并为单个 `code_nav`（−3）。
-    // 本轮：`misc_basic` 整族（`regex_test` / `date_calc` / `json_format` / `env_var_check`）
-    // 迁为 Typed（−4）。
-    // 本轮（B2 首段）：`text_diff` / `table_text` 迁为 Typed（−2）。
-    // 本轮（B2 第二段）：`markdown_check_links` / `structured_validate` / `structured_query` /
-    // `structured_diff` 迁为 Typed（−4）。
-    // 本轮（B2 第三段）：`structured_patch` 迁为 Typed（−1）。
-    // 本轮（B4）：file_core 只读族 `read_dir` / `glob_files` / `list_tree` /
-    // `read_binary_meta` 迁为 Typed（−1）。
-    // 本轮（A 档首项）：`self_config_info` 迁为 Typed（−1）—— 缺 `AgentConfig` 与非空
-    // `sections` 未匹配均改为显式 `ToolError`。同项的 `skill_manage` 暂缓：其内部实现是
-    // `Result<_, String>`（约 20 处 `"错误：…"`），需整体换成 `Result<_, ToolError>`，
-    // 单独切片处理（见 `docs/design/tool_runner_typed_migration.md` §4.8）。
-    // 本轮（A 档第二项）：`long_term_*` 四个（`remember` / `forget` / `memory_list` /
-    // `summarize_experience`）迁为 Typed（−4）—— 顺带修掉「`参数 JSON 无效: …` 无
-    // `错误：` 前缀会被启发式判成成功」的旧缺陷。
-    // 本轮（A 档第三项）：`metrics` 族 `code_stats` / `dependency_graph` / `coverage_report`
-    // 迁为 Typed（−3）—— 划分口径：「没有这个东西」（无源码文件 / 无构建清单 / 未找到
-    // 覆盖率文件）仍返回 `Ok`，属合法答案；只有参数与路径问题才 `Err`。
-    // 本轮（A 档第四项）：`skill_manage` 迁为 Typed（−1）—— 内部 8 个 `Result<_, String>`
-    // 全部换成 `Result<_, ToolError>`；测试 helper 统一取 `e.message`，故原断言口径不变。
-    // 本轮（E 档整工具删除）：`changelog_draft` / `license_notice` 连同实现文件
-    // `release_docs.rs` 一并移除（−2）；平替为 `run_command` /
-    // `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`。
-    // 随后 `rust_compiler_json` 也整工具删除（−1，见上一条注释）。
-    // 本轮（整工具删除）：`rust_backtrace_analyze` 退场（−1）—— 纯计算分析器，模型可直接读
-    // panic 文本，或用 `run_command` + `c++filt` / `code_nav`；调试族随 `debug_tools.rs` 整文件移除。
-    // 本轮（整工具删除）：`error_output_playbook` / `playbook_run_commands` 一并退场（−2）—— 两者的
-    // 建议都来自「生态 × 类别」固定查表模板，不是对具体错误的推理；模型可自行归类后直接调 `run_command`。
-    // 实现文件 `error_playbook.rs` 整文件移除（627 行）。
-    // 本轮（B 档）：`reminder`（5 个 action）+ `event`（4 个 action）迁为 Typed（−2）——
-    // 顺带修掉四个静默成功分支：dispatch 层的「`add` 缺 title」「缺 id」与「未找到 id」都只返回
-    // 不含「错误 / 失败 / 超时」的裸正文，被 `parse_legacy_output` 判成 **成功**；
-    // 现在分别是 `invalid_args` / `reminder_not_found` / `event_not_found`。
-    // 本轮（B 档 · 后台任务 + 工作流同步面）：`background_job` / `background_job_cancel`
-    // 迁为 Typed（−2），`workflow_execute` 的同步面占位亦改 Typed 并返回 `Err`（−1）——
-    // 它原先回「由运行时引擎执行（若你看到这条，说明拦截未生效）」占位句，
-    // 既不含「错误」也不含「失败」，被判成成功。三者合计 −3：23 → 20。
-    // 本轮（C 档 · rust_analyzer）：迁 Typed（−1）——「路径无法解析: No such file」与
-    // 各格式化函数的「… : LSP error: …」都不命中任何关键词，被判成成功：20 → 19。
-    // 本轮（C 档 · GitHub CLI）：`gh_pr` / `gh_run` / `gh_issue_create` / `gh_release_create` /
-    // `gh_api` 五个迁 Typed（−5）—— 非零退出此前只有正文里的「退出码：N」，靠
-    // `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式 `gh_{子命令}_failed`。19 → 14。
-    // 本轮（C 档 · Git 只读查询）：`git`（10 个 action）迁 Typed（−1）—— 子命令非零退出
-    // （`log` 在空仓库、`show` 的 rev 不存在、`blame` 的路径不在索引…）此前只以正文
-    // 「退出码：N」存在，靠 `parse_legacy_output` 的 `parse_exit_code` 兜底；现在显式
-    // `git_{action}_failed`，「不在 Git 仓库」另有 `git_not_a_repo`。14 → 13。
-    // 本轮（C 档 · Python 族）：`pytest_run` / `python_snippet_run` 迁 Typed（−2）——
-    // `pytest_run` 的 `5`（未收集到用例）与「工作区无 Python 工程标记」仍算成功，
-    // `1`/`2`/`3`/`4` 与脚本非零退出显式成 `pytest_failed` / `python_snippet_failed`。
-    // 13 → 11。
-    // 本轮（D 档 · 只读聚合）：`diagnostic_summary` / `repo_overview_sweep` /
-    // `crate_contract_map` 迁 Typed（−3）—— 三者唯一的真失败都是参数 JSON 不合法
-    // （`invalid_args`）；越界阈值走 clamp、非法 / 缺失路径只标注降级，仍算成功。
-    // 顺序照旧：先把「容忍」写进各自 `*_tolerates_*` 用例，再改返回类型。11 → 8。
-    // 本轮（C 档 · 外部 API）：`get_weather` / `web_search` 迁 Typed（−2）—— 两者原先
-    // 靠正文首行 `错误[码]：` 标记让 `parse_legacy_output` 反解错误码，现在直接给 `Err`；
-    // 顺带把 weather 的两条静默成功（查不到地名 / 上游无 `current`）改成显式失败。8 → 6。
-    // 再说受控 HTTP 族：`http_fetch` / `http_request` 迁 Typed（−2）—— 共用
-    // `fetch_with_method` / `request_with_json_body`，`Err` 的正文与旧文本逐字一致，
-    // 差异只在「URL 未匹配白名单」从普通错误升为 `PolicyDenied`。6 → 4。
-    // 本轮（B 档 · 聚合器）：`docs_health_sweep` 迁 Typed（−1）—— 它有三种「失败」：
-    // 入参坏（`invalid_args`）、某阶段执行故障（上抛成 `Err`）、以及**检查出问题**
-    // （typos 有拼写 / 坏链接）。第三种是内容发现：正文照写「存在失败项」，但整体仍是
-    // `Ok`——迁移前正文里的「失败」二字会被 `parse_legacy_output` 判成工具故障。
-    // 4 → 3。
-    // 同批（控制面）：`present_clarification_questionnaire` 迁 Typed（−1）——失败从
-    // 「正文 `退出码：1` 让 `parse_legacy_output` 走 exit-code 分支」变成显式
-    // `Err(invalid_args)`；成功正文逐字不变（SSE 桥靠首行 `退出码：0` 判定）。3 → 2。
-    // 本轮（B 档收尾）：`code_nav` 迁 Typed（−1）—— 路径拒绝与 `搜索过程中发生错误：…`
-    // 原先是**静默成功**；重复的路径解析收敛到 `code_nav_paths`，`define_runners_cwd!` 随之删除。
-    // 本轮（D 档收尾）：`codebase_semantic_search` 迁 Typed（−1）—— host 契约与
-    // `run_tool_try` / `rebuild_index` / `search_index` 一并换 `Result`；至此清零（2 → 0）。
-    const LEGACY_BASELINE: usize = 0;
-    let legacy = tool_specs()
+fn async_only_specs_are_exactly_the_async_tools() {
+    let mut names: Vec<&str> = tool_specs()
         .iter()
-        .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
-        .count();
-    assert_eq!(
-        legacy, LEGACY_BASELINE,
-        "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
-    );
+        .filter(|spec| matches!(spec.runner, ToolRunner::AsyncOnly))
+        .map(|spec| spec.name)
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["run_command", "terminal_session"]);
 }
 
 /// 缺语义检索宿主是显式 `tool_context_incomplete`（`Workspace`：执行环境未注入）。

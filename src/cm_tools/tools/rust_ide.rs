@@ -56,7 +56,7 @@ goto_implementation / goto_type_definition / document_highlight / workspace_symb
 /// 参数校验仍留在 [`lsp_rust_analyzer_request`] 内（`path` 必填、position 类另需 0-based `line`），
 /// 因此缺参正文与逐工具时代保持一致。
 ///
-/// Typed 迁移（legacy ratchet 20 → 19）：失败一律以 [`ToolError`] 返回，成功正文保持不变，
+/// Typed 迁移：失败一律以 [`ToolError`] 返回，成功正文保持不变，
 /// 判定改由 `e.code` 承载。此前「路径无法解析: …」与「… : LSP error: …」两类正文既不含
 /// 「错误」也不含「失败」，`parse_legacy_output` 会把它们判成 `ok: true`——模型拿到空结果，
 /// 还以为「该位置确实没有信息」。错误码划分见 [`resolve_rel_file`] 与 [`lsp_io_error`]。
