@@ -705,7 +705,15 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 再说受控 HTTP 族：`http_fetch` / `http_request` 迁 Typed（−2）—— 共用
     // `fetch_with_method` / `request_with_json_body`，`Err` 的正文与旧文本逐字一致，
     // 差异只在「URL 未匹配白名单」从普通错误升为 `PolicyDenied`。6 → 4。
-    const LEGACY_BASELINE: usize = 4;
+    // 本轮（B 档 · 聚合器）：`docs_health_sweep` 迁 Typed（−1）—— 它有三种「失败」：
+    // 入参坏（`invalid_args`）、某阶段执行故障（上抛成 `Err`）、以及**检查出问题**
+    // （typos 有拼写 / 坏链接）。第三种是内容发现：正文照写「存在失败项」，但整体仍是
+    // `Ok`——迁移前正文里的「失败」二字会被 `parse_legacy_output` 判成工具故障。
+    // 4 → 3。
+    // 同批（控制面）：`present_clarification_questionnaire` 迁 Typed（−1）——失败从
+    // 「正文 `退出码：1` 让 `parse_legacy_output` 走 exit-code 分支」变成显式
+    // `Err(invalid_args)`；成功正文逐字不变（SSE 桥靠首行 `退出码：0` 判定）。3 → 2。
+    const LEGACY_BASELINE: usize = 2;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

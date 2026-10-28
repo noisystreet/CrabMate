@@ -63,23 +63,17 @@ const CASES: &[(&str, &str, Expect, &str)] = &[
     //    `run_direct` / `run_request_direct`（非法 scheme、白名单拒绝）──
     // ── LSP：`rust_analyzer` 已迁 Typed（失败一律显式 `Err(ToolError)`），
     //    其错误码划分与 8 个 action 的失败分支由 `rust_ide::tests` 直接覆盖，不再经本表 ──
-    // ── 控制面 ──────────────────────────────────────────────────
-    (
-        "present_clarification_questionnaire",
-        r#"{}"#,
-        Expect::Fails,
-        "缺 questionnaire_id / intro / questions（当前连正文都缺，靠「退出码：1」兜底）",
-    ),
+    // ── 控制面：`present_clarification_questionnaire` 已迁 Typed（2026-10-28）——
+    //    `{}` 这类缺必填字段的入参现在是显式 `invalid_args`；成功正文仍以 `退出码：0`
+    //    开头（`clarification_sse_bridge` 依赖这一行），由 `present` 模块自身守住 ──
     // ── 诊断 / 聚合：`diagnostic_summary` / `repo_overview_sweep` /
     //    `crate_contract_map` 均已迁 Typed（2026-10-28，D 档）—— 它们原先在这里按
     //    `Legal` 钉住「非法字段只降级」，现在那条语义由各自 `*_tolerates_*` 用例守，
     //    不再经本表 ──
-    (
-        "docs_health_sweep",
-        r#"{"md_roots":"not-an-array"}"#,
-        Expect::Fails,
-        "「参数解析错误: invalid type …」",
-    ),
+    // `docs_health_sweep` 已迁 Typed（2026-10-28）：`md_roots` 类型不对现由
+    // `docs_health_sweep::tests::bad_args_is_invalid_args` 按 `invalid_args` 断言；
+    // 「内容发现不是工具故障」与「阶段执行故障要上抛」由同文件 `content_findings_stay_ok`
+    // / `markdown_phase_error_fails_the_sweep` 守住，不再经本表。
     (
         "codebase_semantic_search",
         r#"{"query":""}"#,

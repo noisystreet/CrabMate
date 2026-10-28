@@ -7,7 +7,19 @@ use super::file::read_file;
 use super::output_util::truncate_output_bytes;
 use super::repo_overview;
 use super::spell_tools;
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::DocsHealthSweepArgs;
+
+/// 阶段参数二次序列化失败（`DocsHealthSweepArgs` → `Value` → `String`）。
+///
+/// 走到这里的入参已经过一次成功反序列化，因此只有 `serde_json` 自身出错才可能触发——
+/// 属内部不变量破坏，不是入参问题，故用 `*_serialize_failed`（归 `Internal`）。
+fn phase_args_serialize_failed(phase: &str, e: &serde_json::Error) -> ToolError {
+    ToolError::internal_code(
+        "docs_health_serialize_failed",
+        format!("{phase} 参数序列化失败：{e}"),
+    )
+}
 
 fn default_doc_preview_paths() -> Vec<String> {
     repo_overview::default_health_sweep_doc_paths()
@@ -160,7 +172,8 @@ fn append_doc_preview_section(
     }
 }
 
-fn typos_args_json(v: &serde_json::Value) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+fn typos_args_json(v: &serde_json::Value) -> Result<String, ToolError> {
     let spell_paths = v.get("spell_paths").cloned();
     let mut o = serde_json::Map::new();
     if let Some(p) = spell_paths {
@@ -173,10 +186,11 @@ fn typos_args_json(v: &serde_json::Value) -> Result<String, String> {
         );
     }
     serde_json::to_string(&serde_json::Value::Object(o))
-        .map_err(|e| format!("typos 参数序列化失败：{}", e))
+        .map_err(|e| phase_args_serialize_failed("typos", &e))
 }
 
-fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Option<String> {
+#[allow(clippy::result_large_err)]
+fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Result<Option<String>, ToolError> {
     let TyposPhaseCtx {
         env,
         io,
@@ -187,12 +201,9 @@ fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Option<String> {
     let DocsSweepPhaseIo { sections, summary } = io;
     if !run_typos {
         summary.push(("typos_check".to_string(), "skipped".to_string()));
-        return None;
+        return Ok(None);
     }
-    let typos_args = match typos_args_json(env.v) {
-        Ok(s) => s,
-        Err(e) => return Some(e),
-    };
+    let typos_args = typos_args_json(env.v)?;
     let r = spell_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len);
     let failed = spell_tool_failed(&r);
     summary.push((
@@ -212,18 +223,19 @@ fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Option<String> {
     }
     if env.fail_fast && failed {
         push_skipped_after_typos(summary, run_codespell, run_markdown_links);
-        return Some(build_output(
+        return Ok(Some(build_output(
             summary,
             sections,
             env.summary_only,
             env.max_output_len,
             true,
-        ));
+        )));
     }
-    None
+    Ok(None)
 }
 
-fn codespell_args_json(v: &serde_json::Value) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+fn codespell_args_json(v: &serde_json::Value) -> Result<String, ToolError> {
     let spell_paths = v.get("spell_paths").cloned();
     let mut o = serde_json::Map::new();
     if let Some(p) = spell_paths {
@@ -251,10 +263,11 @@ fn codespell_args_json(v: &serde_json::Value) -> Result<String, String> {
         );
     }
     serde_json::to_string(&serde_json::Value::Object(o))
-        .map_err(|e| format!("codespell 参数序列化失败：{}", e))
+        .map_err(|e| phase_args_serialize_failed("codespell", &e))
 }
 
-fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Option<String> {
+#[allow(clippy::result_large_err)]
+fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Result<Option<String>, ToolError> {
     let CodespellPhaseCtx {
         env,
         io,
@@ -264,12 +277,9 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Option<String> {
     let DocsSweepPhaseIo { sections, summary } = io;
     if !run_codespell {
         summary.push(("codespell_check".to_string(), "skipped".to_string()));
-        return None;
+        return Ok(None);
     }
-    let codespell_args = match codespell_args_json(env.v) {
-        Ok(s) => s,
-        Err(e) => return Some(e),
-    };
+    let codespell_args = codespell_args_json(env.v)?;
     let r = spell_tools::codespell_check(
         &codespell_args,
         env.workspace_root,
@@ -295,18 +305,19 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Option<String> {
         if run_markdown_links {
             summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
         }
-        return Some(build_output(
+        return Ok(Some(build_output(
             summary,
             sections,
             env.summary_only,
             env.max_output_len,
             true,
-        ));
+        )));
     }
-    None
+    Ok(None)
 }
 
-fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, String> {
+#[allow(clippy::result_large_err)]
+fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, ToolError> {
     let mut o = serde_json::Map::new();
     if let Some(a) = v.get("md_roots").and_then(|x| x.as_array())
         && !a.is_empty()
@@ -344,9 +355,15 @@ fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, Strin
         );
     }
     serde_json::to_string(&serde_json::Value::Object(o))
-        .map_err(|e| format!("markdown_check_links 参数序列化失败：{}", e))
+        .map_err(|e| phase_args_serialize_failed("markdown_check_links", &e))
 }
 
+/// 运行 Markdown 链接检查阶段。
+///
+/// 两种「失败」必须分开：`markdown_check_links_try` 返回 `Err` 是**执行故障**
+/// （工作区解析 / 扫描 IO），上抛给调用方；正文里的「结论: 发现 N 处问题」是
+/// **内容发现**，只记进汇总，整体仍是 `Ok`——工具确实跑完了。
+#[allow(clippy::result_large_err)]
 fn run_markdown_links_phase(
     v: &serde_json::Value,
     workspace_root: &Path,
@@ -354,21 +371,13 @@ fn run_markdown_links_phase(
     summary_only: bool,
     sections: &mut Vec<String>,
     summary: &mut Vec<(String, String)>,
-) -> Option<String> {
+) -> Result<(), ToolError> {
     if !run_markdown_links {
         summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
-        return None;
+        return Ok(());
     }
-    let md_args = match markdown_check_links_args_json(v) {
-        Ok(s) => s,
-        Err(e) => return Some(e),
-    };
-    // 迁移 Typed 后失败是显式 `ToolError`；这里仍取正文拼进报告，
-    // `markdown_links_failed` 判的是「结论: 发现」即查到问题，与执行成败无关，保持不变。
-    let r = match super::markdown_links::markdown_check_links_try(&md_args, workspace_root) {
-        Ok(body) => body,
-        Err(e) => e.message,
-    };
+    let md_args = markdown_check_links_args_json(v)?;
+    let r = super::markdown_links::markdown_check_links_try(&md_args, workspace_root)?;
     let failed = markdown_links_failed(&r);
     summary.push((
         "markdown_check_links".to_string(),
@@ -383,22 +392,26 @@ fn run_markdown_links_phase(
         sections.push(r);
         sections.push("\n".to_string());
     }
-    None
+    Ok(())
 }
 
 /// 只读聚合：文档头预览、`typos_check`、`codespell_check`、`markdown_check_links`。
 ///
 /// **外链探测**：`markdown_check_links` 在 `allowed_external_prefixes` 非空时使用内置 HTTP 客户端发 HEAD，
 /// **不经过** `http_fetch` / `http_request` 工具与 `http_fetch_allowed_prefixes`，也**无** Web SSE 审批会话。
-pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let args: DocsHealthSweepArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
+/// **失败语义**（迁 `Typed` 时定下）：只有「入参不合法」与「某阶段执行故障」返回 `Err`；
+/// 各阶段**检查出问题**（typos 有拼写、codespell 有错词、坏链接）只写进正文的
+/// `### 步骤汇总` / `整体: 存在失败项`，整体仍是 `Ok` —— 工具确实跑完了，
+/// 查到的问题交给模型判断，不该表现为工具故障（那会让调用方去重试一个已经成功的扫查）。
+#[allow(clippy::result_large_err)]
+pub fn docs_health_sweep_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let args: DocsHealthSweepArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    let v = serde_json::to_value(&args).map_err(|e| phase_args_serialize_failed("sweep", &e))?;
 
     let run_doc_preview = v
         .get("run_doc_preview")
@@ -462,8 +475,8 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         run_typos,
         run_codespell,
         run_markdown_links,
-    }) {
-        return out;
+    })? {
+        return Ok(out);
     }
 
     if let Some(out) = run_codespell_phase(CodespellPhaseCtx {
@@ -474,29 +487,27 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         },
         run_codespell,
         run_markdown_links,
-    }) {
-        return out;
+    })? {
+        return Ok(out);
     }
 
-    if let Some(out) = run_markdown_links_phase(
+    run_markdown_links_phase(
         &v,
         workspace_root,
         run_markdown_links,
         summary_only,
         &mut sections,
         &mut summary,
-    ) {
-        return out;
-    }
+    )?;
 
     let any_failed = summary.iter().any(|(_, s)| s == "failed");
-    build_output(
+    Ok(build_output(
         &summary,
         &sections,
         summary_only,
         max_output_len,
         any_failed,
-    )
+    ))
 }
 
 fn build_output(
@@ -532,20 +543,77 @@ mod tests {
     use super::*;
     use std::fs;
 
-    #[test]
-    fn sweep_readme_only_markdown() {
-        let root =
-            std::env::temp_dir().join(format!("crabmate_docs_health_{}", std::process::id()));
+    /// 每个用例独立临时根（并行跑测试时不会互相删目录）。
+    fn temp_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_docs_health_{}_{tag}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("mkdir");
+        root
+    }
+
+    /// 只跑 Markdown 链接阶段：其余阶段关掉，避免依赖本机是否装了 typos / codespell。
+    const ONLY_MARKDOWN: &str = r#"{"run_doc_preview":false,"run_typos":false,"run_codespell":false,"run_markdown_links":true,"md_roots":["README.md"]}"#;
+
+    #[test]
+    fn sweep_readme_only_markdown() {
+        let root = temp_root("readme");
         fs::write(root.join("README.md"), "# Hi\n\n[me](./README.md)\n").expect("w");
 
-        let arg = r#"{"run_doc_preview":false,"run_typos":false,"run_codespell":false,"run_markdown_links":true,"md_roots":["README.md"]}"#;
-        let out = docs_health_sweep(arg, &root, 80_000);
+        let out = docs_health_sweep_try(ONLY_MARKDOWN, &root, 80_000).expect("干净扫查应成功");
         let _ = fs::remove_dir_all(&root);
 
         assert!(out.contains("docs_health_sweep"));
         assert!(out.contains("markdown_check_links"));
         assert!(out.contains("passed") || out.contains("未发现"));
+    }
+
+    /// 内容问题 ≠ 工具失败：坏链接只写进汇总，返回值仍是 `Ok`。
+    ///
+    /// 迁移前正文含「存在失败项」会被 `parse_legacy_output` 的 `contains("失败")` 规则
+    /// 判成失败 —— 工具明明跑完了，调用方却收到「失败」，接着可能去重试一次已经成功的扫查。
+    #[test]
+    fn content_findings_stay_ok() {
+        let root = temp_root("findings");
+        fs::write(root.join("README.md"), "# Hi\n\n[gone](./missing.md)\n").expect("w");
+
+        let out = docs_health_sweep_try(ONLY_MARKDOWN, &root, 80_000)
+            .expect("发现坏链接是内容问题，不是工具故障");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(out.contains("markdown_check_links: failed"), "{out}");
+        assert!(out.contains("存在失败项"), "{out}");
+    }
+
+    /// 阶段真的执行不了（`markdown_check_links_try` 返回 `Err`）⇒ 整个 sweep 失败。
+    ///
+    /// 迁移前这里是「把 `e.message` 拼进正文、判 `passed`」——执行故障被吞成成功。
+    /// 用「工作区根不存在」触发 `markdown_check_collect_files` 解析失败；
+    /// `md_roots` 写成 `../outside` 这类**非法根**不会返回 `Err`（那是内容问题，只记一条本地问题）。
+    #[test]
+    fn markdown_phase_error_fails_the_sweep() {
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_docs_health_{}_missing_root",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+
+        let e = docs_health_sweep_try(ONLY_MARKDOWN, &root, 80_000)
+            .expect_err("工作区不可用应是执行故障");
+
+        assert_eq!(e.code, "markdown_check_links_workspace_failed", "{}", e.code);
+    }
+
+    /// 入参类型不对仍是 `invalid_args`（不让「容忍」把真参数错误也吞掉）。
+    #[test]
+    fn bad_args_is_invalid_args() {
+        let root = temp_root("bad_args");
+        let e = docs_health_sweep_try(r#"{"md_roots":"not-an-array"}"#, &root, 1_000)
+            .expect_err("md_roots 类型不对应失败");
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(e.code, "invalid_args");
     }
 }

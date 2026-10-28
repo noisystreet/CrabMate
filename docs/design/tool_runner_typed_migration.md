@@ -83,18 +83,18 @@
 
 | 形态 | Legacy 宏 | Typed 孪生 |
 |---|---|---|
-| `f(args, cwd, max_len)` | `define_runners_cwd_maxlen!` | `define_runners_cwd_maxlen_try!` |
+| `f(args, cwd, max_len)` | `define_runners_cwd_maxlen!`（无实例，已删除） | `define_runners_cwd_maxlen_try!` |
 | `f(args, cwd, ctx)` | `define_runners_cwd_ctx!` | `define_runners_cwd_ctx_try!` |
 | `f(args, cwd)` | `define_runners_cwd!` | `define_runners_cwd_try!` |
 | `f(args, &PathAccess)` | — | `define_runners_paths_try!` |
 | `f(args, &PathAccess, ctx)` | — | `define_runners_paths_ctx_try!` |
-| `f(args)`（args-only） | `define_runners_args_only!` | **无孪生**（4 个 misc 工具均为手写具名 runner） |
+| `f(args)`（args-only） | `define_runners_args_only!`（无实例，已删除） | `define_runners_args_only_try!` |
 | git 族 | `define_git_runners!`（迁完后无实例，已删除） | `define_git_runners_try!` |
 | gh 族 | `gh_runner!` | **无孪生** |
 
 ### 3.2 编译期 smoke
 
-`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）加 git 族的 `define_git_runners_try!`（`git::dispatch`）。
+`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）、git 族的 `define_git_runners_try!`（`git::dispatch`），以及 args-only 形态的 `define_runners_args_only_try!`（`present_clarification_questionnaire`，2026-10-28 补）。
 
 新增孪生宏时**应同时在 smoke 里挂一个真实实现**，否则宏本身没有任何类型校验。
 
@@ -171,7 +171,7 @@
 | ~~`repo_overview_sweep`~~（**已迁 2026-10-28**） | `cwd_maxlen_try` | `repo_overview::repo_overview_sweep_try` | 同上；字段类型不对退回默认值、缺失路径在正文标「不存在」 |
 | ~~`crate_contract_map`~~（**已迁 2026-10-28**） | 手写 | `contract_map::crate_contract_map_try(args, ctx)` | 同上；越界阈值 clamp、非法 `extra_paths` 只跳过 |
 | ~~`long_term_remember`~~ / ~~`long_term_forget`~~ / ~~`long_term_memory_list`~~ / ~~`summarize_experience`~~（**已迁 2026-10-27**） | 手写 | `dispatch_long_term_tool(...)` | 四个共用入口，一次改造覆盖；`LongTermMemoryToolHost::dispatch` 契约改为 `Result<String, ToolError>`；缺 `cfg` / host → `tool_context_incomplete`，记忆库 IO → `long_term_memory_io_failed` |
-| `present_clarification_questionnaire` | `args_only` | `clarification_questionnaire::run_present_clarification_questionnaire` | 控制面，非普通工具 |
+| ~~`present_clarification_questionnaire`~~（**已迁 2026-10-28**） | `args_only_try` | `clarification_questionnaire::run_present_clarification_questionnaire` | 控制面，非普通工具；失败改显式 `invalid_args`，成功正文首行 `退出码：0` 不可动（见 §4.20） |
 
 > `long_term_*` 四个共用 `dispatch_long_term_tool`，一次改造覆盖四个（已落地，见上）。**顺带修掉一个真缺陷**：旧实现里 JSON 解析失败返回 `参数 JSON 无效: …`，**没有「错误：」前缀**，会被 `parse_legacy_output` 启发式判成**成功**——即模型传错参数时拿到的是「成功」结果。迁 Typed 后该路径稳定为 `invalid_args`。
 
@@ -348,13 +348,13 @@
 |---|---|---|---|
 | `workflow_execute` | 手写 **stub** | 不执行，返回提示串 | 由 runtime 在 `run_agent_turn` 拦截，**迁移意义存疑**：同步面本就没有执行体，更接近 `AsyncOnly` |
 
-### 4.15 `docs_health.inc.rs`（1）— 形态 `cwd_maxlen`
+### 4.15 `docs_health.inc.rs`（1）— 形态 `cwd_maxlen` — **已迁 2026-10-28**
 
 > 旧标题写作 `format_lint.inc.rs / docs_health.inc.rs（各 1）`，但 `format_lint.inc.rs` 这个 spec 文件已不存在，按实际清单修正。
 
 | 工具 | 目标实现 | 备注 |
 |---|---|---|
-| `docs_health_sweep` | `docs_health_sweep::docs_health_sweep` | 聚合器（预览 + 拼写 + 链接） |
+| `docs_health_sweep` | `docs_health_sweep::docs_health_sweep_try` | 聚合器（预览 + 拼写 + 链接）；三种「失败」的拆法见 §4.19 |
 
 ### 4.16 只读聚合三兄弟 — **已迁 2026-10-28**
 
@@ -446,6 +446,58 @@
 **棘轮**：6 → 4；审计表两条变注释，本族清零。剩余 Legacy 为
 `present_clarification_questionnaire` / `docs_health_sweep` / `code_nav` / `codebase_semantic_search`。
 
+### 4.19 B 档：`docs_health_sweep`（聚合器）— **已迁 2026-10-28**
+
+| 工具 | 形态 | 目标实现 |
+|---|---|---|
+| `docs_health_sweep` | `f(args, cwd, max_len)` | `docs_health_sweep::docs_health_sweep_try` |
+
+**核心问题：它有三种「失败」，旧实现把它们混成一个 `String`。** 正文含「失败」二字
+（`整体: 存在失败项（见上）`）就会被 `parse_legacy_output` 判成工具故障，于是
+「扫查跑完、发现三处拼写错误」被报成**工具失败**——调用方据此去重试一件已经成功的事。
+
+迁移把它拆成三路：
+
+| 情形 | 旧 | 新 |
+|---|---|---|
+| 入参坏（JSON 坏、`md_roots` 类型不对） | 靠 `参数解析错误:` 前缀 | `invalid_args` |
+| 子阶段**执行故障**（`markdown_check_links_try` 返回 `Err`：工作区解析 / 扫描 IO） | 取 `e.message` 拼进正文，`markdown_links_failed` 判 `结论: 发现` 不成立 ⇒ **记 passed**，故障被吞 | 上抛为 `Err`（码原样透传，如 `markdown_check_links_workspace_failed`） |
+| 子阶段**检查出问题**（拼写、错词、坏链接） | 正文写 `failed` + 整体 `存在失败项` ⇒ 判**失败** | 正文逐字不变，整体 `Ok` |
+
+**新增码**：`docs_health_serialize_failed`（`Internal`）—— 阶段参数二次序列化，只可能
+在 `serde_json` 不变量破坏时触发（入参已成功反序列化过一次）。
+
+**`md_roots: ["../outside"]` 不返回 `Err`**：越界根被记成一条**本地问题**，即「发现」。
+写测试时踩过一次（以为它会失败），所以 `markdown_phase_error_fails_the_sweep` 改用
+「工作区根不存在」触发真故障，并在测试注释里写明这一点。
+
+**测试**（4 条）：`sweep_readme_only_markdown`（干净通过）、`content_findings_stay_ok`
+（坏链接 ⇒ `Ok` 且含 `markdown_check_links: failed` + `存在失败项`）、
+`markdown_phase_error_fails_the_sweep`（缺工作区 ⇒ `markdown_check_links_workspace_failed`）、
+`bad_args_is_invalid_args`。
+
+**棘轮**：4 → 3；`define_runners_cwd_maxlen!` 失去最后一个实例，连带删除
+（`unused_macros` 会报）。
+
+### 4.20 控制面：`present_clarification_questionnaire` — **已迁 2026-10-28**
+
+失败时旧实现返回 `退出码：1\n{e}\n`，只有 `parse_legacy_output` 的 exit-code 分支认得；
+`{}`（必填字段全缺）全靠这层兜底。现返回 `Err(invalid_args)`，所有校验分支（问卷 id 非法、
+`intro` 空白 / 超长、题目数不在 1～12、题目 `id` 非法或重复、`label` / `hint` 空白或超长、
+`kind` 非法）同一码。
+
+**成功正文逐字不变，首行尤其重要**：`cm_internal::clarification_sse_bridge` 用
+`tool_output.trim_start().starts_with("退出码：0")` 判断「这是登记成功的问卷」，改动首行会让
+Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header_and_reports_invalid_args`
+钉住（成功首行 + `invalid_args` 的两种触发）。
+
+**runner 形态**：args-only 的 `define_runners_args_only!` 随之改名为
+`define_runners_args_only_try!`；`try_macro_typecheck` 挂上该实现，使每种宏形态都有真实
+`_try` 实现参与类型检查。
+
+**棘轮**：3 → 2。剩余 Legacy 仅 `code_nav`（B 档，action 选择器，需在分发层收敛未知 action、
+并把四个子实现一并换类型）与 `codebase_semantic_search`（D 档，受 host 注入 + feature 限制）。
+
 ---
 
 ## 5. 建议切片顺序
@@ -455,7 +507,7 @@
 | 档 | 族 | 理由 |
 |---|---|---|
 | **A（低风险，建议先做）** | `metrics` 3 个、`self_config_info`、`long_term_*` 4 个、`skill_manage`、**只读聚合三兄弟**（`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`，2026-10-28 已迁，见 §4.16）（**全部已迁，A 档已清空**） | 纯读或纯本地；错误分支已存在，只需从「返回串」改成 `Err`；无外部进程、无后台装配 |
-| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、`docs_health` 1 个聚合器、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；`docs_health` 是聚合器，须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
+| **B（中风险）** | ~~`archive` 3 个~~（**已迁 2026-10-28**）、~~`reminder` / `event`~~（**已迁 2026-10-28**）、~~`docs_health` 1 个聚合器~~（**已迁 2026-10-28**，见 §4.19）、`code_nav` 1 个 action 选择器 | action 选择器需在分发层做「未知 action」的错误收敛；聚合器须保留自己的失败判定（`结论: 发现` 表示「发现了链接问题」，不是工具失败） |
 | **C（高风险，须先设计）** | ~~`gh_*` 5 个~~（**已迁 2026-10-28**）、~~`git`~~（**已迁 2026-10-28**）、~~`background_job*`~~（**已迁 2026-10-28**）、~~`http_fetch` / `http_request`~~（**已迁 2026-10-28**，见 §4.18）、~~`pytest_run` / `python_snippet_run`~~（**已迁 2026-10-28**）、~~`web_search` / `get_weather`~~（**已迁 2026-10-28**，见 §4.17） | 失败语义混在命令/HTTP 输出里；`http_*` 还有「未审批」这一中间态；`pytest_run` 与后台任务装配耦合 |
 | **D（不建议迁）** | `workflow_execute`（同步面是 stub，宜改 `AsyncOnly`）、`codebase_semantic_search`（依赖 host 注入 + feature） | 迁移不带来收益或受编译条件限制 |
 
@@ -492,3 +544,5 @@
 | 2026-10-28 | **A 档收尾：只读聚合三兄弟迁为 Typed**（`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map`，Legacy 11 → **8**）。三者唯一的真失败点都是 `parse_args_json`，其余全是有意容忍（审计表原按 `Legal` 钉住）：`sections` / `extra_env_vars` 类型不对只忽略、工作区根不可解析只写一行、字段类型不对退回默认值、越界阈值 clamp、非法 `extra_paths` 跳过。因此**先在三处 `tests` 里把「容忍 ⇒ `Ok`」写成用例，再改返回类型**（每处配一条 `*_bad_args_is_invalid_args`，防「全都成功」）—— 这是 §6 第 2 条的镜像：`Ok` 正文不能变，**「容忍」本身也是成功语义**。错误码只用既有 `invalid_args`，无新增分类分支。runner 侧两个手写（多参数转发）+ 一个并入 `define_runners_cwd_maxlen_try!`；审计表三条变注释，`Expect::Legal` 失去最后一个 Legacy 用例，保留变体并加 `#[allow(dead_code)]` + 理由。顺带修正 §2.1 两处过期行（`basic_network` 实际全是 Legacy、`format_lint.inc.rs` 文件已不存在）。 |
 | 2026-10-28 | **C 档：外部 API 族迁 Typed**（`get_weather` / `web_search`，Legacy 8 → **6**，见 §4.17）。这两个工具的码原本藏在正文首行 `错误[码]：` 里由 `extract_error_code_marker` 反解，迁移后不再依赖首行格式、`retryable` 由 `ToolError` 决定；正文逐字保留。**顺带修掉 `get_weather` 两个静默成功**：查不到地名（`未找到与「X」匹配的地点…`）与上游无 `current`（`未获取到当前天气数据`）旧实现都被启发式判成 `ok: true`。新增 6 个码并登记分类（`weather_city_not_found` → `InvalidInput`，`web_search_not_configured` → `Workspace`，其余 4 个 → `External`）。测试用两个纯构造函数 + `test_ctx` 钉住码的分工；真实 HTTP 分支仍无单测（已知缺口）。 |
 | 2026-10-28 | **C 档：受控 HTTP 族迁 Typed**（`http_fetch` / `http_request`，Legacy 6 → **4**，见 §4.18）。核心是共用内核 `fetch_with_method` / `request_with_json_body` 一次换类型，四个调用面（runner、并行只读批、审批后异步路径、Docker 沙盒 runner）统一展平 `Err`，正文逐字不变。**关键判断**：同步路径没有审批通道，「URL 未匹配白名单」是**策略拒绝**而非执行失败 → 新码 `http_fetch_url_not_allowed` / `http_request_url_not_allowed`（`PolicyDenied`、`retryable=false`），两个工具各用各的码；另有 `http_client_failed`（`External`）。Web SSE 审批与 CLI 异步路径不经过这两个函数，行为不变。审计表两条变注释，本族清零；剩余 4 个 Legacy 见 §4.18 末。 |
+| 2026-10-28 | **B 档：`docs_health_sweep` 迁 Typed**（Legacy 4 → **3**，见 §4.19）。核心是把它混在 `String` 里的**三种「失败」拆开**：入参坏 → `invalid_args`；子阶段执行故障（`markdown_check_links_try` 的 `Err`，工作区解析 / 扫描 IO）从「拼进正文并记 passed」改为上抛；子阶段**检查出问题**（拼写 / 坏链接）保持正文 `### 步骤汇总` + `整体: 存在失败项` 不变，但整体 `Ok`——此前正文里的「失败」二字会让 `parse_legacy_output` 把一次跑完的扫查判成工具故障。新增码 `docs_health_serialize_failed`（`Internal`，阶段参数二次序列化）。测试 1 → 4：`content_findings_stay_ok`（坏链接 ⇒ `Ok` 且含 `存在失败项`）与 `markdown_phase_error_fails_the_sweep`（缺工作区 ⇒ `markdown_check_links_workspace_failed`）成对。**踩坑记录**：`md_roots: ["../outside"]` 是「发现一条本地问题」，不返回 `Err`，故障注入必须换「工作区根不存在」。`define_runners_cwd_maxlen!` 失去最后实例，连带删除。 |
+| 2026-10-28 | **控制面：`present_clarification_questionnaire` 迁 Typed**（Legacy 3 → **2**，见 §4.20）。失败从 `退出码：1\n{e}\n`（只有 `parse_legacy_output` 的 exit-code 分支认得）改为显式 `invalid_args`；成功正文逐字不变，首行 `退出码：0` 是 `clarification_sse_bridge` 判定「登记成功」的依据，由 `present_runner_keeps_exit_zero_header_and_reports_invalid_args` 钉住。args-only 形态的宏随之改名为 `define_runners_args_only_try!` 并挂进 `try_macro_typecheck`。剩余 Legacy **2**：`code_nav`（B 档，下一批）与 `codebase_semantic_search`（D 档）。 |

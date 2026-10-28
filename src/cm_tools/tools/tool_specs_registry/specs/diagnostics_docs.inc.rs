@@ -4,7 +4,7 @@
             description: "向 Web 客户端下发**澄清问卷**控制面（SSE `clarification_questionnaire`）：当信息不足需用户逐项回答时调用。须提供稳定 `questionnaire_id` 与 1～12 道题目（`id`/`label`/可选 `hint`/`required`/`kind`）。**仅 Web 流式**会弹出问卷 UI；CLI/TUI 仍收到工具正文。用户下一条 `POST /chat` 或 `/chat/stream` 须在 JSON 中带 `clarify_questionnaire_answers`（与 `questionnaire_id` 及题目 `id` 对齐）。**禁止**在 `intro`/`label` 中要求用户粘贴密钥或隐私原文。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::PresentClarificationQuestionnaireArgs>,
-            runner: ToolRunner::Legacy(runner_present_clarification_questionnaire),
+            runner: ToolRunner::Typed(runner_present_clarification_questionnaire_try),
             summary: ToolSummaryKind::Static("Present clarification questionnaire (Web SSE)"),
         },
         ToolSpec {
