@@ -1,10 +1,12 @@
 //! Clap 派生 CLI、`parse_args`、`help` 子命令 argv 归一化；进程日志初始化见 crate 根 **`observability::init_tracing_subscriber`**。
 
+pub mod ctl;
 pub mod definitions;
 
 mod help_argv;
 pub(crate) mod parse;
 
+pub use ctl::CtlCmd;
 pub use definitions::{
     E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
     SaveSessionCli, SaveSessionFormat, SaveSessionProjection, SseReplayCli, ToolReplayCli,
