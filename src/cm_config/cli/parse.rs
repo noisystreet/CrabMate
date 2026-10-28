@@ -64,6 +64,7 @@ impl CliParseCtx {
             log_file: self.log_file.clone(),
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
+            ctl: None,
             save_session: None,
             web_bearer: None,
             tool_replay: None,
@@ -109,6 +110,9 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
             b.serve_desktop_ready_json = s.desktop_ready_json;
             b.serve_yes = s.yes;
             b.http_bind_host = resolve_http_bind_host(s.host);
+        }
+        Commands::Ctl(c) => {
+            b.ctl = Some(c);
         }
         Commands::Bench(be) => {
             b.bench_args = BenchmarkCliArgs {

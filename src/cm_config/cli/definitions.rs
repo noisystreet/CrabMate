@@ -416,6 +416,8 @@ pub enum ExtraCliCommand {
 pub enum Commands {
     /// 启动 HTTP API（纯 API，不托管 UI；默认端口 8080）
     Serve(ServeCmd),
+    /// 本地多实例 serve 进程管理（up/down/restart/run/ls/status/logs/prune；Unix-only）
+    Ctl(super::ctl::CtlCmd),
     /// 批量 benchmark 测评（JSONL）
     Bench(BenchCmd),
     /// 配置与自检
@@ -499,6 +501,8 @@ pub struct ParsedCliArgs {
     pub log_file: Option<String>,
     pub bench_args: BenchmarkCliArgs,
     pub extra_cli: ExtraCliCommand,
+    /// `ctl` 子命令（`Some` 表示走本地进程管理分支，不进 agent 主流程）
+    pub ctl: Option<super::ctl::CtlCmd>,
     /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
     pub save_session: Option<SaveSessionCli>,
     /// `Some` 时执行 `web-bearer` 后退出（不要求 API_KEY）

@@ -514,10 +514,15 @@ pub(super) fn serve_log_resolved_paths(
 }
 
 /// `--web-ready-json` / `--desktop-ready-json` 输出的单行 JSON。
+///
+/// `config` 是**实际加载**的配置文件路径（未加载任何文件时为 `null`）：`crabmate ctl`
+/// 依赖它向用户展示 `config_in_use`，避免「声明了 A 却静默加载了 B」这类排查困难。
+/// 该字段属 CLI stdout 的纯增量，不改变任何 HTTP 路由契约。
 pub(super) fn serve_ready_json(
     actual_addr: std::net::SocketAddr,
     web_api_bearer_layer_enabled: bool,
     instance_id: Option<&str>,
+    config: Option<&str>,
 ) -> serde_json::Value {
     serde_json::json!({
         "event": "web_ready",
@@ -526,6 +531,7 @@ pub(super) fn serve_ready_json(
         "url": format!("http://{}/", actual_addr),
         "auth_enabled": web_api_bearer_layer_enabled,
         "instance_id": instance_id,
+        "config": config,
     })
 }
 
@@ -692,14 +698,17 @@ mod tests {
     }
 
     #[test]
-    fn ready_json_includes_instance_id() {
+    fn ready_json_includes_instance_id_and_config() {
         let addr: std::net::SocketAddr = "127.0.0.1:18080".parse().unwrap();
-        let v = serve_ready_json(addr, true, Some("host-a"));
+        let v = serve_ready_json(addr, true, Some("host-a"), Some("/etc/crabmate/a.toml"));
         assert_eq!(v["event"], "web_ready");
         assert_eq!(v["port"], 18080);
         assert_eq!(v["auth_enabled"], true);
         assert_eq!(v["instance_id"], "host-a");
-        assert!(serve_ready_json(addr, false, None)["instance_id"].is_null());
+        assert_eq!(v["config"], "/etc/crabmate/a.toml");
+        let none = serve_ready_json(addr, false, None, None);
+        assert!(none["instance_id"].is_null());
+        assert!(none["config"].is_null(), "未加载配置时应为 null");
     }
 }
 

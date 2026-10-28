@@ -1,5 +1,10 @@
 #[allow(unused)]
 pub(crate) mod cmd_mate;
+#[cfg(unix)]
+#[allow(unused)]
+pub(crate) mod cm_ctl;
+#[allow(unused)]
+mod cm_ctl_entry;
 #[doc(hidden)]
 pub mod cm_agent;
 #[doc(hidden)]
