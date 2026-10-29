@@ -51,6 +51,10 @@ pub enum RestartArg {
 /// 按声明文件收敛实例。
 #[derive(Parser, Debug, Clone)]
 pub struct SuperviseCmd {
+    /// 只监督这一个实例（**必须出现在声明里**）；省略则收敛整份声明
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
+
     /// 从声明文件收敛（`$XDG_CONFIG_HOME/crabmate/instances.toml`）
     #[arg(long = "from-config")]
     pub from_config: bool,
