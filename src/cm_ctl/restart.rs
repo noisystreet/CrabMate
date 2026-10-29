@@ -318,7 +318,7 @@ mod tests {
             instances.insert(
                 (*name).to_string(),
                 Declaration {
-                    workspace: (*workspace).to_string(),
+                    workspace: Some((*workspace).to_string()),
                     config: None,
                     profile: None,
                     port: None,

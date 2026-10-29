@@ -287,7 +287,7 @@ fn add(path: &Path, a: AddRequest) -> (Response, bool) {
         return (Response::err(e.error_code, e.message), false);
     }
     let decl = Declaration {
-        workspace: a.workspace,
+        workspace: Some(a.workspace),
         // 控制面不接受 `config`：否则 socket 就成了「按任意路径加载配置」的入口，
         // 与 profile「能力集合有界」的目的相悖。要换配置请改 profile 或无 add。
         config: None,
@@ -329,6 +329,10 @@ fn reject_bad_workspace(decl: &Declaration) -> Result<(), Response> {
     let p = decl
         .workspace_path()
         .map_err(|e| Response::err(e.error_code, e.message))?;
+    // `None` = 待绑定：此刻没有路径可校验，真正的校验点是 client 的 `POST /workspace`。
+    let Some(p) = p else {
+        return Ok(());
+    };
     if p.is_dir() {
         return Ok(());
     }
@@ -562,7 +566,7 @@ mod tests {
         assert!(changed, "新增声明应触发收敛");
         let loaded = instances::load(&decl).expect("声明应可加载（含 0600 校验）");
         let d = loaded.instances.get("proj-a").expect("应有 proj-a");
-        assert_eq!(d.workspace, ws.display().to_string());
+        assert_eq!(d.workspace, Some(ws.display().to_string()));
         assert!(d.enabled, "enabled 缺省为 true");
         let _ = std::fs::remove_dir_all(&dir);
     }

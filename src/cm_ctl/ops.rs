@@ -83,7 +83,8 @@ impl Origin {
 #[derive(Debug, Clone)]
 pub struct UpArgs {
     pub name: String,
-    pub workspace: String,
+    /// 工作区；`None` = 待绑定（子 serve 以 `--workspace-unset` 启动，等 client 设置）。
+    pub workspace: Option<String>,
     /// 交给子 serve 的 `--config`（与 ctl 自身的 `--config` 无关）。
     pub serve_config: Option<String>,
     pub port: Option<u16>,
@@ -151,12 +152,12 @@ fn existing_if_ready(ctx: &Ctx, name: &str) -> Result<Option<InstanceRecord>, Ct
 fn build_spec(
     ctx: &Ctx,
     args: &UpArgs,
-    workspace: &Path,
+    workspace: Option<&Path>,
     port: u16,
 ) -> SpawnSpec {
     let log_path = ctx.paths.log_path(&args.name);
     SpawnSpec {
-        workspace: workspace.to_path_buf(),
+        workspace: workspace.map(Path::to_path_buf),
         serve_config: args.serve_config.as_ref().map(PathBuf::from),
         port,
         yes: args.yes,
@@ -174,7 +175,7 @@ fn build_spec(
 fn spawn_and_record(
     ctx: &Ctx,
     args: &UpArgs,
-    workspace: &Path,
+    workspace: Option<&Path>,
     port: u16,
 ) -> Result<InstanceRecord, CtlError> {
     let rec_path = ctx.record_path(&args.name)?;
@@ -199,7 +200,7 @@ fn spawn_and_record(
     rec.boot_id = identity::boot_id();
     rec.pid_start_ticks = identity::pid_start_ticks(pid);
     rec.started_at = Some(now_rfc3339());
-    rec.workspace = Some(workspace.display().to_string());
+    rec.workspace = workspace.map(|w| w.display().to_string());
     rec.config = args.serve_config.clone();
     rec.log = Some(spec.log_path.display().to_string());
     rec.env_keys = spawned.env_keys;
@@ -282,7 +283,7 @@ fn mark_readiness_timeout(
 fn up_once(
     ctx: &Ctx,
     args: &UpArgs,
-    workspace: &Path,
+    workspace: Option<&Path>,
     port: u16,
     warnings: &[String],
 ) -> Result<UpOutcome, CtlError> {
@@ -349,7 +350,8 @@ enum Launch {
     Existing(Box<InstanceRecord>),
     /// 需要启动。
     New {
-        workspace: PathBuf,
+        /// `None` = 待绑定（子 serve 以 `--workspace-unset` 启动，等 client 设置）。
+        workspace: Option<PathBuf>,
         port: u16,
         /// 预检提示，透传到 `UpOutcome` 由输出层打印。
         warnings: Vec<String>,
@@ -383,16 +385,41 @@ fn select_port(ctx: &Ctx, args: &UpArgs) -> Result<u16, CtlError> {
     }
 }
 
+/// 解析并校验工作区：省略（或空白）= 待绑定，返回 `None`；给了就必须存在且是目录。
+fn resolve_workspace(raw: Option<&str>) -> Result<Option<PathBuf>, CtlError> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let p = paths::absolutize(raw)?;
+    if !p.is_dir() {
+        return Err(CtlError::usage(
+            "bad_workspace",
+            format!("workspace 不存在或不是目录：{}", p.display()),
+        ));
+    }
+    Ok(Some(p))
+}
+
+/// 启动前的提示：有工作区才跑白名单预检；待绑定只给一条说明。
+///
+/// 预检不是授权判断——通过不等于 serve 会接受该 workspace，且绝不自动加白。
+fn preflight_warnings(
+    serve_config: Option<&str>,
+    workspace: Option<&Path>,
+) -> Result<Vec<String>, CtlError> {
+    match workspace {
+        Some(ws) => Ok(preflight::check(serve_config, ws)?.warnings),
+        None => Ok(vec![
+            "该实例以待绑定工作区启动：工具面在 client 设置工作区前不可用（`POST /workspace`）"
+                .to_string(),
+        ]),
+    }
+}
+
 /// 校验参数、判幂等、选定端口（不含 spawn；拆出来压 `up` 的复杂度）。
 fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
     paths::validate_name(&args.name)?;
-    let workspace = paths::absolutize(&args.workspace)?;
-    if !workspace.is_dir() {
-        return Err(CtlError::usage(
-            "bad_workspace",
-            format!("workspace 不存在或不是目录：{}", workspace.display()),
-        ));
-    }
+    let workspace = resolve_workspace(args.workspace.as_deref())?;
     ctx.paths.ensure_dirs()?;
 
     if let Some(rec) = existing_if_ready(ctx, &args.name)? {
@@ -400,13 +427,11 @@ fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
     }
 
     let port = select_port(ctx, args)?;
-    // 友好预检：越界才阻断（`workspace_out_of_roots`），未给 `--serve-config` 只提示。
-    // 这不是授权判断——预检通过不等于 serve 会接受该 workspace，且绝不自动加白。
-    let pf = preflight::check(args.serve_config.as_deref(), &workspace)?;
+    let warnings = preflight_warnings(args.serve_config.as_deref(), workspace.as_deref())?;
     Ok(Launch::New {
         workspace,
         port,
-        warnings: pf.warnings,
+        warnings,
     })
 }
 
@@ -428,12 +453,12 @@ pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
         } => (workspace, port, warnings),
     };
 
-    match up_once(ctx, args, &workspace, port, &warnings) {
+    match up_once(ctx, args, workspace.as_deref(), port, &warnings) {
         Ok(out) => Ok(out),
         // 端口竞争：池内顺延重试一次，仍失败则把两个原因都说清
         Err(e) if e.error_code == "readiness_failed" && args.port.is_none() => {
             let retry = ctx.pool.next_free_from(port)?;
-            up_once(ctx, args, &workspace, retry, &warnings).map_err(|e2| {
+            up_once(ctx, args, workspace.as_deref(), retry, &warnings).map_err(|e2| {
                 CtlError::general(
                     "port_race",
                     format!("端口 {port} 启动失败，顺延到 {retry} 仍失败：{}", e2.message),
@@ -544,12 +569,8 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
             format!("实例 {name} 不存在；请先 `crabmatectl up {name} ...`"),
         ));
     };
-    let workspace = rec.workspace.clone().ok_or_else(|| {
-        CtlError::general(
-            "record_incomplete",
-            format!("实例 {name} 的记录缺少 workspace，无法重启；请重新 up"),
-        )
-    })?;
+    // 记录里没有工作区 = 该实例本来就是待绑定态，重启后仍是待绑定（不回填，见 #1183 §2 ②）。
+    let workspace = rec.workspace.clone();
     // profile 存在时按**当前** profiles.toml 重新解析：`restart` 是「按声明重建」，
     // 若把 `--no-tools` / `allowed_commands` 丢掉，实例会在重启后悄悄变成另一种权限集合
     // （而方向可能是放松）。这也正是「profile 变更需 restart 才生效」的落点。
@@ -788,7 +809,7 @@ mod tests {
         let ctx = ctx_at(&tmp);
         let args = UpArgs {
             name: "x".to_string(),
-            workspace: tmp.join("definitely-not-here").display().to_string(),
+            workspace: Some(tmp.join("definitely-not-here").display().to_string()),
             serve_config: None,
             port: None,
             yes: false,
@@ -816,7 +837,7 @@ mod tests {
         let port = held.local_addr().expect("取本地地址").port();
         let args = UpArgs {
             name: "x".to_string(),
-            workspace: ws.display().to_string(),
+            workspace: Some(ws.display().to_string()),
             serve_config: None,
             port: Some(port),
             yes: true,

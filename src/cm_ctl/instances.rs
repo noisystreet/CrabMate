@@ -36,7 +36,10 @@ pub struct InstancesFile {
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
     /// 工作区路径（支持 `~/...`）。是否在允许根内由子实例配置决定。
-    pub workspace: String,
+    /// 实例的工作区。**省略 = 待绑定**：由 client 连上后经 `POST /workspace` 设置（#1183）。
+    /// 显式给空串是书写错误（与「没写」不是一回事），由 `validate` 拒绝。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     /// 交给子 serve 的 `--config`；相对路径按 **ctl 的 cwd** 绝对化。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
@@ -65,12 +68,15 @@ fn is_enabled(v: &bool) -> bool {
 }
 
 impl Declaration {
-    /// 声明里的 workspace → 绝对路径。
+    /// 声明里的工作区 → 绝对路径。`None` 表示**待绑定**（由 client 运行时设置）。
     ///
     /// 先展开 `~`：`Path::absolutize` 只补 cwd，不认 shell 的波浪号，而声明文件是
     /// 人手写的（`workspace = "~/proj-a"`），不展开会解析成 `<cwd>/~/proj-a`。
-    pub fn workspace_path(&self) -> Result<PathBuf, CtlError> {
-        paths::absolutize(&expand_tilde(self.workspace.trim()))
+    pub fn workspace_path(&self) -> Result<Option<PathBuf>, CtlError> {
+        let Some(raw) = self.workspace.as_deref() else {
+            return Ok(None);
+        };
+        Ok(Some(paths::absolutize(&expand_tilde(raw.trim()))?))
     }
 }
 
@@ -203,10 +209,17 @@ fn validate(file: &InstancesFile) -> Result<(), CtlError> {
                 format!("声明项 `{name}` 非法：{}", e.message),
             ));
         }
-        if decl.workspace.trim().is_empty() {
+        // 省略 workspace = 待绑定（合法）；显式空串是书写错误，两者不能混为一谈。
+        if decl
+            .workspace
+            .as_deref()
+            .is_some_and(|w| w.trim().is_empty())
+        {
             return Err(CtlError::usage(
                 "bad_instances_entry",
-                format!("声明项 `{name}` 缺少 workspace"),
+                format!(
+                    "声明项 `{name}` 的 workspace 为空串：不指定工作区请**省略该键**（实例将以待绑定态启动）"
+                ),
             ));
         }
         if decl.profile.is_some() && decl.config.is_some() {
@@ -288,7 +301,7 @@ port = 8080
         let d = f.instances.get("proj-a").expect("应有 proj-a");
         assert!(d.enabled, "enabled 缺省为 true");
         assert_eq!(d.port, Some(8080));
-        assert_eq!(d.workspace, "/tmp/proj-a");
+        assert_eq!(d.workspace.as_deref(), Some("/tmp/proj-a"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -381,17 +394,36 @@ port = 8080
     #[test]
     fn workspace_path_expands_tilde() {
         let d = Declaration {
-            workspace: "~/proj-a".to_string(),
+            workspace: Some("~/proj-a".to_string()),
             config: None,
             profile: None,
             port: None,
             enabled: true,
             env: BTreeMap::new(),
         };
-        let p = d.workspace_path().expect("应可绝对化");
+        let p = d
+            .workspace_path()
+            .expect("应可绝对化")
+            .expect("给了 workspace 就应有路径");
         assert!(p.is_absolute(), "{}", p.display());
         if std::env::var_os("HOME").is_some() {
             assert!(!p.to_string_lossy().contains('~'), "{}", p.display());
         }
+    }
+
+    #[test]
+    fn workspace_path_is_none_when_omitted() {
+        let d = Declaration {
+            workspace: None,
+            config: None,
+            profile: None,
+            port: None,
+            enabled: true,
+            env: BTreeMap::new(),
+        };
+        assert!(
+            d.workspace_path().expect("省略不应报错").is_none(),
+            "省略 workspace = 待绑定，不是错误"
+        );
     }
 }
