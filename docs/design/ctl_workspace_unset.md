@@ -115,7 +115,9 @@ Some(x) ──POST /workspace {path:""}─► Some("")          显式复位
 
 ### web / CLI 侧
 
-6. `serve` CLI：新增 `--workspace-unset`（与 `--workspace` 互斥），初始 override 置 `None`
+6. `serve` CLI：新增 `--workspace-unset`（与 `--workspace` 互斥）。**落点已勘察（2026-10-29）**，需贯穿 5 处结构体/构造点：`cm_config/cli/definitions.rs`（`ServeCmd` 加字段）→ `ParsedCliArgs`（`serve_desktop_ready_json` 的兄弟字段）→ `cli_run_session::CliDispatchArgs` → `cli_run::ServeBranchArgs` → `build_serve_runtime_state`。
+   初始 override 的算法定死为：`--workspace-unset` ⇒ `None`（待绑定）；否则 ⇒ `Some(workspace_cli.unwrap_or_default())`（`Some("")` 表示默认目录，等价旧行为）。
+   现状是 `initial_workspace: workspace_cli.clone()`（`cli_run.rs:654`）——「未传」本来就已经是 `None`，只是被 `chat/stream.rs:238-243` 的 fallback 掩盖成「用默认目录」。**§2 ③ 要拆开的正是这一层**：让 `None` 不再被掩盖，同时把「未传」的语义显式改成 `Some("")`，旧行为才不会被打破
 7. `workspace_set_handler` / `set_workspace_from_raw_path`：加冲突拦截，新增 `WORKSPACE_ALREADY_SET`
 8. 未设置即拒绝，逐点核对：
    - `src/web/chat_handlers/chat/stream.rs:238-243`
