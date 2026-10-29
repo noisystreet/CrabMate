@@ -113,6 +113,18 @@ pub struct InstanceRecord {
     /// 收敛就会把它当成「多余声明」杀掉 —— 那是不可接受的破坏。
     #[serde(default)]
     pub managed_by: Option<String>,
+    /// 连续重启尝试次数（`supervise --restart on-failure`）。
+    ///
+    /// 落在状态文件里而不是内存里，是为了让**退避窗口跨 ctl 重启**仍然有效：
+    /// 一个立刻崩溃的实例，不该因为守护进程被重启就获得一次「免费」的即时重试。
+    /// 观测到 `ready` 时清零（见 `restart::sweep`）。
+    #[serde(default)]
+    pub restart_attempts: u32,
+    /// 下一次允许重启的时间（RFC3339）；不在退避窗口内时为 `None`。
+    ///
+    /// 用绝对时间而不是「剩余秒数」，原因同上：ctl 重启后仍然算得对。
+    #[serde(default)]
+    pub next_restart_at: Option<String>,
     /// 仅供排查，不参与兼容判断。
     #[serde(default)]
     pub ctl_version: Option<String>,

@@ -13,7 +13,7 @@
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
 const BIN: &str = env!("CARGO_BIN_EXE_crabmatectl");
@@ -36,6 +36,11 @@ impl Sandbox {
 
     /// 跑一条 `crabmate ...` 命令。`CM_*` 全部剔除：本机配置不应影响子实例判定。
     fn run(&self, args: &[&str]) -> Output {
+        self.command(args).output().expect("crabmate 应可执行")
+    }
+
+    /// 与 `run` 同一套隔离环境，供需要长期持有的子进程（`supervise`）使用。
+    fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(BIN);
         cmd.args(args)
             .env("XDG_STATE_HOME", self.root().join("state"))
@@ -47,7 +52,22 @@ impl Sandbox {
                 cmd.env_remove(&k);
             }
         }
-        cmd.output().expect("crabmate 应可执行")
+        cmd
+    }
+
+    /// `$XDG_CONFIG_HOME/crabmate`（声明文件与 profile 的落地目录）。
+    fn config_dir(&self) -> PathBuf {
+        let d = self.root().join("config").join("crabmate");
+        std::fs::create_dir_all(&d).expect("建配置目录");
+        d
+    }
+
+    /// 写 `instances.toml` 并置 `0600`（声明文件等同进程启动清单，权限门是硬要求）。
+    fn write_declaration(&self, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = self.config_dir().join("instances.toml");
+        std::fs::write(&path, body).expect("写声明");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("设 0600");
     }
 
     fn workspace(&self, name: &str) -> PathBuf {
@@ -87,6 +107,13 @@ impl Sandbox {
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("读取状态文件 {} 失败：{e}", path.display()));
         serde_json::from_str(&text).expect("状态文件应是合法 JSON")
+    }
+
+    /// 读状态文件；尚未创建时给 `None`（`wait_until` 的谓词里不能 panic）。
+    fn record_opt(&self, name: &str) -> Option<serde_json::Value> {
+        let path = self.instance_dir().join(format!("{name}.json"));
+        let text = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&text).ok()
     }
 
     fn log(&self, name: &str) -> String {
@@ -237,4 +264,77 @@ fn down_all_stops_instances_and_ctl_leaves_serve_running() {
                 && sb.record("a")["pid"].is_null()
         },
     );
+}
+
+/// `supervise --watch --restart on-failure`：**真进程**崩溃后被按退避拉起来。
+///
+/// 这条非走真 `serve` 不可：退避重启的全部价值在「进程真的没了，再起一个」。
+/// 单测只能用「起不来的实例」验证记账与退避门，证明不了它能把活拉回来。
+///
+/// 崩溃用 `kill -9` 而不是 `down`：`down` 会写下 `desired_state = stopped`，
+/// 那是「用户显式停止」，被守护进程复活才是错的。
+#[test]
+fn supervise_restarts_crashed_instance() {
+    let sb = Sandbox::new();
+    let ws = sb.workspace("proj-restart");
+    let port = 18137u16;
+    let name = "r";
+    sb.write_declaration(&format!(
+        "[instances.{name}]\nworkspace = \"{}\"\nport = {port}\n",
+        ws.display()
+    ));
+
+    let mut sup = sb
+        .command(&[
+            "supervise",
+            "--from-config",
+            "--watch",
+            "--restart",
+            "on-failure",
+            "--interval",
+            "1",
+            "--health-interval",
+            "1",
+            "--backoff-initial",
+            "1",
+            "--backoff-max",
+            "5",
+            "--timeout",
+            "5",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("启动 supervise");
+
+    // 1) 首次收敛把实例拉起来
+    wait_until(
+        "声明收敛后实例应 ready",
+        Duration::from_secs(60),
+        || sb.record_opt(name).is_some_and(|r| r["state"] == "ready") && tcp_ok(port),
+    );
+    let first_pid = sb.record(name)["pid"].clone();
+
+    // 2) kill -9：进程没了，但期望态仍是 running
+    let pid = first_pid.as_u64().expect("ready 的实例应有 pid");
+    let killed = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .expect("执行 kill");
+    assert!(killed.success(), "kill -9 {pid} 失败");
+
+    // 3) 巡检应在退避窗口过后换成新进程
+    wait_until(
+        "崩溃的实例应被重新拉起（pid 变化且 ready）",
+        Duration::from_secs(60),
+        || {
+            sb.record_opt(name)
+                .is_some_and(|r| r["state"] == "ready" && r["pid"] != first_pid)
+        },
+    );
+
+    // 先收 supervise，再让 `Drop` 的 `down --all` 收 serve：
+    // 反过来的话，守护进程可能在清理之后又拉起一个新进程。
+    let _ = sup.kill();
+    let _ = sup.wait();
 }

@@ -23,6 +23,7 @@ pub(crate) mod profiles;
 pub(crate) mod readiness;
 pub(crate) mod record;
 pub(crate) mod render;
+pub(crate) mod restart;
 pub(crate) mod run;
 pub(crate) mod signal;
 pub(crate) mod spawn;

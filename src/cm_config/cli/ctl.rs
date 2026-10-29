@@ -7,7 +7,7 @@
 //!
 //! 二者绝不互相继承 —— 否则子实例会静默套用 ctl 的配置，形成「看起来隔离、实际同源」。
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// `ctl` 子命令容器。
 #[derive(Parser, Debug, Clone)]
@@ -37,6 +37,15 @@ pub enum CtlSubCmd {
     Prune(PruneCmd),
     /// 按 `instances.toml` 声明收敛实例（起该起的、停该停的）
     Supervise(SuperviseCmd),
+}
+
+/// `--restart` 的取值。
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestartArg {
+    /// 默认：只在声明变化时收敛，绝不因崩溃重启。
+    Never,
+    /// 观测到 failed / stopped / stale 时按退避重启。
+    OnFailure,
 }
 
 /// 按声明文件收敛实例。
@@ -72,6 +81,24 @@ pub struct SuperviseCmd {
         default_missing_value = ""
     )]
     pub socket: Option<String>,
+
+    /// 崩溃后是否重启：`never`（默认，只在声明变化时收敛）/ `on-failure`（按退避重启）
+    ///
+    /// `on-failure` 只在常驻模式（`--watch` / `--socket`）下有意义。
+    #[arg(long = "restart", value_enum, default_value_t = RestartArg::Never)]
+    pub restart: RestartArg,
+
+    /// `on-failure` 的健康巡检间隔秒数（与 `--interval` 的声明轮询分开）
+    #[arg(long = "health-interval", value_name = "SECS", default_value_t = 30)]
+    pub health_interval_secs: u64,
+
+    /// 首次退避秒数（之后按 2 倍增长，直到 `--backoff-max`）
+    #[arg(long = "backoff-initial", value_name = "SECS", default_value_t = 5)]
+    pub backoff_initial_secs: u64,
+
+    /// 退避封顶秒数（永不放弃，只把间隔封顶）
+    #[arg(long = "backoff-max", value_name = "SECS", default_value_t = 300)]
+    pub backoff_max_secs: u64,
 
     /// 启动时等待 TCP 就绪的秒数
     #[arg(long = "timeout", value_name = "SECS", default_value_t = 10)]

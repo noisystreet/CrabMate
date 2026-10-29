@@ -9,8 +9,9 @@
 //!    即便不在声明里也不会被碰——删一条声明不该杀掉用户手工起的进程。
 //! 2. **不覆盖用户的显式停止**：`desired_state = stopped`（`down` 留下的）优先于
 //!    声明里的 `enabled = true`，否则用户刚停掉的实例会被常驻的 supervise 立刻拉起。
-//! 3. **不静默重启**：需要重启时先在步骤里说明原因（观测态），失败则报 `Failed`，
-//!    不重试、不循环——退避重启属于后续切片。
+//! 3. **不静默重启**：声明变化引发的（重新）启动都会在步骤里说明原因（观测态），
+//!    失败则报 `Failed`，不重试、不循环。崩溃后的重试是**显式开关**
+//!    （`--restart on-failure`，见 `restart` 模块），默认关闭。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -21,6 +22,7 @@ use super::ops::{self, Ctx, Origin, UpArgs};
 use super::probe::{Observed, Probe};
 use super::profiles::{self, ProfilesFile};
 use super::record::{DesiredState, InstanceRecord};
+use super::restart;
 use super::CtlError;
 
 /// 一次收敛的参数。
@@ -32,6 +34,12 @@ pub struct Opts {
     pub grace: Duration,
     /// 只出计划，不 spawn、不发信号。
     pub dry_run: bool,
+    /// 崩溃重启策略（`--restart`）。默认 `Never`，即维持「只在声明变化时收敛」。
+    pub restart: restart::Restart,
+    /// 退避曲线（`--backoff-initial` / `--backoff-max`）。
+    pub backoff: restart::Backoff,
+    /// 健康巡检间隔（`--health-interval`），与声明指纹轮询分开。
+    pub health: Duration,
 }
 
 /// 启动一个实例所需的全部声明信息（与 [`UpArgs`] 一一对应，但不含 `origin`）。
@@ -482,8 +490,12 @@ impl Cursor {
 /// 为一个半截 TOML 退出常驻进程比暂停更糟。修好之后指纹变化，自然恢复。
 pub fn watch(ctx: &Ctx, path: &Path, opts: &Opts, interval: Duration) -> ! {
     let mut cursor = Cursor::new();
+    // 声明指纹轮询（轻，每秒一次）与健康巡检（重，要发 TCP）共用这个循环，
+    // 但节拍不同：巡检自己按 `--health-interval` 节流，策略为 `Never` 时直接返回。
+    let mut health = restart::Health::new(opts.health);
     loop {
         cursor.tick(ctx, path, opts);
+        health.tick(ctx, path, opts);
         std::thread::sleep(interval);
     }
 }
@@ -633,6 +645,9 @@ mod tests {
             timeout: Duration::from_millis(50),
             grace: Duration::from_millis(10),
             dry_run: true,
+            restart: restart::Restart::Never,
+            backoff: restart::Backoff::default(),
+            health: Duration::from_secs(30),
         };
         let out = execute(&ctx, steps, &opts);
         assert_eq!(out.len(), 1);
