@@ -56,6 +56,7 @@ impl CliParseCtx {
             llm_context_tokens_cli: self.llm_context_tokens_cli,
             serve_port: None,
             serve_desktop_ready_json: false,
+            serve_workspace_unset: false,
             serve_yes: false,
             http_bind_host: resolve_http_bind_host(None),
             workspace_cli: self.workspace_cli.clone(),
@@ -86,7 +87,9 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
     let raw: Vec<String> = std::env::args().collect();
     let normalized = normalize_help_argv(raw);
     let root = RootCli::try_parse_from(normalized).unwrap_or_else(|e| e.exit());
-    Ok(build_parsed_cli_args(root))
+    let parsed = build_parsed_cli_args(root);
+    validate_parsed(&parsed)?;
+    Ok(parsed)
 }
 
 /// 使用给定 **`argv`**（首元素为程序名）解析 CLI，供契约/集成测试；生产请用 [`parse_args`]。
@@ -96,7 +99,24 @@ pub fn parse_args_from_argv(raw: Vec<String>) -> io::Result<ParsedCliArgs> {
     let normalized = normalize_help_argv(raw);
     let root = RootCli::try_parse_from(normalized)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
-    Ok(build_parsed_cli_args(root))
+    let parsed = build_parsed_cli_args(root);
+    validate_parsed(&parsed)?;
+    Ok(parsed)
+}
+
+/// 解析后的跨字段校验。
+///
+/// clap 的 `conflicts_with` 对 **global** 参数（`--workspace`）在子命令上下文里不生效
+/// （实测 `--workspace /tmp serve --workspace-unset` 仍被接受），故在此兜底：
+/// 待绑定模式与显式工作区同时出现属于用户误解，必须拒绝而不是「后者赢」。
+fn validate_parsed(p: &ParsedCliArgs) -> io::Result<()> {
+    if p.serve_workspace_unset && p.workspace_cli.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "`--workspace` 与 `--workspace-unset` 互斥：待绑定模式下工作区由 client 通过 `POST /workspace` 设置",
+        ));
+    }
+    Ok(())
 }
 
 fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
@@ -107,6 +127,7 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
         Commands::Serve(s) => {
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
             b.serve_desktop_ready_json = s.desktop_ready_json;
+            b.serve_workspace_unset = s.workspace_unset;
             b.serve_yes = s.yes;
             b.http_bind_host = resolve_http_bind_host(s.host);
         }

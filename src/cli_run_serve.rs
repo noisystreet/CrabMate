@@ -146,6 +146,22 @@ pub(super) async fn serve_log_startup_health(
     crate::health::log_startup_dep_compat_summary(&report);
 }
 
+/// 初始工作区 override：`--workspace-unset` ⇒ `None`（待绑定），否则 `Some(workspace_cli.unwrap_or_default())`。
+///
+/// `Some("")` 的语义是「用配置的 `run_command_working_dir`」——与不带 `--workspace` 的旧行为
+/// 逐字等价。只有 ctl 显式声明「等 client 绑定」时才产生 `None`（Issue #1183 §2 ④）：
+/// 若把「未传」也当成 `None`，CLI 直启 `serve` 会因工作区未绑定而无法使用工具。
+pub(super) fn initial_workspace_override(
+    workspace_cli: &Option<String>,
+    workspace_unset: bool,
+) -> Option<String> {
+    if workspace_unset {
+        None
+    } else {
+        Some(workspace_cli.clone().unwrap_or_default())
+    }
+}
+
 /// 解析并校验实例标识；`None` 表示未设置/空串。
 fn parse_instance_id(raw: Option<&str>) -> Result<Option<String>, std::io::Error> {
     let Some(raw) = raw else { return Ok(None) };

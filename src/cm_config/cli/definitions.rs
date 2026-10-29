@@ -46,6 +46,12 @@ pub struct ServeCmd {
     #[arg(long = "desktop-ready-json", visible_alias = "web-ready-json")]
     pub desktop_ready_json: bool,
 
+    /// 以**待绑定工作区**启动：不设初始工作区，等 client 通过 `POST /workspace` 绑定。
+    /// 未绑定时工具调用一律拒绝（`WORKSPACE_NOT_SET`），避免静默落到配置的默认目录。
+    /// 仅供 `crabmatectl` 起的实例使用；与 `--workspace` 互斥（同时给出无意义）。
+    #[arg(long = "workspace-unset", conflicts_with = "workspace")]
+    pub workspace_unset: bool,
+
     /// 跳过命令白名单（`allowed_commands`）：`run_command` 不再做命令名校验，一律放行。
     /// 仅供完全信任或已隔离（容器/专属主机）的环境使用；**不**影响工作区外路径审批与参数安全检查。
     #[arg(long = "yes")]
@@ -489,6 +495,8 @@ pub struct ParsedCliArgs {
     pub serve_port: Option<u16>,
     /// `serve --desktop-ready-json` / `--web-ready-json`：监听成功后打印 `web_ready`（已弃用命名；壳不依赖）
     pub serve_desktop_ready_json: bool,
+    /// `serve --workspace-unset`：以待绑定工作区启动（等 client `POST /workspace`），未绑定时工具面拒绝
+    pub serve_workspace_unset: bool,
     /// `serve --yes`：跳过命令白名单（`allowed_commands` → `*`），`run_command` 一律放行
     pub serve_yes: bool,
     /// `serve` 时使用；来自 `serve --host`、`CM_HTTP_HOST` 或默认 `127.0.0.1`。
