@@ -19,6 +19,7 @@ use std::time::Duration;
 use super::instances::{self, Declaration, InstancesFile};
 use super::ops::{self, Ctx, Origin, UpArgs};
 use super::probe::{Observed, Probe};
+use super::profiles::{self, ProfilesFile};
 use super::record::{DesiredState, InstanceRecord};
 use super::CtlError;
 
@@ -40,6 +41,12 @@ pub struct StartSpec {
     pub serve_config: Option<String>,
     pub port: Option<u16>,
     pub env: BTreeMap<String, String>,
+    /// 引用的 profile 名（写进状态记录，供下一轮比对）。
+    pub profile: Option<String>,
+    /// 生效 profile 的指纹（只比名字会漏掉「改了内容但没改名」）。
+    pub profile_fingerprint: Option<String>,
+    /// profile 派生的 `--no-tools`。
+    pub no_tools: bool,
 }
 
 /// 收敛步骤：既是计划条目，也是执行结果（执行后计划态被替换为结果态）。
@@ -56,6 +63,16 @@ pub enum Step {
     Stop { name: String, reason: String },
     /// 已处于期望态（健康运行），无需动作。
     Running { name: String },
+    /// **执行结果**：启动（或重启）成功。
+    ///
+    /// 与 [`Step::Running`] 分开是必须的：若成功后就地塌成 `Running`，
+    /// 「因为 profile 变了而重启」会在输出里显示成「已就绪（无动作）」——
+    /// 用户看不到刚刚发生过一次重启，也看不到为什么。
+    Started {
+        name: String,
+        restarted: bool,
+        reason: String,
+    },
     /// 已回收。
     Stopped { name: String },
     /// 有意跳过（disabled / 用户已 down）。
@@ -70,6 +87,7 @@ impl Step {
             Self::Start { name, .. }
             | Self::Stop { name, .. }
             | Self::Running { name }
+            | Self::Started { name, .. }
             | Self::Stopped { name }
             | Self::Skipped { name, .. }
             | Self::Failed { name, .. } => name,
@@ -81,13 +99,31 @@ impl Step {
     }
 }
 
-/// 读声明 + 观测现状，产出计划（**只读**：不 spawn、不发信号）。
+/// 读声明 + profiles + 观测现状，产出计划（**只读**：不 spawn、不发信号）。
 pub fn plan(ctx: &Ctx, file: &InstancesFile) -> Result<Vec<Step>, CtlError> {
+    let profiles_path = ctx.paths.profiles_file();
+    let profiles_file = profiles::load_optional(&profiles_path)?;
+    plan_with(ctx, file, &profiles_file, &profiles_path)
+}
+
+/// 同 [`plan`]，但 profiles 由调用方提供（便于单测，也避免 `--watch` 重复读盘）。
+pub fn plan_with(
+    ctx: &Ctx,
+    file: &InstancesFile,
+    profiles_file: &ProfilesFile,
+    profiles_path: &Path,
+) -> Result<Vec<Step>, CtlError> {
     let observed = ops::ls(ctx)?;
     let mut steps = Vec::with_capacity(file.instances.len() + observed.len());
 
     for (name, decl) in &file.instances {
-        steps.push(step_for_decl(name, decl, &observed)?);
+        steps.push(step_for_decl(
+            name,
+            decl,
+            &observed,
+            profiles_file,
+            profiles_path,
+        )?);
     }
 
     // 声明里没有、但由 supervise 拉起的实例：声明被删 ⇒ 回收。
@@ -114,9 +150,23 @@ fn step_for_decl(
     name: &str,
     decl: &Declaration,
     observed: &[(InstanceRecord, Probe)],
+    profiles_file: &ProfilesFile,
+    profiles_path: &Path,
 ) -> Result<Step, CtlError> {
     let workspace = decl.workspace_path()?.display().to_string();
+    // profile 在**计划阶段**就解析：引用不到立刻报错，而不是等到 spawn 才发现
+    let resolved = match decl.profile.as_deref() {
+        Some(profile) => Some(profiles::resolve(
+            profiles_file,
+            profile,
+            &decl.env,
+            profiles_path,
+        )?),
+        None => None,
+    };
     let current = find_current(observed, name);
+    // 指纹要单独算一次：它同时用于「计划是否需要重启」和写进启动规格
+    let decl_fingerprint = resolved.as_ref().map(|r| r.fingerprint());
 
     if !decl.enabled {
         return Ok(match current {
@@ -134,7 +184,7 @@ fn step_for_decl(
     let Some((rec, probe)) = current else {
         return Ok(Step::Start {
             name: name.to_string(),
-            spec: start_spec(decl, &workspace, None),
+            spec: start_spec(decl, &workspace, None, resolved.as_ref()),
             restart: false,
             reason: "尚无实例记录".to_string(),
         });
@@ -150,6 +200,16 @@ fn step_for_decl(
         });
     }
 
+    // profile 变更**不热改**运行中实例（#1165）：重启才生效，且必须先说清原因
+    if let Some(reason) = profile_change_reason(decl, rec, probe.pid_alive, decl_fingerprint.as_deref()) {
+        return Ok(Step::Start {
+            name: name.to_string(),
+            spec: start_spec(decl, &workspace, rec.port, resolved.as_ref()),
+            restart: true,
+            reason,
+        });
+    }
+
     if probe.observed == Observed::Ready {
         return Ok(Step::Running {
             name: name.to_string(),
@@ -159,20 +219,65 @@ fn step_for_decl(
     // 端口优先沿用记录里的值，`base_url` 才不会在每次收敛后漂移。
     Ok(Step::Start {
         name: name.to_string(),
-        spec: start_spec(decl, &workspace, rec.port),
+        spec: start_spec(decl, &workspace, rec.port, resolved.as_ref()),
         restart: true,
         reason: format!("观测态为 {}，需要重新拉起", probe.observed.as_str()),
     })
 }
 
-/// 端口优先级：声明 > 记录（仅重启时） > 端口池。
-fn start_spec(decl: &Declaration, workspace: &str, recorded_port: Option<u16>) -> StartSpec {
+/// 端口优先级：声明 > 记录（仅重启时） > 端口池；config / env / `--no-tools`
+/// 由 profile 决定（无 profile 时退回实例自身的 `config` / `env`）。
+fn start_spec(
+    decl: &Declaration,
+    workspace: &str,
+    recorded_port: Option<u16>,
+    resolved: Option<&profiles::Resolved>,
+) -> StartSpec {
     StartSpec {
         workspace: workspace.to_string(),
-        serve_config: decl.config.clone(),
+        serve_config: resolved
+            .and_then(|r| r.serve_config.clone())
+            .or_else(|| decl.config.clone()),
         port: decl.port.or(recorded_port),
-        env: decl.env.clone(),
+        env: resolved
+            .map(|r| r.env.clone())
+            .unwrap_or_else(|| decl.env.clone()),
+        profile: decl.profile.clone(),
+        profile_fingerprint: resolved.map(|r| r.fingerprint()),
+        no_tools: resolved.map(|r| r.no_tools).unwrap_or(false),
     }
+}
+
+/// profile 变更且进程仍在跑 ⇒ 需要重启（`None` = 无需动作）。
+///
+/// 两级判定：**名字变了**先报名字；名字相同但**内容指纹变了**（改了
+/// `allowed_commands` / `permission_level` / `env`）同样要重启——否则收敛会
+/// 一直显示 `ready`，而实际生效的是上一版权限集合。
+fn profile_change_reason(
+    decl: &Declaration,
+    rec: &InstanceRecord,
+    pid_alive: bool,
+    decl_fingerprint: Option<&str>,
+) -> Option<String> {
+    if !pid_alive {
+        return None;
+    }
+    if decl.profile.as_deref() != rec.profile.as_deref() {
+        return Some(format!(
+            "profile 从 `{}` 变为 `{}`；需重启才生效",
+            rec.profile.as_deref().unwrap_or("（无）"),
+            decl.profile.as_deref().unwrap_or("（无）")
+        ));
+    }
+    // 没有 profile 就无从比较内容指纹
+    decl.profile.as_ref()?;
+    if decl_fingerprint != rec.profile_fingerprint.as_deref() {
+        return Some(format!(
+            "profile `{}` 的内容已变更（allowed_commands / permission_level / env 等）；需重启才生效",
+            decl.profile.as_deref().unwrap_or("")
+        ));
+    }
+    None
 }
 
 /// 声明里已不存在的实例：仅当它由 `supervise` 拉起**且**进程还活着时才回收。
@@ -203,15 +308,22 @@ fn run_step(ctx: &Ctx, step: Step, opts: &Opts) -> Step {
             name,
             spec,
             restart,
-            ..
-        } => exec_start(ctx, name, spec, restart, opts),
+            reason,
+        } => exec_start(ctx, name, spec, restart, reason, opts),
         Step::Stop { name, .. } => exec_stop(ctx, name, opts),
         // 已是结果态 / 有意跳过：原样保留
         other => other,
     }
 }
 
-fn exec_start(ctx: &Ctx, name: String, spec: StartSpec, restart: bool, opts: &Opts) -> Step {
+fn exec_start(
+    ctx: &Ctx,
+    name: String,
+    spec: StartSpec,
+    restart: bool,
+    reason: String,
+    opts: &Opts,
+) -> Step {
     if restart && let Err(e) = ops::down(ctx, &name, opts.grace) {
         return Step::Failed {
             name,
@@ -228,9 +340,17 @@ fn exec_start(ctx: &Ctx, name: String, spec: StartSpec, restart: bool, opts: &Op
         env: spec.env,
         timeout: opts.timeout,
         origin: Origin::Supervise,
+        profile: spec.profile,
+        profile_fingerprint: spec.profile_fingerprint,
+        no_tools: spec.no_tools,
     };
     match ops::up(ctx, &args) {
-        Ok(_) => Step::Running { name },
+        // 保留 `restarted` 与 `reason`：否则「因 profile 变更而重启」会被渲染成「无动作」
+        Ok(_) => Step::Started {
+            name,
+            restarted: restart,
+            reason,
+        },
         Err(e) => Step::Failed {
             name,
             error: format!("{}（{}）", e.message, e.error_code),
@@ -355,6 +475,7 @@ mod tests {
         Declaration {
             workspace: workspace.to_string(),
             config: None,
+            profile: None,
             port,
             enabled,
             env: BTreeMap::new(),
@@ -570,5 +691,133 @@ mod tests {
         let (again, _) = poll_once(&path, Some(&fp));
         assert!(matches!(again, Poll::Unchanged), "{again:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 写一份 `0600` 的 profiles.toml 到本 ctx 的配置目录。
+    fn write_profiles(ctx: &Ctx, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = ctx.paths.profiles_file();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).expect("建配置目录");
+        }
+        std::fs::write(&path, body).expect("写 profiles");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("设权限");
+    }
+
+    /// 写一条「指向自身 pid、profile = 旧值」的 supervise 记录（进程活着）。
+    fn write_profile_record(ctx: &Ctx, name: &str, profile: &str) {
+        ctx.paths.ensure_dirs().expect("建目录");
+        let mut rec = InstanceRecord::new(name);
+        rec.state = InstanceState::Ready;
+        rec.pid = Some(std::process::id());
+        rec.pgid = Some(std::process::id() as i32);
+        rec.port = Some(1);
+        rec.boot_id = crate::cm_ctl::identity::boot_id();
+        rec.pid_start_ticks = crate::cm_ctl::identity::pid_start_ticks(std::process::id());
+        rec.managed_by = Some(Origin::Supervise.as_str().to_string());
+        rec.profile = Some(profile.to_string());
+        rec.profile_in_use = Some(profile.to_string());
+        let path = ctx.paths.record_path(name).expect("记录路径");
+        record::write_atomic(&path, &rec).expect("写记录");
+    }
+
+    #[test]
+    fn profile_change_on_running_instance_plans_restart() {
+        let tmp = tempdir("profile_restart");
+        let ctx = ctx_at(&tmp);
+        write_profiles(&ctx, "[profiles.new]\npermission_level = \"read\"\n");
+        write_profile_record(&ctx, "a", "old");
+
+        let mut d = decl("/tmp/a", true, None);
+        d.profile = Some("new".to_string());
+        let file = file_with(&[("a", d)]);
+
+        let steps = plan(&ctx, &file).expect("计划");
+        match &steps[0] {
+            Step::Start {
+                restart,
+                reason,
+                spec,
+                ..
+            } => {
+                assert!(*restart, "profile 变更必须重启才生效");
+                assert!(reason.contains("profile"), "{reason}");
+                assert_eq!(spec.profile.as_deref(), Some("new"));
+            }
+            other => panic!("期望 Start（重启），实际 {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn profile_no_tools_and_allowed_commands_reach_start_spec() {
+        let tmp = tempdir("profile_launch");
+        let ctx = ctx_at(&tmp);
+        write_profiles(
+            &ctx,
+            "[profiles.audit]\nno_tools = true\nallowed_commands = [\"grep\"]\n",
+        );
+
+        let mut d = decl("/tmp/a", true, None);
+        d.profile = Some("audit".to_string());
+        let file = file_with(&[("a", d)]);
+
+        let steps = plan(&ctx, &file).expect("计划");
+        match &steps[0] {
+            Step::Start { spec, .. } => {
+                assert!(spec.no_tools, "no_tools 应传到 --no-tools");
+                assert_eq!(
+                    spec.env.get("CM_ALLOWED_COMMANDS").map(String::as_str),
+                    Some("grep")
+                );
+            }
+            other => panic!("期望 Start，实际 {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn profile_change_reason_compares_name_then_fingerprint() {
+        let mut rec = InstanceRecord::new("a");
+        let mut d = decl("/tmp/a", true, None);
+
+        // 进程已停 ⇒ 不构成「需重启」
+        d.profile = Some("new".to_string());
+        rec.profile = Some("old".to_string());
+        assert!(profile_change_reason(&d, &rec, false, Some("f1")).is_none());
+
+        // 名字变了 ⇒ 报名字
+        let reason = profile_change_reason(&d, &rec, true, Some("f1")).expect("应重启");
+        assert!(reason.contains("变为"), "{reason}");
+
+        // 名字相同、指纹不同 ⇒ 内容变了，仍要重启
+        rec.profile = Some("new".to_string());
+        rec.profile_fingerprint = Some("old-fp".to_string());
+        let reason = profile_change_reason(&d, &rec, true, Some("new-fp")).expect("内容变更应重启");
+        assert!(reason.contains("内容已变更"), "{reason}");
+
+        // 名字与指纹都一致 ⇒ 无动作（否则每次收敛都会白白重启）
+        rec.profile_fingerprint = Some("new-fp".to_string());
+        assert!(profile_change_reason(&d, &rec, true, Some("new-fp")).is_none());
+
+        // 双方都没有 profile ⇒ 无动作
+        let plain = decl("/tmp/a", true, None);
+        let mut bare = InstanceRecord::new("a");
+        bare.profile = None;
+        assert!(profile_change_reason(&plain, &bare, true, None).is_none());
+    }
+
+    #[test]
+    fn missing_profile_is_reported_at_plan_time() {
+        let tmp = tempdir("profile_missing");
+        let ctx = ctx_at(&tmp);
+        let mut d = decl("/tmp/a", true, None);
+        d.profile = Some("nope".to_string());
+        let file = file_with(&[("a", d)]);
+
+        // 计划阶段就报错：不能等到 spawn 才发现引用错了
+        let err = plan(&ctx, &file).expect_err("引用不存在的 profile 应报错");
+        assert_eq!(err.error_code, "profile_not_found");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

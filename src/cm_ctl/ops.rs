@@ -12,6 +12,7 @@ use super::paths::{self, CtlPaths};
 use super::port_pool::PortPool;
 use super::preflight;
 use super::probe::{self, Observed, Probe};
+use super::profiles;
 use super::readiness::{self, WaitOutcome};
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::signal;
@@ -91,6 +92,12 @@ pub struct UpArgs {
     pub timeout: Duration,
     /// 谁在拉起这个实例（决定它将来会不会被 `supervise` 回收）。
     pub origin: Origin,
+    /// 引用的 profile 名（写入状态记录，供 `supervise` 比对「声明变了但没重启」）。
+    pub profile: Option<String>,
+    /// 生效 profile 的指纹（同上；只比名字会漏掉「改了内容但没改名」）。
+    pub profile_fingerprint: Option<String>,
+    /// profile 派生的 `--no-tools`。
+    pub no_tools: bool,
 }
 
 /// `up` 结果。
@@ -153,6 +160,7 @@ fn build_spec(
         serve_config: args.serve_config.as_ref().map(PathBuf::from),
         port,
         yes: args.yes,
+        no_tools: args.no_tools,
         env: args.env.clone(),
         log_path,
         home: ctx.paths.instance_home(&args.name),
@@ -196,6 +204,11 @@ fn spawn_and_record(
     rec.log = Some(spec.log_path.display().to_string());
     rec.env_keys = spawned.env_keys;
     rec.managed_by = Some(args.origin.as_str().to_string());
+    // `profile` 与 `profile_in_use` 在启动时必然相同：差异只出现在
+    // 「声明改了 profile、实例还没 restart」，由 `supervise` 的计划发现。
+    rec.profile = args.profile.clone();
+    rec.profile_in_use = args.profile.clone();
+    rec.profile_fingerprint = args.profile_fingerprint.clone();
 
     // 先落盘再等 readiness：ctl 若在此后崩溃，孤儿实例仍有记录可被 prune/ls 发现
     record::write_atomic(&rec_path, &rec)?;
@@ -444,6 +457,28 @@ fn finish_stopped(path: &Path, rec: &mut InstanceRecord) -> Result<(), CtlError>
     record::write_atomic(path, rec)
 }
 
+/// 按实例记录里的 profile 名重新解析预设（`restart` 用）。
+///
+/// 这段语义值得一个函数名而不只是内联：**重启必须按当前 `profiles.toml` 重建
+/// 权限集合**，否则 `--no-tools` / `allowed_commands` 会在重启后消失——
+/// 而那是向**放松**方向漂移，比报错更危险。
+fn resolve_recorded_profile(
+    ctx: &Ctx,
+    rec: &InstanceRecord,
+) -> Result<Option<profiles::Resolved>, CtlError> {
+    let Some(name) = rec.profile.as_deref() else {
+        return Ok(None);
+    };
+    let path = ctx.paths.profiles_file();
+    let file = profiles::load_optional(&path)?;
+    Ok(Some(profiles::resolve(
+        &file,
+        name,
+        &BTreeMap::new(),
+        &path,
+    )?))
+}
+
 /// 重启：复用原有 workspace / 端口 / 配置，先 down 再 up。
 pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Result<UpOutcome, CtlError> {
     paths::validate_name(name)?;
@@ -460,8 +495,19 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
             format!("实例 {name} 的记录缺少 workspace，无法重启；请重新 up"),
         )
     })?;
+    // profile 存在时按**当前** profiles.toml 重新解析：`restart` 是「按声明重建」，
+    // 若把 `--no-tools` / `allowed_commands` 丢掉，实例会在重启后悄悄变成另一种权限集合
+    // （而方向可能是放松）。这也正是「profile 变更需 restart 才生效」的落点。
+    let resolved = resolve_recorded_profile(ctx, &rec)?;
     let port = rec.port;
-    let serve_config = rec.config.clone();
+    let serve_config = resolved
+        .as_ref()
+        .and_then(|r| r.serve_config.clone())
+        .or_else(|| rec.config.clone());
+    let env = resolved.as_ref().map(|r| r.env.clone()).unwrap_or_default();
+    let no_tools = resolved.as_ref().map(|r| r.no_tools).unwrap_or(false);
+    let fingerprint = resolved.as_ref().map(|r| r.fingerprint());
+
     // 沿用原持有者：`supervise` 拉起的实例被人工 restart 后仍归 `supervise` 回收，
     // 否则它会变成「无主的 supervise 实例」——既不被声明回收，也不被声明接管。
     let origin = Origin::from_record(&rec);
@@ -474,9 +520,12 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
         serve_config,
         port,
         yes: false,
-        env: BTreeMap::new(),
+        env,
         timeout,
         origin,
+        profile: rec.profile.clone(),
+        profile_fingerprint: fingerprint,
+        no_tools,
     };
     up(ctx, &args)
 }
@@ -654,6 +703,9 @@ mod tests {
             env: BTreeMap::new(),
             timeout: Duration::from_millis(100),
             origin: Origin::Cli,
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
         };
         let err = up(&ctx, &args).expect_err("不存在的 workspace 应被拒绝");
         assert_eq!(err.error_code, "bad_workspace");
