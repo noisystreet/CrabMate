@@ -88,4 +88,68 @@ mod tests {
         let e = CtlError::general("lock_busy", "锁被占用");
         assert_eq!(e.exit_code, crate::EXIT_GENERAL);
     }
+
+    /// 读 `fixtures/ctl_contract.json` 的一组字段（已排序）。
+    fn expected_keys(field: &str) -> Vec<String> {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ctl_contract.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("读 {} 失败：{e}", path.display()));
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("golden 应是合法 JSON");
+        let mut keys: Vec<String> = v[field]
+            .as_array()
+            .unwrap_or_else(|| panic!("golden 缺少数组字段 `{field}`"))
+            .iter()
+            .map(|k| {
+                k.as_str()
+                    .unwrap_or_else(|| panic!("`{field}` 里应全是字符串"))
+                    .to_string()
+            })
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    fn sorted_keys(v: &serde_json::Value) -> Vec<String> {
+        let mut keys: Vec<String> = v
+            .as_object()
+            .expect("契约对象应是 JSON object")
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    fn sample_probe() -> probe::Probe {
+        probe::observe(&record::InstanceRecord::default())
+    }
+
+    /// `ls --json` 的每行字段集由 `crabmate-client` 直接消费。
+    ///
+    /// 改名 / 删字段 → 客户端静默读到 `null`（表现为 lane 一直「未知」），且没有任何
+    /// 编译期或运行期信号；新增字段 → 内部结构被泄漏成契约、以后删不掉。两个方向都
+    /// 必须显式改 `fixtures/ctl_contract.json`，那一步就是审阅点。
+    #[test]
+    fn ls_row_json_matches_the_contract() {
+        let rec = record::InstanceRecord::default();
+        let v = render::row_json(&rec, &sample_probe());
+        assert_eq!(sorted_keys(&v), expected_keys("ls_row"));
+    }
+
+    /// `status --json` = `ls` 的一行 + 进程身份三项。
+    #[test]
+    fn status_json_matches_the_contract() {
+        let rec = record::InstanceRecord::default();
+        let v = render::status_json(&rec, &sample_probe());
+        assert_eq!(sorted_keys(&v), expected_keys("status_row"));
+    }
+
+    /// 状态文件（`<name>.json`）同样是契约：客户端直接读它，不只是读 `ls` 输出。
+    /// 这条也顺带盯住「别把只该活在内存里的字段写进盘」。
+    #[test]
+    fn record_fields_match_the_contract() {
+        let v = serde_json::to_value(record::InstanceRecord::default()).expect("序列化记录");
+        assert_eq!(sorted_keys(&v), expected_keys("record_fields"));
+    }
 }
