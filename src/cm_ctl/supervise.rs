@@ -13,9 +13,10 @@
 //!    不重试、不循环——退避重启属于后续切片。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::time::Duration;
 
-use super::instances::{Declaration, InstancesFile};
+use super::instances::{self, Declaration, InstancesFile};
 use super::ops::{self, Ctx, Origin, UpArgs};
 use super::probe::{Observed, Probe};
 use super::record::{DesiredState, InstanceRecord};
@@ -247,6 +248,82 @@ fn exec_stop(ctx: &Ctx, name: String, opts: &Opts) -> Step {
     }
 }
 
+/// 轮询间隔：容器 overlayfs 上 inotify 不可靠，与 `logs -f` 同策略。
+pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(1);
+
+/// 声明文件的**指纹：内容 + 权限位**。
+///
+/// 权限必须进指纹。用户 `chmod 600` 修好一个 0644 的文件后内容一字未改，
+/// 若只看内容，watch 会永远停在「已暂停收敛」而不重新加载。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fingerprint {
+    /// `None` 表示文件不存在（被删 / 编辑器原子替换的瞬间）。
+    mode: Option<u32>,
+    text: String,
+}
+
+/// `--watch` 单轮的判定。
+#[derive(Debug)]
+pub enum Poll {
+    /// 指纹未变：什么都不做（否则每秒都会重新 probe 一遍 TCP）。
+    Unchanged,
+    /// 指纹变了且声明可加载：收敛。
+    Reconcile(InstancesFile),
+    /// 指纹变了但声明不可用（权限过宽 / 属主不符 / 语法错 / 不存在）：
+    /// **只告警，不收敛**。声明被改坏时「按它起进程」比「什么都不起」危险得多。
+    Refused(String),
+}
+
+fn fingerprint(path: &Path) -> Fingerprint {
+    use std::os::unix::fs::MetadataExt;
+    let mode = std::fs::metadata(path)
+        .ok()
+        .map(|m| m.mode() & 0o777);
+    Fingerprint {
+        mode,
+        text: std::fs::read_to_string(path).unwrap_or_default(),
+    }
+}
+
+/// 读一次声明并与上一轮的指纹比对。
+pub fn poll_once(path: &Path, last: Option<&Fingerprint>) -> (Poll, Fingerprint) {
+    let current = fingerprint(path);
+    if last == Some(&current) {
+        return (Poll::Unchanged, current);
+    }
+    let poll = match instances::load(path) {
+        Ok(file) => Poll::Reconcile(file),
+        Err(e) => Poll::Refused(format!("{}（{}）", e.message, e.error_code)),
+    };
+    (poll, current)
+}
+
+/// `--watch`：声明变化即重新收敛，直到进程被信号终止。
+///
+/// 声明损坏时**暂停收敛并保留现场**（不 `exit`）：用户正在编辑的文件经常短暂失效，
+/// 为一个半截 TOML 退出常驻进程比暂停更糟。修好之后指纹变化，自然恢复。
+pub fn watch(ctx: &Ctx, path: &Path, opts: &Opts, interval: Duration) -> ! {
+    let mut last: Option<Fingerprint> = None;
+    loop {
+        let (poll, fingerprint) = poll_once(path, last.as_ref());
+        last = Some(fingerprint);
+        match poll {
+            Poll::Unchanged => {}
+            Poll::Refused(reason) => super::render::supervise_refused(&reason),
+            Poll::Reconcile(file) => match plan(ctx, &file) {
+                Ok(steps) => {
+                    let done = execute(ctx, steps, opts);
+                    super::render::supervise(&done, false);
+                }
+                Err(e) => {
+                    super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code))
+                }
+            },
+        }
+        std::thread::sleep(interval);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +478,97 @@ mod tests {
             "dry-run 不得写状态文件"
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn write_decl(path: &std::path::Path, body: &str, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, body).expect("写声明");
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("设权限");
+    }
+
+    const DECL_BODY: &str = "[instances.a]\nworkspace = \"/tmp/a\"\n";
+
+    #[test]
+    fn watch_first_round_reconciles_then_goes_quiet() {
+        let dir = tempdir("watch_first");
+        let path = dir.join("instances.toml");
+        write_decl(&path, DECL_BODY, 0o600);
+
+        let (first, fp) = poll_once(&path, None);
+        assert!(matches!(first, Poll::Reconcile(_)), "{first:?}");
+
+        // 指纹未变 ⇒ 不再收敛（否则每秒重新 probe 一遍 TCP）
+        let (second, _) = poll_once(&path, Some(&fp));
+        assert!(matches!(second, Poll::Unchanged), "{second:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watch_picks_up_content_change() {
+        let dir = tempdir("watch_change");
+        let path = dir.join("instances.toml");
+        write_decl(&path, DECL_BODY, 0o600);
+        let (_, fp) = poll_once(&path, None);
+
+        write_decl(
+            &path,
+            "[instances.a]\nworkspace = \"/tmp/a\"\n\n[instances.b]\nworkspace = \"/tmp/b\"\n",
+            0o600,
+        );
+        let (poll, _) = poll_once(&path, Some(&fp));
+        match poll {
+            Poll::Reconcile(file) => assert_eq!(file.instances.len(), 2),
+            other => panic!("期望 Reconcile，实际 {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watch_pauses_when_permissions_widen_and_recovers_after_chmod() {
+        let dir = tempdir("watch_perm");
+        let path = dir.join("instances.toml");
+        write_decl(&path, DECL_BODY, 0o600);
+        let (_, fp) = poll_once(&path, None);
+
+        // 仅放宽权限、内容一字未改：必须被察觉（指纹含 mode）并暂停收敛
+        std::fs::set_permissions(&path, {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::Permissions::from_mode(0o644)
+        })
+        .expect("放宽权限");
+        let (poll, fp2) = poll_once(&path, Some(&fp));
+        match poll {
+            Poll::Refused(reason) => {
+                assert!(reason.contains("instances_file_insecure"), "{reason}")
+            }
+            other => panic!("期望 Refused，实际 {other:?}"),
+        }
+
+        // chmod 回 0600、内容仍不变：也要重新加载，否则会永远卡在「已暂停」
+        std::fs::set_permissions(&path, {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::Permissions::from_mode(0o600)
+        })
+        .expect("恢复权限");
+        let (poll, _) = poll_once(&path, Some(&fp2));
+        assert!(matches!(poll, Poll::Reconcile(_)), "{poll:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watch_refuses_missing_declaration_without_crashing() {
+        let dir = tempdir("watch_missing");
+        let path = dir.join("instances.toml");
+        let (poll, fp) = poll_once(&path, None);
+        match poll {
+            Poll::Refused(reason) => assert!(reason.contains("instances_file_missing"), "{reason}"),
+            other => panic!("期望 Refused，实际 {other:?}"),
+        }
+        // 同一缺失状态不重复告警（指纹已记住）
+        let (again, _) = poll_once(&path, Some(&fp));
+        assert!(matches!(again, Poll::Unchanged), "{again:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
