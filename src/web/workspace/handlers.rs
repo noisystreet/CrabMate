@@ -174,25 +174,34 @@ async fn set_workspace_from_raw_path(
     raw: &str,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let mut guard = http.workspace_override.write().await;
-    // 一实例一工作区（Issue #1183 §2 ①）：**已经绑定到具体路径**的实例不再接受覆盖，
+    // 一实例一工作区（Issue #1183 §2 ①）：**已经绑定到具体路径**的实例不再接受另一个路径，
     // 同值重放幂等。`Some("")` 不算已绑定——那是「CLI 直启、用配置的默认目录」，
     // 语义上仍属「未约定」，否则现有 Web UI 首次选目录就会被 409 挡住。
-    if let Some(already) = guard.as_deref().filter(|s| !s.is_empty()) {
-        let same = !raw.is_empty() && std::path::Path::new(already) == std::path::Path::new(raw);
-        if !same {
-            return Err((
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "ok": false,
-                    "code": "WORKSPACE_ALREADY_SET",
-                    "error": format!(
-                        "该实例已绑定工作区 {already}；换工作区请另起实例（一实例一工作区）"
-                    )
-                })),
-            ));
+    //
+    // 空串**不在拦截范围内**：它是设计稿 §3.1 的显式复位
+    // （`Some(x) --{path:""}--> Some("")`），不是「另一个路径」。早期实现把它也算作
+    // 「不同」，于是已绑定实例连 TUI 的 `/workspace off` 都会被 409 挡死——
+    // 「换工作区」的两步（复位 → 设新值）第一步就断，用户只能另起实例。
+    let bound = guard
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    // `filter(|_| !raw.is_empty())`：空串请求跳过拦截，落到下面的「显式复位」分支。
+    if let Some(already) = bound.filter(|_| !raw.is_empty()) {
+        if std::path::Path::new(&already) == std::path::Path::new(raw) {
+            // 同值：幂等返回，不再重复同步运行时路径
+            return Ok(Json(serde_json::json!({ "ok": true, "path": already })));
         }
-        // 同值：幂等返回，不再重复同步运行时路径
-        return Ok(Json(serde_json::json!({ "ok": true, "path": already })));
+        return Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "ok": false,
+                "code": "WORKSPACE_ALREADY_SET",
+                "error": format!(
+                    "该实例已绑定工作区 {already}；换工作区请先复位（POST /workspace 空路径）或另起实例"
+                )
+            })),
+        ));
     }
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
