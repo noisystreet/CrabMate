@@ -384,10 +384,8 @@ fn supervise_restarts_crashed_instance() {
 
     // 1) 首次收敛把实例拉起来
     //
-    // 等待上限要覆盖 `--timeout`：readiness 超时后实例被置为 `starting` 且**不杀**，
-    // 而 `--watch` 只认声明指纹变化、巡检只认 failure —— 不会再有一次尝试。
-    // 也就是说首轮要么在 `--timeout` 内 ready，要么就一直起不来。这里的上限只是
-    // 兜住「记录写入 + 探测」的尾巴，不是重试预算。
+    // 等待上限要覆盖 `--timeout`：readiness 超时后实例落 `failed` 并回收进程（见 #1181），
+    // 后续重试交给 `--restart on-failure` 的退避；这里只等首轮结果，不是重试预算。
     wait_until(
         "声明收敛后实例应 ready",
         Duration::from_secs(120),

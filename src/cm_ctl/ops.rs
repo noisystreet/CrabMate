@@ -243,6 +243,41 @@ fn finalize_ready(
     Ok(rec)
 }
 
+/// readiness 超时的终态：**回收自己刚起的进程组**，并把记录落为 `failed`。
+///
+/// 停在 `starting` 是错的，代价很具体：`probe::observe` 对「`starting` + 进程活着 +
+/// 端口不通」给的是 `Observed::Starting`，而 `restart::is_failure` 只认
+/// `failed` / `stale` / `stopped` —— 巡检于是**永远跳过**它，实例既不重试也不回收
+/// （即 #1177 / #1180 记录的「`starting` 永不自愈」），客户端也只会看到一个二义的
+/// 「`starting` + `last_error`」，判不出该继续等还是该报错。
+fn mark_readiness_timeout(
+    ctx: &Ctx,
+    mut rec: InstanceRecord,
+    pid: u32,
+    timeout: Duration,
+) -> Result<InstanceRecord, CtlError> {
+    let mut note = format!("TCP 未在 {timeout:?} 内就绪（pid {pid}），已回收该进程组");
+    match signal::terminate(pid, rec.pgid, DEFAULT_GRACE, POLL) {
+        Ok(s) if s.forced => {
+            note.push_str("；宽限期不够，动用了 SIGKILL（serve 可能阻塞在关闭流程上）");
+        }
+        Ok(_) => {}
+        // 回收失败不改变结论：这次启动确实没成功，记录必须如实反映
+        Err(e) => note.push_str(&format!("；但回收失败：{}", e.message)),
+    }
+    rec.state = InstanceState::Failed;
+    rec.pid = None;
+    rec.pgid = None;
+    rec.base_url = None;
+    rec.last_error = Some(format!(
+        "{note}；详见日志 {}",
+        rec.log.as_deref().unwrap_or("(未知)")
+    ));
+    let path = ctx.record_path(&rec.name)?;
+    record::write_atomic(&path, &rec)?;
+    Ok(rec)
+}
+
 /// 单次 `up` 尝试（指定端口）。
 fn up_once(
     ctx: &Ctx,
@@ -276,18 +311,11 @@ fn up_once(
             })
         }
         WaitOutcome::Timeout => {
-            // 进程活着但 TCP 未就绪：**不杀**，置 starting + last_error 交由用户判断
-            let mut rec = rec;
-            rec.last_error = Some(format!(
-                "TCP 未在 {:?} 内就绪，但进程仍存活（pid {}）；可能需要更长的 --timeout",
-                args.timeout, pid
-            ));
-            let path = ctx.record_path(&rec.name)?;
-            record::write_atomic(&path, &rec)?;
+            let rec = mark_readiness_timeout(ctx, rec, pid, args.timeout)?;
             Ok(UpOutcome {
                 record: rec,
                 already_running: false,
-                observed: Observed::Starting,
+                observed: Observed::Failed,
                 warnings: warnings.to_vec(),
             })
         }
@@ -715,6 +743,43 @@ mod tests {
         let ctx = ctx_at(&tmp);
         let err = logs(&ctx, "nope", 10).expect_err("应报无日志");
         assert_eq!(err.error_code, "log_not_found");
+    }
+
+    /// readiness 超时：记录落 `failed`（并通过 `signal::terminate` 回收进程）。
+    ///
+    /// 用**无效 pid** 当目标：`signal::terminate` 对超范围 pid 直接视为「已达成」，
+    /// 于是这条用例只钉状态迁移，不会真的动进程。「真杀进程 / 整组回收」由
+    /// `signal::terminates_child_process_group` 覆盖 —— 那里若用替身进程，
+    /// 被杀后成僵尸会让 `wait_gone` 走满宽限期，测试白等 10s。
+    ///
+    /// 修好之前这条路径会把记录留在 `starting`，而 `restart::is_failure` 不认
+    /// `starting` ⇒ 巡检永远不碰它（#1181 / #1177）。
+    #[test]
+    fn readiness_timeout_marks_record_failed() {
+        let tmp = tempdir("up_timeout");
+        let ctx = ctx_at(&tmp);
+        // `CtlPaths::for_test` 不建状态目录，写记录前必须先建
+        let rec_path = ctx.record_path("x").expect("记录路径");
+        std::fs::create_dir_all(rec_path.parent().expect("父目录")).expect("建状态目录");
+        let pid = u32::MAX;
+        let mut rec = InstanceRecord::new("x");
+        rec.state = InstanceState::Starting;
+        rec.pid = Some(pid);
+        // `pgid = None` 走 Pid 模式：真实路径上组长是 serve 自己
+        let out = mark_readiness_timeout(&ctx, rec, pid, Duration::from_secs(1)).expect("应写入记录");
+
+        assert_eq!(out.state, InstanceState::Failed);
+        assert!(out.pid.is_none() && out.pgid.is_none());
+        assert!(out.base_url.is_none());
+        let last_error = out.last_error.clone().expect("应有 last_error");
+        assert!(
+            last_error.contains("TCP 未在"),
+            "last_error 应说明超时：{last_error}"
+        );
+
+        let read = record::read_required(&rec_path).expect("应能读回记录");
+        assert_eq!(read.state, InstanceState::Failed, "记录必须落 failed");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
