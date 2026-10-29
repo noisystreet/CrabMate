@@ -332,8 +332,12 @@ fn supervise_restarts_crashed_instance() {
             "1",
             "--backoff-max",
             "5",
+            // readiness 余量要按 CI 的冷启动给：`up` 用默认 10s 才过得了，这条测试
+            // 原来给 5s，双核 runner 上 serve 初始化（SQLite、目录、会话库锁）常常
+            // 超过它 → 每次尝试都 timeout → 永远不 ready。超时是**每次尝试**的上限，
+            // 放宽它不会让「起不来」蒙混过关，只是不再把「慢」当成「坏」。
             "--timeout",
-            "5",
+            "30",
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -341,9 +345,14 @@ fn supervise_restarts_crashed_instance() {
         .expect("启动 supervise");
 
     // 1) 首次收敛把实例拉起来
+    //
+    // 等待上限要覆盖 `--timeout`：readiness 超时后实例被置为 `starting` 且**不杀**，
+    // 而 `--watch` 只认声明指纹变化、巡检只认 failure —— 不会再有一次尝试。
+    // 也就是说首轮要么在 `--timeout` 内 ready，要么就一直起不来。这里的上限只是
+    // 兜住「记录写入 + 探测」的尾巴，不是重试预算。
     wait_until(
         "声明收敛后实例应 ready",
-        Duration::from_secs(60),
+        Duration::from_secs(120),
         || sb.record_opt(name).is_some_and(|r| r["state"] == "ready") && tcp_ok(port),
     );
     let first_pid = sb.record(name)["pid"].clone();
@@ -359,7 +368,7 @@ fn supervise_restarts_crashed_instance() {
     // 3) 巡检应在退避窗口过后换成新进程
     wait_until(
         "崩溃的实例应被重新拉起（pid 变化且 ready）",
-        Duration::from_secs(60),
+        Duration::from_secs(120),
         || {
             sb.record_opt(name)
                 .is_some_and(|r| r["state"] == "ready" && r["pid"] != first_pid)
