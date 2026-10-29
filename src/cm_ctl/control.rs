@@ -26,9 +26,10 @@ use serde_json::{Value, json};
 
 use super::CtlError;
 use super::instances::{self, Declaration};
-use super::ops::Ctx;
+use super::ops::{self, Ctx};
 use super::paths;
-use super::record::{self, InstanceRecord, InstanceState};
+use super::probe::Observed;
+use super::record::{InstanceRecord, InstanceState};
 
 /// 单行请求上限：请求体是几个短字段，64 KiB 已远超合理值，超出即拒绝。
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
@@ -168,7 +169,19 @@ fn dispatch_line(line: &str, tx: &Sender<Incoming>) -> Response {
 pub enum Request {
     Add(AddRequest),
     Remove(RemoveRequest),
-    List,
+    List(ListRequest),
+}
+
+/// `{"op":"list"}`：两个字段都可省略。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListRequest {
+    /// 为真时并入「有状态记录但没有声明」的实例（命令行 `up` 起的）。
+    ///
+    /// 缺省 `false`：`list` 的视野仍是「声明里有什么」，与引入本字段前逐字一致；
+    /// 客户端要做全量总览时才显式打开，避免与 `ctl ls` 的语义搅在一起。
+    #[serde(default)]
+    pub include_unmanaged: bool,
 }
 
 /// `{"op":"add",...}`：`workspace` 之外的字段都可省略。
@@ -213,7 +226,7 @@ impl Request {
         let allowed: &[&str] = match op {
             "add" => &["op", "name", "workspace", "profile", "port", "enabled"],
             "remove" => &["op", "name"],
-            "list" => &["op"],
+            "list" => &["op", "include_unmanaged"],
             other => {
                 return Err(Response::err(
                     "bad_request",
@@ -263,7 +276,7 @@ impl Response {
 /// 处理一条请求。返回值第二项表示「声明文件已改，需要立刻收敛」。
 pub fn handle(ctx: &Ctx, path: &Path, request: Request) -> (Response, bool) {
     match request {
-        Request::List => (list(ctx, path), false),
+        Request::List(l) => (list(ctx, path, l.include_unmanaged), false),
         Request::Add(a) => add(path, a),
         Request::Remove(r) => remove(path, r),
     }
@@ -342,35 +355,63 @@ fn remove(path: &Path, r: RemoveRequest) -> (Response, bool) {
 
 /// 列出声明的实例及其状态记录。
 ///
-/// 只列**声明中**的实例：人工 `up` 起的不在声明里，那是 `ctl ls` 的视野。
-/// 状态取自状态文件（断线后仍可读），缺失时给 `starting` —— 客户端要能立刻画出
-/// 「已请求、尚未就绪」的 lane。
-fn list(ctx: &Ctx, path: &Path) -> Response {
+/// 默认只列**声明中**的实例：人工 `up` 起的不在声明里，那是 `ctl ls` 的视野；
+/// `include_unmanaged` 打开时才并入它们，并以 `declared` / `managed_by` 区分来源。
+/// 缺记录时 `state` 给 `starting` —— 客户端要能立刻画出「已请求、尚未就绪」的 lane。
+///
+/// `observed` 是**读取时派生**的观测态（`probe::observe`），与落盘 `state` 并列：
+/// `stale`（记录说在跑但连不上 / 进程身份不符）刻意不落盘，只看 `state` 会把一个
+/// 死实例报成 `ready`，客户端据此连接会打到空端口。
+fn list(ctx: &Ctx, path: &Path, include_unmanaged: bool) -> Response {
     let file = match instances::load_optional(path) {
         Ok(f) => f,
         Err(e) => return Response::err(e.error_code, e.message),
     };
-    let mut items = Vec::with_capacity(file.instances.len());
+    // 一次探测复用整份列表：`observed` 要真实进程事实，不能只看落盘 `state`。
+    let probed = match ops::ls(ctx) {
+        Ok(v) => v,
+        Err(e) => return Response::err(e.error_code, e.message),
+    };
+    let mut items = Vec::with_capacity(file.instances.len() + probed.len());
     for (name, decl) in &file.instances {
-        let rec = record_for(ctx, name);
-        items.push(json!({
-            "name": name,
-            "state": rec.as_ref().map_or(InstanceState::Starting.as_str(), |r| r.state.as_str()),
-            "base_url": rec.as_ref().and_then(|r| r.base_url.clone()),
-            "port": rec.as_ref().and_then(|r| r.port),
-            "pid": rec.as_ref().and_then(|r| r.pid),
-            "last_error": rec.as_ref().and_then(|r| r.last_error.clone()),
-            "workspace": decl.workspace,
-            "profile": decl.profile,
-            "enabled": decl.enabled,
-        }));
+        let pair = probed.iter().find(|(rec, _)| &rec.name == name);
+        items.push(list_item(name, Some(decl), pair));
+    }
+    if include_unmanaged {
+        for pair in &probed {
+            if !file.instances.contains_key(&pair.0.name) {
+                items.push(list_item(&pair.0.name, None, Some(pair)));
+            }
+        }
     }
     Response::ok(json!({ "instances": items }))
 }
 
-fn record_for(ctx: &Ctx, name: &str) -> Option<InstanceRecord> {
-    let path = ctx.paths.record_path(name).ok()?;
-    record::read_optional(&path).ok().flatten()
+/// 单个列表项。`decl` 为 `None` 表示这是「只有记录、没有声明」的实例。
+fn list_item(
+    name: &str,
+    decl: Option<&Declaration>,
+    pair: Option<&(InstanceRecord, super::probe::Probe)>,
+) -> Value {
+    let rec = pair.map(|(r, _)| r);
+    let observed = pair.map_or(Observed::Starting.as_str(), |(_, p)| p.observed.as_str());
+    json!({
+        "name": name,
+        // 落盘态：缺记录时视为「已请求、尚未就绪」
+        "state": rec.map_or(InstanceState::Starting.as_str(), |r| r.state.as_str()),
+        // 派生观测态：`stale` / `held` 只可能出现在这里
+        "observed": observed,
+        "base_url": rec.and_then(|r| r.base_url.clone()),
+        "port": rec.and_then(|r| r.port),
+        "pid": rec.and_then(|r| r.pid),
+        "last_error": rec.and_then(|r| r.last_error.clone()),
+        "workspace": decl.map(|d| d.workspace.clone()),
+        "profile": decl.and_then(|d| d.profile.clone()),
+        "enabled": decl.map(|d| d.enabled),
+        // 来源：`declared` 区分「声明里的」与「命令行起的」
+        "declared": decl.is_some(),
+        "managed_by": rec.and_then(|r| r.managed_by.clone()),
+    })
 }
 
 #[cfg(test)]
@@ -656,7 +697,7 @@ mod tests {
             },
         );
         let ctx = ctx_at(&dir);
-        let body = list(&ctx, &decl).to_line();
+        let body = list(&ctx, &decl, false).to_line();
         let v: Value = serde_json::from_str(&body).expect("应为 JSON");
         assert_eq!(v["instances"][0]["name"], json!("p"));
         assert_eq!(
@@ -664,6 +705,75 @@ mod tests {
             json!("starting"),
             "无状态记录时应给 starting，客户端据此画「已请求未就绪」"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_reports_stale_observed_when_ready_record_cannot_be_reached() {
+        let dir = tempdir("list2");
+        let ws = dir.join("p");
+        std::fs::create_dir_all(&ws).expect("建 workspace");
+        let decl = dir.join(instances::FILE_NAME);
+        add(
+            &decl,
+            AddRequest {
+                name: "p".to_string(),
+                workspace: ws.display().to_string(),
+                profile: None,
+                port: None,
+                enabled: true,
+            },
+        );
+        let ctx = ctx_at(&dir);
+        // 记录说 ready、pid 活着（用自身 pid），但端口没人监听 → 观测态必须暴露 stale。
+        // 只回 `state` 的话客户端会拿着这个 base_url 去连一个空端口。
+        let mut rec = crate::cm_ctl::record::InstanceRecord::new("p");
+        rec.state = crate::cm_ctl::record::InstanceState::Ready;
+        rec.pid = Some(std::process::id());
+        rec.port = Some(1);
+        rec.base_url = Some("http://127.0.0.1:1".to_string());
+        let path = ctx.paths.record_path("p").expect("记录路径");
+        std::fs::create_dir_all(path.parent().expect("父目录")).expect("建状态目录");
+        crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
+
+        let v: Value = serde_json::from_str(&list(&ctx, &decl, false).to_line()).expect("应为 JSON");
+        assert_eq!(v["instances"][0]["state"], json!("ready"), "落盘态保持 ready");
+        assert_eq!(
+            v["instances"][0]["observed"],
+            json!("stale"),
+            "连不上的 ready 记录必须报 stale，不能只回 state"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_include_unmanaged_lists_record_without_declaration() {
+        let dir = tempdir("list3");
+        let decl = dir.join(instances::FILE_NAME);
+        let ctx = ctx_at(&dir);
+        // 命令行 `up` 起的实例：有状态记录、没有声明
+        let mut rec = crate::cm_ctl::record::InstanceRecord::new("cli-one");
+        rec.state = crate::cm_ctl::record::InstanceState::Stopped;
+        rec.managed_by = Some("cli".to_string());
+        let path = ctx.paths.record_path("cli-one").expect("记录路径");
+        std::fs::create_dir_all(path.parent().expect("父目录")).expect("建状态目录");
+        crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
+
+        let plain: Value =
+            serde_json::from_str(&list(&ctx, &decl, false).to_line()).expect("应为 JSON");
+        assert!(
+            plain["instances"].as_array().expect("数组").is_empty(),
+            "缺省视野是「声明里有什么」，不该冒出非声明实例"
+        );
+
+        let all: Value = serde_json::from_str(&list(&ctx, &decl, true).to_line()).expect("应为 JSON");
+        let items = all["instances"].as_array().expect("数组");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["name"], json!("cli-one"));
+        assert_eq!(items[0]["declared"], json!(false));
+        assert_eq!(items[0]["managed_by"], json!("cli"));
+        // 记录 stopped 且无 pid → 观测态就是 stopped
+        assert_eq!(items[0]["observed"], json!("stopped"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
