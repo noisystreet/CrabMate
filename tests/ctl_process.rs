@@ -179,6 +179,39 @@ fn up_reaches_ready_and_ls_reports_matching_base_url() {
     assert_eq!(first["state"], "ready");
     assert_eq!(first["port"], port);
     assert_eq!(first["base_url"], format!("http://127.0.0.1:{port}/"));
+    // 字段集是契约（`crabmate-client` 直接消费）：`cm_ctl::tests` 已在单元层钉住
+    // `row_json`，这里再钉一次**真实输出**，防止有人给 `ls` 换一条序列化路径。
+    assert_eq!(
+        sorted_keys(first),
+        contract_keys("ls_row"),
+        "ls --json 的字段集与 fixtures/ctl_contract.json 不一致"
+    );
+}
+
+/// 读 `fixtures/ctl_contract.json` 里的一组字段（已排序）；与单元测试读同一份 golden。
+fn contract_keys(field: &str) -> Vec<String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ctl_contract.json");
+    let raw = std::fs::read_to_string(&path).expect("golden 应可读");
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("golden 应是合法 JSON");
+    let mut keys: Vec<String> = v[field]
+        .as_array()
+        .unwrap_or_else(|| panic!("golden 缺少数组字段 `{field}`"))
+        .iter()
+        .map(|k| k.as_str().expect("字段名应是字符串").to_string())
+        .collect();
+    keys.sort();
+    keys
+}
+
+fn sorted_keys(v: &serde_json::Value) -> Vec<String> {
+    let mut keys: Vec<String> = v
+        .as_object()
+        .expect("契约对象应是 JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
 }
 
 /// 两个实例能**同时** ready —— 多实例功能的存在性前提（`serve` 的会话库与锁按 cwd 解析，
