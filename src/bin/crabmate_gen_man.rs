@@ -1,8 +1,12 @@
 //! 从 clap 定义生成 **troff(1)** 手册页：`man/crabmate.1` 与 `man/crabmatectl.1`。
 //!
-//! 维护者：CLI 有增删时执行
+//! 维护者：**增删子命令或顶层选项**之后执行
 //! `cargo run --features gen-man --bin crabmate-gen-man`
 //! 再提交更新后的 `man/*.1`。
+//!
+//! 单页**不含各子命令自己的 flags**——查某个子命令的 flag 用 `<cmd> <sub> --help`。
+//! 因此改子命令 flag 不必重生成（重生成也不会产生 diff）；只有顶层选项或子命令增减
+//! 才会改变输出。
 //!
 //! `clap_mangen` 会为子命令生成 `crabmate\-foo(1)` 式交叉引用，但本仓库**只安装**单页，
 //! 故在写入前将子命令标题改为 **粗体名称**（无虚假 `man` 链接）。`crabmatectl` 同理。
