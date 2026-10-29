@@ -16,7 +16,8 @@ usage() {
   -h, --help            显示本说明
 
 产物目录: dist/
-  - crabmate_<version>_<os>_<arch>.tar.gz（含 systemd/ 与 etc/crabmate/ 布局）
+  - crabmate_<version>_<os>_<arch>.tar.gz（含 man/（crabmate.1 + crabmatectl.1）、
+    systemd/（system 级）、systemd-user/（用户级示例）与 etc/crabmate/ 布局）
   - crabmate_<version>_<arch>.deb（仅 Linux；含 crabmate.service，默认不 enable）
 
 依赖: Rust；.deb 需 cargo install cargo-deb
@@ -111,10 +112,15 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   [[ -f README.md ]] && cp README.md "$STAGE_DIR/"
   cp -R config "$STAGE_DIR/"
   mkdir -p "$STAGE_DIR/man"
-  cp man/crabmate.1 "$STAGE_DIR/man/"
+  # 两页都要：`crabmatectl` 是独立二进制，`crabmate.1` 覆盖不到它
+  cp man/*.1 "$STAGE_DIR/man/"
   mkdir -p "$STAGE_DIR/systemd"
   cp packaging/systemd/crabmate.service "$STAGE_DIR/systemd/"
   cp packaging/systemd/crabmate.env.example "$STAGE_DIR/systemd/"
+  # 用户级（user）单元示例单独一层：`systemd/` 那层是 system 级（需 root），
+  # 混在一个目录里会让人直接 cp 到 /etc/systemd/system 而拿到错误的 %h 语义
+  mkdir -p "$STAGE_DIR/systemd-user"
+  cp packaging/systemd-user/crabmate-supervise.service "$STAGE_DIR/systemd-user/"
   # Deb-compatible /etc layout for systemd unit (--config /etc/crabmate/config.toml)
   mkdir -p "$STAGE_DIR/etc/crabmate/config/prompts"
   cp packaging/etc/config.toml "$STAGE_DIR/etc/crabmate/config.toml"
