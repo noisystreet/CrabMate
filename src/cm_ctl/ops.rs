@@ -454,6 +454,9 @@ fn finish_stopped(path: &Path, rec: &mut InstanceRecord) -> Result<(), CtlError>
     rec.pid = None;
     rec.pgid = None;
     rec.base_url = None;
+    // 显式停下就清零退避：下一次 `up` 不该被上一轮崩溃的等待时间挡住
+    rec.restart_attempts = 0;
+    rec.next_restart_at = None;
     record::write_atomic(path, rec)
 }
 

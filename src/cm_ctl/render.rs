@@ -45,6 +45,9 @@ pub fn row_json(rec: &InstanceRecord, p: &Probe) -> serde_json::Value {
         "env_keys": rec.env_keys,
         "profile": rec.profile,
         "profile_in_use": rec.profile_in_use,
+        // 退避重启进度：`--restart on-failure` 关闭时恒为 0 / null
+        "restart_attempts": rec.restart_attempts,
+        "next_restart_at": rec.next_restart_at,
     })
 }
 
@@ -120,6 +123,13 @@ pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
         println!(
             "  提示: profile 已变更但实例未重启；执行 `crabmatectl restart {}` 才生效",
             rec.name
+        );
+    }
+    if rec.restart_attempts > 0 || rec.next_restart_at.is_some() {
+        println!(
+            "  重启退避: 连续 {} 次，下次允许 {}（`--restart on-failure`）",
+            rec.restart_attempts,
+            rec.next_restart_at.as_deref().unwrap_or("-")
         );
     }
     if let Some(e) = rec.last_error.as_deref() {
@@ -222,6 +232,16 @@ pub fn supervise(steps: &[Step], dry_run: bool) {
 /// 声明不可用时的告警（走 stderr，并明确说「已暂停收敛」）。
 pub fn supervise_refused(reason: &str) {
     eprintln!("WARN: 声明文件当前不可用，已暂停收敛（不启动、不回收）：{reason}");
+}
+
+/// 健康巡检的结果：**只在真有动作时输出**。
+///
+/// 被退避挡下的尝试刻意静默（`ctl status` 里能看到 `next_restart_at`）：
+/// 崩溃循环最糟的输出是每 30 秒一条一模一样的日志。
+pub fn restart(steps: &[Step]) {
+    for step in steps {
+        println!("{}", supervise_line(step, false));
+    }
 }
 
 fn supervise_line(step: &Step, dry_run: bool) -> String {

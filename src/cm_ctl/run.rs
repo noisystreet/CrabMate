@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::config::cli::ctl::{
-    CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RunCmd, SuperviseCmd, UpCmd,
+    CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, UpCmd,
 };
 
 use super::control;
@@ -18,6 +18,7 @@ use super::paths;
 use super::preflight;
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::render;
+use super::restart;
 use super::spawn::{self, SpawnSpec};
 use super::supervise;
 use super::CtlError;
@@ -96,11 +97,7 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
         Some(p) => paths::absolutize(p)?,
         None => ctx.paths.instances_file(),
     };
-    let opts = supervise::Opts {
-        timeout: Duration::from_secs(c.timeout_secs),
-        grace: Duration::from_secs(c.grace_secs),
-        dry_run: c.dry_run,
-    };
+    let opts = supervise_opts(c)?;
     if let Some(spec) = c.socket.as_deref() {
         return socket_mode(ctx, c, &path, &opts, spec);
     }
@@ -119,6 +116,35 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
         "supervise_partial_failure",
         format!("{failed} 个实例未能收敛到期望态（详见上方输出）"),
     ))
+}
+
+/// 把 `--restart` / `--backoff-*` / `--health-interval` 翻译成收敛参数。
+///
+/// `on-failure` 只在常驻模式下有意义：一次性收敛没有「下一轮巡检」，
+/// 接受这个组合只会让用户以为崩溃会被自动拉起。
+fn supervise_opts(c: &SuperviseCmd) -> Result<supervise::Opts, CtlError> {
+    let restart = match c.restart {
+        RestartArg::Never => restart::Restart::Never,
+        RestartArg::OnFailure => restart::Restart::OnFailure,
+    };
+    if restart == restart::Restart::OnFailure && !c.watch && c.socket.is_none() {
+        return Err(CtlError::usage(
+            "restart_requires_resident",
+            "`--restart on-failure` 只在常驻模式（`--watch` / `--socket`）下有效：\
+             一次性收敛没有下一轮巡检",
+        ));
+    }
+    Ok(supervise::Opts {
+        timeout: Duration::from_secs(c.timeout_secs),
+        grace: Duration::from_secs(c.grace_secs),
+        dry_run: c.dry_run,
+        restart,
+        backoff: restart::Backoff::new(
+            Duration::from_secs(c.backoff_initial_secs),
+            Duration::from_secs(c.backoff_max_secs),
+        ),
+        health: Duration::from_secs(c.health_interval_secs),
+    })
 }
 
 fn watch_mode(
@@ -184,6 +210,9 @@ fn socket_mode(
     );
     let interval = Duration::from_secs(c.interval_secs.max(1));
     let mut cursor = supervise::Cursor::new();
+    // 与 `--watch` 同一套节流：socket 模式下即使没有 `--watch`，只要开了
+    // `--restart on-failure`，崩溃的实例也会被巡检拉起来。
+    let mut health = restart::Health::new(opts.health);
     loop {
         let mut changed = false;
         while let Some(incoming) = server.try_next() {
@@ -201,6 +230,7 @@ fn socket_mode(
         } else if c.watch {
             cursor.tick(ctx, path, opts);
         }
+        health.tick(ctx, path, opts);
         std::thread::sleep(interval);
     }
 }
