@@ -111,6 +111,24 @@ fn tcp_ok(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
 }
 
+/// 轮询等待条件成立。
+///
+/// `down --timeout 1` 是「SIGTERM → 1s 宽限 → SIGKILL」，但 SIGKILL 之后进程被回收、
+/// 监听套接字被内核关闭仍有可观延迟；双核 CI runner 上足以让「立即断言」偶发翻车。
+/// 这里等待的是「最终状态」，不降低断言语义，只给它一点时间。
+fn wait_until(what: &str, timeout: Duration, mut cond: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if cond() {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("等待超时（{}s）：{what}", timeout.as_secs());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// `up` 之后 TCP 可达，且 `ls --json` 与实际监听端口一致。
 #[test]
 fn up_reaches_ready_and_ls_reports_matching_base_url() {
@@ -204,8 +222,19 @@ fn down_all_stops_instances_and_ctl_leaves_serve_running() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    assert!(!tcp_ok(pa) && !tcp_ok(pb), "down 后两个端口都不应可连");
-    assert_eq!(sb.record("a")["state"], "stopped");
-    assert_eq!(sb.record("b")["state"], "stopped");
-    assert!(sb.record("a")["pid"].is_null(), "停止后 pid 应清空");
+    // 强杀之后进程回收与端口关闭都不是瞬时的，轮询等待「最终状态」。
+    wait_until(
+        "down 后两个端口都应关闭",
+        Duration::from_secs(10),
+        || !tcp_ok(pa) && !tcp_ok(pb),
+    );
+    wait_until(
+        "状态应转为 stopped 且 pid 清空",
+        Duration::from_secs(10),
+        || {
+            sb.record("a")["state"] == "stopped"
+                && sb.record("b")["state"] == "stopped"
+                && sb.record("a")["pid"].is_null()
+        },
+    );
 }

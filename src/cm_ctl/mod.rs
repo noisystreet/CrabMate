@@ -10,6 +10,7 @@
 //! - **发信号前先验身份**：`pid` / `pgid` 是历史值，PID 复用会误杀无关进程组，
 //!   故 `boot_id` + `pid_start_ticks` + `cmdline` 三重校验（见 `identity` 模块）。
 
+pub(crate) mod control;
 pub(crate) mod identity;
 pub(crate) mod instances;
 pub(crate) mod lock;

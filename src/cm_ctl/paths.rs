@@ -74,6 +74,26 @@ impl CtlPaths {
         self.config_dir.join(super::instances::FILE_NAME)
     }
 
+    /// 控制面 socket 路径：`$XDG_RUNTIME_DIR/crabmate/ctl.sock`。
+    ///
+    /// `XDG_RUNTIME_DIR` 缺失时回退到状态目录，而不是 `/tmp`：`/tmp` 全局可写，
+    /// 把「起进程的入口」放进去等于凭空多出一道只能靠 sticky 位兜的边界。
+    pub fn control_socket(&self) -> PathBuf {
+        self.runtime_dir
+            .clone()
+            .unwrap_or_else(|| self.state_dir.clone())
+            .join("ctl.sock")
+    }
+
+    /// 准备控制面目录（`0700`）并返回 socket 路径。
+    pub fn prepare_control_socket(&self) -> Result<PathBuf, CtlError> {
+        let sock = self.control_socket();
+        if let Some(dir) = sock.parent() {
+            create_dir_0700(dir)?;
+        }
+        Ok(sock)
+    }
+
     /// 预设文件路径：`$XDG_CONFIG_HOME/crabmate/profiles.toml`。
     pub fn profiles_file(&self) -> PathBuf {
         self.config_dir.join(super::profiles::FILE_NAME)
@@ -149,7 +169,7 @@ fn xdg_dir(var: &str) -> Option<PathBuf> {
     }
 }
 
-fn create_dir_0700(path: &Path) -> Result<(), CtlError> {
+pub(super) fn create_dir_0700(path: &Path) -> Result<(), CtlError> {
     if path.is_dir() {
         return Ok(());
     }

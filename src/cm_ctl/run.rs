@@ -10,6 +10,7 @@ use crate::config::cli::ctl::{
     CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RunCmd, SuperviseCmd, UpCmd,
 };
 
+use super::control;
 use super::identity;
 use super::instances;
 use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
@@ -100,6 +101,9 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
         grace: Duration::from_secs(c.grace_secs),
         dry_run: c.dry_run,
     };
+    if let Some(spec) = c.socket.as_deref() {
+        return socket_mode(ctx, c, &path, &opts, spec);
+    }
     if c.watch {
         return watch_mode(ctx, c, &path, &opts);
     }
@@ -148,6 +152,73 @@ fn require_from_config(c: &SuperviseCmd) -> Result<(), CtlError> {
         "missing_from_config",
         "`supervise` 需要 `--from-config`（按 instances.toml 收敛）",
     ))
+}
+
+/// `--socket`：常驻并接受本地控制面请求（`add` / `remove` / `list`）。
+///
+/// 主循环独占写盘：请求先改声明、再由本线程收敛，因此不存在「socket 与
+/// `--watch` 同时改文件」的交错；配 `--watch` 时额外保留文件指纹轮询。
+fn socket_mode(
+    ctx: &Ctx,
+    c: &SuperviseCmd,
+    path: &std::path::Path,
+    opts: &supervise::Opts,
+    spec: &str,
+) -> Result<(), CtlError> {
+    if c.dry_run {
+        return Err(CtlError::usage(
+            "conflicting_flags",
+            "`--socket` 是常驻服务，不能与 `--dry-run` 同时使用",
+        ));
+    }
+    let sock = resolve_socket_path(ctx, spec)?;
+    let server = control::Server::bind(&sock)?;
+    println!(
+        "控制面 {}（仅同用户可连）；{}，Ctrl-C 退出",
+        sock.display(),
+        if c.watch {
+            "声明变化与 socket 请求都会收敛"
+        } else {
+            "仅在收到请求后收敛"
+        }
+    );
+    let interval = Duration::from_secs(c.interval_secs.max(1));
+    let mut cursor = supervise::Cursor::new();
+    loop {
+        let mut changed = false;
+        while let Some(incoming) = server.try_next() {
+            let (resp, dirty) = control::handle(ctx, path, incoming.request);
+            changed |= dirty;
+            // 写盘在 `handle` 内已完成，这里才回响应：客户端收到 `ok` 时声明已落盘
+            if incoming.reply.send(resp).is_err() {
+                eprintln!("控制面请求的响应通道已关闭（客户端可能提前断开）");
+            }
+        }
+        if changed {
+            supervise::reconcile_once(ctx, path, opts);
+            // 同步指纹：否则 `--watch` 会把本进程刚写的变化再收敛一遍
+            cursor.sync(path);
+        } else if c.watch {
+            cursor.tick(ctx, path, opts);
+        }
+        std::thread::sleep(interval);
+    }
+}
+
+/// socket 路径：省略值时用 `$XDG_RUNTIME_DIR/crabmate/ctl.sock`（建 `0700` 目录）；
+/// 显式给出则只要求父目录已存在 —— 绝不去替用户改 `/tmp` 这类目录的权限。
+fn resolve_socket_path(ctx: &Ctx, spec: &str) -> Result<PathBuf, CtlError> {
+    if spec.trim().is_empty() {
+        return ctx.paths.prepare_control_socket();
+    }
+    let p = paths::absolutize(spec)?;
+    match p.parent() {
+        Some(dir) if dir.is_dir() => Ok(p),
+        _ => Err(CtlError::usage(
+            "bad_socket_path",
+            format!("socket 所在目录不存在：{}", p.display()),
+        )),
+    }
 }
 
 fn down_cmd(ctx: &Ctx, c: &DownCmd) -> Result<(), CtlError> {
