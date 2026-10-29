@@ -49,6 +49,35 @@ impl Ctx {
     }
 }
 
+/// 实例的持有者：谁把它拉起来的。
+///
+/// `supervise` 的回收范围只覆盖 [`Origin::Supervise`]：人工 `up` 的实例永远
+/// 不由收敛逻辑决定生死（删声明 ≠ 杀掉用户手工起的进程）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// 人工 `up` / `run`（含 `restart`）。
+    Cli,
+    /// `supervise --from-config` 按声明拉起。
+    Supervise,
+}
+
+impl Origin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Supervise => "supervise",
+        }
+    }
+
+    /// 沿用既有记录的持有者（`restart` 用）：缺字段的历史记录按 `cli` 处理。
+    pub fn from_record(rec: &InstanceRecord) -> Self {
+        match rec.managed_by.as_deref() {
+            Some("supervise") => Self::Supervise,
+            _ => Self::Cli,
+        }
+    }
+}
+
 /// `up` 的入参。
 #[derive(Debug, Clone)]
 pub struct UpArgs {
@@ -60,6 +89,8 @@ pub struct UpArgs {
     pub yes: bool,
     pub env: BTreeMap<String, String>,
     pub timeout: Duration,
+    /// 谁在拉起这个实例（决定它将来会不会被 `supervise` 回收）。
+    pub origin: Origin,
 }
 
 /// `up` 结果。
@@ -164,6 +195,7 @@ fn spawn_and_record(
     rec.config = args.serve_config.clone();
     rec.log = Some(spec.log_path.display().to_string());
     rec.env_keys = spawned.env_keys;
+    rec.managed_by = Some(args.origin.as_str().to_string());
 
     // 先落盘再等 readiness：ctl 若在此后崩溃，孤儿实例仍有记录可被 prune/ls 发现
     record::write_atomic(&rec_path, &rec)?;
@@ -430,6 +462,9 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
     })?;
     let port = rec.port;
     let serve_config = rec.config.clone();
+    // 沿用原持有者：`supervise` 拉起的实例被人工 restart 后仍归 `supervise` 回收，
+    // 否则它会变成「无主的 supervise 实例」——既不被声明回收，也不被声明接管。
+    let origin = Origin::from_record(&rec);
 
     down(ctx, name, grace)?;
 
@@ -441,6 +476,7 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
         yes: false,
         env: BTreeMap::new(),
         timeout,
+        origin,
     };
     up(ctx, &args)
 }
@@ -617,6 +653,7 @@ mod tests {
             yes: false,
             env: BTreeMap::new(),
             timeout: Duration::from_millis(100),
+            origin: Origin::Cli,
         };
         let err = up(&ctx, &args).expect_err("不存在的 workspace 应被拒绝");
         assert_eq!(err.error_code, "bad_workspace");

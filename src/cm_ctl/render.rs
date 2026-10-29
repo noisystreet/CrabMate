@@ -8,6 +8,7 @@ use serde_json::json;
 use super::ops::{DownOutcome, UpOutcome};
 use super::probe::{Observed, Probe};
 use super::record::InstanceRecord;
+use super::supervise::Step;
 
 /// `started_at` → 已运行秒数。
 fn uptime_secs(rec: &InstanceRecord) -> Option<i64> {
@@ -191,5 +192,49 @@ pub fn prune(items: &[(String, Observed)], dry_run: bool) {
     }
     if dry_run {
         println!("（dry-run：未实际删除；去掉 --dry-run 执行）");
+    }
+}
+
+/// `supervise` 输出：一行一个实例，先给动作再给原因。
+pub fn supervise(steps: &[Step], dry_run: bool) {
+    if dry_run {
+        println!("（dry-run：只打印计划，不启动也不回收）");
+    }
+    if steps.is_empty() {
+        println!("（声明为空，且没有需要回收的实例）");
+        return;
+    }
+    for step in steps {
+        println!("{}", supervise_line(step, dry_run));
+    }
+}
+
+fn supervise_line(step: &Step, dry_run: bool) -> String {
+    match step {
+        Step::Start {
+            name,
+            spec,
+            restart,
+            reason,
+        } => {
+            let verb = if *restart { "重启" } else { "启动" };
+            let port = spec
+                .port
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "自动".to_string());
+            let mark = if dry_run { "+" } else { "●" };
+            format!(
+                "{mark} {name:<16} {verb}：端口 {port}，workspace {}（{reason}）",
+                spec.workspace
+            )
+        }
+        Step::Stop { name, reason } => {
+            let mark = if dry_run { "−" } else { "○" };
+            format!("{mark} {name:<16} 回收（{reason}）")
+        }
+        Step::Running { name } => format!("● {name:<16} 已就绪（无动作）"),
+        Step::Stopped { name } => format!("○ {name:<16} 已回收"),
+        Step::Skipped { name, reason } => format!("· {name:<16} 跳过：{reason}"),
+        Step::Failed { name, error } => format!("× {name:<16} 失败：{error}"),
     }
 }

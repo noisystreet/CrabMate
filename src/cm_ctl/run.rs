@@ -6,15 +6,19 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::config::cli::ctl::{CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RunCmd, UpCmd};
+use crate::config::cli::ctl::{
+    CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RunCmd, SuperviseCmd, UpCmd,
+};
 
 use super::identity;
-use super::ops::{self, Ctx, UpArgs, DEFAULT_GRACE};
+use super::instances;
+use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
 use super::paths;
 use super::preflight;
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::render;
 use super::spawn::{self, SpawnSpec};
+use super::supervise;
 use super::CtlError;
 
 /// `ctl` 入口：`workspace_cli` 来自全局 `--workspace`。
@@ -54,6 +58,7 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
             render::prune(&items, c.dry_run);
             Ok(())
         }
+        CtlSubCmd::Supervise(c) => supervise_cmd(&ctx, c),
     }
 }
 
@@ -75,7 +80,52 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
         yes: c.yes,
         env: Default::default(),
         timeout: Duration::from_secs(c.timeout_secs),
+        origin: Origin::Cli,
     })
+}
+
+/// `supervise`：读声明 → 计划 → 执行（一次收敛）。
+fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
+    require_once_mode(c)?;
+    let path = match c.instances_file.as_deref() {
+        Some(p) => paths::absolutize(p)?,
+        None => ctx.paths.instances_file(),
+    };
+    let file = instances::load(&path)?;
+    let opts = supervise::Opts {
+        timeout: Duration::from_secs(c.timeout_secs),
+        grace: Duration::from_secs(c.grace_secs),
+        dry_run: c.dry_run,
+    };
+    let steps = supervise::execute(ctx, supervise::plan(ctx, &file)?, &opts);
+    render::supervise(&steps, c.dry_run);
+
+    let failed = steps.iter().filter(|s| s.has_failed()).count();
+    if failed == 0 {
+        return Ok(());
+    }
+    Err(CtlError::general(
+        "supervise_partial_failure",
+        format!("{failed} 个实例未能收敛到期望态（详见上方输出）"),
+    ))
+}
+
+/// `--from-config` 是本轮唯一模式；`--watch` 明说未实现，避免「看起来生效了」。
+fn require_once_mode(c: &SuperviseCmd) -> Result<(), CtlError> {
+    if !c.from_config {
+        return Err(CtlError::usage(
+            "missing_from_config",
+            "`supervise` 当前只支持 `--from-config`（按 instances.toml 收敛）",
+        ));
+    }
+    if c.watch {
+        return Err(CtlError::usage(
+            "unsupported_watch",
+            "`--watch` 属 supervise 的后续切片，尚未实现；当前请重复执行 \
+             `crabmatectl supervise --from-config`（可配 systemd timer）",
+        ));
+    }
+    Ok(())
 }
 
 fn down_cmd(ctx: &Ctx, c: &DownCmd) -> Result<(), CtlError> {
@@ -180,6 +230,8 @@ fn write_run_record(
     rec.workspace = Some(workspace.display().to_string());
     rec.config = c.serve_config.clone();
     rec.env_keys = env_keys;
+    // 前台模式同样归 `cli`：`supervise` 不接管人工起的实例。
+    rec.managed_by = Some(Origin::Cli.as_str().to_string());
     let path = ctx.record_path(&c.name)?;
     record::write_atomic(&path, &rec)?;
     Ok(path)

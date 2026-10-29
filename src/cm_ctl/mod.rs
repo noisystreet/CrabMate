@@ -11,6 +11,7 @@
 //!   故 `boot_id` + `pid_start_ticks` + `cmdline` 三重校验（见 `identity` 模块）。
 
 pub(crate) mod identity;
+pub(crate) mod instances;
 pub(crate) mod lock;
 pub(crate) mod ops;
 pub(crate) mod paths;
@@ -23,6 +24,7 @@ pub(crate) mod render;
 pub(crate) mod run;
 pub(crate) mod signal;
 pub(crate) mod spawn;
+pub(crate) mod supervise;
 
 pub use run::run;
 
