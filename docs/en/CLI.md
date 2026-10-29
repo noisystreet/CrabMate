@@ -10,9 +10,9 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 ## Man page (troff / `man`)
 
-- **Source tree**: Pre-generated **`man/crabmate.1`** (troff), aligned with current `clap`; **Debian `.deb`** installs to **`/usr/share/man/man1/crabmate.1`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
-- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1`.
-- **`cargo install crabmate`** (crates.io **stable `0.7.0`**, default **`server`**; git tag **`v0.7.0`** matches this package): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
+- **Source tree**: Pre-generated **`man/crabmate.1`** and **`man/crabmatectl.1`** (troff), both aligned with the current `clap` definitions; the **Debian `.deb`** installs them to **`/usr/share/man/man1/`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
+- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1` **and** `man/crabmatectl.1` (one run writes both; the second page comes from the same clap definition as the `crabmatectl` binary).
+- **`cargo install crabmate`** (crates.io **stable `0.7.0`**, default **`server`**; git tag **`v0.7.0`** matches this package): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` and `man/crabmatectl.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
 
 ## Subcommand overview
 
@@ -258,7 +258,7 @@ sudo dpkg -i dist/crabmate_*.deb   # or target/debian/crabmate_*.deb
 
 Server **`make package*`** / `.deb` is **server-only** (no UI). Runtime is always API-only and never hosts a SPA; browser UIs are hosted from the Client repo and connect over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**).
 
-After install: `export API_KEY=… && crabmate serve` (API-only). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
+After install: `export API_KEY=… && crabmate serve` (API-only). Package includes **`/usr/share/man/man1/crabmate.1`** and **`/usr/share/man/man1/crabmatectl.1`** (`man crabmate` / `man crabmatectl` if **`MANPATH`** includes `/usr/share/man`).
 
 ### systemd (`.deb` / tarball)
 
@@ -275,6 +275,7 @@ sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service
 ```
 
-- **tar.gz**: ships **`systemd/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`** and the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed). Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
+- **tar.gz**: ships **`systemd/`**, **`systemd-user/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`**, the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed), and **`systemd-user/crabmate-supervise.service`** under **`/usr/lib/systemd/user/`** if you want the multi-instance supervisor. Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
+- **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`) or **`systemd-user/`** (tarball) runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the system unit above does not apply. `systemctl --user enable --now` starts it; add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**) must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose: that directory is globbed into **system** units, where a `%h` / `default.target` unit would be wrong.
 
-Preview from tree: `man -l man/crabmate.1` (path relative to repo root).
+Preview from tree: `man -l man/crabmate.1` / `man -l man/crabmatectl.1` (paths relative to repo root).

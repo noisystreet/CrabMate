@@ -7,7 +7,7 @@
 //!
 //! 二者绝不互相继承 —— 否则子实例会静默套用 ctl 的配置，形成「看起来隔离、实际同源」。
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 /// `ctl` 子命令容器。
 #[derive(Parser, Debug, Clone)]
@@ -217,4 +217,73 @@ pub struct PruneCmd {
     /// 只列出将清理的记录，不实际删除
     #[arg(long)]
     pub dry_run: bool,
+}
+
+/// `crabmatectl` 的子命令名（`crabmate-gen-man` 生成 troff 交叉引用时用）。
+///
+/// 必须与 [`CtlSubCmd`] 逐项一致——`subcommand_names_match_cli` 会红。这条清单写在这里
+/// 而不是生成器里，是因为「新增子命令却忘了进 man 页」不会编译失败，只会留下一条
+/// 虚假的 `crabmatectl\-xxx(1)` 交叉引用。
+pub const SUBCOMMAND_NAMES: &[&str] = &[
+    "up",
+    "down",
+    "restart",
+    "run",
+    "ls",
+    "status",
+    "logs",
+    "prune",
+    "supervise",
+];
+
+/// `crabmatectl` 的根命令。
+///
+/// **定义在 lib 而不是 `src/bin/crabmatectl.rs`**：`crabmate-gen-man` 是另一个 bin crate
+/// 入口，引用不到 bin 内部的类型——定义留在 bin 里，man 页就只能永远手写或用另一份
+/// 复制品生成，而那两份迟早会漂移。放在这里，CLI 与手册页来自同一份真源。
+#[derive(Parser, Debug, Clone)]
+#[command(
+    name = "crabmatectl",
+    version,
+    about = "本地多实例 crabmate serve 进程管理（Unix-only）",
+    long_about = None
+)]
+pub struct CtlCli {
+    /// 实例 workspace 路径（`up` / `run` 必填；其余子命令忽略）
+    #[arg(long, global = true, value_name = "PATH")]
+    pub workspace: Option<String>,
+
+    #[command(subcommand)]
+    pub sub: CtlSubCmd,
+}
+
+/// 与当前构建一致的 `crabmatectl` 根 `clap::Command`，供 **`crabmate-gen-man`** 生成
+/// `man/crabmatectl.1`（troff）。
+pub fn ctl_clap_command_for_man_page() -> clap::Command {
+    CtlCli::command()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn man_page_command_is_named_crabmatectl() {
+        assert_eq!(ctl_clap_command_for_man_page().get_name(), "crabmatectl");
+    }
+
+    /// 新增子命令时若忘了登记 [`SUBCOMMAND_NAMES`]，生成的 man 页会留下虚假交叉引用；
+    /// 这条断言把清单和 clap 定义钉在一起。
+    #[test]
+    fn subcommand_names_match_cli() {
+        let cmd = ctl_clap_command_for_man_page();
+        let mut actual: Vec<String> = cmd
+            .get_subcommands()
+            .map(|c| c.get_name().to_string())
+            .collect();
+        actual.sort();
+        let mut expected: Vec<String> = SUBCOMMAND_NAMES.iter().map(|s| s.to_string()).collect();
+        expected.sort();
+        assert_eq!(actual, expected);
+    }
 }

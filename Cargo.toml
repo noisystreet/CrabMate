@@ -148,6 +148,15 @@ assets = [
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
     # man page（troff；由 `cargo run --features gen-man --bin crabmate-gen-man` 再生成）
     ["man/crabmate.1", "usr/share/man/man1/crabmate.1", "644"],
+    ["man/crabmatectl.1", "usr/share/man/man1/crabmatectl.1", "644"],
+    # **用户级** unit 示例（`systemctl --user`）。刻意不放在 `packaging/systemd/`：
+    # 那个目录被上面的 `systemd-units` 扫成 **system** 级单元，放进去会被装到
+    # `/etc/systemd/system/`，而它的 `%h` 与 `default.target` 语义只对 user 实例成立。
+    [
+        "packaging/systemd-user/crabmate-supervise.service",
+        "usr/lib/systemd/user/crabmate-supervise.service",
+        "644",
+    ],
 ]
 
 [features]

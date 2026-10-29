@@ -11,24 +11,9 @@
 
 use clap::Parser;
 
-use crabmate::config::cli::ctl::{CtlCmd, CtlSubCmd};
-
-/// `crabmatectl <subcommand>`。
-#[derive(Parser, Debug)]
-#[command(
-    name = "crabmatectl",
-    version,
-    about = "本地多实例 crabmate serve 进程管理（Unix-only）",
-    long_about = None,
-)]
-struct CtlCli {
-    /// 实例 workspace 路径（`up` / `run` 必填；其余子命令忽略）
-    #[arg(long, global = true, value_name = "PATH")]
-    workspace: Option<String>,
-
-    #[command(subcommand)]
-    sub: CtlSubCmd,
-}
+// `CtlCli` 定义在 lib（`cm_config::cli::ctl`）而不是本文件：`crabmate-gen-man` 是另一个
+// bin crate 入口，只有共享同一份定义才能生成 `man/crabmatectl.1` 而不抄一份会漂移的副本。
+use crabmate::config::cli::ctl::{CtlCli, CtlCmd};
 
 fn main() {
     let cli = CtlCli::parse();

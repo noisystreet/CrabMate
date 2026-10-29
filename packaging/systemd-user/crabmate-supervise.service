@@ -1,0 +1,46 @@
+# CrabMate 本地多实例守护 —— **用户级** unit 示例（无 root / 容器内 / 临时机器）。
+#
+# 与同目录的 `crabmate.service`（system 级，需 root）是两条互不替代的路径：
+# 那条跑单个 `serve`，这条跑 `crabmatectl supervise` 管理**多个**实例。
+#
+# 安装：
+#   mkdir -p ~/.config/systemd/user
+#   cp crabmate-supervise.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now crabmate-supervise.service
+#   # 未登录也要常驻（可选，需一次 sudo）：
+#   loginctl enable-linger "$USER"
+#
+# 前置条件（ctl 会主动拒绝不满足的声明，不是建议而是硬要求）：
+#   1. `instances.toml` 必须是 `0600` —— 它等同「一份进程启动清单」，宽权限会被
+#      `instances_file_insecure` 拒绝，`--watch` 下则暂停收敛并告警：
+#        install -m 600 /dev/null ~/.config/crabmate/instances.toml
+#      引用了 profile 时 `profiles.toml` 同样要 `0600`（`profiles_file_insecure`）。
+#   2. `ExecStart` 必须是**绝对路径**（systemd 不查 PATH）。下面按 `~/.local/bin`
+#      写；若 crabmatectl 装在 `/usr/bin`（deb 包即如此），改成 `/usr/bin/crabmatectl`。
+#
+# 为什么是 `--watch --restart on-failure`：
+#   `supervise` 不带 `--watch` 时只做一次收敛就退出（那条形态适合让 systemd 自己
+#   按 Restart= 拉起）；要让「声明被改」与「实例自己崩了」都由 ctl 负责，才需要
+#   这两个开关。`--restart` 默认是 `never`，不写就不会有重启行为。
+
+[Unit]
+Description=CrabMate local multi-instance serve supervisor (crabmatectl)
+Documentation=man:crabmatectl(1)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/crabmatectl supervise --from-config --watch --restart on-failure
+# ctl 常驻失败时由 systemd 兜底；ctl 是**唯一**的写者，重启它会重新读声明收敛。
+Restart=on-failure
+RestartSec=5
+# 子实例的环境由 ctl 用 env_clear + 白名单构造（只带 PATH/HOME/XDG_* 与声明里的
+# env 表），所以这里**不需要**传 API_KEY —— 也不要传：那会让「隔离实例」变成空话，
+# 且声明里出现敏感变量名会被 ctl 直接拒绝。
+#
+# ctl 用 setsid 让子实例脱管，所以 ctl 自身退出后实例仍在跑；但 `systemctl --user
+# stop` 停的是整个 cgroup，仍会一并收掉（这正是停止时想要的行为）。
+
+[Install]
+WantedBy=default.target
