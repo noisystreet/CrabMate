@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::CtlError;
 use super::paths;
@@ -24,7 +24,7 @@ use super::paths;
 pub const FILE_NAME: &str = "instances.toml";
 
 /// 声明文件顶层。
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstancesFile {
     #[serde(default)]
@@ -32,30 +32,36 @@ pub struct InstancesFile {
 }
 
 /// 单个实例声明。
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
     /// 工作区路径（支持 `~/...`）。是否在允许根内由子实例配置决定。
     pub workspace: String,
     /// 交给子 serve 的 `--config`；相对路径按 **ctl 的 cwd** 绝对化。
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
     /// 引用 `profiles.toml` 中的预设名；与 `config` **互斥**（profile 内部已含 config）。
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     /// 指定端口；省略则由端口池分配。
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
     /// `false` 表示「声明上保留、但不该运行」——客户端摘 lane 时的软删除语义。
-    #[serde(default = "default_enabled")]
+    ///
+    /// 序列化时 `true` 省略（读回默认即 `true`），`false` 必须写出，否则语义丢失。
+    #[serde(default = "default_enabled", skip_serializing_if = "is_enabled")]
     pub enabled: bool,
     /// 显式环境（敏感名由 [`super::spawn::build_env`] 拒绝，绝不静默透传）。
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
 }
 
 fn default_enabled() -> bool {
     true
+}
+
+fn is_enabled(v: &bool) -> bool {
+    *v
 }
 
 impl Declaration {
@@ -96,6 +102,85 @@ pub fn load(path: &Path) -> Result<InstancesFile, CtlError> {
     })?;
     validate(&parsed)?;
     Ok(parsed)
+}
+
+/// 读取声明文件；不存在视为空声明（控制面首次 `add` 时文件还不存在）。
+pub fn load_optional(path: &Path) -> Result<InstancesFile, CtlError> {
+    match std::fs::metadata(path) {
+        Ok(_) => load(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(InstancesFile::default()),
+        Err(e) => Err(CtlError::general(
+            "instances_file_unreadable",
+            format!("读取声明文件元数据失败 {}：{e}", path.display()),
+        )),
+    }
+}
+
+/// 原子写回声明文件（`0600`）。
+///
+/// 控制面是 `instances.toml` 的唯一写入者，但仍须原子替换：`--watch` 随时会
+/// stat + read 该文件，读到半截 TOML 会被判为损坏从而暂停收敛。
+///
+/// 取舍：整份重写会**丢弃注释与手工排序**（`BTreeMap` 按实例名重排）。改用控制面
+/// 管理实例后，该文件即由 ctl 生成；需要长期保留的说明请写进 `profiles.toml`。
+pub fn write_atomic(path: &Path, file: &InstancesFile) -> Result<(), CtlError> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let text = toml::to_string_pretty(file).map_err(|e| {
+        CtlError::general(
+            "instances_serialize_failed",
+            format!("声明文件序列化失败：{e}"),
+        )
+    })?;
+    if let Some(dir) = path.parent() {
+        paths::create_dir_0700(dir)?;
+    }
+    // 临时文件名带 pid：并发的两个 ctl 至少不会互相踩同一份临时文件
+    // （真并发由 socket 的 `socket_in_use` 挡住，这里只是兜底）
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp)
+        .and_then(|mut f| {
+            f.write_all(text.as_bytes())?;
+            f.sync_all()
+        });
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(CtlError::general(
+            "instances_write_failed",
+            format!("写声明文件失败 {}：{e}", tmp.display()),
+        ));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        CtlError::general(
+            "instances_write_failed",
+            format!("替换声明文件失败 {}：{e}", path.display()),
+        )
+    })
+}
+
+/// 写入一条声明（已存在则覆盖）。返回 `true` 表示是新增。
+pub fn upsert(path: &Path, name: &str, decl: Declaration) -> Result<bool, CtlError> {
+    let mut file = load_optional(path)?;
+    let created = file.instances.insert(name.to_string(), decl).is_none();
+    write_atomic(path, &file)?;
+    Ok(created)
+}
+
+/// 删掉一条声明。返回 `true` 表示确有删除（文件本就缺该实例时为 `false`）。
+pub fn remove_entry(path: &Path, name: &str) -> Result<bool, CtlError> {
+    let mut file = load_optional(path)?;
+    if file.instances.remove(name).is_none() {
+        return Ok(false);
+    }
+    write_atomic(path, &file)?;
+    Ok(true)
 }
 
 fn invalid_message(path: &Path, detail: &str) -> String {

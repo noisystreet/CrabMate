@@ -418,28 +418,72 @@ pub fn poll_once(path: &Path, last: Option<&Fingerprint>) -> (Poll, Fingerprint)
     (poll, current)
 }
 
+/// 按一份已加载的声明收敛。
+///
+/// 计划失败只告警不退出：常驻进程为一个半截 TOML 死去，比暂停收敛更糟。
+fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) {
+    match plan(ctx, file) {
+        Ok(steps) => {
+            let done = execute(ctx, steps, opts);
+            super::render::supervise(&done, false);
+        }
+        Err(e) => super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code)),
+    }
+}
+
+/// 读一次声明并收敛（控制面收到 `add` / `remove` 后立即调用）。
+pub fn reconcile_once(ctx: &Ctx, path: &Path, opts: &Opts) {
+    match instances::load(path) {
+        Ok(file) => apply(ctx, &file, opts),
+        Err(e) => {
+            super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code));
+        }
+    }
+}
+
+/// `--watch` 的收敛游标：记住上次看到的声明指纹。
+///
+/// 独立成类型是为了让「既要轮询声明、又要处理 socket 请求」的主循环
+/// （`--socket` 模式）也能复用同一套判定，而不必把 `Fingerprint` 暴露出去。
+#[derive(Debug, Default)]
+pub struct Cursor(Option<Fingerprint>);
+
+impl Cursor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 推进一轮：指纹变了就收敛。返回是否真的收敛过。
+    pub fn tick(&mut self, ctx: &Ctx, path: &Path, opts: &Opts) -> bool {
+        let (poll, fingerprint) = poll_once(path, self.0.as_ref());
+        self.0 = Some(fingerprint);
+        match poll {
+            Poll::Unchanged => false,
+            Poll::Refused(reason) => {
+                super::render::supervise_refused(&reason);
+                false
+            }
+            Poll::Reconcile(file) => {
+                apply(ctx, &file, opts);
+                true
+            }
+        }
+    }
+
+    /// 本进程刚改过声明：同步指纹，避免下一轮把它当成外部变化再收敛一遍。
+    pub fn sync(&mut self, path: &Path) {
+        self.0 = Some(fingerprint(path));
+    }
+}
+
 /// `--watch`：声明变化即重新收敛，直到进程被信号终止。
 ///
 /// 声明损坏时**暂停收敛并保留现场**（不 `exit`）：用户正在编辑的文件经常短暂失效，
 /// 为一个半截 TOML 退出常驻进程比暂停更糟。修好之后指纹变化，自然恢复。
 pub fn watch(ctx: &Ctx, path: &Path, opts: &Opts, interval: Duration) -> ! {
-    let mut last: Option<Fingerprint> = None;
+    let mut cursor = Cursor::new();
     loop {
-        let (poll, fingerprint) = poll_once(path, last.as_ref());
-        last = Some(fingerprint);
-        match poll {
-            Poll::Unchanged => {}
-            Poll::Refused(reason) => super::render::supervise_refused(&reason),
-            Poll::Reconcile(file) => match plan(ctx, &file) {
-                Ok(steps) => {
-                    let done = execute(ctx, steps, opts);
-                    super::render::supervise(&done, false);
-                }
-                Err(e) => {
-                    super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code))
-                }
-            },
-        }
+        cursor.tick(ctx, path, opts);
         std::thread::sleep(interval);
     }
 }
