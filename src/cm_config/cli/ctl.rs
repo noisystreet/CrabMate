@@ -112,8 +112,20 @@ pub struct SuperviseCmd {
 /// 启动实例。
 #[derive(Parser, Debug, Clone)]
 pub struct UpCmd {
-    /// 实例名（仅字母数字与 `.` `_` `-`）
-    pub name: String,
+    /// 实例名；与 `--all` 二选一
+    pub name: Option<String>,
+
+    /// 按 `instances.toml` 声明批量启动（**只启动，不回收**：回收归 `supervise`）
+    #[arg(long)]
+    pub all: bool,
+
+    /// 声明文件路径（默认 `$XDG_CONFIG_HOME/crabmate/instances.toml`；仅 `--all` 使用）
+    #[arg(long = "instances-file", value_name = "FILE")]
+    pub instances_file: Option<String>,
+
+    /// 只打印计划，不实际启动（仅 `--all` 使用）
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// 交给**子 serve** 的 `--config`（不是 ctl 自己的 `--config`）；省略则让 serve 按自身 XDG 顺序解析
     #[arg(long = "serve-config", value_name = "FILE")]
