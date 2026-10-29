@@ -35,6 +35,36 @@ pub enum CtlSubCmd {
     Logs(LogsCmd),
     /// 清理 stale / 已退出 / 失败的记录（不碰健康实例）
     Prune(PruneCmd),
+    /// 按 `instances.toml` 声明收敛实例（起该起的、停该停的）
+    Supervise(SuperviseCmd),
+}
+
+/// 按声明文件收敛实例。
+#[derive(Parser, Debug, Clone)]
+pub struct SuperviseCmd {
+    /// 从声明文件收敛（`$XDG_CONFIG_HOME/crabmate/instances.toml`）
+    #[arg(long = "from-config")]
+    pub from_config: bool,
+
+    /// 声明文件路径（默认 `$XDG_CONFIG_HOME/crabmate/instances.toml`）
+    #[arg(long = "instances-file", value_name = "FILE")]
+    pub instances_file: Option<String>,
+
+    /// 只打印计划，不启动也不回收（无副作用）
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// 监听声明变化并热生效。**尚未实现**：显式报错，不静默忽略
+    #[arg(long)]
+    pub watch: bool,
+
+    /// 启动时等待 TCP 就绪的秒数
+    #[arg(long = "timeout", value_name = "SECS", default_value_t = 10)]
+    pub timeout_secs: u64,
+
+    /// 回收旧实例时的终止宽限秒数
+    #[arg(long = "grace", value_name = "SECS", default_value_t = 10)]
+    pub grace_secs: u64,
 }
 
 /// 启动实例。

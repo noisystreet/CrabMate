@@ -67,6 +67,13 @@ impl CtlPaths {
         self.runtime_dir.as_deref()
     }
 
+    /// 声明文件路径：`$XDG_CONFIG_HOME/crabmate/instances.toml`。
+    ///
+    /// 放在**配置**目录而不是状态目录：它是人手写的输入，不是 ctl 产出的缓存。
+    pub fn instances_file(&self) -> PathBuf {
+        self.config_dir.join(super::instances::FILE_NAME)
+    }
+
     /// 状态文件所在目录：`<state>/crabmate/instances`。
     pub fn instances_dir(&self) -> PathBuf {
         self.state_dir.join("instances")
