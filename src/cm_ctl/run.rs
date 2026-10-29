@@ -150,6 +150,8 @@ fn one_shot_opts(c: &UpCmd) -> supervise::Opts {
         restart: restart::Restart::Never,
         backoff: restart::Backoff::default(),
         health: Duration::from_secs(30),
+        // `up --all` 的范围由计划里的 `Start` 决定，不再二次裁剪
+        scope: None,
     }
 }
 
@@ -195,12 +197,7 @@ fn failed_count(steps: &[supervise::Step]) -> usize {
 
 /// `supervise`：读声明 → 计划 → 执行（`--watch` 则循环）。
 fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
-    require_from_config(c)?;
-    let path = match c.instances_file.as_deref() {
-        Some(p) => paths::absolutize(p)?,
-        None => ctx.paths.instances_file(),
-    };
-    let opts = supervise_opts(c)?;
+    let (path, opts) = resolve_supervise_target(ctx, c)?;
     if let Some(spec) = c.socket.as_deref() {
         return socket_mode(ctx, c, &path, &opts, spec);
     }
@@ -208,7 +205,7 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
         return watch_mode(ctx, c, &path, &opts);
     }
     let file = instances::load(&path)?;
-    let steps = supervise::execute(ctx, supervise::plan(ctx, &file)?, &opts);
+    let steps = supervise::execute(ctx, supervise::scoped_plan(ctx, &file, &opts)?, &opts);
     render::supervise(&steps, c.dry_run);
 
     let failed = failed_count(&steps);
@@ -219,6 +216,24 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
         "supervise_partial_failure",
         format!("{failed} 个实例未能收敛到期望态（详见上方输出）"),
     ))
+}
+
+/// 解析 `supervise` 的目标：声明路径 + 选项 + 名字校验（三种模式共用）。
+///
+/// 名字校验放在这里而不是各模式内部：`--watch` / `--socket` 每轮都重读计划，
+/// 先一次性确认，用户才不会对着一屏空计划猜自己拼错了名字。
+fn resolve_supervise_target(
+    ctx: &Ctx,
+    c: &SuperviseCmd,
+) -> Result<(std::path::PathBuf, supervise::Opts), CtlError> {
+    require_from_config(c)?;
+    let path = match c.instances_file.as_deref() {
+        Some(p) => paths::absolutize(p)?,
+        None => ctx.paths.instances_file(),
+    };
+    let opts = supervise_opts(c)?;
+    ensure_declared(&path, c.name.as_deref())?;
+    Ok((path, opts))
 }
 
 /// 把 `--restart` / `--backoff-*` / `--health-interval` 翻译成收敛参数。
@@ -247,6 +262,8 @@ fn supervise_opts(c: &SuperviseCmd) -> Result<supervise::Opts, CtlError> {
             Duration::from_secs(c.backoff_max_secs),
         ),
         health: Duration::from_secs(c.health_interval_secs),
+        // `supervise <name>` 只监督这一个；省略则整份声明
+        scope: c.name.clone(),
     })
 }
 
@@ -280,6 +297,28 @@ fn require_from_config(c: &SuperviseCmd) -> Result<(), CtlError> {
     Err(CtlError::usage(
         "missing_from_config",
         "`supervise` 需要 `--from-config`（按 instances.toml 收敛）",
+    ))
+}
+
+/// 单实例监督只认声明。
+///
+/// **记录里只存 `env_keys`、不存 env 值**（刻意的安全边界），从记录重建启动规格会在
+/// 重启后静默丢掉手工 `up -e FOO=bar` 给的变量 —— 一个「配置悄悄变了」的守护进程比
+/// 没有更糟。所以这里拒绝：要么写进声明，要么用 `up` 自己管。
+fn ensure_declared(path: &std::path::Path, name: Option<&str>) -> Result<(), CtlError> {
+    let Some(name) = name else {
+        return Ok(());
+    };
+    let file = instances::load(path)?;
+    if file.instances.contains_key(name) {
+        return Ok(());
+    }
+    Err(CtlError::usage(
+        "not_declared",
+        format!(
+            "`{name}` 不在声明文件里：{}（单实例监督只认声明；临时实例请写进 instances.toml）",
+            path.display()
+        ),
     ))
 }
 
@@ -689,5 +728,134 @@ mod tests {
                 .any(|s| matches!(s, Step::Start { name, .. } if name == "off")),
             "disabled 的实例不该被启动：{kept:?}"
         );
+    }
+
+    fn scoped_start(name: &str) -> supervise::Step {
+        supervise::Step::Start {
+            name: name.to_string(),
+            spec: supervise::StartSpec {
+                workspace: "/tmp/nope".to_string(),
+                serve_config: None,
+                port: None,
+                env: std::collections::BTreeMap::new(),
+                profile: None,
+                profile_fingerprint: None,
+                no_tools: false,
+            },
+            restart: false,
+            reason: "测试".to_string(),
+        }
+    }
+
+    /// 限定范围时，**别的实例的步骤**（尤其 `Stop` / 孤儿回收）必须一起被丢掉：
+    /// 「守护这一个」不能变成「顺手停掉没让我停的东西」。
+    #[test]
+    fn scoped_drops_other_instances_including_stops() {
+        let steps = vec![
+            scoped_start("a"),
+            supervise::Step::Stop {
+                name: "b".to_string(),
+                reason: "声明中已不存在".to_string(),
+            },
+            supervise::Step::Running {
+                name: "c".to_string(),
+            },
+        ];
+        let kept = supervise::scoped(steps, Some("a"));
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(matches!(&kept[0], supervise::Step::Start { name, .. } if name == "a"));
+    }
+
+    /// 目标实例**自己的** `Stop` 要留下：声明判给它的（如 `enabled = false`）仍是事实。
+    #[test]
+    fn scoped_keeps_target_stop_and_none_keeps_all() {
+        let steps = vec![
+            supervise::Step::Stop {
+                name: "a".to_string(),
+                reason: "声明为 enabled = false".to_string(),
+            },
+            supervise::Step::Stop {
+                name: "b".to_string(),
+                reason: "声明中已不存在".to_string(),
+            },
+        ];
+        let kept = supervise::scoped(steps.clone(), Some("a"));
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(matches!(&kept[0], supervise::Step::Stop { name, .. } if name == "a"));
+
+        // `None` = 整份声明：默认行为必须与引入范围之前逐字一致
+        assert_eq!(supervise::scoped(steps, None).len(), 2);
+    }
+
+    /// 范围裁剪必须作用在**真实计划**上，而不只是那个纯函数：加范围时第一版漏了
+    /// 一次性收敛这条路径（它当时直接调 `plan`），`supervise alpha --dry-run` 照旧
+    /// 列出了 `beta`。这条测试钉住的就是「路径有没有接上唯一入口」。
+    #[test]
+    fn scoped_plan_on_real_plan_excludes_other_instances() {
+        let dir = std::env::temp_dir().join(format!(
+            "cm_ctl_scopeplan_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(dir.join("config")).expect("建目录");
+        let ctx = ctx_at(&dir);
+        let decl = dir.join("config").join("instances.toml");
+        std::fs::write(
+            &decl,
+            "[instances.a]\nworkspace = \"/tmp/nope-a\"\n\n\
+             [instances.b]\nworkspace = \"/tmp/nope-b\"\n",
+        )
+        .expect("写声明");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&decl, std::fs::Permissions::from_mode(0o600)).expect("权限");
+
+        let file = instances::load(&decl).expect("读声明");
+        let mut opts = one_shot_opts(&cmd(None));
+        opts.scope = Some("a".to_string());
+        let kept = supervise::scoped_plan(&ctx, &file, &opts).expect("计划");
+        assert!(
+            kept.iter()
+                .any(|s| matches!(s, supervise::Step::Start { name, .. } if name == "a")),
+            "目标实例应在计划里：{kept:?}"
+        );
+        assert!(
+            kept.iter().all(|s| s.name() != "b"),
+            "范围外的实例不得出现在计划里：{kept:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 单实例监督只认声明：名字不在 `instances.toml` 里必须报 `not_declared`
+    /// （记录里不存 env 值，无法可靠重建启动规格 —— 见 `ensure_declared` 的注释）。
+    #[test]
+    fn ensure_declared_rejects_unknown_name() {
+        let dir = std::env::temp_dir().join(format!(
+            "cm_ctl_scope_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(dir.join("config")).expect("建目录");
+        let decl = dir.join("config").join("instances.toml");
+        std::fs::write(&decl, "[instances.demo]\nworkspace = \"/tmp/nope-demo\"\n").expect("写声明");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&decl, std::fs::Permissions::from_mode(0o600)).expect("权限");
+
+        // 省略名字 = 整份声明，不做名字校验
+        assert!(ensure_declared(&decl, None).is_ok());
+        // 声明里有的名字可以
+        assert!(ensure_declared(&decl, Some("demo")).is_ok());
+        // 声明里没有 → 用法错误，而不是「计划为空但你不知道为什么」
+        let e = ensure_declared(&decl, Some("nope")).expect_err("应报错");
+        assert_eq!(e.error_code, "not_declared");
+        assert!(e.message.contains("nope"), "{}", e.message);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

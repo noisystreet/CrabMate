@@ -5,7 +5,7 @@
 //! 1. **只重启、不回收**：巡检只执行 `Step::Start`。`Step::Stop` / `Skipped` 仍由
 //!    「声明变化」那条路径独占——让周期性动作顺手杀进程，等于把回收语义从
 //!    「声明变更时」偷偷扩成「每 N 秒一次」。
-//! 2. **判据只有一处**：巡检复用 [`supervise::plan`]，不另写「什么算不健康」。
+//! 2. **判据只有一处**：巡检复用 [`supervise::scoped_plan`]（`plan` + 范围裁剪），不另写「什么算不健康」。
 //!    `enabled` / `desired_state` / profile 变更的判定都在那里，第二处必然漂移。
 //! 3. **记账落在状态记录里**：`restart_attempts` / `next_restart_at` 写盘，所以
 //!    ctl 重启后仍在退避窗口内——立刻崩溃的实例不该因为守护进程重启就白得一次即时重试。
@@ -129,7 +129,9 @@ pub fn sweep(
     let mut run = Vec::new();
     let mut booked: Vec<(String, u32)> = Vec::new();
 
-    for step in supervise::plan(ctx, file)? {
+    // 巡检与一次性收敛必须用同一处范围裁剪，否则 `supervise <name>` 在常驻模式下
+    // 会去重启别的实例。
+    for step in supervise::scoped_plan(ctx, file, opts)? {
         match step {
             // 健康：清零退避（这是「重启成功后算恢复」的唯一信号）
             Step::Running { name } => reset(ctx, &name)?,
@@ -306,6 +308,7 @@ mod tests {
             restart: Restart::OnFailure,
             backoff,
             health: Duration::from_secs(30),
+            scope: None,
         }
     }
 

@@ -40,6 +40,38 @@ pub struct Opts {
     pub backoff: restart::Backoff,
     /// 健康巡检间隔（`--health-interval`），与声明指纹轮询分开。
     pub health: Duration,
+    /// 监督范围：`None` = 整份声明；`Some(name)` = 只认这一个实例（`supervise <name>`）。
+    ///
+    /// 裁剪统一走 [`scoped`]，不要在单个消费点各写一遍。
+    pub scope: Option<String>,
+}
+
+/// 按监督范围裁剪计划。
+///
+/// 限定范围时，**别的实例的 `Stop` / 孤儿回收一并丢弃**：「守护这一个」不能变成
+/// 「顺手停掉没让我停的东西」——与 `up --all` 同一条边界。目标实例自己的步骤
+/// （包括声明判给它的 `Stop`）保留：声明仍是事实。
+///
+/// 所有消费计划的地方都必须经过这里。目前有两处：本模块的 [`apply`]（一次性 /
+/// `--watch` / `--socket`）与 `restart::sweep`（健康巡检）。漏掉任何一处，
+/// 「常驻」与「一次性」的行为就会分叉。
+pub(crate) fn scoped(steps: Vec<Step>, scope: Option<&str>) -> Vec<Step> {
+    match scope {
+        None => steps,
+        Some(name) => steps.into_iter().filter(|s| s.name() == name).collect(),
+    }
+}
+
+/// `plan` + 范围裁剪的**唯一入口**。
+///
+/// 四条路径都必须走这里：一次性收敛（`run.rs`）、`--watch`（[`apply`]）、
+/// `--socket`（同一 `apply`）、健康巡检（`restart::sweep`）。
+///
+/// 这不是洁癖：加范围时第一版就漏了一次性收敛那条（它当时直接调 `plan`），
+/// 表现是 `supervise alpha --dry-run` 照旧列出了 `beta`。多一个调用点就多一次
+/// 漏掉的机会，所以只留一个入口。
+pub fn scoped_plan(ctx: &Ctx, file: &InstancesFile, opts: &Opts) -> Result<Vec<Step>, CtlError> {
+    Ok(scoped(plan(ctx, file)?, opts.scope.as_deref()))
 }
 
 /// 启动一个实例所需的全部声明信息（与 [`UpArgs`] 一一对应，但不含 `origin`）。
@@ -430,7 +462,7 @@ pub fn poll_once(path: &Path, last: Option<&Fingerprint>) -> (Poll, Fingerprint)
 ///
 /// 计划失败只告警不退出：常驻进程为一个半截 TOML 死去，比暂停收敛更糟。
 fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) {
-    match plan(ctx, file) {
+    match scoped_plan(ctx, file, opts) {
         Ok(steps) => {
             let done = execute(ctx, steps, opts);
             super::render::supervise(&done, false);
@@ -648,6 +680,7 @@ mod tests {
             restart: restart::Restart::Never,
             backoff: restart::Backoff::default(),
             health: Duration::from_secs(30),
+            scope: None,
         };
         let out = execute(&ctx, steps, &opts);
         assert_eq!(out.len(), 1);
