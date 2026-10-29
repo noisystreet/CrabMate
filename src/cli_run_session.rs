@@ -59,6 +59,7 @@ pub(super) struct CliDispatchArgs {
     pub config_path: Option<String>,
     pub serve_port: Option<u16>,
     pub serve_desktop_ready_json: bool,
+    pub serve_workspace_unset: bool,
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,
     pub bench_args: BenchmarkCliArgs,
@@ -72,6 +73,7 @@ pub(super) async fn run_cli_main_routes(
         config_path,
         serve_port,
         serve_desktop_ready_json,
+        serve_workspace_unset,
         http_bind_host,
         workspace_cli,
         bench_args,
@@ -96,6 +98,7 @@ pub(super) async fn run_cli_main_routes(
                 workspace_cli: &workspace_cli,
                 port,
                 desktop_ready_json: serve_desktop_ready_json,
+                workspace_unset: serve_workspace_unset,
                 http_bind_host: http_bind_host.as_str(),
                 process_handles: Arc::clone(&process_handles),
             })

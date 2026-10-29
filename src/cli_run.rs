@@ -410,6 +410,8 @@ pub(super) struct ServeBranchArgs<'a> {
     workspace_cli: &'a Option<String>,
     port: u16,
     desktop_ready_json: bool,
+    /// 待绑定工作区（`serve --workspace-unset`）：初始 override 置 `None`，等 client `POST /workspace`
+    workspace_unset: bool,
     http_bind_host: &'a str,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
@@ -631,6 +633,7 @@ pub(super) async fn run_serve_branch(
         workspace_cli,
         port,
         desktop_ready_json,
+        workspace_unset,
         http_bind_host,
         process_handles,
     } = args;
@@ -651,7 +654,7 @@ pub(super) async fn run_serve_branch(
         client,
         tools,
         api_key: api_key.clone(),
-        initial_workspace: workspace_cli.clone(),
+        initial_workspace: cli_run_serve::initial_workspace_override(workspace_cli, workspace_unset),
         process_handles,
         paths,
     })
@@ -751,6 +754,8 @@ pub(super) struct ServeBranchArgs<'a> {
     pub workspace_cli: &'a Option<String>,
     pub port: u16,
     pub desktop_ready_json: bool,
+    /// 待绑定工作区（`serve --workspace-unset`）：初始 override 置 `None`，等 client `POST /workspace`
+    pub workspace_unset: bool,
     pub http_bind_host: &'a str,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
@@ -897,6 +902,7 @@ async fn run_cli_interactive_session(
             config_path: args.config_path,
             serve_port: args.serve_port,
             serve_desktop_ready_json: args.serve_desktop_ready_json,
+            serve_workspace_unset: args.serve_workspace_unset,
             http_bind_host: args.http_bind_host,
             workspace_cli: args.workspace_cli,
             bench_args: args.bench_args,

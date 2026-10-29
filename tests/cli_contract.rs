@@ -119,6 +119,47 @@ fn config_subcommand_rejects_options() {
 }
 
 #[test]
+fn serve_workspace_unset_flag_is_parsed() {
+    with_isolated_agent_http_host(|| {
+        let p = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "serve".to_string(),
+            "--workspace-unset".to_string(),
+        ])
+        .expect("--workspace-unset 应被接受");
+        assert!(p.serve_workspace_unset, "标志须落到 ParsedCliArgs");
+        assert_eq!(p.workspace_cli, None, "待绑定模式下不应同时给 --workspace");
+    });
+}
+
+#[test]
+fn serve_workspace_unset_defaults_off() {
+    with_isolated_agent_http_host(|| {
+        let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()])
+            .expect("serve 无其它参数应可解析");
+        assert!(
+            !p.serve_workspace_unset,
+            "默认不是待绑定模式（CLI 直启仍用配置的默认目录）"
+        );
+    });
+}
+
+#[test]
+fn serve_workspace_unset_conflicts_with_workspace() {
+    with_isolated_agent_http_host(|| {
+        let err = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "--workspace".to_string(),
+            "/tmp".to_string(),
+            "serve".to_string(),
+            "--workspace-unset".to_string(),
+        ])
+        .expect_err("--workspace 与 --workspace-unset 互斥，须由 clap 拒绝");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    });
+}
+
+#[test]
 fn fixture_parse_args_from_argv_contract() {
     with_isolated_agent_http_host(|| {
         let path = fixture_dir().join("parse_contract.json");
