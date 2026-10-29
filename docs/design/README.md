@@ -100,6 +100,12 @@
 | [ide_mode_roadmap.md](ide_mode_roadmap.md) | Web / 桌面内置 IDE 模式：完善规划 |
 | [server_api_completeness.md](server_api_completeness.md) | ADR：Server API 完备度边界与演进基线 |
 
+## 9. CLI / 运维（1）
+
+| 文档 | 说明 |
+|---|---|
+| [ctl_workspace_unset.md](ctl_workspace_unset.md) | 声明可省略工作区、由同机 client 运行时设置：**设计稿（#1183），未实现**。已定语义：一实例一工作区（409 拒绝覆盖）、接受无人值守退化（不回填）、未设置时工具拒绝 `WORKSPACE_NOT_SET`；待绑定语义只对 ctl 起的实例生效 |
+
 ## 已归档（`archive/`）
 
 仅作历史参考，内容可能已被上表文档取代：
