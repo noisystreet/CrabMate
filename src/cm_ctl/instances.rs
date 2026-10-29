@@ -40,6 +40,9 @@ pub struct Declaration {
     /// 交给子 serve 的 `--config`；相对路径按 **ctl 的 cwd** 绝对化。
     #[serde(default)]
     pub config: Option<String>,
+    /// 引用 `profiles.toml` 中的预设名；与 `config` **互斥**（profile 内部已含 config）。
+    #[serde(default)]
+    pub profile: Option<String>,
     /// 指定端口；省略则由端口池分配。
     #[serde(default)]
     pub port: Option<u16>,
@@ -96,8 +99,10 @@ pub fn load(path: &Path) -> Result<InstancesFile, CtlError> {
 }
 
 fn invalid_message(path: &Path, detail: &str) -> String {
-    let hint = if detail.contains("profile") {
-        "\n提示：`profile` 属于 supervise 的后续切片；当前版本请直接写 `workspace` / `config` / `port` / `enabled` / `env`"
+    let hint = if detail.contains("unknown field `workspace`") || detail.contains("unknown field 'workspace'") {
+        "（`workspace` 只能由实例声明提供，profile 不得携带）"
+    } else if detail.contains("unknown field `yes`") || detail.contains("unknown field 'yes'") {
+        "（`yes` 必须由实例级显式决定，不得藏在 profile 里）"
     } else {
         ""
     };
@@ -119,16 +124,23 @@ fn validate(file: &InstancesFile) -> Result<(), CtlError> {
                 format!("声明项 `{name}` 缺少 workspace"),
             ));
         }
+        if decl.profile.is_some() && decl.config.is_some() {
+            return Err(CtlError::usage(
+                "profile_and_config_conflict",
+                format!(
+                    "声明项 `{name}` 同时给了 `profile` 与 `config`：只能二选一（profile 内部已含 config）"
+                ),
+            ));
+        }
     }
     Ok(())
 }
 
-/// 权限闸门：文件必须仅本人可读写（`0600` 或更严），且属于当前用户。
+/// 权限闸门：存在性由本函数报 `instances_file_missing`，权限与属主交给共用闸门
+/// （`profiles.toml` 用的是同一套规则，见 [`super::paths::check_private_file`]）。
 fn check_permissions(path: &Path) -> Result<(), CtlError> {
-    use std::os::unix::fs::MetadataExt;
-
-    let meta = match std::fs::metadata(path) {
-        Ok(m) => m,
+    match std::fs::metadata(path) {
+        Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(CtlError::usage(
                 "instances_file_missing",
@@ -144,42 +156,13 @@ fn check_permissions(path: &Path) -> Result<(), CtlError> {
                 format!("读取声明文件元数据失败 {}：{e}", path.display()),
             ));
         }
-    };
-
-    let mode = meta.mode() & 0o777;
-    if mode & 0o077 != 0 {
-        return Err(CtlError::general(
-            "instances_file_insecure",
-            format!(
-                "拒绝加载声明文件 {}：权限 {mode:03o} 过宽（要求 0600 或更严）。\n\
-                 它等同进程启动清单——同机其他用户若能写它，就能借 ctl 起指向任意目录的 serve；\n\
-                 请执行 `chmod 600 {}` 后重试",
-                path.display(),
-                path.display()
-            ),
-        ));
     }
-    check_owner(path, meta.uid())
-}
-
-fn check_owner(path: &Path, owner: u32) -> Result<(), CtlError> {
-    // 取 euid 不想引 libc + unsafe：Linux 上 `/proc/self` 目录的 uid 就是当前 euid。
-    // 拿不到（macOS 无 procfs、容器裁剪）时跳过本项检查，权限位检查仍然生效。
-    use std::os::unix::fs::MetadataExt;
-    let Ok(self_meta) = std::fs::metadata("/proc/self") else {
-        return Ok(());
-    };
-    let euid = self_meta.uid();
-    if owner == euid {
-        return Ok(());
-    }
-    Err(CtlError::general(
+    paths::check_private_file(
+        path,
+        "声明文件",
+        "instances_file_insecure",
         "instances_file_foreign_owner",
-        format!(
-            "拒绝加载声明文件 {}：属主 uid {owner} 与当前用户 {euid} 不符",
-            path.display()
-        ),
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -259,7 +242,7 @@ port = 8080
     }
 
     #[test]
-    fn profile_key_reports_it_as_a_later_slice() {
+    fn profile_key_is_accepted_and_recorded() {
         let dir = tmpdir("profile");
         let p = dir.join(FILE_NAME);
         write_with_mode(
@@ -267,8 +250,26 @@ port = 8080
             "[instances.a]\nworkspace = \"/tmp/a\"\nprofile = \"readonly-audit\"\n",
             0o600,
         );
-        let err = load(&p).expect_err("profile 尚未实现，应报错");
-        assert!(err.message.contains("后续切片"), "{}", err.message);
+        let f = load(&p).expect("profile 应被接受");
+        assert_eq!(
+            f.instances.get("a").expect("应有 a").profile.as_deref(),
+            Some("readonly-audit")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn profile_and_config_together_are_rejected() {
+        let dir = tmpdir("profile_conflict");
+        let p = dir.join(FILE_NAME);
+        write_with_mode(
+            &p,
+            "[instances.a]\nworkspace = \"/tmp/a\"\nprofile = \"p\"\nconfig = \"/tmp/c.toml\"\n",
+            0o600,
+        );
+        let err = load(&p).expect_err("profile 与 config 互斥");
+        assert_eq!(err.error_code, "profile_and_config_conflict");
+        assert!(err.message.contains("二选一"), "{}", err.message);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -297,6 +298,7 @@ port = 8080
         let d = Declaration {
             workspace: "~/proj-a".to_string(),
             config: None,
+            profile: None,
             port: None,
             enabled: true,
             env: BTreeMap::new(),

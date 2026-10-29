@@ -100,6 +100,12 @@ pub struct InstanceRecord {
     pub profile: Option<String>,
     #[serde(default)]
     pub profile_in_use: Option<String>,
+    /// **实际生效**的那份 profile 的指纹（`profiles::Resolved::fingerprint`）。
+    ///
+    /// 只记名字不够：改 `allowed_commands` / `permission_level` / `env` 时名字一字未变，
+    /// 权限集合却已经不同。旧记录缺这个字段 ⇒ 视为「未知」，收敛会保守地重启一次。
+    #[serde(default)]
+    pub profile_fingerprint: Option<String>,
     /// 谁负责这个实例：`cli`（人工 `up` / `run`）或 `supervise`（声明式收敛）。
     ///
     /// 必须存在而不是靠「声明里有没有」反推：`supervise` 回收「声明已删掉」的实例时，

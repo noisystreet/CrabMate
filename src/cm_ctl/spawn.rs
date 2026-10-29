@@ -39,8 +39,24 @@ const BASE_ENV_KEYS: &[&str] = &[
     "SSL_CERT_DIR",
 ];
 
+/// 允许由**声明**显式给出的 `CM_*` 键（`profiles.toml` 的预设映射到这些）。
+///
+/// 只放行这几个具体键，**不做前缀放行**：`CM_` 前缀放行等于允许注入
+/// `CM_SERVE_DISABLE_INSTANCE_LOCK` 这类变量，直接打掉实例隔离。
+/// 注意语义是「声明给出」而非「继承」——这些键不在 [`BASE_ENV_KEYS`] 里，
+/// 不可能从 ctl 自身环境漏进子进程。
+const DECLARABLE_CM_KEYS: &[&str] = &[
+    "CM_ALLOWED_COMMANDS",
+    "CM_PERMISSION_LEVEL",
+    "CM_LLM_MODEL",
+    "CM_LLM_API_BASE",
+];
+
 /// 永不透传的变量：一旦继承会让「隔离」形同虚设。
 fn is_forbidden(key: &str) -> bool {
+    if DECLARABLE_CM_KEYS.contains(&key) {
+        return false;
+    }
     key == "API_KEY"
         || key == "CM_SERVE_DISABLE_INSTANCE_LOCK"
         || key.starts_with("CM_")
@@ -89,6 +105,8 @@ pub struct SpawnSpec {
     pub port: u16,
     /// `--yes`（跳过命令白名单）：必须由实例声明显式给出，绝不隐式继承。
     pub yes: bool,
+    /// `--no-tools`（禁用全部工具）：来自 profile 的 `no_tools`
+    pub no_tools: bool,
     pub env: BTreeMap<String, String>,
     pub log_path: PathBuf,
     /// 子进程 cwd（实例专属目录）。
@@ -117,7 +135,12 @@ impl Spawned {
 }
 
 fn build_args(spec: &SpawnSpec, serve_config: Option<&Path>) -> Vec<String> {
-    let mut args: Vec<String> = vec!["serve".to_string()];
+    let mut args: Vec<String> = Vec::new();
+    // `--no-tools` 是 clap 的 **global** 选项，文档约定写在子命令之前
+    if spec.no_tools {
+        args.push("--no-tools".to_string());
+    }
+    args.push("serve".to_string());
     args.push("--port".to_string());
     args.push(spec.port.to_string());
     args.push("--workspace".to_string());
@@ -292,6 +315,7 @@ mod tests {
             serve_config: Some(PathBuf::from("/c.toml")),
             port: 8080,
             yes: true,
+            no_tools: true,
             env: BTreeMap::new(),
             log_path: PathBuf::from("/tmp/x.log"),
             home: PathBuf::from("/tmp/x"),
@@ -300,11 +324,14 @@ mod tests {
             own_process_group: true,
         };
         let args = build_args(&spec, spec.serve_config.as_deref());
-        assert_eq!(args[0], "serve");
+        // `--no-tools` 是 clap global 选项，按文档约定前置于子命令
+        assert_eq!(args[0], "--no-tools");
+        assert_eq!(args[1], "serve");
         assert!(args.windows(2).any(|w| w == ["--port", "8080"]));
         assert!(args.windows(2).any(|w| w == ["--workspace", "/w"]));
         assert!(args.windows(2).any(|w| w == ["--config", "/c.toml"]));
         assert!(args.iter().any(|a| a == "--yes"));
+        assert!(args.iter().any(|a| a == "--no-tools"));
         assert!(args.iter().any(|a| a == "--web-ready-json"));
     }
 
@@ -315,6 +342,7 @@ mod tests {
             serve_config: None,
             port: 8081,
             yes: false,
+            no_tools: false,
             env: BTreeMap::new(),
             log_path: PathBuf::from("/tmp/x.log"),
             home: PathBuf::from("/tmp/x"),
@@ -325,6 +353,7 @@ mod tests {
         let args = build_args(&spec, spec.serve_config.as_deref());
         assert!(!args.iter().any(|a| a == "--config"), "不应隐式传 --config");
         assert!(!args.iter().any(|a| a == "--yes"), "不应隐式开 --yes");
+        assert!(!args.iter().any(|a| a == "--no-tools"), "不应隐式开 --no-tools");
     }
 
     #[test]
@@ -345,24 +374,48 @@ mod tests {
     fn is_forbidden_matches_sensitive_shapes() {
         for k in [
             "API_KEY",
-            "CM_LLM_MODEL",
             "CM_SERVE_DISABLE_INSTANCE_LOCK",
+            "CM_WEB_API_BEARER_TOKEN",
+            "CM_ANYTHING_ELSE",
             "GITHUB_TOKEN",
             "MY_SECRET",
         ] {
             assert!(is_forbidden(k), "{k} 应被禁止透传");
         }
-        for k in ["PATH", "HOME", "HTTPS_PROXY", "GIT_SSH_COMMAND"] {
+        // 声明可给的受控 CM_ 键与普通变量
+        for k in [
+            "PATH",
+            "HOME",
+            "HTTPS_PROXY",
+            "GIT_SSH_COMMAND",
+            "CM_ALLOWED_COMMANDS",
+            "CM_PERMISSION_LEVEL",
+            "CM_LLM_MODEL",
+            "CM_LLM_API_BASE",
+        ] {
             assert!(!is_forbidden(k), "{k} 应允许");
         }
     }
 
     #[test]
-    fn declared_env_is_applied_and_listed() {
+    fn declared_controlled_cm_key_is_allowed() {
+        // `profiles.toml` 的预设就靠这条通道落地（allowed_commands / permission_level / llm_*）
         let mut declared = BTreeMap::new();
         declared.insert("CM_LLM_MODEL".to_string(), "deepseek-chat".to_string());
-        // CM_ 前缀属敏感项：必须被拒绝，即使来自声明
-        let err = build_env(&declared).expect_err("声明敏感变量应被拒绝");
+        let (env, keys) = build_env(&declared).expect("受控 CM_ 键应允许");
+        assert_eq!(
+            env.get("CM_LLM_MODEL").map(String::as_str),
+            Some("deepseek-chat")
+        );
+        assert!(keys.iter().any(|k| k == "CM_LLM_MODEL"));
+    }
+
+    #[test]
+    fn declared_unlisted_cm_key_is_rejected() {
+        // 白名单**外**的 CM_ 键仍必须拒绝：前缀放行会打开实例隔离的缺口
+        let mut declared = BTreeMap::new();
+        declared.insert("CM_WEB_WORKSPACE_POOL".to_string(), "/".to_string());
+        let err = build_env(&declared).expect_err("白名单外的 CM_ 键应拒绝");
         assert_eq!(err.error_code, "forbidden_env");
     }
 

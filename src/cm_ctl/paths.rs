@@ -74,6 +74,11 @@ impl CtlPaths {
         self.config_dir.join(super::instances::FILE_NAME)
     }
 
+    /// 预设文件路径：`$XDG_CONFIG_HOME/crabmate/profiles.toml`。
+    pub fn profiles_file(&self) -> PathBuf {
+        self.config_dir.join(super::profiles::FILE_NAME)
+    }
+
     /// 状态文件所在目录：`<state>/crabmate/instances`。
     pub fn instances_dir(&self) -> PathBuf {
         self.state_dir.join("instances")
@@ -166,6 +171,59 @@ fn create_dir_0700(path: &Path) -> Result<(), CtlError> {
         })?;
     }
     Ok(())
+}
+
+/// 私有文件闸门：仅本人可读写（`0600` 或更严）且属主是当前用户。
+///
+/// 用于那些**等同权限清单**的本地文件（`instances.toml` / `profiles.toml`）：
+/// 同机其他用户若能写它们，就能借 ctl 起一个指向任意目录、带任意 `allowed_commands`
+/// 的 serve，绕开文件系统本来就挡住的访问。存在性由调用方先判断（缺失语义各不相同）。
+pub fn check_private_file(
+    path: &Path,
+    what: &str,
+    insecure_code: &'static str,
+    foreign_owner_code: &'static str,
+) -> Result<(), CtlError> {
+    use std::os::unix::fs::MetadataExt;
+
+    let meta = fs::metadata(path).map_err(|e| {
+        CtlError::general(
+            "file_metadata_failed",
+            format!("读取{what}元数据失败 {}：{e}", path.display()),
+        )
+    })?;
+
+    let mode = meta.mode() & 0o777;
+    if mode & 0o077 != 0 {
+        return Err(CtlError::general(
+            insecure_code,
+            format!(
+                "拒绝加载{what} {}：权限 {mode:03o} 过宽（要求 0600 或更严）。\n\
+                 它等同进程启动清单——同机其他用户若能写它，就能借 ctl 起指向任意目录、带任意权限的 serve；\n\
+                 请执行 `chmod 600 {}` 后重试",
+                path.display(),
+                path.display()
+            ),
+        ));
+    }
+
+    // 取 euid 不想引 libc + unsafe：Linux 上 `/proc/self` 目录的 uid 就是当前 euid。
+    // 拿不到（macOS 无 procfs、容器裁剪）时跳过本项，权限位检查仍然生效。
+    let Ok(self_meta) = fs::metadata("/proc/self") else {
+        return Ok(());
+    };
+    let euid = self_meta.uid();
+    if meta.uid() == euid {
+        return Ok(());
+    }
+    Err(CtlError::general(
+        foreign_owner_code,
+        format!(
+            "拒绝加载{what} {}：属主 uid {} 与当前用户 {euid} 不符",
+            path.display(),
+            meta.uid()
+        ),
+    ))
 }
 
 /// 实例名 → 文件名安全：只允许字母数字与 `.` `_` `-`，不以 `.` 开头，长度受限。

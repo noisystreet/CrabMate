@@ -43,6 +43,8 @@ pub fn row_json(rec: &InstanceRecord, p: &Probe) -> serde_json::Value {
         "workspace": rec.workspace,
         "log": rec.log,
         "env_keys": rec.env_keys,
+        "profile": rec.profile,
+        "profile_in_use": rec.profile_in_use,
     })
 }
 
@@ -112,6 +114,14 @@ pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
     println!("  实际 config: {}", rec.config_in_use.as_deref().unwrap_or("-"));
     println!("  日志: {}", rec.log.as_deref().unwrap_or("-"));
     println!("  环境变量(名): {}", rec.env_keys.join(", "));
+    println!("  profile(声明): {}", rec.profile.as_deref().unwrap_or("-"));
+    println!("  profile(实际): {}", rec.profile_in_use.as_deref().unwrap_or("-"));
+    if rec.profile != rec.profile_in_use {
+        println!(
+            "  提示: profile 已变更但实例未重启；执行 `crabmatectl restart {}` 才生效",
+            rec.name
+        );
+    }
     if let Some(e) = rec.last_error.as_deref() {
         println!("  最近错误: {e}");
     }
@@ -238,6 +248,15 @@ fn supervise_line(step: &Step, dry_run: bool) -> String {
             format!("{mark} {name:<16} 回收（{reason}）")
         }
         Step::Running { name } => format!("● {name:<16} 已就绪（无动作）"),
+        Step::Started {
+            name,
+            restarted,
+            reason,
+        } => {
+            // 显式回显「重启了什么、为什么」，否则用户只能从日志里猜
+            let verb = if *restarted { "已重启" } else { "已启动" };
+            format!("● {name:<16} {verb}（{reason}）")
+        }
         Step::Stopped { name } => format!("○ {name:<16} 已回收"),
         Step::Skipped { name, reason } => format!("· {name:<16} 跳过：{reason}"),
         Step::Failed { name, error } => format!("× {name:<16} 失败：{error}"),

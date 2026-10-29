@@ -81,6 +81,10 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
         env: Default::default(),
         timeout: Duration::from_secs(c.timeout_secs),
         origin: Origin::Cli,
+        // 人工 `up` 不走 profile：预设只由声明式收敛（`supervise`）解析
+        profile: None,
+        profile_fingerprint: None,
+        no_tools: false,
     })
 }
 
@@ -216,6 +220,7 @@ fn foreground_spec(
         serve_config: c.serve_config.as_ref().map(PathBuf::from),
         port,
         yes: c.yes,
+        no_tools: false,
         env: Default::default(),
         log_path: ctx.paths.log_path(&c.name),
         home: ctx.paths.instance_home(&c.name),
