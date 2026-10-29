@@ -271,7 +271,7 @@ fn supervise_line(step: &Step, dry_run: bool) -> String {
             let mark = if dry_run { "+" } else { "●" };
             format!(
                 "{mark} {name:<16} {verb}：端口 {port}，workspace {}（{reason}）",
-                spec.workspace
+                spec.workspace.as_deref().unwrap_or("（待绑定：等 client 设置）")
             )
         }
         Step::Stop { name, reason } => {

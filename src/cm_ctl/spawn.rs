@@ -96,7 +96,9 @@ pub fn build_env(
 /// 一次 spawn 所需的全部受控输入（只由显式声明构造，不接受任意 argv）。
 #[derive(Debug, Clone)]
 pub struct SpawnSpec {
-    pub workspace: PathBuf,
+    /// 工作区；`None` = **待绑定**（子 serve 以 `--workspace-unset` 启动，等 client
+    /// 通过 `POST /workspace` 设置）。见 Issue #1183。
+    pub workspace: Option<PathBuf>,
     /// 交给子 serve 的 `--config`；`None` 表示让 serve 按自身 XDG 顺序解析。
     ///
     /// 相对路径在 spawn 时按 **ctl 的 cwd** 绝对化后再交给子进程：子进程 cwd 是
@@ -143,8 +145,15 @@ fn build_args(spec: &SpawnSpec, serve_config: Option<&Path>) -> Vec<String> {
     args.push("serve".to_string());
     args.push("--port".to_string());
     args.push(spec.port.to_string());
-    args.push("--workspace".to_string());
-    args.push(spec.workspace.display().to_string());
+    // 工作区二选一，不能都不给：`--workspace-unset` 是「先起来、等 client 绑定」的显式声明，
+    // 与「忘了传 --workspace」在语义上不同（后者会让 serve 回落到配置的默认目录）。
+    match &spec.workspace {
+        Some(ws) => {
+            args.push("--workspace".to_string());
+            args.push(ws.display().to_string());
+        }
+        None => args.push("--workspace-unset".to_string()),
+    }
     if let Some(cfg) = serve_config {
         args.push("--config".to_string());
         args.push(cfg.display().to_string());
@@ -311,7 +320,7 @@ mod tests {
     #[test]
     fn build_args_includes_serve_and_controlled_flags_only() {
         let spec = SpawnSpec {
-            workspace: PathBuf::from("/w"),
+            workspace: Some(PathBuf::from("/w")),
             serve_config: Some(PathBuf::from("/c.toml")),
             port: 8080,
             yes: true,
@@ -338,7 +347,7 @@ mod tests {
     #[test]
     fn build_args_omits_optional_flags_when_unset() {
         let spec = SpawnSpec {
-            workspace: PathBuf::from("/w"),
+            workspace: Some(PathBuf::from("/w")),
             serve_config: None,
             port: 8081,
             yes: false,

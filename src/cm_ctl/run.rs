@@ -78,7 +78,9 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
     })?;
     Ok(UpArgs {
         name,
-        workspace: require_workspace(workspace_cli, "ctl up")?,
+        // 人工 `up` 仍要求显式工作区：待绑定只用于「声明里省略 workspace」的无人值守实例，
+        // 人手敲命令时静默进入待绑定态只会让人以为实例坏了（#1183 §2 ④）。
+        workspace: Some(require_workspace(workspace_cli, "ctl up")?),
         serve_config: c.serve_config.clone(),
         port: c.port,
         yes: c.yes,
@@ -459,7 +461,7 @@ fn foreground_spec(
     port: u16,
 ) -> SpawnSpec {
     SpawnSpec {
-        workspace: workspace.to_path_buf(),
+        workspace: Some(workspace.to_path_buf()),
         serve_config: c.serve_config.as_ref().map(PathBuf::from),
         port,
         yes: c.yes,
@@ -620,7 +622,7 @@ mod tests {
         Step::Start {
             name: name.to_string(),
             spec: StartSpec {
-                workspace: "/tmp/nope".to_string(),
+                workspace: Some("/tmp/nope".to_string()),
                 serve_config: None,
                 port: None,
                 env: BTreeMap::new(),
@@ -734,7 +736,7 @@ mod tests {
         supervise::Step::Start {
             name: name.to_string(),
             spec: supervise::StartSpec {
-                workspace: "/tmp/nope".to_string(),
+                workspace: Some("/tmp/nope".to_string()),
                 serve_config: None,
                 port: None,
                 env: std::collections::BTreeMap::new(),

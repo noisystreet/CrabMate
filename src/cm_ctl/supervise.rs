@@ -77,7 +77,8 @@ pub fn scoped_plan(ctx: &Ctx, file: &InstancesFile, opts: &Opts) -> Result<Vec<S
 /// 启动一个实例所需的全部声明信息（与 [`UpArgs`] 一一对应，但不含 `origin`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartSpec {
-    pub workspace: String,
+    /// `None` = 待绑定工作区（声明里省略 `workspace`，由 client 运行时设置）。
+    pub workspace: Option<String>,
     pub serve_config: Option<String>,
     pub port: Option<u16>,
     pub env: BTreeMap<String, String>,
@@ -193,7 +194,9 @@ fn step_for_decl(
     profiles_file: &ProfilesFile,
     profiles_path: &Path,
 ) -> Result<Step, CtlError> {
-    let workspace = decl.workspace_path()?.display().to_string();
+    let workspace = decl
+        .workspace_path()?
+        .map(|p| p.display().to_string());
     // profile 在**计划阶段**就解析：引用不到立刻报错，而不是等到 spawn 才发现
     let resolved = match decl.profile.as_deref() {
         Some(profile) => Some(profiles::resolve(
@@ -224,7 +227,7 @@ fn step_for_decl(
     let Some((rec, probe)) = current else {
         return Ok(Step::Start {
             name: name.to_string(),
-            spec: start_spec(decl, &workspace, None, resolved.as_ref()),
+            spec: start_spec(decl, workspace.as_deref(), None, resolved.as_ref()),
             restart: false,
             reason: "尚无实例记录".to_string(),
         });
@@ -244,7 +247,7 @@ fn step_for_decl(
     if let Some(reason) = profile_change_reason(decl, rec, probe.pid_alive, decl_fingerprint.as_deref()) {
         return Ok(Step::Start {
             name: name.to_string(),
-            spec: start_spec(decl, &workspace, rec.port, resolved.as_ref()),
+            spec: start_spec(decl, workspace.as_deref(), rec.port, resolved.as_ref()),
             restart: true,
             reason,
         });
@@ -259,7 +262,7 @@ fn step_for_decl(
     // 端口优先沿用记录里的值，`base_url` 才不会在每次收敛后漂移。
     Ok(Step::Start {
         name: name.to_string(),
-        spec: start_spec(decl, &workspace, rec.port, resolved.as_ref()),
+        spec: start_spec(decl, workspace.as_deref(), rec.port, resolved.as_ref()),
         restart: true,
         reason: format!("观测态为 {}，需要重新拉起", probe.observed.as_str()),
     })
@@ -269,12 +272,12 @@ fn step_for_decl(
 /// 由 profile 决定（无 profile 时退回实例自身的 `config` / `env`）。
 fn start_spec(
     decl: &Declaration,
-    workspace: &str,
+    workspace: Option<&str>,
     recorded_port: Option<u16>,
     resolved: Option<&profiles::Resolved>,
 ) -> StartSpec {
     StartSpec {
-        workspace: workspace.to_string(),
+        workspace: workspace.map(str::to_string),
         serve_config: resolved
             .and_then(|r| r.serve_config.clone())
             .or_else(|| decl.config.clone()),
@@ -561,7 +564,7 @@ mod tests {
 
     fn decl(workspace: &str, enabled: bool, port: Option<u16>) -> Declaration {
         Declaration {
-            workspace: workspace.to_string(),
+            workspace: Some(workspace.to_string()),
             config: None,
             profile: None,
             port,
