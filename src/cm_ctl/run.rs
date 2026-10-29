@@ -84,19 +84,22 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
     })
 }
 
-/// `supervise`：读声明 → 计划 → 执行（一次收敛）。
+/// `supervise`：读声明 → 计划 → 执行（`--watch` 则循环）。
 fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
-    require_once_mode(c)?;
+    require_from_config(c)?;
     let path = match c.instances_file.as_deref() {
         Some(p) => paths::absolutize(p)?,
         None => ctx.paths.instances_file(),
     };
-    let file = instances::load(&path)?;
     let opts = supervise::Opts {
         timeout: Duration::from_secs(c.timeout_secs),
         grace: Duration::from_secs(c.grace_secs),
         dry_run: c.dry_run,
     };
+    if c.watch {
+        return watch_mode(ctx, c, &path, &opts);
+    }
+    let file = instances::load(&path)?;
     let steps = supervise::execute(ctx, supervise::plan(ctx, &file)?, &opts);
     render::supervise(&steps, c.dry_run);
 
@@ -110,22 +113,37 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
     ))
 }
 
-/// `--from-config` 是本轮唯一模式；`--watch` 明说未实现，避免「看起来生效了」。
-fn require_once_mode(c: &SuperviseCmd) -> Result<(), CtlError> {
-    if !c.from_config {
+fn watch_mode(
+    ctx: &Ctx,
+    c: &SuperviseCmd,
+    path: &std::path::Path,
+    opts: &supervise::Opts,
+) -> Result<(), CtlError> {
+    if c.dry_run {
         return Err(CtlError::usage(
-            "missing_from_config",
-            "`supervise` 当前只支持 `--from-config`（按 instances.toml 收敛）",
+            "conflicting_flags",
+            "`--watch` 是持续收敛，不能与 `--dry-run` 同时使用",
         ));
     }
-    if c.watch {
-        return Err(CtlError::usage(
-            "unsupported_watch",
-            "`--watch` 属 supervise 的后续切片，尚未实现；当前请重复执行 \
-             `crabmatectl supervise --from-config`（可配 systemd timer）",
-        ));
+    // 0 会退化成忙轮询：每次都重新 stat + load
+    let interval = Duration::from_secs(c.interval_secs.max(1));
+    println!(
+        "监听 {}（间隔 {}s）；声明变化即收敛，Ctrl-C 退出",
+        path.display(),
+        interval.as_secs()
+    );
+    supervise::watch(ctx, path, opts, interval)
+}
+
+/// `--from-config` 是当前唯一模式（`--watch` 仍需它）。
+fn require_from_config(c: &SuperviseCmd) -> Result<(), CtlError> {
+    if c.from_config {
+        return Ok(());
     }
-    Ok(())
+    Err(CtlError::usage(
+        "missing_from_config",
+        "`supervise` 需要 `--from-config`（按 instances.toml 收敛）",
+    ))
 }
 
 fn down_cmd(ctx: &Ctx, c: &DownCmd) -> Result<(), CtlError> {

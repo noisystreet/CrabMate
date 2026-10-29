@@ -54,9 +54,13 @@ pub struct SuperviseCmd {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// 监听声明变化并热生效。**尚未实现**：显式报错，不静默忽略
+    /// 监听声明变化并热生效（常驻；Ctrl-C 退出）
     #[arg(long)]
     pub watch: bool,
+
+    /// `--watch` 的轮询间隔秒数（不用 inotify：容器 overlayfs 不可靠）
+    #[arg(long = "interval", value_name = "SECS", default_value_t = 1)]
+    pub interval_secs: u64,
 
     /// 启动时等待 TCP 就绪的秒数
     #[arg(long = "timeout", value_name = "SECS", default_value_t = 10)]

@@ -209,6 +209,11 @@ pub fn supervise(steps: &[Step], dry_run: bool) {
     }
 }
 
+/// 声明不可用时的告警（走 stderr，并明确说「已暂停收敛」）。
+pub fn supervise_refused(reason: &str) {
+    eprintln!("WARN: 声明文件当前不可用，已暂停收敛（不启动、不回收）：{reason}");
+}
+
 fn supervise_line(step: &Step, dry_run: bool) -> String {
     match step {
         Step::Start {
