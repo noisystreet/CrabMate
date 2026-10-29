@@ -91,16 +91,27 @@ pub fn ls(rows: &[(InstanceRecord, Probe)], as_json: bool) {
     }
 }
 
+/// `status --json` 的形状：`ls` 的一行 + 三项进程身份细节。
+///
+/// 抽成函数是为了能被契约测试直接比对键集：这份结构由 `crabmate-client` 直接消费，
+/// 内联在 `println!` 里就只能靠「输出看起来对」来保证。
+pub fn status_json(rec: &InstanceRecord, p: &Probe) -> serde_json::Value {
+    let mut v = row_json(rec, p);
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("identity".to_string(), json!(identity_str(p)));
+        obj.insert("pid_alive".to_string(), json!(p.pid_alive));
+        obj.insert("tcp_ok".to_string(), json!(p.tcp_ok));
+    }
+    v
+}
+
 /// `status` 输出。
 pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
     if as_json {
-        let mut v = row_json(rec, p);
-        if let Some(obj) = v.as_object_mut() {
-            obj.insert("identity".to_string(), json!(identity_str(p)));
-            obj.insert("pid_alive".to_string(), json!(p.pid_alive));
-            obj.insert("tcp_ok".to_string(), json!(p.tcp_ok));
-        }
-        println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&status_json(rec, p)).unwrap_or_default()
+        );
         return;
     }
     println!("实例: {}", rec.name);
