@@ -214,6 +214,44 @@ fn sorted_keys(v: &serde_json::Value) -> Vec<String> {
     keys
 }
 
+/// 端口被占用时必须**明确报错**，而不是把别人的进程认成自己的（#1177）。
+///
+/// 这条钉的是错误**行为**，不只是错误码：修好之前 `up b` 会「成功」，写出
+/// `state: ready` 且 `base_url` 指向 **a** 的端口 —— 客户端连 b 全落到 a 上，
+/// 两个 lane 共用一份会话库，正是 ctl 存在的理由被绕过。
+#[test]
+fn up_on_taken_port_fails_instead_of_faking_ready() {
+    let sb = Sandbox::new();
+    let ws_a = sb.workspace("busy-a");
+    let ws_b = sb.workspace("busy-b");
+    let port = 18138u16;
+    sb.up("a", &ws_a, port);
+
+    let out = sb.run(&[
+        "up",
+        "b",
+        "--workspace",
+        &ws_b.display().to_string(),
+        "--port",
+        &port.to_string(),
+    ]);
+    assert!(!out.status.success(), "端口被占用时 up 应失败");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("port_in_use"),
+        "应报 port_in_use，实际：{stderr}"
+    );
+
+    // 关键断言：不得留下记录。留下 `ready` 记录就是原来的 bug。
+    assert!(
+        sb.record_opt("b").is_none(),
+        "失败的 up 不应写出记录，实际：{:?}",
+        sb.record_opt("b")
+    );
+    // a 不受影响，仍可连
+    assert!(tcp_ok(port), "a 应仍在监听 {port}");
+}
+
 /// 两个实例能**同时** ready —— 多实例功能的存在性前提（`serve` 的会话库与锁按 cwd 解析，
 /// 没有每实例独立 cwd 时第二个进程会直接启动失败）。
 #[test]

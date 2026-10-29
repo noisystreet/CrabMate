@@ -328,6 +328,33 @@ enum Launch {
     },
 }
 
+/// 选定本次要用的端口。
+///
+/// 显式 `--port` 必须先做占用检查。原因不是洁癖：readiness 只问「这个地址能不能
+/// 连上」，端口被别人占着时连到的就是**别人**，于是自己的实例被判定 `ready`、
+/// `base_url` 指向别人的进程（#1177 的复现：两个 lane 的 `base_url` 一模一样，
+/// 客户端连过去全落到同一个 serve）。用户在这个场景里需要的是一句明确的话。
+///
+/// auto 分配不需要再查：`first_free` 已经跳过占用端口；从它到 `spawn` 之间的
+/// TOCTOU 窗口由 `up` 的 `port_race` 顺延兜住（那是只有 auto 才能做的补救——
+/// 显式端口若是被抢，顺延会违背用户的明确要求）。
+fn select_port(ctx: &Ctx, args: &UpArgs) -> Result<u16, CtlError> {
+    match args.port {
+        Some(p) => {
+            if !PortPool::is_free(p) {
+                return Err(CtlError::usage(
+                    "port_in_use",
+                    format!(
+                        "端口 {p} 已被占用（127.0.0.1）；换一个 `--port`，或先 `crabmatectl down` 掉占用它的实例"
+                    ),
+                ));
+            }
+            Ok(p)
+        }
+        None => ctx.pool.first_free(),
+    }
+}
+
 /// 校验参数、判幂等、选定端口（不含 spawn；拆出来压 `up` 的复杂度）。
 fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
     paths::validate_name(&args.name)?;
@@ -344,10 +371,7 @@ fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
         return Ok(Launch::Existing(Box::new(rec)));
     }
 
-    let port = match args.port {
-        Some(p) => p,
-        None => ctx.pool.first_free()?,
-    };
+    let port = select_port(ctx, args)?;
     // 友好预检：越界才阻断（`workspace_out_of_roots`），未给 `--serve-config` 只提示。
     // 这不是授权判断——预检通过不等于 serve 会接受该 workspace，且绝不自动加白。
     let pf = preflight::check(args.serve_config.as_deref(), &workspace)?;
@@ -712,6 +736,41 @@ mod tests {
         };
         let err = up(&ctx, &args).expect_err("不存在的 workspace 应被拒绝");
         assert_eq!(err.error_code, "bad_workspace");
+    }
+
+    /// 显式 `--port` 撞上已被监听的端口：必须在 spawn 之前就失败，报 `port_in_use`。
+    /// 修好之前这条路径会「成功」，写出一份 `base_url` 指向别人进程的记录（#1177）。
+    #[test]
+    fn up_rejects_port_already_in_use() {
+        let tmp = tempdir("up_portbusy");
+        let ctx = ctx_at(&tmp);
+        let ws = tmp.join("ws");
+        std::fs::create_dir_all(&ws).expect("建 workspace");
+        // 请求一个真实被监听的端口：bind 到 0 后**保持 listener 存活**，端口才算占用。
+        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("绑定随机端口");
+        let port = held.local_addr().expect("取本地地址").port();
+        let args = UpArgs {
+            name: "x".to_string(),
+            workspace: ws.display().to_string(),
+            serve_config: None,
+            port: Some(port),
+            yes: true,
+            env: BTreeMap::new(),
+            timeout: Duration::from_millis(100),
+            origin: Origin::Cli,
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+        let err = up(&ctx, &args).expect_err("被占用的端口应被拒绝");
+        assert_eq!(err.error_code, "port_in_use");
+        assert_eq!(err.exit_code, crate::EXIT_USAGE);
+        assert!(
+            err.message.contains(&port.to_string()),
+            "错误信息应点出端口号，便于定位：{}",
+            err.message
+        );
+        drop(held);
     }
 
     fn tempdir(tag: &str) -> PathBuf {
