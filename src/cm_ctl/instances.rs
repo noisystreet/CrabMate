@@ -230,7 +230,7 @@ fn check_permissions(path: &Path) -> Result<(), CtlError> {
             return Err(CtlError::usage(
                 "instances_file_missing",
                 format!(
-                    "声明文件不存在：{}（`supervise --from-config` 需要它）",
+                    "声明文件不存在：{}（`supervise --from-config` 与 `up --all` 都需要它）",
                     path.display()
                 ),
             ));

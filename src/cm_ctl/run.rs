@@ -27,11 +27,7 @@ use super::CtlError;
 pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
     let ctx = Ctx::resolve()?;
     match &cmd.sub {
-        CtlSubCmd::Up(c) => {
-            let out = ops::up(&ctx, &up_args(c, workspace_cli)?)?;
-            render::up(&out);
-            Ok(())
-        }
+        CtlSubCmd::Up(c) => up_cmd(&ctx, c, workspace_cli),
         CtlSubCmd::Down(c) => down_cmd(&ctx, c),
         CtlSubCmd::Restart(c) => {
             let out = ops::restart(
@@ -74,8 +70,14 @@ fn require_workspace(workspace_cli: Option<&str>, what: &str) -> Result<String, 
 }
 
 fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
+    let name = c.name.clone().ok_or_else(|| {
+        CtlError::usage(
+            "missing_name",
+            "需要实例名，或使用 `--all` 按 instances.toml 声明批量启动",
+        )
+    })?;
     Ok(UpArgs {
-        name: c.name.clone(),
+        name,
         workspace: require_workspace(workspace_cli, "ctl up")?,
         serve_config: c.serve_config.clone(),
         port: c.port,
@@ -88,6 +90,107 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
         profile_fingerprint: None,
         no_tools: false,
     })
+}
+
+/// `up`：单实例，或 `--all` 按声明批量启动。
+fn up_cmd(ctx: &Ctx, c: &UpCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
+    if c.all {
+        return up_all(ctx, c);
+    }
+    let out = ops::up(ctx, &up_args(c, workspace_cli)?)?;
+    render::up(&out);
+    Ok(())
+}
+
+/// `up --all`：**复用** `supervise` 的计划，只执行其中的 `Start`。
+///
+/// 回收语义仍归 `supervise` 独占——这里不执行 `Stop` / `Skipped`，否则「批量起」会变成
+/// 「顺手停掉用户自己 `up` 起来的实例」。`Running` 不进入执行集合，所以重复执行是幂等的。
+/// 另写一条「什么算需要起」才是这里最该避免的东西：声明解析、profile 指纹、端口池、
+/// workspace 预检都只该有一份，第二份迟早与第一份漂移。
+fn up_all(ctx: &Ctx, c: &UpCmd) -> Result<(), CtlError> {
+    reject_name_with_all(c)?;
+    reject_single_instance_flags(c)?;
+    let path = match c.instances_file.as_deref() {
+        Some(p) => paths::absolutize(p)?,
+        None => ctx.paths.instances_file(),
+    };
+    let file = instances::load(&path)?;
+    let starts = starts_only(supervise::plan(ctx, &file)?);
+    if c.dry_run {
+        render::supervise(&starts, true);
+        return Ok(());
+    }
+    let done = supervise::execute(ctx, starts, &one_shot_opts(c));
+    render::supervise(&done, false);
+    let failed = failed_count(&done);
+    if failed == 0 {
+        return Ok(());
+    }
+    Err(CtlError::general(
+        "up_all_partial_failure",
+        format!("{failed} 个实例未能启动（详见上方输出）"),
+    ))
+}
+
+/// 计划里只保留启动步骤：回收由 `supervise` 决定，不在批量启动里顺手做。
+fn starts_only(steps: Vec<supervise::Step>) -> Vec<supervise::Step> {
+    steps
+        .into_iter()
+        .filter(|s| matches!(s, supervise::Step::Start { .. }))
+        .collect()
+}
+
+/// `up --all` 的收敛参数：一次性执行，不巡检、不重启。
+fn one_shot_opts(c: &UpCmd) -> supervise::Opts {
+    supervise::Opts {
+        timeout: Duration::from_secs(c.timeout_secs),
+        grace: DEFAULT_GRACE,
+        dry_run: c.dry_run,
+        restart: restart::Restart::Never,
+        backoff: restart::Backoff::default(),
+        health: Duration::from_secs(30),
+    }
+}
+
+/// `--all` 与实例名二选一（缺名字由 `up_args` 负责，这里负责「两个都给」那种）。
+fn reject_name_with_all(c: &UpCmd) -> Result<(), CtlError> {
+    if c.name.is_none() {
+        return Ok(());
+    }
+    Err(CtlError::usage(
+        "conflicting_flags",
+        "`--all` 与实例名互斥：给名字起一个用 `up <name>`，按声明批量起才用 `--all`",
+    ))
+}
+
+/// `--all` 不接受单实例参数：它们在声明（或 profile）里，静默忽略会让人以为生效。
+fn reject_single_instance_flags(c: &UpCmd) -> Result<(), CtlError> {
+    let mut used = Vec::new();
+    if c.serve_config.is_some() {
+        used.push("--serve-config");
+    }
+    if c.port.is_some() {
+        used.push("--port");
+    }
+    if c.yes {
+        used.push("--yes");
+    }
+    if used.is_empty() {
+        return Ok(());
+    }
+    Err(CtlError::usage(
+        "conflicting_flags",
+        format!(
+            "`--all` 与 {} 互斥：批量启动只认 instances.toml 的声明（或用 profile），\
+             单实例参数在这里只会看起来生效",
+            used.join(" / ")
+        ),
+    ))
+}
+
+fn failed_count(steps: &[supervise::Step]) -> usize {
+    steps.iter().filter(|s| s.has_failed()).count()
 }
 
 /// `supervise`：读声明 → 计划 → 执行（`--watch` 则循环）。
@@ -108,7 +211,7 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
     let steps = supervise::execute(ctx, supervise::plan(ctx, &file)?, &opts);
     render::supervise(&steps, c.dry_run);
 
-    let failed = steps.iter().filter(|s| s.has_failed()).count();
+    let failed = failed_count(&steps);
     if failed == 0 {
         return Ok(());
     }
@@ -443,5 +546,148 @@ fn follow_file(path: &std::path::Path) -> ! {
                 offset = len;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_ctl::paths::CtlPaths;
+    use crate::cm_ctl::port_pool::PortPool;
+    use crate::cm_ctl::supervise::{StartSpec, Step, plan};
+    use std::collections::BTreeMap;
+
+    fn cmd(name: Option<&str>) -> UpCmd {
+        UpCmd {
+            name: name.map(str::to_string),
+            all: false,
+            instances_file: None,
+            dry_run: true,
+            serve_config: None,
+            port: None,
+            yes: false,
+            timeout_secs: 10,
+        }
+    }
+
+    fn ctx_at(dir: &std::path::Path) -> Ctx {
+        Ctx {
+            paths: CtlPaths::for_test(dir),
+            pool: PortPool::default_pool(),
+        }
+    }
+
+    fn start(name: &str) -> Step {
+        Step::Start {
+            name: name.to_string(),
+            spec: StartSpec {
+                workspace: "/tmp/nope".to_string(),
+                serve_config: None,
+                port: None,
+                env: BTreeMap::new(),
+                profile: None,
+                profile_fingerprint: None,
+                no_tools: false,
+            },
+            restart: false,
+            reason: "测试".to_string(),
+        }
+    }
+
+    /// 既没给名字、也没给 `--all`：必须是用法错误，而不是「起了一个空名字的实例」。
+    #[test]
+    fn up_without_name_or_all_is_missing_name() {
+        let e = up_args(&cmd(None), None).expect_err("应报错");
+        assert_eq!(e.error_code, "missing_name");
+    }
+
+    #[test]
+    fn all_with_instance_name_is_conflicting_flags() {
+        let mut c = cmd(Some("proj-a"));
+        c.all = true;
+        assert_eq!(
+            reject_name_with_all(&c).expect_err("应报错").error_code,
+            "conflicting_flags"
+        );
+    }
+
+    /// 单实例参数在批量模式下必须报错：静默忽略会让人以为 `--port` 生效了。
+    #[test]
+    fn all_rejects_single_instance_flags() {
+        let mut c = cmd(None);
+        c.port = Some(8080);
+        assert_eq!(
+            reject_single_instance_flags(&c).expect_err("应报错").error_code,
+            "conflicting_flags"
+        );
+
+        let mut c = cmd(None);
+        c.yes = true;
+        assert_eq!(
+            reject_single_instance_flags(&c).expect_err("应报错").error_code,
+            "conflicting_flags"
+        );
+
+        // 都不给时不得报错（批量模式本来就该零参数跑）
+        assert!(reject_single_instance_flags(&cmd(None)).is_ok());
+    }
+
+    /// 只有 `Start` 进入执行集合：回收是 `supervise` 的事。
+    #[test]
+    fn starts_only_drops_everything_but_start() {
+        let steps = vec![
+            Step::Running { name: "a".into() },
+            start("b"),
+            Step::Stop {
+                name: "c".into(),
+                reason: "测试".into(),
+            },
+            Step::Skipped {
+                name: "d".into(),
+                reason: "测试".into(),
+            },
+        ];
+        let kept = starts_only(steps);
+        assert_eq!(kept.len(), 1, "只应保留 Start：{kept:?}");
+        assert!(matches!(&kept[0], Step::Start { name, .. } if name == "b"));
+    }
+
+    /// 声明里 `enabled = false` 的实例不能被 `up --all` 启动
+    /// （`plan` 把它判成 `Skipped`，而这里只留 `Start`）。
+    #[test]
+    fn plan_filter_excludes_disabled_declaration() {
+        let dir = std::env::temp_dir().join(format!(
+            "cm_ctl_up_all_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(dir.join("config")).expect("建目录");
+        let ctx = ctx_at(&dir);
+        let decl = dir.join("config").join("instances.toml");
+        std::fs::write(
+            &decl,
+            "[instances.on]\nworkspace = \"/tmp/nope-on\"\n\n\
+             [instances.off]\nworkspace = \"/tmp/nope-off\"\nenabled = false\n",
+        )
+        .expect("写声明");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&decl, std::fs::Permissions::from_mode(0o600)).expect("权限");
+
+        let file = instances::load(&decl).expect("读声明");
+        let kept = starts_only(plan(&ctx, &file).expect("计划"));
+        assert!(
+            kept.iter()
+                .any(|s| matches!(s, Step::Start { name, .. } if name == "on")),
+            "启用的实例应进入启动集合：{kept:?}"
+        );
+        assert!(
+            !kept
+                .iter()
+                .any(|s| matches!(s, Step::Start { name, .. } if name == "off")),
+            "disabled 的实例不该被启动：{kept:?}"
+        );
     }
 }
