@@ -174,6 +174,26 @@ async fn set_workspace_from_raw_path(
     raw: &str,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let mut guard = http.workspace_override.write().await;
+    // 一实例一工作区（Issue #1183 §2 ①）：**已经绑定到具体路径**的实例不再接受覆盖，
+    // 同值重放幂等。`Some("")` 不算已绑定——那是「CLI 直启、用配置的默认目录」，
+    // 语义上仍属「未约定」，否则现有 Web UI 首次选目录就会被 409 挡住。
+    if let Some(already) = guard.as_deref().filter(|s| !s.is_empty()) {
+        let same = !raw.is_empty() && std::path::Path::new(already) == std::path::Path::new(raw);
+        if !same {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "code": "WORKSPACE_ALREADY_SET",
+                    "error": format!(
+                        "该实例已绑定工作区 {already}；换工作区请另起实例（一实例一工作区）"
+                    )
+                })),
+            ));
+        }
+        // 同值：幂等返回，不再重复同步运行时路径
+        return Ok(Json(serde_json::json!({ "ok": true, "path": already })));
+    }
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
         *guard = Some(String::new());
