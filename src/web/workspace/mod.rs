@@ -17,6 +17,8 @@ mod handlers_file_raw_http_tests;
 mod handlers_fs_extra_http_tests;
 #[cfg(test)]
 mod handlers_profile_http_tests;
+#[cfg(test)]
+mod handlers_workspace_set_http_tests;
 mod handlers_sync;
 mod projects;
 
