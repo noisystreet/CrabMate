@@ -580,6 +580,29 @@ fn search_replace_try_writes_without_confirm_when_dry_run_false() {
 }
 
 #[test]
+fn search_replace_ambiguous_match_is_invalid_input_and_does_not_write() {
+    // 未声明替换范围时多处命中必须拒写：旧行为是静默替换全部，模型看不到「改多了」。
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "x = 1\nx = 1\n").unwrap();
+
+    let err = search_replace_try(
+        r#"{"path":"a.txt","search":"x = 1","replace":"x = 2","dry_run":false}"#,
+        &super::PathAccess::new(&dir),
+        &test_ctx(&dir),
+    )
+    .expect_err("多处命中须拒写");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("匹配 2 处"), "{}", err.message);
+    assert_eq!(
+        read(&dir, "a.txt"),
+        "x = 1\nx = 1\n",
+        "歧义拒写不得改动文件"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn search_replace_try_invalid_regex_is_invalid_input() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "hello\n").unwrap();

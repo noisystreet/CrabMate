@@ -466,11 +466,25 @@ pub struct SearchReplaceArgs {
     pub replace: String,
     #[serde(default)]
     pub regex: bool,
+    /// **省略 = 唯一性守卫**：`search` 必须只匹配 1 处，多处即拒写（未写盘）并列出命中位置。
+    /// `0` = 显式全部替换；`N` = 只替换前 N 处。
     #[serde(default)]
     #[schemars(range(min = 0))]
     pub max_replacements: Option<u64>,
+    /// `true` 等价于 `max_replacements=0`（显式全部替换），语义更直白。与 `max_replacements`
+    /// 给非 0 值时冲突报错。
+    #[serde(default)]
+    pub replace_all: bool,
     #[serde(default = "default_true")]
     pub dry_run: bool,
+    /// 可选写前 CAS：最近一次 `read_file` 成功输出头里的 `revision`；与当前内容不一致时
+    /// **拒写**（`错误[stale_revision]`）。显式传入时始终校验。
+    #[serde(default)]
+    pub base_revision: Option<String>,
+    /// `true` 时跳过「本轮 `read_file` 绑定」的自动校验（显式 `base_revision` 仍校验）。
+    /// 本轮没读过该文件时本来就不校验——按文本锚定不依赖行号快照。
+    #[serde(default)]
+    pub allow_stale_revision: Option<bool>,
     /// **已废弃**：写盘只需 `dry_run=false`，本字段不再被校验；仅为兼容既有调用保留。
     #[serde(default)]
     pub confirm: bool,

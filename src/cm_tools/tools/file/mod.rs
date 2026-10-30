@@ -13,6 +13,7 @@ mod read_file_pipeline;
 mod read_tool;
 mod replace_lines_stream;
 mod revision;
+mod search_replace;
 mod tree_glob;
 mod write_guard;
 mod write_ops;
@@ -22,8 +23,9 @@ pub use directory::read_dir_try;
 pub use inspect::read_binary_meta_try;
 pub use mutate::{
     append_file, append_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
-    delete_files, delete_files_try, search_replace, search_replace_try,
+    delete_files, delete_files_try,
 };
+pub use search_replace::{search_replace, search_replace_try};
 pub use path::{PathAccess, canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 // 审计正文的路径截断：`read_dir` 的工作区外审批在 `cm_internal` 侧记录，那里不该自己
 // 再写一份「只留末两段」的规则。
