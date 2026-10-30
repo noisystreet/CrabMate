@@ -520,6 +520,47 @@ fn enable_clears_down_marker() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 声明本就 `enabled = true`、记录却被 `down` 标成 `stopped` 时，`enable` 必须
+/// **立刻收敛**：`changed` 只反映 `enabled` 字段变没变，清标记是另一次写盘；只认
+/// `changed` 会回一个 `ok` 却什么都不做（默认 `--restart never`，`--watch` 又只跟
+/// 声明指纹，实例于是永远停着 —— 客户端拿到的却是成功）。
+#[test]
+fn enable_on_already_enabled_but_downed_instance_reconverges() {
+    let dir = tempdir("en_idem");
+    let (decl, _) = decl_with_manual_fields(&dir);
+    let ctx = ctx_at(&dir);
+    ctx.paths.ensure_dirs().expect("建状态目录");
+
+    // 只留下 `down` 的标记，`enabled` 仍是 true（客户端重试 enable 的场景）
+    let rec_path = ctx.paths.record_path("p").expect("记录路径");
+    let mut rec = crate::cm_ctl::record::InstanceRecord::new("p");
+    rec.desired_state = crate::cm_ctl::record::DesiredState::Stopped;
+    crate::cm_ctl::record::write_atomic(&rec_path, &rec).expect("写记录");
+
+    let (resp, dirty) = handle(
+        &ctx,
+        &decl,
+        Request::Enable(TargetRequest {
+            name: "p".to_string(),
+        }),
+    );
+    let v: Value = serde_json::from_str(&resp.to_line()).expect("响应应为 JSON");
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["changed"], json!(false), "enabled 本就是 true");
+    assert_eq!(v["cleared_down"], json!(true), "应回报清掉了 down 标记");
+    assert!(dirty, "清了标记就必须收敛，否则实例把 ok 当成已启动");
+
+    let after = crate::cm_ctl::record::read_optional(&rec_path)
+        .expect("读记录")
+        .expect("记录应存在");
+    assert_eq!(
+        after.desired_state,
+        crate::cm_ctl::record::DesiredState::Running,
+        "desired_state 必须回到 running"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `disable` / `enable` 只收 `name`：多给的字段一律拒绝（手写白名单是唯一防线）。
 #[test]
 fn disable_rejects_unknown_field() {

@@ -324,7 +324,7 @@ fn ensure_declared(path: &std::path::Path, name: Option<&str>) -> Result<(), Ctl
     ))
 }
 
-/// `--socket`：常驻并接受本地控制面请求（`add` / `remove` / `list`）。
+/// `--socket`：常驻并接受本地控制面请求（`add` / `remove` / `list` / `disable` / `enable`）。
 ///
 /// 主循环独占写盘：请求先改声明、再由本线程收敛，因此不存在「socket 与
 /// `--watch` 同时改文件」的交错；配 `--watch` 时额外保留文件指纹轮询。
