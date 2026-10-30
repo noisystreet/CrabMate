@@ -502,3 +502,91 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     assert!(list_out.contains("[succeeded]"), "{list_out}");
     drop(sandbox);
 }
+
+/// 待绑定 / 已绑定工作区下对 `json_format` 的真实分发结果。
+///
+/// 用 `json_format`（`SyncDefault`，不碰磁盘）做探针，是为了把「工作区 gate」与「工具
+/// 自身要路径」区分开：`!workspace_is_set` 时被拦，只能归因于 gate。
+///
+/// 不走 `DispatchToolWorkspace::for_tests`：它把 `workspace_is_set` 钉成 `true`（常规
+/// 已设置上下文），而这里要的恰是另一侧。
+async fn dispatch_json_format_with_workspace(
+    is_set: bool,
+) -> (String, Option<serde_json::Value>) {
+    let cfg = std::sync::Arc::new(test_cfg());
+    let mut workspace_changed = false;
+    let call = ToolCall {
+        id: "call_ws".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "json_format".into(),
+            arguments: r#"{"text":"{\"a\":1}"}"#.into(),
+        },
+    };
+    let lookup = default_lookup();
+    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    dispatch_tool(DispatchToolParams {
+        runtime: ToolRuntime {
+            workspace_changed: &mut workspace_changed,
+            ctx: None,
+        },
+        call: DispatchToolCall {
+            name: "json_format",
+            args: r#"{"text":"{\"a\":1}"}"#,
+            tc: &call,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: std::path::Path::new("."),
+            workspace_is_set: is_set,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+            permission: None,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: None,
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await
+}
+
+/// 待绑定工作区必须拒绝 `SyncDefault` 工具（#1183 ③）。
+///
+/// 这条是回归闸：`workspace_is_set == false` 时若放过工具，`working_dir` 会回落到
+/// `command_exec.run_command_working_dir`，于是「还没选目录」的实例照样在某个目录上
+/// 读写——正是该 Issue 要消灭的静默回落。提示里必须给出可操作出口（工作区面板），
+/// 否则用户只看到一句拒绝。
+#[tokio::test]
+async fn pending_workspace_blocks_sync_default_tool() {
+    let (out, payload) = dispatch_json_format_with_workspace(false).await;
+    assert!(out.contains("未设置工作区"), "待绑定时应拒绝，实际：{out}");
+    assert!(
+        out.contains("工作区面板"),
+        "拒绝文案应给出可操作出口，实际：{out}"
+    );
+    assert!(payload.is_none(), "拒绝路径不应带结构化载荷：{payload:?}");
+}
+
+/// 对照（#1183 ③「`Some("")` 不得误伤」）：显式选默认目录不等于待绑定。
+///
+/// 少了这一条，把 gate 写成「工作目录为空就拒绝」也能过前一条测试，而 CLI 直启
+/// `serve`（不传 `--workspace`）的用户会被一并打断。
+#[tokio::test]
+async fn explicit_default_workspace_does_not_block_sync_default_tool() {
+    let (out, _) = dispatch_json_format_with_workspace(true).await;
+    assert!(!out.contains("未设置工作区"), "已设置工作区不应被拦：{out}");
+    assert!(out.contains("\"a\""), "工具应真正执行：{out}");
+}

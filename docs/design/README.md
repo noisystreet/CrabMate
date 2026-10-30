@@ -104,7 +104,7 @@
 
 | 文档 | 说明 |
 |---|---|
-| [ctl_workspace_unset.md](ctl_workspace_unset.md) | 声明可省略工作区、由同机 client 运行时设置：**设计稿（#1183），未实现**。已定语义：一实例一工作区（409 拒绝覆盖）、接受无人值守退化（不回填）、未设置时工具拒绝 `WORKSPACE_NOT_SET`；待绑定语义只对 ctl 起的实例生效 |
+| [ctl_workspace_unset.md](ctl_workspace_unset.md) | 声明可省略工作区、由同机 client 运行时设置：**已实现（#1183）**。语义：一实例一工作区（409 拒绝覆盖、空路径复位）、接受无人值守退化（不回填）、未设置时工具面拒绝 `WORKSPACE_NOT_SET`（仅拦 `SyncDefault` 类工具）；待绑定语义只对 ctl 起的实例生效 |
 
 ## 已归档（`archive/`）
 
