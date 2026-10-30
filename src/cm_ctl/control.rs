@@ -402,6 +402,7 @@ fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Res
             false,
         ),
         Ok(Some(changed)) => {
+            let mut cleared_down = false;
             let mut body = json!({
                 "name": name,
                 "enabled": enabled,
@@ -410,7 +411,10 @@ fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Res
             });
             if enabled {
                 match ops::mark_wanted_running(ctx, &name) {
-                    Ok(cleared) => body["cleared_down"] = json!(cleared),
+                    Ok(cleared) => {
+                        cleared_down = cleared;
+                        body["cleared_down"] = json!(cleared);
+                    }
                     // 声明已经写成 `enabled = true`，此时回错误会让客户端以为没改成；
                     // 但「这半边没做成」必须让它看见，否则它会干等一个不会启动的实例。
                     Err(e) => {
@@ -421,7 +425,11 @@ fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Res
                     }
                 }
             }
-            (Response::ok(body), changed)
+            // 收敛判据不能只看 `changed`：它只说明 `enabled` 字段变没变，而清 `down`
+            // 标记同样是一次写盘。声明本就 `enabled = true`、记录却被 `down` 标成
+            // `stopped` 时（客户端重试 `enable`），只认 `changed` 会回一个
+            // `ok + cleared_down: true` 却不收敛 —— 客户端以为成功，实例永远不启动。
+            (Response::ok(body), changed || cleared_down)
         }
         Err(e) => (Response::err(e.error_code, e.message), false),
     }

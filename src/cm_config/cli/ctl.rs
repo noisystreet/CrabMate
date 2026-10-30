@@ -75,7 +75,7 @@ pub struct SuperviseCmd {
     #[arg(long = "interval", value_name = "SECS", default_value_t = 1)]
     pub interval_secs: u64,
 
-    /// 同时提供本地控制面（unix socket）：`add` / `remove` / `list`，仅同用户可连
+    /// 同时提供本地控制面（unix socket）：`add` / `remove` / `list` / `disable` / `enable`，仅同用户可连
     ///
     /// 省略值时为 `$XDG_RUNTIME_DIR/crabmate/ctl.sock`。给出即常驻（Ctrl-C 退出）。
     #[arg(

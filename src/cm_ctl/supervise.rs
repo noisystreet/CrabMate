@@ -495,7 +495,7 @@ fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) {
     }
 }
 
-/// 读一次声明并收敛（控制面收到 `add` / `remove` 后立即调用）。
+/// 读一次声明并收敛（控制面收到 `add` / `remove` / `disable` / `enable` 后立即调用）。
 pub fn reconcile_once(ctx: &Ctx, path: &Path, opts: &Opts) {
     match instances::load(path) {
         Ok(file) => apply(ctx, &file, opts),
