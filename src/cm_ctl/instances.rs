@@ -189,6 +189,29 @@ pub fn remove_entry(path: &Path, name: &str) -> Result<bool, CtlError> {
     Ok(true)
 }
 
+/// 只改一条声明的 `enabled`，其余字段（`env` / `config` / `profile` / `port` /
+/// `workspace`）原样保留。
+///
+/// **为什么不是 [`upsert`]**：`upsert` 是整条 `insert` 覆盖。控制面的
+/// `disable` / `enable` 只收到 `name`，用它重建一个 `Declaration` 就会把人工写在
+/// 文件里的 `env` / `config` 清空 —— 而那正是「摘 lane 不该丢的东西」（#1187）。
+/// 这里用 `get_mut` 就地改一个字段，语义上等价于「软删除」。
+///
+/// 返回 `Ok(None)` = 声明里没有该实例；`Ok(Some(false))` = 值本就一致，
+/// **不写盘**（因此也不会触发收敛）；`Ok(Some(true))` = 已改并落盘。
+pub fn set_enabled(path: &Path, name: &str, enabled: bool) -> Result<Option<bool>, CtlError> {
+    let mut file = load_optional(path)?;
+    let Some(decl) = file.instances.get_mut(name) else {
+        return Ok(None);
+    };
+    if decl.enabled == enabled {
+        return Ok(Some(false));
+    }
+    decl.enabled = enabled;
+    write_atomic(path, &file)?;
+    Ok(Some(true))
+}
+
 fn invalid_message(path: &Path, detail: &str) -> String {
     let hint = if detail.contains("unknown field `workspace`") || detail.contains("unknown field 'workspace'") {
         "（`workspace` 只能由实例声明提供，profile 不得携带）"
