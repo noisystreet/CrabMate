@@ -128,6 +128,13 @@ pub struct InstanceRecord {
     /// 仅供排查，不参与兼容判断。
     #[serde(default)]
     pub ctl_version: Option<String>,
+    /// 该实例是以「跳过命令白名单」（子 `serve --yes`）启动的。
+    ///
+    /// 必须落盘：`restart` 用**记录**重建启动规格，缺了它就会把一个 `--yes` 实例
+    /// 在重启后悄悄变回「白名单生效」。方向虽是收紧，但它已不是同一个实例，
+    /// 而用户只会看到「重启后工具突然都用不了了」，且 `restart` 前后没有任何提示。
+    #[serde(default)]
+    pub yes: bool,
 }
 
 fn default_schema_version() -> u32 {

@@ -204,6 +204,9 @@ fn spawn_and_record(
     rec.config = args.serve_config.clone();
     rec.log = Some(spec.log_path.display().to_string());
     rec.env_keys = spawned.env_keys;
+    // 落 `--yes`：`restart` 只凭记录重建规格，缺了它会把「跳过白名单」的实例
+    // 在重启后悄悄变成「白名单生效」（见 `restart` 里的使用点）。
+    rec.yes = args.yes;
     rec.managed_by = Some(args.origin.as_str().to_string());
     // `profile` 与 `profile_in_use` 在启动时必然相同：差异只出现在
     // 「声明改了 profile、实例还没 restart」，由 `supervise` 的计划发现。
@@ -592,40 +595,13 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
             format!("实例 {name} 不存在；请先 `crabmatectl up {name} ...`"),
         ));
     };
-    // 记录里没有工作区 = 该实例本来就是待绑定态，重启后仍是待绑定（不回填，见 #1183 §2 ②）。
-    let workspace = rec.workspace.clone();
     // profile 存在时按**当前** profiles.toml 重新解析：`restart` 是「按声明重建」，
     // 若把 `--no-tools` / `allowed_commands` 丢掉，实例会在重启后悄悄变成另一种权限集合
     // （而方向可能是放松）。这也正是「profile 变更需 restart 才生效」的落点。
     let resolved = resolve_recorded_profile(ctx, &rec)?;
-    let port = rec.port;
-    let serve_config = resolved
-        .as_ref()
-        .and_then(|r| r.serve_config.clone())
-        .or_else(|| rec.config.clone());
-    let env = resolved.as_ref().map(|r| r.env.clone()).unwrap_or_default();
-    let no_tools = resolved.as_ref().map(|r| r.no_tools).unwrap_or(false);
-    let fingerprint = resolved.as_ref().map(|r| r.fingerprint());
-
-    // 沿用原持有者：`supervise` 拉起的实例被人工 restart 后仍归 `supervise` 回收，
-    // 否则它会变成「无主的 supervise 实例」——既不被声明回收，也不被声明接管。
-    let origin = Origin::from_record(&rec);
+    let args = super::relaunch::args_from_record(&rec, resolved.as_ref(), timeout);
 
     down(ctx, name, grace)?;
-
-    let args = UpArgs {
-        name: name.to_string(),
-        workspace,
-        serve_config,
-        port,
-        yes: false,
-        env,
-        timeout,
-        origin,
-        profile: rec.profile.clone(),
-        profile_fingerprint: fingerprint,
-        no_tools,
-    };
     up(ctx, &args)
 }
 

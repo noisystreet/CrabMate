@@ -1,4 +1,4 @@
-//! `crabmatectl`：本地多实例 `serve` 进程管理器（Unix-only）。
+//! `crabmatectl`：本地多实例 `serve` 进程管理器（Linux-only）。
 //!
 //! 设计要点（见 `docs/命令行与路由.md` 与 `docs/开发文档.md`）：
 //!
@@ -22,6 +22,7 @@ pub(crate) mod probe;
 pub(crate) mod profiles;
 pub(crate) mod readiness;
 pub(crate) mod record;
+pub(crate) mod relaunch;
 pub(crate) mod render;
 pub(crate) mod restart;
 pub(crate) mod run;
@@ -30,6 +31,18 @@ pub(crate) mod spawn;
 pub(crate) mod supervise;
 
 pub use run::run;
+
+/// 本平台的进程管理能力是否完整（目前仅 Linux）。
+///
+/// 进程身份与存活判定（`boot_id` / `pid_start_ticks` / `cmdline` / `pid_alive`）
+/// 全部读 `/proc`，而 macOS 没有 procfs。在那里 `pid_alive` 会恒为 `false`，于是
+/// `down` 把「读不到事实」当成「进程已死」：清掉 `pid` 并写 `stopped`，进程却仍在
+/// 后台跑；`ls` 同样把每个实例都报成 `stopped`，`--restart on-failure` 更会每轮
+/// 巡检再起一个新进程。
+///
+/// 与其让这种静默误判成立，不如在**入口**（`run`）直接拒绝：拿不到进程事实时说
+/// 「不支持」，比给出一个编造的状态诚实。
+pub const PLATFORM_SUPPORTED: bool = cfg!(target_os = "linux");
 
 use std::fmt;
 
