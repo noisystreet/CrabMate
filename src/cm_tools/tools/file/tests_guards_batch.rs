@@ -521,7 +521,7 @@ fn test_write_tools_default_to_preview_without_dry_run() {
     );
 
     // search_replace：不传 dry_run → 预览，磁盘不变。
-    let out = super::mutate::search_replace(r#"{"path":"m.txt","search":"L1","replace":"Z"}"#, &dir, &ctx);
+    let out = super::search_replace(r#"{"path":"m.txt","search":"L1","replace":"Z"}"#, &dir, &ctx);
     assert!(
         out.contains("dry-run") && out.contains("设置 dry_run=false"),
         "{}",
