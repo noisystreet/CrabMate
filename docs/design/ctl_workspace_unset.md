@@ -1,6 +1,8 @@
 # 声明可省略 workspace：由同机 client 运行时设置
 
-> **状态**：设计稿（跟踪 Issue #1183，**未实现**）。三条核心语义于 2026-10-29 拍板，实现不得回退。
+> **状态**：**已实现**（跟踪 Issue #1183）。三条核心语义于 2026-10-29 拍板，实现不得回退。
+>
+> 落地锚点：ctl 侧五处改动 + `serve --workspace-unset`（`cm_config/cli/definitions.rs`）→ `POST /workspace` 的 409 `WORKSPACE_ALREADY_SET`（`web/workspace/handlers.rs`）→ 工具面 `WORKSPACE_NOT_SET`（`cm_api_contract/error_codes.rs`；gate 在 `tool_registry/execute/{dispatch_body,run_command_host,terminal_session}`）。回归测试：`tool_registry::tests::{pending_workspace_blocks_sync_default_tool, explicit_default_workspace_does_not_block_sync_default_tool}`、`web::workspace::handlers_workspace_set_http_tests`、`tests/cli_contract.rs` 的三条 `serve_workspace_unset_*`。
 > 相关：[命令行与路由](../命令行与路由.md)（`crabmatectl` 子命令与 socket 协议）、[permission_levels.md](permission_levels.md)（工具面门控）、[server_api_completeness.md](server_api_completeness.md)。
 
 ## 1. 目标
@@ -156,8 +158,10 @@ Some(x) ──POST /workspace {path:""}─► Some("")          显式复位
 - **`serve` 直启（不带 `--workspace-unset`）行为不变**：不设置也能用 `run_command_working_dir`（对照测试，防 §2 ④ 被误伤）
 - `cargo test` 全量 + `pre-commit run --all-files` 绿；文档同步 `README.md`、[命令行与路由](../命令行与路由.md)、`CHANGELOG.md`
 
-## 9. 未决（实现前仍需定）
+## 9. 已收口的未决项（原「实现前仍需定」）
 
-1. `cm_internal/process_handles.rs:136` 管的是子进程 cwd，与 agent 工作区可能不是同一概念；需先区分再决定是否拒绝
-2. socket 控制面的 `add` 是否允许省略 `workspace`：建议**仍必填**（client 知道目录才 `add`），使「声明两种模式并存」且不影响既有调用方
-3. 错误码命名与既有 `*_REQUIRED` 风格对齐（`WORKSPACE_NOT_SET` 还是 `WORKSPACE_REQUIRED`），需与 [SSE 协议](../SSE协议.md) 现有错误码一致
+1. `cm_internal/process_handles.rs` 的 `run_command_working_dir` 回落**不拒绝**：那里解析的是长期记忆库的**存储路径**（`run_command_working_dir/.crabmate/long_term_memory.db`），属服务自身数据落点，不是工具作用域。工具面 gate 只认 `workspace_is_set`。
+2. socket 控制面的 `add` **仍必填 `workspace`**（`cm_ctl/control.rs` 的 `AddRequest.workspace: String`）：client 知道目录才 `add`，使『声明带工作区』与『待绑定』两种模式并存，且不影响既有调用方。
+3. 错误码定为 **`WORKSPACE_NOT_SET`**（`cm_api_contract/error_codes.rs`），SSE 侧沿用既有的小写 `workspace_not_set`（[SSE 协议](../SSE协议.md)）。
+
+实现时确认的一条边界（本设计原未写明）：gate **只拦 `SyncDefault` 类工具**，出网类（`http_fetch` / `web_search` 等）在待绑定态仍可用——它们不落本地工作区，一并拦下只会无端缩小能力面。该判定落在 `execute_dispatch_body.inc.rs` 的 `!workspace_is_set && matches!(hid, HandlerId::SyncDefault)`。
