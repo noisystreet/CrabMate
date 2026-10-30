@@ -83,3 +83,52 @@ async fn workspace_set_is_one_bind_per_instance() {
     assert_eq!(st, 200, "复位后应能切到新路径: {v}");
     assert_eq!(v["ok"], true, "{v}");
 }
+
+/// `GET /workspace` → `(status, json)`。
+async fn get_workspace(client: &reqwest::Client, base: &str) -> (u16, Value) {
+    let resp = client
+        .get(format!("{base}/workspace"))
+        .send()
+        .await
+        .expect("GET /workspace");
+    let status = resp.status().as_u16();
+    let text = resp.text().await.expect("workspace body");
+    let val = serde_json::from_str(&text).unwrap_or_else(|e| panic!("非法 JSON: {e}; body={text}"));
+    (status, val)
+}
+
+/// 待绑定实例在首次绑定前的**可观察态**：`GET /workspace` 报未设置，绑定后立刻反映新作用域。
+///
+/// 待绑定的完整语义是「`workspace_override` 为 `None` + 工具面回 `WORKSPACE_NOT_SET`」
+/// （#1183 §2 ③）。若这里把 `run_command_working_dir` 当成 `path` 回显，client 会以为
+/// 实例已绑定某个目录，而工具调用同时被拒——两处说法互相矛盾，排查时无从下手。
+#[tokio::test]
+async fn pending_workspace_reports_unset_then_binds() {
+    let dir_a = tempfile::tempdir().expect("tempdir a");
+    let a = std::fs::canonicalize(dir_a.path())
+        .expect("canonicalize a")
+        .to_str()
+        .expect("utf8 path a")
+        .to_string();
+
+    // `start_test_serve` 以 `workspace_override: None` 启动，正是 ctl spawn 出的待绑定态。
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+
+    // 1. 未设置不是错误态：`path` 为空、`error` 为 null，且不借默认目录充数。
+    let (st, v) = get_workspace(&client, &handle.base_url).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(
+        v["path"], "",
+        "待绑定时 path 必须为空，而不是回落到 run_command_working_dir: {v}"
+    );
+    assert_eq!(v["entries"].as_array().map(Vec::len), Some(0), "{v}");
+    assert!(v["error"].is_null(), "未设置不是错误态: {v}");
+
+    // 2. client 绑定后，同一实例的 GET 立即反映新作用域（不需要重启）。
+    let (st, v) = post_workspace(&client, &handle.base_url, &json!({ "path": a.clone() })).await;
+    assert_eq!(st, 200, "首次绑定应成功: {v}");
+    let (st, v) = get_workspace(&client, &handle.base_url).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["path"].as_str(), Some(a.as_str()), "{v}");
+}

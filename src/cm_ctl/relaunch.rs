@@ -103,4 +103,27 @@ mod tests {
         );
         assert!(!args.yes, "记录里没有 --yes 时不能凭 profile 新增");
     }
+
+    /// 待绑定实例 `restart` 后**仍然**是待绑定（#1183 §2 ②：接受无人值守退化，不回填）。
+    ///
+    /// 与 `carries_recorded_yes_and_owner` 同一种失败模式：`None` 一旦被「顺手补上」
+    /// 配置里的默认目录，运行时状态就悄悄变成了声明状态——用户重启一个「等 client
+    /// 绑定」的实例，回来却指向自己从未选过的目录，全程没有任何信号。
+    #[test]
+    fn pending_workspace_stays_pending_after_restart() {
+        let mut rec = InstanceRecord::new("a");
+        rec.workspace = None;
+
+        let args = args_from_record(&rec, None, Duration::from_secs(5));
+        assert_eq!(
+            args.workspace, None,
+            "待绑定实例重启后必须保持待绑定；补一个默认目录就是把运行时状态偷换成声明状态"
+        );
+
+        // 对照组：记录里真有路径时必须原样搬过去，
+        // 否则「不回填」会退化成「永远不带工作区」，两次重启后漂移成另一个实例。
+        rec.workspace = Some("/tmp/proj-a".to_string());
+        let args = args_from_record(&rec, None, Duration::from_secs(5));
+        assert_eq!(args.workspace.as_deref(), Some("/tmp/proj-a"));
+    }
 }
