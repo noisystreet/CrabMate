@@ -18,7 +18,8 @@
     "started_at",
     "state",
     "uptime_secs",
-    "workspace"
+    "workspace",
+    "yes"
   ],
   "status_row": [
     "base_url",
@@ -41,7 +42,8 @@
     "state",
     "tcp_ok",
     "uptime_secs",
-    "workspace"
+    "workspace",
+    "yes"
   ],
   "record_fields": [
     "base_url",
@@ -67,6 +69,7 @@
     "schema_version",
     "started_at",
     "state",
-    "workspace"
+    "workspace",
+    "yes"
   ]
 }

@@ -1,4 +1,8 @@
-//! `crabmatectl`：本地多实例 `crabmate serve` 进程管理（Unix-only）。
+//! `crabmatectl`：本地多实例 `crabmate serve` 进程管理（Linux-only）。
+//!
+//! **平台边界**：进程身份校验与存活判定读 `/proc`，故仅 Linux。其他 Unix（macOS）
+//! 能编译也会被 `cm_ctl::PLATFORM_SUPPORTED` 在入口拒绝——`pid_alive` 在那里恒为
+//! `false`，放行等于让 `down` 清掉记录却不杀进程。
 //!
 //! **独立二进制而非 `crabmate ctl` 子命令**：它管理的是别的进程、不是一次 agent
 //! 调用，入口分开才能一眼看出用途；同时也不让 `serve` 的 CLI 面被运维动作撑大。
@@ -30,7 +34,7 @@ fn main() {
     #[cfg(not(unix))]
     {
         let _ = (&cmd, cli.workspace.as_deref());
-        eprintln!("crabmatectl 目前仅支持 Unix（Linux/macOS）");
+        eprintln!("crabmatectl 目前仅支持 Linux：进程身份与存活判定依赖 procfs（/proc）");
         std::process::exit(2);
     }
 }

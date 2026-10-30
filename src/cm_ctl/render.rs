@@ -48,6 +48,9 @@ pub fn row_json(rec: &InstanceRecord, p: &Probe) -> serde_json::Value {
         // 退避重启进度：`--restart on-failure` 关闭时恒为 0 / null
         "restart_attempts": rec.restart_attempts,
         "next_restart_at": rec.next_restart_at,
+        // 工具面的一部分：`--yes` 决定子实例的命令白名单是否生效，
+        // 客户端要能展示它，不能只让人读 `status` 看得见。
+        "yes": rec.yes,
     })
 }
 
@@ -128,6 +131,12 @@ pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
     println!("  实际 config: {}", rec.config_in_use.as_deref().unwrap_or("-"));
     println!("  日志: {}", rec.log.as_deref().unwrap_or("-"));
     println!("  环境变量(名): {}", rec.env_keys.join(", "));
+    // `--yes` 决定工具面的白名单是否生效，属于「这个实例到底是什么」的一部分；
+    // 只存在记录里而不显示，用户就只能靠翻命令行历史去确认。
+    println!(
+        "  跳过命令白名单: {}",
+        if rec.yes { "是（--yes）" } else { "否" }
+    );
     println!("  profile(声明): {}", rec.profile.as_deref().unwrap_or("-"));
     println!("  profile(实际): {}", rec.profile_in_use.as_deref().unwrap_or("-"));
     if rec.profile != rec.profile_in_use {

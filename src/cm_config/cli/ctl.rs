@@ -172,6 +172,14 @@ pub struct RestartCmd {
     /// 等待 TCP 就绪的秒数
     #[arg(long = "timeout", value_name = "SECS", default_value_t = 10)]
     pub timeout_secs: u64,
+
+    /// 终止旧实例时的宽限秒数（宽限内未退出则 SIGKILL）
+    ///
+    /// 与 `down --timeout` / `supervise --grace` 同义。`serve` 收到 `SIGTERM` 后
+    /// 可能几十秒才退出，而 `restart` 又恰是 profile 变更的官方补救路径 ——
+    /// 没有这个口子，它会稳定地走 SIGKILL。
+    #[arg(long = "grace", value_name = "SECS", default_value_t = 10)]
+    pub grace_secs: u64,
 }
 
 /// 前台运行实例。
@@ -261,7 +269,7 @@ pub const SUBCOMMAND_NAMES: &[&str] = &[
 #[command(
     name = "crabmatectl",
     version,
-    about = "本地多实例 crabmate serve 进程管理（Unix-only）",
+    about = "本地多实例 crabmate serve 进程管理（Linux-only）",
     long_about = None
 )]
 pub struct CtlCli {
@@ -286,6 +294,34 @@ mod tests {
     #[test]
     fn man_page_command_is_named_crabmatectl() {
         assert_eq!(ctl_clap_command_for_man_page().get_name(), "crabmatectl");
+    }
+
+    /// `restart` 的两个秒数旋钮各自独立：`--grace` 放宽杀旧实例的终止窗口，
+    /// `--timeout` 放宽等新实例就绪。两者默认都是 10，映射串了没人看得出来，
+    /// 只会得到「按文档放宽了宽限，实际却在等就绪」。
+    #[test]
+    fn restart_reads_grace_and_timeout_separately() {
+        let cli = CtlCli::try_parse_from([
+            "crabmatectl", "restart", "a", "--grace", "45", "--timeout", "20",
+        ])
+        .expect("restart 应接受 --grace 与 --timeout");
+        let CtlSubCmd::Restart(c) = cli.sub else {
+            panic!("应解析成 restart");
+        };
+        assert_eq!(c.grace_secs, 45, "`--grace` 是终止宽限");
+        assert_eq!(c.timeout_secs, 20, "`--timeout` 是就绪等待");
+    }
+
+    /// 默认值同样是契约：不传时 `--grace` 与 `down --timeout` 同义（10s）。
+    /// 若默认变成 0，正常关停会直接跳到 SIGKILL。
+    #[test]
+    fn restart_defaults_grace_and_timeout_to_ten() {
+        let cli = CtlCli::try_parse_from(["crabmatectl", "restart", "a"]).expect("restart 只要有实例名");
+        let CtlSubCmd::Restart(c) = cli.sub else {
+            panic!("应解析成 restart");
+        };
+        assert_eq!(c.grace_secs, 10);
+        assert_eq!(c.timeout_secs, 10);
     }
 
     /// 新增子命令时若忘了登记 [`SUBCOMMAND_NAMES`]，生成的 man 页会留下虚假交叉引用；

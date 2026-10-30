@@ -7,6 +7,12 @@
 //! 1. `boot_id`：不一致 ⇒ 记录来自上次开机，直接判失效，不碰任何进程；
 //! 2. `pid_start_ticks`：`/proc/<pid>/stat` 第 22 字段，同 pid 换了进程就不等；
 //! 3. `cmdline`：包含 `serve` 且包含该实例的 workspace / port。
+//!
+//! **平台前提：仅 Linux。** 三重判据全部读 `/proc`；macOS 没有 procfs，本模块的
+//! 每个探针都会返回 `None` / `false`，而那只意味着「读不到事实」，**不等于**
+//! 「进程已死」。把两者混为一谈的后果很具体：`down` 会清掉 `pid` 并把记录写成
+//! `stopped`，进程却在后台继续跑。因此非 Linux 平台由 `cm_ctl::PLATFORM_SUPPORTED`
+//! 在入口拦下，不允许走到本模块的判定上。
 
 use std::fs;
 use std::path::PathBuf;

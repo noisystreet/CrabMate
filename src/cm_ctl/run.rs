@@ -25,6 +25,7 @@ use super::CtlError;
 
 /// `ctl` 入口：`workspace_cli` 来自全局 `--workspace`。
 pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
+    ensure_platform()?;
     let ctx = Ctx::resolve()?;
     match &cmd.sub {
         CtlSubCmd::Up(c) => up_cmd(&ctx, c, workspace_cli),
@@ -33,7 +34,9 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
             let out = ops::restart(
                 &ctx,
                 &c.name,
-                DEFAULT_GRACE,
+                // 宽限由调用方给（`--grace`）：`serve` 优雅关停可能远超默认 10s，
+                // 而 `restart` 是 profile 变更的官方补救路径，不该只能靠 SIGKILL。
+                Duration::from_secs(c.grace_secs),
                 Duration::from_secs(c.timeout_secs),
             )?;
             render::up(&out);
@@ -58,6 +61,22 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
         }
         CtlSubCmd::Supervise(c) => supervise_cmd(&ctx, c),
     }
+}
+
+/// 平台闸门：必须在**任何**子命令动作之前执行。
+///
+/// 非 Linux 上进程事实读不到（没有 procfs），而 `identity` / `probe` 把「读不到」
+/// 表达成 `pid_alive = false`。若放行，`down` 会清掉记录却不杀进程、`ls` 会把每个
+/// 实例都报成 `stopped`——这类静默误判比「明确说不能用」危险得多。
+fn ensure_platform() -> Result<(), CtlError> {
+    if super::PLATFORM_SUPPORTED {
+        return Ok(());
+    }
+    Err(CtlError::general(
+        "platform_unsupported",
+        "crabmatectl 目前仅支持 Linux：进程身份校验与存活判定依赖 procfs（/proc），\
+         在其它平台上这些事实读不到，`down` / `ls` 会给出与实际进程不符的结果",
+    ))
 }
 
 fn require_workspace(workspace_cli: Option<&str>, what: &str) -> Result<String, CtlError> {
@@ -498,6 +517,7 @@ fn write_run_record(
     rec.workspace = Some(workspace.display().to_string());
     rec.config = c.serve_config.clone();
     rec.env_keys = env_keys;
+    rec.yes = c.yes;
     // 前台模式同样归 `cli`：`supervise` 不接管人工起的实例。
     rec.managed_by = Some(Origin::Cli.as_str().to_string());
     let path = ctx.record_path(&c.name)?;
