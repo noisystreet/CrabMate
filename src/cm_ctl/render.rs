@@ -302,3 +302,72 @@ fn supervise_line(step: &Step, dry_run: bool) -> String {
         Step::Failed { name, error } => format!("× {name:<16} 失败：{error}"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::cm_ctl::supervise::{StartSpec, Step};
+
+    use super::supervise_line;
+
+    /// 计划行对待绑定实例必须显示「待绑定」，不能借 `run_command_working_dir`
+    /// 或任何占位路径把它伪装成已选目录（#1183 §2 ②：`ls` / `status` / `--dry-run`
+    /// 都要让「未绑定」对人可见）。
+    #[test]
+    fn dry_run_marks_pending_workspace() {
+        let spec = StartSpec {
+            workspace: None,
+            serve_config: None,
+            port: Some(8081),
+            env: BTreeMap::new(),
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+        let line = supervise_line(
+            &Step::Start {
+                name: "alpha".to_string(),
+                spec,
+                restart: false,
+                reason: "声明新增".to_string(),
+            },
+            true,
+        );
+
+        assert!(line.starts_with('+'), "dry-run 用 `+` 前缀：{line}");
+        assert!(
+            line.contains("待绑定"),
+            "待绑定实例的计划行必须写明「等 client 设置」，否则用户会以为它已有工作区：{line}"
+        );
+    }
+
+    /// 对照组：有工作区时照原样回显路径——否则上一条的占位文案会把真实路径也吃掉。
+    #[test]
+    fn dry_run_shows_bound_workspace_path() {
+        let spec = StartSpec {
+            workspace: Some("/tmp/proj-a".to_string()),
+            serve_config: None,
+            port: None,
+            env: BTreeMap::new(),
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+        let line = supervise_line(
+            &Step::Start {
+                name: "alpha".to_string(),
+                spec,
+                restart: true,
+                reason: "profile 变更".to_string(),
+            },
+            true,
+        );
+
+        assert!(line.contains("/tmp/proj-a"), "{line}");
+        assert!(
+            !line.contains("待绑定"),
+            "已绑定的实例不应显示待绑定：{line}"
+        );
+    }
+}
