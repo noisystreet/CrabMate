@@ -493,6 +493,29 @@ fn already_stopped(name: &str) -> DownOutcome {
     }
 }
 
+/// 把记录的期望态改回 `running`：`down` 留下的「用户显式停止」由声明侧收回。
+///
+/// 存在的理由与 `restart::book` 里那段注释同源：`down` 会写
+/// `desired_state = stopped`，而 `supervise` 把该标记当作**用户意图**，优先于声明
+/// 里的 `enabled = true`（`step_for_decl`）。控制面的 `enable` 是本进程发起的动作、
+/// 不是用户 `down`，所以必须先把标记清掉 —— 否则 `enable` 之后的收敛恒定 `Skipped`，
+/// 实例永远起不来，而声明里 `enabled = true` 又是对的，排查会毫无线索。
+///
+/// 无记录 / 本就 `running` 时返回 `Ok(false)`（不写盘）。
+pub fn mark_wanted_running(ctx: &Ctx, name: &str) -> Result<bool, CtlError> {
+    paths::validate_name(name)?;
+    let path = ctx.record_path(name)?;
+    let Some(mut rec) = record::read_optional(&path)? else {
+        return Ok(false);
+    };
+    if rec.desired_state == DesiredState::Running {
+        return Ok(false);
+    }
+    rec.desired_state = DesiredState::Running;
+    record::write_atomic(&path, &rec)?;
+    Ok(true)
+}
+
 /// 真正发信号的部分：把「没有存活的 pid」收敛成一个分支，压 `down` 的复杂度。
 fn down_record(
     name: &str,

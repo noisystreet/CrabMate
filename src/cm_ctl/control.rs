@@ -1,4 +1,5 @@
-//! `supervise --socket`：本地 unix socket 控制面（`add` / `remove` / `list`）。
+//! `supervise --socket`：本地 unix socket 控制面（`add` / `remove` / `list` /
+//! `disable` / `enable`）。
 //!
 //! 存在的理由很具体：TUI 要在界面里增删 lane（= 增删一个 serve 进程），但它被
 //! 禁止 spawn 进程，也不该自己写 `instances.toml` —— 那会和 `--watch` 构成两个
@@ -170,6 +171,10 @@ pub enum Request {
     Add(AddRequest),
     Remove(RemoveRequest),
     List(ListRequest),
+    /// 保留声明项、但不要它运行（客户端「摘 lane」的软删除，依赖 `enabled = false`）。
+    Disable(TargetRequest),
+    /// 撤销 [`Request::Disable`]：声明项本就还在，只把 `enabled` 放开。
+    Enable(TargetRequest),
 }
 
 /// `{"op":"list"}`：两个字段都可省略。
@@ -205,6 +210,17 @@ pub struct RemoveRequest {
     pub name: String,
 }
 
+/// `{"op":"disable","name":"proj-a"}` / `{"op":"enable","name":"proj-a"}`。
+///
+/// 只有 `name`：`disable` / `enable` **不得**顺手改别的字段。要换 `workspace` /
+/// `profile` / `port` 仍走 `remove` + `add` 的显式两步，避免「一次写操作同时改两件
+/// 事」——那正是 `add` 幂等语义一直想避免的。`config` 同样不在此放开。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetRequest {
+    pub name: String,
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -225,12 +241,13 @@ impl Request {
         // 少了这一层，`{"op":"list","evil":1}` 会被静默接受。
         let allowed: &[&str] = match op {
             "add" => &["op", "name", "workspace", "profile", "port", "enabled"],
-            "remove" => &["op", "name"],
+            // `disable` / `enable` 只收 `name`：它们不是 `update`，不接受任何其它字段
+            "remove" | "disable" | "enable" => &["op", "name"],
             "list" => &["op", "include_unmanaged"],
             other => {
                 return Err(Response::err(
                     "bad_request",
-                    format!("未知 `op`：{other}（支持 add / remove / list）"),
+                    format!("未知 `op`：{other}（支持 add / remove / list / disable / enable）"),
                 ));
             }
         };
@@ -279,6 +296,8 @@ pub fn handle(ctx: &Ctx, path: &Path, request: Request) -> (Response, bool) {
         Request::List(l) => (list(ctx, path, l.include_unmanaged), false),
         Request::Add(a) => add(path, a),
         Request::Remove(r) => remove(path, r),
+        Request::Disable(t) => set_decl_enabled(path, ctx, t.name, false),
+        Request::Enable(t) => set_decl_enabled(path, ctx, t.name, true),
     }
 }
 
@@ -357,6 +376,57 @@ fn remove(path: &Path, r: RemoveRequest) -> (Response, bool) {
     }
 }
 
+/// `disable` / `enable` 的公共实现：只翻声明里的 `enabled`，其它字段一律不动。
+///
+/// 三条约定（与 `remove` 对齐，客户端可无脑重试）：
+///
+/// 1. **幂等**：值本就一致时回 `changed: false`，且**不触发收敛**（少跑一轮 probe）；
+/// 2. **目标不存在也成功**：不必先 `list` 再写；
+/// 3. `enable` 顺手收回 `down` 留下的 `desired_state = stopped` —— 否则收敛会一直
+///    `Skipped`，声明明明是 `enabled = true`，实例却永远起不来。
+///
+/// 返回值第二项即 [`handle`] 的「需要立刻收敛」。收敛发生在主循环拿到返回值之后，
+/// 所以「先清标记、后收敛」的顺序天然成立。
+fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Response, bool) {
+    if let Err(e) = paths::validate_name(&name) {
+        return (Response::err(e.error_code, e.message), false);
+    }
+    match instances::set_enabled(path, &name, enabled) {
+        Ok(None) => (
+            Response::ok(json!({
+                "name": name,
+                "enabled": enabled,
+                "changed": false,
+                "note": "声明中不存在该实例",
+            })),
+            false,
+        ),
+        Ok(Some(changed)) => {
+            let mut body = json!({
+                "name": name,
+                "enabled": enabled,
+                "changed": changed,
+                "cleared_down": false,
+            });
+            if enabled {
+                match ops::mark_wanted_running(ctx, &name) {
+                    Ok(cleared) => body["cleared_down"] = json!(cleared),
+                    // 声明已经写成 `enabled = true`，此时回错误会让客户端以为没改成；
+                    // 但「这半边没做成」必须让它看见，否则它会干等一个不会启动的实例。
+                    Err(e) => {
+                        body["warning"] = json!(format!(
+                            "已写入 enabled = true，但清理 down 标记失败：{}（{}）",
+                            e.message, e.error_code
+                        ));
+                    }
+                }
+            }
+            (Response::ok(body), changed)
+        }
+        Err(e) => (Response::err(e.error_code, e.message), false),
+    }
+}
+
 /// 列出声明的实例及其状态记录。
 ///
 /// 默认只列**声明中**的实例：人工 `up` 起的不在声明里，那是 `ctl ls` 的视野；
@@ -419,365 +489,5 @@ fn list_item(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cm_ctl::port_pool::PortPool;
-    use std::io::Write as _;
-    use std::path::PathBuf;
-
-    fn ctx_at(dir: &Path) -> Ctx {
-        Ctx {
-            paths: paths::CtlPaths::for_test(dir),
-            pool: PortPool::default_pool(),
-        }
-    }
-
-    fn tempdir(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "cmc{tag}{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&p).expect("建临时目录");
-        p
-    }
-
-    /// 在临时目录里跑一次「主循环 + 一次往返」。
-    fn roundtrip(tag: &str, req: &str) -> (Value, PathBuf, PathBuf) {
-        let dir = tempdir(tag);
-        let sock = dir.join("s.sock");
-        let decl = dir.join(instances::FILE_NAME);
-        let server = Server::bind(&sock).expect("应能绑定 socket");
-        let probe_sock = sock.clone();
-        let line = req.to_string();
-        let client = std::thread::spawn(move || call(&probe_sock, &line));
-
-        // 请求可能在 `dispatch_line` 阶段就被拒（JSON 非法 / 未知字段），那它根本不会
-        // 进通道；没有超时的话，这类用例会永久挂住测试进程。
-        let ctx = ctx_at(&dir);
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while std::time::Instant::now() < deadline {
-            match server.try_next() {
-                Some(i) => {
-                    let (resp, _changed) = handle(&ctx, &decl, i.request);
-                    let _ = i.reply.send(resp);
-                    break;
-                }
-                None => std::thread::sleep(Duration::from_millis(5)),
-            }
-        }
-        let raw = client.join().expect("客户端线程");
-        let value: Value = serde_json::from_str(&raw).expect("响应应为 JSON");
-        (value, decl, dir)
-    }
-
-    fn call(sock: &Path, line: &str) -> String {
-        let mut stream = UnixStream::connect(sock).expect("应能连接");
-        stream
-            .write_all(format!("{line}\n").as_bytes())
-            .expect("应能写");
-        let mut out = String::new();
-        BufReader::new(&stream).read_line(&mut out).expect("应能读");
-        out
-    }
-
-    #[test]
-    fn permissions_are_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempdir("perm");
-        let sock = dir.join("s.sock");
-        let _server = Server::bind(&sock).expect("应能绑定");
-        let mode = std::fs::metadata(&sock)
-            .expect("应有 socket")
-            .permissions()
-            .mode()
-            & 0o777;
-        assert_eq!(mode, 0o600, "socket 必须 0600，实际 {mode:o}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn second_bind_on_live_socket_is_refused() {
-        let dir = tempdir("inuse");
-        let sock = dir.join("s.sock");
-        let _first = Server::bind(&sock).expect("首次应成功");
-        let err = match Server::bind(&sock) {
-            Ok(_) => panic!("已有服务时应拒绝第二次绑定"),
-            Err(e) => e,
-        };
-        assert_eq!(err.error_code, "socket_in_use");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_is_ok_without_declarations() {
-        let (v, decl, dir) = roundtrip("list0", r#"{"op":"list"}"#);
-        assert_eq!(v["ok"], json!(true));
-        assert_eq!(v["instances"], json!([]));
-        assert!(!decl.exists(), "list 不应创建声明文件");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn unknown_op_is_rejected() {
-        let (v, _, dir) = roundtrip("badop", r#"{"op":"explode"}"#);
-        assert_eq!(v["ok"], json!(false));
-        assert_eq!(v["code"], json!("bad_request"));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn unknown_field_is_rejected() {
-        let (v, _, dir) = roundtrip("badfield", r#"{"op":"list","evil":1}"#);
-        assert_eq!(v["ok"], json!(false));
-        assert_eq!(v["code"], json!("bad_request"));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn add_writes_declaration_and_persists_workspace() {
-        let dir = tempdir("add");
-        let ws = dir.join("proj-a");
-        std::fs::create_dir_all(&ws).expect("建 workspace");
-        let sock = dir.join("s.sock");
-        let decl = dir.join(instances::FILE_NAME);
-        let server = Server::bind(&sock).expect("应能绑定");
-        let body = json!({"op": "add", "name": "proj-a", "workspace": ws.display().to_string()});
-        let probe = sock.clone();
-        let client = std::thread::spawn(move || call(&probe, &body.to_string()));
-
-        let incoming = loop {
-            if let Some(i) = server.try_next() {
-                break i;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        };
-        let ctx = ctx_at(&dir);
-        let (resp, changed) = handle(&ctx, &decl, incoming.request);
-        let _ = incoming.reply.send(resp.clone());
-        let raw = client.join().expect("客户端线程");
-        let v: Value = serde_json::from_str(&raw).expect("响应应为 JSON");
-
-        assert_eq!(v["ok"], json!(true));
-        assert_eq!(v["created"], json!(true));
-        assert!(changed, "新增声明应触发收敛");
-        let loaded = instances::load(&decl).expect("声明应可加载（含 0600 校验）");
-        let d = loaded.instances.get("proj-a").expect("应有 proj-a");
-        assert_eq!(d.workspace, Some(ws.display().to_string()));
-        assert!(d.enabled, "enabled 缺省为 true");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn add_is_idempotent() {
-        let dir = tempdir("idem");
-        let ws = dir.join("p");
-        std::fs::create_dir_all(&ws).expect("建 workspace");
-        let decl = dir.join(instances::FILE_NAME);
-        let req = AddRequest {
-            name: "p".to_string(),
-            workspace: ws.display().to_string(),
-            profile: None,
-            port: None,
-            enabled: true,
-        };
-        let (first, changed) = add(&decl, req.clone());
-        assert!(changed && first.to_line().contains("\"created\":true"));
-        let (second, changed_again) = add(&decl, req);
-        assert!(!changed_again, "重复 add 不应再触发收敛");
-        let line = second.to_line();
-        assert!(line.contains("\"created\":false"), "应返回既有实例：{line}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn add_rejects_bad_name_without_writing() {
-        let dir = tempdir("badname");
-        let decl = dir.join(instances::FILE_NAME);
-        for name in ["../etc", "a/b", ""] {
-            let req = AddRequest {
-                name: name.to_string(),
-                workspace: dir.display().to_string(),
-                profile: None,
-                port: None,
-                enabled: true,
-            };
-            let (resp, changed) = add(&decl, req);
-            assert!(!changed, "非法名字不应写盘：{name}");
-            assert!(resp.to_line().contains("\"ok\":false"), "应拒绝：{name}");
-        }
-        assert!(!decl.exists(), "非法请求不得创建声明文件");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn add_rejects_missing_workspace_without_writing() {
-        let dir = tempdir("badws");
-        let decl = dir.join(instances::FILE_NAME);
-        let req = AddRequest {
-            name: "p".to_string(),
-            workspace: dir.join("absent").display().to_string(),
-            profile: None,
-            port: None,
-            enabled: true,
-        };
-        let (resp, changed) = add(&decl, req);
-        assert!(!changed);
-        assert!(resp.to_line().contains("bad_workspace"));
-        assert!(!decl.exists(), "起点不来的声明不应落盘");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 控制面**不接受** `config`：socket 只表达「用哪个预设」，不表达「加载哪个文件」。
-    /// 放开它等于把「按任意路径加载配置」这个越权面重新引入，与 profile 的目的相反。
-    #[test]
-    fn add_rejects_config_field() {
-        let (v, decl, dir) = roundtrip(
-            "noconfig",
-            r#"{"op":"add","name":"p","workspace":"/tmp","config":"/tmp/x.toml"}"#,
-        );
-        assert_eq!(v["ok"], json!(false));
-        assert_eq!(v["code"], json!("bad_request"));
-        assert!(!decl.exists(), "含禁用字段的请求不得创建声明文件");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn remove_is_idempotent_and_clears_declaration() {
-        let dir = tempdir("rm");
-        let ws = dir.join("p");
-        std::fs::create_dir_all(&ws).expect("建 workspace");
-        let decl = dir.join(instances::FILE_NAME);
-        let (_, changed) = add(
-            &decl,
-            AddRequest {
-                name: "p".to_string(),
-                workspace: ws.display().to_string(),
-                profile: None,
-                port: None,
-                enabled: true,
-            },
-        );
-        assert!(changed);
-        let (resp, changed) = remove(
-            &decl,
-            RemoveRequest {
-                name: "p".to_string(),
-            },
-        );
-        assert!(changed);
-        assert!(resp.to_line().contains("\"removed\":true"));
-        let loaded = instances::load(&decl).expect("声明应仍可加载");
-        assert!(loaded.instances.is_empty(), "声明项应被摘掉");
-
-        let (resp2, changed2) = remove(
-            &decl,
-            RemoveRequest {
-                name: "p".to_string(),
-            },
-        );
-        assert!(!changed2, "删除不存在实例不应再收敛");
-        assert!(resp2.to_line().contains("\"ok\":true"), "应幂等成功");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_reports_declared_instances_as_starting_without_record() {
-        let dir = tempdir("list1");
-        let ws = dir.join("p");
-        std::fs::create_dir_all(&ws).expect("建 workspace");
-        let decl = dir.join(instances::FILE_NAME);
-        add(
-            &decl,
-            AddRequest {
-                name: "p".to_string(),
-                workspace: ws.display().to_string(),
-                profile: None,
-                port: None,
-                enabled: true,
-            },
-        );
-        let ctx = ctx_at(&dir);
-        let body = list(&ctx, &decl, false).to_line();
-        let v: Value = serde_json::from_str(&body).expect("应为 JSON");
-        assert_eq!(v["instances"][0]["name"], json!("p"));
-        assert_eq!(
-            v["instances"][0]["state"],
-            json!("starting"),
-            "无状态记录时应给 starting，客户端据此画「已请求未就绪」"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_reports_stale_observed_when_ready_record_cannot_be_reached() {
-        let dir = tempdir("list2");
-        let ws = dir.join("p");
-        std::fs::create_dir_all(&ws).expect("建 workspace");
-        let decl = dir.join(instances::FILE_NAME);
-        add(
-            &decl,
-            AddRequest {
-                name: "p".to_string(),
-                workspace: ws.display().to_string(),
-                profile: None,
-                port: None,
-                enabled: true,
-            },
-        );
-        let ctx = ctx_at(&dir);
-        // 记录说 ready、pid 活着（用自身 pid），但端口没人监听 → 观测态必须暴露 stale。
-        // 只回 `state` 的话客户端会拿着这个 base_url 去连一个空端口。
-        let mut rec = crate::cm_ctl::record::InstanceRecord::new("p");
-        rec.state = crate::cm_ctl::record::InstanceState::Ready;
-        rec.pid = Some(std::process::id());
-        rec.port = Some(1);
-        rec.base_url = Some("http://127.0.0.1:1".to_string());
-        let path = ctx.paths.record_path("p").expect("记录路径");
-        std::fs::create_dir_all(path.parent().expect("父目录")).expect("建状态目录");
-        crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
-
-        let v: Value = serde_json::from_str(&list(&ctx, &decl, false).to_line()).expect("应为 JSON");
-        assert_eq!(v["instances"][0]["state"], json!("ready"), "落盘态保持 ready");
-        assert_eq!(
-            v["instances"][0]["observed"],
-            json!("stale"),
-            "连不上的 ready 记录必须报 stale，不能只回 state"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn list_include_unmanaged_lists_record_without_declaration() {
-        let dir = tempdir("list3");
-        let decl = dir.join(instances::FILE_NAME);
-        let ctx = ctx_at(&dir);
-        // 命令行 `up` 起的实例：有状态记录、没有声明
-        let mut rec = crate::cm_ctl::record::InstanceRecord::new("cli-one");
-        rec.state = crate::cm_ctl::record::InstanceState::Stopped;
-        rec.managed_by = Some("cli".to_string());
-        let path = ctx.paths.record_path("cli-one").expect("记录路径");
-        std::fs::create_dir_all(path.parent().expect("父目录")).expect("建状态目录");
-        crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
-
-        let plain: Value =
-            serde_json::from_str(&list(&ctx, &decl, false).to_line()).expect("应为 JSON");
-        assert!(
-            plain["instances"].as_array().expect("数组").is_empty(),
-            "缺省视野是「声明里有什么」，不该冒出非声明实例"
-        );
-
-        let all: Value = serde_json::from_str(&list(&ctx, &decl, true).to_line()).expect("应为 JSON");
-        let items = all["instances"].as_array().expect("数组");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["name"], json!("cli-one"));
-        assert_eq!(items[0]["declared"], json!(false));
-        assert_eq!(items[0]["managed_by"], json!("cli"));
-        // 记录 stopped 且无 pid → 观测态就是 stopped
-        assert_eq!(items[0]["observed"], json!("stopped"));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+#[path = "control_tests.rs"]
+mod tests;
