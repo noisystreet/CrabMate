@@ -91,7 +91,7 @@ Three entry points exist and they are **not** interchangeable — running the wr
 
 | When | Command | Covers |
 |------|---------|--------|
-| Before every commit | `pre-commit run --all-files` | `cargo fmt`, `cargo clippy -D warnings`, `cargo doc` (rustdoc warnings denied), crate-dep policy, lizard CCN, fn param/nloc ratchets, `taplo` |
+| Before every commit | `pre-commit run --all-files` | `cargo fmt`, `cargo clippy -D warnings`, `cargo doc` (rustdoc warnings denied), crate-dep policy, lizard CCN, fn param/nloc ratchets, builtin tool-name literal ratchet, `taplo` |
 | Build / package | `make backend` / `make package` (see `make help`) | Compilation and release artifacts; **not** a gate |
 | Full test suite | `make test` (i.e. `cargo test --workspace`) | Also run in CI |
 
@@ -101,7 +101,7 @@ Three entry points exist and they are **not** interchangeable — running the wr
 
 ### Commit & push
 
-- Before **every** `git commit`: `pre-commit run --all-files`. If `pre-commit` is not installed, run at least, from the repo root: `cargo fmt --all`; `cargo clippy --all-targets --all-features -- -D warnings`; `bash scripts/lizard-rust.sh` (Rust CCN ≤ 10); `bash scripts/fn-param-ratchet.sh` (≤ 9 params); `bash scripts/fn-nloc-ratchet.sh` (fn nloc ≤ 200, file ≤ 920 lines).
+- Before **every** `git commit`: `pre-commit run --all-files`. If `pre-commit` is not installed, run at least, from the repo root: `cargo fmt --all`; `cargo clippy --all-targets --all-features -- -D warnings`; `bash scripts/lizard-rust.sh` (Rust CCN ≤ 10); `bash scripts/fn-param-ratchet.sh` (≤ 9 params); `bash scripts/fn-nloc-ratchet.sh` (fn nloc ≤ 200, file ≤ 920 lines); `bash scripts/tool-name-literal-ratchet.sh` (no new builtin tool-name literals at comparison / match / or-pattern sites — use `crate::cm_names::*`, see `#1155`).
 - Fix hook failures and re-run until green; `git add` any file the hooks rewrote, then commit. **`--no-verify` is prohibited** — if the user explicitly demands an exception, state the risk in the reply.
 - **Subject format**: `type(scope): 中文简述 / English brief` — Conventional Commits + bilingual, `scope` written **once in English**, both sides verb-first and symmetric. Mark incompatible changes with `!` after the type/scope or a `BREAKING CHANGE:` footer. Bare messages like「更新」「修改」are rejected by the `commit-msg` hook.
 - **Before `git push`**: `git fetch origin main` → `git rebase origin/main` → resolve conflicts (`git add` + `git rebase --continue`) → re-run the checks above → push. A `--force-with-lease` needed by the rebase requires explicit user authorization.

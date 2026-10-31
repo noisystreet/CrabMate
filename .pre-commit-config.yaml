@@ -62,6 +62,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      - id: tool-name-literal-ratchet
+        name: builtin tool name literals (no new literals at comparison/match sites, #1155)
+        entry: bash scripts/tool-name-literal-ratchet.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       # cargo test（含 golden_sse_control / golden_turn_route_decision 等）仅在 CI 跑，见 .github/workflows/ci.yml 与 code-complexity.yml
       # Desktop/Android / 业务 UI：Client 仓 crabmate-client（路径 A Phase 4）
       - id: taplo-format

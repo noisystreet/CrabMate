@@ -1,0 +1,19 @@
+# 内建工具名字面量的判定形态基线（#1155）。
+#
+# 由 `python3 scripts/tool_name_literal_ratchet.py --print-baseline` 生成。
+#
+# 只许降不许升：把字面量换成 `crate::cm_names::*` 之后，请同步下调对应计数，
+# 归零的条目直接删除。新增工具名请先加常量，不要在判定点写字面量。
+#
+# 下列 6 条经逐个核对，都是**与工具名同名的其它概念**，不是工具身份判定：
+#   - readonly_tool_ttl_cache / structured_preview 的 `git` → 子进程命令名
+#   - long_term_memory_* 的 `summarize_experience` → 长期记忆的 source_role 标签
+#   - self_config_info 的 `web_search` / `http_fetch` → sections 小节 id
+#
+# 格式：相对路径<TAB>工具名<TAB>处数
+src/cm_internal/readonly_tool_ttl_cache.rs	git	1
+src/cm_memory/memory/long_term_memory_recall.rs	summarize_experience	2
+src/cm_memory/memory/long_term_memory_store.rs	summarize_experience	1
+src/cm_tools/tools/self_config_info.rs	http_fetch	1
+src/cm_tools/tools/self_config_info.rs	web_search	1
+src/cm_tools/tools/structured_preview.rs	git	1
