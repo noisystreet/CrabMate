@@ -35,14 +35,14 @@ macro_rules! builtin_tool {
         args: $args:ty,
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
-        runner: $runner:expr,
+        runner: $runner:tt,
         summary: dynamic,
         description: $description:expr $(,)?
     ) => {
         $crate::cm_tools::tools::builtin_tool!(@spec
             name: $name,
             parameters: schema_of::<$args>,
-            runner: ToolRunner::Typed($runner),
+            runner: $crate::cm_tools::tools::builtin_tool!(@runner $runner),
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Dynamic(
@@ -57,14 +57,14 @@ macro_rules! builtin_tool {
         args: $args:ty,
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
-        runner: $runner:expr,
+        runner: $runner:tt,
         summary: static $summary:expr,
         description: $description:expr $(,)?
     ) => {
         $crate::cm_tools::tools::builtin_tool!(@spec
             name: $name,
             parameters: schema_of::<$args>,
-            runner: ToolRunner::Typed($runner),
+            runner: $crate::cm_tools::tools::builtin_tool!(@runner $runner),
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Static($summary),
@@ -77,19 +77,28 @@ macro_rules! builtin_tool {
         args: $args:ty,
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
-        runner: $runner:expr,
+        runner: $runner:tt,
         summary: none,
         description: $description:expr $(,)?
     ) => {
         $crate::cm_tools::tools::builtin_tool!(@spec
             name: $name,
             parameters: schema_of::<$args>,
-            runner: ToolRunner::Typed($runner),
+            runner: $crate::cm_tools::tools::builtin_tool!(@runner $runner),
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::None,
             description: $description,
         )
+    };
+    // ── 执行体：同步 `Typed(fn)` 或仅异步 `AsyncOnly` ────────────────────────
+    // 分派放这里，而不是给每种摘要形态再复制一套 `async_only` 分支：三种摘要 × 两种
+    // 执行体是 6 条近乎相同的臂，改一处漏一处就变成四份要同步维护的字面量。
+    (@runner async_only) => {
+        ToolRunner::AsyncOnly
+    };
+    (@runner $runner:tt) => {
+        ToolRunner::Typed($runner)
     };
     // ── 装配：各写法最终收敛到这一处 ─────────────────────────────────────────
     (

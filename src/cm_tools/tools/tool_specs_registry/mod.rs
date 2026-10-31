@@ -116,6 +116,23 @@ mod name_consistency_tests {
             assert!(seen.insert(spec.name), "specs 中工具名重复：{}", spec.name);
         }
     }
+
+    /// 执行体种类必须钉住：`AsyncOnly` 表示「同步面没有执行体」，错标成 `Typed` 会让同步
+    /// 路径出现一条本不该存在的执行分支，反之则让异步面凭空少一条。而注册表快照只比
+    /// `category` / `description` / `parameters` / 摘要，**不含 runner**，这类错标它发现不了，
+    /// 所以单独钉一次。
+    #[test]
+    fn async_only_runners_are_pinned() {
+        let mut got: Vec<&str> = tool_specs()
+            .iter()
+            .filter(|s| matches!(s.runner, ToolRunner::AsyncOnly))
+            .map(|s| s.name)
+            .collect();
+        got.sort_unstable();
+        let mut want = vec![tool_names::RUN_COMMAND, tool_names::TERMINAL_SESSION];
+        want.sort_unstable();
+        assert_eq!(got, want, "AsyncOnly 工具集合发生变化");
+    }
 }
 
 /// 注册流程收敛（#1157）期间的**零漂移**快照守卫。

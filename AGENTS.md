@@ -178,18 +178,20 @@ Adding or renaming a tool — check in order:
 > 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|static "…"|none, description }`
 >    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
 >
-> 已迁移到宏写法：共 **40 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
-> （`summary: static` 分支验证）、全部 `static` / `none` 摘要工具（P1 机械改写批），以及
+> 已迁移到宏写法：共 **44 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
+> （`summary: static` 分支验证）、全部 `static` / `none` 摘要工具（P1 机械改写批）、
 > P2 前两批的 12 个动态摘要工具（`code_stats` / `dependency_graph` / `coverage_report` /
 > `delete_dir` / `background_job_cancel` / `read_binary_meta` / `delete_files` / `append_file` /
-> `create_dir` / `gh_release_create` / `gh_issue_create` / `gh_api`）。
-> 剩 **28 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
+> `create_dir` / `gh_release_create` / `gh_issue_create` / `gh_api`），以及后台任务族
+> （`run_command` / `terminal_session` / `background_job` / `background_job_wait`）。
+> 剩 **24 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
 > `impl ToolArgsSummary for XArgs`（P2），才能换成 `summary: dynamic`。
 > 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证
 > schema / 描述 / 摘要文本零漂移——快照现在覆盖**全部**动态摘要工具（手写真实入参 +
 > 按 schema 生成的全字段样本），改摘要逻辑必然被比对到。
-> `ToolRunner::AsyncOnly` 的工具（`run_command` / `terminal_session`）尚无宏写法：要等各自那批
-> 先把摘要 `impl` 落到 Args 上再一起迁。全部迁完后本表收敛为 3 步。
+> 宏已支持 `runner: async_only`（内部 `@runner` 分派，见 `registry_macro.rs`）：`AsyncOnly`
+> 的工具写 `runner: async_only`，同步工具写 `runner: runner_xxx_try`。注意快照**不含 runner**，
+> 「哪些工具只有异步执行体」由 `async_only_runners_are_pinned` 单独钉住。全部迁完后本表收敛为 3 步。
 
 1. `src/cm_tools/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). **`name` must reference a constant from `src/cm_tools/tool_names.rs` — never a string literal — and the tool must also be added to `tool_names::ALL`** (the `all_tool_names_match_specs` guard test fails otherwise). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
 2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.

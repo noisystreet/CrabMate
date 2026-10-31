@@ -109,27 +109,6 @@ fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct RunCommandSummaryArgs {
-    /// 模型常把整条命令写成数组（`["git","status"]`）；字段声明为 `String` 时反序列化会
-    /// 整体失败，摘要退化成占位串 `tool: <name>`，客户端只能再解析一遍参数才补回来。
-    command: serde_json::Value,
-    /// 模型常把 `args` 写成数组或整段字符串；缺省为 JSON null。
-    #[serde(default)]
-    args: serde_json::Value,
-}
-
-impl ToolSummaryLine for RunCommandSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let mut tokens = command_display_tokens(&self.command);
-        if tokens.is_empty() {
-            return None;
-        }
-        tokens.extend(run_command_arg_display_tokens(&self.args));
-        Some(tokens.join(" "))
-    }
-}
-
 /// `command` 的展示 token：数组即一整条命令行，字符串原样保留（它本身就是要显示的命令，
 /// 加引号反而奇怪）。参数位置另由 [`run_command_arg_display_tokens`] 逐 token 处理。
 fn command_display_tokens(command: &serde_json::Value) -> Vec<String> {
@@ -169,66 +148,6 @@ fn terminal_session_arg_display_token(arg: &str) -> String {
     }
     s.push('"');
     s
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct TerminalSessionSummaryArgs {
-    action: String,
-    #[serde(default)]
-    session_id: Option<String>,
-    #[serde(default)]
-    command: Option<String>,
-    /// 与工具 JSON 一致；摘要里拼接为类 shell 命令行，供 Web 终端卡展示。
-    #[serde(default)]
-    args: Vec<serde_json::Value>,
-}
-
-impl ToolSummaryLine for TerminalSessionSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let a = self.action.trim().to_ascii_lowercase();
-        match a.as_str() {
-            "list" => Some("terminal_session list".to_string()),
-            "close" => Some(format!(
-                "terminal_session close {}",
-                self.session_id.as_deref().unwrap_or("?")
-            )),
-            "resize" => Some(format!(
-                "terminal_session resize {}",
-                self.session_id.as_deref().unwrap_or("?")
-            )),
-            "send_signal" => Some(format!(
-                "terminal_session signal {}",
-                self.session_id.as_deref().unwrap_or("?")
-            )),
-            "interrupt" => Some(format!(
-                "terminal_session interrupt {}",
-                self.session_id.as_deref().unwrap_or("?")
-            )),
-            "exec" => {
-                let sid = self.session_id.as_deref().unwrap_or("").trim();
-                let cmd = self.command.as_deref().unwrap_or("").trim();
-                if !sid.is_empty() {
-                    Some(format!("terminal_session exec sid={sid}"))
-                } else if !cmd.is_empty() {
-                    let tail = self
-                        .args
-                        .iter()
-                        .filter_map(|x| x.as_str())
-                        .map(terminal_session_arg_display_token)
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if tail.is_empty() {
-                        Some(format!("terminal_session exec {cmd}"))
-                    } else {
-                        Some(format!("terminal_session exec {cmd} {tail}"))
-                    }
-                } else {
-                    Some("terminal_session exec".to_string())
-                }
-            }
-            _ => Some(format!("terminal_session {}", self.action)),
-        }
-    }
 }
 
 // ── rust_analyzer ──────────────────────────────────────

@@ -8,35 +8,6 @@ fn gh_repo_suffix(repo: Option<String>) -> String {
         .unwrap_or_default()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn run_command_summary_joins_command_and_string_args() {
-        let v = json!({ "command": "cargo", "args": ["test", "--all"] });
-        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
-        assert_eq!(s, "cargo test --all");
-    }
-
-    #[test]
-    fn run_command_summary_accepts_args_as_single_string() {
-        let v = json!({ "command": "bash", "args": "-c echo hi" });
-        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
-        assert!(s.starts_with("bash "), "{s}");
-        assert!(s.contains("echo hi"), "{s}");
-    }
-
-    #[test]
-    fn run_command_summary_quotes_args_with_spaces() {
-        let v = json!({ "command": "bash", "args": ["-c", "echo hello world"] });
-        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
-        assert_eq!(s, r#"bash -c "echo hello world""#);
-    }
-
-}
-
 #[derive(Debug, Deserialize)]
 pub(super) struct GhPrSummaryArgs {
     action: String,
