@@ -29,9 +29,6 @@ define_summaries! {
     summary_code_nav => CodeNavSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
     summary_gh_run => GhRunSummaryArgs,
-    summary_archive_pack => ArchivePackSummaryArgs,
-    summary_archive_unpack => ArchiveUnpackSummaryArgs,
-    summary_archive_list => ArchiveListSummaryArgs,
 }
 
 /// `copy_file` / `move_file` 共用 `FileFromToOverwriteArgs`：字段一致、只有动词不同，
