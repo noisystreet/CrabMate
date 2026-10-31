@@ -11,6 +11,7 @@ use crate::config::cli::ctl::{
 };
 
 use super::control;
+use super::decl;
 use super::identity;
 use super::instances;
 use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
@@ -59,6 +60,12 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
             render::prune(&items, c.dry_run);
             Ok(())
         }
+        // 声明类命令只写 `instances.toml`（实现在 `decl.rs`，与 socket 控制面共用）：
+        // 一次性命令里不顺手起停进程，收敛语义只属于 `supervise`。
+        CtlSubCmd::Add(c) => decl::cli_add(&ctx, c),
+        CtlSubCmd::Remove(c) => decl::cli_remove(&ctx, c),
+        CtlSubCmd::Disable(c) => decl::cli_toggle(&ctx, c, false),
+        CtlSubCmd::Enable(c) => decl::cli_toggle(&ctx, c, true),
         CtlSubCmd::Supervise(c) => supervise_cmd(&ctx, c),
     }
 }
@@ -132,10 +139,7 @@ fn up_cmd(ctx: &Ctx, c: &UpCmd, workspace_cli: Option<&str>) -> Result<(), CtlEr
 fn up_all(ctx: &Ctx, c: &UpCmd) -> Result<(), CtlError> {
     reject_name_with_all(c)?;
     reject_single_instance_flags(c)?;
-    let path = match c.instances_file.as_deref() {
-        Some(p) => paths::absolutize(p)?,
-        None => ctx.paths.instances_file(),
-    };
+    let path = decl::target_path(ctx, c.instances_file.as_deref())?;
     let file = instances::load(&path)?;
     let starts = starts_only(supervise::plan(ctx, &file)?);
     if c.dry_run {
@@ -248,10 +252,7 @@ fn resolve_supervise_target(
     c: &SuperviseCmd,
 ) -> Result<(std::path::PathBuf, supervise::Opts), CtlError> {
     require_from_config(c)?;
-    let path = match c.instances_file.as_deref() {
-        Some(p) => paths::absolutize(p)?,
-        None => ctx.paths.instances_file(),
-    };
+    let path = decl::target_path(ctx, c.instances_file.as_deref())?;
     let opts = supervise_opts(c)?;
     ensure_declared(&path, c.name.as_deref())?;
     Ok((path, opts))

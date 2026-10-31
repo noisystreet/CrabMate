@@ -35,6 +35,14 @@ pub enum CtlSubCmd {
     Logs(LogsCmd),
     /// 清理 stale / 已退出 / 失败的记录（不碰健康实例）
     Prune(PruneCmd),
+    /// 新增一条实例声明（只写 `instances.toml`，不起进程）
+    Add(AddCmd),
+    /// 删除一条实例声明（不删实例目录与日志）
+    Remove(RemoveCmd),
+    /// 软删：保留声明（`env` / `config` 原样），但不让它运行
+    Disable(ToggleCmd),
+    /// 撤销 disable（并收回 `down` 留下的「用户显式停止」标记）
+    Enable(ToggleCmd),
     /// 按 `instances.toml` 声明收敛实例（起该起的、停该停的）
     Supervise(SuperviseCmd),
 }
@@ -251,6 +259,61 @@ pub struct PruneCmd {
     pub force: bool,
 }
 
+/// 新增一条实例声明（**只写 `instances.toml`，不起进程**）。
+#[derive(Parser, Debug, Clone)]
+pub struct AddCmd {
+    /// 实例名
+    pub name: String,
+
+    /// 写进声明的工作区路径（必须存在且是目录）
+    ///
+    /// 与 socket 控制面同一字段面：**必填**。要「先起来、等 client 绑定工作区」的
+    /// 待绑定实例，请手写声明并省略 `workspace` 键（那是无人值守路径）。
+    #[arg(long, value_name = "PATH")]
+    pub workspace: String,
+
+    /// 引用 `profiles.toml` 的预设名
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+
+    /// 指定端口；省略则由端口池在收敛时分配
+    #[arg(long, value_name = "PORT")]
+    pub port: Option<u16>,
+
+    /// 写入 `enabled = false`（保留声明，但不要它运行）
+    #[arg(long, value_name = "BOOL")]
+    pub enabled: Option<bool>,
+
+    /// 声明文件路径（默认 `$XDG_CONFIG_HOME/crabmate/instances.toml`）
+    #[arg(long = "instances-file", value_name = "FILE")]
+    pub instances_file: Option<String>,
+}
+
+/// 删除一条实例声明。
+#[derive(Parser, Debug, Clone)]
+pub struct RemoveCmd {
+    /// 实例名
+    pub name: String,
+
+    /// 声明文件路径（默认 `$XDG_CONFIG_HOME/crabmate/instances.toml`）
+    #[arg(long = "instances-file", value_name = "FILE")]
+    pub instances_file: Option<String>,
+}
+
+/// `disable` / `enable` 的公共入参：只认实例名，与 socket 控制面同一字段面。
+///
+/// 它们**不是** `update`：要换 `workspace` / `profile` / `port` 仍是
+/// `remove` + `add` 两步，避免「一次写操作同时改两件事」。
+#[derive(Parser, Debug, Clone)]
+pub struct ToggleCmd {
+    /// 实例名
+    pub name: String,
+
+    /// 声明文件路径（默认 `$XDG_CONFIG_HOME/crabmate/instances.toml`）
+    #[arg(long = "instances-file", value_name = "FILE")]
+    pub instances_file: Option<String>,
+}
+
 /// `crabmatectl` 的子命令名（`crabmate-gen-man` 生成 troff 交叉引用时用）。
 ///
 /// 必须与 [`CtlSubCmd`] 逐项一致——`subcommand_names_match_cli` 会红。这条清单写在这里
@@ -265,6 +328,10 @@ pub const SUBCOMMAND_NAMES: &[&str] = &[
     "status",
     "logs",
     "prune",
+    "add",
+    "remove",
+    "disable",
+    "enable",
     "supervise",
 ];
 

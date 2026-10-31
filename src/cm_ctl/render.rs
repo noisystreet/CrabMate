@@ -3,8 +3,11 @@
 //! `--json` 是给脚本与客户端的**主契约**（状态文件只是可断线读取的缓存），
 //! 字段名与状态文件保持一致，新增字段只增不删。
 
+use std::path::Path;
+
 use serde_json::json;
 
+use super::decl;
 use super::ops::{DownOutcome, PruneItem, UpOutcome};
 use super::probe::{Observed, Probe};
 use super::record::InstanceRecord;
@@ -247,6 +250,79 @@ pub fn prune(items: &[PruneItem], dry_run: bool) {
             "提示：跳过项由 `crabmatectl prune --force` 强制清理（会让仍在运行的进程失去记录）"
         );
     }
+}
+
+/// `add` 输出。
+///
+/// 必须当场说清两件事：它写的是**声明**不是进程；重复 `add` 不动既有条目
+/// （覆盖会悄悄丢掉手工写的 `env`）。这两点是这条命令最容易误会的地方。
+pub fn decl_add(out: &decl::AddOutcome, path: &Path) {
+    if out.created {
+        println!("已在声明中新增实例 {}（{}）", out.name, path.display());
+        println!(
+            "  提示：只写了声明，进程还没起 —— 用 `crabmatectl up {}`，或让常驻 `supervise --watch` 收敛",
+            out.name
+        );
+        return;
+    }
+    // 两个括号套在一起（`说明（…）（路径）`）读起来像笔误，路径单独一行
+    println!("实例 {}：{}", out.name, out.note().unwrap_or("未改动"));
+    println!("  声明文件：{}", path.display());
+}
+
+/// `remove` 输出：只删声明，不删数据。
+pub fn decl_remove(out: &decl::RemoveOutcome, path: &Path) {
+    if out.removed {
+        println!("已从声明中删除实例 {}（{}）", out.name, path.display());
+        println!("  提示：只删了声明，该实例的目录与日志仍在，运行中的进程也不会被停止");
+        return;
+    }
+    println!(
+        "实例 {} 不在声明中（{}），无需删除",
+        out.name,
+        path.display()
+    );
+}
+
+/// `disable` / `enable` 输出。
+///
+/// 重点是把「配置已改」与「进程会怎样」分开说：这两个命令**不杀进程**，停/起都等
+/// `supervise` 下一轮收敛（立即停止是 `down` 的事）。
+pub fn decl_toggle(out: &decl::ToggleOutcome, path: &Path) {
+    let verb = if out.enabled { "启用" } else { "停用" };
+    if out.missing {
+        println!(
+            "实例 {} 不在声明中（{}），未{} —— 手工 `up` 起的实例不归声明管",
+            out.name,
+            path.display(),
+            verb
+        );
+        return;
+    }
+    if out.changed {
+        println!("已{}实例 {}（{}）", verb, out.name, path.display());
+    } else {
+        println!(
+            "实例 {} 已是「{}」状态，未改动（{}）",
+            out.name,
+            verb,
+            path.display()
+        );
+    }
+    if out.cleared_down {
+        println!("  已收回 `down` 留下的「用户显式停止」标记：下一轮收敛会重新拉起它");
+    }
+    if let Some(warn) = out.warning.as_deref() {
+        eprintln!("WARN: {warn}");
+    }
+    println!(
+        "  提示：只改了声明 —— 进程由常驻 `supervise --watch` 收敛{}",
+        if out.enabled {
+            "拉起"
+        } else {
+            "停掉（要立即停止请用 `crabmatectl down`）"
+        }
+    );
 }
 
 /// `supervise` 输出：一行一个实例，先给动作再给原因。
