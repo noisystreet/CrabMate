@@ -7,19 +7,23 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::cm_tools::subprocess_session::SessionStream;
 
 use super::types::{
     JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobSpawn, JobStatus,
-    OutputLogRead,
+    MAX_ITEMS_PER_RESPONSE, OutputLogRead,
 };
 
 /// 进程内注册表（所有操作持锁，单临界区保证状态转移原子性）。
+///
+/// `changed` 是 [`ToolJobRegistry::wait_for`] 的事件唤醒点：状态转移 / 输出追加 / 取消
+/// 都在**同一把锁内**完成后再 `notify_all`，等待者持锁复查条件，因此不存在丢失唤醒。
 pub struct ToolJobRegistry {
     inner: Mutex<Inner>,
+    changed: Condvar,
     limits: JobLimits,
 }
 
@@ -93,6 +97,100 @@ pub enum OutputPollOutcome {
     NotFound,
 }
 
+/// 等待结果（`background_job_wait`，契约见 `docs/design/background_tool_jobs_contract.md` §10）。
+///
+/// 变体名刻意**不**叫 `TimedOut`：`JobStatus::TimedOut` 是「任务自己超时结束」，这里是
+/// 「本次等待没有等到」——两件事共用一个词正是要避免的混淆（#1194 review）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitOutcome {
+    /// 条件已满足。`matched` = `true` 表示由 `output_matches` 命中（此时任务**可能仍在运行**）；
+    /// `false` 表示任务已到终态。
+    Hit { status: JobStatus, matched: bool },
+    /// 到墙钟上限仍未满足。任务**不受影响**（仍是 `running` / `queued`），未被取消。
+    DeadlineReached { status: JobStatus },
+    /// 任务已置取消标记但尚未落地终态：等待立即结束，不空等 worker 收尾。
+    CancelRequested { status: JobStatus },
+    /// 已过 TTL+宽限被清理（与 `background_job` 的 `410` 同源）。
+    Expired,
+    /// 不存在 / 从未创建（与 `background_job` 的 `404` 同源）。
+    NotFound,
+}
+
+/// 取 `s` 末尾至多 `max` 字节（不切进多字节序列）。
+fn tail_bytes(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut start = s.len() - max;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    s[start..].to_string()
+}
+
+/// `s` 开头至多 `max` 字节的**字符边界**长度（用于只取「可能与上一块拼成 pattern」的前缀）。
+fn head_char_boundary(s: &str, max: usize) -> usize {
+    let mut end = max.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
+/// 在 job 输出的**保留窗口**内增量查找 `pattern`（子串，非正则）。
+///
+/// 只扫 `scan_cursor` 之后的新块，并用 `carry` 保留 `len-1` 字节尾巴来解决「子串跨块被
+/// 切断」；因此多次唤醒的总代价与**新增输出量**成正比，而不是与缓冲大小成正比。
+fn scan_output_locked(
+    g: &Inner,
+    id: &str,
+    pattern: &str,
+    scan_cursor: &mut u64,
+    carry: &mut String,
+) -> bool {
+    let Some(log) = g.outputs.get(id) else {
+        return false;
+    };
+    let keep = pattern.len().saturating_sub(1);
+    loop {
+        let read = log.read(Some(*scan_cursor));
+        if read.items.is_empty() {
+            return false;
+        }
+        let mut chunk = String::new();
+        for e in &read.items {
+            chunk.push_str(&e.text);
+        }
+        // 先在本块内找（零拷贝），再只看跨块边界那至多 `keep` 字节的接缝：
+        // 避免每次唤醒都拼一份与输出量同阶的临时串——此时还持有 registry 全局锁，
+        // 而 worker 的 `push_output` 要的正是同一把锁。
+        if chunk.contains(pattern) {
+            return true;
+        }
+        let bridge_len = head_char_boundary(&chunk, keep);
+        if !carry.is_empty() && bridge_len > 0 {
+            let mut bridge = String::with_capacity(carry.len() + bridge_len);
+            bridge.push_str(carry);
+            bridge.push_str(&chunk[..bridge_len]);
+            if bridge.contains(pattern) {
+                return true;
+            }
+        }
+        *carry = if chunk.len() >= keep {
+            tail_bytes(&chunk, keep)
+        } else {
+            let mut joined = String::with_capacity(carry.len() + chunk.len());
+            joined.push_str(carry);
+            joined.push_str(&chunk);
+            tail_bytes(&joined, keep)
+        };
+        *scan_cursor = read.next_cursor;
+        if read.items.len() < MAX_ITEMS_PER_RESPONSE {
+            return false;
+        }
+    }
+}
+
 /// 注册表快照（观测/`/status` 用）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct JobRegistryStats {
@@ -119,6 +217,7 @@ impl ToolJobRegistry {
                 output_events_dropped: 0,
                 expired: VecDeque::new(),
             }),
+            changed: Condvar::new(),
             limits,
         }
     }
@@ -212,6 +311,65 @@ impl ToolJobRegistry {
         GetOutcome::Found(record.clone())
     }
 
+    /// 等待条件命中（`background_job_wait`）：**事件唤醒**，不做固定间隔轮询。
+    ///
+    /// `pattern` 为 `None` 时等终态；`Some(p)` 时等「终态 **或** 输出保留窗口内出现 `p`」。
+    /// 条件检查与 `wait_timeout` 在同一把锁内完成，因此不存在「先查后等」的丢失唤醒窗口。
+    ///
+    /// **不改变任务状态**：超时返回 [`WaitOutcome::TimedOut`]，任务仍是 `queued` / `running`
+    /// （#1194 Q2：保持纯只读语义，不计入写副作用名单）。
+    #[must_use]
+    pub fn wait_for(&self, id: &str, pattern: Option<&str>, timeout: Duration) -> WaitOutcome {
+        let deadline = Instant::now() + timeout;
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut scan_cursor: u64 = 0;
+        let mut carry = String::new();
+        loop {
+            let Some((status, cancel_requested)) = g
+                .jobs
+                .get(id)
+                .map(|r| (r.status, r.cancel_requested))
+            else {
+                return if g.expired.iter().any(|eid| eid == id) {
+                    WaitOutcome::Expired
+                } else {
+                    WaitOutcome::NotFound
+                };
+            };
+            if status.is_terminal() {
+                return WaitOutcome::Hit {
+                    status,
+                    matched: false,
+                };
+            }
+            // 顺序：终态 → 命中 → 取消。已经满足的条件优先于「正在被取消」，
+            // 否则会出现「日志里明明有目标子串，却被告知取消了」的自相矛盾。
+            if let Some(pat) = pattern
+                && scan_output_locked(&g, id, pat, &mut scan_cursor, &mut carry)
+            {
+                return WaitOutcome::Hit {
+                    status,
+                    matched: true,
+                };
+            }
+            if cancel_requested {
+                // 用户停止回合 / 显式 `background_job_cancel` 已置标记：立即结束等待，
+                // 不再等 worker 收尾（否则 blocking 线程最多白占一个 `timeout_secs`）。
+                return WaitOutcome::CancelRequested { status };
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return WaitOutcome::DeadlineReached { status };
+            }
+            let remaining = deadline - now;
+            let (guard, _) = self
+                .changed
+                .wait_timeout(g, remaining)
+                .unwrap_or_else(|e| e.into_inner());
+            g = guard;
+        }
+    }
+
     /// 追加一条实时输出（worker 的 chunk sink 调用；已按 `take_utf8_text` 组装为完整文本）。
     /// job 不存在/已清理 → `false`（worker 侧忽略即可，进程结束期间正常竞态）。
     pub fn push_output(&self, id: &str, stream: SessionStream, text: &str) -> bool {
@@ -221,6 +379,9 @@ impl ToolJobRegistry {
         };
         let dropped = log.push(stream, text, self.limits.output_buffer_bytes) as u64;
         g.output_events_dropped = g.output_events_dropped.saturating_add(dropped);
+        drop(g);
+        // 唤醒点是**每次**输出追加，不是终态——否则 `output_matches` 永远等不到命中。
+        self.changed.notify_all();
         true
     }
 
@@ -290,7 +451,10 @@ impl ToolJobRegistry {
             record.cancel_requested = false;
         }
         g.running += 1;
-        g.jobs.get(&id).cloned()
+        let record = g.jobs.get(&id).cloned();
+        drop(g);
+        self.changed.notify_all();
+        record
     }
 
     /// 取消（契约 §3.2）。`queued` 直接转 `cancelled`；`running` 置取消标记（由 worker 完成落定）。
@@ -323,6 +487,7 @@ impl ToolJobRegistry {
                 // 取出回调（一次性消费），锁外调用。
                 let sink = g.finished_sinks.remove(id);
                 drop(g);
+                self.changed.notify_all();
                 if let Some(sink) = sink {
                     sink(id, &outcome);
                 }
@@ -331,6 +496,9 @@ impl ToolJobRegistry {
             JobStatus::Running => {
                 record.cancel_requested = true;
                 record.cancel_flag.store(true, Ordering::SeqCst);
+                drop(g);
+                // 取消标记已置：唤醒等待者复查。终态由 worker 完成时落定，`complete` 会再唤醒一次。
+                self.changed.notify_all();
                 CancelOutcome::Cancelled
             }
             other => CancelOutcome::AlreadyFinished(other),
@@ -403,6 +571,8 @@ impl ToolJobRegistry {
         // 终态补发回调**取出**（一次性消费）；在锁外调用，避免持锁执行外部代码。
         let sink = g.finished_sinks.remove(id);
         drop(g);
+        // 终态是等待者的主要唤醒点（`until=exit`）。
+        self.changed.notify_all();
         if let Some(sink) = sink {
             sink(id, &outcome);
         }
@@ -438,7 +608,13 @@ impl ToolJobRegistry {
         }
         let live: std::collections::HashSet<String> = g.jobs.keys().cloned().collect();
         g.queue.retain(|id| live.contains(id));
-        before - g.jobs.len()
+        let removed = before - g.jobs.len();
+        drop(g);
+        if removed > 0 {
+            // 被清理的任务若仍有等待者，必须立刻唤醒（否则会白等到墙钟上限）。
+            self.changed.notify_all();
+        }
+        removed
     }
 
     /// 统计快照。
@@ -546,3 +722,7 @@ mod streaming;
 #[cfg(test)]
 #[path = "registry_finished_sink_tests.rs"]
 mod finished_sink;
+
+#[cfg(test)]
+#[path = "registry_wait_tests.rs"]
+mod wait_tests;

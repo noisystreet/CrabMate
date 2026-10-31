@@ -253,3 +253,78 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | 模型侧工具 | `background_job`（**`action` = `status` / `list` / `output`**；三者于 2026-10-24 合并自原 `background_job_status` / `background_job_list` / `background_job_output`）与 `background_job_cancel`（写副作用，故不并入只读三动作；`src/cm_tools/tools/background_job_tools.rs`，经 `ToolJobsToolHost` 注入只读注册表）。**`output` 为只读增量拉取**（复用 `poll_output`）；**`cancel` 为终止语义**（复用 `cancel`，`queued`→`cancelled` / `running` 置标记 / 终态不覆盖），**不发起执行**，故不违反 ADR「不新增发起执行型工具组」约束。`cancel` 计入 `write_effect_tools`（改变任务状态，供审计）；`output` 计入只读去重缓存豁免（同轮输出会变）。 | — |
 
 测试：生命周期、超时/取消（含完成竞态）、过期/410、认证/归属越权、并发与排队上限、worker panic 兜底、`deny_unknown_fields` 回归、金样。
+
+---
+
+## 10. 模型侧等待：`background_job_wait`（#1194）
+
+### 10.1 为什么是独立工具而不是 `background_job` 的新 `action`
+
+阻塞等待与 `background_job` 的三个动作有三处硬冲突，合进同一个名字会让既有身份全部失效：
+
+| 既有身份 | 一旦并入阻塞 `action` |
+|---|---|
+| 并行只读批（`tool_ok_for_parallel_readonly_batch_piece`） | 一次几十秒的阻塞会拖住整批同轮工具 |
+| 同轮 `(name, args)` 去重缓存 | 同 id 连续两次等待会被缓存吃掉，第二次永远拿到第一次的结果 |
+| 只读三动作整体豁免两套缓存的理由 | 不再成立（见 §9 末行） |
+
+因此新增工具名 **`background_job_wait`**，并同时做三件事：`builtin_parallel_sync_denied_exact`（移出并行读批）、`builtin_dedup_cache_exempt_tools`（豁免同轮去重）、**不**进 `write_effect_tools`（`TimedOut` 不改任务状态，Q2 取纯只读语义）。
+
+> **只读 TTL 缓存不需要改**：`serial_try_ttl_run_command_cache_hit` 在入口就要求 `p.name == RUN_COMMAND`（`agent/agent_turn/host/execute/tools/serial/emit.rs`），该缓存对任何非 `run_command` 工具天然不适用。这是 Issue 里「豁免两层缓存」的实际落点差异，实施时按此核对。
+
+### 10.2 参数与语义
+
+| 字段 | 语义 |
+|---|---|
+| `tool_job_id` | 必填，trim 后非空 |
+| `until` | `exit`（默认）→ 等终态；`output_matches` → 等终态**或**输出命中。省略 `until` 但给了非空 `output_matches` 时**推断**为 `output_matches`（否则会静默落回「等 exit」，永不退出的 dev server 直接吃满超时） |
+| `output_matches` | `until=output_matches` 时必填，**子串**（非正则），≤ 256 字节（匹配用 `carry` 尾巴与模式长度成正比，需有界） |
+| `timeout_secs` | 本次等待墙钟，钳制 1–600、默认 60；**不取消任务** |
+
+- 命中范围仅限**环形缓冲保留窗口**（`MAX_OUTPUT_ITEMS`），窗口外的历史文本不可见；命不中一律落超时，不谎报。
+- 跨块子串用 `len(pattern)-1` 字节重叠兜住：`scan_output_locked` 每次只扫 `scan_cursor` 之后的新块，代价与新增输出量成正比，不与缓冲大小成正比。
+- 接缝扫描**不在持锁期间**拼整块临时串：先 `chunk.contains`，再只看至多 `len-1` 字节的桥接前缀（多字节按字符边界收敛）。等待期间的每次唤醒都持有 registry 全局锁，而 worker 的 `push_output` 要的正是同一把锁。
+- 返回体把「等待结果」与「任务状态」**分开**写：`JobStatus::TimedOut`（任务自己超时结束）与 `WaitOutcome::DeadlineReached`（本次没等到）是两个概念，正文里分别表述。枚举变体**刻意不叫** `TimedOut`，就是为了不让两个概念在代码里再次混用。
+
+#### 退出条件与优先级
+
+1. **终态** → `Hit { matched: false }`；
+2. **`output_matches` 命中** → `Hit { matched: true }`（任务可能仍在跑）；
+3. **已请求取消**（`cancel_requested` 置位但尚未落地终态）→ `CancelRequested`，**立即**结束等待，不空等 worker 收尾（否则 blocking 线程最多白占一个 `timeout_secs`）；
+4. **墙钟到期** → `DeadlineReached`；记录消失 → `Expired` / `NotFound`。
+
+顺序是「已满足的条件优先于正在被取消」：否则会出现「日志里明明有目标子串，却被告知已请求取消」的自相矛盾（`pattern_hit_wins_over_pending_cancel`）。
+
+正文只取**一次**记录快照：`head` 与详情正文分两次读时，若记录恰好被 TTL 清理，会拼出「已到终态」+「已过保留时长」的矛盾正文。
+
+### 10.3 等待原语：`Condvar` 事件唤醒，不是轮询
+
+`ToolJobRegistry` 的 `inner: Mutex<Inner>` 是 **std 同步锁**，且工具执行在 `spawn_blocking` 内（`wait` 必然是同步语义），因此 `Condvar::wait_timeout` 是正确原语，不需要改 async 运行时、也不需要新线程模型：
+
+```
+持锁 → 检查条件（终态 / 缓冲出现 match）→ 不满足则 wait_timeout(截止时间)
+```
+
+条件检查与 `wait_timeout` 在**同一把锁内**完成，故不存在「先查后等」的丢失唤醒窗口（`registry_wait_tests::repeated_races_between_complete_and_wait_never_hang` 覆盖）。
+
+`notify_all` 的四个点：**每次** `push_output`（不是终态——否则 `output_matches` 永远唤不醒）、`complete`、`cancel`（两分支）、`try_start`，以及 `cleanup` 删除条目时（否则被清理的任务仍有等待者时会白等到墙钟上限）。
+
+`cancel` 的 `running` 分支只置 `cancel_requested`，**不会**把记录改成终态（终态由 worker 收尾落定）。等待者因此不能只等终态：条件里包含 `cancel_requested`，否则用户停止回合后 blocking 线程会白等到 worker 结束或墙钟到期。
+
+**不复用 `JobFinishedSink`**：它是 per-job、`complete` 时 `take` 一次消费的 SSE 终态补发槽位，加第二个消费者会让补发丢事件。
+
+### 10.4 外圈墙钟留白（必须保留）
+
+`SyncDefault` 工具被 `spawn_blocking` + 外层 `tokio::time::timeout(parallel_tool_wall_timeout_secs)` 包住，`BlockingSync` 类取 `command_exec.command_timeout_secs`（默认 600）——与 `timeout_secs` 的硬顶**同值**。内层若不在墙钟前返回，外层先开火，模型拿到的是通用「工具执行超时」而非结构化等待结果。故 runner 把外圈值传进工具，内层取 `min(600, wall - OUTER_WALL_RESERVE_SECS)`（留白 1 秒）。
+
+同一理由，本工具已加入 `tool_retry_policy::builtin_retry_denied`：等待时长本身就是这次调用的预算，透明重试会把墙钟翻倍、吃掉上面那 1 秒留白（当前 `should_retry` 尚无调用点，属预防性排除）。
+
+### 10.5 配置与保留期
+
+**不新增配置键**（`timeout_secs` 是调用参数，不是 `[tool_registry]` 项）。代价是：两次 `wait` 之间受 `background_job_result_grace_secs`（默认 300s）与 TTL 约束——终态记录宽限后即删，再等会得到与 `background_job` 同源的「已过保留时长」文案。
+
+### 10.6 验证
+
+`registry_wait_tests`：终态零等待、`output_matches` 唤醒（断言耗时远小于上限，防止退回定长轮询）、跨块重叠命中（ASCII 与多字节各一条）、超时不改状态、`queued`→`running`→终态唤醒、`cancel` 唤醒（`queued` 与 `running` 两条路径；`running` 断言**立即**返回 `CancelRequested`）、命中优先于「正在取消」、同 id 连续两次等待都拿到新进展、`NotFound`/`Expired`、完成/等待竞态 ×20。
+host 层：等待正文与「未被取消 / 可能仍在运行 / 已请求取消」措辞、`NotFound`/`Expired` 与 `background_job` 同文案。
+工具层：`until` 默认值、`output_matches` 缺省推断（及空白 pattern 仍落 `exit`）、pattern 必填/过长、参数口径与外圈留白两重钳制、`deny_unknown_fields`、无宿主降级。

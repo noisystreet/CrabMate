@@ -124,6 +124,43 @@ pub struct BackgroundJobCancelArgs {
     pub tool_job_id: String,
 }
 
+/// `background_job_wait` 的 `until` 取值。
+///
+/// 只取保守的 A 案（#1194 Q1）：`exit` 与 `output_matches`。**不做** `idle_secs` ——
+/// `terminal_session` 的 `IDLE_DRAIN` 之所以成立，是因为 PTY 没有「结束」信号；
+/// 普通命令有 exit code，引入「输出暂停」等于用一个更弱的信号覆盖更强的信号，
+/// 卡死会被误判成「暂时没输出」。
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundJobWaitUntil {
+    /// 等到任务终态（`succeeded` / `failed` / `cancelled` / `timed_out`）。
+    #[default]
+    Exit,
+    /// 保留窗口内出现 `output_matches` 子串即返回（不必等到结束）。
+    OutputMatches,
+}
+
+/// [`super::background_job_tools::background_job_wait_try`] 入参。
+///
+/// **独立工具**，不并入 `background_job`：阻塞等待会同时破坏该工具的
+/// 并行只读批身份与同轮 `(name, args)` 去重缓存（见 `docs/design/background_tool_jobs_contract.md` §9）。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundJobWaitArgs {
+    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
+    pub tool_job_id: String,
+    /// 等待条件，默认 `exit`（跑到终态）。
+    #[serde(default)]
+    pub until: Option<BackgroundJobWaitUntil>,
+    /// `until=output_matches` 时必填：在任务输出（stdout/stderr 合并、保留窗口内）中查找的**子串**（非正则，≤ 256 字节）。
+    #[serde(default)]
+    pub output_matches: Option<String>,
+    /// 本次等待的墙钟上限（秒），钳制 1–600，默认 60；**不会**取消任务。
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 600))]
+    pub timeout_secs: Option<u64>,
+}
+
 /// [`super::markdown_links::markdown_check_links_try`] 的 `output_format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]

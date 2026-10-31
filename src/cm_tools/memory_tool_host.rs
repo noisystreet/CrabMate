@@ -48,4 +48,15 @@ pub trait ToolJobsToolHost: Send + Sync {
     fn output(&self, id: &str, cursor: Option<u64>, max_output_len: usize) -> String;
     /// 取消任务（`queued` 直接转移；`running` 置取消标记；终态不覆盖）。
     fn cancel(&self, id: &str) -> String;
+    /// 阻塞等待任务满足条件（`background_job_wait`）：**不改变任务状态**。
+    ///
+    /// - `pattern` 为 `None` → 等终态；`Some(p)` → 等终态 **或** 输出（保留窗口内）出现子串 `p`。
+    /// - `timeout_secs` 由调用方钳制（已为外圈墙钟留出余量），实现侧按此墙钟返回即止。
+    fn wait_until(
+        &self,
+        id: &str,
+        pattern: Option<&str>,
+        timeout_secs: u64,
+        max_output_len: usize,
+    ) -> String;
 }

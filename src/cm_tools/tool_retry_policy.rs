@@ -21,12 +21,14 @@ const MAX_BACKOFF_MS: u64 = 5000;
 
 /// 内建**硬排除**（`is_readonly_tool` 判定为真但参数可触发写副作用 / 重型任务，重试会重复副作用）：
 /// `codebase_semantic_search` 的 `rebuild_index: true` 会写工作区 SQLite 索引；
+/// `background_job_wait` 虽然只读，但**等待时长本身就是本次调用的预算**，重试等于把墙钟翻倍，
+/// 会把外圈留白吃掉（#1194 review）。
 /// 与 `[tool_registry] tool_retry_denied_tools`（用户额外排除）叠加。
 fn builtin_retry_denied() -> &'static std::collections::HashSet<String> {
     static DENIED: std::sync::OnceLock<std::collections::HashSet<String>> =
         std::sync::OnceLock::new();
     DENIED.get_or_init(|| {
-        [tool_names::CODEBASE_SEMANTIC_SEARCH]
+        [tool_names::CODEBASE_SEMANTIC_SEARCH, tool_names::BACKGROUND_JOB_WAIT]
             .into_iter()
             .map(str::to_string)
             .collect()
