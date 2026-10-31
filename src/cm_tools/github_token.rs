@@ -145,17 +145,6 @@ pub fn github_https_auth_envs(remote_url: &str) -> Option<Vec<(String, String)>>
     ])
 }
 
-/// 对 [`std::process::Command`] 注入 GitHub HTTPS 认证环境（见 [`github_https_auth_envs`]）。
-pub fn apply_github_https_auth(cmd: &mut Command, remote_url: &str) -> bool {
-    let Some(pairs) = github_https_auth_envs(remote_url) else {
-        return false;
-    };
-    for (k, v) in pairs {
-        cmd.env(k, v);
-    }
-    true
-}
-
 /// 对任意支持 `.env(K, V)` 的命令构建器注入（如 `tokio::process::Command`）。
 pub fn apply_github_https_auth_pairs<F>(remote_url: &str, mut set_env: F) -> bool
 where

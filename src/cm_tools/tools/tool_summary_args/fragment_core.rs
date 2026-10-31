@@ -173,12 +173,6 @@ impl ToolArgsSummary for super::tool_param_types::PythonSnippetRunArgs {
     }
 }
 
-fn default_true() -> bool {
-    true
-}
-
-
-// 各 fragment 被 `include!` 进同一模块，`tests` 名字不能复用，故带前缀。
 // 各 fragment 被 `include!` 进同一模块，`tests` 名字不能复用，故带前缀。
 #[cfg(test)]
 mod rust_analyzer_summary_tests {
