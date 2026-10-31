@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_names as tool_names;
 use crate::cm_tools::registry_policy::is_readonly_tool;
 use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 use crate::cm_types::Tool;
@@ -14,12 +15,12 @@ fn default_patch_write_tool_names() -> &'static HashSet<&'static str> {
     static S: OnceLock<HashSet<&'static str>> = OnceLock::new();
     S.get_or_init(|| {
         [
-            "apply_patch",
-            "search_replace",
-            "structured",
-            "create_file",
-            "modify_file",
-            "append_file",
+            tool_names::APPLY_PATCH,
+            tool_names::SEARCH_REPLACE,
+            tool_names::STRUCTURED,
+            tool_names::CREATE_FILE,
+            tool_names::MODIFY_FILE,
+            tool_names::APPEND_FILE,
         ]
         .into_iter()
         .collect()
@@ -30,9 +31,9 @@ fn default_test_runner_tool_names() -> &'static HashSet<&'static str> {
     static S: OnceLock<HashSet<&'static str>> = OnceLock::new();
     S.get_or_init(|| {
         [
-            "cargo_test",
-            "pytest_run",
-            "run_command",
+            tool_names::CARGO_TEST,
+            tool_names::PYTEST_RUN,
+            tool_names::RUN_COMMAND,
         ]
         .into_iter()
         .collect()
@@ -64,20 +65,20 @@ pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
     if tool_origin(name) == ToolOrigin::Mcp {
         return false;
     }
+    // `list_dir` / `grep` / `stat` 曾在此出现，但它们是**命令名**而非注册工具名
+    // （`specs/` 与 `cm_names::ALL` 里都没有）。`name` 来自当前调用，不可能是已删除的
+    // 工具名，故删除这三个分支 —— 它们从未命中过。
     matches!(
         name,
-        "read_file"
-            | "read_dir"
-            | "list_dir"
-            | "grep"
-            | "search_in_files"
-            | "stat"
-            | "git"
-            | "code_nav"
-            | "archive_list"
-            | "http_fetch"
-            | "diagnostic_summary"
-            | "self_config_info"
+        tool_names::READ_FILE
+            | tool_names::READ_DIR
+            | tool_names::SEARCH_IN_FILES
+            | tool_names::GIT
+            | tool_names::CODE_NAV
+            | tool_names::ARCHIVE_LIST
+            | tool_names::HTTP_FETCH
+            | tool_names::DIAGNOSTIC_SUMMARY
+            | tool_names::SELF_CONFIG_INFO
     )
 }
 
@@ -256,7 +257,7 @@ mod tests {
             );
         }
         let filtered = filter_tool_defs_for_executor_kind(
-            &[tool_named(name), tool_named("create_file")],
+            &[tool_named(name), tool_named(tool_names::CREATE_FILE)],
             &cfg,
             PlanStepExecutorKind::ReviewReadonly,
         );
@@ -269,10 +270,10 @@ mod tests {
         let mut cfg = load_config(None).expect("embed default");
         cfg.tool_registry_policy
             .tool_registry_sub_agent_review_readonly_deny_tools =
-            Some(Arc::new(HashSet::from(["read_file".to_string()])));
+            Some(Arc::new(HashSet::from([tool_names::READ_FILE.to_string()])));
         assert!(!tool_allowed_for_step_executor_kind(
             &cfg,
-            "read_file",
+            tool_names::READ_FILE,
             PlanStepExecutorKind::ReviewReadonly
         ));
     }
@@ -282,7 +283,7 @@ mod tests {
         let cfg = load_config(None).expect("embed default");
         assert!(tool_allowed_for_step_executor_kind(
             &cfg,
-            "run_command",
+            tool_names::RUN_COMMAND,
             PlanStepExecutorKind::TestRunner
         ));
     }
@@ -290,14 +291,14 @@ mod tests {
     #[test]
     fn denied_body_lists_allowed_names() {
         let cfg = load_config(None).expect("embed default");
-        let defs = vec![tool_named("read_file"), tool_named("create_file")];
+        let defs = vec![tool_named(tool_names::READ_FILE), tool_named(tool_names::CREATE_FILE)];
         let body = executor_kind_tool_denied_body(
             &cfg,
             &defs,
-            "create_file",
+            tool_names::CREATE_FILE,
             PlanStepExecutorKind::ReviewReadonly,
         );
-        assert!(body.contains("read_file"), "body={body}");
+        assert!(body.contains(tool_names::READ_FILE), "body={body}");
         assert!(body.contains("不在本步子代理"));
     }
 }
