@@ -10,10 +10,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub use crate::cm_chat_export::{
-    CHAT_EXPORT_PROJECTION_DISPLAY, CHAT_EXPORT_PROJECTION_RAW, CHAT_EXPORT_SCHEMA_ID,
-    CHAT_EXPORT_SCHEMA_VERSION, CHAT_SESSION_FILE_VERSION, ChatSessionFile, DisplayChatSessionFile,
-    DisplayExportMessage, ExportMdLocale, display_session_to_json_pretty, ensure_raw_projection,
-    projection_is_display, projection_is_raw, session_to_json_pretty,
+    ChatSessionFile, DisplayChatSessionFile, DisplayExportMessage, ExportMdLocale,
+    display_session_to_json_pretty, ensure_raw_projection, session_to_json_pretty,
 };
 
 /// JSON 导出信封投影（与 CLI `--projection` / Web 信封一致）。
@@ -109,11 +107,6 @@ pub fn messages_to_display_export(messages: &[Message]) -> Vec<DisplayExportMess
     out
 }
 
-/// 写入 `exports/chat_export_YYYYMMDD_HHMMSS.json`（默认 raw）。
-pub fn write_json_export(workspace: &Path, messages: &[Message]) -> io::Result<PathBuf> {
-    write_json_export_with_projection(workspace, messages, JsonExportProjection::Raw)
-}
-
 /// 按 `projection` 写入 JSON 信封。
 pub fn write_json_export_with_projection(
     workspace: &Path,
@@ -149,7 +142,10 @@ pub fn write_markdown_export(workspace: &Path, messages: &[Message]) -> io::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_chat_export::messages_to_markdown_with_body;
+    use crate::cm_chat_export::{
+        CHAT_EXPORT_PROJECTION_DISPLAY, CHAT_EXPORT_SCHEMA_ID, CHAT_EXPORT_SCHEMA_VERSION,
+        CHAT_SESSION_FILE_VERSION, messages_to_markdown_with_body, projection_is_display,
+    };
 
     fn msg(role: &str, content: &str) -> Message {
         Message {

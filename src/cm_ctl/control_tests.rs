@@ -4,8 +4,9 @@
 //! 拆测试是保持该上限的手段；测试路径仍是 `cm_ctl::control::tests`。
 
 use super::*;
+use crate::cm_ctl::paths;
 use crate::cm_ctl::port_pool::PortPool;
-use std::io::Write as _;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn ctx_at(dir: &Path) -> Ctx {

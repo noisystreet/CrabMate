@@ -21,8 +21,6 @@ use super::CtlError;
 
 /// 轮询间隔（readiness 与信号等待共用）。
 const POLL: Duration = Duration::from_millis(100);
-/// 默认就绪超时。
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 默认终止宽限。
 pub const DEFAULT_GRACE: Duration = Duration::from_secs(10);
 

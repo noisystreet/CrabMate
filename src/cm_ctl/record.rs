@@ -153,7 +153,8 @@ impl InstanceRecord {
         }
     }
 
-    /// 记录是否声明「应当运行」（`supervise` 收敛判据）。
+    /// 记录是否声明「应当运行」。仅测试使用——`supervise` 收敛直接比较 `desired_state`。
+    #[cfg(test)]
     pub fn wants_running(&self) -> bool {
         self.desired_state == DesiredState::Running
     }

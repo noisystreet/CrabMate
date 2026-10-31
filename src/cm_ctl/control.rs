@@ -15,7 +15,6 @@
 //! 4. **写入串行**：socket 线程只把请求投进通道，由主循环写盘并收敛，
 //!    因此不存在「socket 与 `--watch` 同时改文件」的交错。
 
-use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -29,7 +28,6 @@ use super::CtlError;
 use super::decl;
 use super::instances::{self, Declaration};
 use super::ops::{self, Ctx};
-use super::paths;
 use super::probe::Observed;
 use super::record::{InstanceRecord, InstanceState};
 

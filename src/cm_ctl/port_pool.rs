@@ -19,6 +19,8 @@ pub struct PortPool {
 }
 
 impl PortPool {
+    /// 由给定区间构造（校验 `lo != 0` 且 `lo <= hi`）。仅测试使用——生产只走 [`Self::default_pool`]。
+    #[cfg(test)]
     pub fn new(lo: u16, hi: u16) -> Result<Self, CtlError> {
         if lo == 0 {
             return Err(CtlError::usage("bad_port_range", "端口下限不能为 0"));
@@ -39,10 +41,12 @@ impl PortPool {
         }
     }
 
+    #[cfg(test)]
     pub fn lo(&self) -> u16 {
         self.lo
     }
 
+    #[cfg(test)]
     pub fn hi(&self) -> u16 {
         self.hi
     }

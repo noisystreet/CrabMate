@@ -22,14 +22,10 @@ pub const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
 /// [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 为 `false` 时仅 JSON `human_summary` 等摘要，**无**「`### 执行输出`」；
 /// 为 `true` 时：先 `human_summary`，再 **`### 执行输出`**（状态 + stdout/stderr 等）；纯文本 `run_command` 风格则结构化展示。
 ///
-/// 受 [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 控制；CLI 无 SSE 回显请用 [`tool_content_for_display_full`]。
+/// 受 [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 控制；需要「始终完整」的调用方直接用
+/// [`tool_content_for_display_impl`] 并传 `include_raw = true`。
 pub fn tool_content_for_display(raw: &str) -> String {
     tool_content_for_display_impl(raw, SHOW_TOOL_RAW_OUTPUT_IN_CHAT)
-}
-
-/// 终端 CLI 等需与「聊天区省略策略」独立时：始终包含完整工具输出（与日志/对话历史一致）。
-pub fn tool_content_for_display_full(raw: &str) -> String {
-    tool_content_for_display_impl(raw, true)
 }
 
 pub fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> String {
@@ -304,18 +300,6 @@ pub fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
     let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
     assistant_markdown_from_stripped(&stripped)
-}
-
-/// TUI 流式：拼接思维链与正文（与 `llm::api` 累加顺序一致）。收齐后由 [`assistant_markdown_source_for_display`] 剥规划 JSON。
-pub fn assistant_streaming_plain_concat(m: &Message) -> String {
-    let mut s = String::new();
-    if let Some(r) = m.reasoning_content.as_deref() {
-        s.push_str(r);
-    }
-    if let Some(c) = crate::cm_types::message_content_as_str(&m.content) {
-        s.push_str(c);
-    }
-    s
 }
 
 /// `deepseek-reasoner` 等：拼接「思考过程」与正文为 Markdown 源，再走 [`assistant_markdown_source_for_display`]。
