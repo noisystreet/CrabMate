@@ -43,7 +43,7 @@ git push --force-with-lease=<branch>:<sha-from-ls-remote> origin <branch>
 
 - Use the **explicit** `--force-with-lease=<ref>:<expected-sha>` form. The bare form compares against the local remote-tracking ref, which is stale right after a rebase (fails as `stale info`), and it cannot tell "someone else pushed" apart from "the ref is gone upstream" — the latter is exactly what happens when the base merged and `delete_branch_on_merge` removed it.
 - `--force-with-lease` still needs explicit user authorization (see above): inspect, then push.
-- Merging `origin/main` into the branch also clears the conflict and needs no force-push, and GitHub's rebase merge does tolerate the merge commit (it drops it). Prefer the rebase anyway: it keeps the PR's commit list and body honest about what the PR actually changes.
+- Merging `origin/main` into the branch clears the `CONFLICTING` banner and needs no force-push — **but in this rebase-only repo that is not enough to merge**：rebase-merge 重放的是**每个提交**、并丢掉 merge commit，所以「只写在 merge commit 里」的冲突解决对它不可见，GitHub 会继续报 *"This branch cannot be rebased due to conflicts"*，而 `gh pr view` 同时说 `mergeable: MERGEABLE`。先用 `git merge-tree --write-tree --merge-base=<old-base> <new-base> <commit>` 复现那一步（它打印的正是同一批冲突）；真有冲突就只能 rebase 到分支提交**直接坐在**新 base 上（重放退化为 no-op，`git diff --stat <old-head> HEAD` 保持为空）。无论如何优先用 rebase：它让 PR 的提交列表与正文如实反映改动。
 - A genuine content conflict is still possible when two batches touch the same lines (e.g. the migration counters in this file). Resolve by keeping the downstream side, then re-run the zero-drift tests.
 
 ### Environment variable `API_KEY`
