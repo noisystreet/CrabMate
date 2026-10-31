@@ -71,14 +71,14 @@
             runner: ToolRunner::Typed(runner_list_tree_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_list_tree),
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::READ_BINARY_META,
+            args: args::ReadBinaryMetaArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_read_binary_meta_try,
+            summary: dynamic,
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::ReadBinaryMetaArgs>,
-            runner: ToolRunner::Typed(runner_read_binary_meta_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_read_binary_meta),
         },
         ToolSpec {
             name: tool_names::APPLY_PATCH,

@@ -43,6 +43,20 @@ pub(super) fn arg_u64(args: &serde_json::Value, key: &str) -> Option<u64> {
     args.get(key).and_then(serde_json::Value::as_u64)
 }
 
+/// 取布尔参数：缺失或类型不符算「没给」（默认值由调用方决定）。
+pub(super) fn arg_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
+    args.get(key).and_then(serde_json::Value::as_bool)
+}
+
+/// 取**原样**字符串参数：不 trim、不把空串当「没给」。
+///
+/// 迁移时用于旧结构体 `Option<String>` + `unwrap_or(默认值)` 的语义（`code_stats` 的
+/// 缺省 `.`、`dependency_graph` 的缺省 `mermaid` 等）：`arg_str` 会把空白当「没给」并
+/// 回落默认值，那会改变「显式传空白」时的输出，所以这类字段走这个更贴近原语义的取值。
+pub(super) fn arg_str_raw<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    args.get(key).and_then(serde_json::Value::as_str)
+}
+
 include!("tool_summary_args/fragment_args_summary.rs");
 include!("tool_summary_args/fragment_core.rs");
 include!("tool_summary_args/fragment_git_files_diff.rs");
