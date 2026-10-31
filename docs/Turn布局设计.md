@@ -111,7 +111,7 @@ flowchart TB
 | `src/agent/agent_turn/host/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `src/cm_llm` SSE 解析） |
 | 同目录 `mod.rs` | 工具批结束发送 **`turn_tool_phase_end: true`**（在 `tool_running: false` 之前） |
 
-TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录（见 **`docs/design/archive/tui_align_tauri_display.md`** Phase 3）。附录**仅**保留错误，避免生成过程中刷出该标题。
+**控制面附录**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录；附录**仅**保留错误，避免生成过程中刷出该标题。（该约定源自**已移除**的同进程 TUI `sse_mirror`；终端展示现由 Client `crabmate-tui` 负责，见 [`client_shell_split.md`](design/client_shell_split.md)。）
 
 ### 4.3 前端 Web
 
@@ -231,7 +231,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 - **`docs/SSE协议.md`** — 控制面字段与前端处理列  
 - Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) — `composer_stream` 分层与 `wire_*`（UI 源码不在本仓）  
 - **`docs/开发文档.md`** — Web 流式概要  
-- **`docs/design/archive/tui_align_tauri_display.md`** — 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）  
+- **`docs/design/archive/tui_align_tauri_display.md`**（**已归档**，仅供考古）— 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）；终端实现现属 Client `crabmate-tui`  
 - **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** — 协议双端同步规则
 
 ---
