@@ -1,21 +1,21 @@
 [
-ToolSpec {
+        builtin_tool! {
             name: tool_names::TEXT_DIFF,
+            args: args::TextDiffArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_text_diff_try,
+            summary: none,
             description: "任意两段 **UTF-8 纯文本**的行级 unified diff（与 Git 无关）。mode=inline 时比较 left/right 字符串（各 256KiB）；mode=paths 时比较工作区内两文件（各 4MiB 内）。可调 context_lines 与 max_output_bytes。与 `structured_diff`（结构化键）互补。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::TextDiffArgs>,
-            runner: ToolRunner::Typed(runner_text_diff_try),
-            summary: ToolSummaryKind::None,
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::TABLE_TEXT,
+            args: args::TableTextArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_table_text_try,
+            summary: none,
             description: "工作区内 **CSV / TSV / 简单分隔** 纯文本：`preview` 抽样预览，`validate` 检查列数是否一致，`select_columns` 按列下标导出 TSV，`filter_rows` 按列 equals/contains 筛选，`aggregate` 对列做 sum/mean/min/max/count。单文件 4MiB；内联 `text` 256KiB；扫描/输出行数有上限。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::TableTextArgs>,
-            runner: ToolRunner::Typed(runner_table_text_try),
-            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: tool_names::CODE_NAV,

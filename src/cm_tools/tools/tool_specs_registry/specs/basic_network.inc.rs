@@ -1,12 +1,12 @@
 [
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::GET_WEATHER,
+            args: args::GetWeatherArgs,
+            category: Basic,
+            tags: [],
+            runner: runner_get_weather_try,
+            summary: none,
             description: "获取指定城市或地区的当前天气（使用 Open-Meteo，无需 API Key）。用于回答「某地天气怎么样」「北京今天天气」等问题。参数 city 或 location 为城市/地区名，如北京、上海、Tokyo、New York。",
-            category: ToolCategory::Basic,
-            tags: &[],
-            parameters: schema_of::<args::GetWeatherArgs>,
-            runner: ToolRunner::Typed(runner_get_weather_try),
-            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: tool_names::WEB_SEARCH,

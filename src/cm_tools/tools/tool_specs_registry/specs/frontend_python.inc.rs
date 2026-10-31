@@ -1,12 +1,12 @@
 [
-ToolSpec {
+        builtin_tool! {
             name: tool_names::PYTEST_RUN,
+            args: args::PytestRunArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL, dev_tag::PYTHON],
+            runner: runner_pytest_run_try,
+            summary: static "python3 -m pytest",
             description: "在工作区运行 `python3 -m pytest`（需已安装 pytest）。可选 test_path、keyword（-k）、markers（-m）、quiet、maxfail、nocapture。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL, dev_tag::PYTHON],
-            parameters: schema_of::<args::PytestRunArgs>,
-            runner: ToolRunner::Typed(runner_pytest_run_try),
-            summary: ToolSummaryKind::Static("python3 -m pytest"),
         },
         ToolSpec {
             name: tool_names::PYTHON_SNIPPET_RUN,
