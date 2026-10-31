@@ -55,6 +55,138 @@ impl ToolArgsSummary for super::tool_param_types::FileWriteArgs {
     }
 }
 
+// ── P2 批：代码度量 / 后台任务的 5 个小摘要 ────────────────────────────────
+
+impl ToolArgsSummary for super::tool_param_types::CodeStatsArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        // 旧结构体是 `Option<String>` + `unwrap_or(".")`：缺失回落 `.`，显式空白串则 trim
+        // 成空串而**不**回落——用 `arg_str_raw` 保持这条边界，`arg_str` 会把它当「没给」。
+        let path = arg_str_raw(args, "path").unwrap_or(".").trim();
+        Some(format!("code stats: {path}"))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::DependencyGraphArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let format = arg_str_raw(args, "format").unwrap_or("mermaid");
+        let kind = arg_str_raw(args, "kind").unwrap_or("auto");
+        Some(format!("dependency graph ({kind}/{format})"))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::CoverageReportArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let path = arg_str_raw(args, "path").unwrap_or("").trim();
+        if path.is_empty() {
+            Some("coverage report (auto-detect)".to_string())
+        } else {
+            Some(format!("coverage report: {path}"))
+        }
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::DeleteDirArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let path = arg_str(args, "path")?;
+        Some(if arg_bool(args, "recursive").unwrap_or(false) {
+            format!("delete directory (recursive): {path}")
+        } else {
+            format!("delete directory: {path}")
+        })
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::BackgroundJobCancelArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        match arg_str(args, "tool_job_id") {
+            Some(id) => Some(format!("cancel background job: {id}")),
+            None => Some("cancel background job".to_string()),
+        }
+    }
+}
+
+
+/// 摘要里的「前 N 字符 + …」截断。原先 `gh issue create` / `gh api` / `gh pr` /
+/// `search_replace` 各写一遍同样的逻辑，迁移时收敛到这里。
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() > max {
+        format!("{}…", s.chars().take(max).collect::<String>())
+    } else {
+        s.to_string()
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::ReadBinaryMetaArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        Some(format!("binary metadata: {}", arg_str(args, "path")?))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::AppendFileArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        Some(format!("append to file: {}", arg_str(args, "path")?))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::CreateDirArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        Some(format!("create directory: {}", arg_str(args, "path")?))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::DeleteFilesArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        // 旧结构体是 `paths: Vec<String>`：字段缺失或不是数组都等于「没给」。
+        let paths = args.get("paths")?.as_array()?;
+        let total = paths.len();
+        if total == 0 {
+            return None;
+        }
+        let shown: Vec<&str> = paths.iter().take(3).filter_map(serde_json::Value::as_str).collect();
+        let mut line = format!("delete files: {}", shown.join(", "));
+        if total > 3 {
+            line.push_str(&format!(" (+{} more)", total - 3));
+        }
+        Some(line)
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::GhReleaseCreateArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let tag = arg_str(args, "tag")?;
+        let draft = arg_bool(args, "draft") == Some(true);
+        Some(format!(
+            "gh release create {tag}{}",
+            if draft { " (draft)" } else { "" }
+        ))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::GhIssueCreateArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let title = arg_str(args, "title")?;
+        Some(format!(
+            "gh issue create{}: {}",
+            gh_repo_suffix(arg_str(args, "repo").map(str::to_string)),
+            truncate_chars(title, 40)
+        ))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::GhApiArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let path = arg_str(args, "path")?;
+        // `method` 走 `arg_str_raw`：旧实现是 `unwrap_or("GET").trim()`，显式空白串会得到
+        // 空 method 而不是回落 "GET"，这条边界要保持。
+        let method = arg_str_raw(args, "method")
+            .unwrap_or("GET")
+            .trim()
+            .to_ascii_uppercase();
+        Some(format!("gh api {method} {}", truncate_chars(path, 40)))
+    }
+}
+
+
 #[cfg(test)]
 mod args_summary_tests {
     use super::*;

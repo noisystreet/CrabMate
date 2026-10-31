@@ -8,14 +8,14 @@ ToolSpec {
             runner: ToolRunner::Typed(runner_background_job_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_background_job),
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::BACKGROUND_JOB_CANCEL,
+            args: args::BackgroundJobCancelArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_background_job_cancel_try,
+            summary: dynamic,
             description: "取消后台工具任务（终止语义，非发起执行）。queued 直接转移为 cancelled；running 置取消标记；已是 cancelled 幂等成功；其它终态不可取消。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::BackgroundJobCancelArgs>,
-            runner: ToolRunner::Typed(runner_background_job_cancel_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_cancel),
         },
         ToolSpec {
             name: tool_names::BACKGROUND_JOB_WAIT,
