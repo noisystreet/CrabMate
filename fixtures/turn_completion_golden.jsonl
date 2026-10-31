@@ -8,3 +8,4 @@
 {"id":"build_no_suppress_replan","case":"suppress_replanning","fixture":"build_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"deny","deny_reason":"early_stop_not_allowed"}
 {"id":"readonly_redundant_tools","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"list_tree_probe","expect":"allow"}
 {"id":"build_no_redundant_tools","case":"redundant_tools","fixture":"build_satisfied","tool_fixture":"list_tree_probe","expect":"deny","deny_reason":"early_stop_not_allowed"}
+{"id":"readonly_redundant_glob_probe","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"glob_files_probe","expect":"allow"}

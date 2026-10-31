@@ -8,10 +8,17 @@ use super::run_command_dedupe::{
     normalize_run_command_key, successful_run_command_keys_from_messages,
 };
 
+/// 只读「探测」类工具：目标已有完成证据时，再调一次不会带回新信息。
+///
+/// `read_file` / `read_dir` / `list_tree` 是列举与读取，`glob_files` / `search_in_files`
+/// 是查找——同属一族，抑制口径必须一致。历史上这里写的是 `list_dir` / `glob` / `search`
+/// （三个并不存在的工具名，见 #1155 / #1204），导致查找类两个真实工具从未生效。
 const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
     tool_names::READ_FILE,
     tool_names::READ_DIR,
     tool_names::LIST_TREE,
+    tool_names::GLOB_FILES,
+    tool_names::SEARCH_IN_FILES,
 ];
 
 const RUN_COMMAND_VERIFY_MARKERS: &[&str] = &[
