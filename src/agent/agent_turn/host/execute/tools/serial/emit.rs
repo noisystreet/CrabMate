@@ -8,6 +8,7 @@ use crate::agent::agent_turn::run_command_dedupe::{
     RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key_with_cwd,
 };
 use crate::agent::per_coord::PerCoordinator;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
 use crate::tool_result::parse_tool_output;
@@ -28,7 +29,7 @@ pub(super) async fn serial_try_ttl_run_command_cache_hit(
 ) -> bool {
     let ttl_secs = p.cfg.chat_queues_cache.readonly_tool_ttl_cache_secs;
     if ttl_secs == 0
-        || p.name != "run_command"
+        || p.name != tool_names::RUN_COMMAND
         || !crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(p.args)
     {
         return false;
@@ -70,7 +71,7 @@ fn readonly_tool_ttl_cache_should_invalidate_workspace(
     workspace_changed: bool,
 ) -> bool {
     workspace_changed
-        || if name == "run_command" {
+        || if name == tool_names::RUN_COMMAND {
             !crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(args)
         } else {
             !tool_registry::is_readonly_tool(cfg, name)
@@ -115,7 +116,7 @@ pub(super) fn serial_bookkeep_readonly_tool_ttl_cache_after_tool(
     let ws_key = p.effective_working_dir.to_string_lossy();
     let ttl_secs = p.cfg.chat_queues_cache.readonly_tool_ttl_cache_secs;
     let mut ttl_run_command_success_cache: Option<String> = None;
-    if ttl_secs > 0 && p.name == "run_command" {
+    if ttl_secs > 0 && p.name == tool_names::RUN_COMMAND {
         let parsed_tool = parse_tool_output(p.name, p.result);
         if parsed_tool.ok
             && crate::readonly_tool_ttl_cache::run_command_invocation_ttl_cache_eligible(p.args)
@@ -385,7 +386,7 @@ async fn serial_emit_run_command_preflight_errors(
 async fn serial_emit_run_command_and_readonly_cache_hits(
     p: &mut SerialEmitEarlyWithoutDispatchParams<'_>,
 ) -> bool {
-    if p.name == "run_command"
+    if p.name == tool_names::RUN_COMMAND
         && serial_emit_run_command_success_dedupe(SerialRunCommandSuccessDedupeParams {
             messages: p.messages,
             per_coord: p.per_coord,
@@ -402,7 +403,7 @@ async fn serial_emit_run_command_and_readonly_cache_hits(
     {
         return true;
     }
-    if p.name == "run_command"
+    if p.name == tool_names::RUN_COMMAND
         && serial_emit_run_command_failure_short_circuits(SerialRunCommandDupShortCircuitEmitCtx {
             messages: p.messages,
             per_coord: p.per_coord,

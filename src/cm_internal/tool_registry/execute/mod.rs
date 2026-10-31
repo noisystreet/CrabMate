@@ -22,7 +22,7 @@ use super::policy::{
 };
 use super::runtime::{ToolRuntime, WebToolRuntime};
 
-/// Web UI：未选择工作区时的统一提示尾句（`run_command` / `run_executable` 共用）。
+/// Web UI：未选择工作区时的统一提示尾句（命令类工具共用）。
 const WEB_WORKSPACE_PANEL_HINT: &str = "请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。";
 
 fn web_tool_err_workspace_not_set(action_zh: &str) -> String {

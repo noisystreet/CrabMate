@@ -20,6 +20,7 @@ use super::http_types::tools::{
     ToolEnabledBody, ToolEnabledResponse, ToolListItem, ToolPolicyView, ToolSourceCounts,
     ToolsListResponse,
 };
+use crate::cm_names as tool_names;
 use crate::cm_api_contract::error_codes;
 use crate::cm_tools::registry_policy;
 use crate::cm_tools::tool_dispatch::HandlerLookupTable;
@@ -117,12 +118,16 @@ fn policy_disabled(cfg: &AgentConfig, name: &str) -> bool {
 
 /// 既有配置硬编码特判（`codebase_semantic_search` / `long_term_memory_*`）。
 fn config_disabled(cfg: &AgentConfig, name: &str) -> bool {
-    if name == "codebase_semantic_search" && !cfg.codebase_semantic.codebase_semantic_search_enabled {
+    if name == tool_names::CODEBASE_SEMANTIC_SEARCH
+        && !cfg.codebase_semantic.codebase_semantic_search_enabled
+    {
         return true;
     }
     if matches!(
         name,
-        "long_term_remember" | "long_term_forget" | "long_term_memory_list"
+        tool_names::LONG_TERM_REMEMBER
+            | tool_names::LONG_TERM_FORGET
+            | tool_names::LONG_TERM_MEMORY_LIST
     ) && !cfg.long_term_memory.long_term_memory_enabled
     {
         return true;

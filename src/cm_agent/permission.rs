@@ -99,8 +99,8 @@ pub const COMMAND_ALLOW_ALL: &str = "*";
 /// 命令范围。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandScope {
-    /// L0 / L1：命令全禁（`run_command` / `terminal_session` / `python_snippet_run` /
-    /// `run_executable` 硬拒，S2 即生效）。
+    /// L0 / L1：命令全禁（`run_command` / `terminal_session` / `python_snippet_run`
+    /// 硬拒，S2 即生效）。
     None,
     /// L2 / L3：沿用 `allowed_commands`（直接复用配置里的 `Arc`，不复制）。
     Allowlist(Arc<[String]>),
@@ -278,15 +278,10 @@ pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps
 ///
 /// 这是**双保险**：可见性已经不下发这些工具，但模型仍可能凭历史发出调用，故在 early-deny
 /// 处再拒一次，不依赖 `is_readonly_tool` 是否漏配。
-pub const COMMAND_TOOLS: [&str; 4] = [
+pub const COMMAND_TOOLS: [&str; 3] = [
     tool_names::RUN_COMMAND,
     tool_names::TERMINAL_SESSION,
     tool_names::PYTHON_SNIPPET_RUN,
-    // `run_executable` **不是**注册工具（`specs/` 里没有对应 `ToolSpec`，也不在
-    // `tool_names::ALL`），只是权限面上的一条命令类入口，因此没有常量可用。
-    // 这里留字面量是刻意的：用 `tool_names` 里不存在的名字会破坏「常量 ↔ 声明点」
-    // 的对应关系，反而更糟。
-    "run_executable",
 ];
 
 /// 是否为命令类工具（见 [`COMMAND_TOOLS`]）。

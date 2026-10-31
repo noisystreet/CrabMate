@@ -294,7 +294,6 @@ fn approved_level_allows_every_tool_like_before() {
         "run_command",
         "terminal_session",
         "python_snippet_run",
-        "run_executable",
         "modify_file",
         "delete_dir",
         "mcp__demo__tool",

@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::cm_names as tool_names;
 use crate::cm_internal::memory::codebase_semantic_index::CodebaseSemanticToolParams;
 use crate::cm_internal::memory_tool_hosts::CodebaseSemanticHost;
 use crate::cm_internal::tools::http_fetch;
@@ -181,18 +182,18 @@ async fn dispatch_tool_runner_kind(
     }
     if matches!(
         kind,
-        "get_weather" | "web_search" | "run_command" | "run_executable"
+        tool_names::GET_WEATHER | tool_names::WEB_SEARCH | tool_names::RUN_COMMAND
     ) {
         return Ok(run_tool_async(kind, &inv.args_json, ctx).await);
     }
-    if kind == "http_fetch" {
+    if kind == tool_names::HTTP_FETCH {
         return Ok(run_tool_runner_http_fetch(inv, http));
     }
-    if kind == "http_request" {
+    if kind == tool_names::HTTP_REQUEST {
         return Ok(run_tool_runner_http_request(inv, http));
     }
     Err(format!(
-        "未知的沙盒调用 kind: {:?}（支持 sync_default、get_weather、web_search、http_fetch、http_request、run_command、run_executable）",
+        "未知的沙盒调用 kind: {:?}（支持 sync_default、get_weather、web_search、http_fetch、http_request、run_command）",
         inv.kind
     ))
 }

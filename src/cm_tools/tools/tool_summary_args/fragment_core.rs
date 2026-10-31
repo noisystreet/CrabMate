@@ -81,7 +81,7 @@ impl ToolSummaryLine for SearchInFilesSummaryArgs {
     }
 }
 
-// ── run_command, run_executable (`args` may be array or string) ─
+// ── run_command (`args` may be array or string) ─
 
 fn json_arg_display_token(v: &serde_json::Value) -> Option<String> {
     match v {

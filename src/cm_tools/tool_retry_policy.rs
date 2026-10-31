@@ -26,7 +26,7 @@ fn builtin_retry_denied() -> &'static std::collections::HashSet<String> {
     static DENIED: std::sync::OnceLock<std::collections::HashSet<String>> =
         std::sync::OnceLock::new();
     DENIED.get_or_init(|| {
-        ["codebase_semantic_search"]
+        [tool_names::CODEBASE_SEMANTIC_SEARCH]
             .into_iter()
             .map(str::to_string)
             .collect()

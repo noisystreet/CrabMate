@@ -1,5 +1,6 @@
 //! 回合结束后启发式检测「由失败到成功」的构建/验证类工具调用，自动写入长期记忆（`source_role=auto_summarize_experience`）。
 
+use crate::cm_names as tool_names;
 use crate::cm_memory::tool_check;
 use crate::cm_types::{Message, message_content_as_str};
 
@@ -70,7 +71,7 @@ fn detect_build_recovery_in_slice(turn: &[Message]) -> Option<BuildRecovery> {
             continue;
         }
         let content = message_content_as_str(&m.content).unwrap_or("").trim();
-        if tool_name == "run_command" && !run_command_looks_like_build(content) {
+        if tool_name == tool_names::RUN_COMMAND && !run_command_looks_like_build(content) {
             continue;
         }
         let ok = tool_check::tool_output_is_ok(content);
@@ -90,10 +91,10 @@ fn detect_build_recovery_in_slice(turn: &[Message]) -> Option<BuildRecovery> {
 fn is_build_verify_tool(name: &str) -> bool {
     matches!(
         name,
-        "run_command"
-            | "cargo_check"
-            | "cargo_test"
-            | "cargo_clippy"
+        tool_names::RUN_COMMAND
+            | tool_names::CARGO_CHECK
+            | tool_names::CARGO_TEST
+            | tool_names::CARGO_CLIPPY
     )
 }
 
@@ -130,7 +131,7 @@ fn one_line_excerpt(s: &str, max_chars: usize) -> String {
 fn tags_for_recovery(recovery: &BuildRecovery) -> Vec<String> {
     let mut tags = vec!["auto".to_string(), "build-recovery".to_string()];
     let n = recovery.tool_name.as_str();
-    if n.contains("cargo") || n == "run_command" {
+    if n.contains("cargo") || n == tool_names::RUN_COMMAND {
         tags.push("rust".to_string());
     }
     if n.contains("test") {
