@@ -59,6 +59,7 @@ mod parse_args;
 mod patch;
 pub(crate) mod python_tools;
 mod regex_test;
+mod registry_macro;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
@@ -90,6 +91,9 @@ mod workspace_image_chat_hint;
 mod write_sse_preview;
 
 pub mod dev_tag;
+
+/// #1157：内建工具注册面的单点声明宏，供 `tool_specs_registry/specs/*.inc.rs` 使用。
+pub(crate) use registry_macro::builtin_tool;
 
 use std::sync::Arc;
 

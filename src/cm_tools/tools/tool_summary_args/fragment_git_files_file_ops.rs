@@ -1,21 +1,6 @@
 // ── file ops ──────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
-pub(super) struct CreateFileSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for CreateFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("create file: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct ModifyFileSummaryArgs {
     path: String,
     #[serde(default)]
