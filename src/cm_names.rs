@@ -182,6 +182,8 @@ pub const ENV_VAR_CHECK: &str = "env_var_check";
 pub const BACKGROUND_JOB: &str = "background_job";
 /// `background_job_cancel`
 pub const BACKGROUND_JOB_CANCEL: &str = "background_job_cancel";
+/// `background_job_wait`
+pub const BACKGROUND_JOB_WAIT: &str = "background_job_wait";
 
 // --- `specs/schedule.inc.rs` ---
 /// `reminder`
@@ -271,6 +273,7 @@ pub static ALL: &[&str] = &[
     ENV_VAR_CHECK,
     BACKGROUND_JOB,
     BACKGROUND_JOB_CANCEL,
+    BACKGROUND_JOB_WAIT,
     REMINDER,
     EVENT,
     SELF_CONFIG_INFO,

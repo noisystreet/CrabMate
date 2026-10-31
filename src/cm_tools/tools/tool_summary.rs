@@ -42,6 +42,7 @@ define_summaries! {
     summary_code_nav => CodeNavSummaryArgs,
     summary_background_job => BackgroundJobSummaryArgs,
     summary_background_job_cancel => BackgroundJobCancelSummaryArgs,
+    summary_background_job_wait => BackgroundJobWaitSummaryArgs,
     summary_code_stats => CodeStatsSummaryArgs,
     summary_dependency_graph => DependencyGraphSummaryArgs,
     summary_coverage_report => CoverageReportSummaryArgs,

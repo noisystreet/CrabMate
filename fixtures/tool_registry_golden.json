@@ -116,6 +116,7 @@
     "event",
     "background_job",
     "background_job_cancel",
+    "background_job_wait",
     "code_stats",
     "dependency_graph",
     "coverage_report",
@@ -360,7 +361,7 @@
     },
     "background_job": {
       "category": "development",
-      "description": "查询后台工具任务（只读，不走白名单审批）。**`action` 必填**：`status` 按 `tool_job_id` 查状态与（终态）输出；`list` 列出当前工作区任务（最新创建在前，可选 `limit`，默认 20、上限 100）；`output` 按 `tool_job_id` 增量拉取输出（`tail -f` 语义，可选 `cursor` = 上次返回的 `next_cursor`）。**`status` / `output` 必须传 `tool_job_id`**。与本 `action` 无关的字段会被忽略，但 `limit` 无论 action 都受 1–100 约束（超出即参数校验失败）。用于 `run_command` 以 `async: true` 启动的长任务。取消任务请用 `background_job_cancel`。",
+      "description": "查询后台工具任务（只读，不走白名单审批）。**`action` 必填**：`status` 按 `tool_job_id` 查状态与（终态）输出；`list` 列出当前工作区任务（最新创建在前，可选 `limit`，默认 20、上限 100）；`output` 按 `tool_job_id` 增量拉取输出（`tail -f` 语义，可选 `cursor` = 上次返回的 `next_cursor`）。**`status` / `output` 必须传 `tool_job_id`**。与本 `action` 无关的字段会被忽略，但 `limit` 无论 action 都受 1–100 约束（超出即参数校验失败）。用于 `run_command` 以 `async: true` 启动的长任务。取消任务请用 `background_job_cancel`；要**等任务结束**请用 `background_job_wait`（服务端内部等待，不必自己反复轮询）。",
       "parameters": {
         "$defs": {
           "BackgroundJobAction": {
@@ -447,6 +448,78 @@
           "tool_job_id"
         ],
         "title": "BackgroundJobCancelArgs",
+        "type": "object"
+      },
+      "summary": "dynamic",
+      "tags": [
+        "general"
+      ]
+    },
+    "background_job_wait": {
+      "category": "development",
+      "description": "等待后台任务满足条件后返回（**只读**；扫描在服务端完成，省掉多轮 `background_job status` 的往返）。`until` 默认 `exit`（等到终态）；`until=output_matches` 时必须给 `output_matches`（**子串**，非正则，≤256 字节），输出出现即返回（例如等 dev server 打印 `listening on`）——省略 `until` 但给了 `output_matches` 时按 `output_matches` 处理。`timeout_secs` 是本次等待的墙钟（钳制 1–600，默认 60）：**超时不取消任务**，任务保持原状态，可继续等待，或改用 `background_job`（`action=output`）取增量；任务被取消（`background_job_cancel` 或用户停止回合）时等待会提前结束并注明「已请求取消」。本工具会阻塞至多 `timeout_secs` 秒，**不要与其它工具并排发起**。返回体把「等待结果」与「任务状态」分开写：任务自身的 `timed_out` 与本次等待超时是两件事。终态记录只保留 `background_job_ttl_secs` + `background_job_result_grace_secs`（默认 1 天 + 300 秒），过期后再等会得到「已过保留时长」错误。",
+      "parameters": {
+        "$defs": {
+          "BackgroundJobWaitUntil": {
+            "description": "`background_job_wait` 的 `until` 取值。\n\n只取保守的 A 案（#1194 Q1）：`exit` 与 `output_matches`。**不做** `idle_secs` ——\n`terminal_session` 的 `IDLE_DRAIN` 之所以成立，是因为 PTY 没有「结束」信号；\n普通命令有 exit code，引入「输出暂停」等于用一个更弱的信号覆盖更强的信号，\n卡死会被误判成「暂时没输出」。",
+            "oneOf": [
+              {
+                "const": "exit",
+                "description": "等到任务终态（`succeeded` / `failed` / `cancelled` / `timed_out`）。",
+                "type": "string"
+              },
+              {
+                "const": "output_matches",
+                "description": "保留窗口内出现 `output_matches` 子串即返回（不必等到结束）。",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "[`super::background_job_tools::background_job_wait_try`] 入参。\n\n**独立工具**，不并入 `background_job`：阻塞等待会同时破坏该工具的\n并行只读批身份与同轮 `(name, args)` 去重缓存（见 `docs/design/background_tool_jobs_contract.md` §9）。",
+        "properties": {
+          "output_matches": {
+            "default": null,
+            "description": "`until=output_matches` 时必填：在任务输出（stdout/stderr 合并、保留窗口内）中查找的**子串**（非正则，≤ 256 字节）。",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeout_secs": {
+            "default": null,
+            "description": "本次等待的墙钟上限（秒），钳制 1–600，默认 60；**不会**取消任务。",
+            "format": "uint64",
+            "maximum": 600,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tool_job_id": {
+            "description": "后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BackgroundJobWaitUntil"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "等待条件，默认 `exit`（跑到终态）。"
+          }
+        },
+        "required": [
+          "tool_job_id"
+        ],
+        "title": "BackgroundJobWaitArgs",
         "type": "object"
       },
       "summary": "dynamic",
@@ -3929,7 +4002,7 @@
     },
     "run_command": {
       "category": "development",
-      "description": "在服务器上执行 Linux 命令（白名单 + 工作区路径安全）。\n\n**1. 基本用法**：`command` 填单个程序名或相对路径，`args` 为参数数组（每项独立，不含程序名）；command 须在 `allowed_commands` 白名单内，或为工作区内已存在的可执行文件/脚本（自动审批）。白名单含 `bash/sh` 时，含 glob/`$VAR`/`&&`/管道的 argv 会整行经 `bash -c` 执行（审批展示完整脚本；反引号与 `$()` 命令替换按字面量转义、不会执行，需要时请用 `script`）。\n**推荐**：`cat [main.cpp]`、`which [gcc,g++]`、`./build/my_app []`。\n**避免**：`which [which gcc]`（args 重复程序名）、`./my_app [build/my_app]`（路径重复）、未白名单的 `rm/mv/chmod/sudo`。\n\n**2. 路径与 cwd**：优先工作区相对路径；可选 `cwd` 指定相对工作目录，不得为绝对路径或含 `..`。argv 含工作区外绝对路径或 `..` 路径分量时需人工审批（`main..HEAD` 不算；`cmake ..` 为合法特例，推荐 `cmake -S . -B build`）。\n\n**3. shell 脚本**：可选 `script` 用一行 shell 脚本代替 `command`+`args`（二者互斥）；白名单无 `bash/sh` 时报错，有 shell 但未获信任时需审批；脚本正文内的路径不由本工具审计。\n\n**4. 异步与超时**：`timeout_secs` 墙钟秒（钳制 1～600）；`async: true` 转后台任务并立即返回 `tool_job_id`，之后用 `background_job`（`action=list` / `status`）查询，需开启 `[tool_registry] background_jobs_enabled`，命令须已在白名单或已 AllowAlways 批准。",
+      "description": "在服务器上执行 Linux 命令（白名单 + 工作区路径安全）。\n\n**1. 基本用法**：`command` 填单个程序名或相对路径，`args` 为参数数组（每项独立，不含程序名）；command 须在 `allowed_commands` 白名单内，或为工作区内已存在的可执行文件/脚本（自动审批）。白名单含 `bash/sh` 时，含 glob/`$VAR`/`&&`/管道的 argv 会整行经 `bash -c` 执行（审批展示完整脚本；反引号与 `$()` 命令替换按字面量转义、不会执行，需要时请用 `script`）。\n**推荐**：`cat [main.cpp]`、`which [gcc,g++]`、`./build/my_app []`。\n**避免**：`which [which gcc]`（args 重复程序名）、`./my_app [build/my_app]`（路径重复）、未白名单的 `rm/mv/chmod/sudo`。\n\n**2. 路径与 cwd**：优先工作区相对路径；可选 `cwd` 指定相对工作目录，不得为绝对路径或含 `..`。argv 含工作区外绝对路径或 `..` 路径分量时需人工审批（`main..HEAD` 不算；`cmake ..` 为合法特例，推荐 `cmake -S . -B build`）。\n\n**3. shell 脚本**：可选 `script` 用一行 shell 脚本代替 `command`+`args`（二者互斥）；白名单无 `bash/sh` 时报错，有 shell 但未获信任时需审批；脚本正文内的路径不由本工具审计。\n\n**4. 异步与超时**：`timeout_secs` 墙钟秒（钳制 1～600）；`async: true` 转后台任务并立即返回 `tool_job_id`，之后用 `background_job_wait` 一次等到终态或日志命中（推荐，免得多轮轮询），或用 `background_job`（`action=list` / `status` / `output`）查询，需开启 `[tool_registry] background_jobs_enabled`，命令须已在白名单或已 AllowAlways 批准。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::cm_config::AgentConfig;
 use crate::cm_names as tool_names;
@@ -17,7 +17,8 @@ use crate::cm_internal::long_term_memory_tools::{
 use crate::cm_internal::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
 use crate::cm_internal::tool_jobs::GetOutcome;
 use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
-use crate::cm_internal::tool_jobs::types::JobStatus;
+use crate::cm_internal::tool_jobs::types::{JobRecord, JobStatus};
+use crate::cm_internal::tool_jobs::WaitOutcome;
 use crate::cm_tools::subprocess_session::SessionStream;
 use crate::cm_tools::tool_result::ToolError;
 
@@ -162,19 +163,10 @@ fn append_stream(out: &mut String, label: &str, bytes: &[u8]) {
     }
 }
 
-impl ToolJobsToolHost for ToolJobsHost {
-    fn status(&self, id: &str, max_output_len: usize) -> String {
-        let rec = match self.registry.get_checked(id, SystemTime::now()) {
-            GetOutcome::Found(rec) => rec,
-            GetOutcome::Expired => {
-                return format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。");
-            }
-            GetOutcome::NotFound => {
-                return format!("错误：后台任务 `{id}` 不存在或从未创建。");
-            }
-        };
-        let mut out = String::new();
-        out.push_str(&format!("后台任务 {}\n", rec.id));
+/// 单条任务详情正文。`status` 与 `wait_until` **共用**这一份渲染，否则两处正文会随改动漂移。
+fn render_job_record(rec: &JobRecord, max_output_len: usize) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("后台任务 {}\n", rec.id));
         out.push_str(&format!("状态: {}\n", rec.status.as_str()));
         out.push_str(&format!("工作区: {}\n", rec.workspace.display()));
         out.push_str(&format!(
@@ -208,6 +200,23 @@ impl ToolJobsToolHost for ToolJobsHost {
             }
         }
         truncate_text(&out, max_output_len)
+}
+
+fn job_expired_text(id: &str) -> String {
+    format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+}
+
+fn job_not_found_text(id: &str) -> String {
+    format!("错误：后台任务 `{id}` 不存在或从未创建。")
+}
+
+impl ToolJobsToolHost for ToolJobsHost {
+    fn status(&self, id: &str, max_output_len: usize) -> String {
+        match self.registry.get_checked(id, SystemTime::now()) {
+            GetOutcome::Found(rec) => render_job_record(&rec, max_output_len),
+            GetOutcome::Expired => job_expired_text(id),
+            GetOutcome::NotFound => job_not_found_text(id),
+        }
     }
 
     fn list(&self, workspace: &Path, limit: usize, max_output_len: usize) -> String {
@@ -270,12 +279,8 @@ impl ToolJobsToolHost for ToolJobsHost {
                 }
                 truncate_text(&out, max_output_len)
             }
-            OutputPollOutcome::Expired => {
-                format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
-            }
-            OutputPollOutcome::NotFound => {
-                format!("错误：后台任务 `{id}` 不存在或从未创建。")
-            }
+            OutputPollOutcome::Expired => job_expired_text(id),
+            OutputPollOutcome::NotFound => job_not_found_text(id),
         }
     }
 
@@ -288,10 +293,43 @@ impl ToolJobsToolHost for ToolJobsHost {
             CancelOutcome::AlreadyFinished(s) => {
                 format!("错误：后台任务 `{id}` 已处于终态 `{}`，不可取消。", s.as_str())
             }
-            CancelOutcome::Expired => {
-                format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+            CancelOutcome::Expired => job_expired_text(id),
+            CancelOutcome::NotFound => job_not_found_text(id),
+        }
+    }
+
+    fn wait_until(
+        &self,
+        id: &str,
+        pattern: Option<&str>,
+        timeout_secs: u64,
+        max_output_len: usize,
+    ) -> String {
+        let wait = self
+            .registry
+            .wait_for(id, pattern, Duration::from_secs(timeout_secs.max(1)));
+        let head = match wait {
+            WaitOutcome::Hit { matched: true, .. } => "等待结果: 已命中 `output_matches`（匹配到输出保留窗口内的子串）。任务**可能仍在运行**，需要终态请再等一次 `until=exit`。".to_string(),
+            WaitOutcome::Hit { .. } => "等待结果: 已到终态".to_string(),
+            WaitOutcome::DeadlineReached { status } => format!(
+                "等待结果: 等待超时（{timeout_secs} 秒内未满足条件）。任务**未被取消**，当前状态 `{}`；可继续等待，或改用 `background_job`（`action=output`）取增量。",
+                status.as_str()
+            ),
+            WaitOutcome::CancelRequested { status } => format!(
+                "等待结果: 任务已请求取消（当前状态 `{}`，尚未落地终态），等待已提前结束。需要终态可稍后再等一次，或改用 `background_job`（`action=status`）查询。",
+                status.as_str()
+            ),
+            WaitOutcome::Expired => return job_expired_text(id),
+            WaitOutcome::NotFound => return job_not_found_text(id),
+        };
+        // 详情正文只取**一次**快照：与 head 分两次读，会在「刚好被 TTL 清理」时拼出
+        // 「已到终态」+「已过保留时长」这种自相矛盾的正文。
+        match self.registry.get_checked(id, SystemTime::now()) {
+            GetOutcome::Found(rec) => {
+                format!("{head}\n\n{}", render_job_record(&rec, max_output_len))
             }
-            CancelOutcome::NotFound => format!("错误：后台任务 `{id}` 不存在或从未创建。"),
+            GetOutcome::Expired => job_expired_text(id),
+            GetOutcome::NotFound => job_not_found_text(id),
         }
     }
 }
@@ -507,5 +545,81 @@ mod tests {
         let out = host.list(Path::new("/ws"), 1, NO_TRUNCATION);
         assert!(out.contains("显示 1 条"), "{out}");
         assert_eq!(out.matches("- tooljob_").count(), 1, "{out}");
+    }
+
+    // ── `background_job_wait`（`wait_until`）────────────────────────
+
+    #[test]
+    fn wait_until_terminal_reports_wait_line_and_status_body() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert!(reg.complete(&id, succeeded_outcome(), true), "complete");
+
+        let out = host.wait_until(&id, None, 5, NO_TRUNCATION);
+        assert!(out.starts_with("等待结果: 已到终态"), "{out}");
+        // 正文复用 `status`，因此终态细节（退出码 / stdout）也要在。
+        assert!(out.contains("状态: succeeded"), "{out}");
+        assert!(out.contains("退出码: 0"), "{out}");
+        assert!(out.contains("all good"), "{out}");
+    }
+
+    #[test]
+    fn wait_until_timeout_says_job_not_cancelled() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+
+        let out = host.wait_until(&id, None, 1, NO_TRUNCATION);
+        assert!(out.contains("等待结果: 等待超时"), "{out}");
+        assert!(out.contains("未被取消"), "{out}");
+        assert!(out.contains("状态: running"), "{out}");
+    }
+
+    /// 取消标记置位后等待立即返回，正文写清「已请求取消」而不是「等待超时」。
+    #[test]
+    fn wait_until_cancel_requested_says_wait_ended_early() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert_eq!(reg.cancel(&id), CancelOutcome::Cancelled);
+
+        let out = host.wait_until(&id, None, 5, NO_TRUNCATION);
+        assert!(out.contains("已请求取消"), "{out}");
+        assert!(!out.contains("等待超时"), "{out}");
+        assert!(out.contains("状态: running"), "{out}");
+    }
+
+    #[test]
+    fn wait_until_output_matches_says_job_may_still_run() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert!(
+            reg.push_output(&id, SessionStream::Stdout, "listening on 3000\n"),
+            "push_output"
+        );
+
+        let out = host.wait_until(&id, Some("listening on"), 5, NO_TRUNCATION);
+        assert!(out.contains("已命中 `output_matches`"), "{out}");
+        assert!(out.contains("可能仍在运行"), "{out}");
+    }
+
+    #[test]
+    fn wait_until_missing_and_expired_keep_status_wording() {
+        let (reg, host) = setup();
+        assert_eq!(
+            host.wait_until("tooljob_missing", None, 1, NO_TRUNCATION),
+            "错误：后台任务 `tooljob_missing` 不存在或从未创建。"
+        );
+
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert!(reg.complete(&id, succeeded_outcome(), false), "complete");
+        assert!(reg.cleanup(SystemTime::now() + Duration::from_secs(3700)) >= 1);
+        assert_eq!(
+            host.wait_until(&id, None, 1, NO_TRUNCATION),
+            format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+        );
     }
 }

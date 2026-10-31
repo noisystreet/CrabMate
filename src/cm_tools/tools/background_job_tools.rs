@@ -17,12 +17,26 @@ use crate::cm_tools::memory_tool_host::ToolJobsToolHost;
 use crate::cm_tools::tool_result::ToolError;
 
 use super::parse_args_json;
-use super::tool_param_types::{BackgroundJobAction, BackgroundJobArgs, BackgroundJobCancelArgs};
+use super::tool_param_types::{
+    BackgroundJobAction, BackgroundJobArgs, BackgroundJobCancelArgs, BackgroundJobWaitArgs,
+    BackgroundJobWaitUntil,
+};
 
 /// `background_job`（`action=list`）未显式传入 `limit` 时的默认条数。
 const DEFAULT_LIST_LIMIT: u32 = 20;
 /// `background_job`（`action=list`）的条数硬上限（与参数 schema 的 `schemars(range)` 保持一致）。
 const MAX_LIST_LIMIT: u32 = 100;
+
+/// `background_job_wait` 未传 `timeout_secs` 时的默认等待上限（秒）。
+const DEFAULT_WAIT_TIMEOUT_SECS: u64 = 60;
+/// `background_job_wait` 的等待上限硬顶（与 `run_command` 的 `timeout_secs` 同口径）。
+const MAX_WAIT_TIMEOUT_SECS: u64 = 600;
+/// `output_matches` 子串的字节上限：匹配用的 `carry` 尾巴与模式长度成正比，必须设界。
+const MAX_MATCH_PATTERN_BYTES: usize = 256;
+/// 外圈墙钟留白（秒）。`SyncDefault` 工具由 `spawn_blocking` 承载并被外层
+/// `tokio::time::timeout(command_timeout_secs)` 包住（见 `tool_registry/execute/dispatch.rs`），
+/// 内层必须**早于**它返回，否则模型拿到的是通用「工具执行超时」而不是结构化的等待结果。
+const OUTER_WALL_RESERVE_SECS: u64 = 1;
 
 /// 宿主缺失（并行只读批 / 工作流节点等路径不注入注册表）时的降级文案，避免 panic。
 ///
@@ -153,6 +167,73 @@ pub fn background_job_cancel_try(
     }
 }
 
+/// 等待后台任务满足条件（`background_job_wait`）—— **不改变任务状态**。
+///
+/// `outer_wall_secs` 是该工具在 `spawn_blocking` 外的墙钟上限（`command_timeout_secs`），
+/// 用于让内层等待**提前**返回；这样超时是结构化结果，而不是外层 `tokio::time::timeout`
+/// 给出的通用「工具执行超时」。
+#[allow(clippy::result_large_err)]
+pub fn background_job_wait_try(
+    args_json: &str,
+    host: Option<&dyn ToolJobsToolHost>,
+    max_output_len: usize,
+    outer_wall_secs: u64,
+) -> Result<String, ToolError> {
+    let v = parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let BackgroundJobWaitArgs {
+        tool_job_id,
+        until,
+        output_matches,
+        timeout_secs,
+    } = serde_json::from_value::<BackgroundJobWaitArgs>(v).map_err(|e| {
+        ToolError::invalid_args(format!("参数 JSON 与 background_job_wait 形状不一致: {e}"))
+    })?;
+    let id = require_job_id(Some(tool_job_id.as_str()))?;
+    // `output_matches` 给了却没写 `until` 时按调用者显然的意图**推断**为 `output_matches`：
+    // 静默落回「等 exit」会让「等 dev server 打印 listening on」变成吃满超时（#1194 review）。
+    let until = until.unwrap_or_else(|| {
+        if output_matches
+            .as_deref()
+            .is_some_and(|p| !p.trim().is_empty())
+        {
+            BackgroundJobWaitUntil::OutputMatches
+        } else {
+            BackgroundJobWaitUntil::Exit
+        }
+    });
+    let pattern = match until {
+        BackgroundJobWaitUntil::Exit => None,
+        BackgroundJobWaitUntil::OutputMatches => {
+            let pat = output_matches.as_deref().unwrap_or("").trim();
+            if pat.is_empty() {
+                return Err(ToolError::invalid_args(
+                    "`until=output_matches` 需要非空的 `output_matches`（要查找的子串）。".to_string(),
+                ));
+            }
+            if pat.len() > MAX_MATCH_PATTERN_BYTES {
+                return Err(ToolError::invalid_args(format!(
+                    "`output_matches` 过长（{} 字节），上限 {MAX_MATCH_PATTERN_BYTES} 字节。",
+                    pat.len()
+                )));
+            }
+            Some(pat)
+        }
+    };
+    // 双重钳制：参数口径 1–600，再为外圈墙钟让出留白（`outer_wall_secs` 未知时按硬顶）。
+    let ceiling = MAX_WAIT_TIMEOUT_SECS.min(
+        outer_wall_secs
+            .saturating_sub(OUTER_WALL_RESERVE_SECS)
+            .max(1),
+    );
+    let wait_secs = timeout_secs
+        .unwrap_or(DEFAULT_WAIT_TIMEOUT_SECS)
+        .clamp(1, ceiling);
+    match host {
+        Some(h) => Ok(h.wait_until(id, pattern, wait_secs, max_output_len)),
+        None => Err(ToolError::invalid_args(HOST_UNAVAILABLE.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,6 +255,16 @@ mod tests {
 
         fn cancel(&self, id: &str) -> String {
             format!("stub cancel: {id}")
+        }
+
+        fn wait_until(
+            &self,
+            id: &str,
+            pattern: Option<&str>,
+            timeout_secs: u64,
+            _max_output_len: usize,
+        ) -> String {
+            format!("stub wait: {id} pattern={pattern:?} timeout={timeout_secs}")
         }
     }
 
@@ -350,5 +441,132 @@ mod tests {
         )
         .expect("status 应成功");
         assert_eq!(out, "stub status: j1");
+    }
+
+    // ── `background_job_wait` ─────────────────────────────────
+
+    #[test]
+    fn wait_defaults_to_exit_and_default_timeout() {
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":" j1 "}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect("wait 应成功");
+        assert_eq!(
+            out,
+            format!("stub wait: j1 pattern=None timeout={DEFAULT_WAIT_TIMEOUT_SECS}")
+        );
+    }
+
+    #[test]
+    fn wait_output_matches_passes_trimmed_pattern() {
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":"j1","until":"output_matches","output_matches":"  listening on "}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect("wait 应成功");
+        assert!(out.contains(r#"pattern=Some("listening on")"#), "{out}");
+    }
+
+    #[test]
+    fn wait_output_matches_is_inferred_when_until_omitted() {
+        // 只给 `output_matches`、不写 `until`：必须按 `output_matches` 处理，
+        // 而不是静默落回「等 exit」（否则永不退出的 dev server 会吃满超时）。
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":"j1","output_matches":"listening on"}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect("wait 应成功");
+        assert!(out.contains(r#"pattern=Some("listening on")"#), "{out}");
+    }
+
+    #[test]
+    fn wait_blank_output_matches_falls_back_to_exit() {
+        // 空白 pattern 不构成「想等 match」的意图，仍按默认 `exit`（不报错地空等 match）。
+        let out =
+            background_job_wait_try(r#"{"tool_job_id":"j1","output_matches":"  "}"#, Some(&StubHost), 1024, 600)
+                .expect("wait 应成功");
+        assert!(out.contains("pattern=None"), "{out}");
+    }
+
+    #[test]
+    fn wait_output_matches_requires_pattern() {
+        let e = background_job_wait_try(
+            r#"{"tool_job_id":"j1","until":"output_matches"}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect_err("缺 pattern 必须报错");
+        assert_eq!(e.code, "invalid_args");
+        assert!(e.message.contains("output_matches"), "{}", e.message);
+    }
+
+    #[test]
+    fn wait_rejects_overlong_pattern() {
+        let long = "a".repeat(MAX_MATCH_PATTERN_BYTES + 1);
+        let args = format!(
+            r#"{{"tool_job_id":"j1","until":"output_matches","output_matches":"{long}"}}"#
+        );
+        let e = background_job_wait_try(&args, Some(&StubHost), 1024, 600)
+            .expect_err("过长 pattern 必须报错");
+        assert_eq!(e.code, "invalid_args");
+        assert!(e.message.contains("过长"), "{}", e.message);
+    }
+
+    #[test]
+    fn wait_clamps_timeout_to_schema_ceiling() {
+        // 外圈未知（`u64::MAX`）时只剩参数口径：请求 10000 秒 → 600。
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":"j1","timeout_secs":10000}"#,
+            Some(&StubHost),
+            1024,
+            u64::MAX,
+        )
+        .expect("wait 应成功");
+        assert!(out.ends_with("timeout=600"), "{out}");
+    }
+
+    #[test]
+    fn wait_leaves_outer_wall_reserve() {
+        // 外圈墙钟 10s → 内层最多 9s，保证早于 `tokio::time::timeout` 返回。
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":"j1","timeout_secs":600}"#,
+            Some(&StubHost),
+            1024,
+            10,
+        )
+        .expect("wait 应成功");
+        assert!(out.ends_with("timeout=9"), "{out}");
+    }
+
+    #[test]
+    fn wait_rejects_empty_id_and_unknown_field() {
+        let e = background_job_wait_try(r#"{"tool_job_id":"  "}"#, Some(&StubHost), 1024, 600)
+            .expect_err("空 id 必须报错");
+        assert_eq!(e.code, "invalid_args");
+
+        let e = background_job_wait_try(
+            r#"{"tool_job_id":"j1","extra":1}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect_err("未知字段必须报错");
+        assert_eq!(e.code, "invalid_args");
+        assert!(e.message.contains("形状不一致"), "{}", e.message);
+    }
+
+    #[test]
+    fn wait_degrades_without_host() {
+        let e = background_job_wait_try(r#"{"tool_job_id":"j1"}"#, None, 1024, 600)
+            .expect_err("无宿主必须报错");
+        assert_eq!(e.code, "invalid_args");
     }
 }

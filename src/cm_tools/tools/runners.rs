@@ -432,6 +432,27 @@ pub fn runner_background_job_cancel_try(
     background_job_tools::background_job_cancel_try(args, ctx.tool_jobs_host)
 }
 
+/// `background_job_wait`：把**外圈**墙钟（`spawn_blocking` 外层的
+/// `tokio::time::timeout`）传给工具，让它提前返回结构化结果而不是被外层掐断。
+#[allow(clippy::result_large_err)]
+pub fn runner_background_job_wait_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let outer_wall_secs = ctx.cfg.map_or(u64::MAX, |cfg| {
+        crate::cm_tools::registry_policy::parallel_tool_wall_timeout_secs(
+            cfg,
+            tool_names::BACKGROUND_JOB_WAIT,
+        )
+    });
+    background_job_tools::background_job_wait_try(
+        args,
+        ctx.tool_jobs_host,
+        ctx.command_max_output_len,
+        outer_wall_secs,
+    )
+}
+
 #[allow(clippy::result_large_err)]
 pub fn read_file_try_dispatch(
     args_json: &str,

@@ -55,8 +55,49 @@ impl ToolSummaryLine for BackgroundJobCancelSummaryArgs {
     }
 }
 
-// ── Code metrics ──────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+pub(super) struct BackgroundJobWaitSummaryArgs {
+    #[serde(default)]
+    tool_job_id: Option<String>,
+    #[serde(default)]
+    until: Option<String>,
+    #[serde(default)]
+    output_matches: Option<String>,
+    #[serde(default)]
+    timeout_secs: Option<u64>,
+}
 
+impl ToolSummaryLine for BackgroundJobWaitSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let BackgroundJobWaitSummaryArgs {
+            tool_job_id,
+            until,
+            output_matches,
+            timeout_secs,
+        } = self;
+        let id = tool_job_id.as_deref().unwrap_or("").trim();
+        let until = until.as_deref().unwrap_or("exit").trim();
+        let target = match until {
+            "output_matches" => match output_matches.as_deref().map(str::trim) {
+                Some(p) if !p.is_empty() => format!("output matches `{p}`"),
+                _ => "output matches".to_string(),
+            },
+            "" | "exit" => "exit".to_string(),
+            other => other.to_string(),
+        };
+        let base = if id.is_empty() {
+            format!("wait background job until {target}")
+        } else {
+            format!("wait background job {id} until {target}")
+        };
+        Some(match timeout_secs {
+            Some(secs) => format!("{base} (timeout: {secs}s)"),
+            None => base,
+        })
+    }
+}
+
+// ── Code metrics ──────────────────────────────────────────────
 #[derive(Debug, Deserialize)]
 pub(super) struct CodeStatsSummaryArgs {
     #[serde(default)]

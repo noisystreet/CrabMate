@@ -13,6 +13,7 @@ pub mod worker;
 
 pub use registry::{
     CancelOutcome, GetOutcome, JobRegistryStats, OutputPollOutcome, RegisterError, ToolJobRegistry,
+    WaitOutcome,
 };
 pub use types::{
     JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus,
