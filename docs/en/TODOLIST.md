@@ -66,7 +66,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 - [ ] **Audience role (side-channel critic)**: optional bounded tool-less side calls per **`docs/design/audience_critic_role.md`**; align with **`plan_rewrite`**, staged patch counters, and **`final_plan_semantic_check`**; default fail-open; observability across CLI/TUI/Web per repo conventions. Indexed from **`docs/en/FUTURE_PLANS.md`**.
 
-(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
+(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md) (**archived** — the plan shipped; authoritative today is `codebase_semantic_search` in **`docs/en/TOOLS.md`**). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
 
 ---
 

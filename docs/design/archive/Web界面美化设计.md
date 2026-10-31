@@ -1,5 +1,7 @@
 # Web 界面美化设计（Leptos 前端）
 
+> **状态：已归档（已被取代）**。Web UI 源码已迁至 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓 `frontend/`，本仓 `serve` 不托管 UI，因此本文描述的组件与样式路径**均已不在本仓**。样式架构与美化思路仅作历史参考；现行权威为 Client 仓 `frontend/src/styles/` 与 **`docs/design/web_theme_presets.md`**（多预设契约；与本设计交叉时以该设计为准）。
+
 本文面向**维护与迭代 CrabMate Web UI** 的同事，说明当前前端的样式架构、美化切入点，以及「Material 主题」与 Leptos 的关系。实现细节以 [crabmate-client](https://github.com/noisystreet/crabmate-client) 的 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 为准（本仓无 UI 源码）。
 
 ---

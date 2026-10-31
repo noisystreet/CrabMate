@@ -108,13 +108,19 @@
 
 ## 已归档（`archive/`）
 
-仅作历史参考，内容可能已被上表文档取代：
+**仅作历史参考，不是实现索引**。每篇头部都有状态标注，三种口径：
 
-- [TUI_CLI改造实施步骤.md](archive/TUI_CLI改造实施步骤.md) — CLI → TUI 改造实施步骤（与 Web 布局对齐）
-- [tui_align_tauri_display.md](archive/tui_align_tauri_display.md) — 终端 TUI 对齐 Tauri / Web 展示规划
-- [tui_chat_display_ownership.md](archive/tui_chat_display_ownership.md) — TUI 中区展示所有权（ADR）
-- [分层多智能体架构.md](archive/分层多智能体架构.md) — 分层多 Agent 协作架构：Manager + Operator + 多 Agent 群体
-- [orchestration_decision_engine.md](archive/orchestration_decision_engine.md) — 编排决策引擎：从二元门控到多因子评分
-- [Web界面美化设计.md](archive/Web界面美化设计.md) — Web 界面美化（Leptos 前端；UI 已迁 Client 仓）
-- [代码库索引方案.md](archive/代码库索引方案.md) — 工作区统一代码索引与增量缓存（已落地，实现见开发文档 / 工具说明）
-- [CODEBASE_INDEX_PLAN.md](archive/CODEBASE_INDEX_PLAN.md) — 上者英文镜像
+- **已废弃** —— 所述能力已从本仓移除（如 D2.2 硬删的进程内 `repl` / `chat` / `tui`），只用于决策考古。
+- **已采纳** —— 方案已落地，归档件仅记录设计来源；现行权威是实现所在的 `docs/` 文档。
+- **已被取代** —— 能力迁往别处（如 Web UI 迁 Client 仓），以新位置的文档为准。
+
+| 文档 | 说明 | 状态 |
+|---|---|---|
+| [TUI_CLI改造实施步骤.md](archive/TUI_CLI改造实施步骤.md) | CLI → TUI 改造实施步骤（与 Web 布局对齐） | **已废弃**：`repl` / `chat` / `tui` 随 D2.2 硬删，官方终端为 Client `crabmate-tui` |
+| [tui_align_tauri_display.md](archive/tui_align_tauri_display.md) | 终端 TUI 对齐 Tauri / Web 展示规划 | **已废弃**：同上；展示对齐改跟 Client 远程 TUI / Web |
+| [tui_chat_display_ownership.md](archive/tui_chat_display_ownership.md) | TUI 中区展示所有权（ADR） | **已废弃**：决策只适用于已删除的 `src/runtime/tui/` |
+| [分层多智能体架构.md](archive/分层多智能体架构.md) | 分层多 Agent 协作架构：Manager + Operator + 多 Agent 群体 | **已废弃**：`src/agent/hierarchy/` 已整棵移除，现行恒为 ReAct 外循环 |
+| [orchestration_decision_engine.md](archive/orchestration_decision_engine.md) | 编排决策引擎：从二元门控到多因子评分 | **已废弃**：`staged_planning_gate` 未作为现行路径保留 |
+| [Web界面美化设计.md](archive/Web界面美化设计.md) | Web 界面美化（Leptos 前端） | **已被取代**：UI 源码在 Client 仓 `frontend/`；样式契约见 [web_theme_presets.md](web_theme_presets.md) |
+| [代码库索引方案.md](archive/代码库索引方案.md) | 工作区统一代码索引与增量缓存 | **已采纳**：已实现，权威见 [工具说明](../工具说明.md) 的 `codebase_semantic_search` 与 [配置说明](../配置说明.md) 的 `codebase_semantic_*` |
+| [CODEBASE_INDEX_PLAN.md](archive/CODEBASE_INDEX_PLAN.md) | 上者英文镜像 | **已采纳**：同上 |
