@@ -1,21 +1,21 @@
 [
-    ToolSpec {
+    builtin_tool! {
         name: tool_names::GH_PR,
+        args: args::GhPrArgs,
+        category: Development,
+        tags: [dev_tag::GENERAL, dev_tag::VCS],
+        runner: runner_gh_pr_try,
+        summary: dynamic,
         description: "PR 操作（封装 **`gh pr`**），由 **`action`** 选择：**`checks`**（只读；可选 **`structured: true`** 附加 JSON + 失败/进行中摘要，需 **`gh` ≥ 2.50**）/ **`create`**（**写远端**；**`title`** 必填，省略 **`body`** 时默认 **`auto_body`** 从 PR 模板 + `base..HEAD` git log 生成正文）/ **`merge`**（**写**；**`merge_method`** 默认 `rebase`，可选 **`auto`**、**`delete_branch`**、**`admin`**）/ **`review`**（**写**；**`event`** 必填，`comment` 与 `request-changes` 须 **`body`**）/ **`comment`**（**写**；**`body`** 必填）/ **`edit`**（**写**；`title` / `body` / `base` / `draft` / `undraft` / 标签 / reviewer / assignee）/ **`body_draft`**（只读；正文草稿，可附 `base` 的 commit 摘要）。通用可选 **`repo`**、**`number`**、**`extra_args`**。须已 `git push` 源分支且本机 **`gh auth`** 有效。",
-        category: ToolCategory::Development,
-        tags: &[dev_tag::GENERAL, dev_tag::VCS],
-        parameters: schema_of::<args::GhPrArgs>,
-        runner: ToolRunner::Typed(runner_gh_pr_try),
-        summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr),
     },
-    ToolSpec {
+    builtin_tool! {
         name: tool_names::GH_RUN,
+        args: args::GhRunArgs,
+        category: Development,
+        tags: [dev_tag::GENERAL, dev_tag::VCS],
+        runner: runner_gh_run_try,
+        summary: dynamic,
         description: "Actions 操作（封装 **`gh run`**），由 **`action`** 选择：**`rerun`**（**写远端**；**`failed: true`** 只重跑失败 job）/ **`failure_summary`**（只读；解析 `gh run view --json jobs` 中失败的 job 并拉取日志尾部，**`tail_lines`** 默认 60、**`max_failed_jobs`** 默认 5，比整段 `--log` 更适合排障）。必填 **`run_id`**；通用可选 **`repo`**、**`extra_args`**。",
-        category: ToolCategory::Development,
-        tags: &[dev_tag::GENERAL, dev_tag::VCS],
-        parameters: schema_of::<args::GhRunArgs>,
-        runner: ToolRunner::Typed(runner_gh_run_try),
-        summary: ToolSummaryKind::Dynamic(ts::summary_gh_run),
     },
         builtin_tool! {
             name: tool_names::GH_ISSUE_CREATE,

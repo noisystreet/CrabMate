@@ -98,13 +98,13 @@
             summary: dynamic,
             description: "在当前工作区内搜索文件内容。支持正则或关键词搜索，返回匹配的文件路径、行号和行片段。支持 context_before/context_after 上下文行、file_glob 文件名过滤、exclude_glob 排除。",
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::CODEBASE_SEMANTIC_SEARCH,
+            args: args::CodebaseSemanticSearchArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_codebase_semantic_search_try,
+            summary: dynamic,
             description: "工作区内**混合**代码检索（SQLite **FTS5** 全文 + **fastembed** 向量，与长期记忆分库）。默认 `retrieve_mode: hybrid`：BM25 与余弦相似度按 `hybrid_alpha` 加权；可改 `semantic_only` / `fts_only`。首次或大改后请先 `rebuild_index: true`（schema v4 起自动维护 FTS）。整库重建默认**增量**（mtime+size+SHA256；`incremental:false` 强制全量）；子目录 `path` 仍为子树全量替换。`.rs` 块嵌入前有符号提示行。精确正则仍优先 `search_in_files`。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::CodebaseSemanticSearchArgs>,
-            runner: ToolRunner::Typed(runner_codebase_semantic_search_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_codebase_semantic_search),
         },
 ]

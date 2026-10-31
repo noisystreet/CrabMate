@@ -1,22 +1,11 @@
-//! Typed tool-argument shapes for **dynamic** chat summaries (`ToolSummaryKind::Dynamic`).
-//! Field names match tool JSON schemas; extra keys are ignored (no `deny_unknown_fields`).
-//! Parsing uses `serde_json::from_value`; on failure the caller yields no summary (same as
-//! missing required fields in the previous `Value::get` style).
-
-use serde::Deserialize;
-
-/// Deserialize from a clone of `v`, then build the summary line.
-pub(super) fn summarize_from_value<T>(v: &serde_json::Value) -> Option<String>
-where
-    T: serde::de::DeserializeOwned + ToolSummaryLine,
-{
-    let t: T = serde_json::from_value(v.clone()).ok()?;
-    t.summary_line()
-}
-
-pub(super) trait ToolSummaryLine {
-    fn summary_line(self) -> Option<String>;
-}
+//! 摘要侧的「Args 同源」取值层（#1157）。
+//!
+//! 每个动态摘要工具在 `tool_summary_args/` 里写一个 `impl ToolArgsSummary for XArgs`，
+//! `builtin_tool! { summary: dynamic }` 直接从 Args 类型派生摘要行。
+//!
+//! **不要** `serde_json::from_value::<XArgs>`：Args 普遍带 `deny_unknown_fields`（schema 需要
+//! `additionalProperties: false`），模型多传一个字段就会让摘要静默消失。字段级取值一律走下面的
+//! `arg_*` helper——它们把「缺键 / `null` 算没给」与「类型不符算失败」分开表达。
 
 /// #1157：摘要与 Args **同源**后的实现形态——从 args JSON 宽容取值。
 ///

@@ -35,13 +35,13 @@
             summary: static "cargo run",
             description: "运行 cargo run（结构化参数）。用于启动 Rust 可执行程序。",
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::RUST_ANALYZER,
+            args: args::RustAnalyzerArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL, dev_tag::RUST],
+            runner: runner_rust_analyzer_try,
+            summary: dynamic,
             description: "启动 **rust-analyzer**（stdio LSP）发一次请求。**`action` 必填**：`goto_definition` / `find_references` / `hover` / `goto_implementation` / `goto_type_definition` / `document_highlight` 需 `path` + **0-based** `line`（可选 `character`）；`document_symbol` 需 `path`（`max_symbols` ≤ 5000）；`workspace_symbol` 需 `path` + `query`（`max_results` ≤ 500）。需本机已安装 rust-analyzer；大文件 >512KiB 请换 read_file 分段。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL, dev_tag::RUST],
-            parameters: schema_of::<args::RustAnalyzerArgs>,
-            runner: ToolRunner::Typed(runner_rust_analyzer_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer),
         },
 ]

@@ -186,16 +186,19 @@ These paths and concepts are **coupled** — when one changes, verify the Rust r
 
 ### Tool registry (`src/tools/`)
 
-Adding or renaming a tool — check in order:
+Adding or renaming a tool — 3 steps:
 
-> **#1157 迁移中（分批）**：新工具**优先**走两步写法，不要再手抄 `ToolSpec` 的
-> `parameters` / 动态摘要结构：
+> **#1157 已完成迁移**：68 个内建工具全部走「Args 同源」两步写法，不要再手抄 `ToolSpec` 的
+> `parameters` / 摘要结构。
 >
 > 1. `tool_param_types/` 写 Args（`Deserialize + JsonSchema`）；需要动态摘要时在
->    `tool_summary_args/fragment_args_summary.rs`（或新的同风格 fragment）里写
->    `impl ToolArgsSummary for XArgs`，**从 `&serde_json::Value` 宽容取值**
->    （`arg_str` / `arg_u64`）。不要 `serde_json::from_value::<XArgs>`：Args 带
->    `deny_unknown_fields`，模型多传一个字段就会让摘要静默消失。
+>    `tool_summary_args/` 的某个 fragment 里写 `impl ToolArgsSummary for XArgs`，
+>    **从 `&serde_json::Value` 宽容取值**（`arg_str` / `arg_str_raw` / `arg_opt_str` /
+>    `arg_str_vec` / `arg_u64` / `arg_opt_u64` / `arg_bool` / `arg_opt_bool` /
+>    `arg_bool_default` / `arg_str_default`）。不要 `serde_json::from_value::<XArgs>`：Args 带
+>    `deny_unknown_fields`，模型多传一个字段就会让摘要静默消失。这套 helper 把「缺键 / `null`
+>    算没给」与「类型不符算失败」分开表达——旧 `*SummaryArgs` 是**整体**反序列化，后者丢一次
+>    就会凭空多出一行摘要。
 > 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|static "…"|none, description }`
 >    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
 >    **两个工具共用同一个 Args 类型**、但摘要要带各自的动词时，写
@@ -203,37 +206,18 @@ Adding or renaming a tool — check in order:
 >    `pub(super) use` 从 `tool_summary_args` 转出）——当前只有 `copy_file` / `move_file`
 >    共用 `FileFromToOverwriteArgs`，是唯一这种组合。
 >
-> 已迁移到宏写法：共 **64 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
-> （`summary: static` 分支验证）、全部 `static` / `none` 摘要工具（P1 机械改写批）、
-> P2 前两批的 12 个动态摘要工具（`code_stats` / `dependency_graph` / `coverage_report` /
-> `delete_dir` / `background_job_cancel` / `read_binary_meta` / `delete_files` / `append_file` /
-> `create_dir` / `gh_release_create` / `gh_issue_create` / `gh_api`）、后台任务族
-> （`run_command` / `terminal_session` / `background_job` / `background_job_wait`）、
-> 检索 / 结构化 / 受控 HTTP 族（`search_in_files` / `search_replace` / `structured` /
-> `http_fetch` / `http_request`）、文件 / 目录族（`copy_file` / `move_file` / `read_dir` /
-> `glob_files` / `list_tree` / `markdown_check_links`）、archive 三件套（`archive_pack` /
-> `archive_unpack` / `archive_list`；它们挂在**非默认** feature `archive-tools` 下，验证须
-> `cargo test --features archive-tools`），写入 / 导航族（`modify_file` / `apply_patch` /
-> `code_nav`），以及 `git` / `web_search` / `python_snippet_run`。
-> 剩 **4 个动态摘要工具**仍是手写 `ToolSpec`：`gh_pr` / `gh_run` / `rust_analyzer` /
-> `codebase_semantic_search`。
-> 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证
-> schema / 描述 / 摘要文本零漂移——快照现在覆盖**全部**动态摘要工具（手写真实入参 +
-> 按 schema 生成的全字段样本），改摘要逻辑必然被比对到。
-> 宏已支持 `runner: async_only`（内部 `@runner` 分派，见 `registry_macro.rs`）：`AsyncOnly`
-> 的工具写 `runner: async_only`，同步工具写 `runner: runner_xxx_try`。注意快照**不含 runner**，
-> 「哪些工具只有异步执行体」由 `async_only_runners_are_pinned` 单独钉住。全部迁完后本表收敛为 3 步。
+> 零漂移由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证：快照覆盖
+> **全部 68 个**工具的 schema / 描述 / 摘要文本（手写真实入参 + 按 schema 生成的全字段样本），
+> 改摘要逻辑必然被比对到；**不带 BLESS** 跑绿才算没漂移。archive 三件套挂在非默认 feature
+> `archive-tools` 下，验证须带 feature：
+> `cargo test -p crabmate --features archive-tools --lib cm_tools::tools::tool_specs_registry`。
+> 宏支持 `runner: async_only`（内部 `@runner` 分派，见 `registry_macro.rs`）：`AsyncOnly`
+> 工具写 `runner: async_only`，同步工具写 `runner: runner_xxx_try`；快照**不含 runner**，
+> 「哪些工具只有异步执行体」由 `async_only_runners_are_pinned` 单独钉住。
 
-1. `src/cm_tools/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). **`name` must reference a constant from `src/cm_tools/tool_names.rs` — never a string literal — and the tool must also be added to `tool_names::ALL`** (the `all_tool_names_match_specs` guard test fails otherwise). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
-2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.
-3. `tool_summary_args.rs` + `tool_summary.rs`: `Deserialize` struct + `ToolSummaryLine` impl, then a `summary_xxx` wrapper calling `summarize_from_value::<…>`.
-4. Args structs (`Deserialize` + `schemars::JsonSchema`) live in `src/cm_tools/tools/tool_param_types/` (`mod.rs` + `part_*.inc.rs`); the schema and the runtime parse share one definition.
-5. Dispatch/timeout: only complex strategies need `tool_registry` registration; most `SyncDefault` tools need none.
-6. `tags`: `Development` 工具在**同一条 spec 声明**里写 `tags: [dev_tag::*]`（`Basic` 留空数组）。
-   `dev_tag::tags_for_tool_name` 只查 `ToolSpec::tags`，不再有手写 `match`（#1157）。
-7. Whitelist/approval: if it runs commands, touches the network, or writes to disk, keep it consistent with the `run_command` allowlist, `http_fetch` prefixes, and TUI `CommandApproval` — do not widen the attack surface.
-8. Docs: user-visible capability ⇒ `README.md` + `docs/工具说明.md`; do not dump per-tool implementation notes back into `docs/开发文档.md`.
-9. Only update the「主要模块」table when the tool system's responsibilities/boundaries change.
+1. **Args**：`tool_param_types/part_*.inc.rs` 写 `XArgs`（`Deserialize + JsonSchema`，schema 与运行时解析共用这一份定义）；需要动态摘要时在 `tool_summary_args/` 加 `impl ToolArgsSummary for XArgs`，并把旧实现的反序列化边界钉成测试。
+2. **一行注册**：`specs/*.inc.rs` 加一行 `builtin_tool!`。**`name` 必须引用 `src/cm_tools/tool_names.rs` 的常量（绝不写字符串字面量），且必须同时加进 `tool_names::ALL`**——`all_tool_names_match_specs` 会拦住漏加；新分片还要在 `mod.rs` 补 `include!` / `extend_from_slice` / `cap`；执行体仍是 `runners.rs` 的 `runner_*` 薄包装（用 `parse_args_json` 解析，不要 ad-hoc `serde_json::from_str`）。
+3. **影响面**（仅当能力面 / 边界变化时）：跑命令、联网、写盘的按 `run_command` 白名单、`http_fetch` 前缀与 TUI `CommandApproval` 保持一致，不要扩大攻击面；`Development` 工具在**同一条 spec 声明**里写 `tags: [dev_tag::*]`（`Basic` 留空数组；`dev_tag::tags_for_tool_name` 只查 `ToolSpec::tags`，没有手写 `match`）；用户可见能力同步 `README.md` + `docs/工具说明.md`，不要把逐工具实现细节塞回 `docs/开发文档.md`；`cm_internal/tool_registry` 只有复杂调度策略才需要注册（多数 `SyncDefault` 工具不需要），「主要模块」表仅在该系统职责 / 边界变化时更新。
 
 ### Release & versioning
 
