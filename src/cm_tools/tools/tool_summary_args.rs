@@ -90,9 +90,34 @@ pub(super) fn arg_opt_u64(args: &serde_json::Value, key: &str) -> Option<Option<
     }
 }
 
+/// `Option<bool>` 语义：缺键 / `null` ⇒ `Some(None)`；非布尔 ⇒ `None`（放弃整条摘要）。
+pub(super) fn arg_opt_bool(args: &serde_json::Value, key: &str) -> Option<Option<bool>> {
+    match args.get(key) {
+        None => Some(None),
+        Some(v) if v.is_null() => Some(None),
+        Some(v) => v.as_bool().map(Some),
+    }
+}
+
+/// `bool` + `#[serde(default)]` 语义：缺键 ⇒ `Some(false)`；`null` / 非布尔 ⇒ `None`。
+pub(super) fn arg_bool_default(args: &serde_json::Value, key: &str) -> Option<bool> {
+    match args.get(key) {
+        None => Some(false),
+        Some(v) => v.as_bool(),
+    }
+}
+
+/// `String` + `#[serde(default)]` 语义：缺键 ⇒ `Some("")`；`null` / 非字符串 ⇒ `None`。
+pub(super) fn arg_str_default<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    match args.get(key) {
+        None => Some(""),
+        Some(v) => v.as_str(),
+    }
+}
+
 include!("tool_summary_args/fragment_args_summary.rs");
 include!("tool_summary_args/fragment_core.rs");
 include!("tool_summary_args/fragment_git_files_diff.rs");
-include!("tool_summary_args/fragment_git_files_file_ops.rs");
+include!("tool_summary_args/fragment_web_search.rs");
 include!("tool_summary_args/fragment_file_ops.rs");
 include!("tool_summary_args/fragment_gh_archive.rs");
