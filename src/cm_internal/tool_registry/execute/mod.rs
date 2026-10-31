@@ -216,17 +216,19 @@ async fn approve_external_read_dir_if_needed(
 }
 
 include!("execute_dispatch_body.inc.rs");
-include!("execute_run_command_docker.inc.rs");
-include!("execute_run_command_approval.inc.rs");
-include!("execute_run_command_chunks.inc.rs");
-include!("execute_run_command_facade.inc.rs");
 include!("execute_background_tool_async.inc.rs");
-include!("execute_run_command_async.inc.rs");
-include!("execute_run_command_host.inc.rs");
-include!("execute_run_command_sync.inc.rs");
 include!("execute_terminal_session.inc.rs");
 include!("http_tool_exec.inc.rs");
 include!("execute_http_tools.inc.rs");
+
+/// `run_command` 的执行流水线：原为 7 个 `include!` 分片，现为独立子模块（#1196）。
+mod run_command;
+
+// 子模块中 `pub(super)` 的项在这里以**裸名**进入 `execute`：其余 `include!` 分片与
+// `tests` 继续沿用原调用点，无需逐个改路径。
+use run_command::*;
+// `tool_registry/mod.rs` 用 `pub use execute::{…}` 对外重导出这一条，故必须保持 `pub`。
+pub use run_command::prefetch_http_fetch_parallel_approvals;
 
 #[cfg(test)]
 #[path = "execute_tests.rs"]

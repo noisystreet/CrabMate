@@ -1,18 +1,38 @@
-struct RunCommandHostInvoke<'a> {
-    env: &'a ToolExecEnv<'a>,
-    effective_working_dir: &'a Path,
-    workspace_is_set: bool,
-    workspace_changed: &'a mut bool,
-    web_ctx: Option<&'a WebToolRuntime>,
-    args: &'a str,
-    tool_call_id: &'a str,
-    sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+//! `run_command` 流水线的 输出分块与宿主调用入参 阶段。
+//!
+//! 原为 `execute/execute_run_command_chunks.inc.rs`，通过 `include!` 与其余六片共享
+//! `execute` 的单一作用域；现为真子模块，跨片调用必须经 `mod.rs` 的显式接口（#1196）。
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_internal::tools;
+use crate::cm_types::{CommandApprovalDecision, ToolCall};
+
+// 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
+use super::super::*;
+// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
+use super::*;
+
+pub(in crate::cm_internal::tool_registry::execute) struct RunCommandHostInvoke<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_changed: &'a mut bool,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) tool_call_id: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::cm_internal::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
-fn run_command_chunk_sink(
+pub(in crate::cm_internal::tool_registry::execute) fn run_command_chunk_sink(
     tool_call_id: String,
     sse_out_tx: Option<tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<crate::cm_sse_protocol::sse::SseControlMirror>,
@@ -39,7 +59,7 @@ fn run_command_chunk_sink(
     }))
 }
 
-fn emit_run_command_tool_output_chunk(
+pub(in crate::cm_internal::tool_registry::execute) fn emit_run_command_tool_output_chunk(
     seq: &std::sync::atomic::AtomicU64,
     tool_call_id: &str,
     stream: crate::cm_tools::subprocess_session::SessionStream,
