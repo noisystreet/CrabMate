@@ -13,25 +13,12 @@ use super::test_result_cache::{
 
 const MAX_OUTPUT_LINES: usize = 800;
 
-pub fn cargo_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_check_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_check_try(
     args_json: &str,
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
     run_cargo_subcommand_str_try("check", args_json, workspace_root, max_output_len, None)
-}
-
-pub fn cargo_test(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-    ctx: Option<&ToolContext<'_>>,
-) -> String {
-    cargo_test_try(args_json, workspace_root, max_output_len, ctx).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_test_try(
@@ -53,10 +40,6 @@ pub fn cargo_test_try(
             Some(c.command_timeout_secs),
         )
     })
-}
-
-pub fn cargo_clippy(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_clippy_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_clippy_try(
@@ -116,5 +99,6 @@ mod cargo_subcommand;
 pub(crate) use cargo_subcommand::cargo_subcommand_background_argv;
 use cargo_subcommand::{run_cargo_subcommand_str_try, run_cargo_subcommand_value_try};
 
+#[cfg(test)]
 #[path = "cargo_tools_run_tests.rs"]
 mod tests;

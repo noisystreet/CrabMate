@@ -6,7 +6,7 @@
 //! - **异步** [`wait_child_session_async`]：`tokio::process` + `tokio::time`，供 chat 宿主 / async funnel 直接 `.await`，
 //!   不再占用阻塞线程。
 //!
-//! 观测：进程内原子计数 + 时长直方图（见 [`session_stats_snapshot`]），供日志、测试与未来 metrics 端点读取。
+//! 观测：进程内原子计数 + 时长直方图（快照入口 `session_stats_snapshot`，当前仅测试读取），供日志与未来 metrics 端点读取。
 
 use std::collections::VecDeque;
 use std::io::{self, Read};
@@ -32,6 +32,7 @@ const DRAIN_JOIN: Duration = Duration::from_secs(2);
 pub const SESSION_DURATION_BUCKET_MS: [u64; 6] = [1_000, 5_000, 30_000, 120_000, 600_000, u64::MAX];
 
 /// 进程内会话观测快照（进程级累计；无外部指标后端时供日志/测试/未来 metrics 端点读取）。
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionStats {
     pub spawns: u64,
@@ -61,6 +62,7 @@ static STAT_DURATION_BUCKETS: [AtomicU64; SESSION_DURATION_BUCKET_MS.len()] =
     [const { AtomicU64::new(0) }; SESSION_DURATION_BUCKET_MS.len()];
 
 /// 进程内会话观测快照（`duration_mean_ms` 为累计平均，`0` 表示尚无完成记录）。
+#[cfg(test)]
 #[must_use]
 pub fn session_stats_snapshot() -> SessionStats {
     let count = STAT_DURATION_COUNT.load(Ordering::Relaxed);
@@ -201,7 +203,9 @@ pub struct SessionWaitResult {
     pub status: Option<ExitStatus>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+    #[cfg(test)]
     pub killed: bool,
+    #[cfg(test)]
     pub child_pid: u32,
 }
 
@@ -315,7 +319,9 @@ pub fn wait_child_session(
         status: status.ok().flatten(),
         stdout,
         stderr,
+        #[cfg(test)]
         killed,
+        #[cfg(test)]
         child_pid,
     })
 }
@@ -425,7 +431,9 @@ pub async fn wait_child_session_async(
         status: status.ok().flatten(),
         stdout,
         stderr,
+        #[cfg(test)]
         killed,
+        #[cfg(test)]
         child_pid,
     })
 }
@@ -788,6 +796,7 @@ fn unix_term_then_kill(pid: u32) {
 }
 
 /// `kill(pid, 0)`：进程是否仍存在（测试与 reap 断言）。
+#[cfg(test)]
 #[must_use]
 pub fn unix_pid_alive(pid: u32) -> bool {
     #[cfg(unix)]

@@ -5,7 +5,6 @@ use std::path::Path;
 
 use super::path::{
     PathAccess, canonical_workspace_root, parse_path_content, path_for_tool_display,
-    resolve_for_read, resolve_for_read_open, resolve_for_write,
 };
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
@@ -38,13 +37,14 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
     )
 }
 
-/// 创建文件：仅在文件不存在时创建；若已存在则报错。
-/// 参数 args_json: { "path": string, "content": string }
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     create_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
-/// [`create_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 创建文件：仅在文件不存在时创建；若已存在则报错。
+/// 参数 args_json: { "path": string, "content": string }
 #[allow(clippy::result_large_err)]
 pub fn create_file_try(
     args_json: &str,
@@ -119,13 +119,14 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
     Ok(())
 }
 
-/// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
-/// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     copy_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
-/// [`copy_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
+/// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
 #[allow(clippy::result_large_err)]
 pub fn copy_file_try(
     args_json: &str,
@@ -176,13 +177,14 @@ pub fn copy_file_try(
     }
 }
 
-/// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
-/// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     move_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
-/// [`move_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
+/// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
 #[allow(clippy::result_large_err)]
 pub fn move_file_try(
     args_json: &str,
@@ -492,6 +494,12 @@ fn modify_file_dispatch_mode(
     )
 }
 
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
+pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
+    modify_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+}
+
 /// 修改文件：仅在文件已存在时写入。
 /// - 未显式给出 `mode` 但带有 `start_line`/`end_line` 时自动使用 `replace_lines`，带有 `after_line` 时自动使用 `insert_after_line`；否则默认 `mode`=`full`。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
@@ -500,13 +508,8 @@ fn modify_file_dispatch_mode(
 ///   显式 `dry_run=false` 才写入。预览跳过**本轮自动绑定**的基线校验（不落盘即无按旧行号误改的
 ///   风险），但显式 `base_revision` 仍始终校验。
 /// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
-pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    modify_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
-}
-
-/// [`modify_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
 ///
-/// 顶层参数 / 路径 / 非文件判定直接返回 [`ToolError`]；行号替换、批量 `edits` 与
+/// Typed 面：顶层参数 / 路径 / 非文件判定直接返回 [`ToolError`]；行号替换、批量 `edits` 与
 /// 整文件覆盖仍以正文返回，这里用 `parse_tool_output` 兜底，保留正文可识别的
 /// 精确码（如 `stale_revision` / `write_precheck_failed`）。
 #[allow(clippy::result_large_err)]

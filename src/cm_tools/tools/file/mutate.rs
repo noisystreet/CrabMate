@@ -5,24 +5,22 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::path::{
-    PathAccess, canonical_workspace_root, path_for_tool_display, resolve_for_read,
-    resolve_for_write, tool_user_error_from_workspace_path,
+    PathAccess, canonical_workspace_root, path_for_tool_display,
+    tool_user_error_from_workspace_path,
 };
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::{
-    AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs, SearchReplaceArgs,
+    AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs,
 };
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
     format_tool_output_with_write_diff_preview,
 };
-use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 use crate::cm_tools::workspace::fs::{
     create_directory_under_root, open_file_append_under_root, unlink_file_under_root,
 };
 
-use super::write_precheck;
 use crate::cm_names as tool_names;
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
@@ -346,13 +344,14 @@ fn delete_files_execute(
     (deleted, failed)
 }
 
-/// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
-/// 再**逐个删除**并汇总成功/失败（删除阶段继续删完）。
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     delete_files_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
-/// [`delete_files`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
+/// 再**逐个删除**并汇总成功/失败（删除阶段继续删完）。
 #[allow(clippy::result_large_err)]
 pub fn delete_files_try(
     args_json: &str,
@@ -399,11 +398,13 @@ pub fn delete_files_try(
 
 // ── delete_dir ──────────────────────────────────────────────
 
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
     delete_dir_try(args_json, &PathAccess::new(working_dir)).unwrap_or_else(|e| e.message)
 }
 
-/// [`delete_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 删除工作区内目录（`recursive=false` 仅空目录；`confirm=true` 必填）。
 #[allow(clippy::result_large_err)]
 pub fn delete_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String, ToolError> {
     let working_dir = access.root();
@@ -441,11 +442,13 @@ pub fn delete_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String
 
 // ── append_file ─────────────────────────────────────────────
 
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     append_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
-/// [`append_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 追加到文件末尾（`dry_run` 默认只预览；`create_if_missing` 可建新文件）。
 #[allow(clippy::result_large_err)]
 pub fn append_file_try(
     args_json: &str,
@@ -474,11 +477,13 @@ pub fn append_file_try(
 
 // ── create_dir ──────────────────────────────────────────────
 
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
 pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
     create_dir_try(args_json, &PathAccess::new(working_dir)).unwrap_or_else(|e| e.message)
 }
 
-/// [`create_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+/// 创建目录（`parents=true` 递归；已存在不报错）。
 #[allow(clippy::result_large_err)]
 pub fn create_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String, ToolError> {
     let working_dir = access.root();

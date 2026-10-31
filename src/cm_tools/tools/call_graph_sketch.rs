@@ -6,7 +6,7 @@ use regex::{Regex, RegexBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::CallGraphSketchArgs;

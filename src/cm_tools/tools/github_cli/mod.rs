@@ -25,11 +25,7 @@ pub use common::{attach_json_if_exit_zero, gh_allowed, validate_api_path, valida
 
 pub use api::gh_api_try;
 pub use issue_create::gh_issue_create_try;
-pub use pr_body::gh_pr_body_draft_try;
-pub use pr_mutate::{gh_pr_comment_try, gh_pr_edit_try, gh_pr_merge_try, gh_pr_review_try};
-pub use pr_workflow::{gh_pr_checks_try, gh_pr_create_try};
 pub use release_create::gh_release_create_try;
-pub use run_ci::{gh_run_failure_summary_try, gh_run_rerun_try};
 
 // ── 动作分发工具 ────────────────────────────────────────────────
 //
@@ -37,8 +33,6 @@ pub use run_ci::{gh_run_failure_summary_try, gh_run_rerun_try};
 // 运行时按 `action` 分发到**未改动的**子实现。先用并集 struct 做一次严格反序列化
 // （`deny_unknown_fields` + 枚举取值校验），再把原始 JSON 透传——子实现各自用
 // `parse_args_json` 取自己关心的键，因此无需裁剪字段；校验失败时不会落到 `gh`。
-
-use std::path::Path;
 
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::parse_args_typed;
@@ -123,6 +117,7 @@ pub fn gh_run_try(
 #[cfg(test)]
 mod dispatch_tests {
     use super::*;
+    use std::path::Path;
 
     /// 白名单不含 `gh`：子实现的第一步都会走 `gh_allowed` 并返回固定文案，
     /// 用它既能验证「已分派到正确子实现」，又不必真的执行 `gh`。

@@ -168,7 +168,7 @@ fn move_file_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "mv").unwrap();
     let args = r#"{"from":"a.txt","to":"c.txt"}"#;
 
-    let typed = assert_success_parity(
+    assert_success_parity(
         &dir_legacy,
         &dir_typed,
         || move_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
