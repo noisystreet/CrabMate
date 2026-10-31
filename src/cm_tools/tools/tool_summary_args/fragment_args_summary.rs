@@ -411,6 +411,92 @@ impl ToolArgsSummary for crate::cm_tools::tools::http_fetch::HttpRequestArgs {
     }
 }
 
+// ── P2 批：文件 / 目录族的 6 个小摘要 ───────────────────────────────────────
+//
+// 这一族原先各有一个字段子集结构体（`CopyFileSummaryArgs` … `MarkdownCheckLinksSummaryArgs`），
+// 字段名与 Args 完全一致、只少几个摘要用不到的键，于是直接按字段名取值即可。
+
+/// 可选 `path` 的统一语义（`read_dir` / `list_tree` / `glob_files` 共用）：
+/// 缺失、`null`、显式空白串都回落 `.`。**类型不是字符串**时返回 `None`——旧结构体是
+/// `Option<String>`，反序列化失败等价于「没有摘要」，这条边界不因迁移而放宽。
+fn path_or_dot(args: &serde_json::Value) -> Option<&str> {
+    match args.get("path") {
+        None | Some(serde_json::Value::Null) => Some("."),
+        Some(serde_json::Value::String(raw)) => {
+            let trimmed = raw.trim();
+            Some(if trimmed.is_empty() { "." } else { trimmed })
+        }
+        Some(_) => None,
+    }
+}
+
+/// `copy_file` / `move_file` 共用 `FileFromToOverwriteArgs`：字段完全一致、只有动词不同，
+/// 所以摘要文本无法由 Args 类型单独决定（`specs` 里用 `summary: dynamic by <fn>`）。
+fn from_to_line(args: &serde_json::Value, verb: &str) -> Option<String> {
+    let from = arg_str(args, "from")?;
+    let to = arg_str(args, "to")?;
+    Some(format!("{verb}: {from} → {to}"))
+}
+
+pub(super) fn summary_copy_file(args: &serde_json::Value) -> Option<String> {
+    from_to_line(args, "copy file")
+}
+
+pub(super) fn summary_move_file(args: &serde_json::Value) -> Option<String> {
+    from_to_line(args, "move file")
+}
+
+impl ToolArgsSummary for super::tool_param_types::ReadDirEnhancedArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        Some(format!("read dir: {}", path_or_dot(args)?))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::GlobFilesArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let pattern = arg_str(args, "pattern")?;
+        Some(format!("glob {pattern} @ {}", path_or_dot(args)?))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::ListTreeArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        Some(format!("list tree: {}", path_or_dot(args)?))
+    }
+}
+
+/// `roots` 的取值：**缺键** ⇒ 空（回落内置默认清单，旧 `#[serde(default)]` 的原语义）；
+/// `null` / 非数组 / 含非字符串元素 ⇒ `None`（旧 `Vec<String>` 反序列化会整体失败）。
+fn markdown_roots(args: &serde_json::Value) -> Option<Vec<&str>> {
+    match args.get("roots") {
+        None => Some(Vec::new()),
+        Some(v) => v
+            .as_array()?
+            .iter()
+            .map(|item| item.as_str().map(str::trim))
+            .collect(),
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::MarkdownCheckLinksArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let joined = markdown_roots(args)?
+            .into_iter()
+            .filter(|root| !root.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        // 没有可用 roots 时旧实现回落内置默认清单，摘要里也照原样显示那两项。
+        Some(format!(
+            "markdown link check: {}",
+            if joined.is_empty() {
+                "README.md, docs"
+            } else {
+                joined.as_str()
+            }
+        ))
+    }
+}
+
 
 #[cfg(test)]
 mod args_summary_tests {
@@ -588,5 +674,108 @@ mod field_family_summary_tests {
                 assert!(s.ends_with(" [html_text]"), "{tf} → {s}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod path_family_summary_tests {
+    use super::*;
+    use crate::cm_tools::tools::tool_param_types::{
+        GlobFilesArgs, ListTreeArgs, MarkdownCheckLinksArgs, ReadDirEnhancedArgs,
+    };
+    use serde_json::json;
+
+    // 这批工具旧实现是「字段子集结构体 + 反序列化失败即无摘要」，所以要钉住的不是快乐路径，
+    // 而是两条边界：缺省 / `null` / 空白回落 `"."`，以及类型不对时仍然**不出**摘要。
+
+    #[test]
+    fn copy_and_move_share_args_but_keep_their_own_verb() {
+        let v = json!({ "from": " a.txt ", "to": "b/c.txt", "overwrite": true });
+        assert_eq!(
+            summary_copy_file(&v).as_deref(),
+            Some("copy file: a.txt → b/c.txt")
+        );
+        assert_eq!(
+            summary_move_file(&v).as_deref(),
+            Some("move file: a.txt → b/c.txt")
+        );
+    }
+
+    #[test]
+    fn copy_and_move_need_both_paths() {
+        assert!(summary_copy_file(&json!({ "from": "a.txt" })).is_none());
+        assert!(summary_move_file(&json!({ "from": " ", "to": "b.txt" })).is_none());
+    }
+
+    #[test]
+    fn read_dir_defaults_to_dot_for_missing_null_or_blank_path() {
+        for v in [json!({}), json!({ "path": null }), json!({ "path": "   " })] {
+            assert_eq!(
+                ReadDirEnhancedArgs::summary_line(&v).as_deref(),
+                Some("read dir: ."),
+                "{v}"
+            );
+        }
+        assert_eq!(
+            ReadDirEnhancedArgs::summary_line(&json!({ "path": " src/tools " })).as_deref(),
+            Some("read dir: src/tools")
+        );
+    }
+
+    /// `path` 类型不对：旧 `Option<String>` 反序列化整体失败 ⇒ 没有摘要，迁移不放宽这条。
+    #[test]
+    fn non_string_path_still_has_no_summary() {
+        assert!(ReadDirEnhancedArgs::summary_line(&json!({ "path": 7 })).is_none());
+        assert!(ListTreeArgs::summary_line(&json!({ "path": ["src"] })).is_none());
+    }
+
+    #[test]
+    fn glob_requires_pattern_and_defaults_root_to_dot() {
+        assert!(GlobFilesArgs::summary_line(&json!({ "path": "src" })).is_none());
+        assert_eq!(
+            GlobFilesArgs::summary_line(&json!({ "pattern": " **/*.rs ", "path": "src" })).as_deref(),
+            Some("glob **/*.rs @ src")
+        );
+        assert_eq!(
+            GlobFilesArgs::summary_line(&json!({ "pattern": "**/*.rs" })).as_deref(),
+            Some("glob **/*.rs @ .")
+        );
+    }
+
+    #[test]
+    fn list_tree_defaults_root_to_dot() {
+        assert_eq!(
+            ListTreeArgs::summary_line(&json!({})).as_deref(),
+            Some("list tree: .")
+        );
+        assert_eq!(
+            ListTreeArgs::summary_line(&json!({ "path": " docs " })).as_deref(),
+            Some("list tree: docs")
+        );
+    }
+
+    #[test]
+    fn markdown_roots_fall_back_to_builtin_list_when_absent_or_blank() {
+        assert_eq!(
+            MarkdownCheckLinksArgs::summary_line(&json!({})).as_deref(),
+            Some("markdown link check: README.md, docs")
+        );
+        assert_eq!(
+            MarkdownCheckLinksArgs::summary_line(&json!({ "roots": ["  ", ""] })).as_deref(),
+            Some("markdown link check: README.md, docs")
+        );
+        assert_eq!(
+            MarkdownCheckLinksArgs::summary_line(&json!({ "roots": [" docs ", "", "README.md"] }))
+                .as_deref(),
+            Some("markdown link check: docs, README.md")
+        );
+    }
+
+    /// `roots` 显式 `null` / 非数组 / 含非字符串：旧 `Vec<String>` 会整体反序列化失败。
+    #[test]
+    fn markdown_roots_of_wrong_shape_has_no_summary() {
+        assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": null })).is_none());
+        assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": "docs" })).is_none());
+        assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": ["docs", 1] })).is_none());
     }
 }

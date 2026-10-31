@@ -1,12 +1,12 @@
 [
-ToolSpec {
+        builtin_tool! {
             name: tool_names::MARKDOWN_CHECK_LINKS,
+            args: args::MarkdownCheckLinksArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_markdown_check_links_try,
+            summary: dynamic,
             description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在，并可校验 `#fragment` 是否命中目标 Markdown 标题锚点。支持 `output_format=text|json|sarif`。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退，且同 URL 去重缓存）。`mailto:`/`tel:` 等跳过。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::MarkdownCheckLinksArgs>,
-            runner: ToolRunner::Typed(runner_markdown_check_links_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_markdown_check_links),
         },
         builtin_tool! {
             name: tool_names::STRUCTURED,
