@@ -21,9 +21,6 @@ macro_rules! define_summaries {
 define_summaries! {
     summary_codebase_semantic_search => CodebaseSemanticSearchSummaryArgs,
     summary_rust_analyzer => RustAnalyzerSummaryArgs,
-    summary_python_snippet_run => PythonSnippetRunSummaryArgs,
-    summary_git => GitSummaryArgs,
-    summary_web_search => WebSearchSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
     summary_gh_run => GhRunSummaryArgs,
 }

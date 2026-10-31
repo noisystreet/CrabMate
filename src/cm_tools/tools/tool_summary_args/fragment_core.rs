@@ -164,15 +164,12 @@ impl ToolSummaryLine for RustAnalyzerSummaryArgs {
 
 // ── python ───────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
-pub(super) struct PythonSnippetRunSummaryArgs {
-    #[serde(default)]
-    use_uv: bool,
-}
-
-impl ToolSummaryLine for PythonSnippetRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        Some(if self.use_uv {
+/// 旧的 `PythonSnippetRunSummaryArgs` 只有 `use_uv: bool` + `#[serde(default)]`：
+/// 缺键 ⇒ false；`null` / 类型不符 ⇒ 整条摘要消失。
+impl ToolArgsSummary for super::tool_param_types::PythonSnippetRunArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let use_uv = arg_bool_default(args, "use_uv")?;
+        Some(if use_uv {
             "python snippet (uv)".to_string()
         } else {
             "python snippet".to_string()
@@ -231,5 +228,41 @@ mod rust_analyzer_summary_tests {
             None
         );
         assert_eq!(line(serde_json::json!({"action":"hover","path":"  "})), None);
+    }
+}
+
+#[cfg(test)]
+mod python_snippet_summary_tests {
+    use super::*;
+    use crate::cm_tools::tools::tool_param_types::PythonSnippetRunArgs;
+    use serde_json::json;
+
+    #[test]
+    fn use_uv_switches_the_label() {
+        assert_eq!(
+            PythonSnippetRunArgs::summary_line(&json!({"code": "print(1)"})).as_deref(),
+            Some("python snippet")
+        );
+        assert_eq!(
+            PythonSnippetRunArgs::summary_line(&json!({"code": "print(1)", "use_uv": true}))
+                .as_deref(),
+            Some("python snippet (uv)")
+        );
+        assert_eq!(
+            PythonSnippetRunArgs::summary_line(&json!({"code": "print(1)", "use_uv": false}))
+                .as_deref(),
+            Some("python snippet")
+        );
+    }
+
+    /// `use_uv` 是 `#[serde(default)] bool`：缺键宽容，`null` / 类型不符整体失败。
+    #[test]
+    fn wrong_typed_use_uv_drops_the_line() {
+        assert!(
+            PythonSnippetRunArgs::summary_line(&json!({"code": "x", "use_uv": null})).is_none()
+        );
+        assert!(
+            PythonSnippetRunArgs::summary_line(&json!({"code": "x", "use_uv": "yes"})).is_none()
+        );
     }
 }
