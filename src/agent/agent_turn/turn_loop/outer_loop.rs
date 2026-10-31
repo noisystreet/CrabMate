@@ -675,6 +675,19 @@ mod tests {
     }
 
     #[test]
+    fn completed_gate_marks_search_family_probe_tools_redundant() {
+        // 查找类（#1204）：与列举/读取同族，完成证据齐备时同样算冗余探针。
+        assert!(tool_call_is_redundant_after_completion(&tc(
+            "glob_files",
+            r#"{"pattern":"**/*.rs"}"#,
+        )));
+        assert!(tool_call_is_redundant_after_completion(&tc(
+            "search_in_files",
+            r#"{"pattern":"TODO"}"#,
+        )));
+    }
+
+    #[test]
     fn completed_gate_does_not_mark_new_build_command_redundant() {
         let calls = vec![tc(
             "run_command",

@@ -103,6 +103,14 @@ fn fixture_tool_calls(name: &str) -> Vec<ToolCall> {
                 arguments: r#"{"path":"."}"#.into(),
             },
         }],
+        "glob_files_probe" => vec![ToolCall {
+            id: "call_1".into(),
+            typ: "function".into(),
+            function: FunctionCall {
+                name: tool_names::GLOB_FILES.into(),
+                arguments: r#"{"pattern":"**/*.rs"}"#.into(),
+            },
+        }],
         other => panic!("unknown tool_fixture: {other}"),
     }
 }
