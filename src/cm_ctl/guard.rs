@@ -80,7 +80,7 @@ mod tests {
     use std::os::unix::process::CommandExt;
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::*;
     use crate::cm_ctl::identity;
@@ -116,42 +116,63 @@ mod tests {
     /// 两者皆空，该项被跳过），所以这个替身会被判成「本人」—— 正是守卫要拦的情形：
     /// 进程确实活着、身份也对得上，但那个端口永远连不通。
     ///
-    /// `sleep 3; :` 两个命令是刻意的：只写 `sleep 3` 时 shell 会用 `exec` 把自己替换掉，
-    /// argv 随之丢掉 `serve` token，身份校验立刻变成 `Mismatch`，用例就测不到本意。
-    struct Lookalike(Child);
+    /// `sleep 300; :` 两个命令是刻意的：只写 `sleep 300` 时 shell 会用 `exec` 把自己
+    /// 替换掉，argv 随之丢掉 `serve` token，身份校验立刻变成 `Mismatch`，用例就测不到
+    /// 本意。时长取 300s 而非 30s：用例只需要它活过几十毫秒，但 CI 上的调度停顿不该让
+    /// 「替身自己睡醒」变成一次莫名其妙的失败。
+    struct Lookalike {
+        child: Child,
+        /// 替身的 stderr。它若被环境掐掉（`fork` 失败、OOM），原因写在这里；
+        /// 少了这个文件，用例只能看到「记录像是死的」，无从下手（#1216）。
+        stderr_path: PathBuf,
+    }
 
     impl Lookalike {
-        fn spawn() -> Self {
+        fn spawn(dir: &Path) -> Self {
+            let stderr_path = dir.join("lookalike.stderr");
+            let stderr = std::fs::File::create(&stderr_path).expect("建替身 stderr 文件");
             let child = Command::new("sh")
                 .arg("-c")
-                .args(["sleep 30; :", "serve"])
-                // 自成一组：收尾时连同 `sleep` 一起结束，不把残骸留给后面几十秒
+                .args(["sleep 300; :", "serve"])
+                // 自成一组：收尾时连同 `sleep` 一起结束，不把残骸留给后面几分钟
                 .process_group(0)
+                .stderr(stderr)
                 .spawn()
                 .expect("起替身进程");
-            Self(child)
+            Self {
+                child,
+                stderr_path,
+            }
         }
 
         fn pid(&self) -> u32 {
-            self.0.id()
+            self.child.id()
+        }
+
+        /// 替身自己说过的话（尾部 400 字符）；正常情形为空。
+        fn stderr_tail(&self) -> String {
+            let text = std::fs::read_to_string(&self.stderr_path).unwrap_or_default();
+            let chars: Vec<char> = text.chars().collect();
+            let start = chars.len().saturating_sub(400);
+            chars[start..].iter().collect::<String>().trim().to_string()
         }
     }
 
     impl Drop for Lookalike {
         /// 用生产代码里的**整组**终止，而不是 `Child::kill`：后者只杀 `sh`，真正的
-        /// `sleep` 会活到 30 秒之后，测试跑完机器上还留着一堆睡着的进程。
+        /// `sleep` 会活到计时结束，测试跑完机器上还留着一堆睡着的进程。
         ///
         /// 还必须真的 reap：`identity::pid_alive` 把僵尸算作「不活」，不 wait 会让
         /// 后续观测静默变成「进程已死」，用例因此变成假绿。
         fn drop(&mut self) {
-            let pid = self.0.id();
+            let pid = self.child.id();
             let _ = signal::terminate(
                 pid,
                 Some(pid as i32),
                 Duration::from_millis(500),
                 Duration::from_millis(20),
             );
-            let _ = self.0.wait();
+            let _ = self.child.wait();
         }
     }
 
@@ -173,18 +194,58 @@ mod tests {
         path
     }
 
+    /// 起一个**可观测为活着**的 serve 替身，等到观测成立才返回。
+    ///
+    /// 单次 `spawn` 之后立刻读 `/proc` 并不稳：CI 上高负载时替身可能刚起来就被环境
+    /// 掐掉（`fork` 失败、内存压力），那一刻记录会被观测成 `stopped` / `stale`，于是
+    /// 「守卫必须拒绝」的断言以一句「必须给出拒绝理由」失败 —— 结论没错，但看不出是
+    /// 替身没起来（#1216）。所以这里轮询到 `process_is_live_and_ours()` 成立；三次都
+    /// 起不来才 panic，并把观测事实与替身 stderr 一并打出来。
+    fn live_lookalike(dir: &Path) -> (Lookalike, InstanceRecord) {
+        let mut last = String::new();
+        for attempt in 1..=3 {
+            let live = Lookalike::spawn(dir);
+            let rec = record_of_live("live", live.pid());
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let p = probe::observe(&rec);
+                if p.process_is_live_and_ours() {
+                    return (live, rec);
+                }
+                last = format!(
+                    "第 {attempt} 次：{} / pid_alive={} / identity={:?} / 替身 stderr={:?}",
+                    p.observed.as_str(),
+                    p.pid_alive,
+                    p.identity,
+                    live.stderr_tail()
+                );
+                if Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        panic!("替身进程始终不像一个活着的 serve（记录会因此被判成可清）：{last}");
+    }
+
     /// 活进程的记录**默认不能**被 `prune` 清掉：它是那个进程唯一的地址。
     #[test]
     fn prune_refuses_record_of_live_process() {
         let tmp = tempdir("prune_live");
         let ctx = ctx_at(&tmp);
         ctx.paths.ensure_dirs().expect("建目录");
-        let live = Lookalike::spawn();
-        let path = write_record(&ctx, &record_of_live("live", live.pid()));
+        let (live, rec) = live_lookalike(&tmp);
+        let path = write_record(&ctx, &rec);
 
         let items = ops::prune(&ctx, false, false).expect("prune 应成功");
         assert_eq!(items.len(), 1, "记录应被列出（只是被跳过）：{items:?}");
-        let reason = items[0].refused.as_deref().expect("必须给出拒绝理由");
+        let Some(reason) = items[0].refused.as_deref() else {
+            panic!(
+                "必须给出拒绝理由：替身 pid {} 仍活着（观测为 {}），prune 却判成可清：{items:?}",
+                live.pid(),
+                probe::observe(&rec).observed.as_str()
+            );
+        };
         assert!(
             reason.contains("仍在运行"),
             "理由要说清进程还活着：{reason}"
@@ -239,8 +300,8 @@ mod tests {
         ctx.paths.ensure_dirs().expect("建目录");
         let ws = tmp.join("ws");
         std::fs::create_dir_all(&ws).expect("建 workspace");
-        let live = Lookalike::spawn();
-        let path = write_record(&ctx, &record_of_live("live", live.pid()));
+        let (_live, rec) = live_lookalike(&tmp);
+        let path = write_record(&ctx, &rec);
         let before = std::fs::read(&path).expect("读记录");
 
         let args = UpArgs {
@@ -326,8 +387,8 @@ mod tests {
         let tmp = tempdir("precedence");
         let ctx = ctx_at(&tmp);
         ctx.paths.ensure_dirs().expect("建目录");
-        let live = Lookalike::spawn();
-        write_record(&ctx, &record_of_live("live", live.pid()));
+        let (_live, rec) = live_lookalike(&tmp);
+        write_record(&ctx, &rec);
 
         let args = UpArgs {
             name: "live".to_string(),
