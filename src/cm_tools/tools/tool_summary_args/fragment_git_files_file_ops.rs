@@ -31,53 +31,8 @@ impl ToolSummaryLine for ModifyFileSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct CopyFileSummaryArgs {
-    from: String,
-    to: String,
-}
 
-impl ToolSummaryLine for CopyFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let from = self.from.trim();
-        let to = self.to.trim();
-        if from.is_empty() || to.is_empty() {
-            return None;
-        }
-        Some(format!("copy file: {} → {}", from, to))
-    }
-}
 
-#[derive(Debug, Deserialize)]
-pub(super) struct MoveFileSummaryArgs {
-    from: String,
-    to: String,
-}
-
-impl ToolSummaryLine for MoveFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let from = self.from.trim();
-        let to = self.to.trim();
-        if from.is_empty() || to.is_empty() {
-            return None;
-        }
-        Some(format!("move file: {} → {}", from, to))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct ReadDirSummaryArgs {
-    #[serde(default)]
-    path: Option<String>,
-}
-
-impl ToolSummaryLine for ReadDirSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.as_deref().unwrap_or(".").trim();
-        let p = if path.is_empty() { "." } else { path };
-        Some(format!("read dir: {}", p))
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub(super) struct WebSearchSummaryArgs {
@@ -94,68 +49,9 @@ impl ToolSummaryLine for WebSearchSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct GlobFilesSummaryArgs {
-    pattern: String,
-    #[serde(default)]
-    path: Option<String>,
-}
-
-impl ToolSummaryLine for GlobFilesSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let pat = self.pattern.trim();
-        if pat.is_empty() {
-            return None;
-        }
-        let root = self.path.as_deref().unwrap_or(".").trim();
-        Some(format!(
-            "glob {} @ {}",
-            pat,
-            if root.is_empty() { "." } else { root }
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct MarkdownCheckLinksSummaryArgs {
-    #[serde(default)]
-    roots: Vec<String>,
-}
-
-impl ToolSummaryLine for MarkdownCheckLinksSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let roots = self
-            .roots
-            .iter()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let roots = if roots.is_empty() {
-            "README.md, docs".to_string()
-        } else {
-            roots
-        };
-        Some(format!("markdown link check: {}", roots))
-    }
-}
 
 
-#[derive(Debug, Deserialize)]
-pub(super) struct ListTreeSummaryArgs {
-    #[serde(default)]
-    path: Option<String>,
-}
 
-impl ToolSummaryLine for ListTreeSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let root = self.path.as_deref().unwrap_or(".").trim();
-        Some(format!(
-            "list tree: {}",
-            if root.is_empty() { "." } else { root }
-        ))
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ApplyPatchSummaryArgs {

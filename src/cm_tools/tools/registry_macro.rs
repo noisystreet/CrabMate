@@ -29,7 +29,30 @@
 /// `terminal_session` 用的 `ToolRunner::AsyncOnly` 暂无对应写法：等它们那一批迁移时再补分支，
 /// 不提前留没被匹配过的空壳（macro_rules 里未匹配到的分支连语法都不会被检查）。
 macro_rules! builtin_tool {
-    // ── 同步执行体 + 动态摘要 ────────────────────────────────────────────────
+    // ── 同步执行体 + 每工具一份的动态摘要 fn ──────────────────────────────────
+    // 用于「多个工具**共用同一个** Args 类型、但摘要要带各自的动词」的情形
+    // （当前只有 `copy_file` / `move_file` 共用 `FileFromToOverwriteArgs`）。
+    // 仍然不重抄字段子集结构：`$fn` 与 Args 同侧定义在 `tool_summary_args`。
+    (
+        name: $name:expr,
+        args: $args:ty,
+        category: $category:ident,
+        tags: [$($tag:expr),* $(,)?],
+        runner: $runner:tt,
+        summary: dynamic by $summary:path,
+        description: $description:expr $(,)?
+    ) => {
+        $crate::cm_tools::tools::builtin_tool!(@spec
+            name: $name,
+            parameters: schema_of::<$args>,
+            runner: $crate::cm_tools::tools::builtin_tool!(@runner $runner),
+            category: $category,
+            tags: [$($tag),*],
+            summary: ToolSummaryKind::Dynamic($summary),
+            description: $description,
+        )
+    };
+    // ── 同步执行体 + 动态摘要（由 Args 派生）─────────────────────────────────
     (
         name: $name:expr,
         args: $args:ty,

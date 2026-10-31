@@ -24,13 +24,7 @@ define_summaries! {
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_git => GitSummaryArgs,
     summary_modify_file => ModifyFileSummaryArgs,
-    summary_copy_file => CopyFileSummaryArgs,
-    summary_move_file => MoveFileSummaryArgs,
-    summary_read_dir => ReadDirSummaryArgs,
     summary_web_search => WebSearchSummaryArgs,
-    summary_glob_files => GlobFilesSummaryArgs,
-    summary_markdown_check_links => MarkdownCheckLinksSummaryArgs,
-    summary_list_tree => ListTreeSummaryArgs,
     summary_apply_patch => ApplyPatchSummaryArgs,
     summary_code_nav => CodeNavSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
@@ -39,3 +33,8 @@ define_summaries! {
     summary_archive_unpack => ArchiveUnpackSummaryArgs,
     summary_archive_list => ArchiveListSummaryArgs,
 }
+
+/// `copy_file` / `move_file` 共用 `FileFromToOverwriteArgs`：字段一致、只有动词不同，
+/// 摘要文本无法由 Args 类型单独决定，所以走 `specs` 的 `summary: dynamic by <fn>`
+/// 而不是 `define_summaries!`。实现仍与 Args 同侧，见 `tool_summary_args`。
+pub(super) use super::tool_summary_args::{summary_copy_file, summary_move_file};
