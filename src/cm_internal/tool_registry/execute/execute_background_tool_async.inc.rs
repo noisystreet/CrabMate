@@ -2,7 +2,7 @@
 //
 // 载荷一律为**进程载荷**：从各工具自身的参数校验逻辑装配 argv，复用 `tool_jobs` 既有的
 // 取消（进程组 SIGTERM→SIGKILL）、墙钟超时与输出流式侧表；`tool_jobs` 侧零改动。
-// `run_command` 不走本文件（见 `execute_run_command_async.inc.rs`）。
+// `run_command` 不走本文件（见 `run_command/async_invocation.rs`）。
 
 const BACKGROUND_ASYNC_DISABLED_MSG: &str = "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务并确保该工具已在 `background_job_async_tools` 白名单中，或去掉 async 参数。";
 const BACKGROUND_ASYNC_NO_REGISTRY_MSG: &str =
