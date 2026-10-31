@@ -8,14 +8,14 @@
             summary: dynamic,
             description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。**必填** `path`（相对工作目录，禁止 `..`）与 `content`（可为 `\"\"`）；请把 `path` 写在 arguments 靠前位置。别名如 `file_path`/`filename`/`file` 会归一到 `path`。**JSON 中 content 须正确转义**：换行 `\\n`、制表 `\\t`、双引号 `\\\"`、反斜杠 `\\\\`（未转义常导致整段 arguments 非法）。大文件可分多次写入。",
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::MODIFY_FILE,
+            args: args::ModifyFileArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_modify_file_try,
+            summary: dynamic,
             description: "在工作区内修改已有文件。**局部改动首选 `search_replace`**（文本锚定）。按行坐标改写：`mode`=`replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，大文件流式）、`insert_after_line`（`after_line` 后插入，0=开头）、`full`/`overwrite`（整覆盖，高危须 `confirm_full_overwrite=true`）；省略 `mode` 时按有无行号/锚点推断。同文件多处改动用 `edits:[{…}]`（≤16 条、同快照自底向上、重叠即拒；与顶层同名字段互斥）。`guard` 在写盘前核对当前内容：`replace_lines` 用 `content`（整段逐行）或 `first_line`+`last_line`（只锚首尾，二者互斥），`insert_after_line` 用 `anchor_line`；与 full/overwrite 互斥。行号类默认绑定本轮 read_file 的 revision（过期 `stale_revision`，缺基线先 read_file）；`allow_stale_revision=true` 跳过绑定。`dry_run` 默认 `true` 只给 diff 预览，`false` 才写盘。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::ModifyFileArgs>,
-            runner: ToolRunner::Typed(runner_modify_file_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_modify_file),
         },
         builtin_tool! {
             name: tool_names::COPY_FILE,
@@ -80,14 +80,14 @@
             summary: dynamic,
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::APPLY_PATCH,
+            args: args::ApplyPatchArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_apply_patch_try,
+            summary: dynamic,
             description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** 或 `git checkout` 回滚。**多文件补丁整体试算、全部能应用才写**（不会部分应用）；`dry_run: true` 只预览 diff。写盘为原子替换；单文件补丁可传 `base_revision` 做写前校验。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::ApplyPatchArgs>,
-            runner: ToolRunner::Typed(runner_apply_patch_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_apply_patch),
         },
         builtin_tool! {
             name: tool_names::SEARCH_IN_FILES,

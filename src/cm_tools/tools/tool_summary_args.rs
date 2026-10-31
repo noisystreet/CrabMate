@@ -57,8 +57,42 @@ pub(super) fn arg_str_raw<'a>(args: &'a serde_json::Value, key: &str) -> Option<
     args.get(key).and_then(serde_json::Value::as_str)
 }
 
+/// `Option<String>` 语义：缺键 / `null` ⇒ `Some(None)`；类型不符 ⇒ `None`（放弃整条摘要）。
+///
+/// #1157：旧 `*SummaryArgs` 的宽容度是**逐字段**不同的——`Option<T>` / `Vec<T>` 缺键可以被
+/// `#[serde(default)]` 放过，但**类型不符一定整体反序列化失败**（= 没有摘要）。摘要改成从
+/// `&Value` 手取值后，最顺手的退化就是「类型不符也被当成没给」——摘要会凭空多出一行，且没有
+/// 任何报错。所以这类字段一律走下面三个 helper，别直接 `args.get(..)?.as_str()`。
+pub(super) fn arg_opt_str<'a>(args: &'a serde_json::Value, key: &str) -> Option<Option<&'a str>> {
+    match args.get(key) {
+        None => Some(None),
+        Some(v) if v.is_null() => Some(None),
+        Some(serde_json::Value::String(s)) => Some(Some(s)),
+        Some(_) => None,
+    }
+}
+
+/// `Vec<String>` + `#[serde(default)]` 语义：缺键 ⇒ 空数组；`null` / 非数组 / 含非字符串元素
+/// ⇒ `None`（放弃整条摘要）。
+pub(super) fn arg_str_vec<'a>(args: &'a serde_json::Value, key: &str) -> Option<Vec<&'a str>> {
+    match args.get(key) {
+        None => Some(Vec::new()),
+        Some(v) => v.as_array()?.iter().map(|item| item.as_str()).collect(),
+    }
+}
+
+/// `Option<u64>` 语义：缺键 / `null` ⇒ `Some(None)`；非整数或负数 ⇒ `None`（放弃整条摘要）。
+pub(super) fn arg_opt_u64(args: &serde_json::Value, key: &str) -> Option<Option<u64>> {
+    match args.get(key) {
+        None => Some(None),
+        Some(v) if v.is_null() => Some(None),
+        Some(v) => v.as_u64().map(Some),
+    }
+}
+
 include!("tool_summary_args/fragment_args_summary.rs");
 include!("tool_summary_args/fragment_core.rs");
 include!("tool_summary_args/fragment_git_files_diff.rs");
 include!("tool_summary_args/fragment_git_files_file_ops.rs");
+include!("tool_summary_args/fragment_file_ops.rs");
 include!("tool_summary_args/fragment_gh_archive.rs");

@@ -203,7 +203,7 @@ Adding or renaming a tool — check in order:
 >    `pub(super) use` 从 `tool_summary_args` 转出）——当前只有 `copy_file` / `move_file`
 >    共用 `FileFromToOverwriteArgs`，是唯一这种组合。
 >
-> 已迁移到宏写法：共 **58 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
+> 已迁移到宏写法：共 **61 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
 > （`summary: static` 分支验证）、全部 `static` / `none` 摘要工具（P1 机械改写批）、
 > P2 前两批的 12 个动态摘要工具（`code_stats` / `dependency_graph` / `coverage_report` /
 > `delete_dir` / `background_job_cancel` / `read_binary_meta` / `delete_files` / `append_file` /
@@ -211,13 +211,14 @@ Adding or renaming a tool — check in order:
 > （`run_command` / `terminal_session` / `background_job` / `background_job_wait`）、
 > 检索 / 结构化 / 受控 HTTP 族（`search_in_files` / `search_replace` / `structured` /
 > `http_fetch` / `http_request`）、文件 / 目录族（`copy_file` / `move_file` / `read_dir` /
-> `glob_files` / `list_tree` / `markdown_check_links`），以及 archive 三件套
-> （`archive_pack` / `archive_unpack` / `archive_list`；它们挂在**非默认** feature
-> `archive-tools` 下，验证须 `cargo test --features archive-tools`）。
-> 剩 **10 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
+> `glob_files` / `list_tree` / `markdown_check_links`）、archive 三件套（`archive_pack` /
+> `archive_unpack` / `archive_list`；它们挂在**非默认** feature `archive-tools` 下，验证须
+> `cargo test --features archive-tools`），以及写入 / 导航族（`modify_file` / `apply_patch` /
+> `code_nav`）。
+> 剩 **7 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
 > `impl ToolArgsSummary for XArgs`（P2），才能换成 `summary: dynamic`。剩下的是
-> `git` / `gh_pr` / `gh_run` / `rust_analyzer` / `modify_file` / `apply_patch` / `code_nav` /
-> `codebase_semantic_search` / `web_search` / `python_snippet_run`。
+> `git` / `gh_pr` / `gh_run` / `rust_analyzer` / `codebase_semantic_search` / `web_search` /
+> `python_snippet_run`。
 > 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证
 > schema / 描述 / 摘要文本零漂移——快照现在覆盖**全部**动态摘要工具（手写真实入参 +
 > 按 schema 生成的全字段样本），改摘要逻辑必然被比对到。
