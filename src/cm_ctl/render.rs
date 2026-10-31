@@ -5,7 +5,7 @@
 
 use serde_json::json;
 
-use super::ops::{DownOutcome, UpOutcome};
+use super::ops::{DownOutcome, PruneItem, UpOutcome};
 use super::probe::{Observed, Probe};
 use super::record::InstanceRecord;
 use super::supervise::Step;
@@ -218,20 +218,34 @@ pub fn down(out: &DownOutcome) {
 }
 
 /// `prune` 输出。
-pub fn prune(items: &[(String, Observed)], dry_run: bool) {
+///
+/// 被跳过的条目必须单独一行说明**为什么**：它们最需要被看见（记录指向活进程），
+/// 混进「没清掉」里等于把最值得处理的情况静音。
+pub fn prune(items: &[PruneItem], dry_run: bool) {
     if items.is_empty() {
         println!("没有可清理的记录");
         return;
     }
-    for (name, obs) in items {
+    for item in items {
+        if let Some(reason) = item.refused.as_deref() {
+            println!("跳过 {}（{}）：{reason}", item.name, item.observed.as_str());
+            continue;
+        }
         if dry_run {
-            println!("将清理 {name}（{}）", obs.as_str());
+            println!("将清理 {}（{}）", item.name, item.observed.as_str());
         } else {
-            println!("已清理 {name}（{}）", obs.as_str());
+            println!("已清理 {}（{}）", item.name, item.observed.as_str());
         }
     }
     if dry_run {
         println!("（dry-run：未实际删除；去掉 --dry-run 执行）");
+    }
+    // 被跳过时 `--force` 本来就是 false（见 `ops::prune`），所以这里不必再问它：
+    // 有 refused 条目就说明用户没加 `--force`。
+    if items.iter().any(|i| i.refused.is_some()) {
+        println!(
+            "提示：跳过项由 `crabmatectl prune --force` 强制清理（会让仍在运行的进程失去记录）"
+        );
     }
 }
 

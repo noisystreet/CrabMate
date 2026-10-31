@@ -11,6 +11,7 @@
 //!   故 `boot_id` + `pid_start_ticks` + `cmdline` 三重校验（见 `identity` 模块）。
 
 pub(crate) mod control;
+pub(crate) mod guard;
 pub(crate) mod identity;
 pub(crate) mod instances;
 pub(crate) mod lock;
@@ -69,6 +70,22 @@ impl CtlError {
 
     /// 用法/参数错误。
     pub fn usage(error_code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            exit_code: crate::EXIT_USAGE,
+            error_code,
+            message: message.into(),
+        }
+    }
+
+    /// 「这个地址/名字已经被占着」类冲突：`port_in_use` / `instance_already_live`。
+    ///
+    /// 与 [`Self::usage`] 共用退出码（`EXIT_USAGE`），因为对调用方而言两者是同一件事：
+    /// **现在重试没有意义**，得先处理掉占用的那个东西（换端口 / 先 `down`）。把它们分到
+    /// 两个退出码上，脚本就得同时判断 1 和 2 才能认出「别重试」。
+    ///
+    /// `identity_mismatch` 刻意不走这里：它不是「被占用」，而是「记录不可信、需人工核对」，
+    /// 属 [`Self::general`] 那一类（重试同样无意义，但补救动作完全不同）。
+    pub fn conflict(error_code: &'static str, message: impl Into<String>) -> Self {
         Self {
             exit_code: crate::EXIT_USAGE,
             error_code,

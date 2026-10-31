@@ -66,6 +66,19 @@ pub struct Probe {
     pub tcp_ok: bool,
 }
 
+impl Probe {
+    /// 记录指向的进程**确实还在跑，且身份校验通过**。
+    ///
+    /// 两者同时为真时，状态文件里的 `pid` 是那个进程在 ctl 视野中的唯一地址：删掉
+    /// 记录或把它覆盖成别的 pid，进程就成孤儿（`down` 报实例不存在、`ls` 看不见、
+    /// `supervise` 不回收）。所以 `prune` / `up` 用本谓词判「能不能动记录」，而不是
+    /// 用 `Observed`：`Observed::Stale` 把「PID 被复用（该清）」与「进程活着但端口
+    /// 不通（不能清）」混成了一类，见 `super::guard`。
+    pub fn process_is_live_and_ours(&self) -> bool {
+        self.pid_alive && self.identity.is_match()
+    }
+}
+
 fn probe_tcp(rec: &InstanceRecord) -> bool {
     let Some(port) = rec.port else {
         return false;
