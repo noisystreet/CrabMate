@@ -3,8 +3,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::cm_config::AgentConfig;
-
 /// stdio 子进程启动规格（结构化 `command`/`args`/`env`/`cwd`，或 legacy 整行拆分）。
 #[derive(Debug, Clone)]
 pub struct McpStdioLaunch {
@@ -152,17 +150,6 @@ impl ResolvedMcpConfig {
         self.servers
             .iter()
             .filter(|s| s.enabled && (s.has_stdio() || s.has_remote_url()))
-    }
-}
-
-/// 从 `cfg` 构造基础 MCP 配置（无 user-data 覆盖；`servers` 恒空）。
-///
-/// Agent 回合须使用 `crate::cm_internal::mcp::resolve_mcp_config`（加载 `mcp_servers.json`）。
-pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
-    ResolvedMcpConfig {
-        global_enabled: cfg.mcp_client.mcp_enabled,
-        tool_timeout_secs: cfg.mcp_client.mcp_tool_timeout_secs.max(1),
-        servers: Vec::new(),
     }
 }
 

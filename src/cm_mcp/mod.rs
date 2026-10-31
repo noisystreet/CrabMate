@@ -5,7 +5,6 @@
 
 pub mod resolve;
 pub mod schema_sanitize;
-pub use resolve::resolve_mcp_config;
 pub use schema_sanitize::sanitize_mcp_json_schema;
 
 #[cfg(feature = "mcp")]

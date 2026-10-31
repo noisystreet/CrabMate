@@ -209,6 +209,11 @@ pub const CODE_NAV: &str = "code_nav";
 ///
 /// 用于遍历与守卫测试；**顺序不承载语义**（注册顺序由 `tool_specs_registry` 决定）。
 /// `archive-tools` 关闭时归档三项不在注册表中，故此处同样按 feature 条件包含。
+//
+// `dead_code` 局部豁免：非测试目标里确实没有调用方（消费方只有本模块测试与
+// `tool_specs_registry::all_tool_names_match_specs`），但它是「工具名全集」的单一真源，
+// 且模块文档以 [`ALL`] 链接它——改成 `#[cfg(test)]` 会让 rustdoc 断链，故保留并在此豁免。
+#[allow(dead_code)]
 pub static ALL: &[&str] = &[
     #[cfg(feature = "archive-tools")]
     ARCHIVE_PACK,
