@@ -166,7 +166,7 @@ impl ToolArgsSummary for super::tool_param_types::GhIssueCreateArgs {
         let title = arg_str(args, "title")?;
         Some(format!(
             "gh issue create{}: {}",
-            gh_repo_suffix(arg_str(args, "repo").map(str::to_string)),
+            gh_repo_suffix(arg_str(args, "repo")),
             truncate_chars(title, 40)
         ))
     }

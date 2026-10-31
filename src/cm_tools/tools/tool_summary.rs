@@ -1,31 +1,10 @@
-//! Dynamic summary helpers for `ToolSpec::summary` `Dynamic` variants.
-//! Argument shapes live in [`super::tool_summary_args`] (`serde` structs + [`ToolSummaryLine`]).
-
-use super::tool_summary_args::*;
-
-/// 生成 `summary_*` 壳函数：每个都只是把 `&serde_json::Value` 交给
-/// [`summarize_from_value`] 并以对应 args 类型反序列化。
-///
-/// 新增动态摘要工具时，只需在下表增一行 `summary_x => XxxSummaryArgs`（args 结构体与
-/// `ToolSummaryLine` 实现按需加到 `tool_summary_args/` 的 fragment 中）。
-macro_rules! define_summaries {
-    ($( $name:ident => $args:ty ),* $(,)?) => {
-        $(
-            pub(super) fn $name(v: &serde_json::Value) -> Option<String> {
-                summarize_from_value::<$args>(v)
-            }
-        )*
-    };
-}
-
-define_summaries! {
-    summary_codebase_semantic_search => CodebaseSemanticSearchSummaryArgs,
-    summary_rust_analyzer => RustAnalyzerSummaryArgs,
-    summary_gh_pr => GhPrSummaryArgs,
-    summary_gh_run => GhRunSummaryArgs,
-}
+//! Dynamic summary **functions** for `ToolSpec::summary`'s `dynamic by` arm.
+//!
+//! 绝大多数动态摘要已由 `impl ToolArgsSummary for XArgs` 从 Args 类型直接派生
+//! （见 `super::tool_summary_args`）；只有「两个工具共用同一个 Args 类型、摘要要带各自动词」
+//! 这一种情况才需要这里的具名函数。新增工具请优先走 Args 同源，不要往这里加壳函数。
 
 /// `copy_file` / `move_file` 共用 `FileFromToOverwriteArgs`：字段一致、只有动词不同，
-/// 摘要文本无法由 Args 类型单独决定，所以走 `specs` 的 `summary: dynamic by <fn>`
-/// 而不是 `define_summaries!`。实现仍与 Args 同侧，见 `tool_summary_args`。
+/// 摘要文本无法由 Args 类型单独决定，所以走 `specs` 的 `summary: dynamic by <fn>`。
+/// 实现仍与 Args 同侧，见 `tool_summary_args`。
 pub(super) use super::tool_summary_args::{summary_copy_file, summary_move_file};
