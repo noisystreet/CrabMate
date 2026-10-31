@@ -16,11 +16,11 @@ pub mod routes;
 pub mod serve;
 pub mod web_ui;
 
-pub use cors::{CORS_EXPOSE_RESPONSE_HEADERS, parse_cors_origin_header_values, try_cors_layer};
-pub use serve::{PROTECTED_API_BODY_LIMIT_BYTES, layer_protected_body_limit};
+pub use cors::try_cors_layer;
 
-/// 包身份（门禁/诊断用）。
-pub fn crate_name() -> &'static str {
+/// 包身份（门禁/诊断用）。仅本模块测试使用，故不进发布构建。
+#[cfg(test)]
+fn crate_name() -> &'static str {
     env!("CARGO_PKG_NAME")
 }
 
