@@ -1,7 +1,7 @@
 //! #1157：内建工具注册面的**单点声明**宏。
 //!
-//! 背景见 issue #1157：新增一个内建工具原本要动约 9 处（`cm_names`、`specs`、
-//! `tool_param_types`、`tool_summary_args`、`tool_summary`、`runners`、`dev_tag`、
+//! 背景见 issue #1157：新增一个内建工具原本要动 8 处（`cm_names`、`specs`、
+//! `tool_param_types`、`tool_summary_args`、`runners`、`dev_tag`、
 //! `tool_write_effect`、`registry_policy`），其中 `ToolSpec` 的 `name` / `parameters` /
 //! `runner` / `summary` 与 `tool_summary_args` 的字段子集结构全是**同一件事的重复抄写**。
 //!

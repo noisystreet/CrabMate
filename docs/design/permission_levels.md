@@ -888,7 +888,7 @@ S3 的必需改动点：
 | 命令执行 | `run_command/approval.rs` | `cwd` 越界判定 |
 | HTTP | `http/gate.rs` | 出站前缀判定 |
 
-不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`tools/mod.rs::resolve_workspace_path_for_read`×1、`cm_llm/outbound_workspace_images.rs`×1。
+不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`cm_llm/outbound_workspace_images.rs`×1。（原先还有 `tools/mod.rs::resolve_workspace_path_for_read`×1，那是对 `file::resolve_for_read` 的一行转发、无调用方，且与「`PathAccess` 是唯一判定点」冲突，已在 #1227 删除。）
 
 **可验证的停止条件**（比「改了几个文件」可靠）：
 
