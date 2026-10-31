@@ -20,7 +20,7 @@ async fn execute_http_fetch_impl(
         workspace_is_set,
         web_ctx,
         args,
-        tool_name: "http_fetch",
+        tool_name: crate::cm_names::HTTP_FETCH,
         url: &url,
         storage_key: &key,
         sse_log_label: "tool_registry::http_fetch approval",
@@ -35,7 +35,7 @@ async fn execute_http_fetch_impl(
     let url_owned = url.clone();
     let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_fetch_outer_wall_secs(cfg);
-    let s = spawn_blocking_http_tool("http_fetch", name, outer_wall, move || {
+    let s = spawn_blocking_http_tool(crate::cm_names::HTTP_FETCH, name, outer_wall, move || {
         tools::http_fetch::fetch_with_method(
             &url_owned,
             method,
@@ -77,7 +77,7 @@ async fn execute_http_request_impl(
         workspace_is_set,
         web_ctx,
         args,
-        tool_name: "http_request",
+        tool_name: crate::cm_names::HTTP_REQUEST,
         url: &url,
         storage_key: &key,
         sse_log_label: "tool_registry::http_request approval",
@@ -92,7 +92,7 @@ async fn execute_http_request_impl(
     let url_fetch = url.clone();
     let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_request_outer_wall_secs(cfg);
-    let s = spawn_blocking_http_tool("http_request", name, outer_wall, move || {
+    let s = spawn_blocking_http_tool(crate::cm_names::HTTP_REQUEST, name, outer_wall, move || {
         tools::http_fetch::request_with_json_body(
             &url_fetch,
             method,
@@ -121,7 +121,7 @@ async fn execute_get_weather_web(
         env,
         effective_working_dir,
         workspace_is_set,
-        "get_weather",
+        crate::cm_names::GET_WEATHER,
         args,
         crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
@@ -173,7 +173,7 @@ async fn execute_web_search_web(
         env,
         effective_working_dir,
         workspace_is_set,
-        "web_search",
+        crate::cm_names::WEB_SEARCH,
         args,
         crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )

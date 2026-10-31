@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_names as tool_names;
 use crate::cm_tools::memory_tool_host::{
     CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
 };
@@ -76,10 +77,10 @@ impl LongTermMemoryToolHost for LongTermMemoryHost {
             scope: self.inner.scope_id.as_str(),
         };
         match tool_name {
-            "long_term_remember" => long_term_remember(args_json, &st),
-            "long_term_forget" => long_term_forget(args_json, &st),
-            "long_term_memory_list" => long_term_memory_list(args_json, &st),
-            "summarize_experience" => summarize_experience(args_json, &st),
+            tool_names::LONG_TERM_REMEMBER => long_term_remember(args_json, &st),
+            tool_names::LONG_TERM_FORGET => long_term_forget(args_json, &st),
+            tool_names::LONG_TERM_MEMORY_LIST => long_term_memory_list(args_json, &st),
+            tool_names::SUMMARIZE_EXPERIENCE => summarize_experience(args_json, &st),
             _ => Err(ToolError::invalid_args(format!(
                 "错误：未知长期记忆工具 `{tool_name}`"
             ))),
@@ -181,7 +182,7 @@ impl ToolJobsToolHost for ToolJobsHost {
             if rec.workspace_changed { "是" } else { "否" }
         ));
         if let Some(summary) =
-            crate::cm_tools::tools::summarize_tool_call("run_command", &rec.args_json)
+            crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &rec.args_json)
         {
             out.push_str(&format!("命令: {summary}\n"));
         }
@@ -225,7 +226,7 @@ impl ToolJobsToolHost for ToolJobsHost {
                 .duration_since(r.created_at)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let cmd = crate::cm_tools::tools::summarize_tool_call("run_command", &r.args_json)
+            let cmd = crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &r.args_json)
                 .unwrap_or_else(|| r.args_json.clone());
             out.push_str(&format!(
                 "- {} [{}] {}（{}秒前）\n",
