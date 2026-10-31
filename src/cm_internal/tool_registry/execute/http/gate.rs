@@ -1,4 +1,19 @@
-// `http_fetch` / `http_request` 共用：前缀白名单、Web 审批与 Docker 分流。
+//! `http_fetch` / `http_request` 共用的出站网络闸门：前缀白名单、Web 审批与 Docker 分流。
+//!
+//! 原为 `execute/http_tool_exec.inc.rs`，现为真子模块（#1198）。本文件同时持有网络轴的
+//! 权限矩阵测试——`docs/design/permission_levels.md` 的「网络」一行直接锚定此处。
+
+use std::path::Path;
+use std::time::Duration;
+
+use log::error;
+
+use crate::cm_internal::tool_approval;
+use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
+use crate::cm_internal::tools;
+
+use super::super::run_command::dispatch_non_sync_tool_to_docker;
+use super::super::ToolExecEnv;
 
 /// URL 是否已由**本等级作用域内**的配置前缀或 persistent allowlist 放行。
 ///
@@ -135,20 +150,21 @@ async fn http_tool_gate_url_approval(
 }
 
 /// 前缀白名单 + 可选 Web 审批 + Docker 分流；通过后返回 `Ok(())` 以继续 `spawn_blocking`。
-struct HttpToolPreflightParams<'a> {
-    env: &'a ToolExecEnv<'a>,
-    effective_working_dir: &'a Path,
-    workspace_is_set: bool,
-    web_ctx: Option<&'a WebToolRuntime>,
-    args: &'a str,
-    tool_name: &'static str,
-    url: &'a reqwest::Url,
-    storage_key: &'a str,
-    sse_log_label: &'static str,
-    approval_spec: &'a crate::cm_internal::tool_approval::ApprovalRequestSpec,
+pub(in crate::cm_internal::tool_registry::execute) struct HttpToolPreflightParams<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) tool_name: &'static str,
+    pub(in crate::cm_internal::tool_registry::execute) url: &'a reqwest::Url,
+    pub(in crate::cm_internal::tool_registry::execute) storage_key: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_log_label: &'static str,
+    pub(in crate::cm_internal::tool_registry::execute) approval_spec:
+        &'a crate::cm_internal::tool_approval::ApprovalRequestSpec,
 }
 
-async fn http_tool_preflight(
+pub(in crate::cm_internal::tool_registry::execute) async fn http_tool_preflight(
     p: HttpToolPreflightParams<'_>,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
     let cfg = p.env.cfg;
@@ -194,7 +210,7 @@ async fn http_tool_preflight(
     Ok(())
 }
 
-async fn spawn_blocking_http_tool(
+pub(in crate::cm_internal::tool_registry::execute) async fn spawn_blocking_http_tool(
     tool_label: &'static str,
     name: &str,
     outer_wall_secs: u64,
@@ -218,7 +234,7 @@ async fn spawn_blocking_http_tool(
 }
 
 /// 并行预取：`http_fetch` URL 审批（与单工具路径共用 spec 构建器与网络门）。
-async fn http_fetch_prefetch_approval(
+pub(in crate::cm_internal::tool_registry::execute) async fn http_fetch_prefetch_approval(
     web_ctx: Option<&WebToolRuntime>,
     cfg: &crate::cm_config::AgentConfig,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
@@ -256,6 +272,7 @@ mod http_net_gate_tests {
     use super::*;
     use crate::cm_agent::permission::project_caps;
     use crate::cm_types::PermissionLevel;
+    use std::sync::Arc;
 
     fn test_cfg() -> crate::cm_config::AgentConfig {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default");

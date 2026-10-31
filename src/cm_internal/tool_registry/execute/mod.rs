@@ -1,26 +1,30 @@
 //! `dispatch_tool` 及各类需异步/阻塞池的工具执行实现。
 //!
 //! 进入阻塞池前对 [`AgentConfig`] 使用 [`Arc::clone`]；白名单等同理。详见仓库 `tool_registry` 模块说明。
+//!
+//! ## 子模块（#1198）
+//!
+//! 各执行阶段原先都是 `include!` 分片，文本被拼进本模块的**同一作用域**：跨阶段调用靠裸名，
+//! 改一片漏改另一片编译器也无从发现（#1158 / #1198）。现在每个阶段是独立子模块，兄弟之间
+//! 只能经下方**显式接口清单**互相调用——`use …::*;` 的 glob 重导出已移除。
+//!
+//! - `dispatch`：`dispatch_tool` 重试外壳 + 单次分发 + 各 handler 分支（编排层）。
+//! - `background_job`：非 `run_command` 工具的后台任务门闩与发起。
+//! - `http::{gate, tools}`：出站网络闸门（含网络轴矩阵测试）与四个出站工具入口。
+//! - `terminal_session`：PTY 执行。
+//! - `run_command`：`run_command` 执行流水线（#1196 已先行子模块化）。
+//!
+//! 行数上限（`file ≤ 920`）保持不变——本模块的目的不是把分片合并成大文件，而是把
+//! 「同作用域文本拼接」换成「有边界的模块」。
 
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 
-use log::error;
+use crate::cm_config::AgentConfig;
+use crate::cm_types::ToolCall;
 
-use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
-use crate::cm_internal::tools;
-use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
-use crate::cm_types::{CommandApprovalDecision, ToolCall};
-
-use super::meta::{HandlerId, HandlerLookupTable};
-use super::policy::{
-    http_fetch_outer_wall_secs, http_request_outer_wall_secs, parallel_tool_wall_timeout_secs,
-    sync_default_runs_inline, terminal_session_outer_wall_secs, web_search_outer_wall_secs,
-};
-use super::runtime::{ToolRuntime, WebToolRuntime};
+use super::meta::HandlerLookupTable;
+use super::runtime::ToolRuntime;
 
 /// Web UI：未选择工作区时的统一提示尾句（命令类工具共用）。
 const WEB_WORKSPACE_PANEL_HINT: &str = "请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。";
@@ -38,6 +42,7 @@ fn extend_allowed_commands_arc(
     v.push(cmd.to_string());
     v.into()
 }
+
 pub struct DispatchToolCall<'a> {
     pub name: &'a str,
     pub args: &'a str,
@@ -45,7 +50,7 @@ pub struct DispatchToolCall<'a> {
 }
 
 pub struct DispatchToolWorkspace<'a> {
-    pub effective_working_dir: &'a Path,
+    pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub workspace_changelist:
         Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
@@ -59,7 +64,7 @@ impl<'a> DispatchToolWorkspace<'a> {
     /// `parallel_readonly`）的字段来源互不相同，`&Path` 也没有合理默认值，
     /// 因此只提供测试入口而不 derive `Default`。
     #[cfg(test)]
-    pub(crate) fn for_tests(effective_working_dir: &'a Path) -> Self {
+    pub(crate) fn for_tests(effective_working_dir: &'a std::path::Path) -> Self {
         Self {
             effective_working_dir,
             workspace_is_set: true,
@@ -112,24 +117,6 @@ pub struct DispatchToolParams<'a> {
     pub memory: DispatchToolMemory<'a>,
 }
 
-/// `HandlerId::SyncDefault` 分支入参（与 [`DispatchToolParams`] 中部分字段一致，避免 `dispatch_sync_default` 形参过多）。
-struct SyncDefaultToolDispatchArgs<'a> {
-    env: &'a ToolExecEnv<'a>,
-    runtime: ToolRuntime<'a>,
-    cfg: &'a Arc<AgentConfig>,
-    effective_working_dir: &'a std::path::Path,
-    workspace_is_set: bool,
-    name: &'a str,
-    args: &'a str,
-    tc: &'a ToolCall,
-    read_file_turn_cache: Option<std::sync::Arc<crate::cm_internal::read_file_turn_cache::ReadFileTurnCache>>,
-    workspace_changelist: Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
-    long_term_memory: Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
-    long_term_memory_scope_id: Option<String>,
-    /// 后台任务注册表：供 `background_job_status` / `background_job_list` 只读查询。
-    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
-}
-
 /// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。
 struct ToolExecEnv<'a> {
     cfg: &'a Arc<AgentConfig>,
@@ -138,96 +125,30 @@ struct ToolExecEnv<'a> {
     permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
-/// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
-fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a WebToolRuntime> {
-    runtime.ctx
-}
-
-/// 检测 `read_dir` 入参中 `path` 是否为外部路径（绝对路径或含 `..`）。
-fn read_dir_path_is_external(args_json: &str) -> Option<String> {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-    let path = v.get("path")?.as_str()?.trim();
-    if path.starts_with('/') || path.contains("..") {
-        return Some(path.to_string());
-    }
-    None
-}
-
-async fn approve_external_read_dir_if_needed(
-    args: &str,
-    web_ctx: Option<&WebToolRuntime>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
-) -> Result<(), String> {
-    let Some(ext_path) = read_dir_path_is_external(args) else {
-        return Ok(());
-    };
-    // S3：路径轴先定论——L4 放行（不弹窗），L2 硬拒（不弹窗），其余走现状审批。
-    if let Some(caps) = permission {
-        // 审计正文只留末两段路径（完整绝对路径不进日志）。
-        let audit_detail = crate::cm_tools::tools::audit_path_detail(&ext_path);
-        if caps.path_scope.is_unrestricted() {
-            crate::cm_agent::permission_audit::record_allowed(
-                caps,
-                crate::cm_agent::permission_audit::PermissionAxis::Path,
-                Some("read_dir"),
-                Some(&audit_detail),
-            );
-            return Ok(());
-        }
-        if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
-            crate::cm_agent::permission_audit::record_denied(
-                caps,
-                crate::cm_agent::permission_audit::PermissionAxis::Path,
-                Some("read_dir"),
-                Some(&audit_detail),
-            );
-            return Err(format!(
-                "错误：当前权限等级（{}）下不允许 read_dir 访问工作区外路径 \"{}\"：{}。",
-                caps.level.as_str(),
-                ext_path,
-                caps.level.promise_zh()
-            ));
-        }
-    }
-    if web_ctx.is_none() {
-        return Err(format!(
-            "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
-            ext_path
-        ));
-    }
-    let spec = tool_approval::approval_spec_read_dir_external_path(&ext_path);
-    let allow_handles =
-        tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level));
-    match tool_approval::interactive_gate_after_whitelist_miss(
-        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
-        &spec,
-        "tool_registry::read_dir external path approval",
-        &allow_handles,
-    )
-    .await
-    {
-        Ok(InteractiveGateOutcome::Allowed) => Ok(()),
-        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
-        Err(e) => Err(e.user_message_zh().to_string()),
-    }
-}
-
-include!("execute_dispatch_body.inc.rs");
-include!("execute_background_tool_async.inc.rs");
-include!("execute_terminal_session.inc.rs");
-include!("http_tool_exec.inc.rs");
-include!("execute_http_tools.inc.rs");
-
-/// `run_command` 的执行流水线：原为 7 个 `include!` 分片，现为独立子模块（#1196）。
+mod background_job;
+mod dispatch;
+mod http;
 mod run_command;
+mod terminal_session;
 
-// 子模块中 `pub(super)` 的项在这里以**裸名**进入 `execute`：其余 `include!` 分片与
-// `tests` 继续沿用原调用点，无需逐个改路径。
-use run_command::*;
-// `tool_registry/mod.rs` 用 `pub use execute::{…}` 对外重导出这一条，故必须保持 `pub`。
+// 显式接口（#1198）：**逐项列出**兄弟子模块之间、以及 `run_command` 对外的调用面。
+// 不用 glob 重导出是有意的——glob 会把「谁依赖谁」重新藏起来，正是本 Issue 要消除的问题。
+// 生产侧只有这些名字需要进入 `execute` 作用域；测试专用的项由各测试文件直接 `use`
+// 对应子模块（`super::dispatch::…` / `super::background_job::…`）。
+pub(in crate::cm_internal::tool_registry::execute) use background_job::{
+    launch_background_job, try_dispatch_background_async_tool,
+};
+pub(in crate::cm_internal::tool_registry::execute) use http::http_fetch_prefetch_approval;
+pub(in crate::cm_internal::tool_registry::execute) use http::{
+    execute_get_weather_web, execute_http_fetch_impl, execute_http_request_impl,
+    execute_web_search_web,
+};
+pub(in crate::cm_internal::tool_registry::execute) use terminal_session::{
+    TerminalSessionExecInvoke, execute_terminal_session_impl,
+};
+
+// 这两条对 `crate` 可见：`tool_registry/mod.rs` 以 `pub use execute::{…}` 对外重导出。
+pub use dispatch::{dispatch_tool, prefetch_parallel_syncdefault_approvals};
 pub use run_command::prefetch_http_fetch_parallel_approvals;
 
 #[cfg(test)]

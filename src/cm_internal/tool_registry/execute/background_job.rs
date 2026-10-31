@@ -1,8 +1,20 @@
-// 非 `run_command` 工具的 `async=true` 后台任务门闩（契约 §1.2）。
-//
-// 载荷一律为**进程载荷**：从各工具自身的参数校验逻辑装配 argv，复用 `tool_jobs` 既有的
-// 取消（进程组 SIGTERM→SIGKILL）、墙钟超时与输出流式侧表；`tool_jobs` 侧零改动。
-// `run_command` 不走本文件（见 `run_command/async_invocation.rs`）。
+//! 非 `run_command` 工具的 `async=true` 后台任务门闩与发起（契约 §1.2）。
+//!
+//! 原为 `execute_background_tool_async.inc.rs`，现为真子模块（#1198）。`run_command`
+//! 不走本文件（见 `run_command/async_invocation.rs`），但它复用本模块的
+//! [`launch_background_job`] 发起函数——该跨模块调用经 `mod.rs` 的显式接口清单。
+//!
+//! 载荷一律为**进程载荷**：从各工具自身的参数校验逻辑装配 argv，复用 `tool_jobs` 既有的
+//! 取消（进程组 SIGTERM→SIGKILL）、墙钟超时与输出流式侧表；`tool_jobs` 侧零改动。
+
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+
+use super::super::runtime::WebToolRuntime;
 
 const BACKGROUND_ASYNC_DISABLED_MSG: &str = "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务并确保该工具已在 `background_job_async_tools` 白名单中，或去掉 async 参数。";
 const BACKGROUND_ASYNC_NO_REGISTRY_MSG: &str =
@@ -33,7 +45,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
 }
 
 /// 门闩判定结果。
-enum BackgroundAsyncGate {
+pub(in crate::cm_internal::tool_registry::execute) enum BackgroundAsyncGate {
     /// 不接管该调用（保持既有「忽略未知参数」语义）。
     Skip,
     /// 接管并直接返回该错误文本。
@@ -45,7 +57,7 @@ enum BackgroundAsyncGate {
 /// 非 `run_command` 工具的 `async=true` 后台路径入口。
 ///
 /// 返回 `Some` 表示该调用已被接管（已发起后台任务，或返回错误帧）；`None` 表示不拦截。
-fn try_dispatch_background_async_tool(
+pub(in crate::cm_internal::tool_registry::execute) fn try_dispatch_background_async_tool(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     web_ctx: Option<&WebToolRuntime>,
@@ -90,7 +102,7 @@ fn try_dispatch_background_async_tool(
 
 /// 门闩判定（纯函数，便于单测）：仅当 `args` 显式请求 `async` 且工具名落在
 /// 「装配表 ∪ `background_job_async_tools` 白名单」内才接管；否则一律 `Skip`。
-fn background_async_gate(
+pub(in crate::cm_internal::tool_registry::execute) fn background_async_gate(
     background_jobs_enabled: bool,
     allowlist: &HashSet<String>,
     name: &str,
@@ -135,7 +147,7 @@ fn args_request_background_async(args: &str) -> bool {
 /// 参数校验复用各工具前台同步路径的同一套逻辑（见装配表），并**原样沿用装配时设定的
 /// 工作目录**（`Command::current_dir`；`pytest_run` 会在此 canonicalize），使后台与前台
 /// 的 argv / cwd 完全一致。墙钟与前台 `registry_policy` 的 `BlockingSync` 取同一配置值。
-fn assemble_background_job_spawn(
+pub(in crate::cm_internal::tool_registry::execute) fn assemble_background_job_spawn(
     cfg: &AgentConfig,
     name: &str,
     args_json: &str,
@@ -163,7 +175,7 @@ fn background_async_unsupported_message(name: &str) -> String {
 /// 后台任务通用发起：登记 + 立即返回启动帧（契约 §1.2）。`run_command` 与各装配工具共用。
 ///
 /// `tool_name` 须为**真实**工具名（终态补发摘要 `summarize_tool_call` 使用）。
-fn launch_background_job(
+pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
     registry: &Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
     web_ctx: Option<&WebToolRuntime>,
     tool_name: &str,

@@ -2,9 +2,21 @@
 
 use super::super::meta::HandlerLookupTable;
 use super::*;
+// #1198：子模块化后，测试专用项直接从对应子模块取（不再靠 `include!` 的同作用域裸名）。
+use super::background_job::{
+    BackgroundAsyncGate, assemble_background_job_spawn, background_async_gate,
+};
+use super::dispatch::read_dir_path_is_external;
+use super::run_command::{
+    ExecMode, ParsedRunCommandJson, PolicyContext, PolicyError, RunCommandHostInvoke,
+    emit_run_command_tool_output_chunk, evaluate_policy, execute_run_command_impl,
+    parse_run_command_json, posix_shell_wrap_needs_interactive_approval,
+};
+use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::cm_types::{FunctionCall, ToolCall};
+use crate::cm_types::{CommandApprovalDecision, FunctionCall, ToolCall};
 
 fn tool_call(name: &str, arguments: &str) -> ToolCall {
     ToolCall {

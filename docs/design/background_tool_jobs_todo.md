@@ -56,7 +56,7 @@
 **方案（已定）**：**进程载荷**——不为普通工具引入新载荷类型。发起时把参数装配成 `(program, args, cwd)`（与前台**同一套**校验与 CLI 拼装），复用既有 `JobSpawn` 链路，取消/超时/输出环形缓冲/`tool_job_finished` 全部照用，`tool_jobs` 模块**零改动**。
 
 - [x] `cm_tools` 侧 argv helper：`cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取快照 `AssembledCommand`）+ 共享 `tools::command_program_and_args`。`cwd` 原样沿用 `Command::current_dir`（`pytest_run` 已在装配阶段 canonicalize），后台与前台工作目录逐字一致。
-- [x] 门闩与装配：`tool_registry/execute/execute_background_tool_async.inc.rs`（`try_dispatch_background_async_tool`：总开关 → 注册表 → Docker 沙盒拒绝 → 装配 → `launch_background_job`）；`run_command/async_invocation.rs` 收敛到同一发起函数（顺带修掉终态补发里硬编码 `"run_command"`）。
+- [x] 门闩与装配：`tool_registry/execute/background_job.rs`（`try_dispatch_background_async_tool`：总开关 → 注册表 → Docker 沙盒拒绝 → 装配 → `launch_background_job`）；`run_command/async_invocation.rs` 收敛到同一发起函数（顺带修掉终态补发里硬编码 `"run_command"`）。
 - [x] 单一事实来源：门闩的「支持」判定与装配共用装配表 `background_async_argv_assembler(name)`（`background_async_gate` 与 `assemble_background_job_spawn` 都查它），「支持清单」不再与装配分支两处漂移。
 - [x] 语义（契约 §1.2/§1.3）：拦截条件 = `async == true` 且 `name != run_command` 且（∈ 装配表 或 ∈ 白名单）；装配表∩白名单 → 发起；装配表×非白名单 → 报「未在白名单中」；白名单×非装配表 → 报「暂不支持后台执行」；两者皆非 → **不拦截**（保持既有「未知参数被忽略」语义）；总开关关闭的文案同时点明白名单条件。
 - [x] schema：`CargoTestArgs` / `PytestRunArgs` 增 `async`（`#[serde(rename = "async")] pub async_: Option<bool>`），并有 schema 断言测试。

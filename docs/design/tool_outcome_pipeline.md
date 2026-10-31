@@ -42,7 +42,7 @@ if parsed.exit_code.is_some_and(|code| code != 0) { parsed.exit_code = None; }
 | 模型信封 `encode_tool_message_envelope_v1`（`emit.rs:225`、`turn_completion.rs:171`） | `ok`/`code`/分类/可重试 | 同上 | — |
 | 观测 `tool_stats`（`tool_stats.rs:105`） | `ok` | 同上 | — |
 | 验收 `acceptance::tool_evidence`（`tool_evidence.rs:19`） | `exit_code` | 同上，并为复用证据逻辑**伪造** `ToolError { message: "Verification fake error" }` | 为复用类型造假错误 |
-| 重试策略（`execute_dispatch_body.inc.rs:237`） | `error_code` | 从正文解析 | **重试决策依赖文本** |
+| 重试策略（`dispatch.rs`） | `error_code` | 从正文解析 | **重试决策依赖文本** |
 | `run_command_dedupe`（`run_command_dedupe.rs:77`） | 成败 | `parsed.ok \|\| parsed.exit_code == Some(0)` | **另一套成功定义** |
 | `serial/after_dispatch`（`after_dispatch.rs:26`、`:79`） | `ok`/`code`/`exit_code` | 同上 | — |
 | TTL 缓存（`serial/emit.rs:119`） | `ok` | 同上 | — |
@@ -69,7 +69,7 @@ flowchart TD
   end
   subgraph G2["B：tool_registry 面（chat 的 run_command 走这里）"]
     RC["execute_run_command_impl<br/>自行渲染正文，不经 run_tool*"]
-    RB["execute_dispatch_body<br/>parse → 决定重试"]
+    RB["dispatch<br/>parse → 决定重试"]
     RC --> RB
   end
   F1 --> S[("String 面：正文 + 可选头")]
@@ -91,7 +91,7 @@ flowchart TD
 | `finish_dispatch_text` | `tools/mod.rs:530` | A | 文本收尾（A 面上唯一真正需推断成败处） |
 | `typed_outcome_output` | `tools/mod.rs:486` | A | 不一致时注入 `ok`/`error_code` 头 |
 | `execute_run_command_impl` | `run_command/host.rs` | **B** | chat 的 `run_command` 主路径，**不经 `run_tool*`** |
-| `execute_dispatch_body` | `execute_dispatch_body.inc.rs:237` | **B** | 从正文取 `error_code` 决定是否重试 |
+| `dispatch` | `dispatch.rs` | **B** | 从正文取 `error_code` 决定是否重试 |
 | `parse_tool_output` | `tool_result/mod.rs:94` | A+B | 解码：头优先 → exit-code → 关键词表 |
 | `NormalizedToolEnvelope::from_tool_run` | `tool_result/normalize.rs:42` | 共用 | 信封 v1 逻辑视图（`failure_category` / `retryable` 在**这里**再派生一次） |
 
@@ -102,7 +102,7 @@ flowchart TD
 | **A `run_tool*`** | workflow 节点（`cm_workflow/execute/node.rs:90,118`）、MCP `tools/call`、`tool-replay`、容器 sandbox | `run_tool_dispatch` | 有 | 症状 1、2 |
 | **B `tool_registry`** | **chat 的 `run_command`**（`HandlerId::RunCommand`）与 `terminal_session` | 注册表内各自渲染 | **无** | 各自解正文决定重试 |
 
-这条事实直接改变 S1 的范围：只给 `run_tool_dispatch` 加 `ToolOutcome`，**生产环境里最主要的 `run_command` 消费点仍靠解文本**，而它正是「读正文 → 决定重不重跑」的高风险点。所以 S1 必须让 B 路径也产出 `ToolOutcome`（在 `execute_dispatch_body` 拿到 `out` 处构造），§5 第 2 条才有东西可读。
+这条事实直接改变 S1 的范围：只给 `run_tool_dispatch` 加 `ToolOutcome`，**生产环境里最主要的 `run_command` 消费点仍靠解文本**，而它正是「读正文 → 决定重不重跑」的高风险点。所以 S1 必须让 B 路径也产出 `ToolOutcome`（在 `dispatch` 拿到 `out` 处构造），§5 第 2 条才有东西可读。
 
 ---
 
@@ -187,7 +187,7 @@ pub struct Streams {
 
 | 概念 | 位置 | 消费方 |
 |---|---|---|
-| 编排重试 | `ToolRetryPolicy::should_retry(code, attempt)`（`cm_tools/tool_retry_policy.rs:77`），spec 驱动、带 attempt 预算 | `execute_dispatch_body` 真正决定重跑 |
+| 编排重试 | `ToolRetryPolicy::should_retry(code, attempt)`（`cm_tools/tool_retry_policy.rs:77`），spec 驱动、带 attempt 预算 | `dispatch` 真正决定重跑 |
 | 提示启发式 | `tool_error_retryable_heuristic(code)` | SSE `retryable` 字段、给模型的提示 |
 
 `ToolOutcome` 只带后者，且**改名为 `retryable_hint`**，避开「`retryable==true` 就该重试」的误读。
@@ -201,7 +201,7 @@ S2 逐条切换，每行 = 一个 commit：
 | # | 位置 | 现在 | 改成 |
 |---|---|---|---|
 | 1 | `cm_internal/tool_stats.rs:105` | `parse` 后建 envelope | 读 `outcome.ok` |
-| 2 | `cm_internal/tool_registry/execute/execute_dispatch_body.inc.rs:237` | `parse(...).error_code` | 读 `outcome.code` |
+| 2 | `cm_internal/tool_registry/execute/dispatch.rs` | `parse(...).error_code` | 读 `outcome.code` |
 | 3 | `agent_turn/turn_loop/turn_completion.rs:171` | `parse` 后编码信封 | 读 `outcome` |
 | 4 | `cm_agent/acceptance/tool_evidence.rs:19` | `parse` + 伪造 `ToolError` | 读 `outcome.exit_code`，删掉假错误 |
 | 5 | `agent_turn/policy/run_command_dedupe.rs:77` | `ok \|\| exit_code==0` | 统一成功定义（见开放问题 1） |

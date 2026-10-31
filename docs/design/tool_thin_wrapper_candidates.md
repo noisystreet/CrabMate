@@ -113,7 +113,7 @@
 
 | # | 耦合点 | 位置 | 说明 |
 |---|--------|------|------|
-| 1 | `background_job_async_tools` **按工具名匹配** | `tool_registry/execute/execute_background_tool_async.inc.rs`（`"cargo_test" => Some(…)`） | 合并后工具名只剩 `cargo`；用户既有配置 `background_job_async_tools = ["cargo_test"]` 会**静默失效**，属配置行为回归而非重构。需把配置语义扩为「工具 + 动作」，或保留 `cargo_test` 别名 |
+| 1 | `background_job_async_tools` **按工具名匹配** | `tool_registry/execute/background_job.rs`（`"cargo_test" => Some(…)`） | 合并后工具名只剩 `cargo`；用户既有配置 `background_job_async_tools = ["cargo_test"]` 会**静默失效**，属配置行为回归而非重构。需把配置语义扩为「工具 + 动作」，或保留 `cargo_test` 别名 |
 | 2 | 按工具名覆盖的墙钟超时 | `registry_policy::parallel_tool_wall_timeout_secs(cfg, "cargo_test")` | 同上，按名查表 |
 | 3 | 只读身份变粗 | 写效应名单只含 `cargo_test` / `cargo_run`（2026-10-28 起；`check` / `clippy` 仍算只读） | `check` / `clippy` 当前算只读，`test` / `run` 算写。合并成单个 `cargo` 后整族只能按写处理（按工具名判定），`check` / `clippy` 会丢掉只读重试、`Plan`·`Ask` 门控与 TTL 缓存（与 `gh_*` 合并同型代价） |
 | 4 | 并行只读批前缀失配 | `builtin_parallel_sync_prefix_hit` 的前缀表含 `"cargo_"`（带下划线） | 改名成 `cargo` 后**不再命中**，会重新进入并行批判定，须同步补 `"cargo"` |

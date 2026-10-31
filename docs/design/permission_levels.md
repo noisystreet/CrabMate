@@ -52,7 +52,7 @@
 | 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/cm_agent/turn_tool_policy.rs:66` |
 | 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/cm_internal/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
 | 路径 | 根内相对路径硬校验；绝对路径 / `..` 在文件工具直接拒 | `src/cm_tools/tools/file/path.rs:127`（`resolve_for_read`）、`:159`（`resolve_for_write`）、`src/cm_tools/workspace/path.rs` |
-| 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/cm_internal/tool_registry/execute/http_tool_exec.inc.rs:4`（`http_tool_url_allowed`） |
+| 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed`） |
 | 人工审批 / 隔离 | `SensitiveCapability`（5 类）+ Docker 沙盒 | `src/cm_approval/mod.rs:26`、`src/cm_internal/tool_approval/approval_specs.rs`、`src/cm_internal/tool_sandbox/mod.rs:82` |
 
 ### 1.2 三个真实缺口
@@ -266,7 +266,7 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 - **载体**：`cm_types::scoped_allowlist_key(level, key)` 是唯一生成点（`None` → 裸键，未接线路径逐字等价）；`PermissionLevel::index()` 是唯一序号来源。
 - **写入**：`cm_approval::persist_allowlist_key` 统一加前缀，等级由 `SharedAllowlistHandles.level` 带入（`shared_allowlist_handles_web(web_ctx, level)`）；workflow 节点走 `WorkflowApprovalMode::Interactive.permission_level`，与主链路同一把尺子。SSE 载荷里的 `allowlist_key` **保持裸键**（客户端可读性 + 既有 golden 不变）。
-- **命中**：`http_tool_exec.inc.rs` 的 URL 集合查询、`run_command/approval.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
+- **命中**：`http/gate.rs` 的 URL 集合查询、`run_command/approval.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
 - **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
 - **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
 - **仍未做**（S4 剩余之外）：`permission_confirm_tools` 目前仍无消费点（MB-4 由工具自身 `confirm` 参数承担）。
@@ -455,10 +455,10 @@ struct PolicyDecision<'a> {
 | 可见性 | `turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） | 先按 `caps.tool_visibility` 过滤；`None` → 空表 |
 | 准入 | `policy/tool_execution.rs:93`（`tool_policy_early_deny_message`） | 新增 permission 分支（`None` → 全拒；`Readonly` → 按**独立正列表** `permission_read_tools` 拒，**不读** `is_readonly_tool`） |
 | 命令 | `execute/run_command/approval.rs`（`evaluate_policy`） | `PolicyDecision` 改为**嵌入** `caps`（§7.4）；`command_scope = None` 时**在 S2 即硬拒** `run_command` / `terminal_session` / `python_snippet_run` / `run_executable`（补上 `is_readonly_tool` 可能漏的口子） |
-| PTY | `execute/execute_terminal_session.inc.rs` | 同上；`command_scope = None` 时整个工具不出现（已被可见性挡住，双保险） |
+| PTY | `execute/terminal_session.rs` | 同上；`command_scope = None` 时整个工具不出现（已被可见性挡住，双保险） |
 | 路径 | `tools/file/path.rs:127/159` | 加 `PathScope` 形参；`PathScope::Any` 走新 `resolve_any_path` |
 | 路径 | `execute/mod.rs:134`（`approve_external_read_dir_if_needed`） | `path_scope = Any` → 跳过审批；`approval = Deny` → 直接拒（不再报“审批通道不可用”） |
-| 网络 | `execute/http_tool_exec.inc.rs:56`（`http_tool_preflight`） | `net_scope` 与 `approval` 分支；`Any` → 不查前缀；`None` → 拒；`Prefixes` → 白名单 + `Gate`（§6.3 的等级前缀命中） |
+| 网络 | `execute/http/gate.rs`（`http_tool_preflight`） | `net_scope` 与 `approval` 分支；`Any` → 不查前缀；`None` → 拒；`Prefixes` → 白名单 + `Gate`（§6.3 的等级前缀命中） |
 | 审批 | `src/cm_approval/mod.rs:26` | 新增 `ApprovalPolicy` 消费点与 `SensitiveCapability` 无关；只在“是否需要弹窗”处判断 |
 | 观测 | `self_config_info`、`GET /status` | 新增 `permission` 小节（已有 `sections` 机制） |
 | Workflow | `cm_workflow/run.rs:228`（`WorkflowToolExecCtx`）+ `execute/node.rs:36` | 节点的 `allowed_commands` / 前缀 / 路径 scope 改由 **`caps` 派生**，不再从 `cfg` 直取；否则 L2 的硬边界会被 `WorkflowGate` 审批绕过 |
@@ -818,12 +818,12 @@ impl PathAccess<'_> {
 **落地结果**（实测 10 个判定点，与下方原估算基本一致）：
 
 - 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
-- 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`execute_dispatch_body.inc.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
+- 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`dispatch.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
 - **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；写成 `tool_origin != Dynamic` 只会更难读。
 - 附带发现（已随 R2 后续清理）：转换后 `cm_mcp/stub.rs` / `cm_mcp/mcp_impl.rs` / `cm_internal/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，**三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
 - 清理时的额外发现（**未处理**，属更大范围的死分支）：`cm_mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
 
-**问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`execute_dispatch_body.inc.rs:8/57`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
+**问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`dispatch.rs`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
 
 **改法**：
 
@@ -851,7 +851,7 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 - **出参而非返回值**：`evaluate_policy` 不能「内部建快照、返回借用它的 decision」，故签名改为 `caps: &'a mut RunCommandCaps`。评估过程仍在局部变量里做扩展，**末尾一次性**写回 `caps.allowed_commands`，decision 只 reborrow；中途 Err 返回时快照保持调用前状态。
 - 白名单的**两处读取点**都改走快照：`resolve_unknown_cmd_allowlist` 的**判定基**与 `apply_unknown_cmd_decision` 的**扩展基**现在是同一个 `base: &Arc<[String]>`（从 `caps` 透传）。原实现后者仍以 `cfg.command_exec.allowed_commands` 为基——当前 `caps ≡ cfg` 所以等价，但 S3 让等级收窄白名单后，那条路会把配置全量白名单带进生效集、绕过等级边界，因此本轮一并收口。
 - 快照**不可 clone、不可跨评估复用**：`RunCommandCaps` 不派生 `Clone`，`evaluate_policy` 的 doc 写明「必须每次评估新建」——它以自身列表为基做扩展，复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单（静默放宽）。写回只在**成功路径末尾**发生，`Err` 时快照保持调用前状态。
-- 调用点：`run_command/host.rs` 与 `execute_terminal_session.inc.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
+- 调用点：`run_command/host.rs` 与 `terminal_session.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
 - 测试：`execute_tests.rs` 新增 `evaluate_for_test`（内部持快照、对外回 owned `EvaluatedPolicy`），20 处矩阵断言形态不变，避免逐用例声明快照；`execute_run_command_gate_tests.rs::facade_rejects_pty_mode` 就地构造快照。
 
 **问题**（历史记录）：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。先实现权限再改，等于在同一文件里改两遍。
@@ -886,7 +886,7 @@ S3 的必需改动点：
 | 路径载体 | `cm_tools/tools/file/path.rs` | `PathAccess` 加 `PathScope` 字段；`for_read` / `for_read_open` / `for_write` 内做 scope 判定（**唯一判定点**） |
 | 文件类工具构造点 | `runners.rs` 的 `define_runners_paths_try!` 与 `define_runners_paths_ctx_try!` | 两个宏各一行 `PathAccess::new(ctx.working_dir)`；16 个文件类工具全部经此构造 |
 | 命令执行 | `run_command/approval.rs` | `cwd` 越界判定 |
-| HTTP | `http_tool_exec.inc.rs` | 出站前缀判定 |
+| HTTP | `http/gate.rs` | 出站前缀判定 |
 
 不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`tools/mod.rs::resolve_workspace_path_for_read`×1、`cm_llm/outbound_workspace_images.rs`×1。
 
@@ -922,7 +922,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | 文件路径解析/写入 | `src/cm_tools/tools/file/path.rs:127`、`:159` |
 | 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_config/workspace_roots.rs:4` |
 | `read_dir` 工作区外审批 | `src/cm_internal/tool_registry/execute/mod.rs:134` |
-| http 前缀 + 审批 preflight | `src/cm_internal/tool_registry/execute/http_tool_exec.inc.rs:4`、`:56` |
+| http 前缀 + 审批 preflight | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed` / `http_tool_preflight`） |
 | 审批能力域 | `src/cm_approval/mod.rs:26` |
 | 审批载荷构造 | `src/cm_internal/tool_approval/approval_specs.rs` |
 | 执行附件（`RunLoopAttach`） | `src/agent/agent_turn/host/params.rs:65` |
