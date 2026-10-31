@@ -44,6 +44,12 @@ pub struct ToolSpec {
     pub parameters: ParamBuilder,
     pub runner: ToolRunner,
     pub summary: ToolSummaryKind,
+    /// `Development` 子域标签（取值见 [`super::dev_tag`] 的常量）；`Basic` 工具为 `&[]`。
+    ///
+    /// #1157：这是标签的**唯一真源**。此前 `dev_tag::tags_for_tool_name` 另有一张 200 行
+    /// `match`，与 `specs/` 各写一份——漏改其一不会报错，只会在 `build_tools_with_options`
+    /// 的栈裁剪里静默丢工具（或留下不该出现的工具）。
+    pub tags: &'static [&'static str],
 }
 
 #[inline]

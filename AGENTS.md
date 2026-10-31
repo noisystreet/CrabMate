@@ -167,12 +167,28 @@ These paths and concepts are **coupled** — when one changes, verify the Rust r
 
 Adding or renaming a tool — check in order:
 
+> **#1157 迁移中（分批）**：新工具**优先**走两步写法，不要再手抄 `ToolSpec` 的
+> `parameters` / 动态摘要结构：
+>
+> 1. `tool_param_types/` 写 Args（`Deserialize + JsonSchema`）；需要动态摘要时在
+>    `tool_summary_args/fragment_args_summary.rs`（或新的同风格 fragment）里写
+>    `impl ToolArgsSummary for XArgs`，**从 `&serde_json::Value` 宽容取值**
+>    （`arg_str` / `arg_u64`）。不要 `serde_json::from_value::<XArgs>`：Args 带
+>    `deny_unknown_fields`，模型多传一个字段就会让摘要静默消失。
+> 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|none, description }`
+>    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
+>
+> 已迁移：`create_file` / `read_file`（形态验证批）。其余工具仍手写 `ToolSpec`，
+> 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）
+> 保证 schema / 描述 / 摘要文本零漂移。全部迁完后本表收敛为 3 步。
+
 1. `src/cm_tools/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). **`name` must reference a constant from `src/cm_tools/tool_names.rs` — never a string literal — and the tool must also be added to `tool_names::ALL`** (the `all_tool_names_match_specs` guard test fails otherwise). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
 2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.
 3. `tool_summary_args.rs` + `tool_summary.rs`: `Deserialize` struct + `ToolSummaryLine` impl, then a `summary_xxx` wrapper calling `summarize_from_value::<…>`.
 4. Args structs (`Deserialize` + `schemars::JsonSchema`) live in `src/cm_tools/tools/tool_param_types/` (`mod.rs` + `part_*.inc.rs`); the schema and the runtime parse share one definition.
 5. Dispatch/timeout: only complex strategies need `tool_registry` registration; most `SyncDefault` tools need none.
-6. `src/tools/dev_tag.rs` `tags_for_tool_name`: add the mapping for `Development`-only tools (`Basic` may skip).
+6. `tags`: `Development` 工具在**同一条 spec 声明**里写 `tags: [dev_tag::*]`（`Basic` 留空数组）。
+   `dev_tag::tags_for_tool_name` 只查 `ToolSpec::tags`，不再有手写 `match`（#1157）。
 7. Whitelist/approval: if it runs commands, touches the network, or writes to disk, keep it consistent with the `run_command` allowlist, `http_fetch` prefixes, and TUI `CommandApproval` — do not widen the attack surface.
 8. Docs: user-visible capability ⇒ `README.md` + `docs/工具说明.md`; do not dump per-tool implementation notes back into `docs/开发文档.md`.
 9. Only update the「主要模块」table when the tool system's responsibilities/boundaries change.

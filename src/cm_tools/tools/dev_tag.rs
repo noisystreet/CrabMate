@@ -1,7 +1,5 @@
 //! Development 工具子域标签：按语言栈 / 职责过滤，与 [`super::ToolCategory::Development`] 配合使用。
 
-use crate::cm_names as tool_names;
-
 /// 与工作区、壳命令、编排、元数据等相关，**不绑定**特定语言运行时。
 pub const GENERAL: &str = "general";
 /// Rust / Cargo 生态工具。
@@ -25,74 +23,21 @@ pub const SHELL: &str = "shell";
 /// Docker / 容器化相关工具。
 pub const DOCKER: &str = "docker";
 
-/// 返回 `Development` 工具的标签切片；**非 Development 工具名**应返回空（调用方按分类跳过）。
+/// 返回 `Development` 工具的标签切片；**非 Development 工具名**返回空（调用方按分类跳过）。
+///
+/// #1157：标签的唯一真源是 [`super::ToolSpec::tags`]（声明点在
+/// `tool_specs_registry/specs/*.inc.rs`）。此前这里另有一张约 200 行的 `match`，与声明点
+/// 各写一份——漏改其一不会报错，只会在 [`super::build_tools_with_options`] 的栈裁剪里
+/// **静默丢工具**（或留下本不该出现的工具）。
+///
+/// 未知名字返回 `&[]`：旧实现的 `_ => &[GENERAL]` 兜底只对「已注册但未列名」的
+/// Development 工具生效，而那批工具现在已在声明点显式写了 `tags`；两个调用点
+/// （`tool_passes_filters` 与 `builtin_tool_descriptors`）都只传已注册的 `spec.name`。
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
-    match name {
-        // --- 语言无关 / 工作区 ---
-        tool_names::RUN_COMMAND | tool_names::TERMINAL_SESSION => &[GENERAL, CPP],
-        // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
-        tool_names::WORKFLOW_EXECUTE => &[GENERAL, RUST, QUALITY],
-        tool_names::DIAGNOSTIC_SUMMARY
-        | tool_names::SELF_CONFIG_INFO
-        | tool_names::LONG_TERM_REMEMBER
-        | tool_names::LONG_TERM_FORGET
-        | tool_names::LONG_TERM_MEMORY_LIST
-        | tool_names::SUMMARIZE_EXPERIENCE => &[GENERAL],
-        tool_names::CREATE_FILE
-        | tool_names::MODIFY_FILE
-        | tool_names::COPY_FILE
-        | tool_names::MOVE_FILE
-        | tool_names::READ_FILE
-        | tool_names::READ_DIR
-        | tool_names::GLOB_FILES
-        | tool_names::LIST_TREE
-        | tool_names::READ_BINARY_META
-        | tool_names::APPLY_PATCH
-        | tool_names::SEARCH_IN_FILES
-        | tool_names::CODEBASE_SEMANTIC_SEARCH
-        | tool_names::MARKDOWN_CHECK_LINKS
-        | tool_names::DELETE_FILES
-        | tool_names::DELETE_DIR
-        | tool_names::APPEND_FILE
-        | tool_names::CREATE_DIR
-        | tool_names::SEARCH_REPLACE => &[GENERAL],
-        tool_names::STRUCTURED
-        | tool_names::TEXT_DIFF
-        | tool_names::TABLE_TEXT => &[GENERAL],
-
-        // --- Git ---
-        tool_names::GIT => &[GENERAL, VCS],
-        tool_names::GH_PR | tool_names::GH_RUN | tool_names::GH_ISSUE_CREATE | tool_names::GH_RELEASE_CREATE | tool_names::GH_API => {
-            &[GENERAL, VCS]
-        }
-
-        // --- Rust / Cargo ---
-        tool_names::CARGO_RUN | tool_names::RUST_ANALYZER => &[GENERAL, RUST],
-        tool_names::CARGO_CHECK | tool_names::CARGO_TEST | tool_names::CARGO_CLIPPY => {
-            &[GENERAL, RUST, QUALITY]
-        }
-        tool_names::CODE_NAV => &[GENERAL, RUST],
-
-        // --- Python ---
-        tool_names::PYTEST_RUN | tool_names::PYTHON_SNIPPET_RUN => &[GENERAL, PYTHON],
-
-        // --- 质量聚合（跨栈）---
-        tool_names::REPO_OVERVIEW_SWEEP | tool_names::CRATE_CONTRACT_MAP | tool_names::DOCS_HEALTH_SWEEP => {
-            &[GENERAL, QUALITY]
-        }
-
-        // --- 格式化（多语言由实现按扩展名分流）---
-
-        // --- 后台任务查询 ---
-        tool_names::BACKGROUND_JOB | tool_names::BACKGROUND_JOB_CANCEL => &[GENERAL],
-
-        // --- 代码度量与分析 ---
-        tool_names::CODE_STATS => &[GENERAL],
-        tool_names::DEPENDENCY_GRAPH => &[GENERAL, RUST, FRONTEND, GO, JVM],
-        tool_names::COVERAGE_REPORT => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
-
-        _ => &[GENERAL],
-    }
+    super::tool_specs_registry::tool_specs()
+        .iter()
+        .find(|spec| spec.name == name)
+        .map_or(&[], |spec| spec.tags)
 }
 
 /// 根据工作区根目录推测应启用的开发工具标签（去重）。始终包含 `general` 与 `vcs`。
@@ -195,6 +140,46 @@ fn suggest_shell_tag_if_scripts(root: &std::path::Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cm_names as tool_names;
+
+    /// #1157：标签真源搬到 `ToolSpec::tags` 后，`Development` 工具必须声明非空标签，
+    /// `Basic` 工具必须为空——否则 `dev_tags` 栈裁剪会把 Basic 工具误算进/漏出。
+    #[test]
+    fn spec_tags_follow_category() {
+        for spec in super::super::tool_specs_registry::tool_specs() {
+            match spec.category {
+                crate::cm_tools::tools::ToolCategory::Development => assert!(
+                    !spec.tags.is_empty(),
+                    "Development 工具 `{}` 未声明开发子域标签",
+                    spec.name
+                ),
+                crate::cm_tools::tools::ToolCategory::Basic => assert!(
+                    spec.tags.is_empty(),
+                    "Basic 工具 `{}` 不应声明开发子域标签（得到 {:?}）",
+                    spec.name,
+                    spec.tags
+                ),
+            }
+        }
+    }
+
+    /// 标签取值必须是本模块导出的常量，禁止在 spec 里手写 `"rust"` 之类的自由字符串
+    /// （拼错不会有编译错误，只会让栈裁剪静默失效）。
+    #[test]
+    fn spec_tags_use_known_constants() {
+        const KNOWN: &[&str] = &[
+            GENERAL, RUST, FRONTEND, PYTHON, CPP, VCS, QUALITY, GO, JVM, SHELL, DOCKER,
+        ];
+        for spec in super::super::tool_specs_registry::tool_specs() {
+            for tag in spec.tags {
+                assert!(
+                    KNOWN.contains(tag),
+                    "工具 `{}` 的标签 `{tag}` 不在 dev_tag 常量集合中",
+                    spec.name
+                );
+            }
+        }
+    }
 
     #[test]
     fn workflow_execute_tags_rust_and_quality() {
