@@ -115,7 +115,6 @@ fn truncate_chars(s: &str, max: usize) -> String {
         s.to_string()
     }
 }
-
 impl ToolArgsSummary for super::tool_param_types::ReadBinaryMetaArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("binary metadata: {}", arg_str(args, "path")?))
@@ -410,61 +409,6 @@ impl ToolArgsSummary for crate::cm_tools::tools::http_fetch::HttpRequestArgs {
         Some(format!("HTTP {method} {url}{}", html_text_suffix(args)))
     }
 }
-
-// ── P2 批：archive 三件套 ──────────────────────────────────────────────────
-//
-// 注意：`specs/archive.inc.rs` 挂在**非默认** feature `archive-tools` 下，所以这批的零漂移
-// 校验必须带 feature 跑（golden 存全集、只比对当前构建实际注册的工具）：
-// `cargo test -p crabmate --features archive-tools --lib cm_tools::tools::tool_specs_registry`.
-
-/// 数组参数的条目数：**缺键** ⇒ 0（旧 `#[serde(default)] Vec<String>` 的原语义）；
-/// `null` / 非数组 / 含非字符串元素 ⇒ `None`（旧结构体会整体反序列化失败）。
-/// 摘要只用到个数，但元素类型仍要校验——否则「模型传了数字数组」会凭空多出一行摘要。
-fn string_array_len(args: &serde_json::Value, key: &str) -> Option<usize> {
-    match args.get(key) {
-        None => Some(0),
-        Some(v) => {
-            let items = v.as_array()?;
-            items
-                .iter()
-                .all(serde_json::Value::is_string)
-                .then_some(items.len())
-        }
-    }
-}
-
-impl ToolArgsSummary for super::tool_param_types::ArchivePackArgs {
-    fn summary_line(args: &serde_json::Value) -> Option<String> {
-        let output = arg_str(args, "output")?;
-        Some(format!(
-            "pack {} items into {output}",
-            string_array_len(args, "sources")?
-        ))
-    }
-}
-
-impl ToolArgsSummary for super::tool_param_types::ArchiveUnpackArgs {
-    fn summary_line(args: &serde_json::Value) -> Option<String> {
-        let archive = arg_str(args, "archive")?;
-        // 旧实现是 `Option<String>` + `.filter(|s| !s.is_empty())` + `unwrap_or(".")`：
-        // **不 trim**。所以显式空白串会被原样输出（`unpack a.tar to    `），只有空串与缺键
-        // 才回落 `.`。这条边界与 `path_or_dot` 的 trim 语义不同，不能合并成同一个 helper。
-        let dir = match args.get("output_dir") {
-            None | Some(serde_json::Value::Null) => ".",
-            Some(serde_json::Value::String(raw)) if raw.is_empty() => ".",
-            Some(serde_json::Value::String(raw)) => raw.as_str(),
-            Some(_) => return None,
-        };
-        Some(format!("unpack {archive} to {dir}"))
-    }
-}
-
-impl ToolArgsSummary for super::tool_param_types::ArchiveListArgs {
-    fn summary_line(args: &serde_json::Value) -> Option<String> {
-        Some(format!("list archive: {}", arg_str(args, "archive")?))
-    }
-}
-
 // ── P2 批：文件 / 目录族的 6 个小摘要 ───────────────────────────────────────
 //
 // 这一族原先各有一个字段子集结构体（`CopyFileSummaryArgs` … `MarkdownCheckLinksSummaryArgs`），
@@ -519,23 +463,11 @@ impl ToolArgsSummary for super::tool_param_types::ListTreeArgs {
     }
 }
 
-/// `roots` 的取值：**缺键** ⇒ 空（回落内置默认清单，旧 `#[serde(default)]` 的原语义）；
-/// `null` / 非数组 / 含非字符串元素 ⇒ `None`（旧 `Vec<String>` 反序列化会整体失败）。
-fn markdown_roots(args: &serde_json::Value) -> Option<Vec<&str>> {
-    match args.get("roots") {
-        None => Some(Vec::new()),
-        Some(v) => v
-            .as_array()?
-            .iter()
-            .map(|item| item.as_str().map(str::trim))
-            .collect(),
-    }
-}
-
 impl ToolArgsSummary for super::tool_param_types::MarkdownCheckLinksArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
-        let joined = markdown_roots(args)?
+        let joined = arg_str_vec(args, "roots")?
             .into_iter()
+            .map(str::trim)
             .filter(|root| !root.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
@@ -550,7 +482,6 @@ impl ToolArgsSummary for super::tool_param_types::MarkdownCheckLinksArgs {
         ))
     }
 }
-
 
 #[cfg(test)]
 mod args_summary_tests {
@@ -831,81 +762,5 @@ mod path_family_summary_tests {
         assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": null })).is_none());
         assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": "docs" })).is_none());
         assert!(MarkdownCheckLinksArgs::summary_line(&json!({ "roots": ["docs", 1] })).is_none());
-    }
-}
-
-#[cfg(test)]
-mod archive_family_summary_tests {
-    use super::*;
-    use crate::cm_tools::tools::tool_param_types::{
-        ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs,
-    };
-    use serde_json::json;
-
-    // 这批的旧实现同样是「字段子集结构体 + 反序列化失败即无摘要」，所以钉边界而不是快乐路径。
-
-    #[test]
-    fn pack_counts_sources_and_requires_output() {
-        let v = json!({ "output": " out.tar ", "sources": ["a", "b", "c"] });
-        assert_eq!(
-            ArchivePackArgs::summary_line(&v).as_deref(),
-            Some("pack 3 items into out.tar")
-        );
-        assert!(ArchivePackArgs::summary_line(&json!({ "output": "  " })).is_none());
-    }
-
-    /// `sources` 缺键 ⇒ 0 项；`null` / 非数组 / 含非字符串元素 ⇒ 无摘要
-    /// （旧 `#[serde(default)] Vec<String>` 宽容缺键、严格于类型，两条边界都在）。
-    #[test]
-    fn pack_sources_keep_the_old_deserialize_boundary() {
-        assert_eq!(
-            ArchivePackArgs::summary_line(&json!({ "output": "out.tar" })).as_deref(),
-            Some("pack 0 items into out.tar")
-        );
-        assert!(
-            ArchivePackArgs::summary_line(&json!({ "output": "o.tar", "sources": null })).is_none()
-        );
-        assert!(
-            ArchivePackArgs::summary_line(&json!({ "output": "o.tar", "sources": "a,b" }))
-                .is_none()
-        );
-        assert!(
-            ArchivePackArgs::summary_line(&json!({ "output": "o.tar", "sources": ["a", 1] }))
-                .is_none()
-        );
-    }
-
-    /// `output_dir` 缺键与空串回落 `.`，但**不 trim**：显式空白串原样输出。
-    #[test]
-    fn unpack_defaults_to_dot_but_does_not_trim_explicit_whitespace() {
-        assert_eq!(
-            ArchiveUnpackArgs::summary_line(&json!({ "archive": " a.tar " })).as_deref(),
-            Some("unpack a.tar to .")
-        );
-        assert_eq!(
-            ArchiveUnpackArgs::summary_line(&json!({ "archive": "a.tar", "output_dir": "" }))
-                .as_deref(),
-            Some("unpack a.tar to .")
-        );
-        assert_eq!(
-            ArchiveUnpackArgs::summary_line(&json!({ "archive": "a.tar", "output_dir": "  " }))
-                .as_deref(),
-            Some("unpack a.tar to   ")
-        );
-        assert_eq!(
-            ArchiveUnpackArgs::summary_line(&json!({ "archive": "a.tar", "output_dir": " out " }))
-                .as_deref(),
-            Some("unpack a.tar to  out ")
-        );
-    }
-
-    #[test]
-    fn list_requires_archive() {
-        assert_eq!(
-            ArchiveListArgs::summary_line(&json!({ "archive": " pkg.zip ", "max_entries": 5 }))
-                .as_deref(),
-            Some("list archive: pkg.zip")
-        );
-        assert!(ArchiveListArgs::summary_line(&json!({ "verbose": true })).is_none());
     }
 }

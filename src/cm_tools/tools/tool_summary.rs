@@ -23,10 +23,7 @@ define_summaries! {
     summary_rust_analyzer => RustAnalyzerSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_git => GitSummaryArgs,
-    summary_modify_file => ModifyFileSummaryArgs,
     summary_web_search => WebSearchSummaryArgs,
-    summary_apply_patch => ApplyPatchSummaryArgs,
-    summary_code_nav => CodeNavSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
     summary_gh_run => GhRunSummaryArgs,
 }
