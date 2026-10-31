@@ -164,4 +164,4 @@ Some(x) ──POST /workspace {path:""}─► Some("")          显式复位
 2. socket 控制面的 `add` **仍必填 `workspace`**（`cm_ctl/control.rs` 的 `AddRequest.workspace: String`）：client 知道目录才 `add`，使『声明带工作区』与『待绑定』两种模式并存，且不影响既有调用方。
 3. 错误码定为 **`WORKSPACE_NOT_SET`**（`cm_api_contract/error_codes.rs`），SSE 侧沿用既有的小写 `workspace_not_set`（[SSE 协议](../SSE协议.md)）。
 
-实现时确认的一条边界（本设计原未写明）：gate **只拦 `SyncDefault` 类工具**，出网类（`http_fetch` / `web_search` 等）在待绑定态仍可用——它们不落本地工作区，一并拦下只会无端缩小能力面。该判定落在 `execute_dispatch_body.inc.rs` 的 `!workspace_is_set && matches!(hid, HandlerId::SyncDefault)`。
+实现时确认的一条边界（本设计原未写明）：gate **只拦 `SyncDefault` 类工具**，出网类（`http_fetch` / `web_search` 等）在待绑定态仍可用——它们不落本地工作区，一并拦下只会无端缩小能力面。该判定落在 `dispatch.rs` 的 `!workspace_is_set && matches!(hid, HandlerId::SyncDefault)`。

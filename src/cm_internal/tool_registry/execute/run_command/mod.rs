@@ -16,6 +16,10 @@ mod facade;
 mod host;
 mod sync;
 
+// `WebToolRuntime` 是本流水线各阶段注入参数的公共类型；原先由 `execute` 的 glob 重导出顺带
+// 带入，现在按显式接口给各子模块（#1198）。
+pub(super) use super::super::runtime::WebToolRuntime;
+
 // 显式接口：**逐项列出**本流水线对 `execute` 暴露的东西，兄弟子模块也只能经由这里
 // 互相调用。不用 glob 重导出是有意的——glob 会把「谁依赖谁」重新藏起来，正是本 Issue
 // 要消除的问题。

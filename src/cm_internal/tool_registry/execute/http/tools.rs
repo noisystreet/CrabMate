@@ -1,4 +1,25 @@
-async fn execute_http_fetch_impl(
+//! 四个出站工具入口：`http_fetch` / `http_request` / `get_weather` / `web_search`。
+//!
+//! 原为 `execute_http_tools.inc.rs`，现为真子模块（#1198）。网络闸门与阻塞池封装在
+//! 兄弟模块 [`gate`](super::gate)，本文件只负责各工具的参数解析与调用编排。
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use log::error;
+
+use crate::cm_internal::tool_registry::policy::{
+    http_fetch_outer_wall_secs, http_request_outer_wall_secs, web_search_outer_wall_secs,
+};
+use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
+use crate::cm_internal::tools;
+
+use super::super::run_command::dispatch_non_sync_tool_to_docker;
+use super::super::ToolExecEnv;
+use super::{HttpToolPreflightParams, http_tool_preflight, spawn_blocking_http_tool};
+
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_fetch_impl(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -51,7 +72,7 @@ async fn execute_http_fetch_impl(
     (s, None)
 }
 
-async fn execute_http_request_impl(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_request_impl(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -109,7 +130,7 @@ async fn execute_http_request_impl(
     (s, None)
 }
 
-async fn execute_get_weather_web(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_get_weather_web(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -161,7 +182,7 @@ async fn execute_get_weather_web(
     (s, None)
 }
 
-async fn execute_web_search_web(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_web_search_web(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,

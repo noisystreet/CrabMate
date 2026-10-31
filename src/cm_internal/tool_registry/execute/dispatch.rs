@@ -1,3 +1,132 @@
+//! 工具分发编排层：`dispatch_tool` 重试外壳、单次分发与各 handler 分支。
+//!
+//! 原为 `execute_dispatch_body.inc.rs`，经 `include!` 与其余四片共享 `execute` 的**同一作用域**：
+//! 漏改一片编译器也无从发现（#1158 / #1198）。现为真子模块，跨模块调用只能经 `mod.rs` 的
+//! 显式接口清单。
+//!
+//! 本模块只做编排：具体执行分别落在 `background_job` / `http` / `terminal_session` /
+//! `run_command`；动态工具、MCP 代理与 `SyncDefault` 分支在本文件内解析后转发。
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use log::error;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_internal::tools;
+use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
+use crate::cm_types::ToolCall;
+
+use super::super::meta::{HandlerId, HandlerLookupTable};
+use super::super::policy::{parallel_tool_wall_timeout_secs, sync_default_runs_inline};
+use super::super::runtime::{ToolRuntime, WebToolRuntime};
+use super::run_command::{RunCommandHostInvoke, execute_run_command_impl};
+// 祖先层（`execute`）的项，以及 `mod.rs` 里集中声明的兄弟子模块显式接口。
+use super::*;
+
+/// `HandlerId::SyncDefault` 分支入参（与 [`DispatchToolParams`] 中部分字段一致，避免 `dispatch_sync_default` 形参过多）。
+struct SyncDefaultToolDispatchArgs<'a> {
+    env: &'a ToolExecEnv<'a>,
+    runtime: ToolRuntime<'a>,
+    cfg: &'a Arc<AgentConfig>,
+    effective_working_dir: &'a Path,
+    workspace_is_set: bool,
+    name: &'a str,
+    args: &'a str,
+    tc: &'a ToolCall,
+    read_file_turn_cache:
+        Option<std::sync::Arc<crate::cm_internal::read_file_turn_cache::ReadFileTurnCache>>,
+    workspace_changelist:
+        Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
+    long_term_memory:
+        Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
+    long_term_memory_scope_id: Option<String>,
+    /// 后台任务注册表：供 `background_job_status` / `background_job_list` 只读查询。
+    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+}
+
+/// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
+fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a WebToolRuntime> {
+    runtime.ctx
+}
+
+/// 检测 `read_dir` 入参中 `path` 是否为外部路径（绝对路径或含 `..`）。
+pub(in crate::cm_internal::tool_registry::execute) fn read_dir_path_is_external(
+    args_json: &str,
+) -> Option<String> {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+    let path = v.get("path")?.as_str()?.trim();
+    if path.starts_with('/') || path.contains("..") {
+        return Some(path.to_string());
+    }
+    None
+}
+
+async fn approve_external_read_dir_if_needed(
+    args: &str,
+    web_ctx: Option<&WebToolRuntime>,
+    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+) -> Result<(), String> {
+    let Some(ext_path) = read_dir_path_is_external(args) else {
+        return Ok(());
+    };
+    // S3：路径轴先定论——L4 放行（不弹窗），L2 硬拒（不弹窗），其余走现状审批。
+    if let Some(caps) = permission {
+        // 审计正文只留末两段路径（完整绝对路径不进日志）。
+        let audit_detail = crate::cm_tools::tools::audit_path_detail(&ext_path);
+        if caps.path_scope.is_unrestricted() {
+            crate::cm_agent::permission_audit::record_allowed(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Path,
+                Some("read_dir"),
+                Some(&audit_detail),
+            );
+            return Ok(());
+        }
+        if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+            crate::cm_agent::permission_audit::record_denied(
+                caps,
+                crate::cm_agent::permission_audit::PermissionAxis::Path,
+                Some("read_dir"),
+                Some(&audit_detail),
+            );
+            return Err(format!(
+                "错误：当前权限等级（{}）下不允许 read_dir 访问工作区外路径 \"{}\"：{}。",
+                caps.level.as_str(),
+                ext_path,
+                caps.level.promise_zh()
+            ));
+        }
+    }
+    if web_ctx.is_none() {
+        return Err(format!(
+            "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
+            ext_path
+        ));
+    }
+    let spec = tool_approval::approval_spec_read_dir_external_path(&ext_path);
+    let allow_handles =
+        tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level));
+    match tool_approval::interactive_gate_after_whitelist_miss(
+        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        &spec,
+        "tool_registry::read_dir external path approval",
+        &allow_handles,
+    )
+    .await
+    {
+        Ok(InteractiveGateOutcome::Allowed) => Ok(()),
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
+        Err(e) => Err(e.user_message_zh().to_string()),
+    }
+}
+
 async fn try_dispatch_dynamic_tool(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &std::path::Path,

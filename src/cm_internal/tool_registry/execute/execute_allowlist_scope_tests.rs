@@ -8,7 +8,10 @@
 
 use super::*;
 use crate::cm_agent::permission::project_caps;
-use crate::cm_types::PermissionLevel;
+use crate::cm_types::{CommandApprovalDecision, PermissionLevel};
+use std::sync::Arc;
+// #1198：`run_command` 的显式接口不再打平进 `execute`，测试按模块路径取。
+use super::run_command::ExecMode;
 use super::tests::{
     approval_fixture, evaluate_for_test, parsed_run_command, test_policy_context,
     test_policy_context_with_caps,

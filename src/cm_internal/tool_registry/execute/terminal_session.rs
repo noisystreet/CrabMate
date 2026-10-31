@@ -1,15 +1,39 @@
-struct TerminalSessionExecInvoke<'a> {
-    env: &'a ToolExecEnv<'a>,
-    effective_working_dir: &'a Path,
-    workspace_is_set: bool,
-    workspace_changed: &'a mut bool,
-    web_ctx: Option<&'a WebToolRuntime>,
-    args: &'a str,
-    sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    tool_call_id: &'a str,
-    sse_encoder: Option<&'a dyn crate::cm_sse_protocol::sse::SseEncoder>,
-    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+//! `terminal_session` 的 PTY 执行路径。
+//!
+//! 原为 `execute_terminal_session.inc.rs`，现为真子模块（#1198）。argv 解析、白名单与
+//! 审批策略复用 `run_command` 流水线的显式接口——本模块不自行解释命令。
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::SyncDefaultToolSandboxMode;
+use crate::cm_internal::tools;
+
+use super::super::policy::terminal_session_outer_wall_secs;
+use super::super::runtime::WebToolRuntime;
+use super::run_command::{
+    ExecMode, ParsedRunCommandJson, PolicyContext, evaluate_policy, parse_run_command_json,
+};
+// 祖先层（`execute`）的项：`ToolExecEnv` 与 Web 未设置工作区的统一提示。
+use super::{ToolExecEnv, WEB_WORKSPACE_PANEL_HINT};
+
+pub(in crate::cm_internal::tool_registry::execute) struct TerminalSessionExecInvoke<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_changed: &'a mut bool,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_out_tx:
+        Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror:
+        Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::cm_internal::tool_registry::execute) tool_call_id: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_encoder:
+        Option<&'a dyn crate::cm_sse_protocol::sse::SseEncoder>,
+    pub(in crate::cm_internal::tool_registry::execute) cancel:
+        Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 fn terminal_session_precheck(
@@ -66,7 +90,7 @@ fn parse_terminal_session_exec(
         .map_err(|e| (e.extended_user_message(), None))
 }
 
-async fn execute_terminal_session_impl(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_terminal_session_impl(
     invoke: TerminalSessionExecInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
     let TerminalSessionExecInvoke {
