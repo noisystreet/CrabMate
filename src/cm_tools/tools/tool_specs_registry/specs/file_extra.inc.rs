@@ -35,14 +35,14 @@
             summary: dynamic,
             description: "在工作区内创建目录。默认 parents=true（递归创建父目录，类似 mkdir -p）。目录已存在时不报错。",
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::SEARCH_REPLACE,
+            args: args::SearchReplaceArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_search_replace_try,
+            summary: dynamic,
             description: "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 search 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::SearchReplaceArgs>,
-            runner: ToolRunner::Typed(runner_search_replace_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_search_replace),
         },
         // ── 新增纯内存 / 开发辅助工具 ────────────────────────
 ]

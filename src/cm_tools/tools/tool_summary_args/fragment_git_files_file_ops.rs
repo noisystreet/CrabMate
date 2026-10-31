@@ -95,70 +95,6 @@ impl ToolSummaryLine for WebSearchSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct HttpFetchSummaryArgs {
-    url: String,
-    #[serde(default)]
-    method: Option<String>,
-    #[serde(default)]
-    text_format: Option<String>,
-}
-
-impl ToolSummaryLine for HttpFetchSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let u = self.url.trim();
-        if u.is_empty() {
-            return None;
-        }
-        let m = self
-            .method
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("GET");
-        let tf = self
-            .text_format
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_ascii_lowercase().replace('-', "_"));
-        let suffix = match tf.as_deref() {
-            Some("html_text" | "htmltext" | "text") => " [html_text]",
-            _ => "",
-        };
-        Some(format!("HTTP {} {}{}", m.to_ascii_uppercase(), u, suffix))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct HttpRequestSummaryArgs {
-    url: String,
-    method: String,
-    #[serde(default)]
-    text_format: Option<String>,
-}
-
-impl ToolSummaryLine for HttpRequestSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let u = self.url.trim();
-        let m = self.method.trim();
-        if u.is_empty() || m.is_empty() {
-            return None;
-        }
-        let tf = self
-            .text_format
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_ascii_lowercase().replace('-', "_"));
-        let suffix = match tf.as_deref() {
-            Some("html_text" | "htmltext" | "text") => " [html_text]",
-            _ => "",
-        };
-        Some(format!("HTTP {} {}{}", m.to_ascii_uppercase(), u, suffix))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct GlobFilesSummaryArgs {
     pattern: String,
     #[serde(default)]
@@ -204,49 +140,6 @@ impl ToolSummaryLine for MarkdownCheckLinksSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct StructuredSummaryArgs {
-    #[serde(default)]
-    action: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    path_a: Option<String>,
-    #[serde(default)]
-    path_b: Option<String>,
-    #[serde(default)]
-    query: Option<String>,
-    #[serde(default)]
-    mutation: Option<String>,
-}
-
-impl ToolSummaryLine for StructuredSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = trimmed_opt(self.path.as_deref());
-        match self.action.as_deref().unwrap_or("").trim() {
-            "validate" => Some(format!("structured validate: {}", path?)),
-            "query" => {
-                let q = trimmed_opt(self.query.as_deref())?;
-                Some(format!("structured query: {} [{}]", path?, q))
-            }
-            "diff" => {
-                let a = trimmed_opt(self.path_a.as_deref())?;
-                let b = trimmed_opt(self.path_b.as_deref())?;
-                Some(format!("structured diff: {} vs {}", a, b))
-            }
-            "patch" => {
-                let q = trimmed_opt(self.query.as_deref())?;
-                let m = self.mutation.as_deref().unwrap_or("set").trim();
-                Some(format!("structured patch: {} [{} @ {}]", path?, m, q))
-            }
-            _ => None,
-        }
-    }
-}
-
-fn trimmed_opt(v: Option<&str>) -> Option<&str> {
-    v.map(str::trim).filter(|s| !s.is_empty())
-}
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ListTreeSummaryArgs {

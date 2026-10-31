@@ -178,13 +178,15 @@ Adding or renaming a tool — check in order:
 > 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|static "…"|none, description }`
 >    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
 >
-> 已迁移到宏写法：共 **44 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
+> 已迁移到宏写法：共 **49 / 68**——`create_file` / `read_file`（形态验证批）、`cargo_check`
 > （`summary: static` 分支验证）、全部 `static` / `none` 摘要工具（P1 机械改写批）、
 > P2 前两批的 12 个动态摘要工具（`code_stats` / `dependency_graph` / `coverage_report` /
 > `delete_dir` / `background_job_cancel` / `read_binary_meta` / `delete_files` / `append_file` /
-> `create_dir` / `gh_release_create` / `gh_issue_create` / `gh_api`），以及后台任务族
-> （`run_command` / `terminal_session` / `background_job` / `background_job_wait`）。
-> 剩 **24 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
+> `create_dir` / `gh_release_create` / `gh_issue_create` / `gh_api`）、后台任务族
+> （`run_command` / `terminal_session` / `background_job` / `background_job_wait`），以及
+> 检索 / 结构化 / 受控 HTTP 族（`search_in_files` / `search_replace` / `structured` /
+> `http_fetch` / `http_request`）。
+> 剩 **19 个动态摘要工具**仍是手写 `ToolSpec`：它们要先把旧 `*SummaryArgs` 字段子集结构改成
 > `impl ToolArgsSummary for XArgs`（P2），才能换成 `summary: dynamic`。
 > 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证
 > schema / 描述 / 摘要文本零漂移——快照现在覆盖**全部**动态摘要工具（手写真实入参 +
