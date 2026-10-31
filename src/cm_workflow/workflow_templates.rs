@@ -12,25 +12,25 @@ pub(crate) fn workflow_template_rust_ci_light() -> serde_json::Value {
         "nodes": [
             {
                 "id": "rust_ci_fmt",
-                "tool_name": "run_command",
+                "tool_name": crate::cm_names::RUN_COMMAND,
                 "tool_args": { "command": "cargo", "args": ["fmt", "--check"] },
                 "deps": []
             },
             {
                 "id": "rust_ci_check",
-                "tool_name": "cargo_check",
+                "tool_name": crate::cm_names::CARGO_CHECK,
                 "tool_args": { "all_targets": true },
                 "deps": ["rust_ci_fmt"]
             },
             {
                 "id": "rust_ci_clippy",
-                "tool_name": "cargo_clippy",
+                "tool_name": crate::cm_names::CARGO_CLIPPY,
                 "tool_args": { "all_targets": true },
                 "deps": ["rust_ci_check"]
             },
             {
                 "id": "rust_ci_test",
-                "tool_name": "cargo_test",
+                "tool_name": crate::cm_names::CARGO_TEST,
                 "tool_args": {},
                 "deps": ["rust_ci_clippy"]
             }
@@ -47,21 +47,21 @@ pub(crate) fn workflow_template_code_review() -> serde_json::Value {
         "nodes": [
             {
                 "id": "cr_diff_names",
-                "tool_name": "git",
+                "tool_name": crate::cm_names::GIT,
                 "tool_args": { "action": "diff", "mode": "all", "name_only": true },
                 "deps": [],
                 "node_tool_role": "review_readonly"
             },
             {
                 "id": "cr_diff",
-                "tool_name": "git",
+                "tool_name": crate::cm_names::GIT,
                 "tool_args": { "action": "diff", "mode": "all", "context_lines": 3 },
                 "deps": ["cr_diff_names"],
                 "node_tool_role": "review_readonly"
             },
             {
                 "id": "cr_search",
-                "tool_name": "search_in_files",
+                "tool_name": crate::cm_names::SEARCH_IN_FILES,
                 "tool_args": {
                     "pattern": "unwrap\\(|\\.expect\\(|todo!|FIXME|panic!",
                     "file_glob": "*.rs",
@@ -73,7 +73,7 @@ pub(crate) fn workflow_template_code_review() -> serde_json::Value {
             },
             {
                 "id": "cr_clippy",
-                "tool_name": "cargo_clippy",
+                "tool_name": crate::cm_names::CARGO_CLIPPY,
                 "tool_args": { "all_targets": true },
                 "deps": ["cr_diff", "cr_search"],
                 "node_tool_role": "review_readonly"
@@ -91,14 +91,14 @@ pub(crate) fn workflow_template_refactor_precheck() -> serde_json::Value {
         "nodes": [
             {
                 "id": "rpc_graph",
-                "tool_name": "code_nav",
+                "tool_name": crate::cm_names::CODE_NAV,
                 "tool_args": { "action": "call_graph_sketch", "symbol": "" },
                 "deps": [],
                 "node_tool_role": "review_readonly"
             },
             {
                 "id": "rpc_refs",
-                "tool_name": "code_nav",
+                "tool_name": crate::cm_names::CODE_NAV,
                 "tool_args": { "action": "find_references", "symbol": "", "exclude_definitions": true },
                 "deps": ["rpc_graph"],
                 "node_tool_role": "review_readonly"
