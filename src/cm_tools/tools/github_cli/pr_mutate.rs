@@ -2,8 +2,6 @@
 
 use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
-use std::path::Path;
-
 use super::common::{
     gh_allowed, run_gh_vec, validate_extra_args, validate_pr_body, validate_pr_ref_token,
     validate_pr_title, validate_repo, write_workspace_temp_markdown,

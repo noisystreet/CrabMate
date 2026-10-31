@@ -44,7 +44,8 @@ const OUTER_WALL_RESERVE_SECS: u64 = 1;
 const HOST_UNAVAILABLE: &str =
     "错误：后台任务查询不可用——当前执行路径未注入后台任务注册表。请在主对话回合中直接调用本工具。";
 
-/// 后台任务只读入口（String 面薄壳）：按 `action` 分派到 `status` / `list` / `output`。
+/// 后台任务只读入口（String 面薄壳，仅测试使用）：按 `action` 分派到 `status` / `list` / `output`。
+#[cfg(test)]
 #[allow(clippy::result_large_err)] // 与 crate 内 `*_try` 约定一致（`ToolError` 含正文解析快照 `parsed`）
 pub fn background_job(
     args_json: &str,
@@ -144,7 +145,8 @@ fn output_impl(
     }
 }
 
-/// 取消后台任务（终止语义，非发起执行）—— String 面薄壳。
+/// 取消后台任务（终止语义，非发起执行）—— String 面薄壳（仅测试使用）。
+#[cfg(test)]
 #[allow(clippy::result_large_err)]
 pub fn background_job_cancel(args_json: &str, host: Option<&dyn ToolJobsToolHost>) -> String {
     background_job_cancel_try(args_json, host).unwrap_or_else(|e| e.message)

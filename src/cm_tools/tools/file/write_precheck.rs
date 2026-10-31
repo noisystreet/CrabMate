@@ -22,7 +22,7 @@ pub enum PrecheckVerdict {
     /// 通过（或该类型无需校验）。
     Ok,
     /// 跳过（无校验器 / 外部工具缺失 / 超时）；不阻塞写盘。
-    Skipped(&'static str),
+    Skipped,
     /// 失败（含机器可读码与行号），默认拒写。
     Failed(PrecheckFailure),
 }
@@ -81,7 +81,7 @@ pub fn precheck_before_write(
         return Ok(());
     }
     match precheck_write(rel_path, content) {
-        PrecheckVerdict::Ok | PrecheckVerdict::Skipped(_) => Ok(()),
+        PrecheckVerdict::Ok | PrecheckVerdict::Skipped => Ok(()),
         PrecheckVerdict::Failed(f) => Err(f.tool_message(rel_path)),
     }
 }
@@ -119,12 +119,14 @@ fn check_python(content: &str) -> PrecheckVerdict {
     {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return PrecheckVerdict::Skipped("python3 未安装，跳过 Python 语法校验");
+            // python3 未安装：跳过 Python 语法校验。
+            return PrecheckVerdict::Skipped;
         }
-        Err(_) => return PrecheckVerdict::Skipped("无法启动 python3，跳过 Python 语法校验"),
+        // 无法启动 python3（子进程创建失败）：跳过 Python 语法校验。
+        Err(_) => return PrecheckVerdict::Skipped,
     };
-    let mut stdout = child.stdout.take();
-    let mut stderr = child.stderr.take();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(content.as_bytes());
     }
@@ -137,10 +139,10 @@ fn check_python(content: &str) -> PrecheckVerdict {
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return PrecheckVerdict::Skipped("python3 校验超时，跳过");
+                return PrecheckVerdict::Skipped; // 校验超时：不阻塞写盘。
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(_) => return PrecheckVerdict::Skipped("python3 校验执行失败，跳过"),
+            Err(_) => return PrecheckVerdict::Skipped, // 校验执行失败：不阻塞写盘。
         }
     };
 
@@ -238,7 +240,7 @@ mod tests {
                 assert_eq!(f.code, "PY_SYNTAX_ERROR");
                 assert_eq!(f.line, Some(2));
             }
-            PrecheckVerdict::Skipped(_) => {}
+            PrecheckVerdict::Skipped => {}
             other => panic!("expected failed or skipped, got {other:?}"),
         }
     }
@@ -247,7 +249,7 @@ mod tests {
     fn python_valid_ok_or_skipped() {
         match precheck_write("app.py", "def f():\n    return 1\n") {
             PrecheckVerdict::Ok => {}
-            PrecheckVerdict::Skipped(_) => {}
+            PrecheckVerdict::Skipped => {}
             other => panic!("expected ok or skipped, got {other:?}"),
         }
     }

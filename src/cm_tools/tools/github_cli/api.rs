@@ -3,7 +3,6 @@
 use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use std::io::Write;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde_json::Value as JsonValue;

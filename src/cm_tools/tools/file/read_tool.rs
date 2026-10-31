@@ -5,9 +5,7 @@ use std::path::Path;
 
 use crate::cm_tools::workspace::path::WorkspacePathError;
 
-use super::path::{
-    path_for_tool_display, resolve_for_read_open, tool_user_error_from_workspace_path,
-};
+use super::path::{path_for_tool_display, tool_user_error_from_workspace_path};
 use super::read_file_pipeline::{
     ReadFileBodyError, ReadFileLinesDispatch, ReadFileLinesResult, ReadFileLinesSpec,
     dispatch_read_file_lines, format_encoding_header, guard_read_file_count_total_size,

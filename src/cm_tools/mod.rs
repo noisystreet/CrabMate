@@ -1,10 +1,5 @@
 //! CrabMate 工具支撑层：工作区路径、工具结果类型、内置 Function Calling 工具实现等。
 
-pub(crate) use crate::cm_config;
-pub(crate) use crate::cm_config as config;
-pub(crate) use crate::cm_types;
-pub(crate) use crate::cm_types as types;
-
 pub mod cargo_metadata;
 pub mod clarification_questionnaire;
 pub mod fs_atomic;

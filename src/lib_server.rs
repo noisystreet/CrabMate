@@ -13,7 +13,6 @@ pub(crate) mod cm_runtime;
 pub(crate) mod cm_names;
 #[doc(hidden)]
 pub mod cm_config;
-#[allow(unused)]
 pub(crate) mod cm_tools;
 pub(crate) mod cm_memory;
 #[doc(hidden)]

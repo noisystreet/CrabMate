@@ -325,8 +325,7 @@ pub fn create_directory_under_root(
     logical: &Path,
     parents: bool,
 ) -> io::Result<()> {
-    use nix::errno::Errno;
-    use nix::sys::stat::{Mode, mkdirat};
+    use nix::sys::stat::Mode;
 
     let rel = rel_under_root(root_canonical, logical)?;
     if rel.as_os_str().is_empty() {

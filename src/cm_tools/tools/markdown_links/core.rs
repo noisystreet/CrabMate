@@ -178,7 +178,7 @@ pub fn collect_markdown_files(
         }
     };
     if meta.is_file() {
-        collect_root_markdown_file(&abs, ws_canonical, seen, out, root_rel, errors);
+        collect_root_markdown_file(&abs, seen, out, root_rel, errors);
     } else if meta.is_dir() {
         walk_collect(ws_canonical, &abs, 0, max_depth, max_files, out, seen);
     }
@@ -218,7 +218,6 @@ fn resolve_collect_root(
 /// 根路径是单个 `.md` 文件时收集（去重）；非 `.md` 文件记错误。
 fn collect_root_markdown_file(
     abs: &Path,
-    ws_canonical: &Path,
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
     root_rel: &str,

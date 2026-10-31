@@ -26,7 +26,7 @@ pub use command::{
     scan_run_command_unsafe_args_spec,
 };
 pub use command_error::RunCommandError;
-pub(crate) use command::{parse_run_command_payload_lenient, parse_run_command_value_with_repair};
+pub(crate) use command::parse_run_command_payload_lenient;
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod contract_map;

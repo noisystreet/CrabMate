@@ -281,12 +281,6 @@ impl<'a> PathAccess<'a> {
         self.root
     }
 
-    /// 当前路径范围。
-    #[must_use]
-    pub fn scope(&self) -> crate::cm_types::PathScope {
-        self.scope
-    }
-
     /// L4 的路径放行留痕。
     ///
     /// 等级直接回填 `Unrestricted`：`PathScope::Any` **只**由 `project_caps(Unrestricted)` 产生

@@ -12,8 +12,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::cm_config::skills::{
-    SkillLayer, SkillManagedDoc, SkillsListOpts, list_skills_by_layer, resolve_skill_layer_dir,
-    skill_ui_description,
+    SkillLayer, SkillManagedDoc, list_skills_by_layer, resolve_skill_layer_dir, skill_ui_description,
 };
 use crate::cm_config::skills_slash::skill_callable_id;
 use crate::cm_config::SkillsConfigSection;

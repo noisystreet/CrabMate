@@ -294,10 +294,6 @@ fn load_search_replace_file_bytes(
     Ok((target, content))
 }
 
-pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    search_replace_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
-}
-
 /// 把「首行 `错误[CODE]`」的正文还原成带精确码的 [`ToolError`]。
 ///
 /// `parse_tool_output` 只认**首行**标记，所以调用方不能给这类正文加 `写入文件失败：` 前缀。
@@ -448,6 +444,12 @@ fn search_replace_persist(
         }],
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
     ))
+}
+
+/// String 面：Typed 迁移的对照面，仅测试使用。
+#[cfg(test)]
+pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
+    search_replace_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`search_replace`] 的显式失败版本（成功正文与 String 面逐字节一致）。
