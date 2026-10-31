@@ -12,6 +12,9 @@ pub mod cm_agent;
 pub mod cm_llm;
 #[allow(unused)]
 pub(crate) mod cm_runtime;
+/// 内建工具名等标识符常量的单一真源：零依赖，故列在 `cm_config` 之前。
+#[allow(unused)]
+pub(crate) mod cm_names;
 #[doc(hidden)]
 pub mod cm_config;
 #[allow(unused)]

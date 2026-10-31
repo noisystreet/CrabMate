@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_names as tool_names;
 
 /// 退避上限（毫秒），与 `finalize.rs` 夹取后的 `tool_retry_backoff_ms` 上限无关（此为指数上限）。
 const MAX_BACKOFF_MS: u64 = 5000;
@@ -64,10 +65,10 @@ impl ToolRetrySpec {
         if builtin_retry_denied().contains(tool_name) || self.denied_tools.contains(tool_name) {
             return false;
         }
-        if tool_name == "http_fetch" && http_fetch_args_need_approval(cfg, args) {
+        if tool_name == tool_names::HTTP_FETCH && http_fetch_args_need_approval(cfg, args) {
             return false;
         }
-        if tool_name == "read_dir" && read_dir_args_has_external_path(args) {
+        if tool_name == tool_names::READ_DIR && read_dir_args_has_external_path(args) {
             return false;
         }
         true

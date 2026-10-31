@@ -27,9 +27,19 @@
 //!
 //! 新增工具时的自检：`write_effect_list_matches_registered_tools`（`cm_tools` 测试）会同时
 //! 抓「名单里有、工具表里没有」的死项与「会写却漏列」的漏项。
+//!
+//! 名单里的名字全部取自 `crate::cm_names`（内建工具名的单一真源），本文件不写字面量。
+//!
+//! **为什么常量层独立成顶层模块，而不是放在本层或 `cm_tools`**：本层（`cm_config`）与
+//! `cm_tools` 互为上下游 —— `cm_tools` 依赖 `cm_config`，而本文件需要工具名常量。常量若放在
+//! `cm_tools`，本层反向引用即构成循环依赖；常量若放在本层，则 `cm_tools` 侧（`specs` /
+//! `dev_tag` / `tool_dispatch`）要跟着搬，且工具名是**标识符**而非配置项。`cm_names` 零依赖，
+//! 两层都能单向引用，于是这条边不再有方向问题。
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
+
+use crate::cm_names as tool_names;
 
 /// 内置工具里带副作用的工具名集合。
 ///
@@ -39,47 +49,47 @@ pub fn builtin_write_effect_tools() -> &'static HashSet<String> {
     static W: OnceLock<HashSet<String>> = OnceLock::new();
     W.get_or_init(|| {
         [
-            "create_file",
-            "modify_file",
-            "copy_file",
-            "move_file",
-            "delete_files",
-            "delete_dir",
-            "append_file",
-            "create_dir",
-            "search_replace",
-            "apply_patch",
+            tool_names::CREATE_FILE,
+            tool_names::MODIFY_FILE,
+            tool_names::COPY_FILE,
+            tool_names::MOVE_FILE,
+            tool_names::DELETE_FILES,
+            tool_names::DELETE_DIR,
+            tool_names::APPEND_FILE,
+            tool_names::CREATE_DIR,
+            tool_names::SEARCH_REPLACE,
+            tool_names::APPLY_PATCH,
             // 合并后整工具算写（见模块文档）。
-            "structured",
+            tool_names::STRUCTURED,
             // 解压 / 打包都会往工作区写文件；`archive_list` 只读，不列入。
             // 这两个工具只在 `archive-tools` feature 下注册（`SPECS_ARCHIVE` 受 gate），
             // 名单必须同步 gate —— 否则默认构建里「名单有、注册表无」会被
             // `write_effect_list_matches_registered_tools` 判成死项（它检查的正是二者一致）。
             #[cfg(feature = "archive-tools")]
-            "archive_pack",
+            tool_names::ARCHIVE_PACK,
             #[cfg(feature = "archive-tools")]
-            "archive_unpack",
-            "long_term_remember",
-            "long_term_forget",
-            "summarize_experience",
-            "run_command",
-            "terminal_session",
-            "python_snippet_run",
-            "pytest_run",
-            "cargo_test",
-            "cargo_run",
-            "workflow_execute",
-            "http_request",
-            "gh_api",
-            "gh_pr",
-            "gh_run",
-            "gh_issue_create",
-            "gh_release_create",
-            "skill_manage",
-            "background_job_cancel",
+            tool_names::ARCHIVE_UNPACK,
+            tool_names::LONG_TERM_REMEMBER,
+            tool_names::LONG_TERM_FORGET,
+            tool_names::SUMMARIZE_EXPERIENCE,
+            tool_names::RUN_COMMAND,
+            tool_names::TERMINAL_SESSION,
+            tool_names::PYTHON_SNIPPET_RUN,
+            tool_names::PYTEST_RUN,
+            tool_names::CARGO_TEST,
+            tool_names::CARGO_RUN,
+            tool_names::WORKFLOW_EXECUTE,
+            tool_names::HTTP_REQUEST,
+            tool_names::GH_API,
+            tool_names::GH_PR,
+            tool_names::GH_RUN,
+            tool_names::GH_ISSUE_CREATE,
+            tool_names::GH_RELEASE_CREATE,
+            tool_names::SKILL_MANAGE,
+            tool_names::BACKGROUND_JOB_CANCEL,
             // 日程/提醒：除 `list` 外都会写 `.crabmate/*.json`。
-            "reminder",
-            "event",
+            tool_names::REMINDER,
+            tool_names::EVENT,
         ]
         .into_iter()
         .map(str::to_string)

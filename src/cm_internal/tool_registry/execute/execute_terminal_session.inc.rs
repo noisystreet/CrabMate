@@ -114,7 +114,7 @@ async fn execute_terminal_session_impl(
                 workspace: effective_working_dir,
                 web_ctx,
                 mode: ExecMode::Pty,
-                sse_command: "terminal_session",
+                sse_command: crate::cm_names::TERMINAL_SESSION,
                 permission: env.permission,
             };
             let mut policy_caps = policy_ctx.command_caps();

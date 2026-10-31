@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-/// 与 `crate::cm_tools::workspace::path::is_sensitive_workspace_path` 保持一致（config 不能依赖 tools）。
+/// 与 `cm_tools::workspace::path::is_sensitive_workspace_path` 保持一致（config 不能依赖 tools）。
 const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
     "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
 ];

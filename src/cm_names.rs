@@ -1,11 +1,12 @@
-//! 内建工具名的**单一真源**。
+//! 内建工具名的**单一真源**，位于不依赖任何 crate 内模块的最底层。
 //!
 //! 工具名是下列各面的共同主键，此前它们各自写字面量：
 //!
-//! - `tool_specs_registry::specs/*.inc.rs` 的 `ToolSpec.name`（声明点）
-//! - [`super::registry_policy`] 的只读批 / 重试 / 门控判定
-//! - [`super::tools::dev_tag`] 的 `Development` 子域标签
-//! - `cm_config::tool_write_effect` 的写副作用归类
+//! - `cm_tools::tools::tool_specs_registry::specs/*.inc.rs` 的 `ToolSpec.name`（声明点）
+//! - [`crate::cm_tools::registry_policy`] 的只读批 / 重试 / 门控判定
+//! - [`crate::cm_tools::tools::dev_tag`] 的 `Development` 子域标签
+//! - [`crate::cm_tools::tool_dispatch`] 的工具名 → `HandlerId` 分派映射表
+//! - [`crate::cm_config::tool_write_effect`] 的写副作用归类
 //! - permission 策略与 turn allowlist、审批键、`tool_summary`、SSE 事件与 MCP 暴露面
 //!
 //! 任一处拼写与声明点不一致都会**静默失效**（不报错、不命中），且人工无法核对
@@ -15,8 +16,20 @@
 //! 一致性由 `tool_specs_registry` 的守卫测试 `all_tool_names_match_specs` 保证：
 //! 本模块的 [`ALL`] 与 `tool_specs()` 必须双向一致（无遗漏、无多余）。
 //!
-//! 前缀 / 来源判定（`mcp__` / `dyn__` 与 [`super::tool_naming::ToolOrigin`]）**不在**本模块，
-//! 见 [`super::tool_naming`]——那里判的是「名字的形状」，这里列的是「内建工具的全部名字」。
+//! ## 为什么是独立顶层模块，而不是放在 `cm_tools` 或 `cm_config` 里
+//!
+//! 消费者横跨两层：`cm_config::tool_write_effect` 与 `cm_tools` / `cm_agent` /
+//! `cm_internal` 各处引用点。放在 `cm_tools` 里会让 `cm_config` 反向依赖上层
+//! （`cm_tools` 已依赖 `cm_config`，成环）；放在 `cm_config` 里虽不成环，但工具名是
+//! **标识符**而非配置项，且 `cm_config` 属 `#[doc(hidden)]` 的 server 实现层 —— 将来
+//! `protocol` 侧若需要同一份名字就得再搬一次。
+//!
+//! 因此本模块保持**零依赖**（只有 `&'static str` 与 `#[cfg(feature = ...)]`），
+//! 只允许被上层单向引用；`scripts/check-crate-deps.sh` 强制这条边。
+//!
+//! 前缀 / 来源判定（`mcp__` / `dyn__` 与 [`crate::cm_tools::tool_naming::ToolOrigin`]）
+//! **不在**本模块，见 [`crate::cm_tools::tool_naming`]——那里判的是「名字的形状」，
+//! 这里列的是「内建工具的全部名字」。
 
 // --- `specs/archive.inc.rs`（feature `archive-tools`）---
 /// `archive_pack`

@@ -1,4 +1,4 @@
-//! 文本工具函数（从 `crate::cm_tools::redact` 提取）。
+//! 文本工具函数（从 `cm_tools::redact` 提取）。
 //!
 //! 供 `cm_memory` 等轻量模块使用，无需引入完整工具依赖。
 

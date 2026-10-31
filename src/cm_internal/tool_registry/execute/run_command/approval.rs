@@ -11,6 +11,7 @@ use std::time::Duration;
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
 use crate::cm_internal::tools;
+use crate::cm_names as tool_names;
 use crate::cm_types::{CommandApprovalDecision, ToolCall};
 
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
@@ -402,7 +403,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn resolve_unknown_cmd_
             crate::cm_agent::permission_audit::record_allowed(
                 caps,
                 crate::cm_agent::permission_audit::PermissionAxis::Command,
-                Some("run_command"),
+                Some(tool_names::RUN_COMMAND),
                 Some(parsed.cmd.as_str()),
             );
         }
@@ -438,7 +439,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn resolve_unknown_cmd_
         crate::cm_agent::permission_audit::record_denied(
             caps,
             crate::cm_agent::permission_audit::PermissionAxis::Command,
-            Some("run_command"),
+            Some(tool_names::RUN_COMMAND),
             Some(parsed.cmd.as_str()),
         );
         return Err(PolicyError::Denied {
@@ -605,7 +606,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn external_path_gate_by_caps
         crate::cm_agent::permission_audit::record_allowed(
             caps,
             crate::cm_agent::permission_audit::PermissionAxis::Path,
-            Some("run_command"),
+            Some(tool_names::RUN_COMMAND),
             None,
         );
         return Some(Ok(ExternalPathGate::Approved));
@@ -614,7 +615,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn external_path_gate_by_caps
         crate::cm_agent::permission_audit::record_denied(
             caps,
             crate::cm_agent::permission_audit::PermissionAxis::Path,
-            Some("run_command"),
+            Some(tool_names::RUN_COMMAND),
             None,
         );
         return Some(Err(PolicyError::Denied {
