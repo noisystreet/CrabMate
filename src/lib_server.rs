@@ -21,7 +21,6 @@ pub(crate) mod cm_approval;
 #[cfg(feature = "web")]
 pub(crate) mod cm_web_host;
 pub(crate) mod cm_mcp;
-#[allow(unused)]
 pub(crate) mod cm_benchmark;
 #[doc(hidden)]
 #[allow(unused_imports)]
