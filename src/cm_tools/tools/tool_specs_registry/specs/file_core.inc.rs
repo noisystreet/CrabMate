@@ -89,14 +89,14 @@
             runner: ToolRunner::Typed(runner_apply_patch_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_apply_patch),
         },
-        ToolSpec {
+        builtin_tool! {
             name: tool_names::SEARCH_IN_FILES,
+            args: args::SearchInFilesEnhancedArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_search_in_files_try,
+            summary: dynamic,
             description: "在当前工作区内搜索文件内容。支持正则或关键词搜索，返回匹配的文件路径、行号和行片段。支持 context_before/context_after 上下文行、file_glob 文件名过滤、exclude_glob 排除。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL],
-            parameters: schema_of::<args::SearchInFilesEnhancedArgs>,
-            runner: ToolRunner::Typed(runner_search_in_files_try),
-            summary: ToolSummaryKind::Dynamic(ts::summary_search_in_files),
         },
         ToolSpec {
             name: tool_names::CODEBASE_SEMANTIC_SEARCH,

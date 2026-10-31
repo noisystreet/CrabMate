@@ -20,7 +20,6 @@ macro_rules! define_summaries {
 
 define_summaries! {
     summary_codebase_semantic_search => CodebaseSemanticSearchSummaryArgs,
-    summary_search_in_files => SearchInFilesSummaryArgs,
     summary_rust_analyzer => RustAnalyzerSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_git => GitSummaryArgs,
@@ -29,15 +28,11 @@ define_summaries! {
     summary_move_file => MoveFileSummaryArgs,
     summary_read_dir => ReadDirSummaryArgs,
     summary_web_search => WebSearchSummaryArgs,
-    summary_http_fetch => HttpFetchSummaryArgs,
-    summary_http_request => HttpRequestSummaryArgs,
     summary_glob_files => GlobFilesSummaryArgs,
     summary_markdown_check_links => MarkdownCheckLinksSummaryArgs,
-    summary_structured => StructuredSummaryArgs,
     summary_list_tree => ListTreeSummaryArgs,
     summary_apply_patch => ApplyPatchSummaryArgs,
     summary_code_nav => CodeNavSummaryArgs,
-    summary_search_replace => SearchReplaceSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
     summary_gh_run => GhRunSummaryArgs,
     summary_archive_pack => ArchivePackSummaryArgs,

@@ -44,43 +44,6 @@ impl ToolSummaryLine for CodebaseSemanticSearchSummaryArgs {
 
 // ── search_in_files ─────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
-pub(super) struct SearchInFilesSummaryArgs {
-    pattern: String,
-    #[serde(default)]
-    path: Option<String>,
-}
-
-impl ToolSummaryLine for SearchInFilesSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let pattern = self.pattern.trim();
-        if pattern.is_empty() {
-            return None;
-        }
-        const MAX_PATTERN_CHARS: usize = 40;
-        let mut pat: String = pattern.chars().take(MAX_PATTERN_CHARS).collect();
-        if pattern.chars().count() > MAX_PATTERN_CHARS {
-            pat.push('…');
-        }
-        const MAX_PATH_CHARS: usize = 28;
-        let sub = self
-            .path
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        Some(match sub {
-            Some(p) => {
-                let mut ps: String = p.chars().take(MAX_PATH_CHARS).collect();
-                if p.chars().count() > MAX_PATH_CHARS {
-                    ps.push('…');
-                }
-                format!("search in files: {} @ {}", pat, ps)
-            }
-            None => format!("search in files: {}", pat),
-        })
-    }
-}
-
 // ── run_command (`args` may be array or string) ─
 
 fn json_arg_display_token(v: &serde_json::Value) -> Option<String> {
