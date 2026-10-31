@@ -50,7 +50,7 @@
 |---|---|---|
 | 工具可见性 | `SessionMode` Ask/Plan → `PlanStepExecutorKind::ReviewReadonly` | `src/agent/agent_turn/turn_loop/run_dispatch.rs:34`、`turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） |
 | 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/cm_agent/turn_tool_policy.rs:66` |
-| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/cm_internal/tool_registry/execute/execute_run_command_approval.inc.rs:147`（`evaluate_policy`） |
+| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/cm_internal/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
 | 路径 | 根内相对路径硬校验；绝对路径 / `..` 在文件工具直接拒 | `src/cm_tools/tools/file/path.rs:127`（`resolve_for_read`）、`:159`（`resolve_for_write`）、`src/cm_tools/workspace/path.rs` |
 | 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/cm_internal/tool_registry/execute/http_tool_exec.inc.rs:4`（`http_tool_url_allowed`） |
 | 人工审批 / 隔离 | `SensitiveCapability`（5 类）+ Docker 沙盒 | `src/cm_approval/mod.rs:26`、`src/cm_internal/tool_approval/approval_specs.rs`、`src/cm_internal/tool_sandbox/mod.rs:82` |
@@ -67,8 +67,8 @@
 
 这一点决定了 L3 与 L4 的边界怎么画，必须先说清：
 
-- 未知命令 → `AllowAlways` 会把该命令名写入会话级 `persistent_allowlist_shared`（`execute_run_command_approval.inc.rs:277`），或直接扩展本轮 `allowed_commands`（`:316`）；
-- 工作区外路径 → 审批通过后 `skip_arg_safety = true`（`:170`），本轮直接跳过 `..` / 绝对路径拒绝。
+- 未知命令 → `AllowAlways` 会把该命令名写入会话级 `persistent_allowlist_shared`（`run_command/approval.rs`），或直接扩展本轮 `allowed_commands`（`resolve_unknown_cmd_allowlist` 的扩展分支）；
+- 工作区外路径 → 审批通过后 `skip_arg_safety = true`（`evaluate_policy` 里的 `ExternalPathGate::Approved` 分支），本轮直接跳过 `..` / 绝对路径拒绝。
 
 也就是说：**现状下"审批通过"= 该次调用拿到 host 级能力**。所以"最高等级"不是"比现状更强的能力"，而是"**同样的能力，但不问人**"。这直接决定了：
 
@@ -245,7 +245,7 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 ### 6.3 审批结果的作用域：前缀键（已定）
 
-现状的会话级 persistent allowlist 是**平铺命名空间**：`http_fetch:<url>`、`http_request:<METHOD>:<url>` 带前缀，但 `run_command` 的 `AllowAlways` 存的是**裸命令名**（`execute_run_command_approval.inc.rs:277`）。引入等级后必须防止“高等级批过的键在低等级继续放行”。
+现状的会话级 persistent allowlist 是**平铺命名空间**：`http_fetch:<url>`、`http_request:<METHOD>:<url>` 带前缀，但 `run_command` 的 `AllowAlways` 存的是**裸命令名**（`run_command/approval.rs`）。引入等级后必须防止“高等级批过的键在低等级继续放行”。
 
 **决定：给键加等级前缀，存储类型不变**（仍是 `Arc<Mutex<HashSet<String>>>`）。这是第一优先级方案——不新增结构体、不改序列化、不动调用方签名；该集合是**内存态**（`stream_job_setup.rs:162` 以空集初始化），无磁盘 schema，故**零迁移成本**。
 
@@ -266,7 +266,7 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 - **载体**：`cm_types::scoped_allowlist_key(level, key)` 是唯一生成点（`None` → 裸键，未接线路径逐字等价）；`PermissionLevel::index()` 是唯一序号来源。
 - **写入**：`cm_approval::persist_allowlist_key` 统一加前缀，等级由 `SharedAllowlistHandles.level` 带入（`shared_allowlist_handles_web(web_ctx, level)`）；workflow 节点走 `WorkflowApprovalMode::Interactive.permission_level`，与主链路同一把尺子。SSE 载荷里的 `allowlist_key` **保持裸键**（客户端可读性 + 既有 golden 不变）。
-- **命中**：`http_tool_exec.inc.rs` 的 URL 集合查询、`execute_run_command_approval.inc.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
+- **命中**：`http_tool_exec.inc.rs` 的 URL 集合查询、`run_command/approval.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
 - **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
 - **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
 - **仍未做**（S4 剩余之外）：`permission_confirm_tools` 目前仍无消费点（MB-4 由工具自身 `confirm` 参数承担）。
@@ -413,7 +413,7 @@ pub struct PermissionCaps {
 
 ### 7.4 与既有能力快照合并（避免两套）
 
-`execute_run_command_approval.inc.rs:134` 已有同形快照：
+`run_command/approval.rs` 已有同形快照：
 
 ```rust
 struct PolicyDecision {
@@ -454,7 +454,7 @@ struct PolicyDecision<'a> {
 | 装配 | `src/agent/agent_turn/host/params.rs:65`（`RunLoopAttach`） | 加 `pub permission: PermissionCaps` |
 | 可见性 | `turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） | 先按 `caps.tool_visibility` 过滤；`None` → 空表 |
 | 准入 | `policy/tool_execution.rs:93`（`tool_policy_early_deny_message`） | 新增 permission 分支（`None` → 全拒；`Readonly` → 按**独立正列表** `permission_read_tools` 拒，**不读** `is_readonly_tool`） |
-| 命令 | `execute/execute_run_command_approval.inc.rs:147`（`evaluate_policy`） | `PolicyDecision` 改为**嵌入** `caps`（§7.4）；`command_scope = None` 时**在 S2 即硬拒** `run_command` / `terminal_session` / `python_snippet_run` / `run_executable`（补上 `is_readonly_tool` 可能漏的口子） |
+| 命令 | `execute/run_command/approval.rs`（`evaluate_policy`） | `PolicyDecision` 改为**嵌入** `caps`（§7.4）；`command_scope = None` 时**在 S2 即硬拒** `run_command` / `terminal_session` / `python_snippet_run` / `run_executable`（补上 `is_readonly_tool` 可能漏的口子） |
 | PTY | `execute/execute_terminal_session.inc.rs` | 同上；`command_scope = None` 时整个工具不出现（已被可见性挡住，双保险） |
 | 路径 | `tools/file/path.rs:127/159` | 加 `PathScope` 形参；`PathScope::Any` 走新 `resolve_any_path` |
 | 路径 | `execute/mod.rs:134`（`approve_external_read_dir_if_needed`） | `path_scope = Any` → 跳过审批；`approval = Deny` → 直接拒（不再报“审批通道不可用”） |
@@ -846,12 +846,12 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 **落地结果**（比原估算多一层约束：借用生命周期绑不住返回值）：
 
-- 载体：`execute_run_command_approval.inc.rs` 新增 `RunCommandCaps { allowed_commands: Arc<[String]> }`，由 `PolicyContext::command_caps()` 以 `cfg.command_exec.allowed_commands` 构造。它是**白名单的唯一持有者**，注释里标明 S3 后并入 `PermissionCaps.command_scope`。
+- 载体：`run_command/approval.rs` 新增 `RunCommandCaps { allowed_commands: Arc<[String]> }`，由 `PolicyContext::command_caps()` 以 `cfg.command_exec.allowed_commands` 构造。它是**白名单的唯一持有者**，注释里标明 S3 后并入 `PermissionCaps.command_scope`。
 - `PolicyDecision<'a> { caps: &'a RunCommandCaps, skip_arg_safety, capabilities, approvals }`——不再含 `Arc<[String]>` 字段；`skip_arg_safety`（派生）与 `capabilities`（`ExecMode` 是**执行形态**不是权限面）按 §7.4 留在 decision。
 - **出参而非返回值**：`evaluate_policy` 不能「内部建快照、返回借用它的 decision」，故签名改为 `caps: &'a mut RunCommandCaps`。评估过程仍在局部变量里做扩展，**末尾一次性**写回 `caps.allowed_commands`，decision 只 reborrow；中途 Err 返回时快照保持调用前状态。
 - 白名单的**两处读取点**都改走快照：`resolve_unknown_cmd_allowlist` 的**判定基**与 `apply_unknown_cmd_decision` 的**扩展基**现在是同一个 `base: &Arc<[String]>`（从 `caps` 透传）。原实现后者仍以 `cfg.command_exec.allowed_commands` 为基——当前 `caps ≡ cfg` 所以等价，但 S3 让等级收窄白名单后，那条路会把配置全量白名单带进生效集、绕过等级边界，因此本轮一并收口。
 - 快照**不可 clone、不可跨评估复用**：`RunCommandCaps` 不派生 `Clone`，`evaluate_policy` 的 doc 写明「必须每次评估新建」——它以自身列表为基做扩展，复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单（静默放宽）。写回只在**成功路径末尾**发生，`Err` 时快照保持调用前状态。
-- 调用点：`execute_run_command_host.inc.rs` 与 `execute_terminal_session.inc.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
+- 调用点：`run_command/host.rs` 与 `execute_terminal_session.inc.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
 - 测试：`execute_tests.rs` 新增 `evaluate_for_test`（内部持快照、对外回 owned `EvaluatedPolicy`），20 处矩阵断言形态不变，避免逐用例声明快照；`execute_run_command_gate_tests.rs::facade_rejects_pty_mode` 就地构造快照。
 
 **问题**（历史记录）：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。先实现权限再改，等于在同一文件里改两遍。
@@ -885,7 +885,7 @@ S3 的必需改动点：
 |---|---|---|
 | 路径载体 | `cm_tools/tools/file/path.rs` | `PathAccess` 加 `PathScope` 字段；`for_read` / `for_read_open` / `for_write` 内做 scope 判定（**唯一判定点**） |
 | 文件类工具构造点 | `runners.rs` 的 `define_runners_paths_try!` 与 `define_runners_paths_ctx_try!` | 两个宏各一行 `PathAccess::new(ctx.working_dir)`；16 个文件类工具全部经此构造 |
-| 命令执行 | `execute_run_command_approval.inc.rs` | `cwd` 越界判定 |
+| 命令执行 | `run_command/approval.rs` | `cwd` 越界判定 |
 | HTTP | `http_tool_exec.inc.rs` | 出站前缀判定 |
 
 不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`tools/mod.rs::resolve_workspace_path_for_read`×1、`cm_llm/outbound_workspace_images.rs`×1。
@@ -916,8 +916,8 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93` |
 | 角色 `allowed_tools` 解析 | `src/cm_config/agent_roles.rs:111`、`src/cm_agent/turn_tool_policy.rs:44` |
 | 只读/写工具分类 | `src/cm_tools/registry_policy.rs:105`、`:149` |
-| `run_command` 策略评估 | `src/cm_internal/tool_registry/execute/execute_run_command_approval.inc.rs:147` |
-| `PolicyDecision` 结构 | 同上 `:134` |
+| `run_command` 策略评估 | `src/cm_internal/tool_registry/execute/run_command/approval.rs` |
+| `PolicyDecision` 结构 | 同上（`run_command/approval.rs`，`struct PolicyDecision`） |
 | 白名单 `*` 哨兵 | `src/cm_tools/tools/command_shell_script.rs:29` |
 | 文件路径解析/写入 | `src/cm_tools/tools/file/path.rs:127`、`:159` |
 | 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_config/workspace_roots.rs:4` |

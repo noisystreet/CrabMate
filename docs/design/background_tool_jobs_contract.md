@@ -243,7 +243,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 | 面 | 后端 | Client |
 |----|------|--------|
-| 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`run_command_dispatch_async`（`cm_tools/tools/mod.rs`）/ `execute_run_command_async.inc.rs` | 参数表单 |
+| 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`run_command_dispatch_async`（`cm_tools/tools/mod.rs`）/ `run_command/async_invocation.rs` | 参数表单 |
 | 装配表（`cargo_test` / `pytest_run`） | `tool_registry/execute/execute_background_tool_async.inc.rs`（`background_async_gate` 门闩 + `background_async_argv_assembler` 装配表 + `assemble_background_job_spawn` + `launch_background_job` 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs`（`AssembledCommand` + `command_program_and_args`） | 参数表单（`async`） |
 | job 注册表 + worker | 新模块（建议 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
