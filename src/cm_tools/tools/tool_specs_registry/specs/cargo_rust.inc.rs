@@ -1,12 +1,12 @@
 [
-ToolSpec {
+        builtin_tool! {
             name: tool_names::CARGO_CHECK,
+            args: args::CargoCommonCliArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL, dev_tag::RUST, dev_tag::QUALITY],
+            runner: runner_cargo_check_try,
+            summary: static "cargo check",
             description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。\n\n【cargo check 常用模式】检查整个项目：`cargo check`；检查特定包：`cargo check -p <package>`。",
-            category: ToolCategory::Development,
-            tags: &[dev_tag::GENERAL, dev_tag::RUST, dev_tag::QUALITY],
-            parameters: schema_of::<args::CargoCommonCliArgs>,
-            runner: ToolRunner::Typed(runner_cargo_check_try),
-            summary: ToolSummaryKind::Static("cargo check"),
         },
         ToolSpec {
             name: tool_names::CARGO_TEST,
