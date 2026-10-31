@@ -3,6 +3,7 @@
 use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
 use crate::tools;
+use crate::cm_names as tool_names;
 
 /// 按执行模式构造 [`ToolEnvelopeContext`]。
 pub(super) fn tool_envelope_context<'a>(
@@ -57,7 +58,7 @@ pub(super) async fn emit_sse_tool_result(
         result,
         norm.structured_payload.as_ref(),
     );
-    if name == "run_command" {
+    if name == tool_names::RUN_COMMAND {
         structured_preview =
             crate::tools::structured_preview::augment_run_command_preview_with_git_diff(
                 structured_preview,

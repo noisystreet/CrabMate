@@ -5,6 +5,7 @@
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fmt;
+use crate::cm_names as tool_names;
 
 /// Do 阶段契约校验收集到的节点集合（id 集合 + 节点副本与 id）。
 type WorkflowExecuteCollectedNodes = (HashSet<String>, Vec<(Value, String)>);
@@ -197,7 +198,7 @@ impl WorkflowReflectionController {
                     "revise_workflow_then_call_workflow_execute_or_set_workflow_done_true_when_goal_reached"
                 },
                 "next_call_hint": {
-                    "call_tool": "workflow_execute",
+                    "call_tool": tool_names::WORKFLOW_EXECUTE,
                     "workflow_done": false
                 }
             })),

@@ -6,6 +6,7 @@
 //! [`exit_code_in_header_region`]（在首个流标记行之前逐行找）。
 
 use serde_json::Value;
+use crate::cm_names as tool_names;
 
 /// 分隔 stdout / stderr 的固定标记行，由 `run_command` 输出格式化端写入。
 const STREAM_MARKERS: [&str; 2] = ["标准输出：", "标准错误："];
@@ -112,7 +113,7 @@ pub(super) fn run_command_structured_payload(raw_output: &str) -> Value {
     let (stdout, stderr) = extract_streams(raw_output);
     serde_json::json!({
         "kind": "crabmate_structured_payload",
-        "tool": "run_command",
+        "tool": tool_names::RUN_COMMAND,
         "version": 1_u64,
         "schema": "run_command_exit_v1",
         "invocation": invocation,

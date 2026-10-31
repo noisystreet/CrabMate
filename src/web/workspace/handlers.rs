@@ -35,6 +35,7 @@ use crate::workspace::path::{
     WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
     validate_effective_workspace_base, validate_workspace_set_path,
 };
+use crate::cm_names as tool_names;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
 
@@ -445,7 +446,7 @@ pub async fn workspace_search_handler(
             cfg_arc.command_exec.allowed_commands.as_ref(),
             &work_dir,
         );
-        crate::tools::run_tool("search_in_files", &args_json, &ctx)
+        crate::tools::run_tool(tool_names::SEARCH_IN_FILES, &args_json, &ctx)
     })
     .await
     {

@@ -23,6 +23,7 @@ use crate::cm_tools::workspace::fs::{
 };
 
 use super::write_precheck;
+use crate::cm_names as tool_names;
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
     crate::cm_tools::tools::parse_args_typed(args_json)
@@ -209,7 +210,7 @@ fn append_file_preview(working_dir: &Path, plan: AppendFilePlan) -> String {
         append_file_build_body("预览（dry_run=true）：将追加", working_dir, &plan) + "，未写盘";
     let after = append_file_after_preview(&plan);
     format_tool_output_with_write_diff_preview(
-        "append_file",
+        tool_names::APPEND_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -239,7 +240,7 @@ fn append_file_write(
     }
     let body = append_file_build_body("已追加", working_dir, &plan);
     Ok(format_tool_output_with_write_diff_preview(
-        "append_file",
+        tool_names::APPEND_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -383,7 +384,7 @@ pub fn delete_files_try(
         })
         .collect();
     let output = format_tool_output_with_write_diff_preview(
-        "delete_files",
+        tool_names::DELETE_FILES,
         failed.is_empty(),
         body,
         diff_states,
@@ -466,7 +467,7 @@ pub fn append_file_try(
     );
     if let Err(e) = super::write_precheck::precheck_before_write(&plan.path, &merged, skip_precheck)
     {
-        return Err(ToolError::write_precheck_failed("append_file", e));
+        return Err(ToolError::write_precheck_failed(tool_names::APPEND_FILE, e));
     }
     append_file_write(working_dir, ctx, plan)
 }

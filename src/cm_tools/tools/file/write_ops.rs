@@ -19,6 +19,7 @@ use crate::cm_tools::workspace::fs::{
 };
 
 use super::write_precheck::NOT_WRITTEN_HINT;
+use crate::cm_names as tool_names;
 
 /// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
 #[inline]
@@ -61,7 +62,7 @@ pub fn create_file_try(
     }
     let skip_precheck = super::write_precheck::arg_skip_precheck(args_json);
     if let Err(e) = super::write_precheck::precheck_before_write(&path, &content, skip_precheck) {
-        return Err(ToolError::write_precheck_failed("create_file", e));
+        return Err(ToolError::write_precheck_failed(tool_names::CREATE_FILE, e));
     }
     write_bytes_under_root(&base, &target, content.as_bytes(), true, false)
         .map(|()| {
@@ -69,7 +70,7 @@ pub fn create_file_try(
             let disp = path_for_tool_display(working_dir, &target, Some(&path));
             let body = tool_output_prepend_path(&disp, format!("已创建文件: {}", disp));
             format_tool_output_with_write_diff_preview(
-                "create_file",
+                tool_names::CREATE_FILE,
                 true,
                 body,
                 vec![WriteDiffFileState {
@@ -157,7 +158,7 @@ pub fn copy_file_try(
             let body = tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n));
             let after = std::fs::read_to_string(&dst).ok();
             Ok(format_tool_output_with_write_diff_preview(
-                "copy_file",
+                tool_names::COPY_FILE,
                 true,
                 body,
                 vec![WriteDiffFileState {
@@ -267,7 +268,7 @@ fn modify_file_write_full_overwrite(
             "预览（dry_run=true）：整文件覆盖未写盘。设置 dry_run=false 以执行；若工具提示须确认，再附带 confirm_full_overwrite=true。",
         );
         return format_tool_output_with_write_diff_preview(
-            "modify_file",
+            tool_names::MODIFY_FILE,
             true,
             body,
             vec![WriteDiffFileState {
@@ -288,7 +289,7 @@ fn modify_file_write_full_overwrite(
             ),
         );
         return format_tool_output_with_write_diff_preview(
-            "modify_file",
+            tool_names::MODIFY_FILE,
             false,
             body,
             vec![WriteDiffFileState {
@@ -328,7 +329,7 @@ fn modify_file_write_full_overwrite(
     }
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -535,16 +536,16 @@ pub fn modify_file_try(
 
     let output =
         modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode);
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("modify_file", &output);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
     if parsed.ok {
         return Ok(output);
     }
-    Err(ToolError::from_parsed("modify_file", &parsed, output))
+    Err(ToolError::from_parsed(tool_names::MODIFY_FILE, &parsed, output))
 }
 
 /// dispatch 内部仍返回正文：失败码由正文可识别标记保留（如 `错误[stale_revision]`）。
 #[allow(clippy::result_large_err)]
 fn modify_file_legacy_body_error(output: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("modify_file", &output);
-    ToolError::from_parsed("modify_file", &parsed, output)
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
+    ToolError::from_parsed(tool_names::MODIFY_FILE, &parsed, output)
 }

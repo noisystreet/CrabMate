@@ -20,6 +20,7 @@ use crate::cm_api_contract::tool_jobs::{
     ToolJobCancelResponseBody, ToolJobOutputItem, ToolJobOutputResponseBody,
     ToolJobStatusResponseBody,
 };
+use crate::cm_names as tool_names;
 
 /// 可选归属校验头：客户端声明其所在 workspace root；与任务创建时记录比对。
 const X_WORKSPACE_ROOT: &str = "x-workspace-root";
@@ -104,7 +105,7 @@ pub(crate) async fn tool_job_status_handler(
     let stdout = outcome.map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
     let stderr = outcome.map(|o| String::from_utf8_lossy(&o.stderr).into_owned());
     let summary = if terminal {
-        crate::cm_tools::tools::summarize_tool_call("run_command", &rec.args_json)
+        crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &rec.args_json)
     } else {
         None
     };

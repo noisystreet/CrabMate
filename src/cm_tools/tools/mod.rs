@@ -100,6 +100,7 @@ use crate::cm_tools::tool_result::{ToolError, ToolResult};
 use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
 use crate::cm_config::{AgentConfig, ExposeSecret};
 use crate::cm_types::{FunctionDef, Tool};
+use crate::cm_names as tool_names;
 
 /// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -570,7 +571,7 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
 /// `run_command` 实现体基于 [`tokio::process`] 事件驱动等待（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存），
 /// 不再占用阻塞线程。
 pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
-    if name == "run_command" {
+    if name == tool_names::RUN_COMMAND {
         match run_command_dispatch_async(name, args_json, ctx).await {
             Ok((output, _)) => output,
             Err(e) => e.message,
@@ -586,7 +587,7 @@ pub async fn run_tool_result_async(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> ToolResult {
-    if name == "run_command" {
+    if name == tool_names::RUN_COMMAND {
         match run_command_dispatch_async(name, args_json, ctx).await {
             Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
             Err(e) => ToolResult::from_parsed(e.message, e.parsed),
@@ -665,7 +666,7 @@ pub fn is_compile_command_success_spec(spec: &CommandSpec, result: &str) -> bool
     if !is_compile_command_spec(spec) {
         return false;
     }
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("run_command", result);
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::RUN_COMMAND, result);
     parsed.ok && parsed.exit_code == Some(0)
 }
 

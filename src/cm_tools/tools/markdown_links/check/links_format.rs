@@ -9,6 +9,7 @@ use crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksOutputFormat;
 
 use super::TextReportSummary;
 use super::render_text_report;
+use crate::cm_names as tool_names;
 
 pub(super) struct MarkdownCheckScanStats {
     pub rel_ok: usize,
@@ -70,7 +71,7 @@ pub(super) fn markdown_check_format_output(input: MarkdownCheckFormatInput<'_>) 
     match output_format {
         MarkdownCheckLinksOutputFormat::Text => text,
         MarkdownCheckLinksOutputFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
-            "tool": "markdown_check_links",
+            "tool": tool_names::MARKDOWN_CHECK_LINKS,
             "workspace": ws_canonical.to_string_lossy(),
             "roots": roots,
             "summary": {
@@ -102,7 +103,7 @@ pub(super) fn markdown_check_format_output(input: MarkdownCheckFormatInput<'_>) 
                 "runs": [{
                     "tool": {
                         "driver": {
-                            "name": "markdown_check_links",
+                            "name": tool_names::MARKDOWN_CHECK_LINKS,
                             "rules": [
                                 { "id": RULE_LOCAL, "shortDescription": { "text": "Markdown 相对路径问题" } },
                                 { "id": RULE_ANCHOR, "shortDescription": { "text": "Markdown 锚点问题" } },

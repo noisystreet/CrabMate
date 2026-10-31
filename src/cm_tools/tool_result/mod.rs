@@ -39,6 +39,7 @@ use run_command::{
     exit_code_in_header_region, extract_streams, looks_like_failure, parse_exit_code,
     run_command_structured_payload, strip_leading_command_invocation_line,
 };
+use crate::cm_names as tool_names;
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -219,10 +220,10 @@ fn classify_error_code(first_line: &str, tool_name: &str) -> String {
 
 /// 供 **`crabmate_tool.structured_payload`** 与 SSE 合并路径使用：对已格式化命令输出生成稳定 JSON（**不含** stdout/stderr 全文）。
 pub fn structured_payload_for_tool(tool_name: &str, raw_output: &str) -> Option<Value> {
-    if tool_name == "run_command" {
+    if tool_name == tool_names::RUN_COMMAND {
         return Some(run_command_structured_payload(raw_output));
     }
-    if matches!(tool_name, "http_fetch" | "http_request") {
+    if matches!(tool_name, tool_names::HTTP_FETCH | tool_names::HTTP_REQUEST) {
         return http_tool_response_v1_payload(tool_name, raw_output);
     }
     if tool_name.starts_with("cargo_") {

@@ -9,6 +9,7 @@ use crate::cm_agent::acceptance::{
 };
 use crate::cm_agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
+use crate::cm_names as tool_names;
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -115,7 +116,7 @@ fn assert_verify(ctx: &str, body: &serde_json::Value) {
         .and_then(|s| s.as_str())
         .unwrap_or("");
     let ev = AcceptanceEvidence {
-        tool_name: "run_command",
+        tool_name: tool_names::RUN_COMMAND,
         tool_output,
         stdout,
         stderr,

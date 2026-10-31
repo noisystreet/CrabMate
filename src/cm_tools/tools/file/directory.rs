@@ -11,6 +11,7 @@ use super::path::{
     PathAccess, WorkspacePathCodes, path_for_tool_display,
     workspace_path_tool_error_with_message,
 };
+use crate::cm_names as tool_names;
 
 /// `read_dir` 在工作区路径解析失败时的稳定码（越界 / IO）。
 const READ_DIR_PATH_CODES: WorkspacePathCodes = WorkspacePathCodes {
@@ -25,7 +26,7 @@ fn prepend_read_dir_output_header(
     entries_walked: usize,
 ) -> String {
     crate::cm_tools::tool_result::prepend_crabmate_tool_output(
-        "read_dir",
+        tool_names::READ_DIR,
         crate::cm_tools::tool_result::ReadDirOutputFields {
             path: path_disp.to_string(),
             entries_shown,
