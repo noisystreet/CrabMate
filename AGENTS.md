@@ -175,12 +175,15 @@ Adding or renaming a tool — check in order:
 >    `impl ToolArgsSummary for XArgs`，**从 `&serde_json::Value` 宽容取值**
 >    （`arg_str` / `arg_u64`）。不要 `serde_json::from_value::<XArgs>`：Args 带
 >    `deny_unknown_fields`，模型多传一个字段就会让摘要静默消失。
-> 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|none, description }`
+> 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|static "…"|none, description }`
 >    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
 >
-> 已迁移：`create_file` / `read_file`（形态验证批）。其余工具仍手写 `ToolSpec`，
-> 两种写法并存期由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）
-> 保证 schema / 描述 / 摘要文本零漂移。全部迁完后本表收敛为 3 步。
+> 已迁移：`create_file` / `read_file`（形态验证批）、`cargo_check`（`summary: static` 分支验证）。
+> 其余工具仍手写 `ToolSpec`，两种写法并存期由 `registry_golden_tests`
+> （`fixtures/tool_registry_golden.json`）保证 schema / 描述 / 摘要文本零漂移——快照现在覆盖
+> **全部**动态摘要工具（手写真实入参 + 按 schema 生成的全字段样本），改摘要逻辑必然被比对到。
+> `ToolRunner::AsyncOnly` 的工具（`run_command` / `terminal_session`）尚无宏写法：要等各自那批
+> 先把摘要 `impl` 落到 Args 上再一起迁。全部迁完后本表收敛为 3 步。
 
 1. `src/cm_tools/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). **`name` must reference a constant from `src/cm_tools/tool_names.rs` — never a string literal — and the tool must also be added to `tool_names::ALL`** (the `all_tool_names_match_specs` guard test fails otherwise). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
 2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.

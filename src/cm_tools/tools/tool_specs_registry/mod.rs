@@ -142,8 +142,8 @@ mod registry_golden_tests {
     use std::collections::{BTreeMap, HashSet};
     use std::path::{Path, PathBuf};
 
-    /// 固定入参的摘要样本：覆盖 `read_file` 的两种行号形态、写副作用工具、
-    /// 命令类与目录类。工具名一律引用 `cm_names` 常量——`scripts/tool-name-literal-ratchet.sh`
+    /// 手写入参样本：覆盖真实场景下的关键组合（`read_file` 的两种行号形态、写副作用工具、
+    /// 命令类与目录类）。工具名一律引用 `cm_names` 常量——`scripts/tool-name-literal-ratchet.sh`
     /// 禁止在比较位置出现工具名字面量。
     const SUMMARY_SAMPLES: &[(&str, &str)] = &[
         (
@@ -171,6 +171,24 @@ mod registry_golden_tests {
             r#"{"command":"cargo","args":["check"]}"#,
         ),
         (tool_names::LIST_TREE, r#"{"path":"src","max_depth":2}"#),
+        // `structured` 的摘要有 4 个分支（validate / query / diff / patch），
+        // 按 schema 生成的单条样本只能命中其中一个，所以逐个分支各钉一条。
+        (
+            tool_names::STRUCTURED,
+            r#"{"action":"validate","path":"Cargo.toml"}"#,
+        ),
+        (
+            tool_names::STRUCTURED,
+            r#"{"action":"query","path":"Cargo.toml","query":"/package/name"}"#,
+        ),
+        (
+            tool_names::STRUCTURED,
+            r#"{"action":"diff","path_a":"a.json","path_b":"b.json"}"#,
+        ),
+        (
+            tool_names::STRUCTURED,
+            r#"{"action":"patch","path":"a.json","query":"/x","mutation":"remove"}"#,
+        ),
     ];
 
     fn golden_path() -> PathBuf {
@@ -213,22 +231,121 @@ mod registry_golden_tests {
         (order, tools)
     }
 
+    /// 采样来源 ①：手写入参，挑的是真实场景下的关键组合（`read_file` 的两种行号形态、
+    /// 写副作用工具、命令类与目录类），人工可读、便于对照旧摘要结构的字段语义。
+    /// 采样来源 ② 见下方「按 schema 生成」的兜底。
     fn current_samples() -> Vec<Value> {
         let registered: HashSet<&str> = tool_specs().iter().map(|s| s.name).collect();
         let mut samples = Vec::new();
+        let mut covered: HashSet<&str> = HashSet::new();
         for &(name, raw_args) in SUMMARY_SAMPLES {
             if !registered.contains(name) {
                 continue;
             }
             let args: Value = serde_json::from_str(raw_args)
                 .unwrap_or_else(|e| panic!("摘要样本 {name} 的 args 不是合法 JSON: {e}"));
+            covered.insert(name);
             samples.push(json!({
                 "tool": name,
                 "args": args,
                 "summary": dynamic_summary(name, &args),
             }));
         }
+        // 采样来源 ②：手写样本没覆盖到的动态摘要工具，按 schema 生成「全字段填充」入参。
+        //
+        // 迁移的实质是把旧的 `*SummaryArgs` 字段子集结构换成 `impl ToolArgsSummary for XArgs`，
+        // 最容易犯的错是「漏读某个字段 / 字段名写错」，而这类错只在那个字段非空时才显形。
+        // 因此这里把 schema 里**所有**属性都填上占位值（不只 `required`），覆盖面比手挑几条
+        // 真实入参更宽；schema 一旦改动，摘要文本随之变化、快照就会红——那正是想要的提示
+        // （schema 是契约，改它必须走 BLESS 评审）。附带效果：新加的动态摘要工具即使没人补
+        // 手写样本，也会被自动兜住，不会出现「摘要代码改了却没有快照守着」的工具。
+        for spec in tool_specs() {
+            if !matches!(spec.summary, ToolSummaryKind::Dynamic(_)) || covered.contains(spec.name) {
+                continue;
+            }
+            let schema = (spec.parameters)();
+            let args = placeholder_object(&schema, &schema, 0);
+            samples.push(json!({
+                "tool": spec.name,
+                "args": args,
+                "summary": dynamic_summary(spec.name, &args),
+            }));
+        }
         samples
+    }
+
+    /// 按 JSON Schema 造一份「所有属性都填上占位值」的样本入参。
+    ///
+    /// `root` 用于解析 `$ref`（`rust_analyzer` 这类带动作选择器的 Args 把分支放在 `$defs`），
+    /// `depth` 兜住自引用 schema，避免递归不收敛。
+    fn placeholder_object(root: &Value, schema: &Value, depth: u8) -> Value {
+        let mut args = Map::new();
+        if depth >= 3 {
+            return Value::Object(args);
+        }
+        if let Some(props) = schema.get("properties").and_then(Value::as_object) {
+            for (key, prop) in props {
+                args.insert(key.clone(), placeholder_value(root, prop, depth + 1));
+            }
+        }
+        Value::Object(args)
+    }
+
+    /// 单个属性的占位值：`$ref` → `oneOf`/`anyOf` → `type` 依次收敛。
+    fn placeholder_value(root: &Value, schema: &Value, depth: u8) -> Value {
+        if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+            let def = reference
+                .strip_prefix("#/$defs/")
+                .and_then(|name| root.get("$defs").and_then(|defs| defs.get(name)));
+            return match def {
+                Some(def) if depth < 3 => placeholder_value(root, def, depth + 1),
+                _ => Value::Null,
+            };
+        }
+        for key in ["oneOf", "anyOf"] {
+            let Some(branches) = schema.get(key).and_then(Value::as_array) else {
+                continue;
+            };
+            let picked = branches
+                .iter()
+                .find(|b| b.get("type").and_then(Value::as_str) != Some("null"))
+                .or_else(|| branches.first());
+            if let Some(picked) = picked {
+                return placeholder_value(root, picked, depth + 1);
+            }
+        }
+        match schema.get("type") {
+            Some(Value::String(ty)) => placeholder_of_type(root, schema, ty, depth),
+            // `"type": ["integer", "null"]` 这类可空类型：取第一个非 null 的标量。
+            Some(Value::Array(types)) => {
+                let Some(ty) = types
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .find(|ty| *ty != "null")
+                else {
+                    return Value::Null;
+                };
+                let mut narrowed = schema.clone();
+                narrowed["type"] = json!(ty);
+                placeholder_value(root, &narrowed, depth + 1)
+            }
+            _ => Value::Null,
+        }
+    }
+
+    fn placeholder_of_type(root: &Value, schema: &Value, ty: &str, depth: u8) -> Value {
+        match ty {
+            "string" => json!("x"),
+            "integer" => json!(1),
+            "number" => json!(1.0),
+            "boolean" => json!(false),
+            "array" => match schema.get("items") {
+                Some(items) => json!([placeholder_value(root, items, depth + 1)]),
+                None => json!(["x"]),
+            },
+            "object" => placeholder_object(root, schema, depth),
+            _ => Value::Null,
+        }
     }
 
     fn read_golden(path: &Path) -> Option<Value> {

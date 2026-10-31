@@ -60,6 +60,506 @@
       },
       "summary": "list tree: src",
       "tool": "list_tree"
+    },
+    {
+      "args": {
+        "action": "validate",
+        "path": "Cargo.toml"
+      },
+      "summary": "structured validate: Cargo.toml",
+      "tool": "structured"
+    },
+    {
+      "args": {
+        "action": "query",
+        "path": "Cargo.toml",
+        "query": "/package/name"
+      },
+      "summary": "structured query: Cargo.toml [/package/name]",
+      "tool": "structured"
+    },
+    {
+      "args": {
+        "action": "diff",
+        "path_a": "a.json",
+        "path_b": "b.json"
+      },
+      "summary": "structured diff: a.json vs b.json",
+      "tool": "structured"
+    },
+    {
+      "args": {
+        "action": "patch",
+        "mutation": "remove",
+        "path": "a.json",
+        "query": "/x"
+      },
+      "summary": "structured patch: a.json [remove @ /x]",
+      "tool": "structured"
+    },
+    {
+      "args": {
+        "exclude": [
+          "x"
+        ],
+        "format": "x",
+        "output": "x",
+        "sources": [
+          "x"
+        ]
+      },
+      "summary": "pack 1 items into x",
+      "tool": "archive_pack"
+    },
+    {
+      "args": {
+        "archive": "x",
+        "files": [
+          "x"
+        ],
+        "output_dir": "x",
+        "strip_components": 1
+      },
+      "summary": "unpack x to x",
+      "tool": "archive_unpack"
+    },
+    {
+      "args": {
+        "archive": "x",
+        "max_entries": 1,
+        "verbose": false
+      },
+      "summary": "list archive: x",
+      "tool": "archive_list"
+    },
+    {
+      "args": {
+        "max_results": 1,
+        "proxy": "x",
+        "query": "x"
+      },
+      "summary": "web search: x",
+      "tool": "web_search"
+    },
+    {
+      "args": {
+        "method": "x",
+        "text_format": "x",
+        "url": "x"
+      },
+      "summary": "HTTP X x",
+      "tool": "http_fetch"
+    },
+    {
+      "args": {
+        "json_body": null,
+        "method": "x",
+        "text_format": "x",
+        "url": "x"
+      },
+      "summary": "HTTP X x",
+      "tool": "http_request"
+    },
+    {
+      "args": {
+        "action": "x",
+        "args": [
+          "x"
+        ],
+        "cols": 1,
+        "command": "x",
+        "input": "x",
+        "rows": 1,
+        "session_id": "x",
+        "signal": 1
+      },
+      "summary": "terminal_session x",
+      "tool": "terminal_session"
+    },
+    {
+      "args": {
+        "action": "x",
+        "character": 1,
+        "include_declaration": false,
+        "line": 1,
+        "max_results": 1,
+        "max_symbols": 1,
+        "path": "x",
+        "query": "x",
+        "server_path": "x",
+        "wait_after_open_ms": 1
+      },
+      "summary": "rust-analyzer x x:1",
+      "tool": "rust_analyzer"
+    },
+    {
+      "args": {
+        "code": "x",
+        "timeout_secs": 1,
+        "use_uv": false
+      },
+      "summary": "python snippet",
+      "tool": "python_snippet_run"
+    },
+    {
+      "args": {
+        "action": "x",
+        "add_assignee": [
+          "x"
+        ],
+        "add_label": [
+          "x"
+        ],
+        "add_reviewer": [
+          "x"
+        ],
+        "admin": false,
+        "auto": false,
+        "auto_body": false,
+        "base": "x",
+        "body": "x",
+        "delete_branch": false,
+        "draft": false,
+        "event": "x",
+        "extra_args": [
+          "x"
+        ],
+        "head": "x",
+        "include_commit_log": false,
+        "include_template": false,
+        "max_commits": 1,
+        "merge_method": "x",
+        "number": 1,
+        "remove_assignee": [
+          "x"
+        ],
+        "remove_label": [
+          "x"
+        ],
+        "remove_reviewer": [
+          "x"
+        ],
+        "repo": "x",
+        "structured": false,
+        "title": "x",
+        "undraft": false,
+        "web": false
+      },
+      "summary": "gh pr x #1 (x): x",
+      "tool": "gh_pr"
+    },
+    {
+      "args": {
+        "action": "x",
+        "extra_args": [
+          "x"
+        ],
+        "failed": false,
+        "max_failed_jobs": 1,
+        "repo": "x",
+        "run_id": "x",
+        "tail_lines": 1
+      },
+      "summary": "gh run x x",
+      "tool": "gh_run"
+    },
+    {
+      "args": {
+        "assignee": "x",
+        "body": "x",
+        "extra_args": [
+          "x"
+        ],
+        "labels": [
+          "x"
+        ],
+        "repo": "x",
+        "title": "x",
+        "web": false
+      },
+      "summary": "gh issue create (x): x",
+      "tool": "gh_issue_create"
+    },
+    {
+      "args": {
+        "auto_notes": false,
+        "draft": false,
+        "extra_args": [
+          "x"
+        ],
+        "max_commits": 1,
+        "notes": "x",
+        "prerelease": false,
+        "repo": "x",
+        "tag": "x",
+        "target": "x",
+        "title": "x",
+        "web": false
+      },
+      "summary": "gh release create x",
+      "tool": "gh_release_create"
+    },
+    {
+      "args": {
+        "body": "x",
+        "extra_args": [
+          "x"
+        ],
+        "method": "x",
+        "path": "x",
+        "query": null
+      },
+      "summary": "gh api X x",
+      "tool": "gh_api"
+    },
+    {
+      "args": {
+        "action": "x",
+        "base": "x",
+        "branch": false,
+        "context_lines": 1,
+        "end_line": 1,
+        "include_remote": false,
+        "include_untracked": false,
+        "max_count": 1,
+        "mode": "x",
+        "name_only": false,
+        "oneline": false,
+        "path": "x",
+        "porcelain": false,
+        "rev": "x",
+        "start_line": 1,
+        "stat": false
+      },
+      "summary": "git",
+      "tool": "git"
+    },
+    {
+      "args": {
+        "from": "x",
+        "overwrite": false,
+        "to": "x"
+      },
+      "summary": "copy file: x → x",
+      "tool": "copy_file"
+    },
+    {
+      "args": {
+        "from": "x",
+        "overwrite": false,
+        "to": "x"
+      },
+      "summary": "move file: x → x",
+      "tool": "move_file"
+    },
+    {
+      "args": {
+        "include_hidden": false,
+        "include_mtime": false,
+        "include_size": false,
+        "max_entries": 1,
+        "path": "x",
+        "sort_by": "x"
+      },
+      "summary": "read dir: x",
+      "tool": "read_dir"
+    },
+    {
+      "args": {
+        "include_hidden": false,
+        "max_depth": 1,
+        "max_results": 1,
+        "path": "x",
+        "pattern": "x"
+      },
+      "summary": "glob x @ x",
+      "tool": "glob_files"
+    },
+    {
+      "args": {
+        "path": "x",
+        "prefix_hash_bytes": 1
+      },
+      "summary": "binary metadata: x",
+      "tool": "read_binary_meta"
+    },
+    {
+      "args": {
+        "base_revision": "x",
+        "dry_run": false,
+        "patch": "x",
+        "strip": 1
+      },
+      "summary": "apply patch",
+      "tool": "apply_patch"
+    },
+    {
+      "args": {
+        "extensions": [
+          "x"
+        ],
+        "file_glob": "x",
+        "fts_top_n": 1,
+        "hybrid_alpha": 1.0,
+        "hybrid_semantic_pool": 1,
+        "incremental": false,
+        "path": "x",
+        "query": "x",
+        "query_max_chunks": 1,
+        "rebuild_index": false,
+        "retrieve_mode": "x",
+        "top_k": 1
+      },
+      "summary": "code search [x]: x",
+      "tool": "codebase_semantic_search"
+    },
+    {
+      "args": {
+        "allowed_external_prefixes": [
+          "x"
+        ],
+        "check_fragments": false,
+        "external_timeout_secs": 1,
+        "max_depth": 1,
+        "max_files": 1,
+        "output_format": "x",
+        "roots": [
+          "x"
+        ]
+      },
+      "summary": "markdown link check: x",
+      "tool": "markdown_check_links"
+    },
+    {
+      "args": {
+        "action": "x",
+        "case_insensitive": false,
+        "case_sensitive": false,
+        "context_lines": 1,
+        "exclude_definitions": false,
+        "include_hidden": false,
+        "include_use": false,
+        "kind": "x",
+        "max_edges": 1,
+        "max_files": 1,
+        "max_items": 1,
+        "max_results": 1,
+        "path": "x",
+        "symbol": "x",
+        "symbols": [
+          "x"
+        ]
+      },
+      "summary": "code_nav x: x",
+      "tool": "code_nav"
+    },
+    {
+      "args": {
+        "action": "x",
+        "cursor": 1,
+        "limit": 1,
+        "tool_job_id": "x"
+      },
+      "summary": "background job: x",
+      "tool": "background_job"
+    },
+    {
+      "args": {
+        "tool_job_id": "x"
+      },
+      "summary": "cancel background job: x",
+      "tool": "background_job_cancel"
+    },
+    {
+      "args": {
+        "output_matches": "x",
+        "timeout_secs": 1,
+        "tool_job_id": "x",
+        "until": "x"
+      },
+      "summary": "wait background job x until x (timeout: 1s)",
+      "tool": "background_job_wait"
+    },
+    {
+      "args": {
+        "format": "x",
+        "path": "x"
+      },
+      "summary": "code stats: x",
+      "tool": "code_stats"
+    },
+    {
+      "args": {
+        "depth": 1,
+        "format": "x",
+        "kind": "x"
+      },
+      "summary": "dependency graph (x/x)",
+      "tool": "dependency_graph"
+    },
+    {
+      "args": {
+        "format": "x",
+        "path": "x"
+      },
+      "summary": "coverage report: x",
+      "tool": "coverage_report"
+    },
+    {
+      "args": {
+        "confirm": false,
+        "paths": [
+          "x"
+        ]
+      },
+      "summary": "delete files: x",
+      "tool": "delete_files"
+    },
+    {
+      "args": {
+        "confirm": false,
+        "path": "x",
+        "recursive": false
+      },
+      "summary": "delete directory: x",
+      "tool": "delete_dir"
+    },
+    {
+      "args": {
+        "content": "x",
+        "create_if_missing": false,
+        "dry_run": false,
+        "ensure_leading_newline": false,
+        "path": "x",
+        "skip_precheck": false
+      },
+      "summary": "append to file: x",
+      "tool": "append_file"
+    },
+    {
+      "args": {
+        "parents": false,
+        "path": "x"
+      },
+      "summary": "create directory: x",
+      "tool": "create_dir"
+    },
+    {
+      "args": {
+        "allow_stale_revision": false,
+        "base_revision": "x",
+        "confirm": false,
+        "dry_run": false,
+        "max_replacements": 1,
+        "path": "x",
+        "regex": false,
+        "replace": "x",
+        "replace_all": false,
+        "search": "x",
+        "skip_precheck": false
+      },
+      "summary": "search_replace (first 1): x / \"x\"",
+      "tool": "search_replace"
     }
   ],
   "registry_order": [

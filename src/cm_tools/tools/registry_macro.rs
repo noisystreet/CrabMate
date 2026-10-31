@@ -19,10 +19,17 @@
 
 /// 声明一条内建工具的注册项，用在 `tool_specs_registry/specs/*.inc.rs` 的数组字面量里。
 ///
-/// `summary` 只接受 `dynamic` / `none` 两种：`dynamic` 要求 `args` 类型实现了
-/// [`ToolArgsSummary`]，`none` 用于没有自定义摘要的工具。`static` 摘要目前没有
-/// 使用者，等真出现再加分支（不留「以后可能用」的空壳）。
+/// `summary` 覆盖注册表里**实际出现过**的三种形态：
+///
+/// - `dynamic` —— 要求 `args` 类型实现了 [`ToolArgsSummary`]，摘要逻辑与 Args 同侧；
+/// - `static "…"` —— 与参数无关的固定文案（`cargo check` 这类只做转发的包装工具）；
+/// - `none` —— 没有自定义摘要。
+///
+/// `runner` 只接受同步执行体函数路径（对应 `ToolRunner::Typed`）。`run_command` /
+/// `terminal_session` 用的 `ToolRunner::AsyncOnly` 暂无对应写法：等它们那一批迁移时再补分支，
+/// 不提前留没被匹配过的空壳（macro_rules 里未匹配到的分支连语法都不会被检查）。
 macro_rules! builtin_tool {
+    // ── 同步执行体 + 动态摘要 ────────────────────────────────────────────────
     (
         name: $name:expr,
         args: $args:ty,
@@ -32,18 +39,39 @@ macro_rules! builtin_tool {
         summary: dynamic,
         description: $description:expr $(,)?
     ) => {
-        ToolSpec {
+        $crate::cm_tools::tools::builtin_tool!(@spec
             name: $name,
-            description: $description,
-            category: ToolCategory::$category,
             parameters: schema_of::<$args>,
             runner: ToolRunner::Typed($runner),
+            category: $category,
+            tags: [$($tag),*],
             summary: ToolSummaryKind::Dynamic(
                 <$args as $crate::cm_tools::tools::tool_summary_args::ToolArgsSummary>::summary_line,
             ),
-            tags: &[$($tag),*],
-        }
+            description: $description,
+        )
     };
+    // ── 同步执行体 + 固定摘要 ────────────────────────────────────────────────
+    (
+        name: $name:expr,
+        args: $args:ty,
+        category: $category:ident,
+        tags: [$($tag:expr),* $(,)?],
+        runner: $runner:expr,
+        summary: static $summary:expr,
+        description: $description:expr $(,)?
+    ) => {
+        $crate::cm_tools::tools::builtin_tool!(@spec
+            name: $name,
+            parameters: schema_of::<$args>,
+            runner: ToolRunner::Typed($runner),
+            category: $category,
+            tags: [$($tag),*],
+            summary: ToolSummaryKind::Static($summary),
+            description: $description,
+        )
+    };
+    // ── 同步执行体 + 无摘要 ──────────────────────────────────────────────────
     (
         name: $name:expr,
         args: $args:ty,
@@ -53,13 +81,34 @@ macro_rules! builtin_tool {
         summary: none,
         description: $description:expr $(,)?
     ) => {
+        $crate::cm_tools::tools::builtin_tool!(@spec
+            name: $name,
+            parameters: schema_of::<$args>,
+            runner: ToolRunner::Typed($runner),
+            category: $category,
+            tags: [$($tag),*],
+            summary: ToolSummaryKind::None,
+            description: $description,
+        )
+    };
+    // ── 装配：各写法最终收敛到这一处 ─────────────────────────────────────────
+    (
+        @spec
+        name: $name:expr,
+        parameters: $parameters:expr,
+        runner: $runner:expr,
+        category: $category:ident,
+        tags: [$($tag:expr),* $(,)?],
+        summary: $summary:expr,
+        description: $description:expr $(,)?
+    ) => {
         ToolSpec {
             name: $name,
             description: $description,
             category: ToolCategory::$category,
-            parameters: schema_of::<$args>,
-            runner: ToolRunner::Typed($runner),
-            summary: ToolSummaryKind::None,
+            parameters: $parameters,
+            runner: $runner,
+            summary: $summary,
             tags: &[$($tag),*],
         }
     };
