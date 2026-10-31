@@ -7,7 +7,7 @@ use crate::cm_tools::tools::http_fetch::{HttpFetchArgs, HttpRequestArgs};
 use crate::cm_tools::tools::tool_json_schema::tool_parameters_schema_value as schema_of;
 use crate::cm_tools::tools::tool_param_types as args;
 
-use super::tool_summary as ts;
+use super::tool_summary_args as ts;
 use super::*;
 
 #[cfg(feature = "archive-tools")]

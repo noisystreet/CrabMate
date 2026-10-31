@@ -202,8 +202,8 @@ Adding or renaming a tool — 3 steps:
 > 2. `specs/*.inc.rs` 用 `builtin_tool! { name, args, category, runner, summary: dynamic|static "…"|none, description }`
 >    声明一行；`parameters` 由 `args` 派生，`name` 仍取 `cm_names::*` 常量。
 >    **两个工具共用同一个 Args 类型**、但摘要要带各自的动词时，写
->    `summary: dynamic by ts::summary_x`（`ts` 即 `tool_summary`；该 fn 仍与 Args 同侧定义，
->    `pub(super) use` 从 `tool_summary_args` 转出）——当前只有 `copy_file` / `move_file`
+>    `summary: dynamic by ts::summary_x`（`ts` 即 `tool_summary_args`；该 fn 与 Args 同侧定义在
+>    `fragment_args_summary.rs`，以 `pub(super)` 直接可见）——当前只有 `copy_file` / `move_file`
 >    共用 `FileFromToOverwriteArgs`，是唯一这种组合。
 >
 > 零漂移由 `registry_golden_tests`（`fixtures/tool_registry_golden.json`）保证：快照覆盖

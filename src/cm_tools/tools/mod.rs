@@ -83,7 +83,6 @@ mod tool_args_validate;
 mod tool_json_schema;
 mod tool_param_types;
 mod tool_specs_registry;
-mod tool_summary;
 mod tool_summary_args;
 mod weather;
 mod web_search;
@@ -172,16 +171,6 @@ impl<'a> ToolContext<'a> {
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
-/// 与内置文件工具相同的路径规则：将相对路径解析为工作区内绝对路径（供变更集等跨模块只读）。
-pub use crate::cm_tools::workspace::path::WorkspacePathError;
-
-pub fn resolve_workspace_path_for_read(
-    working_dir: &std::path::Path,
-    rel: &str,
-) -> Result<std::path::PathBuf, WorkspacePathError> {
-    file::resolve_for_read(working_dir, rel)
-}
-
 pub fn tool_context_for<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
