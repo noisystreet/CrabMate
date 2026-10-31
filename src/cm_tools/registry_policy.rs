@@ -147,7 +147,7 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
 fn builtin_dedup_cache_exempt_tools() -> &'static HashSet<String> {
     static E: OnceLock<HashSet<String>> = OnceLock::new();
     E.get_or_init(|| {
-        ["background_job"]
+        [tool_names::BACKGROUND_JOB]
             .into_iter()
             .map(|s| s.to_string())
             .collect()
@@ -165,10 +165,10 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
     static S: OnceLock<HashSet<String>> = OnceLock::new();
     S.get_or_init(|| {
         [
-            "repo_overview_sweep",
-            "crate_contract_map",
-            "codebase_semantic_search",
-            "docs_health_sweep",
+            tool_names::REPO_OVERVIEW_SWEEP,
+            tool_names::CRATE_CONTRACT_MAP,
+            tool_names::CODEBASE_SEMANTIC_SEARCH,
+            tool_names::DOCS_HEALTH_SWEEP,
         ]
         .into_iter()
         .map(|s| s.to_string())

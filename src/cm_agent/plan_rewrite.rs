@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::cm_agent::log_preview::preview_chars;
 use crate::cm_agent::plan_artifact;
+use crate::cm_names as tool_names;
 
 /// 终答规划重写用尽时 SSE **`reason_code`** 的稳定子码（顶层 **`code`** 仍为 `plan_rewrite_exhausted`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,7 +214,7 @@ fn try_node_ids_from_workflow_execute_tool_message(
         .iter()
         .find(|c| c.id == tid)
         .map(|c| c.function.name.as_str())?;
-    if name != "workflow_execute" {
+    if name != tool_names::WORKFLOW_EXECUTE {
         return None;
     }
     let body = crate::cm_types::message_content_as_str(&m.content)?;
@@ -248,7 +249,7 @@ fn workflow_execute_tool_payload_json(messages: &[Message], i: usize) -> Option<
         .iter()
         .find(|c| c.id == tid)
         .map(|c| c.function.name.as_str())?;
-    if name != "workflow_execute" {
+    if name != tool_names::WORKFLOW_EXECUTE {
         return None;
     }
     let body = crate::cm_types::message_content_as_str(&m.content)?;
@@ -295,7 +296,7 @@ pub fn last_workflow_validate_binding_plan_node_ids(messages: &[Message]) -> Opt
         else {
             continue;
         };
-        if name != "workflow_execute" {
+        if name != tool_names::WORKFLOW_EXECUTE {
             continue;
         }
         let Some(body) = crate::cm_types::message_content_as_str(&m.content) else {
@@ -342,13 +343,11 @@ pub fn validate_only_plan_binding_rewrite_suffix(validate_only_node_ids: &[Strin
 
 /// 内置工具名：出现则认为「高风险」，语义侧向校验可收录其摘要（仍受 `max_non_readonly` 条数限制）。
 const SEMANTIC_CHECK_HIGH_RISK_TOOLS: &[&str] = &[
-    "run_command",
-    "run_executable",
-    "workflow_execute",
-    "create_file",
-    "edit_file",
-    "apply_patch",
-    "http_request",
+    tool_names::RUN_COMMAND,
+    tool_names::WORKFLOW_EXECUTE,
+    tool_names::CREATE_FILE,
+    tool_names::APPLY_PATCH,
+    tool_names::HTTP_REQUEST,
 ];
 
 fn tool_name_is_high_risk(name: &str) -> bool {

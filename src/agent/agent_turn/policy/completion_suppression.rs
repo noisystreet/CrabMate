@@ -1,6 +1,7 @@
 //! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
 
 use crate::cm_agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
+use crate::cm_names as tool_names;
 use crate::cm_types::{Message, ToolCall};
 
 use super::run_command_dedupe::{
@@ -8,12 +9,9 @@ use super::run_command_dedupe::{
 };
 
 const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
-    "read_file",
-    "read_dir",
-    "list_dir",
-    "list_tree",
-    "glob",
-    "search",
+    tool_names::READ_FILE,
+    tool_names::READ_DIR,
+    tool_names::LIST_TREE,
 ];
 
 const RUN_COMMAND_VERIFY_MARKERS: &[&str] = &[
@@ -115,7 +113,7 @@ fn tool_call_is_redundant_build_run_repeat(
     tc: &ToolCall,
     prior_success: &std::collections::HashSet<String>,
 ) -> bool {
-    if tc.function.name != "run_command" {
+    if tc.function.name != tool_names::RUN_COMMAND {
         return false;
     }
     normalize_run_command_key(tc.function.arguments.as_str())
@@ -127,7 +125,7 @@ pub fn tool_call_is_redundant_after_completion(tc: &ToolCall) -> bool {
     if READONLY_PROBE_TOOL_NAMES.contains(&name) {
         return true;
     }
-    name == "run_command" && run_command_is_redundant_verification(&tc.function.arguments)
+    name == tool_names::RUN_COMMAND && run_command_is_redundant_verification(&tc.function.arguments)
 }
 
 fn run_command_is_redundant_verification(args_json: &str) -> bool {

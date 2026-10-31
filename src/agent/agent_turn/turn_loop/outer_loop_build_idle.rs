@@ -2,6 +2,7 @@
 
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
 use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
+use crate::cm_names as tool_names;
 use crate::types::{Message, last_real_user_message_index, message_content_as_str};
 
 /// 从工具名 + 正文推断此工具结果指示了「构建类进展」（非简单退出码 0 检测）。
@@ -11,15 +12,14 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
     };
     if matches!(
         name,
-        "run_executable"
-            | "cargo_test"
-            | "cargo_check"
-            | "cargo_clippy"
-            | "pytest_run"
+        tool_names::CARGO_TEST
+            | tool_names::CARGO_CHECK
+            | tool_names::CARGO_CLIPPY
+            | tool_names::PYTEST_RUN
     ) {
         return true;
     }
-    if name != "run_command" {
+    if name != tool_names::RUN_COMMAND {
         return false;
     }
     let Some(content) = message_content_as_str(&m.content) else {

@@ -5,6 +5,7 @@ use super::{
     evaluate_turn_suppress_replanning,
 };
 use crate::agent::plan_artifact::PlanStepV1;
+use crate::cm_names as tool_names;
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde::Deserialize;
@@ -94,11 +95,11 @@ fn fixture_steps(name: &str) -> Vec<PlanStepV1> {
 
 fn fixture_tool_calls(name: &str) -> Vec<ToolCall> {
     match name {
-        "list_dir_probe" => vec![ToolCall {
+        "list_tree_probe" => vec![ToolCall {
             id: "call_1".into(),
             typ: "function".into(),
             function: FunctionCall {
-                name: "list_dir".into(),
+                name: tool_names::LIST_TREE.into(),
                 arguments: r#"{"path":"."}"#.into(),
             },
         }],
@@ -132,7 +133,7 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
             evaluate_turn_suppress_replanning(&messages, row.entered_from_step, &steps)
         }
         "redundant_tools" => {
-            let tools = fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_dir_probe"));
+            let tools = fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_tree_probe"));
             evaluate_turn_redundant_tools(&tools, &messages)
         }
         other => panic!("{ctx}: unknown case {other}"),

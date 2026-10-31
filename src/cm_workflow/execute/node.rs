@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use crate::cm_names as tool_names;
 use crate::cm_types::CommandApprovalDecision;
 use log::info;
 use tokio::sync::{Mutex, mpsc};
@@ -48,14 +49,14 @@ async fn execute_node_tool_phase(
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
     let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
-    let command_timeout_secs = if tool_name == "run_command" {
+    let command_timeout_secs = if tool_name == tool_names::RUN_COMMAND {
         timeout_secs
             .unwrap_or(tool_exec_ctx.cfg_command_timeout_secs)
             .max(1)
     } else {
         tool_exec_ctx.cfg_command_timeout_secs
     };
-    let run_command_reaps_self = tool_name == "run_command";
+    let run_command_reaps_self = tool_name == tool_names::RUN_COMMAND;
     // 节点内的文件工具同样受本回合权限等级的路径轴约束（S3）。
     let node_path_scope = tool_exec_ctx.path_scope;
 
@@ -157,7 +158,7 @@ async fn execute_node_tool_phase(
     };
 
     let mut workspace_changed = false;
-    if tool_name == "run_command"
+    if tool_name == tool_names::RUN_COMMAND
         && crate::cm_tools::tools::is_compile_command_success(
             tool_args_json_str,
             &tool_result.message,
@@ -243,7 +244,7 @@ fn workflow_node_workspace_failure_if_unset(
     if tool_exec_ctx.workspace_is_set {
         return None;
     }
-    if node.tool_name != "run_command" && node.tool_name != "run_executable" {
+    if node.tool_name != tool_names::RUN_COMMAND {
         return None;
     }
     Some(NodeRunResult {
@@ -439,7 +440,7 @@ async fn apply_run_command_allowlist_approvals(
     approval_mode: &WorkflowApprovalMode,
     tool_exec_ctx: &WorkflowToolExecCtx,
 ) -> Result<Arc<[String]>, NodeRunResult> {
-    if node.tool_name != "run_command" {
+    if node.tool_name != tool_names::RUN_COMMAND {
         return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     }
     let Some(cmd) = node.tool_args.get("command").and_then(|x| x.as_str()) else {
@@ -461,7 +462,7 @@ async fn apply_run_command_allowlist_approvals(
     audit_workflow_node_gate(
         approval_mode,
         crate::cm_types::permission_audit::PermissionAxis::Command,
-        "run_command",
+        tool_names::RUN_COMMAND,
         node.id.as_str(),
         disposition,
     );
@@ -483,7 +484,7 @@ async fn apply_generic_workflow_node_approval(
     node: &WorkflowNodeSpec,
     approval_mode: &WorkflowApprovalMode,
 ) -> Result<(), NodeRunResult> {
-    if !node.requires_approval || node.tool_name == "run_command" {
+    if !node.requires_approval || node.tool_name == tool_names::RUN_COMMAND {
         return Ok(());
     }
     let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
@@ -579,11 +580,11 @@ fn resolve_workflow_node_timeout_secs(
     tool_exec_ctx: &WorkflowToolExecCtx,
 ) -> Option<u64> {
     node.timeout_secs.or(match node.tool_name.as_str() {
-        "run_command" | "run_executable" | "python_snippet_run" => {
+        tool_names::RUN_COMMAND | tool_names::PYTHON_SNIPPET_RUN => {
             Some(tool_exec_ctx.cfg_command_timeout_secs)
         }
-        "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
-        "web_search" => {
+        tool_names::GET_WEATHER => Some(tool_exec_ctx.cfg_weather_timeout_secs),
+        tool_names::WEB_SEARCH => {
             let provider =
                 crate::cm_config::WebSearchProvider::parse(&tool_exec_ctx.cfg_web_search_provider)
                     .unwrap_or_default();
@@ -594,7 +595,7 @@ fn resolve_workflow_node_timeout_secs(
                 ),
             )
         }
-        "http_fetch" | "http_request" => Some(
+        tool_names::HTTP_FETCH | tool_names::HTTP_REQUEST => Some(
             tool_exec_ctx
                 .cfg_http_fetch_timeout_secs
                 .max(tool_exec_ctx.cfg_command_timeout_secs),

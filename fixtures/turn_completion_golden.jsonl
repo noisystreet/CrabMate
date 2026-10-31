@@ -6,5 +6,5 @@
 {"id":"build_early_stop","case":"early_stop","fixture":"build_satisfied","expect":"deny","deny_reason":"build_or_test_intent"}
 {"id":"readonly_suppress_replan","case":"suppress_replanning","fixture":"readonly_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"allow"}
 {"id":"build_no_suppress_replan","case":"suppress_replanning","fixture":"build_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"deny","deny_reason":"early_stop_not_allowed"}
-{"id":"readonly_redundant_tools","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"list_dir_probe","expect":"allow"}
-{"id":"build_no_redundant_tools","case":"redundant_tools","fixture":"build_satisfied","tool_fixture":"list_dir_probe","expect":"deny","deny_reason":"early_stop_not_allowed"}
+{"id":"readonly_redundant_tools","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"list_tree_probe","expect":"allow"}
+{"id":"build_no_redundant_tools","case":"redundant_tools","fixture":"build_satisfied","tool_fixture":"list_tree_probe","expect":"deny","deny_reason":"early_stop_not_allowed"}

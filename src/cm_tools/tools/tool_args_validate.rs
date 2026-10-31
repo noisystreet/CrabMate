@@ -18,6 +18,7 @@ use std::sync::OnceLock;
 use jsonschema::Validator;
 use serde_json::Value;
 
+use crate::cm_names as tool_names;
 use super::cached_params_for_tool_name;
 use super::tool_specs_registry::tool_specs;
 
@@ -439,7 +440,7 @@ fn apply_path_coercions(name: &str, map: &mut serde_json::Map<String, Value>) ->
             changed = true;
         }
     }
-    if matches!(name, "copy_file" | "move_file") {
+    if matches!(name, tool_names::COPY_FILE | tool_names::MOVE_FILE) {
         if remap_from_to_aliases(map) {
             changed = true;
         }
@@ -456,13 +457,13 @@ fn apply_path_coercions(name: &str, map: &mut serde_json::Map<String, Value>) ->
 
 fn apply_write_content_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
     let mut changed = false;
-    if matches!(name, "create_file" | "modify_file" | "append_file")
+    if matches!(name, tool_names::CREATE_FILE | tool_names::MODIFY_FILE | tool_names::APPEND_FILE)
         && schema_has_top_level_prop(name, "content")
         && remap_content_aliases(map)
     {
         changed = true;
     }
-    if name == "create_file" && schema_has_top_level_prop(name, "content") {
+    if name == tool_names::CREATE_FILE && schema_has_top_level_prop(name, "content") {
         let needs_empty_default = matches!(map.get("content"), None | Some(Value::Null));
         if needs_empty_default {
             map.insert("content".to_string(), Value::String(String::new()));
@@ -484,10 +485,10 @@ pub fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
     if apply_write_content_coercions(name, map) {
         changed = true;
     }
-    if name == "read_file" && coerce_read_file_extra_fields(map) {
+    if name == tool_names::READ_FILE && coerce_read_file_extra_fields(map) {
         changed = true;
     }
-    if name == "modify_file" && coerce_modify_file_extra_fields(map) {
+    if name == tool_names::MODIFY_FILE && coerce_modify_file_extra_fields(map) {
         changed = true;
     }
     changed
@@ -551,7 +552,7 @@ pub fn validate_parsed_str_for_builtin(name: &str, args_json: &str) -> Option<Re
     let args = match super::parse_args::parse_args_json(args_json) {
         Ok(a) => a,
         Err(e) => {
-            if name == "run_command"
+            if name == tool_names::RUN_COMMAND
                 && let Some(repaired) =
                     super::parse_args::try_repair_run_command_args_json(args_json)
                 && let Ok(v) = serde_json::from_str::<serde_json::Value>(&repaired)

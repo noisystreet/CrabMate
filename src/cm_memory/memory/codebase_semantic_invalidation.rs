@@ -191,7 +191,6 @@ pub fn invalidation_for_tool_call(
     if matches!(
         name,
         tool_names::RUN_COMMAND
-            | "run_executable"
             | tool_names::WORKFLOW_EXECUTE
             | tool_names::HTTP_REQUEST
     ) || name.starts_with("git_")

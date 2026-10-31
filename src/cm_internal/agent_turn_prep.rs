@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::cm_names as tool_names;
 use crate::cm_internal::process_handles::TurnProcessHandles;
 use crate::cm_internal::read_file_turn_cache::ReadFileTurnCache;
 use crate::cm_internal::workspace::changelist::WorkspaceChangelist;
@@ -73,13 +74,15 @@ pub async fn prepare_tools_for_turn(
         (None, _) => None,
     };
     if !cfg.codebase_semantic.codebase_semantic_search_enabled {
-        tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
+        tools_for_turn.retain(|t| t.function.name != tool_names::CODEBASE_SEMANTIC_SEARCH);
     }
     if !cfg.long_term_memory.long_term_memory_enabled {
         tools_for_turn.retain(|t| {
             !matches!(
                 t.function.name.as_str(),
-                "long_term_remember" | "long_term_forget" | "long_term_memory_list"
+                tool_names::LONG_TERM_REMEMBER
+                    | tool_names::LONG_TERM_FORGET
+                    | tool_names::LONG_TERM_MEMORY_LIST
             )
         });
     }
