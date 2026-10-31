@@ -98,40 +98,7 @@ pub enum RustAnalyzerAction {
     WorkspaceSymbol,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct RustFileOutlineArgs {
-    pub path: String,
-    pub include_use: Option<bool>,
-    #[schemars(range(min = 1, max = 500))]
-    pub max_items: Option<u32>,
-}
-
 // ── GitHub CLI ───────────────────────────────────────────────────
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrChecksArgs {
-    pub repo: Option<String>,
-    pub number: Option<u32>,
-    pub structured: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrCreateArgs {
-    pub title: String,
-    pub body: Option<String>,
-    pub repo: Option<String>,
-    pub base: Option<String>,
-    pub head: Option<String>,
-    pub draft: Option<bool>,
-    pub web: Option<bool>,
-    /// 当 `body` 为空时，从 PR 模板 + `git log` 生成正文草稿。
-    pub auto_body: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -141,79 +108,12 @@ pub enum GhPrMergeMethod {
     Rebase,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrMergeArgs {
-    pub number: Option<u32>,
-    pub repo: Option<String>,
-    pub merge_method: Option<GhPrMergeMethod>,
-    pub auto: Option<bool>,
-    pub delete_branch: Option<bool>,
-    pub admin: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum GhPrReviewEvent {
     Approve,
     RequestChanges,
     Comment,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhPrReviewArgs {
-    pub number: Option<u32>,
-    pub repo: Option<String>,
-    pub event: GhPrReviewEvent,
-    pub body: Option<String>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrCommentArgs {
-    pub number: Option<u32>,
-    pub repo: Option<String>,
-    pub body: String,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrEditArgs {
-    pub number: Option<u32>,
-    pub repo: Option<String>,
-    pub title: Option<String>,
-    pub body: Option<String>,
-    /// 编辑 PR 时新增/替换的标签（`--add-label`，可多个）。
-    pub add_label: Option<Vec<String>>,
-    /// 编辑 PR 时移除的标签（`--remove-label`，可多个）。
-    pub remove_label: Option<Vec<String>>,
-    /// 编辑 PR 时新增的 reviewer（`--add-reviewer`，可多个）。
-    pub add_reviewer: Option<Vec<String>>,
-    /// 编辑 PR 时移除的 reviewer（`--remove-reviewer`，可多个）。
-    pub remove_reviewer: Option<Vec<String>>,
-    /// 编辑 PR 时新增的 assignee（`--add-assignee`，可多个）。
-    pub add_assignee: Option<Vec<String>>,
-    /// 编辑 PR 时移除的 assignee（`--remove-assignee`，可多个）。
-    pub remove_assignee: Option<Vec<String>>,
-    pub base: Option<String>,
-    /// 置为草稿（`--draft`）。
-    pub draft: Option<bool>,
-    /// 取消草稿（`--undraft`）。
-    pub undraft: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrBodyDraftArgs {
-    pub base: Option<String>,
-    #[schemars(range(min = 1, max = 200))]
-    pub max_commits: Option<u32>,
-    pub include_template: Option<bool>,
-    pub include_commit_log: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
@@ -226,26 +126,6 @@ pub struct GhIssueCreateArgs {
     pub assignee: Option<String>,
     pub web: Option<bool>,
     pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhRunRerunArgs {
-    pub run_id: String,
-    pub repo: Option<String>,
-    pub failed: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhRunFailureSummaryArgs {
-    pub run_id: String,
-    pub repo: Option<String>,
-    #[schemars(range(min = 10, max = 500))]
-    pub tail_lines: Option<u32>,
-    #[schemars(range(min = 1, max = 20))]
-    pub max_failed_jobs: Option<u32>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
