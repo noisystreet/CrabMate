@@ -291,7 +291,7 @@ fn disabled_step(name: &str, current: Option<&(InstanceRecord, Probe)>) -> Step 
 
 /// 端口优先级：声明 > 记录（仅重启时） > 端口池；config / env / `--no-tools`
 /// 由 profile 决定（无 profile 时退回实例自身的 `config` / `env`）。
-fn start_spec(
+pub(crate) fn start_spec(
     decl: &Declaration,
     workspace: Option<&str>,
     recorded_port: Option<u16>,

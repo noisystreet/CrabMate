@@ -13,7 +13,6 @@ use super::paths::{self, CtlPaths};
 use super::port_pool::PortPool;
 use super::preflight;
 use super::probe::{self, Observed, Probe};
-use super::profiles;
 use super::readiness::{self, WaitOutcome};
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::signal;
@@ -571,30 +570,16 @@ fn finish_stopped(path: &Path, rec: &mut InstanceRecord) -> Result<(), CtlError>
     record::write_atomic(path, rec)
 }
 
-/// 按实例记录里的 profile 名重新解析预设（`restart` 用）。
+/// 重启：**优先按声明**重建启动规格，记录只作未声明实例的回落；先 down 再 up。
 ///
-/// 这段语义值得一个函数名而不只是内联：**重启必须按当前 `profiles.toml` 重建
-/// 权限集合**，否则 `--no-tools` / `allowed_commands` 会在重启后消失——
-/// 而那是向**放松**方向漂移，比报错更危险。
-fn resolve_recorded_profile(
+/// 规格为什么必须按声明重建、以及记录这一路的 env 为什么恢复不了，见
+/// [`super::relaunch::plan_restart`] 与 `docs/命令行与路由.md` 关键语义第 14 条。
+pub fn restart(
     ctx: &Ctx,
-    rec: &InstanceRecord,
-) -> Result<Option<profiles::Resolved>, CtlError> {
-    let Some(name) = rec.profile.as_deref() else {
-        return Ok(None);
-    };
-    let path = ctx.paths.profiles_file();
-    let file = profiles::load_optional(&path)?;
-    Ok(Some(profiles::resolve(
-        &file,
-        name,
-        &BTreeMap::new(),
-        &path,
-    )?))
-}
-
-/// 重启：复用原有 workspace / 端口 / 配置，先 down 再 up。
-pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Result<UpOutcome, CtlError> {
+    name: &str,
+    grace: Duration,
+    timeout: Duration,
+) -> Result<UpOutcome, CtlError> {
     paths::validate_name(name)?;
     let path = ctx.record_path(name)?;
     let Some(rec) = record::read_optional(&path)? else {
@@ -603,14 +588,19 @@ pub fn restart(ctx: &Ctx, name: &str, grace: Duration, timeout: Duration) -> Res
             format!("实例 {name} 不存在；请先 `crabmatectl up {name} ...`"),
         ));
     };
-    // profile 存在时按**当前** profiles.toml 重新解析：`restart` 是「按声明重建」，
-    // 若把 `--no-tools` / `allowed_commands` 丢掉，实例会在重启后悄悄变成另一种权限集合
-    // （而方向可能是放松）。这也正是「profile 变更需 restart 才生效」的落点。
-    let resolved = resolve_recorded_profile(ctx, &rec)?;
-    let args = super::relaunch::args_from_record(&rec, resolved.as_ref(), timeout);
+    // 规格必须在 `down` **之前**算完：声明里若出现敏感 env 或坏 profile 名，宁可这次
+    // 什么都不做，也别先把实例停掉再报错。
+    let plan = super::relaunch::load_restart_plan(
+        &rec,
+        &ctx.paths.instances_file(),
+        &ctx.paths.profiles_file(),
+        timeout,
+    )?;
 
     down(ctx, name, grace)?;
-    up(ctx, &args)
+    let mut out = up(ctx, &plan.args)?;
+    out.warnings.extend(plan.notes);
+    Ok(out)
 }
 
 /// 列出全部实例（含派生观测态）。
