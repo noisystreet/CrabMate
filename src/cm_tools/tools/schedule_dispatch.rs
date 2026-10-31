@@ -13,6 +13,7 @@ use crate::cm_tools::tools::tool_param_types::{
 };
 
 use super::schedule;
+use crate::cm_names as tool_names;
 
 /// 提醒工具入口：`list` / `add` / `update` / `delete` / `complete`。
 ///
@@ -42,7 +43,7 @@ pub fn reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError
             )
         }
         ReminderAction::Update => {
-            let id = require_id(args.id.as_deref(), "reminder")?;
+            let id = require_id(args.id.as_deref(), tool_names::REMINDER)?;
             schedule::update_reminder(
                 &serde_json::json!({
                     "id": id,
@@ -55,14 +56,14 @@ pub fn reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError
             )
         }
         ReminderAction::Delete => {
-            let id = require_id(args.id.as_deref(), "reminder")?;
+            let id = require_id(args.id.as_deref(), tool_names::REMINDER)?;
             schedule::delete_reminder(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,
             )
         }
         ReminderAction::Complete => {
-            let id = require_id(args.id.as_deref(), "reminder")?;
+            let id = require_id(args.id.as_deref(), tool_names::REMINDER)?;
             schedule::complete_reminder(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,
@@ -111,7 +112,7 @@ pub fn event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
             )
         }
         EventAction::Update => {
-            let id = require_id(args.id.as_deref(), "event")?;
+            let id = require_id(args.id.as_deref(), tool_names::EVENT)?;
             schedule::update_event(
                 &serde_json::json!({
                     "id": id,
@@ -126,7 +127,7 @@ pub fn event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
             )
         }
         EventAction::Delete => {
-            let id = require_id(args.id.as_deref(), "event")?;
+            let id = require_id(args.id.as_deref(), tool_names::EVENT)?;
             schedule::delete_event(
                 &serde_json::json!({ "id": id }).to_string(),
                 working_dir,

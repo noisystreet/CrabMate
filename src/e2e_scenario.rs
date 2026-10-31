@@ -53,6 +53,7 @@ use crate::{
     LlmSeedOverride, Message, ProcessHandles, RunAgentTurnAttach, RunAgentTurnObs,
     RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs, build_tools, run_agent_turn,
 };
+use crate::cm_names as tool_names;
 
 /// LLM-as-Judge 评分配置。
 #[derive(Debug, Clone, Default)]
@@ -306,7 +307,7 @@ pub fn preset_scenarios() -> Vec<TestScenario> {
                 .to_string(),
             workspace_files: vec![],
             expected_output_contains: vec![],
-            expected_tool_used: Some("json_format".to_string()),
+            expected_tool_used: Some(tool_names::JSON_FORMAT.to_string()),
             allowed_tools: None,
         },
         TestScenario {
@@ -334,7 +335,7 @@ add_executable(cpp_e2e_test main.cpp)
                 ),
             ],
             expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
-            expected_tool_used: Some("run_command".to_string()),
+            expected_tool_used: Some(tool_names::RUN_COMMAND.to_string()),
             allowed_tools: None,
         },
     ]

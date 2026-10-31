@@ -14,6 +14,7 @@ use super::types::{
 };
 use super::validate;
 use super::workspace_roots;
+use crate::cm_names as tool_names;
 
 /// 读取 `system_prompt_file`：绝对路径直接读；否则依次尝试 cwd、各配置目录（后加载的优先）、`run_command_working_dir`。
 fn read_system_prompt_file_resolved(
@@ -503,7 +504,7 @@ fn clean_str_list(v: &[String]) -> Vec<String> {
 
 /// 允许 `async=true` 的内建工具默认白名单（用户可用 `background_job_async_tools` 覆盖；空数组 = 全部禁用）。
 fn default_background_job_async_tools() -> Vec<String> {
-    vec!["run_command".to_string()]
+    vec![tool_names::RUN_COMMAND.to_string()]
 }
 
 /// 工具失败透明重试的默认可重试错误码（瞬时可重试类；用户可用 `tool_retry_error_codes` 覆盖）。

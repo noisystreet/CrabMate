@@ -12,6 +12,7 @@ use super::super::run_command_guard::classify_run_command_failure_family_from_re
 use super::super::{emit_timeline_log_sse, emit_tool_call_summary_sse};
 
 use super::SerialToolIterationSsePreface;
+use crate::cm_names as tool_names;
 
 pub(super) fn serial_bookkeep_run_command_failure(
     per_coord: &mut PerCoordinator,
@@ -20,7 +21,7 @@ pub(super) fn serial_bookkeep_run_command_failure(
     args: &str,
     result: &str,
 ) {
-    if name != "run_command" {
+    if name != tool_names::RUN_COMMAND {
         return;
     }
     let parsed = parse_tool_output(name, result);

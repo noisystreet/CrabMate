@@ -2,6 +2,7 @@
 
 use super::{AcceptanceEvidence, AcceptanceSpec, ExitCodePolicy, FileResolveKind, VerifyOutcome};
 use crate::cm_workflow::resolve_json_path::resolve_json_path_value;
+use crate::cm_names as tool_names;
 
 /// 从工具输出中提取 JSON 信封内的 output 字段（如果有的话）
 fn extract_json_output(output: &str) -> Option<String> {
@@ -102,7 +103,7 @@ fn haystack_for_stream_contains<'a>(
     if !stream.is_empty() {
         return stream;
     }
-    if ev.tool_name == "run_command" {
+    if ev.tool_name == tool_names::RUN_COMMAND {
         return stream;
     }
     if !tool_output_fallback.is_empty() {

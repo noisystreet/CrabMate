@@ -19,7 +19,7 @@ type BackgroundArgvAssembler =
 /// 避免「支持清单」与「装配分支」两处漂移；新增工具只需在此登记一行。
 fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler> {
     match name {
-        "cargo_test" => Some(|args_json, workspace_root| {
+        crate::cm_names::CARGO_TEST => Some(|args_json, workspace_root| {
             crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
                 "test",
                 args_json,
@@ -27,7 +27,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
             )
             .map_err(|e| e.message)
         }),
-        "pytest_run" => Some(crate::cm_tools::tools::python_tools::pytest_run_background_argv),
+        crate::cm_names::PYTEST_RUN => Some(crate::cm_tools::tools::python_tools::pytest_run_background_argv),
         _ => None,
     }
 }
@@ -99,7 +99,7 @@ fn background_async_gate(
     if !args_request_background_async(args) {
         return BackgroundAsyncGate::Skip;
     }
-    if name == "run_command" {
+    if name == crate::cm_names::RUN_COMMAND {
         // `run_command` 走既有 `execute_run_command_async` 路径。
         return BackgroundAsyncGate::Skip;
     }

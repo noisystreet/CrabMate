@@ -17,6 +17,7 @@ use crate::cm_types::{CommandApprovalDecision, ToolCall};
 use super::super::*;
 // 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
 use super::*;
+use crate::cm_names as tool_names;
 
 pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_impl(
     invoke: RunCommandHostInvoke<'_>,
@@ -115,7 +116,7 @@ pub async fn prefetch_http_fetch_parallel_approvals(
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
     for tc in tool_calls {
-        if tc.function.name != "http_fetch" {
+        if tc.function.name != tool_names::HTTP_FETCH {
             continue;
         }
         let key = (tc.function.name.clone(), tc.function.arguments.clone());

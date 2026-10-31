@@ -80,7 +80,7 @@ impl ToolSummaryLine for GitSummaryArgs {
                     "remote_list" => "git remote -v",
                     // 缺 action 或未识别的 action 都回落到工具名，避免把原始字符串
                     // （如拼错的 `nope`）当成卡片标题显示。
-                    _ => "git",
+                    _ => crate::cm_names::GIT,
                 };
                 Some(label.to_string())
             }

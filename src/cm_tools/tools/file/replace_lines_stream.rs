@@ -15,6 +15,7 @@ use crate::cm_tools::tools::write_sse_preview::{
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 
 use super::write_precheck::NOT_WRITTEN_HINT;
+use crate::cm_names as tool_names;
 
 #[inline]
 fn tool_output_prepend_path(rel_display: &str, message: impl AsRef<str>) -> String {
@@ -462,7 +463,7 @@ fn modify_replace_dry_run(
         ),
     );
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -496,7 +497,7 @@ fn modify_insert_dry_run(
         ),
     );
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -524,7 +525,7 @@ fn finish_modify_file_success(
     );
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {

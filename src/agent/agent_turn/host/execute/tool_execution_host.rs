@@ -14,6 +14,7 @@ use crate::cm_internal::tool_registry::{self, DispatchToolParams, HandlerId};
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;
 use crate::request_chrome_trace::RequestTurnTrace;
+use crate::cm_names as tool_names;
 
 async fn prefetch_parallel_approval_failures_impl(
     params: ParallelPrefetchParams<'_>,
@@ -26,7 +27,7 @@ async fn prefetch_parallel_approval_failures_impl(
         permission,
     } = params;
     let mut prefetch_failures = ParallelPrefetchFailures::new();
-    if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
+    if tool_calls.iter().any(|t| t.function.name == tool_names::HTTP_FETCH) {
         prefetch_failures.extend(
             tool_registry::prefetch_http_fetch_parallel_approvals(
                 tool_calls,

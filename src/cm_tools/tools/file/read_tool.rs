@@ -18,6 +18,7 @@ use super::read_file_pipeline::{
 mod read_tool_parse;
 
 use read_tool_parse::{ReadFileParsedArgs, parse_read_file_args};
+use crate::cm_names as tool_names;
 
 /// 路径不存在或无法解析时追加，减少误猜 `foo.rs` / `src/lib.rs` 等布局。
 const READ_FILE_NOT_FOUND_LAYOUT_HINT: &str = "\n\n提示：若路径不存在，常见于误猜 Rust 布局——模块多为 `…/模块名/mod.rs` 而非同级 `…/模块名.rs`；workspace 子 crate 入口可能在包根 `lib.rs`（或 `Cargo.toml` 的 `[lib] path`），未必有 `src/lib.rs`。请先用 read_dir / glob_files / list_tree 确认真实路径后再 read_file。";
@@ -68,7 +69,7 @@ fn read_file_workspace_tool_error_maybe_hint(
 
 fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
     crate::cm_tools::tool_result::prepend_crabmate_tool_output(
-        "read_file",
+        tool_names::READ_FILE,
         crate::cm_tools::tool_result::ReadFileOutputFields {
             path: path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path)),
             revision: meta.revision.to_string(),

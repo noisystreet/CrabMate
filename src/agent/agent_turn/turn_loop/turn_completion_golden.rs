@@ -5,10 +5,10 @@ use super::{
     evaluate_turn_suppress_replanning,
 };
 use crate::agent::plan_artifact::PlanStepV1;
-use crate::cm_names as tool_names;
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde::Deserialize;
+use crate::cm_names as tool_names;
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -59,7 +59,7 @@ fn fixture_messages(name: &str) -> Vec<Message> {
     match name {
         "readonly_satisfied" => vec![
             msg("user", "分析当前目录"),
-            tool_env("list_tree", "list tree: ."),
+            tool_env(tool_names::LIST_TREE, "list tree: ."),
             msg(
                 "assistant",
                 "当前目录包含三个压缩包，分析结果如下，总结完成。",
@@ -68,7 +68,7 @@ fn fixture_messages(name: &str) -> Vec<Message> {
         "build_satisfied" => vec![
             msg("user", "编译 hpcg"),
             tool_env(
-                "run_command",
+                tool_names::RUN_COMMAND,
                 "命令：make\n退出码：0\n标准输出：\nBuilt target hpcg",
             ),
             msg("assistant", "HPCG 编译完成成功。"),

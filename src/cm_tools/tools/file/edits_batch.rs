@@ -17,6 +17,7 @@ use super::replace_lines_stream::{
     verify_expect_content, verify_expect_edge_lines, verify_expect_line_content,
 };
 use super::write_precheck::NOT_WRITTEN_HINT;
+use crate::cm_names as tool_names;
 
 /// 单次 `edits` 批量的条数上限，防止一次调用写坏大文件。
 const MAX_EDITS: usize = 16;
@@ -352,7 +353,7 @@ fn batch_dry_run_preview(path: &str, edits: &[BatchEdit], original: &str, out: S
         edits.len()
     );
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -389,7 +390,7 @@ fn finish_batch_success(
     );
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
-        "modify_file",
+        tool_names::MODIFY_FILE,
         true,
         body,
         vec![WriteDiffFileState {

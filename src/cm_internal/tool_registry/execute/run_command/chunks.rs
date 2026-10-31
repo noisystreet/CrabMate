@@ -17,6 +17,7 @@ use crate::cm_types::{CommandApprovalDecision, ToolCall};
 use super::super::*;
 // 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
 use super::*;
+use crate::cm_names as tool_names;
 
 pub(in crate::cm_internal::tool_registry::execute) struct RunCommandHostInvoke<'a> {
     pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
@@ -84,7 +85,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn emit_run_command_tool_outp
     let payload = crate::cm_sse_protocol::sse::protocol::SsePayload::ToolOutputChunk {
         tool_output_chunk: crate::cm_sse_protocol::sse::protocol::ToolOutputChunkBody {
             tool_call_id: tool_call_id.to_string(),
-            name: Some("run_command".to_string()),
+            name: Some(tool_names::RUN_COMMAND.to_string()),
             seq: n,
             chunk: text,
             stream: Some(stream.as_sse_label().to_string()),

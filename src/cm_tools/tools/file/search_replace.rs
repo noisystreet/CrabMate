@@ -22,6 +22,7 @@ use crate::cm_tools::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
+use crate::cm_names as tool_names;
 // ── search_replace ──────────────────────────────────────────
 
 /// `search_replace` 的替换范围。
@@ -225,7 +226,7 @@ fn search_replace_dry_run_preview(o: &SearchReplaceOutcome<'_>, new_content: &st
     // 与写盘结果共用同一个 diff 渲染：旧预览按行 zip 对比，替换改变行数后其后每行都被判成
     // 「变了」，20 行上限迅速耗尽、结论失真。
     format_tool_output_with_write_diff_preview(
-        "search_replace",
+        tool_names::SEARCH_REPLACE,
         true,
         body,
         vec![WriteDiffFileState {
@@ -268,7 +269,7 @@ fn search_replace_precheck(
     new_content: &str,
 ) -> Result<(), ToolError> {
     super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
-        .map_err(|e| ToolError::write_precheck_failed("search_replace", e))
+        .map_err(|e| ToolError::write_precheck_failed(tool_names::SEARCH_REPLACE, e))
 }
 
 #[allow(clippy::result_large_err)]
@@ -301,8 +302,8 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
 ///
 /// `parse_tool_output` 只认**首行**标记，所以调用方不能给这类正文加 `写入文件失败：` 前缀。
 fn search_replace_typed_error(body: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("search_replace", &body);
-    ToolError::from_parsed("search_replace", &parsed, body)
+    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::SEARCH_REPLACE, &body);
+    ToolError::from_parsed(tool_names::SEARCH_REPLACE, &parsed, body)
 }
 
 /// 写前 CAS：显式 `base_revision` 始终校验；本轮 `read_file` 有绑定就顺带比对；
@@ -437,7 +438,7 @@ fn search_replace_persist(
         Some(before.clone()),
     );
     Ok(format_tool_output_with_write_diff_preview(
-        "search_replace",
+        tool_names::SEARCH_REPLACE,
         true,
         body,
         vec![WriteDiffFileState {

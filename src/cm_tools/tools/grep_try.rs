@@ -7,6 +7,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::cm_tools::tool_result::{SearchInFilesOutputFields, ToolError, prepend_crabmate_tool_output};
+use crate::cm_names as tool_names;
 
 struct SearchParams {
     pattern: String,
@@ -246,7 +247,7 @@ struct SearchOutputHeader<'a> {
 
 fn prepend_search_header(body: &str, h: SearchOutputHeader<'_>) -> String {
     prepend_crabmate_tool_output(
-        "search_in_files",
+        tool_names::SEARCH_IN_FILES,
         SearchInFilesOutputFields {
             pattern: h.pattern.to_string(),
             root: path_under_workspace_display(h.working_dir, h.root),

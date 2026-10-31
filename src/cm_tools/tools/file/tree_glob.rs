@@ -11,6 +11,7 @@ use super::path::{
     PathAccess, WorkspacePathCodes, canonical_workspace_root, path_for_tool_display,
     tool_user_error_from_workspace_path, workspace_path_tool_error_with_message,
 };
+use crate::cm_names as tool_names;
 
 /// `glob_files` 在工作区路径解析失败时的稳定码（越界 / IO）。
 const GLOB_FILES_PATH_CODES: WorkspacePathCodes = WorkspacePathCodes {
@@ -73,7 +74,7 @@ fn prepend_list_tree_output_header(
     truncated: bool,
 ) -> String {
     crate::cm_tools::tool_result::prepend_crabmate_tool_output(
-        "list_tree",
+        tool_names::LIST_TREE,
         crate::cm_tools::tool_result::ListTreeOutputFields {
             path: root_rel.to_string(),
             max_depth,

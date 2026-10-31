@@ -134,7 +134,7 @@ async fn dispatch_sync_default_tool(
         .map(|c| c.path_scope)
         .unwrap_or(crate::cm_types::PathScope::SessionRoot);
 
-    if name == "read_dir" {
+    if name == crate::cm_names::READ_DIR {
         let web_ctx = http_tool_approval_context(runtime);
         if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, env.permission).await {
             return (msg, None);
@@ -506,7 +506,7 @@ pub async fn prefetch_parallel_syncdefault_approvals(
         if handler_lookup.id_for(tc.function.name.as_str()) != HandlerId::SyncDefault {
             continue;
         }
-        if tc.function.name != "read_dir" {
+        if tc.function.name != crate::cm_names::READ_DIR {
             continue;
         }
         let key = (tc.function.name.clone(), tc.function.arguments.clone());

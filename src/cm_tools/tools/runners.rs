@@ -1,5 +1,6 @@
 //! 内置工具的 `runner_*` 薄封装与 [`ToolSpec`] 类型（由 [`super::tool_specs_registry`] 引用）。
 use super::*;
+use crate::cm_names as tool_names;
 
 /// 工具执行体的签名形态。
 ///
@@ -47,7 +48,7 @@ pub struct ToolSpec {
 
 #[inline]
 pub fn tool_spec_requires_fastembed(name: &str) -> bool {
-    name == "codebase_semantic_search"
+    name == tool_names::CODEBASE_SEMANTIC_SEARCH
 }
 
 // ── 同构薄封装宏 ────────────────────────────────────────────

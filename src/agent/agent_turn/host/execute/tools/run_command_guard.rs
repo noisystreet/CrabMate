@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 
 use crate::cm_tools::tools::{CommandSpec, parse_command_spec};
+use crate::cm_names as tool_names;
 
 /// 失败家族判定只看 `CommandSpec` 的规范化结果，与审批/执行消费同一解析入口。
 pub(super) fn classify_run_command_failure_family_from_spec(
@@ -113,7 +114,7 @@ pub(super) fn run_command_cargo_workdir_preflight_error(
     tool_args_json: &str,
     effective_working_dir: &Path,
 ) -> Option<String> {
-    if tool_name != "run_command" {
+    if tool_name != tool_names::RUN_COMMAND {
         return None;
     }
     let spec = parse_command_spec(tool_args_json, effective_working_dir).ok()?;
@@ -156,7 +157,7 @@ pub(super) fn run_command_ctest_preflight_error(
     tool_args_json: &str,
     effective_working_dir: &Path,
 ) -> Option<String> {
-    if tool_name != "run_command" {
+    if tool_name != tool_names::RUN_COMMAND {
         return None;
     }
     let spec = parse_command_spec(tool_args_json, effective_working_dir).ok()?;

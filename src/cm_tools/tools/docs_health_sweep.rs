@@ -9,6 +9,7 @@ use super::repo_overview;
 use super::spell_tools;
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::DocsHealthSweepArgs;
+use crate::cm_names as tool_names;
 
 /// 阶段参数二次序列化失败（`DocsHealthSweepArgs` → `Value` → `String`）。
 ///
@@ -107,7 +108,7 @@ fn push_skipped_after_typos(
         summary.push(("codespell_check".to_string(), "skipped".to_string()));
     }
     if run_markdown_links {
-        summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+        summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
     }
 }
 
@@ -303,7 +304,7 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Result<Option<String>, Too
     }
     if env.fail_fast && failed {
         if run_markdown_links {
-            summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+            summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
         }
         return Ok(Some(build_output(
             summary,
@@ -355,7 +356,7 @@ fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, ToolE
         );
     }
     serde_json::to_string(&serde_json::Value::Object(o))
-        .map_err(|e| phase_args_serialize_failed("markdown_check_links", &e))
+        .map_err(|e| phase_args_serialize_failed(tool_names::MARKDOWN_CHECK_LINKS, &e))
 }
 
 /// 运行 Markdown 链接检查阶段。
@@ -373,14 +374,14 @@ fn run_markdown_links_phase(
     summary: &mut Vec<(String, String)>,
 ) -> Result<(), ToolError> {
     if !run_markdown_links {
-        summary.push(("markdown_check_links".to_string(), "skipped".to_string()));
+        summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
         return Ok(());
     }
     let md_args = markdown_check_links_args_json(v)?;
     let r = super::markdown_links::markdown_check_links_try(&md_args, workspace_root)?;
     let failed = markdown_links_failed(&r);
     summary.push((
-        "markdown_check_links".to_string(),
+        tool_names::MARKDOWN_CHECK_LINKS.to_string(),
         if failed {
             "failed".to_string()
         } else {

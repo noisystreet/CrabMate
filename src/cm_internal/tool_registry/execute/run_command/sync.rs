@@ -17,6 +17,7 @@ use crate::cm_types::{CommandApprovalDecision, ToolCall};
 use super::super::*;
 // 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
 use super::*;
+use crate::cm_names as tool_names;
 
 pub(in crate::cm_internal::tool_registry::execute) struct RunCommandSyncHostInvoke<'a> {
     pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
@@ -62,7 +63,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_
             env,
             effective_working_dir,
             workspace_is_set,
-            "run_command",
+            tool_names::RUN_COMMAND,
             args,
             crate::cm_internal::tool_sandbox::write_runner_config_json_with_allowed_commands(
                 cfg.as_ref(),

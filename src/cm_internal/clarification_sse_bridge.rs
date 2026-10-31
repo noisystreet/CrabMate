@@ -5,6 +5,7 @@ use crate::cm_tools::clarification_questionnaire::{
 };
 
 use crate::cm_sse_protocol::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
+use crate::cm_names as tool_names;
 
 fn to_sse_body(body: ToolsBody) -> ClarificationQuestionnaireBody {
     ClarificationQuestionnaireBody {
@@ -30,7 +31,7 @@ pub fn clarification_questionnaire_body_if_tool_ok(
     args_json: &str,
     tool_output: &str,
 ) -> Option<ClarificationQuestionnaireBody> {
-    if tool_name != "present_clarification_questionnaire" {
+    if tool_name != tool_names::PRESENT_CLARIFICATION_QUESTIONNAIRE {
         return None;
     }
     if !tool_output.trim_start().starts_with("退出码：0") {

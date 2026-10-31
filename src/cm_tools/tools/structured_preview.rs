@@ -15,6 +15,7 @@ use crate::cm_tools::tool_result::{
     CrabmateToolOutputEnvelope, CrabmateToolOutputMeta, PREVIEW_WORKSPACE_WRITE_DIFF,
     WorkspaceWriteDiffFields, WorkspaceWriteDiffFile,
 };
+use crate::cm_names as tool_names;
 
 /// 若 `result` 首行是 `{"kind":"crabmate_tool_output","tool":…}` 且 `tool` 与 `tool_name` 一致，返回该 JSON；否则 `None`。
 pub fn crabmate_tool_output_header(tool_name: &str, result: &str) -> Option<Value> {
@@ -216,7 +217,7 @@ pub fn augment_run_command_preview_with_git_diff(
     let display_path = workspace_preview_display_path(stdout, invocation);
     let (unified_diff, trunc_file) = truncate_stdout_for_preview(stdout);
     let tool_header = CrabmateToolOutputEnvelope::new(
-        "run_command",
+        tool_names::RUN_COMMAND,
         WorkspaceWriteDiffFields::new(
             vec![WorkspaceWriteDiffFile {
                 path: display_path,
