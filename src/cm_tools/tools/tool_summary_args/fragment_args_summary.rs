@@ -187,6 +187,136 @@ impl ToolArgsSummary for super::tool_param_types::GhApiArgs {
 }
 
 
+// ── P2 批：后台任务族（含 `AsyncOnly` 的 run_command / terminal_session）─────────
+
+impl ToolArgsSummary for super::tool_param_types::RunCommandArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        // `command` 既可能是字符串也可能是数组（模型两种都发），所以不走 `arg_str`，
+        // 直接看原始 JSON；数组会被拼成一整条命令行。
+        let mut tokens = command_display_tokens(args.get("command")?);
+        if tokens.is_empty() {
+            return None;
+        }
+        let no_args = serde_json::Value::Null;
+        tokens.extend(run_command_arg_display_tokens(
+            args.get("args").unwrap_or(&no_args),
+        ));
+        Some(tokens.join(" "))
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::TerminalSessionArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let action_raw = arg_str_raw(args, "action").unwrap_or("").trim();
+        let action = action_raw.to_ascii_lowercase();
+        // close/resize/signal/interrupt 走**不 trim** 的 session_id：旧实现
+        // `unwrap_or("?")` 对空白串是原样输出，这里保持同样的边界。
+        let sid_raw = args.get("session_id").and_then(serde_json::Value::as_str);
+        let sid_or_q = sid_raw.unwrap_or("?");
+        Some(match action.as_str() {
+            "list" => "terminal_session list".to_string(),
+            "close" => format!("terminal_session close {sid_or_q}"),
+            "resize" => format!("terminal_session resize {sid_or_q}"),
+            "send_signal" => format!("terminal_session signal {sid_or_q}"),
+            "interrupt" => format!("terminal_session interrupt {sid_or_q}"),
+            "exec" => {
+                let sid = sid_raw.unwrap_or("").trim();
+                let cmd = args
+                    .get("command")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                if !sid.is_empty() {
+                    format!("terminal_session exec sid={sid}")
+                } else if !cmd.is_empty() {
+                    let tail = args
+                        .get("args")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter_map(serde_json::Value::as_str)
+                                .map(terminal_session_arg_display_token)
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
+                    if tail.is_empty() {
+                        format!("terminal_session exec {cmd}")
+                    } else {
+                        format!("terminal_session exec {cmd} {tail}")
+                    }
+                } else {
+                    "terminal_session exec".to_string()
+                }
+            }
+            _ => format!("terminal_session {action_raw}"),
+        })
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::BackgroundJobArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let action = arg_str_raw(args, "action").unwrap_or("").trim();
+        let id = args
+            .get("tool_job_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim();
+        Some(match action {
+            "status" => {
+                if id.is_empty() {
+                    "background job status".to_string()
+                } else {
+                    format!("background job status: {id}")
+                }
+            }
+            "list" => match arg_u64(args, "limit") {
+                Some(n) => format!("list background jobs (limit: {n})"),
+                None => "list background jobs".to_string(),
+            },
+            "output" => {
+                if id.is_empty() {
+                    "background job output".to_string()
+                } else {
+                    format!("background job output: {id}")
+                }
+            }
+            "" => "background job".to_string(),
+            other => format!("background job: {other}"),
+        })
+    }
+}
+
+impl ToolArgsSummary for super::tool_param_types::BackgroundJobWaitArgs {
+    fn summary_line(args: &serde_json::Value) -> Option<String> {
+        let id = args
+            .get("tool_job_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let until = arg_str_raw(args, "until").unwrap_or("exit").trim();
+        let target = match until {
+            "output_matches" => match arg_str(args, "output_matches") {
+                Some(p) => format!("output matches `{p}`"),
+                None => "output matches".to_string(),
+            },
+            "" | "exit" => "exit".to_string(),
+            other => other.to_string(),
+        };
+        let base = if id.is_empty() {
+            format!("wait background job until {target}")
+        } else {
+            format!("wait background job {id} until {target}")
+        };
+        Some(match arg_u64(args, "timeout_secs") {
+            Some(secs) => format!("{base} (timeout: {secs}s)"),
+            None => base,
+        })
+    }
+}
+
+
 #[cfg(test)]
 mod args_summary_tests {
     use super::*;
@@ -225,6 +355,67 @@ mod args_summary_tests {
             )
             .as_deref(),
             Some("create file: notes/a.md")
+        );
+    }
+}
+
+#[cfg(test)]
+mod background_family_summary_tests {
+    use super::*;
+    use crate::cm_tools::tools::tool_param_types::{BackgroundJobArgs, RunCommandArgs};
+    use serde_json::json;
+
+    // 下列案例从 `fragment_gh_archive.rs` / `fragment_git_files_tail.rs` 的旧测试
+    // 平移而来：断言文本不变，只把入口从 `summarize_from_value::<*SummaryArgs>`
+    // 换成 Args 上的 `summary_line`，确保迁移没有悄悄改掉输出。
+
+    #[test]
+    fn run_command_summary_joins_command_and_string_args() {
+        let v = json!({ "command": "cargo", "args": ["test", "--all"] });
+        assert_eq!(RunCommandArgs::summary_line(&v).expect("summary"), "cargo test --all");
+    }
+
+    #[test]
+    fn run_command_summary_accepts_args_as_single_string() {
+        let v = json!({ "command": "bash", "args": "-c echo hi" });
+        let s = RunCommandArgs::summary_line(&v).expect("summary");
+        assert!(s.starts_with("bash "), "{s}");
+        assert!(s.contains("echo hi"), "{s}");
+    }
+
+    #[test]
+    fn run_command_summary_quotes_args_with_spaces() {
+        let v = json!({ "command": "bash", "args": ["-c", "echo hello world"] });
+        assert_eq!(
+            RunCommandArgs::summary_line(&v).expect("summary"),
+            r#"bash -c "echo hello world""#
+        );
+    }
+
+    #[test]
+    fn background_job_status_summary_uses_job_id() {
+        let v = json!({ "action": "status", "tool_job_id": " j1 " });
+        assert_eq!(
+            BackgroundJobArgs::summary_line(&v).expect("summary"),
+            "background job status: j1"
+        );
+    }
+
+    #[test]
+    fn background_job_list_summary_reports_limit() {
+        let v = json!({ "action": "list", "limit": 5 });
+        assert_eq!(
+            BackgroundJobArgs::summary_line(&v).expect("summary"),
+            "list background jobs (limit: 5)"
+        );
+    }
+
+    #[test]
+    fn background_job_missing_action_falls_back_to_generic_line() {
+        let v = json!({ "tool_job_id": "j1" });
+        assert_eq!(
+            BackgroundJobArgs::summary_line(&v).expect("summary"),
+            "background job"
         );
     }
 }

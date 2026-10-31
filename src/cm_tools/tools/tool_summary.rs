@@ -21,8 +21,6 @@ macro_rules! define_summaries {
 define_summaries! {
     summary_codebase_semantic_search => CodebaseSemanticSearchSummaryArgs,
     summary_search_in_files => SearchInFilesSummaryArgs,
-    summary_run_command => RunCommandSummaryArgs,
-    summary_terminal_session => TerminalSessionSummaryArgs,
     summary_rust_analyzer => RustAnalyzerSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_git => GitSummaryArgs,
@@ -39,8 +37,6 @@ define_summaries! {
     summary_list_tree => ListTreeSummaryArgs,
     summary_apply_patch => ApplyPatchSummaryArgs,
     summary_code_nav => CodeNavSummaryArgs,
-    summary_background_job => BackgroundJobSummaryArgs,
-    summary_background_job_wait => BackgroundJobWaitSummaryArgs,
     summary_search_replace => SearchReplaceSummaryArgs,
     summary_gh_pr => GhPrSummaryArgs,
     summary_gh_run => GhRunSummaryArgs,
