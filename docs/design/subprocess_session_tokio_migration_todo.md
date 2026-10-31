@@ -30,8 +30,8 @@
 
 | 宿主 | 文件 | 形态 |
 |---|---|---|
-| chat `run_command`（同步） | `cm_internal/tool_registry/execute/execute_run_command_sync.inc.rs` | `tokio::task::spawn_blocking` 内调 `tools::run_checked_wait`，`with_request_github_token_blocking` 包一层 |
-| chat `run_command`（`async:true` 后台） | `execute_run_command_async.inc.rs` → `cm_internal/tool_jobs::worker::launch_job` | `tokio::spawn` 内再 `spawn_blocking` + `catch_unwind` 调 `run_job_blocking` |
+| chat `run_command`（同步） | `cm_internal/tool_registry/execute/run_command/sync.rs` | `tokio::task::spawn_blocking` 内调 `tools::run_checked_wait`，`with_request_github_token_blocking` 包一层 |
+| chat `run_command`（`async:true` 后台） | `run_command/async_invocation.rs` → `cm_internal/tool_jobs::worker::launch_job` | `tokio::spawn` 内再 `spawn_blocking` + `catch_unwind` 调 `run_job_blocking` |
 | workflow 节点 | `cm_workflow/execute/node.rs` | `async` 块内 `spawn_blocking` 调 `run_tool_result` |
 | `python_snippet_run` | `cm_tools/tools/python_tools.rs` | 直接 `prepare_piped_process_group` + `wait_child_session`；`run_and_capture` |
 | `cargo_test` / `pytest_run` 等 | `cm_tools/tools/cargo_subcommand.rs` 等 | `run_and_capture` |
@@ -165,7 +165,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 |---|---|---|---|
 | 1 | `cm_tools/subprocess_session.rs` | `wait_child_session` / `run_and_capture` / `spawn_drain` / `take_drain` / `terminate_child_group` / `reap_after_kill` / `unix_term_then_kill` 同步 | 全部 `async`；`thread::{sleep,spawn,join}` → `tokio::{time::sleep/spawn/time::timeout}`；模块头注释更新（删「阻塞轮询」） |
 | 2 | `cm_tools/tools/command.rs` | `run_try` / `run_try_wait` / `run_checked` / `run_checked_wait` / `run_impl` / `run_spawned_command` 同步（`run_with_wait` 已随 PR0 删除） | 全部 `async fn`，内部 `.await`；`RunCommandError::TimedOut` 映射不变 |
-| 3 | `cm_internal/tool_registry/execute/execute_run_command_sync.inc.rs` | `spawn_blocking` + `with_request_github_token_blocking` + `tools::run_checked_wait` | 去 `spawn_blocking`，直接 `await tools::run_checked_wait(...)`；token 改 `with_request_github_token`（见「坑」） |
+| 3 | `cm_internal/tool_registry/execute/run_command/sync.rs` | `spawn_blocking` + `with_request_github_token_blocking` + `tools::run_checked_wait` | 去 `spawn_blocking`，直接 `await tools::run_checked_wait(...)`；token 改 `with_request_github_token`（见「坑」） |
 | 4 | `cm_internal/tool_jobs/worker.rs` | **PR2 已实施**：原 `run_job_blocking`（同步）+ `launch_job` 的 `spawn_blocking` + `catch_unwind` | 改名 `run_job_async`，`prepare_piped_process_group` + `wait_child_session_async` 全 `await`；`launch_job` 去 `spawn_blocking`，panic 由内层 `tokio::spawn` 的 `JoinError` 兜底（保留 terminate 进程组后再标 `failed(internal)` 的逻辑）；`chunk_sink_from_output` 不变；命令转 `tokio::process::Command` 后 `kill_on_drop(true)` 兜底 abort/drop |
 | 5 | `cm_workflow/execute/node.rs` | **PR0 / S5 已实施**：原 `spawn_blocking` 调 `run_tool_result`；`run_command_reaps_self` 特判 | run_command 节点：走 `async` 路径直接 `await`；非 run_command 的同步工具仍可保留 `spawn_blocking`；「非 run_command 无法取消」警告相应修订 |
 | 6 | `cm_tools/tools/python_tools.rs` | **PR3 已实施**：路线 A 保留同步入口；L357–374 `prepare_piped_process_group`+`wait_child_session`；L475 `run_and_capture` | **PR0 决策**（S8）：路线 A 保留同步入口；路线 B `await`（需 `run_tool` 一并 async 化）。见「调用面收敛」 |
@@ -240,7 +240,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 
 - 现状：`spawn_blocking` 内用 `with_request_github_token_blocking`（`sync_scope`），因为 task-local **不会**跨到阻塞线程。
 - 迁移后：改回 `with_request_github_token`（`REQUEST_GITHUB_TOKEN.scope(...).await`）。
-- **注意**：`tokio::spawn` 出的**新任务不继承** task-local。当前命令构建（`apply_gh_token_env_if_gh_command` / `resolve_token_for_child_env`）发生在**发起任务的当前作用域内**，故安全；**drain task 与 wait 不得**再依赖 task-local。PR 需在 `execute_run_command_sync.inc.rs` 与 `worker.rs` 两处显式核对 token 取值时机。
+- **注意**：`tokio::spawn` 出的**新任务不继承** task-local。当前命令构建（`apply_gh_token_env_if_gh_command` / `resolve_token_for_child_env`）发生在**发起任务的当前作用域内**，故安全；**drain task 与 wait 不得**再依赖 task-local。PR 需在 `run_command/sync.rs` 与 `worker.rs` 两处显式核对 token 取值时机。
 
 ### 坑 2：`chunk_sink` 并发与背压
 
@@ -261,7 +261,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 
 1. **PR0 — 调用面收敛（前置，独立可回滚）**：按上文「调用面收敛」节 re-route 同步消费点——S3 `run_tool_replay_command` 改 `async fn`（调用点 `await`）；S4 `ToolCallbacks::run_tool` 契约改返回 `Future`；S5 workflow `run_command` 节点改 async 直连；S6 容器 runner 定路线（(a) runtime 提前 + `block_on` / (b) 保留 sync 入口）；随后**删除** S1 `run_tool_dispatch` 的 `"run_command"` 特判与 S2 Legacy `runner_run_command`。**本切片确定路线 A/B 并写进 PR 描述**。仅做 re-route + 删死代码，**不改** `subprocess_session` / `command.rs` 内部实现，独立可构建、可回滚。
    - **已实施**：路线取 **A**，落地形式为「`run_tool_async` / `run_tool_result_async` 专用入口 + 两阶段 strangler」（见上「路线 A 落地形式」）；S6 取路线 **(a)**；S1/S2 已删除，受影响单测（`tools/mod/tests.rs`）已迁移至 `#[tokio::test]` + async 入口。
-2. **PR1 — 原语 + chat 同步宿主**：`subprocess_session` / `command.rs` async 化；`execute_run_command_sync.inc.rs` 去 `spawn_blocking`，token 改 async 版；模块头注释更新；`subprocess_session_tests.rs` 改 `#[tokio::test]`。路线已由 **PR0** 决定（见上）。
+2. **PR1 — 原语 + chat 同步宿主**：`subprocess_session` / `command.rs` async 化；`run_command/sync.rs` 去 `spawn_blocking`，token 改 async 版；模块头注释更新；`subprocess_session_tests.rs` 改 `#[tokio::test]`。路线已由 **PR0** 决定（见上）。
    - **已实施**：新增 `wait_child_session_async` 与 `command.rs` async 入口（`run_checked_wait_async` / `run_try_wait_async`），sync / async 共用同一 plan 层；chat 宿主与异步 funnel 去 `spawn_blocking`（token 走 task-local，无需 `*_blocking`）；`subprocess_session_tests.rs` 增 async 用例。**未**删同步 `wait_child_session`（路线 A 保留同步入口，供非 `run_command` 工具与 PR3 调用方复用）。
 3. **PR2 — 后台 job + workflow**：`worker.rs` `run_job_async`；`launch_job` 去 `spawn_blocking`；`node.rs` run_command 节点 async。
    - **已实施**：`worker.rs` `run_job_blocking` → `run_job_async`（`tokio::process::Command` + `kill_on_drop(true)` + `wait_child_session_async`）；`launch_job` 去 `spawn_blocking` / `catch_unwind`，改内层 `tokio::spawn(run_job_async(...)).await`，`JoinError` → `failed(internal)`（不卡 `running`）；`mod.rs` 导出同步改名。`node.rs` run_command 节点在 **PR0 / S5** 已 async 直连，本 PR 无改动；测试改 `#[tokio::test]`（`thread::sleep` → `tokio::time::sleep`）。

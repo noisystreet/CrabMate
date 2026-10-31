@@ -90,7 +90,7 @@ flowchart TD
 | `finish_dispatch_typed_ok` | `tools/mod.rs:512` | A | Typed `Ok` 收尾（含症状 1 的覆盖） |
 | `finish_dispatch_text` | `tools/mod.rs:530` | A | 文本收尾（A 面上唯一真正需推断成败处） |
 | `typed_outcome_output` | `tools/mod.rs:486` | A | 不一致时注入 `ok`/`error_code` 头 |
-| `execute_run_command_impl` | `execute_run_command_host.inc.rs:1` | **B** | chat 的 `run_command` 主路径，**不经 `run_tool*`** |
+| `execute_run_command_impl` | `run_command/host.rs` | **B** | chat 的 `run_command` 主路径，**不经 `run_tool*`** |
 | `execute_dispatch_body` | `execute_dispatch_body.inc.rs:237` | **B** | 从正文取 `error_code` 决定是否重试 |
 | `parse_tool_output` | `tool_result/mod.rs:94` | A+B | 解码：头优先 → exit-code → 关键词表 |
 | `NormalizedToolEnvelope::from_tool_run` | `tool_result/normalize.rs:42` | 共用 | 信封 v1 逻辑视图（`failure_category` / `retryable` 在**这里**再派生一次） |
