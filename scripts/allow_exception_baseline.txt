@@ -1,0 +1,20 @@
+# 模块级 `allow(unused* / dead_code)` 罩子的基线（#1231）。
+#
+# 由 `python3 scripts/allow_exception_ratchet.py --print-baseline` 生成。
+#
+# 只许降不许升：清掉某处罩子后请下调对应计数，归零的条目直接删除。
+# 新增代码不要加模块级 allow —— 用 item 级 `#[allow(dead_code)] // 理由`，
+# 或 `#[cfg_attr(not(feature = "x"), allow(dead_code))]` 做 feature 对齐。
+#
+# 格式：相对路径<TAB>lint<TAB>处数
+#
+# 备注（只在基线里说明，脚本不解析）：
+# - `src/cm_mcp/stub.rs` 与 `src/cm_sse_protocol/sse/line.rs` 是有注释说明的
+#   语义锚点 / 桩，按 #1229 非目标保持原样。
+# - 两处 `unused_imports` 是模块级再导出面（`pub use` 供外部使用，正文不引用）。
+# - #1230 合并后本基线已由 14 处下调至 4 处（`lib_server.rs` 那 10 处模块级
+#   `#[allow(unused)]` 已清除）。
+src/cm_mcp/stub.rs	dead_code	1
+src/cm_sse_protocol/sse/line.rs	dead_code	1
+src/cm_tools/tools/http_fetch/mod.rs	unused_imports	1
+src/cm_workflow/tests.rs	unused_imports	1
