@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_names as tool_names;
 use crate::cm_types::{PermissionLevel, SessionMode};
 
 /// 工具可见性（§7.1）：本回合向模型下发哪些 `tools` 定义。
@@ -278,9 +279,13 @@ pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps
 /// 这是**双保险**：可见性已经不下发这些工具，但模型仍可能凭历史发出调用，故在 early-deny
 /// 处再拒一次，不依赖 `is_readonly_tool` 是否漏配。
 pub const COMMAND_TOOLS: [&str; 4] = [
-    "run_command",
-    "terminal_session",
-    "python_snippet_run",
+    tool_names::RUN_COMMAND,
+    tool_names::TERMINAL_SESSION,
+    tool_names::PYTHON_SNIPPET_RUN,
+    // `run_executable` **不是**注册工具（`specs/` 里没有对应 `ToolSpec`，也不在
+    // `tool_names::ALL`），只是权限面上的一条命令类入口，因此没有常量可用。
+    // 这里留字面量是刻意的：用 `tool_names` 里不存在的名字会破坏「常量 ↔ 声明点」
+    // 的对应关系，反而更糟。
     "run_executable",
 ];
 

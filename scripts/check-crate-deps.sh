@@ -12,7 +12,8 @@ check_forbidden_mod() {
   local from_dir="$1"
   local needle="$2"
   local why="$3"
-  if [[ ! -d "$from_dir" ]]; then
+  # 目标是目录或单个文件（`src/cm_names.rs` 这类叶子模块单独成文件）。
+  if [[ ! -e "$from_dir" ]]; then
     echo "MISSING: ${from_dir} (${why})"
     fail=1
     return
@@ -39,6 +40,15 @@ check_forbidden_mod src/cm_approval crate::cm_internal \
   "approval types must stay below internal"
 check_forbidden_mod src/cm_web_host crate::cm_internal \
   "web host must not depend on internal facade"
+
+# 工具名边界（#1155）：`cm_names` 是零依赖叶子，`cm_config` / `cm_types` 不得反向依赖 `cm_tools`。
+# 这几条边此前只靠注释约束 —— Rust 单 crate 内模块循环引用照样编译，不加检查就没人拦得住。
+check_forbidden_mod src/cm_names.rs "use crate::" \
+  "cm_names is the zero-dependency leaf for builtin tool names"
+check_forbidden_mod src/cm_config crate::cm_tools \
+  "config stays below tools; tool names come from crate::cm_names"
+check_forbidden_mod src/cm_types crate::cm_tools \
+  "protocol contract stays below tools"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "dependency policy FAILED"

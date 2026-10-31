@@ -1,6 +1,6 @@
 //! Development 工具子域标签：按语言栈 / 职责过滤，与 [`super::ToolCategory::Development`] 配合使用。
 
-use crate::cm_tools::tool_names;
+use crate::cm_names as tool_names;
 
 /// 与工作区、壳命令、编排、元数据等相关，**不绑定**特定语言运行时。
 pub const GENERAL: &str = "general";

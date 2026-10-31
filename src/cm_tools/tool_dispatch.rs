@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::cm_names as tool_names;
+
 /// 工具在运行时的执行类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -34,9 +36,10 @@ pub enum HandlerId {
     SyncDefault,
 }
 
+// 名字接受表达式而非字面量：表体统一引用 `tool_names` 常量（#1155）。
 /// 由 `tool_dispatch_registry!` 展开：生成 `DISPATCH_METADATA` 与 `handler_dispatch_map_build`。
 macro_rules! tool_dispatch_registry {
-    ( $( ( $name:literal, $reqws:expr, $class:ident, $handler:ident ) ),* $(,)? ) => {
+    ( $( ( $name:expr, $reqws:expr, $class:ident, $handler:ident ) ),* $(,)? ) => {
         static DISPATCH_METADATA: &[ToolDispatchMeta] = &[
             $(
                 ToolDispatchMeta {
@@ -58,13 +61,13 @@ macro_rules! tool_dispatch_registry {
 }
 
 tool_dispatch_registry! {
-    ("workflow_execute", false, Workflow, Workflow),
-    ("run_command", true, CommandSpawnTimeout, RunCommand),
-    ("terminal_session", true, CommandSpawnTimeout, TerminalSession),
-    ("get_weather", false, WeatherSpawnTimeout, GetWeather),
-    ("web_search", false, WebSearchSpawnTimeout, WebSearch),
-    ("http_fetch", false, HttpFetchSpawnTimeout, HttpFetch),
-    ("http_request", false, HttpFetchSpawnTimeout, HttpRequest),
+    (tool_names::WORKFLOW_EXECUTE, false, Workflow, Workflow),
+    (tool_names::RUN_COMMAND, true, CommandSpawnTimeout, RunCommand),
+    (tool_names::TERMINAL_SESSION, true, CommandSpawnTimeout, TerminalSession),
+    (tool_names::GET_WEATHER, false, WeatherSpawnTimeout, GetWeather),
+    (tool_names::WEB_SEARCH, false, WebSearchSpawnTimeout, WebSearch),
+    (tool_names::HTTP_FETCH, false, HttpFetchSpawnTimeout, HttpFetch),
+    (tool_names::HTTP_REQUEST, false, HttpFetchSpawnTimeout, HttpRequest),
 }
 
 /// 注册表中显式声明的工具；其余名称运行时走 `SyncDefault`（同步 `run_tool`）。

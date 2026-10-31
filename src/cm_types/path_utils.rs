@@ -1,4 +1,4 @@
-//! 工作区路径的语义化规范化与根边界校验（`crate::cm_tools::workspace::path` 同源精简版）。
+//! 工作区路径的语义化规范化与根边界校验（`cm_tools::workspace::path` 同源精简版）。
 //!
 //! 从 `cm_tools` 提取，供 `cm_memory` 等轻量模块使用，无需引入完整工具依赖。
 

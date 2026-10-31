@@ -10,6 +10,7 @@ use crate::cm_types::ToolCall;
 use crate::cm_tools::tool_dispatch::{
     HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool,
 };
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 
 /// `web_search`（worbrow）外圈相对配置超时的额外等待秒数，供浏览器进程收尾。
@@ -99,7 +100,7 @@ pub fn http_request_outer_wall_secs(cfg: &AgentConfig) -> u64 {
 /// 内层（`drain_until_idle`）使用 `command_exec.command_timeout_secs`；外圈略长，
 /// 让内层先优雅返回（会话仍打开），仅在病态挂起时由外层超时兜底 drop future 触发会话清理。
 pub fn terminal_session_outer_wall_secs(cfg: &AgentConfig) -> u64 {
-    parallel_tool_wall_timeout_secs(cfg, "terminal_session")
+    parallel_tool_wall_timeout_secs(cfg, tool_names::TERMINAL_SESSION)
         .saturating_add(TERMINAL_SESSION_OUTER_GRACE_SECS)
 }
 

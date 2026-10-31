@@ -1,5 +1,6 @@
 //! 各敏感工具的 [`ApprovalRequestSpec`] 构建器，避免在分发层重复拼装字段。
 
+use crate::cm_names as tool_names;
 use super::{ApprovalRequestSpec, SensitiveCapability};
 
 const HTTP_PREFIX_MISS_DETAIL: &str =
@@ -9,7 +10,7 @@ const HTTP_PREFIX_MISS_DETAIL: &str =
 pub fn http_fetch(approval_args: &str, allowlist_key: &str) -> ApprovalRequestSpec {
     ApprovalRequestSpec {
         capability: SensitiveCapability::OutboundHttpRead,
-        sse_command: "http_fetch".to_string(),
+        sse_command: tool_names::HTTP_FETCH.to_string(),
         sse_args: approval_args.to_string(),
         allowlist_key: Some(allowlist_key.to_string()),
         cli_title: "http_fetch 审批",
@@ -22,7 +23,7 @@ pub fn http_fetch(approval_args: &str, allowlist_key: &str) -> ApprovalRequestSp
 pub fn http_request(approval_args: &str, allowlist_key: &str) -> ApprovalRequestSpec {
     ApprovalRequestSpec {
         capability: SensitiveCapability::OutboundHttpWrite,
-        sse_command: "http_request".to_string(),
+        sse_command: tool_names::HTTP_REQUEST.to_string(),
         sse_args: approval_args.to_string(),
         allowlist_key: Some(allowlist_key.to_string()),
         cli_title: "http_request 审批",
@@ -35,7 +36,7 @@ pub fn http_request(approval_args: &str, allowlist_key: &str) -> ApprovalRequest
 pub fn read_dir_external_path(ext_path: &str) -> ApprovalRequestSpec {
     ApprovalRequestSpec {
         capability: SensitiveCapability::WorkspaceExternalPath,
-        sse_command: "read_dir".to_string(),
+        sse_command: tool_names::READ_DIR.to_string(),
         sse_args: format!("path={ext_path}"),
         allowlist_key: None,
         cli_title: "read_dir 工作区外路径审批",
@@ -62,7 +63,7 @@ pub fn run_command_unknown_cmd(cmd: &str, argv_tail: &str, script: &str) -> Appr
 
 /// `run_command` / `terminal_session`：需经 `bash -c` 执行的整行脚本。
 pub fn shell_script(sse_command: &str, script: &str) -> ApprovalRequestSpec {
-    let cli_title = if sse_command == "terminal_session" {
+    let cli_title = if sse_command == tool_names::TERMINAL_SESSION {
         "terminal_session 脚本审批"
     } else {
         "run_command 脚本审批"
@@ -83,7 +84,7 @@ pub fn shell_script(sse_command: &str, script: &str) -> ApprovalRequestSpec {
 
 /// `run_command` / `terminal_session`：参数含工作区外路径或 `..`。
 pub fn workspace_external_path(sse_command: &str, detail_paths: &str) -> ApprovalRequestSpec {
-    let cli_title = if sse_command == "terminal_session" {
+    let cli_title = if sse_command == tool_names::TERMINAL_SESSION {
         "terminal_session 工作区外路径审批"
     } else {
         "run_command 工作区外路径审批"

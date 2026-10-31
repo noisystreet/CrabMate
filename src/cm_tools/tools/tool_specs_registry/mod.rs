@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use crate::cm_tools::tool_names;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tools::http_fetch::{HttpFetchArgs, HttpRequestArgs};
 use crate::cm_tools::tools::tool_json_schema::tool_parameters_schema_value as schema_of;
 use crate::cm_tools::tools::tool_param_types as args;
@@ -83,7 +83,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
 #[cfg(test)]
 mod name_consistency_tests {
     use super::*;
-    use crate::cm_tools::tool_names::ALL;
+    use crate::cm_names::ALL;
     use std::collections::HashSet;
 
     /// `tool_names::ALL` 与注册表必须**双向一致**。

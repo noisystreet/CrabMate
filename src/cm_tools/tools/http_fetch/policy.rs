@@ -1,5 +1,6 @@
 use reqwest::Url;
 
+use crate::cm_names as tool_names;
 use super::args::{FetchMethod, RequestMethod};
 
 /// 永久允许列表与审批判定的键（小写、无 query/fragment）；**仅** `http_fetch`（GET/HEAD）使用。
@@ -7,7 +8,7 @@ pub fn storage_key(url: &Url) -> String {
     let mut u = url.clone();
     u.set_query(None);
     u.set_fragment(None);
-    format!("http_fetch:{}", u.as_str().to_lowercase())
+    format!("{}:{}", tool_names::HTTP_FETCH, u.as_str().to_lowercase())
 }
 
 /// `http_request`（POST/PUT/PATCH/DELETE）审批白名单键：含 **HTTP 方法**，避免与同源 URL 的 `http_fetch` 键混用。
@@ -16,7 +17,8 @@ pub fn request_storage_key(method: RequestMethod, url: &Url) -> String {
     u.set_query(None);
     u.set_fragment(None);
     format!(
-        "http_request:{}:{}",
+        "{}:{}:{}",
+        tool_names::HTTP_REQUEST,
         method.as_str(),
         u.as_str().to_lowercase()
     )

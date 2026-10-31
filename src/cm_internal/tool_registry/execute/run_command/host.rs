@@ -74,7 +74,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_
         workspace: effective_working_dir,
         web_ctx,
         mode: capabilities.mode,
-        sse_command: "run_command",
+        sse_command: crate::cm_names::RUN_COMMAND,
         permission: env.permission,
     };
     // 命令能力快照由本层持有：`evaluate_policy` 就地扩展它，`PolicyDecision` 只借用（R3）。
