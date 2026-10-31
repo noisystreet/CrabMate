@@ -23,6 +23,19 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # `-D warnings` 抓不到被 `allow` 压住的告警——#1229 的根因正是 `lib_server.rs` 给
+      # 10 个 `cm_*` 模块整体加了 `#[allow(unused)]`（`unused` 含 `dead_code`），死代码
+      # 于是长期隐身，clippy 一直绿。所以「allow 出现在哪一层」单独门禁：模块级罩子
+      # 冻结在基线、只许降不许升；item 级 `#[allow(dead_code)] // 理由` 与
+      # `#[cfg_attr(not(feature = …), allow(dead_code))]` 是认可的写法，不算例外。
+      # 纯 markdown / CHANGELOG 提交不涉及 `src/`，故用 `files: \.rs$`。
+      - id: allow-exception-ratchet
+        name: allow exceptions (no new module-level allow(unused*), #1231)
+        entry: bash scripts/allow-exception-ratchet.sh
+        language: system
+        pass_filenames: false
+        files: \.rs$
+        stages: [pre-commit]
       # rustdoc 断链（`crate::…` 路径写错、链接到私有项）不会让 `cargo doc` 非 0 退出，
       # 所以必须 `-D warnings` 才拦得住；`--no-deps` 只检查本 crate。
       # `files: \.rs$` 而非 `always_run`：rustdoc 是 crate 级检查，只在 Rust 源码变动时才值得跑
