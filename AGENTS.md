@@ -25,6 +25,27 @@ CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/complet
 - **`--no-verify` is strictly prohibited.** Never use `git commit --no-verify` or `git push --no-verify` to bypass pre-commit hooks. All commits must pass the full pre-commit check suite. If hooks are slow, use `git commit -m "message"` without `--no-verify` and let hooks run to completion. This rule applies to all code generation and automation tools in this workspace.
 - Prefer **rebase on latest `origin/main`** before push/merge to minimize drift and conflict risk.
 
+#### Stacked PRs (base on another branch)
+
+When a PR depends on an unmerged PR, point its base at that branch and say so in the body — the downstream PR then needs only a re-alignment once, not a second review.
+
+**Expect every downstream PR to turn `CONFLICTING` when its base lands.** That is bookkeeping, not a content conflict: this repo merges **rebase-only** (`allow_squash_merge` / `allow_merge_commit` are off), so landed commits get **new SHAs**; the downstream branch still carries the old ones, its merge-base drifts, and `delete_branch_on_merge` retargets the PR to `main`. The trees may be identical while the PR reports conflicts.
+
+Re-align by rebasing (not by merging `main` into the branch):
+
+```bash
+git switch <downstream-branch>
+git rebase origin/main           # git drops the commits already upstream: "skipped previously applied commit"
+git diff --stat <old-head> HEAD  # empty ⇒ content unchanged, so the earlier local test results still hold
+git ls-remote origin <branch>    # confirm the remote head *before* overwriting it
+git push --force-with-lease=<branch>:<sha-from-ls-remote> origin <branch>
+```
+
+- Use the **explicit** `--force-with-lease=<ref>:<expected-sha>` form. The bare form compares against the local remote-tracking ref, which is stale right after a rebase (fails as `stale info`), and it cannot tell "someone else pushed" apart from "the ref is gone upstream" — the latter is exactly what happens when the base merged and `delete_branch_on_merge` removed it.
+- `--force-with-lease` still needs explicit user authorization (see above): inspect, then push.
+- Merging `origin/main` into the branch also clears the conflict and needs no force-push, and GitHub's rebase merge does tolerate the merge commit (it drops it). Prefer the rebase anyway: it keeps the PR's commit list and body honest about what the PR actually changes.
+- A genuine content conflict is still possible when two batches touch the same lines (e.g. the migration counters in this file). Resolve by keeping the downstream side, then re-run the zero-drift tests.
+
 ### Environment variable `API_KEY`
 
 - **Default (`llm_http_auth_mode = bearer` in config)**：`API_KEY` is the cloud vendor Bearer token (optional process fallback). **`serve` / `bench` 可在未设置 `API_KEY` 时启动**；实际调用 `chat/completions` 前须有关密钥，优先级：**请求体 `client_llm.api_key`（官方 Client）** → **环境变量 `API_KEY`**。同进程 **`repl` / `chat` / `tui` 入口与实现已硬删**（D2.2；用 Client **`crabmate-tui`**）。服务端 **不再** 读写 `client_llm` / `executor_llm` / `saved_model_*` 钥匙串槽。无 **`--config`** 且 cwd 无本地覆盖时采用 **`$XDG_CONFIG_HOME/crabmate/config.toml`**（可种子/回退 `/etc`），并合并 **`llm_overrides.json`** 与 **`prefs.json`** 的 **`cm_role`**（**不**自动打开 **`last_workspace_root`**；须 **`--workspace`**）。**`crabmate models` / `crabmate probe`** 在 `bearer` 下仍要求环境变量 **`API_KEY`** 非空。 **`config`（`cargo run -- config`）、`doctor`、`web-bearer` 与 `save-session`（别名 `export-session`）不要求 `API_KEY`**。
