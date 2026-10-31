@@ -43,6 +43,18 @@ Print version
 \fBprune\fR
 清理 stale / 已退出 / 失败的记录（不碰健康实例）
 .TP
+\fBadd\fR
+新增一条实例声明（只写 `instances.toml`，不起进程）
+.TP
+\fBremove\fR
+删除一条实例声明（不删实例目录与日志）
+.TP
+\fBdisable\fR
+软删：保留声明（`env` / `config` 原样），但不让它运行
+.TP
+\fBenable\fR
+撤销 disable（并收回 `down` 留下的「用户显式停止」标记）
+.TP
 \fBsupervise\fR
 按 `instances.toml` 声明收敛实例（起该起的、停该停的）
 .PP

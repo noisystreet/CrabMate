@@ -26,6 +26,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::CtlError;
+use super::decl;
 use super::instances::{self, Declaration};
 use super::ops::{self, Ctx};
 use super::paths;
@@ -301,135 +302,73 @@ pub fn handle(ctx: &Ctx, path: &Path, request: Request) -> (Response, bool) {
     }
 }
 
+/// 适配 [`decl::add`]：JSON 的 `name` / `created` / `note` 是控制面对外契约。
 fn add(path: &Path, a: AddRequest) -> (Response, bool) {
-    if let Err(e) = paths::validate_name(&a.name) {
-        return (Response::err(e.error_code, e.message), false);
-    }
-    let decl = Declaration {
-        workspace: Some(a.workspace),
-        // 控制面不接受 `config`：否则 socket 就成了「按任意路径加载配置」的入口，
-        // 与 profile「能力集合有界」的目的相悖。要换配置请改 profile 或无 add。
-        config: None,
+    let spec = decl::AddSpec {
+        name: a.name,
+        workspace: a.workspace,
         profile: a.profile,
         port: a.port,
         enabled: a.enabled,
-        env: BTreeMap::new(),
     };
-    if let Err(resp) = reject_bad_workspace(&decl) {
-        return (resp, false);
-    }
-    let name = a.name;
-    // 幂等：已声明就不动它 —— 覆盖会悄悄丢掉手工在文件里写的 env
-    match instances::load_optional(path) {
-        Ok(file) if file.instances.contains_key(&name) => {
-            return (
-                Response::ok(json!({
-                    "name": name,
-                    "created": false,
-                    "note": "已存在，未改动（要换 workspace 请先 remove 再无 add）",
-                })),
-                false,
-            );
+    match decl::add(path, spec) {
+        Ok(out) => {
+            let mut body = json!({"name": out.name, "created": out.created});
+            if let Some(note) = out.note() {
+                body["note"] = json!(note);
+            }
+            (Response::ok(body), out.created)
         }
-        Ok(_) => {}
-        Err(e) => return (Response::err(e.error_code, e.message), false),
-    }
-    match instances::upsert(path, &name, decl) {
-        Ok(_) => (Response::ok(json!({"name": name, "created": true})), true),
         Err(e) => (Response::err(e.error_code, e.message), false),
     }
 }
 
-/// `workspace` 必须已存在：写进一条必然起不来的声明，比直接拒绝更难排查。
-///
-/// **越界**（不在子实例 `workspace_allowed_roots` 内）不在此判定 —— 那需要加载
-/// 子实例配置，属收敛阶段 `preflight` 的职责，届时实例置 `failed` 并给出原因。
-fn reject_bad_workspace(decl: &Declaration) -> Result<(), Response> {
-    let p = decl
-        .workspace_path()
-        .map_err(|e| Response::err(e.error_code, e.message))?;
-    // `None` = 待绑定：此刻没有路径可校验，真正的校验点是 client 的 `POST /workspace`。
-    let Some(p) = p else {
-        return Ok(());
-    };
-    if p.is_dir() {
-        return Ok(());
-    }
-    Err(Response::err(
-        "bad_workspace",
-        format!("workspace 不存在或不是目录：{}", p.display()),
-    ))
-}
-
+/// 适配 [`decl::remove`]：`remove` 对不存在的实例也成功（客户端不必先查）。
 fn remove(path: &Path, r: RemoveRequest) -> (Response, bool) {
-    if let Err(e) = paths::validate_name(&r.name) {
-        return (Response::err(e.error_code, e.message), false);
-    }
-    match instances::remove_entry(path, &r.name) {
-        Ok(true) => (Response::ok(json!({"name": r.name, "removed": true})), true),
-        // 幂等：不存在也算成功，客户端不必先查
-        Ok(false) => (
-            Response::ok(json!({"name": r.name, "removed": false, "note": "声明中不存在该实例"})),
-            false,
-        ),
+    match decl::remove(path, &r.name) {
+        Ok(out) => {
+            let mut body = json!({"name": out.name, "removed": out.removed});
+            if !out.removed {
+                body["note"] = json!("声明中不存在该实例");
+            }
+            (Response::ok(body), out.removed)
+        }
         Err(e) => (Response::err(e.error_code, e.message), false),
     }
 }
 
-/// `disable` / `enable` 的公共实现：只翻声明里的 `enabled`，其它字段一律不动。
+/// 适配 [`decl::set_enabled`]：`disable` / `enable` 只翻声明里的 `enabled`。
 ///
-/// 三条约定（与 `remove` 对齐，客户端可无脑重试）：
+/// 三条约定（与 `remove` 对齐，客户端可无脑重试）：**幂等**（值未变时 `changed: false`
+/// 且不触发收敛）、**目标不存在也成功**（`note` 说明）、`enable` 顺手收回 `down`
+/// 留下的 `desired_state = stopped`（否则收敛会一直 `Skipped`，声明明明 `enabled = true`）。
 ///
-/// 1. **幂等**：值本就一致时回 `changed: false`，且**不触发收敛**（少跑一轮 probe）；
-/// 2. **目标不存在也成功**：不必先 `list` 再写；
-/// 3. `enable` 顺手收回 `down` 留下的 `desired_state = stopped` —— 否则收敛会一直
-///    `Skipped`，声明明明是 `enabled = true`，实例却永远起不来。
-///
-/// 返回值第二项即 [`handle`] 的「需要立刻收敛」。收敛发生在主循环拿到返回值之后，
-/// 所以「先清标记、后收敛」的顺序天然成立。
+/// 返回值第二项即 [`handle`] 的「需要立刻收敛」，判据是
+/// [`decl::ToggleOutcome::needs_reconcile`] 而**不是** `changed`：清 `down` 标记同样
+/// 是一次写盘，只认 `changed` 会回一个「成功却不收敛」。
 fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Response, bool) {
-    if let Err(e) = paths::validate_name(&name) {
-        return (Response::err(e.error_code, e.message), false);
-    }
-    match instances::set_enabled(path, &name, enabled) {
-        Ok(None) => (
+    match decl::set_enabled(path, ctx, &name, enabled) {
+        Ok(out) if out.missing => (
             Response::ok(json!({
-                "name": name,
-                "enabled": enabled,
+                "name": out.name,
+                "enabled": out.enabled,
                 "changed": false,
                 "note": "声明中不存在该实例",
             })),
             false,
         ),
-        Ok(Some(changed)) => {
-            let mut cleared_down = false;
+        Ok(out) => {
             let mut body = json!({
-                "name": name,
-                "enabled": enabled,
-                "changed": changed,
-                "cleared_down": false,
+                "name": out.name,
+                "enabled": out.enabled,
+                "changed": out.changed,
+                "cleared_down": out.cleared_down,
             });
-            if enabled {
-                match ops::mark_wanted_running(ctx, &name) {
-                    Ok(cleared) => {
-                        cleared_down = cleared;
-                        body["cleared_down"] = json!(cleared);
-                    }
-                    // 声明已经写成 `enabled = true`，此时回错误会让客户端以为没改成；
-                    // 但「这半边没做成」必须让它看见，否则它会干等一个不会启动的实例。
-                    Err(e) => {
-                        body["warning"] = json!(format!(
-                            "已写入 enabled = true，但清理 down 标记失败：{}（{}）",
-                            e.message, e.error_code
-                        ));
-                    }
-                }
+            if let Some(warn) = out.warning.as_deref() {
+                body["warning"] = json!(warn);
             }
-            // 收敛判据不能只看 `changed`：它只说明 `enabled` 字段变没变，而清 `down`
-            // 标记同样是一次写盘。声明本就 `enabled = true`、记录却被 `down` 标成
-            // `stopped` 时（客户端重试 `enable`），只认 `changed` 会回一个
-            // `ok + cleared_down: true` 却不收敛 —— 客户端以为成功，实例永远不启动。
-            (Response::ok(body), changed || cleared_down)
+            let dirty = out.needs_reconcile();
+            (Response::ok(body), dirty)
         }
         Err(e) => (Response::err(e.error_code, e.message), false),
     }
