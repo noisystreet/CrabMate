@@ -8,8 +8,6 @@ use std::path::{Path, PathBuf};
 /// 适配器统一接口：每种 benchmark 实现此 trait。
 #[allow(clippy::too_many_arguments)]
 pub trait BenchmarkAdapter: Send + Sync {
-    fn kind(&self) -> BenchmarkKind;
-
     fn validate_task(&self, task: &BenchmarkTask) -> Result<(), String>;
 
     fn build_user_prompt(&self, task: &BenchmarkTask) -> String;
@@ -34,9 +32,6 @@ pub trait BenchmarkAdapter: Send + Sync {
         model_name: &str,
         error: Option<String>,
     ) -> BenchmarkResult;
-
-    /// 尝试修复结束后残留的子进程（各 benchmark 定制），默认空操作。
-    fn cleanup(&self, _work_dir: &Path) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -66,10 +61,6 @@ fn humaneval_user_prompt(stub: &str) -> String {
 }
 
 impl BenchmarkAdapter for SweBenchAdapter {
-    fn kind(&self) -> BenchmarkKind {
-        BenchmarkKind::SweBench
-    }
-
     fn validate_task(&self, task: &BenchmarkTask) -> Result<(), String> {
         if task.instance_id.is_empty() {
             return Err("instance_id 为空".to_string());
@@ -170,10 +161,6 @@ impl BenchmarkAdapter for SweBenchAdapter {
 }
 
 impl BenchmarkAdapter for GaiaAdapter {
-    fn kind(&self) -> BenchmarkKind {
-        BenchmarkKind::Gaia
-    }
-
     fn validate_task(&self, task: &BenchmarkTask) -> Result<(), String> {
         if task.instance_id.is_empty() {
             return Err("instance_id 为空".to_string());
@@ -232,10 +219,6 @@ impl BenchmarkAdapter for GaiaAdapter {
 }
 
 impl BenchmarkAdapter for HumanEvalAdapter {
-    fn kind(&self) -> BenchmarkKind {
-        BenchmarkKind::HumanEval
-    }
-
     fn validate_task(&self, task: &BenchmarkTask) -> Result<(), String> {
         if task.instance_id.is_empty() {
             return Err("instance_id 为空".to_string());
@@ -293,10 +276,6 @@ impl BenchmarkAdapter for HumanEvalAdapter {
 struct GenericAdapter;
 
 impl BenchmarkAdapter for GenericAdapter {
-    fn kind(&self) -> BenchmarkKind {
-        BenchmarkKind::Generic
-    }
-
     fn validate_task(&self, task: &BenchmarkTask) -> Result<(), String> {
         if task.instance_id.is_empty() {
             return Err("instance_id 为空".to_string());
