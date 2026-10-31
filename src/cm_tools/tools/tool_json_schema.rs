@@ -18,13 +18,15 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, JsonFormatArgs,
+        AddReminderArgs, JsonFormatArgs,
         CargoTestArgs, CodeNavArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, RunCommandArgs,
         StructuredArgs, TableTextArgs, WorkflowExecuteArgs,
     };
+    #[cfg(feature = "archive-tools")]
+    use crate::cm_tools::tools::tool_param_types::ArchivePackArgs;
     use serde_json::json;
 
     #[test]
@@ -112,6 +114,7 @@ mod tests {
         assert!(v.pointer("/properties/include_done").is_some());
     }
 
+    #[cfg(feature = "archive-tools")]
     #[test]
     fn archive_pack_schema_requires_output_sources() {
         let v = tool_parameters_schema_value::<ArchivePackArgs>();

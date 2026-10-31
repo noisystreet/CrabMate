@@ -3,6 +3,7 @@
 //! 独立成文件是为了让 `tests.rs` 留在单文件行数上限内：这些用例依赖它的 `test_ctx` /
 //! `test_allowed_commands`（已 `pub(super)` 暴露给同层测试模块）。
 
+#[cfg(feature = "archive-tools")]
 use super::tests::{test_allowed_commands, test_ctx};
 use super::*;
 
