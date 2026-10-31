@@ -5,6 +5,7 @@ use std::path::Path;
 use rusqlite::params;
 
 use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
+use crate::cm_names as tool_names;
 
 use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
@@ -65,7 +66,7 @@ enum InvalScopesFill {
 }
 
 fn fill_dir_path_tools(name: &str, v: &serde_json::Value, scopes: &mut Vec<RelScope>) -> Option<InvalScopesFill> {
-    if !matches!(name, "delete_dir" | "create_dir") {
+    if !matches!(name, tool_names::DELETE_DIR | tool_names::CREATE_DIR) {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), true);
@@ -75,12 +76,12 @@ fn fill_dir_path_tools(name: &str, v: &serde_json::Value, scopes: &mut Vec<RelSc
 fn is_file_path_arg_tool(name: &str) -> bool {
     matches!(
         name,
-        "create_file"
-            | "modify_file"
-            | "delete_files"
-            | "append_file"
-            | "search_replace"
-            | "read_binary_meta"
+        tool_names::CREATE_FILE
+            | tool_names::MODIFY_FILE
+            | tool_names::DELETE_FILES
+            | tool_names::APPEND_FILE
+            | tool_names::SEARCH_REPLACE
+            | tool_names::READ_BINARY_META
     )
 }
 
@@ -106,7 +107,7 @@ fn fill_copy_move_tools(
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !matches!(name, "copy_file" | "move_file") {
+    if !matches!(name, tool_names::COPY_FILE | tool_names::MOVE_FILE) {
         return None;
     }
     push_invalidation_scope(scopes, v.get("from").and_then(|p| p.as_str()), false);
@@ -119,7 +120,7 @@ fn fill_apply_patch_tool(
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if name != "apply_patch" {
+    if name != tool_names::APPLY_PATCH {
         return None;
     }
     if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
@@ -139,11 +140,11 @@ fn fill_structured_doc_tools(
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !matches!(name, "structured" | "markdown_check_links") {
+    if !matches!(name, tool_names::STRUCTURED | tool_names::MARKDOWN_CHECK_LINKS) {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
-    if name == "markdown_check_links"
+    if name == tool_names::MARKDOWN_CHECK_LINKS
         && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
     {
         for x in roots {
@@ -189,10 +190,10 @@ pub fn invalidation_for_tool_call(
     // 子进程 / 工作流 / 网络写：无法可靠解析受影响路径 → 整表失效。
     if matches!(
         name,
-        "run_command"
+        tool_names::RUN_COMMAND
             | "run_executable"
-            | "workflow_execute"
-            | "http_request"
+            | tool_names::WORKFLOW_EXECUTE
+            | tool_names::HTTP_REQUEST
     ) || name.starts_with("git_")
     {
         return Some(CodebaseSemanticInvalidation::FullWorkspace);
@@ -389,7 +390,7 @@ mod tests {
     fn run_command_invalidates_full() {
         let cfg = default_cfg();
         let inv =
-            invalidation_for_tool_call(&cfg, "run_command", r#"{"command":"touch","args":["x"]}"#);
+            invalidation_for_tool_call(&cfg, tool_names::RUN_COMMAND, r#"{"command":"touch","args":["x"]}"#);
         assert!(matches!(
             inv,
             Some(CodebaseSemanticInvalidation::FullWorkspace)
@@ -405,7 +406,7 @@ mod tests {
     #[test]
     fn delete_dir_uses_prefix_scope() {
         let cfg = default_cfg();
-        let inv = invalidation_for_tool_call(&cfg, "delete_dir", r#"{"path":"src/lib"}"#);
+        let inv = invalidation_for_tool_call(&cfg, tool_names::DELETE_DIR, r#"{"path":"src/lib"}"#);
         let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
             panic!("expected RelScopes");
         };
@@ -417,7 +418,7 @@ mod tests {
     #[test]
     fn create_file_is_file_scope() {
         let cfg = default_cfg();
-        let inv = invalidation_for_tool_call(&cfg, "create_file", r#"{"path":"a/b.rs"}"#);
+        let inv = invalidation_for_tool_call(&cfg, tool_names::CREATE_FILE, r#"{"path":"a/b.rs"}"#);
         let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
             panic!("expected RelScopes");
         };
@@ -431,7 +432,7 @@ mod tests {
         let cfg = default_cfg();
         let inv = invalidation_for_tool_call(
             &cfg,
-            "delete_files",
+            tool_names::DELETE_FILES,
             r#"{"paths":["src/a.rs","src/b.rs"]}"#,
         );
         let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
