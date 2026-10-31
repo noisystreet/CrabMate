@@ -48,6 +48,9 @@ jobs:
       - name: crate dependency policy (forbidden edges)
         run: bash scripts/check-crate-deps.sh
 
+      - name: builtin tool name literals (ratchet, #1155)
+        run: bash scripts/tool-name-literal-ratchet.sh
+
       - name: cargo check (crabmate default features)
         run: cargo check -p crabmate
 
