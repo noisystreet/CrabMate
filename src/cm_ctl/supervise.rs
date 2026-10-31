@@ -432,9 +432,6 @@ fn exec_stop(ctx: &Ctx, name: String, opts: &Opts) -> Step {
     }
 }
 
-/// 轮询间隔：容器 overlayfs 上 inotify 不可靠，与 `logs -f` 同策略。
-pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(1);
-
 /// 声明文件的**指纹：内容 + 权限位**。
 ///
 /// 权限必须进指纹。用户 `chmod 600` 修好一个 0644 的文件后内容一字未改，

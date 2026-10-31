@@ -99,11 +99,6 @@ pub fn cmdline_tokens(pid: u32) -> Option<Vec<String>> {
     }
 }
 
-/// 进程命令行的可读形式（仅用于错误信息）。
-pub fn cmdline(pid: u32) -> Option<String> {
-    cmdline_tokens(pid).map(|t| t.join(" "))
-}
-
 /// 该值是否作为参数出现：独立 token 或 `--flag=value` 形式。
 ///
 /// 前提是调用方已确认 `serve` 子命令存在；这里只回答「这个值在不在参数里」，

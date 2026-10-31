@@ -45,10 +45,6 @@ impl CtlPaths {
         })
     }
 
-    pub fn state_dir(&self) -> &Path {
-        &self.state_dir
-    }
-
     /// 测试用：把状态根指向给定目录（字段私有，故由本模块提供构造器）。
     #[cfg(test)]
     pub fn for_test(root: &Path) -> Self {
@@ -57,14 +53,6 @@ impl CtlPaths {
             config_dir: root.join("config"),
             runtime_dir: None,
         }
-    }
-
-    pub fn config_dir(&self) -> &Path {
-        &self.config_dir
-    }
-
-    pub fn runtime_dir(&self) -> Option<&Path> {
-        self.runtime_dir.as_deref()
     }
 
     /// 声明文件路径：`$XDG_CONFIG_HOME/crabmate/instances.toml`。

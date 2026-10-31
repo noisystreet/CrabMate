@@ -2,14 +2,12 @@ pub(crate) mod cmd_mate;
 /// `crabmatectl` 二进制的实现（同 crate 构建，故 ctl 与 serve 的版本不可能漂移）。
 /// `doc(hidden)`：不属公开 API 承诺面，仅供仓内 bin 使用。
 #[cfg(unix)]
-#[allow(unused)]
 #[doc(hidden)]
 pub mod cm_ctl;
 #[doc(hidden)]
 pub mod cm_agent;
 #[doc(hidden)]
 pub mod cm_llm;
-#[allow(unused)]
 pub(crate) mod cm_runtime;
 /// 内建工具名等标识符常量的单一真源：零依赖，故列在 `cm_config` 之前。
 pub(crate) mod cm_names;
@@ -17,7 +15,6 @@ pub(crate) mod cm_names;
 pub mod cm_config;
 #[allow(unused)]
 pub(crate) mod cm_tools;
-#[allow(unused)]
 pub(crate) mod cm_memory;
 #[doc(hidden)]
 pub mod cm_workflow;

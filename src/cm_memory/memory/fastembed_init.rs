@@ -4,8 +4,8 @@
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 
 /// 当前嵌入模型的短标签，用于 `EMBEDDING_RECIPE_VERSION` 的模型耦合测试。
-#[cfg(feature = "fastembed")]
-pub(crate) const EMBEDDING_MODEL_TAG: &str = "minilm";
+#[cfg(all(test, feature = "fastembed"))]
+const EMBEDDING_MODEL_TAG: &str = "minilm";
 
 /// 使用 XDG Cache 下的 `fastembed/` 子目录初始化嵌入模型。
 #[cfg(feature = "fastembed")]
