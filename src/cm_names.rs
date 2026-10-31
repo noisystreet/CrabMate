@@ -32,9 +32,15 @@
 //! 这里列的是「内建工具的全部名字」。
 
 // --- `specs/archive.inc.rs`（feature `archive-tools`）---
+// `archive_pack` / `archive_unpack` 的消费方（`specs/archive.inc.rs`、`tool_write_effect`
+// 名单、`ALL`）全部已按 feature gate，故常量本身同样按 feature 条件定义；否则默认构建里
+// 它们没有任何引用方，`dead_code` 会持续报警。`archive_list` 例外：默认构建的只读工具
+// 名单（`step_executor_policy`）仍无条件引用它，故保持无条件定义。
 /// `archive_pack`
+#[cfg(feature = "archive-tools")]
 pub const ARCHIVE_PACK: &str = "archive_pack";
 /// `archive_unpack`
+#[cfg(feature = "archive-tools")]
 pub const ARCHIVE_UNPACK: &str = "archive_unpack";
 /// `archive_list`
 pub const ARCHIVE_LIST: &str = "archive_list";

@@ -13,6 +13,7 @@
 // 校验必须带 feature 跑（golden 存全集、只比对当前构建实际注册的工具）：
 // `cargo test -p crabmate --features archive-tools --lib cm_tools::tools::tool_specs_registry`.
 
+#[cfg(feature = "archive-tools")]
 impl ToolArgsSummary for super::tool_param_types::ArchivePackArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let output = arg_str(args, "output")?;
@@ -25,6 +26,7 @@ impl ToolArgsSummary for super::tool_param_types::ArchivePackArgs {
     }
 }
 
+#[cfg(feature = "archive-tools")]
 impl ToolArgsSummary for super::tool_param_types::ArchiveUnpackArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let archive = arg_str(args, "archive")?;
@@ -41,6 +43,7 @@ impl ToolArgsSummary for super::tool_param_types::ArchiveUnpackArgs {
     }
 }
 
+#[cfg(feature = "archive-tools")]
 impl ToolArgsSummary for super::tool_param_types::ArchiveListArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("list archive: {}", arg_str(args, "archive")?))
@@ -180,7 +183,7 @@ fn sketch_line(symbol: Option<&str>, symbols: Vec<&str>) -> Option<String> {
     Some(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "archive-tools"))]
 mod archive_family_summary_tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{

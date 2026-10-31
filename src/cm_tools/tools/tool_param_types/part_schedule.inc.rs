@@ -175,7 +175,12 @@ pub struct EventArgs {
 }
 
 // ── 归档（`archive`）──────────────────────────────────────────
+//
+// 整段随 `archive-tools` feature 一起开关：注册表（`specs/archive.inc.rs`）、执行体
+// （`tools/archive.rs`，`mod` 本身就带 gate）、写效应名单与 `cm_names` 常量全部按同一
+// feature gate。默认构建里这几个类型没有任何构造点，不 gate 就会持续报 `dead_code`。
 
+#[cfg(feature = "archive-tools")]
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 pub enum ArchivePackFormat {
     #[serde(rename = "auto")]
@@ -193,6 +198,7 @@ pub enum ArchivePackFormat {
 }
 
 /// [`super::archive::archive_pack`] 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。
+#[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArchivePackArgs {
@@ -204,6 +210,7 @@ pub struct ArchivePackArgs {
 }
 
 /// [`super::archive::archive_unpack`] 入参。
+#[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveUnpackArgs {
@@ -217,11 +224,13 @@ pub struct ArchiveUnpackArgs {
     pub strip_components: Option<u32>,
 }
 
+#[cfg(feature = "archive-tools")]
 fn default_dot_str() -> String {
     ".".to_string()
 }
 
 /// [`super::archive::archive_list`] 入参。
+#[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveListArgs {

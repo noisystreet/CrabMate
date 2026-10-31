@@ -8,7 +8,9 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(feature = "fastembed")]
+use rusqlite::Row;
 
 use crate::cm_tools::tool_result::ToolError;
 
