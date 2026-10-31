@@ -1,5 +1,6 @@
 //! 任务级执行证据核对（写源码 / 编译 / 运行）。
 
+use crate::cm_names as tool_names;
 use crate::cm_types::{Message, message_content_as_str};
 
 use super::common::is_program_build_run_request;
@@ -52,7 +53,6 @@ fn message_history_build_flags(history_lower: &str) -> (bool, bool, bool) {
         "create file",
         "创建文件",
         "已创建文件",
-        "write_file",
         "apply_patch",
     ];
     const COMPILE_HINTS: &[&str] = &[
@@ -132,7 +132,7 @@ fn maybe_mark_wrote_cpp_source(
 ) {
     if matches!(
         env.name.as_str(),
-        "create_file" | "write_file" | "edit_file" | "apply_patch"
+        tool_names::CREATE_FILE | tool_names::APPLY_PATCH
     ) && lower.contains(".cpp")
     {
         evidence.wrote_source = true;
@@ -174,7 +174,7 @@ fn update_program_evidence_from_tool_env(
     let text = normalized_tool_text(env);
     let lower = text.to_lowercase();
     maybe_mark_wrote_cpp_source(evidence, env, &lower);
-    if env.name != "run_command" || !tool_exit_ok(env) {
+    if env.name != tool_names::RUN_COMMAND || !tool_exit_ok(env) {
         return;
     }
     let invocation = run_command_invocation_from_env(env).to_lowercase();
@@ -333,14 +333,14 @@ fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
 fn generic_tool_is_write_success(tool_name: &str, lower: &str) -> bool {
     matches!(
         tool_name,
-        "create_file" | "write_file" | "edit_file" | "apply_patch" | "modify_file"
+        tool_names::CREATE_FILE | tool_names::APPLY_PATCH | tool_names::MODIFY_FILE
     ) || ["已创建文件", "created file", "apply_patch"]
         .iter()
         .any(|marker| lower.contains(marker))
 }
 
 fn generic_tool_is_build_or_test_success(tool_name: &str, lower: &str) -> bool {
-    tool_name == "run_command"
+    tool_name == tool_names::RUN_COMMAND
         && [
             "cmake",
             "make",
@@ -358,12 +358,10 @@ fn generic_tool_is_build_or_test_success(tool_name: &str, lower: &str) -> bool {
 fn generic_tool_is_readonly_success(tool_name: &str, lower: &str) -> bool {
     matches!(
         tool_name,
-        "read_file"
-            | "read_dir"
-            | "list_tree"
-            | "glob"
-            | "search"
-            | "repo_overview_sweep"
+        tool_names::READ_FILE
+            | tool_names::READ_DIR
+            | tool_names::LIST_TREE
+            | tool_names::REPO_OVERVIEW_SWEEP
     ) || ["read file:", "read dir:", "list tree:"]
         .iter()
         .any(|marker| lower.contains(marker))
