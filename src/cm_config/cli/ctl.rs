@@ -241,6 +241,14 @@ pub struct PruneCmd {
     /// 只列出将清理的记录，不实际删除
     #[arg(long)]
     pub dry_run: bool,
+
+    /// 连「记录指向的进程仍在运行」的条目一起清掉
+    ///
+    /// 默认拒绝这类条目：状态文件是 ctl 找到那个进程的唯一地址，删掉之后就再也
+    /// `down` 不到它了。只有 `down` 也停不掉那个进程、且你确认放弃它时才用 ——
+    /// 它会变成连 ctl 都找不到的孤儿进程。
+    #[arg(long)]
+    pub force: bool,
 }
 
 /// `crabmatectl` 的子命令名（`crabmate-gen-man` 生成 troff 交叉引用时用）。

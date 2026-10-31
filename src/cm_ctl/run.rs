@@ -55,7 +55,7 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
         }
         CtlSubCmd::Logs(c) => logs_cmd(&ctx, c),
         CtlSubCmd::Prune(c) => {
-            let items = ops::prune(&ctx, c.dry_run)?;
+            let items = ops::prune(&ctx, c.dry_run, c.force)?;
             render::prune(&items, c.dry_run);
             Ok(())
         }

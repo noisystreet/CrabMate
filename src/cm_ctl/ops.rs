@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::guard;
 use super::identity;
 use super::lock;
 use super::paths::{self, CtlPaths};
@@ -185,6 +186,9 @@ fn spawn_and_record(
     if let Some(rec) = existing_if_ready(ctx, &args.name)? {
         return Ok(rec);
     }
+    // 同一道闸门在临界区内再查一次：前置检查与拿锁之间，另一个 ctl 可能刚起好一个
+    // 还没就绪的实例，此时覆盖记录同样会把它变成孤儿。
+    guard::ensure_not_live(ctx, &args.name)?;
 
     let spec = build_spec(ctx, args, workspace, port);
     let spawned = spawn::spawn_serve(&spec)?;
@@ -375,7 +379,7 @@ fn select_port(ctx: &Ctx, args: &UpArgs) -> Result<u16, CtlError> {
     match args.port {
         Some(p) => {
             if !PortPool::is_free(p) {
-                return Err(CtlError::usage(
+                return Err(CtlError::conflict(
                     "port_in_use",
                     format!(
                         "端口 {p} 已被占用（127.0.0.1）；换一个 `--port`，或先 `crabmatectl down` 掉占用它的实例"
@@ -428,6 +432,10 @@ fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
     if let Some(rec) = existing_if_ready(ctx, &args.name)? {
         return Ok(Launch::Existing(Box::new(rec)));
     }
+
+    // 记录指向的进程若还活着（身份校验通过），覆盖它就是放生一个孤儿：
+    // 新记录指向新 pid，旧进程继续占着端口与实例目录，而谁也不再认识它。
+    guard::ensure_not_live(ctx, &args.name)?;
 
     let port = select_port(ctx, args)?;
     let warnings = preflight_warnings(args.serve_config.as_deref(), workspace.as_deref())?;
@@ -654,20 +662,38 @@ pub fn logs(ctx: &Ctx, name: &str, tail: usize) -> Result<String, CtlError> {
     Ok(lines[start..].join("\n"))
 }
 
+/// `prune` 的单条结果（既可能是「已清」，也可能是「有意跳过」）。
+#[derive(Debug, Clone)]
+pub struct PruneItem {
+    pub name: String,
+    pub observed: Observed,
+    /// `Some(原因)` = 有意跳过：记录指向的进程还活着，删掉它等于放生孤儿。
+    pub refused: Option<String>,
+}
+
 /// 清理 stale / 已退出 / 失败的记录。
-pub fn prune(ctx: &Ctx, dry_run: bool) -> Result<Vec<(String, Observed)>, CtlError> {
-    let mut removed = Vec::new();
+///
+/// `force` 之外，指向**仍存活且身份校验通过**的进程的记录一律跳过 —— 见
+/// [`guard`]：`Observed::Stale` 同时盖住「PID 被复用」与「进程活着但端口不通」，
+/// 只有后者不能清。跳过要**逐条报出来**，否则用户只会看到「没清掉」而不知为何。
+pub fn prune(ctx: &Ctx, dry_run: bool, force: bool) -> Result<Vec<PruneItem>, CtlError> {
+    let mut out = Vec::new();
     for (rec, p) in ls(ctx)? {
         if !p.observed.is_prunable() {
             continue;
         }
-        removed.push((rec.name.clone(), p.observed));
-        if !dry_run {
+        let refused = guard::live_process_reason(&rec, &p).filter(|_| !force);
+        if refused.is_none() && !dry_run {
             let path = ctx.record_path(&rec.name)?;
             record::remove(&path)?;
         }
+        out.push(PruneItem {
+            name: rec.name,
+            observed: p.observed,
+            refused,
+        });
     }
-    Ok(removed)
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -748,11 +774,11 @@ mod tests {
         let p2 = ctx.paths.record_path("dead-one").expect("路径");
         record::write_atomic(&p2, &dead).expect("写");
 
-        let dry = prune(&ctx, true).expect("dry-run");
+        let dry = prune(&ctx, true, false).expect("dry-run");
         assert_eq!(dry.len(), 2, "dry-run 应列出但不动文件：{dry:?}");
         assert!(p1.exists() && p2.exists());
 
-        let real = prune(&ctx, false).expect("实删");
+        let real = prune(&ctx, false, false).expect("实删");
         assert_eq!(real.len(), 2);
         assert!(!p1.exists() && !p2.exists());
     }
