@@ -1,12 +1,32 @@
-struct ParsedRunCommandJson {
-    spec: tools::CommandSpec,
-    cmd: String,
-    script: String,
-    argv_tail: String,
+//! `run_command` 流水线的 解析、策略判定与交互审批 阶段。
+//!
+//! 原为 `execute/execute_run_command_approval.inc.rs`，通过 `include!` 与其余六片共享
+//! `execute` 的单一作用域；现为真子模块，跨片调用必须经 `mod.rs` 的显式接口（#1196）。
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_internal::tools;
+use crate::cm_types::{CommandApprovalDecision, ToolCall};
+
+// 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
+use super::super::*;
+// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
+use super::*;
+
+pub(in crate::cm_internal::tool_registry::execute) struct ParsedRunCommandJson {
+    pub(in crate::cm_internal::tool_registry::execute) spec: tools::CommandSpec,
+    pub(in crate::cm_internal::tool_registry::execute) cmd: String,
+    pub(in crate::cm_internal::tool_registry::execute) script: String,
+    pub(in crate::cm_internal::tool_registry::execute) argv_tail: String,
 }
 
 /// 与执行侧共用 [`tools::parse_command_spec`]（含 JSON 修复、路径归一化与命令拆分）。
-fn parse_run_command_json(
+pub(in crate::cm_internal::tool_registry::execute) fn parse_run_command_json(
     args: &str,
     working_dir: &Path,
 ) -> Result<ParsedRunCommandJson, tools::RunCommandError> {
@@ -25,7 +45,7 @@ fn parse_run_command_json(
     })
 }
 
-fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
+pub(in crate::cm_internal::tool_registry::execute) fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
     !tools::allowlist_allows_all(allowed)
         && !cmd.is_empty()
         && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
@@ -33,7 +53,7 @@ fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
 
 /// 执行/审批模式：由 [`evaluate_policy`] 统一消费，避免各 gate 自行判断 async / Docker。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExecMode {
+pub(in crate::cm_internal::tool_registry::execute) enum ExecMode {
     Sync,
     Async,
     Docker,
@@ -42,9 +62,9 @@ enum ExecMode {
 
 /// 一次策略评估期间生效的能力快照。
 #[derive(Debug, Clone, Copy)]
-struct PolicyCapabilities {
-    mode: ExecMode,
-    has_approval_channel: bool,
+pub(in crate::cm_internal::tool_registry::execute) struct PolicyCapabilities {
+    pub(in crate::cm_internal::tool_registry::execute) mode: ExecMode,
+    pub(in crate::cm_internal::tool_registry::execute) has_approval_channel: bool,
 }
 
 /// 本次策略评估的**命令能力快照**：生效白名单的唯一持有者。
@@ -59,9 +79,9 @@ struct PolicyCapabilities {
 /// **不要 `Clone`、不要跨评估复用**：评估以它持有的列表为基做扩展，
 /// 复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单。
 #[derive(Debug)]
-struct RunCommandCaps {
+pub(in crate::cm_internal::tool_registry::execute) struct RunCommandCaps {
     /// 生效白名单；含 `*` 哨兵时等价全放行（见 [`tools::allowlist_allows_all`]）。
-    allowed_commands: Arc<[String]>,
+    pub(in crate::cm_internal::tool_registry::execute) allowed_commands: Arc<[String]>,
 }
 
 impl RunCommandCaps {
@@ -95,14 +115,14 @@ impl RunCommandCaps {
 }
 
 /// 策略评估上下文。
-struct PolicyContext<'a> {
-    cfg: &'a Arc<AgentConfig>,
-    workspace: &'a Path,
-    web_ctx: Option<&'a WebToolRuntime>,
-    mode: ExecMode,
-    sse_command: &'a str,
+pub(in crate::cm_internal::tool_registry::execute) struct PolicyContext<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) cfg: &'a Arc<AgentConfig>,
+    pub(in crate::cm_internal::tool_registry::execute) workspace: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) mode: ExecMode,
+    pub(in crate::cm_internal::tool_registry::execute) sse_command: &'a str,
     /// 本回合权限能力快照；`None` = 未接线，回落 `cfg` 白名单（S3）。
-    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub(in crate::cm_internal::tool_registry::execute) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
 }
 
 impl PolicyContext<'_> {
@@ -122,21 +142,21 @@ impl PolicyContext<'_> {
     }
 
     /// 以当前配置为基构造命令能力快照（每次评估一份，评估后就地扩展）。
-    fn command_caps(&self) -> RunCommandCaps {
+    pub(in crate::cm_internal::tool_registry::execute) fn command_caps(&self) -> RunCommandCaps {
         RunCommandCaps::from_permission(self.cfg, self.permission)
     }
 }
 
 /// 策略拒绝/不可用的归因（顺序与现网三道 gate 一致）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PolicyReason {
+pub(in crate::cm_internal::tool_registry::execute) enum PolicyReason {
     UnknownCommand,
     PosixShellWrap,
     ExternalPath,
 }
 
 #[derive(Debug)]
-enum PolicyError {
+pub(in crate::cm_internal::tool_registry::execute) enum PolicyError {
     /// 用户拒绝，或交互审批返回拒绝。
     Denied {
         reason: PolicyReason,
@@ -164,7 +184,7 @@ impl PolicyError {
     }
 
     /// 转成工具调用返回的 `(正文, 注入)`；审批错误不注入结构化数据。
-    fn into_message(self) -> (String, Option<serde_json::Value>) {
+    pub(in crate::cm_internal::tool_registry::execute) fn into_message(self) -> (String, Option<serde_json::Value>) {
         let reason = self.reason();
         let message = match self {
             Self::Denied { message, .. }
@@ -178,7 +198,7 @@ impl PolicyError {
 
 /// 已发生的审批（`AllowAlways` 的持久化副作用仍留在本层）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PolicyApproval {
+pub(in crate::cm_internal::tool_registry::execute) enum PolicyApproval {
     UnknownCommandAllowOnce,
     UnknownCommandAllowAlways,
     PosixShellWrap,
@@ -191,11 +211,11 @@ enum PolicyApproval {
 /// 派生值——仅工作区外路径审批通过时为 `true`。`ExecMode` 留在
 /// [`PolicyCapabilities`]：那是**执行形态**，不是权限面（设计 §7.4）。
 #[derive(Debug)]
-struct PolicyDecision<'a> {
-    caps: &'a RunCommandCaps,
-    skip_arg_safety: bool,
-    capabilities: PolicyCapabilities,
-    approvals: Vec<PolicyApproval>,
+pub(in crate::cm_internal::tool_registry::execute) struct PolicyDecision<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) caps: &'a RunCommandCaps,
+    pub(in crate::cm_internal::tool_registry::execute) skip_arg_safety: bool,
+    pub(in crate::cm_internal::tool_registry::execute) capabilities: PolicyCapabilities,
+    pub(in crate::cm_internal::tool_registry::execute) approvals: Vec<PolicyApproval>,
 }
 
 /// 收敛三道审批 gate：未知命令 → shell 包装 → 工作区外路径。
@@ -206,7 +226,7 @@ struct PolicyDecision<'a> {
 /// `caps` **必须每次评估新建**（用 [`PolicyContext::command_caps`]）：它既是基白名单的
 /// 唯一来源，也是扩展结果的落点。复用上一轮的快照会让 `AllowOnce` 的临时批准变成下一轮的
 /// 基白名单——等于静默放宽命令面。
-async fn evaluate_policy<'a>(
+pub(in crate::cm_internal::tool_registry::execute) async fn evaluate_policy<'a>(
     parsed: &ParsedRunCommandJson,
     ctx: &PolicyContext<'_>,
     caps: &'a mut RunCommandCaps,
@@ -268,7 +288,7 @@ async fn evaluate_policy<'a>(
 }
 
 /// 未知命令的交互审批；`base` 是快照里的白名单（批准后基于**它**扩展，不是 `cfg`）。
-async fn request_unknown_cmd_approval(
+pub(in crate::cm_internal::tool_registry::execute) async fn request_unknown_cmd_approval(
     ctx: &PolicyContext<'_>,
     cmd: &str,
     script: &str,
@@ -341,7 +361,7 @@ async fn request_unknown_cmd_approval(
 ///
 /// `base` 必须来自 [`RunCommandCaps`] 而非 `cfg`：等级上限收窄后两者不再相等，
 /// 用 `cfg` 作基会把配置全量白名单带进生效集，绕过等级边界（设计 §6 只收紧不放宽）。
-async fn apply_unknown_cmd_decision(
+pub(in crate::cm_internal::tool_registry::execute) async fn apply_unknown_cmd_decision(
     base: &Arc<[String]>,
     cmd: &str,
     needs_shell: bool,
@@ -369,7 +389,7 @@ async fn apply_unknown_cmd_decision(
 }
 
 /// 以快照里的基白名单做未知命令判定；`base` 由 [`RunCommandCaps`] 持有（单一真源）。
-async fn resolve_unknown_cmd_allowlist(
+pub(in crate::cm_internal::tool_registry::execute) async fn resolve_unknown_cmd_allowlist(
     parsed: &ParsedRunCommandJson,
     needs_shell: bool,
     ctx: &PolicyContext<'_>,
@@ -442,7 +462,7 @@ async fn resolve_unknown_cmd_allowlist(
     .await
 }
 
-fn extend_allowlist_with_cmd_and_optional_bash(
+pub(in crate::cm_internal::tool_registry::execute) fn extend_allowlist_with_cmd_and_optional_bash(
     base: &Arc<[String]>,
     cmd: &str,
     needs_shell: bool,
@@ -456,7 +476,7 @@ fn extend_allowlist_with_cmd_and_optional_bash(
 }
 
 /// glob/`$VAR` 且白名单已有 bash：静默包装。Web 上独立 argv 操作符即使已有 bash 也再审（避免 `ls && rm` 绕过单命令白名单）。无审批通道且已有 bash 时仍包装。
-fn posix_shell_wrap_needs_interactive_approval(
+pub(in crate::cm_internal::tool_registry::execute) fn posix_shell_wrap_needs_interactive_approval(
     command_raw: &str,
     cmd_args: &[String],
     bash_on_allowlist: bool,
@@ -475,7 +495,7 @@ fn posix_shell_wrap_needs_interactive_approval(
 
 /// 白名单无 bash/sh 但 argv 需要 glob/`$VAR` 时，或 Web 上 argv 含 `&&`/`|` 等操作符时：审批完整脚本。
 /// `async` 模式拒绝需要交互审批的 bash 包装。
-async fn approve_posix_shell_wrap_if_needed(
+pub(in crate::cm_internal::tool_registry::execute) async fn approve_posix_shell_wrap_if_needed(
     parsed: &ParsedRunCommandJson,
     policy_cmd: &str,
     policy_args: &[String],
@@ -565,7 +585,7 @@ async fn approve_posix_shell_wrap_if_needed(
 
 /// 工作区外路径 / `..` 预检三态：仅 [`ExternalPathGate::Approved`] 可置 `skip_arg_safety`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExternalPathGate {
+pub(in crate::cm_internal::tool_registry::execute) enum ExternalPathGate {
     NotNeeded,
     Approved,
 }
@@ -575,7 +595,7 @@ enum ExternalPathGate {
 ///
 /// - L4（`path_scope = Any`）：路径面已放宽，直接 `Approved`（等价 `skip_arg_safety`）。
 /// - L2（`approval = Deny`）：硬拒，不弹审批。
-fn external_path_gate_by_caps(
+pub(in crate::cm_internal::tool_registry::execute) fn external_path_gate_by_caps(
     ctx: &PolicyContext<'_>,
     unsafe_args: &[String],
 ) -> Option<Result<ExternalPathGate, PolicyError>> {
@@ -612,7 +632,7 @@ fn external_path_gate_by_caps(
 
 /// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
 /// `async` 模式拒绝需要交互审批的工作区外路径。
-async fn approve_external_run_command_paths_if_needed(
+pub(in crate::cm_internal::tool_registry::execute) async fn approve_external_run_command_paths_if_needed(
     parsed: &ParsedRunCommandJson,
     allowed_commands: &[String],
     ctx: &PolicyContext<'_>,

@@ -1,21 +1,41 @@
-struct RunCommandSyncHostInvoke<'a> {
-    env: &'a ToolExecEnv<'a>,
-    effective_working_dir: &'a Path,
-    workspace_is_set: bool,
-    workspace_changed: &'a mut bool,
-    args: &'a str,
-    tool_call_id: &'a str,
-    sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    timeout_secs: Option<u64>,
-    parsed: ParsedRunCommandJson,
-    decision: PolicyDecision<'a>,
-    capabilities: RunCommandCapabilities,
+//! `run_command` 流水线的 同步宿主执行与子进程派生 阶段。
+//!
+//! 原为 `execute/execute_run_command_sync.inc.rs`，通过 `include!` 与其余六片共享
+//! `execute` 的单一作用域；现为真子模块，跨片调用必须经 `mod.rs` 的显式接口（#1196）。
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_internal::tools;
+use crate::cm_types::{CommandApprovalDecision, ToolCall};
+
+// 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
+use super::super::*;
+// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
+use super::*;
+
+pub(in crate::cm_internal::tool_registry::execute) struct RunCommandSyncHostInvoke<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::cm_internal::tool_registry::execute) workspace_changed: &'a mut bool,
+    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) tool_call_id: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::cm_internal::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::cm_internal::tool_registry::execute) timeout_secs: Option<u64>,
+    pub(in crate::cm_internal::tool_registry::execute) parsed: ParsedRunCommandJson,
+    pub(in crate::cm_internal::tool_registry::execute) decision: PolicyDecision<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) capabilities: RunCommandCapabilities,
 }
 
 /// 同步宿主执行：解析与审批已由 [`execute_run_command_impl`] 完成，此处只做 Docker 转交与宿主 spawn。
-async fn execute_run_command_sync_host(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_sync_host(
     invoke: RunCommandSyncHostInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
     let RunCommandSyncHostInvoke {
@@ -76,20 +96,20 @@ async fn execute_run_command_sync_host(
     (s, None)
 }
 
-struct SpawnRunCommandHost<'a> {
-    cfg: &'a AgentConfig,
-    spec: &'a tools::CommandSpec,
-    work_dir: PathBuf,
-    allowed: Arc<[String]>,
-    skip_arg_safety: bool,
-    timeout_secs: Option<u64>,
-    tool_call_id: &'a str,
-    sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+pub(in crate::cm_internal::tool_registry::execute) struct SpawnRunCommandHost<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) cfg: &'a AgentConfig,
+    pub(in crate::cm_internal::tool_registry::execute) spec: &'a tools::CommandSpec,
+    pub(in crate::cm_internal::tool_registry::execute) work_dir: PathBuf,
+    pub(in crate::cm_internal::tool_registry::execute) allowed: Arc<[String]>,
+    pub(in crate::cm_internal::tool_registry::execute) skip_arg_safety: bool,
+    pub(in crate::cm_internal::tool_registry::execute) timeout_secs: Option<u64>,
+    pub(in crate::cm_internal::tool_registry::execute) tool_call_id: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::cm_internal::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
-async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
+pub(in crate::cm_internal::tool_registry::execute) async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
     let SpawnRunCommandHost {
         cfg,
         spec,

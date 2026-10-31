@@ -1,12 +1,32 @@
-struct RunCommandAsyncInvoke<'a> {
-    env: &'a ToolExecEnv<'a>,
-    effective_working_dir: &'a Path,
-    web_ctx: Option<&'a WebToolRuntime>,
-    args: &'a str,
-    tool_jobs: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
-    parsed: ParsedRunCommandJson,
-    decision: PolicyDecision<'a>,
-    timeout_secs: Option<u64>,
+//! `run_command` 流水线的 后台任务（async）调用 阶段。
+//!
+//! 原为 `execute/execute_run_command_async_invocation.inc.rs`，通过 `include!` 与其余六片共享
+//! `execute` 的单一作用域；现为真子模块，跨片调用必须经 `mod.rs` 的显式接口（#1196）。
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_internal::tools;
+use crate::cm_types::{CommandApprovalDecision, ToolCall};
+
+// 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
+use super::super::*;
+// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
+use super::*;
+
+pub(in crate::cm_internal::tool_registry::execute) struct RunCommandAsyncInvoke<'a> {
+    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
+    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    pub(in crate::cm_internal::tool_registry::execute) parsed: ParsedRunCommandJson,
+    pub(in crate::cm_internal::tool_registry::execute) decision: PolicyDecision<'a>,
+    pub(in crate::cm_internal::tool_registry::execute) timeout_secs: Option<u64>,
 }
 
 /// `run_command` 的 `async=true` 后台路径（契约 §1.2 / §2）。
@@ -14,7 +34,7 @@ struct RunCommandAsyncInvoke<'a> {
 /// 前置检查、解析与审批（`async_mode=true` 拒绝一切交互审批）均由 [`execute_run_command_impl`]
 /// 完成；此处仅构造进程组可执行参数、登记后台任务并立即返回启动帧。
 /// 轮询/取消走 `GET /tools/jobs/{id}` 等端点。
-async fn execute_run_command_async(
+pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_async(
     invoke: RunCommandAsyncInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
     let RunCommandAsyncInvoke {
