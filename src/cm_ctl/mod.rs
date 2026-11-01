@@ -16,6 +16,7 @@ pub(crate) mod guard;
 pub(crate) mod identity;
 pub(crate) mod instances;
 pub(crate) mod lock;
+pub(crate) mod logio;
 pub(crate) mod ops;
 pub(crate) mod paths;
 pub(crate) mod port_pool;

@@ -9,6 +9,7 @@ use std::time::Duration;
 use super::guard;
 use super::identity;
 use super::lock;
+use super::logio;
 use super::paths::{self, CtlPaths};
 use super::port_pool::PortPool;
 use super::preflight;
@@ -23,6 +24,8 @@ use super::CtlError;
 const POLL: Duration = Duration::from_millis(100);
 /// 默认终止宽限。
 pub const DEFAULT_GRACE: Duration = Duration::from_secs(10);
+/// 从日志里捞 `web_ready` 行时看多少行尾巴（只看最近一次启动）。
+const READY_JSON_TAIL_LINES: usize = 200;
 
 /// 动作执行上下文。
 #[derive(Debug, Clone)]
@@ -125,8 +128,11 @@ fn now_rfc3339() -> String {
 }
 
 /// 从子进程日志里取最后一次 `web_ready` 行（`--web-ready-json` 已开启）。
+///
+/// 只读尾巴：这条路径在 `up` 的就绪收尾里，日志涨到 GB 级时整份读入会把
+/// ctl 自己拖垮（与 `logs` 是同一个坑，见 #1213）。
 fn ready_json_from_log(log: &Path) -> Option<serde_json::Value> {
-    let text = std::fs::read_to_string(log).ok()?;
+    let text = logio::tail_lines(log, READY_JSON_TAIL_LINES).ok()?;
     text.lines()
         .rev()
         .find(|l| l.contains("\"web_ready\""))

@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::CtlError;
+use super::logio;
 use super::paths;
 
 /// 默认透传的环境变量（进程运行必需 + 代理/CA 这类高频漏项）。
@@ -176,6 +177,14 @@ fn open_log(path: &Path) -> Result<File, CtlError> {
             )
         })?;
     }
+    // 起服务**前**按大小切一份：日志只增不减会让宿主机磁盘永远回不来（#1213）。
+    // 刻意不另开线程做实时轮转 —— 那是给短命命令行工具加常驻消费者。
+    logio::rotate_if_oversized(path, logio::ROTATE_THRESHOLD_BYTES).map_err(|e| {
+        CtlError::general(
+            "log_rotate_failed",
+            format!("轮转日志失败 {}：{e}", path.display()),
+        )
+    })?;
     let f = OpenOptions::new()
         .create(true)
         .append(true)
@@ -316,6 +325,41 @@ pub fn spawn_serve(spec: &SpawnSpec) -> Result<Spawned, CtlError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 起服务前按大小轮转：日志超过阈值就先切成 `.log.1`，新日志从 0 开始。
+    ///
+    /// 用 `set_len` 造稀疏文件，不必真写 32 MiB —— `rotate_if_oversized` 只看
+    /// `metadata().len()`。
+    #[test]
+    fn open_log_rotates_oversized_log_before_appending() {
+        let dir = std::env::temp_dir().join(format!(
+            "cm_ctl_spawn_rotate_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let log = dir.join("a.log");
+        let big = logio::ROTATE_THRESHOLD_BYTES + 1;
+        File::create(&log).expect("建日志").set_len(big).expect("造超阈值日志");
+
+        open_log(&log).expect("打开日志应成功");
+
+        let rotated = logio::rotated_path(&log);
+        assert_eq!(
+            std::fs::metadata(&rotated).expect("旧份应存在").len(),
+            big,
+            "超阈值的那份应整体改名"
+        );
+        assert_eq!(
+            std::fs::metadata(&log).expect("新日志").len(),
+            0,
+            "轮转后新日志应是空的"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn build_args_includes_serve_and_controlled_flags_only() {
