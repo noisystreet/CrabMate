@@ -8,6 +8,25 @@ mod chat_uploads_paths;
 mod conversation_messages_window;
 pub(crate) mod cron_scheduler;
 pub(crate) mod http_types;
+
+/// Web JSON 错误响应体：`{ "ok": false, "code": ..., "error": ... }`。
+///
+/// `#1247`：`github::device_flow::err_json` 与 `workspace::clone_stream::clone_http_err`
+/// 曾是两份字节级相同的实现，收敛至此。两处都保留原名 `use` 别名，调用点未动。
+pub(crate) fn json_error_response(
+    status: axum::http::StatusCode,
+    code: &str,
+    message: &str,
+) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    (
+        status,
+        axum::Json(serde_json::json!({
+            "ok": false,
+            "code": code,
+            "error": message,
+        })),
+    )
+}
 mod memory;
 mod permission;
 

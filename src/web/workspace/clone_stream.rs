@@ -56,20 +56,8 @@ enum CloneTargetError {
     Io(io::Error),
 }
 
-fn clone_http_err(
-    status: StatusCode,
-    code: &str,
-    message: &str,
-) -> (StatusCode, Json<serde_json::Value>) {
-    (
-        status,
-        Json(json!({
-            "ok": false,
-            "code": code,
-            "error": message,
-        })),
-    )
-}
+/// 原实现在此，`#1247` 收敛到 [`crate::web::json_error_response`]；保留原名以免改动调用点。
+use crate::web::json_error_response as clone_http_err;
 
 /// 解析目标路径并做策略预检（**不**创建目录；独占创建在流内 `claim_clone_target_dir`）。
 fn resolve_clone_target(pool: &Path, name: &str) -> Result<PathBuf, CloneTargetError> {

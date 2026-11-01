@@ -68,17 +68,6 @@ fn open_log_append(path: &Path) -> io::Result<std::fs::File> {
         .open(path)
 }
 
-fn agent_log_json_truthy(s: &str) -> Option<bool> {
-    let v = s.trim().to_ascii_lowercase();
-    if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
-        Some(true)
-    } else if matches!(v.as_str(), "0" | "false" | "no" | "off") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
 fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> String {
     if std::env::var_os("RUST_LOG").is_some() {
         return String::new();
@@ -117,7 +106,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
         let json_logs = std::env::var("CM_LOG_JSON")
             .ok()
             .as_deref()
-            .and_then(agent_log_json_truthy)
+            .and_then(crate::cm_config::parse_bool_like)
             .unwrap_or(false);
         let ansi_stderr = std::io::stderr().is_terminal() && log_file.is_none();
         install_tracing_subscriber(env_filter, log_file, json_logs, ansi_stderr)?;

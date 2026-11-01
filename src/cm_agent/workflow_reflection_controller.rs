@@ -207,7 +207,11 @@ impl WorkflowReflectionController {
     }
 }
 
-fn decision_passthrough_execute() -> WorkflowReflectionDecision {
+/// `execute: true` 且不带任何附加指令的决策骨架。
+///
+/// 两个具名构造器（「直接执行」与「完成并关闭会话」）语义不同，但构造值相同；
+/// 保留各自的命名以表达调用意图，实现只留一份（`#1247`）。
+fn decision_execute_no_extras() -> WorkflowReflectionDecision {
     WorkflowReflectionDecision {
         execute: true,
         stop_output: None,
@@ -216,13 +220,12 @@ fn decision_passthrough_execute() -> WorkflowReflectionDecision {
     }
 }
 
+fn decision_passthrough_execute() -> WorkflowReflectionDecision {
+    decision_execute_no_extras()
+}
+
 fn decision_done_close_session() -> WorkflowReflectionDecision {
-    WorkflowReflectionDecision {
-        execute: true,
-        stop_output: None,
-        inject_instruction: None,
-        workflow_args_patch: None,
-    }
+    decision_execute_no_extras()
 }
 
 fn decision_max_rounds_stop(max_rounds: usize) -> WorkflowReflectionDecision {

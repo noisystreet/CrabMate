@@ -13,7 +13,6 @@ use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
@@ -133,20 +132,9 @@ pub(crate) struct DeviceStatusResponse {
     pub refresh_token_expires_in: Option<u64>,
 }
 
-pub(crate) fn err_json(
-    status: StatusCode,
-    code: &str,
-    message: &str,
-) -> (StatusCode, Json<serde_json::Value>) {
-    (
-        status,
-        Json(json!({
-            "ok": false,
-            "code": code,
-            "error": message,
-        })),
-    )
-}
+/// 原实现在此，`#1247` 收敛到 [`crate::web::json_error_response`]；保留原名供本模块与
+/// `github::token_refresh` 使用。
+pub(crate) use crate::web::json_error_response as err_json;
 
 fn form_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

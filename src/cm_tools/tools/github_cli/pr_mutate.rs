@@ -3,8 +3,8 @@
 use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use super::common::{
-    gh_allowed, run_gh_vec, validate_extra_args, validate_pr_body, validate_pr_ref_token,
-    validate_pr_title, validate_repo, write_workspace_temp_markdown,
+    gh_allowed, push_extra_args_from_json, push_repo_arg, run_gh_vec, validate_pr_body,
+    validate_pr_ref_token, validate_pr_title, write_workspace_temp_markdown,
 };
 
 fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, ToolError> {
@@ -22,27 +22,6 @@ fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, Too
     }
 }
 
-fn push_repo(v: &serde_json::Value, argv: &mut Vec<String>) -> Result<(), ToolError> {
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
-        validate_repo(r)?;
-        argv.push("-R".into());
-        argv.push(r.trim().to_string());
-    }
-    Ok(())
-}
-
-fn push_extra(v: &serde_json::Value, argv: &mut Vec<String>) -> Result<(), ToolError> {
-    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
-        let extra: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        validate_extra_args(&extra)?;
-        argv.extend(extra);
-    }
-    Ok(())
-}
-
 /// `gh pr merge`（写远端：合并 PR）
 pub fn gh_pr_merge_try(
     args_json: &str,
@@ -55,7 +34,7 @@ pub fn gh_pr_merge_try(
     if let Ok(Some(num)) = parse_optional_pr_number(&v) {
         argv.push(num);
     }
-    push_repo(&v, &mut argv)?;
+    push_repo_arg(&v, &mut argv)?;
     let method = v
         .get("merge_method")
         .and_then(|x| x.as_str())
@@ -77,7 +56,7 @@ pub fn gh_pr_merge_try(
     if v.get("admin").and_then(|x| x.as_bool()) == Some(true) {
         argv.push("--admin".into());
     }
-    push_extra(&v, &mut argv)?;
+    push_extra_args_from_json(&v, &mut argv)?;
     run_gh_vec(argv, ctx)
 }
 
@@ -90,7 +69,7 @@ fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, ToolError> {
     if let Ok(Some(num)) = parse_optional_pr_number(v) {
         argv.push(num);
     }
-    push_repo(v, &mut argv)?;
+    push_repo_arg(v, &mut argv)?;
     match event.as_str() {
         "approve" => argv.push("--approve".into()),
         "request-changes" | "request_changes" => argv.push("--request-changes".into()),
@@ -109,7 +88,7 @@ fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, ToolError> {
     ) {
         return Err(ToolError::invalid_args("错误：comment / request-changes 须提供 body".to_string()));
     }
-    push_extra(v, &mut argv)?;
+    push_extra_args_from_json(v, &mut argv)?;
     Ok(argv)
 }
 
@@ -144,10 +123,10 @@ pub fn gh_pr_comment_try(
     if let Ok(Some(num)) = parse_optional_pr_number(&v) {
         argv.push(num);
     }
-    push_repo(&v, &mut argv)?;
+    push_repo_arg(&v, &mut argv)?;
     argv.push("--body".into());
     argv.push(body.trim().to_string());
-    push_extra(&v, &mut argv)?;
+    push_extra_args_from_json(&v, &mut argv)?;
     run_gh_vec(argv, ctx)
 }
 
@@ -191,7 +170,7 @@ fn build_gh_pr_edit_argv(
     if let Ok(Some(num)) = parse_optional_pr_number(v) {
         argv.push(num);
     }
-    push_repo(v, &mut argv)?;
+    push_repo_arg(v, &mut argv)?;
 
     let mut has_edit = false;
     has_edit |= push_scalar_edits(v, body_path_opt, &mut argv)?;
@@ -200,7 +179,7 @@ fn build_gh_pr_edit_argv(
         return Err(ToolError::invalid_args("错误：gh pr edit 至少需要 title / body / add_label / remove_label / add_reviewer / remove_reviewer / add_assignee / remove_assignee / base / draft / undraft 之一"
                 .to_string()));
     }
-    push_extra(v, &mut argv)?;
+    push_extra_args_from_json(v, &mut argv)?;
     Ok(argv)
 }
 

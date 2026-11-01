@@ -376,7 +376,7 @@ pub(super) fn parse_tools_config_bundle(
     Ok((f.agent, f.tool_registry))
 }
 
-pub(super) fn parse_bool_like(s: &str) -> Option<bool> {
+pub(crate) fn parse_bool_like(s: &str) -> Option<bool> {
     let v = s.trim().to_ascii_lowercase();
     if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
         Some(true)

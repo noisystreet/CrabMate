@@ -17,17 +17,16 @@ fn err_out_of_range(
     )
 }
 
-fn check_u64_inclusive(key: &str, v: Option<u64>, min: u64, max: u64) -> Result<(), String> {
-    let Some(n) = v else {
-        return Ok(());
-    };
-    if n < min || n > max {
-        return Err(err_out_of_range(key, n, min, max));
-    }
-    Ok(())
-}
-
-fn check_i64_inclusive(key: &str, v: Option<i64>, min: i64, max: i64) -> Result<(), String> {
+/// 闭区间校验；`None` 视为未配置（跳过）。
+///
+/// 原先是 `check_u64_inclusive` / `check_i64_inclusive` 两份字节级相同的实现（`#1247` 合并）。
+/// `check_f64_inclusive` **未并入**：它多一道 `is_finite` 检查，语义不同。
+fn check_inclusive<T: PartialOrd + Copy + std::fmt::Display>(
+    key: &str,
+    v: Option<T>,
+    min: T,
+    max: T,
+) -> Result<(), String> {
     let Some(n) = v else {
         return Ok(());
     };
@@ -489,13 +488,13 @@ fn u64_range_rows_b() -> &'static [U64RangeRow] {
 
 fn validate_u64_table(b: &ConfigBuilder) -> Result<(), String> {
     for &(key, get, lo, hi) in u64_range_rows_a1() {
-        check_u64_inclusive(key, get(b), lo, hi)?;
+        check_inclusive(key, get(b), lo, hi)?;
     }
     for &(key, get, lo, hi) in u64_range_rows_a2() {
-        check_u64_inclusive(key, get(b), lo, hi)?;
+        check_inclusive(key, get(b), lo, hi)?;
     }
     for &(key, get, lo, hi) in u64_range_rows_b() {
-        check_u64_inclusive(key, get(b), lo, hi)?;
+        check_inclusive(key, get(b), lo, hi)?;
     }
     Ok(())
 }
@@ -554,7 +553,7 @@ fn validate_tool_call_explain_char_range(b: &ConfigBuilder) -> Result<(), String
 /// 对 `finalize` 中会 `clamp` 的字段做前置校验；`None` 表示使用默认，跳过。
 pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), String> {
     validate_u64_table(b)?;
-    check_i64_inclusive("llm_seed", b.llm_sampling.llm_seed, i64::MIN, i64::MAX)?;
+    check_inclusive("llm_seed", b.llm_sampling.llm_seed, i64::MIN, i64::MAX)?;
     validate_f64_table(b)?;
     validate_parallel_wall_timeouts(b)?;
     validate_background_job_ranges(b)?;
