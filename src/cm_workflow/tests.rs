@@ -1,5 +1,4 @@
-// 本模块仅在 #[cfg(test)] 下编译，use 在 lib 检查时无引用。
-#![allow(unused_imports)]
+
 use std::collections::HashMap;
 
 use super::dag::validate_dag;

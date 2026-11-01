@@ -6,7 +6,6 @@
 //! 环境代理：遵循 **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`**（HTTP(S) 代理；reqwest 0.13 不支持 **SOCKS**，遇到 socks 代理会在错误中提示 unset 或改用 http 端口）。
 //! 可选 **`text_format: html_text`**：用 **`scraper`（html5ever）** 将 HTML 转为可读纯文本（跳过 `script`/`style`/`noscript`，优先抽取 `main` / `article` / `[role=main]`，否则 `body`）。
 
-#![allow(unused_imports)] // `pub use` 仅用于对外再导出，本模块正文不直接引用这些符号。
 
 mod args;
 mod decode;
