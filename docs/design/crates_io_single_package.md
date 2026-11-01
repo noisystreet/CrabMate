@@ -110,7 +110,8 @@ HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审
 - `0.5.1`（已发）：入站请求体补出站 `Serialize`——`ChatRequestBodyWire` / `ChatApprovalRequestBody` / `ClientLlmBody` / `ExecutorLlmBody` / `StreamResumeBody` / `ClarifyQuestionnaireAnswersBody`（PR #940）。
 - `0.5.2`（已发）：`cm_api_contract::HealthReportView` / `HealthCheckItemView`（`GET /health` 视图，PR #941）；`cm_sse_protocol::CommandApprovalData`（AG-UI CUSTOM `command_approval` data camel 面，PR #942）；`cm_api_contract::SessionListRow`（sessions 列表行瘦投影，PR #943，已合入 `main`）；`cm_api_contract::workspace`（`/workspace*` 全量 JSON 契约 27 类型自 `cm_web_host` 迁入、原址转发，B.1）。
 - `0.6.0`（已发）：公开协议面**无新增**符号；本体是一批 BREAKING 移除（TOML `[agent] mcp_command` / 明文密钥文件迁移 / `GET /user-data/secrets/status` 旧 `client_llm`·`executor_llm` 槽位 / `final_plan_semantic_check_accept_legacy_text` / 扁平 CLI flag 层 / `config --dry-run`），SSE wire 仍为 v2，六模块符号契约不变。
-- `0.7.0`（本版）：公开协议面**无新增**符号；本体是工具面收敛（大量薄封装 CLI 工具移除并改走 `run_command`，默认白名单相应扩充），SSE wire 仍为 v2，六模块符号契约不变。
+- `0.7.0`（已发）：公开协议面**无新增**符号；本体是工具面收敛（大量薄封装 CLI 工具移除并改走 `run_command`，默认白名单相应扩充），SSE wire 仍为 v2，六模块符号契约不变。
+- `0.8.0`（本版）：新增 `crabmatectl` 本地多实例管理器（**独立 binary**，不进 `protocol` 六模块公开面），并完成工具面类型化收敛（工具合并 / 移除属 **server** 面 BREAKING）；SSE wire 仍为 v2，未打 `client-contract-v*` 展示契约 tag。
 
 **首发前不做**（会把 S4 拖成又一次大切仓；若将来要做须**单独 PR 且在 S5 之前**，否则 `0.4.0` 后再缩是又一次 breaking）：
 

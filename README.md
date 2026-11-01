@@ -102,7 +102,7 @@ Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Debug / **`GET /w
 
 | Method | Command / notes |
 | --- | --- |
-| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.7.0`**, default feature **`server`**; git tag **`v0.7.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)** manually if needed. |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default feature **`server`**; git tag **`v0.8.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)** manually if needed. |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, **`man/`** (`crabmate.1` + `crabmatectl.1`), **`systemd/`** (system-level), **`systemd-user/`** (user-unit example), **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
 | **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
