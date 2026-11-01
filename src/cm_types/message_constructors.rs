@@ -187,6 +187,39 @@ impl Message {
             tool_call_id: Some(tool_call_id.into()),
         }
     }
+
+    /// 构建带图片的 `user` 消息（OpenAI 兼容 `content` 数组）；`text` 可为空（仅图）。
+    pub fn user_with_images(text: &str, image_urls: &[String]) -> Self {
+        let mut parts = Vec::new();
+        let t = text.trim();
+        if !t.is_empty() {
+            parts.push(serde_json::json!({"type": "text", "text": t}));
+        }
+        for url in image_urls {
+            let u = url.trim();
+            if u.is_empty() {
+                continue;
+            }
+            parts.push(serde_json::json!({
+                "type": "image_url",
+                "image_url": {"url": u}
+            }));
+        }
+        let content = if parts.is_empty() {
+            None
+        } else {
+            Some(MessageContent::Parts(parts))
+        };
+        Self {
+            role: "user".to_string(),
+            content,
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
 }
 
 impl ToolCall {

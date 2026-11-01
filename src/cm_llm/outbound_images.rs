@@ -262,7 +262,6 @@ fn is_webp_magic(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_types::message_user_with_images;
 
     const PNG_1X1: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
@@ -274,7 +273,7 @@ mod tests {
 
     #[test]
     fn flatten_drops_image_url_for_text_deepseek() {
-        let mut msgs = vec![message_user_with_images("看图", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images("看图", &["/uploads/a.png".into()])];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash",
@@ -292,7 +291,7 @@ mod tests {
 
     #[test]
     fn flatten_text_deepseek_on_proxy_host() {
-        let mut msgs = vec![message_user_with_images("看图", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images("看图", &["/uploads/a.png".into()])];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash",
@@ -310,7 +309,7 @@ mod tests {
     fn vision_inlines_png_as_data_url() {
         let dir = tempfile::tempdir().expect("tmp");
         std::fs::write(dir.path().join("a.png"), PNG_1X1).expect("write");
-        let mut msgs = vec![message_user_with_images("描述", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images("描述", &["/uploads/a.png".into()])];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash-vision-exp",
@@ -329,7 +328,7 @@ mod tests {
     #[test]
     fn vision_missing_file_becomes_note() {
         let dir = tempfile::tempdir().expect("tmp");
-        let mut msgs = vec![message_user_with_images("", &["/uploads/gone.png".into()])];
+        let mut msgs = vec![Message::user_with_images("", &["/uploads/gone.png".into()])];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash-vision-exp",
@@ -354,7 +353,7 @@ mod tests {
     fn vision_non_image_file_explains_type() {
         let dir = tempfile::tempdir().expect("tmp");
         std::fs::write(dir.path().join("a.png"), b"not-an-image").expect("write");
-        let mut msgs = vec![message_user_with_images("", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images("", &["/uploads/a.png".into()])];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash-vision-exp",
@@ -445,7 +444,7 @@ mod tests {
     fn text_model_placeholder_once_for_at_and_uploads() {
         let ws = tempfile::tempdir().expect("tmp");
         std::fs::write(ws.path().join("plot.png"), PNG_1X1).expect("write");
-        let mut msgs = vec![message_user_with_images(
+        let mut msgs = vec![Message::user_with_images(
             "看 @plot.png",
             &["/uploads/a.png".into()],
         )];

@@ -19,7 +19,7 @@ use crate::context_bootstrap::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message_for_web,
 };
 use crate::memory::agent_memory::load_memory_snippet;
-use crate::types::{Message, message_user_with_images};
+use crate::types::Message;
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
@@ -399,7 +399,7 @@ pub(super) async fn build_messages_for_turn(
     let last_user = if image_urls.is_empty() {
         Message::user_only(raw_user_for_store)
     } else {
-        message_user_with_images(&raw_user_for_store, image_urls)
+        Message::user_with_images(&raw_user_for_store, image_urls)
     };
     let mode_opt = crate::types::parse_optional_session_mode(session_mode)?;
     let parts = TurnBuildParts {
