@@ -272,17 +272,7 @@ pub fn norm_scores_bm25(scores: &[(i64, f64)]) -> HashMap<i64, f32> {
     m
 }
 
-/// UTF-8 安全的字节截断：在 `max_bytes` 以内找到最近的 char boundary 并截取。
-fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
-}
+use crate::cm_types::text_utils::truncate_to_char_boundary;
 
 #[cfg(test)]
 mod tests {

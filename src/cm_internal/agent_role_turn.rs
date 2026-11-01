@@ -197,8 +197,7 @@ pub fn turn_role_max_permission_level_for_web_or_cli_job(
 
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
 ///
-/// 实现委托 `crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`，
-/// 与 `crate::cm_agent::turn_tool_policy` 保持同一规则。
+/// 实现委托 `crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`。
 #[inline]
 pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {
     crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist(name, allow)
@@ -284,5 +283,36 @@ mod tests {
         assert_eq!(f3.len(), 1);
         assert_eq!(f3[0].function.name, "mcp__x");
         assert!(tool_allowed_for_turn("mcp__x", Some(&s3)));
+    }
+
+    /// 白名单外的工具在执行层必须被拒（原 `cm_agent::turn_tool_policy` 的测试，随该模块删除迁入）。
+    #[test]
+    fn turn_allow_blocks_unlisted_tool() {
+        let mut allow = HashSet::new();
+        allow.insert("read_file".to_string());
+        assert!(!tool_allowed_for_turn("run_command", Some(&allow)));
+        assert!(tool_allowed_for_turn("read_file", Some(&allow)));
+    }
+
+    /// MCP 工具按 `mcp` token 或全名两种方式放行（同上迁入，保留真实 MCP 命名）。
+    #[test]
+    fn turn_allow_mcp_by_token_or_exact_name() {
+        let mut by_token = HashSet::new();
+        by_token.insert("mcp".to_string());
+        assert!(tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_watchlist_list",
+            Some(&by_token)
+        ));
+
+        let mut by_exact = HashSet::new();
+        by_exact.insert("mcp__fanalyzer__fanalyzer_watchlist_list".to_string());
+        assert!(tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_watchlist_list",
+            Some(&by_exact)
+        ));
+        assert!(!tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_analyze",
+            Some(&by_exact)
+        ));
     }
 }

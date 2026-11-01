@@ -49,7 +49,7 @@
 | 轴 | 机制 | 锚点 |
 |---|---|---|
 | 工具可见性 | `SessionMode` Ask/Plan → `PlanStepExecutorKind::ReviewReadonly` | `src/agent/agent_turn/turn_loop/run_dispatch.rs:34`、`turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） |
-| 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/cm_agent/turn_tool_policy.rs:66` |
+| 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/cm_internal/agent_role_turn.rs:202` |
 | 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/cm_internal/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
 | 路径 | 根内相对路径硬校验；绝对路径 / `..` 在文件工具直接拒 | `src/cm_tools/tools/file/path.rs:127`（`resolve_for_read`）、`:159`（`resolve_for_write`）、`src/cm_tools/workspace/path.rs` |
 | 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed`） |
@@ -914,7 +914,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | 单回合工具定义过滤 | `src/agent/agent_turn/turn_loop/outer_loop.rs:101` |
 | 子代理角色工具表 | `src/cm_agent/step_executor_policy.rs:91` |
 | early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93` |
-| 角色 `allowed_tools` 解析 | `src/cm_config/agent_roles.rs:111`、`src/cm_agent/turn_tool_policy.rs:44` |
+| 角色 `allowed_tools` 解析 | `src/cm_config/agent_roles.rs:111`、`src/cm_internal/agent_role_turn.rs:162` |
 | 只读/写工具分类 | `src/cm_tools/registry_policy.rs:105`、`:149` |
 | `run_command` 策略评估 | `src/cm_internal/tool_registry/execute/run_command/approval.rs` |
 | `PolicyDecision` 结构 | 同上（`run_command/approval.rs`，`struct PolicyDecision`） |
