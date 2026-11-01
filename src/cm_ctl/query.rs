@@ -8,6 +8,7 @@
 //! 状态集合，[`guard::live_process_reason`] 决定活进程豁免。`gc` 复用同一组。
 
 use super::guard;
+use super::logio;
 use super::ops::Ctx;
 use super::paths;
 use super::probe::{self, Observed, Probe};
@@ -40,27 +41,23 @@ pub fn status(ctx: &Ctx, name: &str) -> Result<(InstanceRecord, Probe), CtlError
 }
 
 /// 读日志尾部。
+///
+/// 走 [`logio::tail_with_rotated`]：只读尾巴（不再整份加载），并在刚轮转过
+/// 时用 `<name>.log.1` 补齐行数 —— 轮转不该让 `logs -n 200` 只剩两行。
 pub fn logs(ctx: &Ctx, name: &str, tail: usize) -> Result<String, CtlError> {
     paths::validate_name(name)?;
     let path = ctx.paths.log_path(name);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(CtlError::general(
-                "log_not_found",
-                format!("实例 {name} 尚无日志文件：{}", path.display()),
-            ));
-        }
-        Err(e) => {
-            return Err(CtlError::general(
-                "log_unreadable",
-                format!("读取日志失败 {}：{e}", path.display()),
-            ));
-        }
-    };
-    let lines: Vec<&str> = text.lines().collect();
-    let start = lines.len().saturating_sub(tail.max(1));
-    Ok(lines[start..].join("\n"))
+    match logio::tail_with_rotated(&path, tail) {
+        Ok(t) => Ok(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(CtlError::general(
+            "log_not_found",
+            format!("实例 {name} 尚无日志文件：{}", path.display()),
+        )),
+        Err(e) => Err(CtlError::general(
+            "log_unreadable",
+            format!("读取日志失败 {}：{e}", path.display()),
+        )),
+    }
 }
 
 /// `prune` 的单条结果（既可能是「已清」，也可能是「有意跳过」）。
