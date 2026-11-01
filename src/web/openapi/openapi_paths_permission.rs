@@ -12,7 +12,7 @@ pub(super) fn openapi_paths_fragment_permission() -> Value {
                 "tags": ["system"],
                 "summary": "权限等级与六轴投影（只读策略投影）",
                 "description": "客户端等级选择器的数据源：`available` 是选项集（全部 ≤ 上限，并已扣除角色上限与会话模式钳制），`clamped_by` 与 `ceiling_source` 解释「为什么本机不能选 L4」。刻意不提供写上限的接口（设计 §16.3）。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "agent_role",
@@ -32,11 +32,7 @@ pub(super) fn openapi_paths_fragment_permission() -> Value {
                 "responses": {
                     "200": {
                         "description": "权限投影",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/PermissionView" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/PermissionView" }))
                     },
                     "400": { "description": "agent_role / conversation_id 非法" },
                     "404": { "description": "会话不存在或已过期" }

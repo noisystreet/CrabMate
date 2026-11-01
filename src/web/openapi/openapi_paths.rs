@@ -19,7 +19,7 @@ fn openapi_paths_fragment_system() -> Value {
                 "responses": {
                     "200": {
                         "description": "OpenAPI 3.0 JSON",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     }
                 }
             }
@@ -31,11 +31,7 @@ fn openapi_paths_fragment_system() -> Value {
                 "responses": {
                     "200": {
                         "description": "健康报告 JSON（status + checks；checks 键随运行环境动态增减）",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/HealthReportView" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/HealthReportView" }))
                     }
                 }
             }
@@ -56,16 +52,12 @@ fn openapi_paths_fragment_system() -> Value {
                 "responses": {
                     "200": {
                         "description": "状态 JSON",
-                        "content": {
-                            "application/json": {
-                                "schema": {
+                        "content": super::openapi_helpers::json_content(json!({
                                     "oneOf": [
                                         { "$ref": "#/components/schemas/StatusShellView" },
                                         { "$ref": "#/components/schemas/StatusResponseBody" }
                                     ]
-                                }
-                            }
-                        }
+                                }))
                     }
                 }
             }
@@ -77,11 +69,7 @@ fn openapi_paths_fragment_system() -> Value {
                 "responses": {
                     "200": {
                         "description": "Web UI 配置 JSON",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WebUiConfigResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WebUiConfigResponse" }))
                     }
                 }
             }
@@ -95,25 +83,17 @@ fn openapi_paths_fragment_chat_core() -> Value {
             "post": {
                 "tags": ["chat"],
                 "summary": "非流式对话",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/ChatRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatRequestBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "助手回复",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ChatResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatResponseBody" }))
                     },
-                    "4XX": { "description": "业务或参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+                    "4XX": { "description": "业务或参数错误", "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ApiError" })) },
                     "5XX": { "description": "服务器错误" }
                 }
             }
@@ -123,14 +103,10 @@ fn openapi_paths_fragment_chat_core() -> Value {
                 "tags": ["chat"],
                 "summary": "SSE 流式对话",
                 "description": "响应 `Content-Type: text/event-stream`；成功时响应头可含 `x-conversation-id`。事件载荷见 `docs/SSE协议.md`。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/ChatRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatRequestBody" }))
                 },
                 "responses": {
                     "200": {
@@ -152,25 +128,17 @@ fn openapi_paths_fragment_chat_async() -> Value {
                 "tags": ["chat"],
                 "summary": "异步非流式对话（轮询 / Webhook）",
                 "description": "立即返回 job_id；执行与 POST /chat 相同 JSON 队列路径。状态仅存本进程内存，serve 重启丢失。需工具审批请用 POST /chat/stream。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/ChatAsyncRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatAsyncRequestBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "已接受",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ChatAsyncSubmitResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatAsyncSubmitResponseBody" }))
                     },
-                    "4XX": { "description": "参数或业务错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+                    "4XX": { "description": "参数或业务错误", "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ApiError" })) },
                     "503": { "description": "队列满（QUEUE_FULL）" }
                 }
             }
@@ -179,7 +147,7 @@ fn openapi_paths_fragment_chat_async() -> Value {
             "get": {
                 "tags": ["chat"],
                 "summary": "查询异步对话任务状态",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "job_id",
@@ -191,11 +159,7 @@ fn openapi_paths_fragment_chat_async() -> Value {
                 "responses": {
                     "200": {
                         "description": "任务状态",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ChatJobStatusResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatJobStatusResponseBody" }))
                     },
                     "404": { "description": "未知 job_id（UNKNOWN_JOB）" }
                 }
@@ -210,23 +174,15 @@ fn openapi_paths_fragment_chat_extras() -> Value {
             "post": {
                 "tags": ["chat"],
                 "summary": "工具/HTTP 审批决策",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/ChatApprovalRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatApprovalRequestBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "审批结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ChatApprovalResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatApprovalResponseBody" }))
                     }
                 }
             }
@@ -235,23 +191,15 @@ fn openapi_paths_fragment_chat_extras() -> Value {
             "post": {
                 "tags": ["chat"],
                 "summary": "会话分叉截断（持久化会话）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/ChatBranchRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatBranchRequestBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "截断结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ChatBranchResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ChatBranchResponseBody" }))
                     }
                 }
             }
@@ -261,7 +209,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 "tags": ["chat"],
                 "summary": "只读拉取已持久化会话消息与 revision",
                 "description": "供 Web 刷新后与 `conversation_id` 对齐；不含长期记忆/变更集/首轮工作区画像注入；404 表示不存在或已过期。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "conversation_id",
@@ -294,11 +242,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 "responses": {
                     "200": {
                         "description": "会话快照",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ConversationMessagesResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ConversationMessagesResponseBody" }))
                     },
                     "400": { "description": "参数错误" },
                     "404": { "description": "会话不存在或已过期" }
@@ -310,7 +254,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 "tags": ["chat"],
                 "summary": "删除已持久化会话（幂等）",
                 "description": "删除服务端会话记录；会话不存在或已过期同样返回 204。仅删服务端记录，Client 侧栏索引由其自行维护。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "conversation_id",
@@ -330,7 +274,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
             "post": {
                 "tags": ["uploads"],
                 "summary": "multipart 文件上传",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -347,11 +291,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 "responses": {
                     "200": {
                         "description": "上传结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/UploadResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/UploadResponseBody" }))
                     }
                 }
             }
@@ -360,7 +300,7 @@ fn openapi_paths_fragment_chat_extras() -> Value {
             "get": {
                 "tags": ["uploads"],
                 "summary": "读取聊天附图字节（与其它受保护 API 同鉴权）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "filename",
@@ -381,23 +321,15 @@ fn openapi_paths_fragment_chat_extras() -> Value {
             "post": {
                 "tags": ["uploads"],
                 "summary": "按 URL 删除已上传文件",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/DeleteUploadsBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/DeleteUploadsBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "删除结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/DeleteUploadsResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/DeleteUploadsResponseBody" }))
                     }
                 }
             }
@@ -411,7 +343,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "列出工作区目录项",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -424,24 +356,16 @@ fn openapi_paths_fragment_workspace_list() -> Value {
                 "responses": {
                     "200": {
                         "description": "目录列表",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceResponse" }))
                     }
                 }
             },
             "post": {
                 "tags": ["workspace"],
                 "summary": "设置当前 Web 工作区根",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/WorkspaceSetBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceSetBody" }))
                 },
                 "responses": {
                     "200": { "description": "设置结果（JSON，形状与实现一致）" }
@@ -452,15 +376,11 @@ fn openapi_paths_fragment_workspace_list() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "工作区选目录占位（始终 path=null；请在侧栏手动填写路径）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "所选路径或 null",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspacePickResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspacePickResponse" }))
                     }
                 }
             }
@@ -469,7 +389,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "列出 Web 项目池状态与项目名",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "enabled / pool_path / projects"
@@ -479,7 +399,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
             "post": {
                 "tags": ["workspace"],
                 "summary": "按名称打开或新建项目池工作区",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": { "description": "切换结果（含 path）" }
                 }
@@ -490,12 +410,10 @@ fn openapi_paths_fragment_workspace_list() -> Value {
                 "tags": ["workspace"],
                 "summary": "在项目池内 git clone（SSE 进度；成功后切换当前工作区）",
                 "description": "仅当已配置 web_workspace_pool。请求 JSON：url、name，可选 depth、branch。成功路径：phase → log/progress → phase=activate → done(name,path)。墙钟超时 20 分钟。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "required": ["url", "name"],
                                 "properties": {
@@ -504,9 +422,7 @@ fn openapi_paths_fragment_workspace_list() -> Value {
                                     "depth": { "type": "integer", "minimum": 1 },
                                     "branch": { "type": "string" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "responses": {
                     "200": {
@@ -524,23 +440,15 @@ fn openapi_paths_fragment_workspace_list() -> Value {
             "post": {
                 "tags": ["workspace"],
                 "summary": "工作区内搜索",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/WorkspaceSearchBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceSearchBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "搜索结果文本",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceSearchResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceSearchResponse" }))
                     }
                 }
             }
@@ -554,30 +462,22 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
             "post": {
                 "tags": ["workspace"],
                 "summary": "在工作区内创建目录，或通过 JSON delete=true 删除目录（与 DELETE 等价）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/WorkspaceDirCreateBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceDirCreateBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "创建结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceDirCreateResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceDirCreateResponse" }))
                     }
                 }
             },
             "delete": {
                 "tags": ["workspace"],
                 "summary": "删除工作区目录（须 confirm=true；非空目录须 recursive=true）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -601,11 +501,7 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
                 "responses": {
                     "200": {
                         "description": "删除结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceDirDeleteResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceDirDeleteResponse" }))
                     }
                 }
             }
@@ -614,15 +510,11 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "项目画像 Markdown",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "画像",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceProfileResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceProfileResponse" }))
                     }
                 }
             }
@@ -631,7 +523,7 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "本会话工作区变更集 Markdown",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "conversation_id",
@@ -643,11 +535,7 @@ fn openapi_paths_fragment_workspace_file_meta() -> Value {
                 "responses": {
                     "200": {
                         "description": "变更集",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceChangelogResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceChangelogResponse" }))
                     }
                 }
             }
@@ -661,38 +549,26 @@ fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
             "get": {
                 "tags": ["tasks"],
                 "summary": "读取当前工作区任务清单（进程内存）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "任务数据",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/TasksData" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/TasksData" }))
                     }
                 }
             },
             "post": {
                 "tags": ["tasks"],
                 "summary": "保存当前工作区任务清单",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/TasksData" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/TasksData" }))
                 },
                 "responses": {
                     "200": {
                         "description": "回显保存后的数据",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/TasksData" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/TasksData" }))
                     }
                 }
             }
@@ -701,7 +577,7 @@ fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
             "post": {
                 "tags": ["config"],
                 "summary": "热重载 AgentConfig（不含部分字段，见 CONFIGURATION.md）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -713,11 +589,7 @@ fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
                 "responses": {
                     "200": {
                         "description": "重载结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ConfigReloadResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ConfigReloadResponseBody" }))
                     }
                 }
             }
@@ -726,23 +598,15 @@ fn openapi_paths_fragment_workspace_tasks_and_config() -> Value {
             "post": {
                 "tags": ["config"],
                 "summary": "切换 Web 会话存储后端（内存 / SQLite，仅当前进程）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/SessionConversationStoreRequestBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/SessionConversationStoreRequestBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "切换结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ConfigReloadResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ConfigReloadResponseBody" }))
                     }
                 }
             }
@@ -756,11 +620,11 @@ fn openapi_paths_fragment_github() -> Value {
             "get": {
                 "tags": ["github"],
                 "summary": "GitHub 仓库上下文（只读；优先 gh，失败时从 git remote 解析 URL）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "仓库与分支摘要",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     }
                 }
             }
@@ -769,11 +633,11 @@ fn openapi_paths_fragment_github() -> Value {
             "get": {
                 "tags": ["github"],
                 "summary": "当前分支关联 PR 的 CI checks（只读）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "checks 摘要",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     }
                 }
             }
@@ -782,25 +646,21 @@ fn openapi_paths_fragment_github() -> Value {
             "post": {
                 "tags": ["github"],
                 "summary": "启动 GitHub Device Flow（body.client_id 必填；不返回 device_code）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "required": ["client_id"],
                                 "properties": {
                                     "client_id": { "type": "string" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "responses": {
                     "200": {
                         "description": "user_code 与 verification_uri_complete 等",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     },
                     "400": { "description": "GITHUB_OAUTH_CLIENT_ID_REQUIRED" }
                 }
@@ -810,7 +670,7 @@ fn openapi_paths_fragment_github() -> Value {
             "get": {
                 "tags": ["github"],
                 "summary": "Device Flow 状态；成功时 Set-Cookie crabmate_github_token 与 crabmate_github_refresh；头 X-CrabMate-GitHub-Token-Delivery: body 时 JSON 含一次性 access_token / refresh_token",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "X-CrabMate-GitHub-Token-Delivery",
@@ -822,7 +682,7 @@ fn openapi_paths_fragment_github() -> Value {
                 "responses": {
                     "200": {
                         "description": "state / login / error；壳可选 access_token / refresh_token 与有效期秒数",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     }
                 }
             }
@@ -831,25 +691,21 @@ fn openapi_paths_fragment_github() -> Value {
             "post": {
                 "tags": ["github"],
                 "summary": "用 refresh_token 刷新 user access token（壳在 body 提供 refresh_token / client_id；浏览器走 HttpOnly Cookie crabmate_github_refresh，client_id 回退最近一次 Device Flow）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": false,
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "client_id": { "type": "string" },
                                     "refresh_token": { "type": "string" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "responses": {
                     "200": {
                         "description": "新 access_token（GitHub App 另含轮换 refresh_token 与有效期秒数）并 Set-Cookie 更新",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
                     },
                     "400": { "description": "GITHUB_REFRESH_TOKEN_REQUIRED / GITHUB_OAUTH_CLIENT_ID_REQUIRED" },
                     "401": { "description": "GITHUB_REFRESH_TOKEN_REJECTED" }
@@ -860,7 +716,7 @@ fn openapi_paths_fragment_github() -> Value {
             "post": {
                 "tags": ["github"],
                 "summary": "取消当前 Device 会话",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": { "204": { "description": "已取消" } }
             }
         },
@@ -868,7 +724,7 @@ fn openapi_paths_fragment_github() -> Value {
             "post": {
                 "tags": ["github"],
                 "summary": "清除浏览器 HttpOnly Cookie crabmate_github_token",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": { "204": { "description": "已清除 Cookie" } }
             }
         },

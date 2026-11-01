@@ -11,7 +11,7 @@ pub(super) fn openapi_paths_fragment_memory() -> Value {
                 "tags": ["memory"],
                 "summary": "按 scope 投影长期记忆列表（只读）",
                 "description": "scope 即 `conversation_id`；响应不含 embedding 与内部 source_role/source_kind。空 scope 返回 200 空列表。长期记忆未启用时 503 LONG_TERM_MEMORY_DISABLED（响应体含 enabled:false）。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "conversation_id",
@@ -63,11 +63,7 @@ pub(super) fn openapi_paths_fragment_memory() -> Value {
                 "responses": {
                     "200": {
                         "description": "投影列表",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/MemoryListResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/MemoryListResponse" }))
                     },
                     "400": { "description": "INVALID_CONVERSATION_ID / INVALID_MEMORY_KIND" },
                     "503": { "description": "LONG_TERM_MEMORY_DISABLED（enabled=false）" }
@@ -79,7 +75,7 @@ pub(super) fn openapi_paths_fragment_memory() -> Value {
                 "tags": ["memory"],
                 "summary": "按 id 删除长期记忆（幂等）",
                 "description": "行不存在 / 已过期 / 不属于该 conversation_id 均返回 204（不泄露 id 是否存在）。",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "id",

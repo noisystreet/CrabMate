@@ -3,6 +3,7 @@
 mod fragment_merge;
 mod openapi_components;
 mod openapi_components_user_data;
+mod openapi_helpers;
 mod openapi_paths;
 mod openapi_paths_chat_stream;
 mod openapi_paths_memory;

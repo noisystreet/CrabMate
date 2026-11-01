@@ -20,7 +20,7 @@ fn tools_list_path() -> Value {
             "tags": ["tools"],
             "summary": "枚举工具（内置 / 工作区动态 / MCP 三源只读清单）",
             "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。每项另有 `available_at_level: bool`：是否在当前权限等级（进程默认档，经 `permission_level_max` 钳制）下可用——它与 `present` 是两条独立的轴（在场 ≠ 调得动），本端点**不**按等级过滤，等级选择器请用 `GET /permission`。",
-            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "security": super::openapi_helpers::protected_security(),
             "parameters": [
                 {
                     "name": "source",
@@ -68,9 +68,7 @@ fn tools_list_path() -> Value {
             "responses": {
                 "200": {
                     "description": "工具清单（含 total/limit/offset/has_more/counts）",
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "tools": {
@@ -112,9 +110,7 @@ fn tools_list_path() -> Value {
                                     },
                                     "workspace_root": { "type": "string" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "400": { "description": "非法过滤参数（INVALID_TOOL_FILTER）" }
             }
@@ -128,21 +124,17 @@ fn tools_plugins_path() -> Value {
         "get": {
             "tags": ["tools"],
             "summary": "列出工作区动态工具文件（`<workspace>/plugins/*.json`，只读）",
-            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "security": super::openapi_helpers::protected_security(),
             "responses": {
                 "200": {
                     "description": "动态工具文件清单（含校验失败原因与命令白名单判定）",
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "plugins": { "type": "array", "items": { "type": "object" } },
                                     "total": { "type": "integer" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 }
             }
         }
@@ -156,7 +148,7 @@ fn tool_plugin_detail_path() -> Value {
             "tags": ["tools"],
             "summary": "读取工作区单个动态工具文件（`<workspace>/plugins/{file}`，只读）",
             "description": "返回该文件的 `parameters` / `args` / `pass_args_json` 与校验结果；不做写/删。`file` 仅允许 `[A-Za-z0-9_-]+\\.json`（显式拒绝分隔符与 `..`）。",
-            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "security": super::openapi_helpers::protected_security(),
             "parameters": [
                 {
                     "name": "file",
@@ -169,9 +161,7 @@ fn tool_plugin_detail_path() -> Value {
             "responses": {
                 "200": {
                     "description": "单文件详情（含校验结果与原始参数）",
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "file": { "type": "string" },
@@ -184,9 +174,7 @@ fn tool_plugin_detail_path() -> Value {
                                     "args": { "type": "array", "items": { "type": "string" } },
                                     "pass_args_json": { "type": "boolean" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "400": { "description": "文件名不合法（INVALID_PLUGIN_DEFINITION）" },
                 "404": { "description": "未找到动态工具文件（PLUGIN_NOT_FOUND）" }
@@ -201,7 +189,7 @@ fn tool_detail_path() -> Value {
         "get": {
             "tags": ["tools"],
             "summary": "单工具详情与策略投影",
-            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "security": super::openapi_helpers::protected_security(),
             "parameters": [
                 {
                     "name": "tool_name",
@@ -213,9 +201,7 @@ fn tool_detail_path() -> Value {
             "responses": {
                 "200": {
                     "description": "工具详情（含 parameters 与 policy）",
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "name": { "type": "string" },
@@ -248,9 +234,7 @@ fn tool_detail_path() -> Value {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "400": { "description": "工具名不合法（INVALID_TOOL_NAME）" },
                 "404": { "description": "未注册的工具（TOOL_NOT_FOUND）" }
@@ -266,7 +250,7 @@ fn tool_enabled_path() -> Value {
             "tags": ["tools"],
             "summary": "启用/停用工具（写 tool_overrides.json 并就地生效）",
             "description": "幂等：始终写入显式 bool。写入后立即更新运行中配置，无需重启；重启/reload 亦生效。`tool_overrides.json` 仅解除精确禁用集；若该名仍被 `disabled_tool_prefixes` 命中，响应 `present:false` 且带 `absent_reason`（不谎报生效）。",
-            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "security": super::openapi_helpers::protected_security(),
             "parameters": [
                 {
                     "name": "tool_name",
@@ -277,22 +261,16 @@ fn tool_enabled_path() -> Value {
             ],
             "requestBody": {
                 "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
+                "content": super::openapi_helpers::json_content(json!({
                             "type": "object",
                             "required": ["enabled"],
                             "properties": { "enabled": { "type": "boolean" } }
-                        }
-                    }
-                }
+                        }))
             },
             "responses": {
                 "200": {
                     "description": "已写入并生效",
-                    "content": {
-                        "application/json": {
-                            "schema": {
+                    "content": super::openapi_helpers::json_content(json!({
                                 "type": "object",
                                 "properties": {
                                     "name": { "type": "string" },
@@ -302,9 +280,7 @@ fn tool_enabled_path() -> Value {
                                     "present": { "type": "boolean" },
                                     "absent_reason": { "type": "string" }
                                 }
-                            }
-                        }
-                    }
+                            }))
                 },
                 "400": { "description": "工具名不合法（INVALID_TOOL_NAME）" },
                 "404": { "description": "未注册的工具（TOOL_NOT_FOUND）" },
