@@ -153,17 +153,7 @@ mod tests {
     use super::*;
     use crate::cm_types::Message;
 
-    fn msg(role: &str, content: &str) -> Message {
-        Message {
-            role: role.to_string(),
-            content: Some(content.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
+    use crate::test_fixtures::msg;
 
     fn plain_body(m: &Message) -> String {
         crate::cm_types::message_content_as_str(&m.content)

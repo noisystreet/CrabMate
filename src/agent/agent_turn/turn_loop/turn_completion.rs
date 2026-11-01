@@ -155,31 +155,8 @@ mod tests {
     use crate::agent::plan_artifact::PlanStepV1;
     use crate::types::Message;
 
-    fn msg(role: &str, text: &str) -> Message {
-        Message {
-            role: role.to_string(),
-            content: Some(text.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
+    use crate::test_fixtures::{msg, tool_env};
 
-    fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-        let parsed = crate::tool_result::parse_tool_output(name, output);
-        msg(
-            "tool",
-            &crate::tool_result::encode_tool_message_envelope_v1(
-                name,
-                summary.to_string(),
-                &parsed,
-                output,
-                None,
-            ),
-        )
-    }
 
     fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
         PlanStepV1 {

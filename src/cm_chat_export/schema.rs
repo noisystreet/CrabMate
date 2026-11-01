@@ -128,19 +128,8 @@ pub fn display_session_to_json_pretty(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_types::Message;
 
-    fn msg(role: &str, content: &str) -> Message {
-        Message {
-            role: role.to_string(),
-            content: Some(content.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
+    use crate::test_fixtures::msg;
 
     #[test]
     fn session_file_roundtrip_includes_raw_projection() {
