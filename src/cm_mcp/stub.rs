@@ -1,4 +1,7 @@
 //! `mcp` feature 关闭时的桩实现：保持类型与函数符号，运行时返回明确错误。
+//! **勿按死代码清理**：符号面须与 `mcp` 开启时的真实实现一致，关闭该 feature 时它们
+//! 自然「无人引用」，删掉本模块或逐个加 item 级 allow 都会让关闭 feature 的构建失去
+//! 同名符号。已登记在 `scripts/allow_exception_baseline.txt`（#1231 基线白名单）。
 #![allow(dead_code)]
 
 use std::collections::HashMap;
