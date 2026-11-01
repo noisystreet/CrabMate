@@ -16,8 +16,9 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 
 use super::instances::{self, InstancesFile};
-use super::ops::{self, Ctx};
+use super::ops::Ctx;
 use super::probe::{Observed, Probe};
+use super::query;
 use super::record::{self, DesiredState, InstanceRecord};
 use super::supervise::{self, Opts, Step};
 use super::CtlError;
@@ -125,7 +126,7 @@ pub fn sweep(
     // 一次探测：`plan` 内部还会再探一次，但这里必须先拿到观测态才能筛掉
     // 「启动中 / 健康」——把这两类交给 `plan` 的 `Start` 分支会导致
     // 正在启动的实例被当成崩溃重启。
-    let observed = ops::ls(ctx)?;
+    let observed = query::ls(ctx)?;
     let mut run = Vec::new();
     let mut booked: Vec<(String, u32)> = Vec::new();
 

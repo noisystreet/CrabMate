@@ -17,6 +17,7 @@ use super::instances;
 use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
 use super::paths;
 use super::preflight;
+use super::query;
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::render;
 use super::restart;
@@ -45,18 +46,18 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
         }
         CtlSubCmd::Run(c) => run_foreground(&ctx, c, workspace_cli),
         CtlSubCmd::Ls(c) => {
-            let rows = ops::ls(&ctx)?;
+            let rows = query::ls(&ctx)?;
             render::ls(&rows, c.json);
             Ok(())
         }
         CtlSubCmd::Status(c) => {
-            let (rec, p) = ops::status(&ctx, &c.name)?;
+            let (rec, p) = query::status(&ctx, &c.name)?;
             render::status(&rec, &p, c.json);
             Ok(())
         }
         CtlSubCmd::Logs(c) => logs_cmd(&ctx, c),
         CtlSubCmd::Prune(c) => {
-            let items = ops::prune(&ctx, c.dry_run, c.force)?;
+            let items = query::prune(&ctx, c.dry_run, c.force)?;
             render::prune(&items, c.dry_run);
             Ok(())
         }
@@ -418,7 +419,7 @@ fn resolve_socket_path(ctx: &Ctx, spec: &str) -> Result<PathBuf, CtlError> {
 fn down_cmd(ctx: &Ctx, c: &DownCmd) -> Result<(), CtlError> {
     let grace = Duration::from_secs(c.timeout_secs);
     if c.all {
-        let rows = ops::ls(ctx)?;
+        let rows = query::ls(ctx)?;
         if rows.is_empty() {
             println!("（没有实例）");
             return Ok(());
@@ -568,7 +569,7 @@ fn run_foreground(ctx: &Ctx, c: &RunCmd, workspace_cli: Option<&str>) -> Result<
 }
 
 fn logs_cmd(ctx: &Ctx, c: &LogsCmd) -> Result<(), CtlError> {
-    let text = ops::logs(ctx, &c.name, c.tail)?;
+    let text = query::logs(ctx, &c.name, c.tail)?;
     if !text.is_empty() {
         println!("{text}");
     }

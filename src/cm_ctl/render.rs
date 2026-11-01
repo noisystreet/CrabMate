@@ -8,7 +8,8 @@ use std::path::Path;
 use serde_json::json;
 
 use super::decl;
-use super::ops::{DownOutcome, PruneItem, UpOutcome};
+use super::ops::{DownOutcome, UpOutcome};
+use super::query::PruneItem;
 use super::probe::{Observed, Probe};
 use super::record::InstanceRecord;
 use super::supervise::Step;
@@ -243,7 +244,7 @@ pub fn prune(items: &[PruneItem], dry_run: bool) {
     if dry_run {
         println!("（dry-run：未实际删除；去掉 --dry-run 执行）");
     }
-    // 被跳过时 `--force` 本来就是 false（见 `ops::prune`），所以这里不必再问它：
+    // 被跳过时 `--force` 本来就是 false（见 `query::prune`），所以这里不必再问它：
     // 有 refused 条目就说明用户没加 `--force`。
     if items.iter().any(|i| i.refused.is_some()) {
         println!(

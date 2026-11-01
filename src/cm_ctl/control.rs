@@ -27,8 +27,9 @@ use serde_json::{Value, json};
 use super::CtlError;
 use super::decl;
 use super::instances::{self, Declaration};
-use super::ops::{self, Ctx};
+use super::ops::Ctx;
 use super::probe::Observed;
+use super::query;
 use super::record::{InstanceRecord, InstanceState};
 
 /// 单行请求上限：请求体是几个短字段，64 KiB 已远超合理值，超出即拒绝。
@@ -387,7 +388,7 @@ fn list(ctx: &Ctx, path: &Path, include_unmanaged: bool) -> Response {
         Err(e) => return Response::err(e.error_code, e.message),
     };
     // 一次探测复用整份列表：`observed` 要真实进程事实，不能只看落盘 `state`。
-    let probed = match ops::ls(ctx) {
+    let probed = match query::ls(ctx) {
         Ok(v) => v,
         Err(e) => return Response::err(e.error_code, e.message),
     };
