@@ -181,7 +181,11 @@ fn doctor_validate_workflow_file(path: &Path) -> Result<(), String> {
     let args_json =
         serde_json::to_string(&compiled).map_err(|e| format!("JSON 序列化失败: {e}"))?;
     let spec = crate::agent::workflow::parse_workflow_spec_from_json(&args_json)?;
-    crate::agent::workflow::workflow_topo_layers(&spec.nodes)?;
+    // 与 `crabmate workflow validate` / `workflow_execute` 加载期同源：本函数问的就是
+    // 「这个工作流文件能加载吗」，拼错的 `tool_name` 与未知依赖都须在这里暴露。
+    // `workflow_validate_dag` 已含未知依赖与环检测，故不再单独跑 `topo_layers`。
+    crate::agent::workflow::workflow_validate_tool_names(&spec)?;
+    crate::agent::workflow::workflow_validate_dag(&spec.nodes)?;
     Ok(())
 }
 

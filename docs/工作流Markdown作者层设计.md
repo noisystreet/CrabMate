@@ -339,7 +339,7 @@ LLM 路径的额外风险：模型生成**无界** `for_each` → 编译器 **�
 |------|------|
 | **单元** | 提取围栏、YAML 错误行号、`compile_spec` 展开与上限 |
 | **金样** | `fixtures/workflows/*.yaml` + `*.expected.json`（`compile_spec` 落地后 `cargo test workflow_compile_golden`） |
-| **集成** | `validate_only` 对编译产物通过；未知工具失败 |
+| **集成** | `validate_only` 对编译产物通过；未注册工具在**加载期**即失败（错误含节点 id；`mcp__*` / `dyn__*` 放行，见 `docs/工具说明.md`），`for_each` 的 `tool` 同样受检 |
 | **LLM** | 可选 mock：固定 prose → 期望 spec 快照（不默认跑 live API） |
 
 ---

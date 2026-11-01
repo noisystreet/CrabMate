@@ -22,6 +22,7 @@ mod placeholders;
 pub(crate) mod resolve_json_path;
 mod run;
 mod run_if;
+mod tool_name_check;
 // 整个文件都是 `#[test]` 用例：不给声明加 cfg 的话，lib 构建也会编译它，里面的
 // `use` 在非测试目标下无人引用，只能靠模块级 `#![allow(unused_imports)]` 罩住
 // （#1231 要消灭的形态）。加 `#[cfg(test)]` 后 allow 可删，且 lib 构建不再编译测试。
@@ -42,5 +43,7 @@ pub use run::run_workflow_execute_tool;
 pub use author_load::resolve_workflow_execute_args;
 pub use compile_spec::compile_workflow_author_yaml;
 pub use dag::topo_layers as workflow_topo_layers;
+pub use dag::validate_dag as workflow_validate_dag;
 pub use md_extract::extract_first_crabmate_workflow_block;
 pub use parse::parse_workflow_spec as parse_workflow_spec_from_json;
+pub use tool_name_check::validate_tool_names as workflow_validate_tool_names;

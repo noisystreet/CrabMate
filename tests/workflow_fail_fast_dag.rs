@@ -11,6 +11,8 @@ async fn workflow_fail_fast_marks_downstream_skipped_and_returns() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let cfg = load_config(None).expect("default config");
     let wf_cfg = workflow_config_from_cfg(&cfg);
+    // 首节点失败须来自「已注册工具的非法参数」：加载期现在会校验 `tool_name`，
+    // 用拼错 / 已删除的旧名（原先是 `calc`）制造失败会在 DAG 执行前就被拒，测不到 fail_fast。
     let args = r#"{
         "workflow": {
             "max_parallelism": 1,
@@ -19,8 +21,8 @@ async fn workflow_fail_fast_marks_downstream_skipped_and_returns() {
             "nodes": [
                 {
                     "id": "fail",
-                    "tool_name": "calc",
-                    "tool_args": {"expression": "not_a_valid_bc_expr___"},
+                    "tool_name": "json_format",
+                    "tool_args": {"text": "{", "mode": "pretty"},
                     "deps": []
                 },
                 {
