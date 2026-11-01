@@ -1,0 +1,40 @@
+# 生产路径 unwrap/expect 基线（#1152）。
+#
+# 由 `python3 scripts/unwrap_ratchet.py --print-baseline` 生成。
+# rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+#
+# 口径：cargo clippy --lib --all-features -- -W clippy::unwrap_used
+#       -W clippy::expect_used 的诊断条数（--lib 不含 test cfg）。
+#
+# 只许降不许升：把 unwrap/expect 改成 `?` + 上下文后，请同步下调对应计数，
+# 归零的条目直接删除。允许保留的只有 AGENTS.md 点名的 LazyLock / OnceLock
+# 一次性初始化与 src/main.rs 启动路径。
+#
+# 注意：本计数与 clippy/rustc 版本绑定（见上方 rustc 行）。升级工具链后若数字
+# 整体漂移，应重新生成基线并在 PR 里说明是工具链变化而非回退。
+#
+# 格式：相对路径<TAB>处数
+src/cm_agent/plan_artifact/types.rs	1
+src/cm_agent/text_sanitize/assistant_tail.rs	1
+src/cm_agent/workspace_snapshot.rs	1
+src/cm_api_contract/openapi.rs	2
+src/cm_benchmark/artifact.rs	2
+src/cm_internal/user_message_file_refs.rs	2
+src/cm_llm/recording.rs	2
+src/cm_memory/memory/codebase_semantic_index/numeric.rs	3
+src/cm_runtime/latex_unicode.rs	4
+src/cm_runtime/message_display.rs	2
+src/cm_sse_protocol/sse/ag_ui_convert.rs	1
+src/cm_tools/redact.rs	5
+src/cm_tools/subprocess_session.rs	1
+src/cm_tools/tools/code_nav_outline.rs	11
+src/cm_tools/tools/github_cli/api.rs	1
+src/cm_tools/tools/http_fetch/decode.rs	5
+src/cm_tools/tools/markdown_links/core.rs	4
+src/cm_workflow/author_validate.rs	4
+src/cm_workflow/execute/node.rs	1
+src/e2e_scenario.rs	3
+src/meta_dialogue.rs	1
+src/shutdown/signals.rs	2
+src/test_serve.rs	5
+src/web/workspace/clone_validate.rs	6
