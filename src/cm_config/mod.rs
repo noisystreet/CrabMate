@@ -18,6 +18,12 @@ mod scheduled_agent_task;
 pub mod skills;
 pub mod skills_slash;
 mod source;
+
+/// 宽松布尔解析（`1/true/yes/on` 与 `0/false/no/off`，大小写与首尾空白不敏感）。
+///
+/// `#1247`：`cm_internal::observability` 曾有一份字节级相同的 `agent_log_json_truthy`，
+/// 现统一从本模块取用。
+pub(crate) use source::parse_bool_like;
 pub(crate) mod text_util;
 pub mod tool_write_effect;
 mod types;

@@ -90,11 +90,8 @@ impl CtlError {
     /// `identity_mismatch` 刻意不走这里：它不是「被占用」，而是「记录不可信、需人工核对」，
     /// 属 [`Self::general`] 那一类（重试同样无意义，但补救动作完全不同）。
     pub fn conflict(error_code: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            exit_code: crate::EXIT_USAGE,
-            error_code,
-            message: message.into(),
-        }
+        // 与 `usage` 构造完全相同；保留两个语义名字（调用点表达意图），实现只留一份（`#1247`）。
+        Self::usage(error_code, message)
     }
 }
 
