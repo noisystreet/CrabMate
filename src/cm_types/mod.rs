@@ -62,6 +62,8 @@ mod assistant_output_kind;
 mod chat_api;
 mod mcp_types;
 mod message;
+/// `Message` 构造器分片（`impl` 跨文件；见模块头说明）。
+mod message_constructors;
 /// 权限决策的结构化审计事件（设计 §11.2；L4 `AuditOnly` 的放行留痕）。
 ///
 /// 放在叶子层是因为 `cm_tools` 的 `PathAccess` 也要记路径轴——见模块文档。
