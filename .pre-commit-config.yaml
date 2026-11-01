@@ -34,6 +34,20 @@ repos:
         pass_filenames: false
         files: ^(Cargo\.toml|src/.*\.rs)$
         stages: [pre-commit]
+      # 生产路径 unwrap/expect 只许降不许升（#1152）。口径是
+      # `cargo clippy --lib --all-features -- -W clippy::unwrap_used
+      # -W clippy::expect_used`：`--lib` 不含 test cfg，所以 `#[cfg(test)]` 的
+      # 2500+ 处不会算进来。**不要改用静态扫描**——本仓库重度 `cfg(feature)`，
+      # 扫描分不清「被 feature 关掉的模块」与「测试代码」，实测差 3 处。
+      # 基线里记了 rustc 版本：升级工具链后数字整体漂移属正常，用
+      # `python3 scripts/unwrap_ratchet.py --print-baseline` 重新生成并在 PR 说明。
+      - id: unwrap-ratchet
+        name: production unwrap/expect ratchet (never increase, #1152)
+        entry: bash scripts/unwrap-ratchet.sh
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.toml|src/.*\.rs|scripts/unwrap_baseline\.txt)$
+        stages: [pre-commit]
       # `-D warnings` 抓不到被 `allow` 压住的告警——#1229 的根因正是 `lib_server.rs` 给
       # 10 个 `cm_*` 模块整体加了 `#[allow(unused)]`（`unused` 含 `dead_code`），死代码
       # 于是长期隐身，clippy 一直绿。所以「allow 出现在哪一层」单独门禁：模块级罩子
