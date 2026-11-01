@@ -23,6 +23,17 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # feature 组合门控：`cm_types` 受 `protocol` 门控、`cm_tools` / `cm_agent` 属 `server`，
+      # 默认 feature 的 clippy 看不到 `--no-default-features` 下的漏门控（#1238 收尾时
+      # `test_fixtures.rs` 引用 `cm_types` 就长期无人发现）。`--all-targets` 必须带：
+      # 该文件只在测试目标里编译。增量约 1s，冷启动需整树重建。
+      - id: cargo-check-no-default-features
+        name: cargo check (--no-default-features, feature gating)
+        entry: cargo check --no-default-features --all-targets
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.toml|src/.*\.rs)$
+        stages: [pre-commit]
       # `-D warnings` 抓不到被 `allow` 压住的告警——#1229 的根因正是 `lib_server.rs` 给
       # 10 个 `cm_*` 模块整体加了 `#[allow(unused)]`（`unused` 含 `dead_code`），死代码
       # 于是长期隐身，clippy 一直绿。所以「allow 出现在哪一层」单独门禁：模块级罩子
