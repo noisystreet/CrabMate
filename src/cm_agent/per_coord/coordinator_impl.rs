@@ -309,15 +309,7 @@ impl PerCoordinator {
                     per_coord.reflection.stage_round()
                 );
             }
-            messages.push(Message {
-                role: "user".to_string(),
-                content: Some(instruction_str.into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: None,
-            });
+            messages.push(Message::user_only(instruction_str));
         }
         per_coord
             .workflow_validate_cache

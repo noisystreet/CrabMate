@@ -289,15 +289,7 @@ mod api_messages_strip_tests {
                 arguments: "{}".to_string(),
             },
         };
-        let asst = Message {
-            role: "assistant".to_string(),
-            content: None,
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: Some(vec![tc]),
-            name: None,
-            tool_call_id: None,
-        };
+        let asst = Message::assistant_tool_calls(vec![tc]);
         let out = message_clone_stripping_reasoning_for_api(&asst, true, false);
         assert_eq!(out.reasoning_content.as_deref(), Some(""));
     }

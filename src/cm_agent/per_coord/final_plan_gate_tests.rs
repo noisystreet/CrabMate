@@ -35,20 +35,9 @@ fn gate_args<'a>(
 #[test]
 fn gate_route_accept_ok_when_plan_valid() {
     let cfg = minimal_cfg();
-    let ok = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let ok = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"x"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     let hist: Vec<Message> = vec![];
     let o = step_check_structured_plan(gate_args(
         &ok,
@@ -106,20 +95,9 @@ fn gate_route_rewrite_when_parse_fails() {
 #[test]
 fn gate_route_rewrite_when_layer_count_mismatches_includes_feedback() {
     let cfg = minimal_cfg();
-    let one_step = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let one_step = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"only one step"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     let hist: Vec<Message> = vec![];
     let mut args = gate_args(
         &one_step,
@@ -217,20 +195,9 @@ fn run_gate_no_requirement_returns_stop_turn() {
 #[test]
 fn gate_route_pending_semantic_when_digest_present() {
     let cfg = minimal_cfg();
-    let ok = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let ok = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"x"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     let hist = vec![
         Message {
             role: "assistant".to_string(),

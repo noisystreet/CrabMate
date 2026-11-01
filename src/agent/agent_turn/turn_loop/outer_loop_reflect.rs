@@ -30,15 +30,7 @@ fn sync_per_flight_from_coord(p: &RunLoopParams<'_>, per_coord: &PerCoordinator)
 }
 
 fn push_pre_gate_user_feedback(p: &mut RunLoopParams<'_>, feedback: String) {
-    p.turn.push_message(Message {
-        role: "user".to_string(),
-        content: Some(feedback.into()),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    });
+    p.turn.push_message(Message::user_only(feedback));
 }
 
 /// 读本轮最后一次 assistant 输出的截断信号（层 1 写入 `PerTurnFlight`）。

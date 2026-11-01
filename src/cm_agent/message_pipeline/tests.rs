@@ -26,25 +26,9 @@ fn compress_tool_truncates() {
 fn trim_by_count_keeps_system_and_latest_complete_group() {
     let mut v = vec![
         Message::system_only("s"),
-        Message {
-            role: "user".to_string(),
-            content: Some("a".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("a"),
         Message::assistant_only("b"),
-        Message {
-            role: "user".to_string(),
-            content: Some("c".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("c"),
     ];
     trim_messages_by_count(&mut v, 2);
     assert_eq!(v.len(), 2);
@@ -78,24 +62,8 @@ fn trim_by_count_keeps_only_complete_group_even_when_it_exceeds_cap() {
 fn char_budget_drops_oldest_after_system() {
     let mut v = vec![
         Message::system_only("s"),
-        Message {
-            role: "user".to_string(),
-            content: Some("aaaaaaaaaa".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "user".to_string(),
-            content: Some("bbbbbbbbbbbbbbbb".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("aaaaaaaaaa"),
+        Message::user_only("bbbbbbbbbbbbbbbb"),
     ];
     trim_messages_by_char_budget(&mut v, 6, 1);
     assert_eq!(v.len(), 2);
@@ -106,15 +74,7 @@ fn char_budget_drops_oldest_after_system() {
 }
 
 fn assistant_with_tool_calls() -> Message {
-    Message {
-        role: "assistant".to_string(),
-        content: None,
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: Some(vec![ToolCall::function("call_1".to_string(), "x".to_string(), "{}".to_string())]),
-        name: None,
-        tool_call_id: None,
-    }
+    Message::assistant_tool_calls(vec![ToolCall::function("call_1".to_string(), "x".to_string(), "{}".to_string())])
 }
 
 #[test]
@@ -184,15 +144,7 @@ fn drop_orphan_tool_removes_leading_tools_after_trim() {
         Message::system_only("s"),
         tool_msg("orphan1"),
         tool_msg("orphan2"),
-        Message {
-            role: "user".to_string(),
-            content: Some("last".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("last"),
     ];
     drop_orphan_tool_messages(&mut v);
     assert_eq!(v.len(), 2);
@@ -210,15 +162,7 @@ fn drop_orphan_tool_keeps_chain_after_assistant_tool_calls() {
         assistant_with_tool_calls(),
         tool_msg("a"),
         tool_msg("b"),
-        Message {
-            role: "user".to_string(),
-            content: Some("u".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("u"),
     ];
     drop_orphan_tool_messages(&mut v);
     assert_eq!(v.len(), 5);
@@ -434,15 +378,7 @@ fn complete_pending_tool_responses_noop_when_all_responded() {
 }
 
 fn assistant_with_call_args(id: &str, args: &str) -> Message {
-    Message {
-        role: "assistant".to_string(),
-        content: None,
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: Some(vec![ToolCall::function(id.to_string(), "run_command".to_string(), args.to_string())]),
-        name: None,
-        tool_call_id: None,
-    }
+    Message::assistant_tool_calls(vec![ToolCall::function(id.to_string(), "run_command".to_string(), args.to_string())])
 }
 
 #[test]

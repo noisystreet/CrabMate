@@ -72,18 +72,10 @@ fn latest_and_prior_user_plain(messages: &[Message]) -> Option<(String, Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Message, MessageContent};
+    use crate::types::Message;
 
     fn user_text(s: &str) -> Message {
-        Message {
-            role: "user".into(),
-            content: Some(MessageContent::Text(s.into())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
+        Message::user_only(s)
     }
 
     #[test]
