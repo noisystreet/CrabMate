@@ -43,5 +43,9 @@ pub mod cm_types;
 include!("lib_server.rs");
 
 /// 金样 fixture 的公共读取工具（仅测试编译）。
-#[cfg(test)]
+///
+/// 随 `protocol` 一起 gate：本模块的辅助依赖 `cm_types`（受 `protocol` 门控）
+/// 与 `cm_tools` / `cm_agent`（`server` 专属）。两个 feature 都不开时它没有任何
+/// 使用者，编进去只会得到一组 `dead_code` 警告。
+#[cfg(all(test, feature = "protocol"))]
 mod test_fixtures;
