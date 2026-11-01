@@ -277,17 +277,7 @@ pub(super) fn format_main_summary(
     out
 }
 
-/// 复制自 `crate::cm_tools::tools::output_util::truncate_to_char_boundary`。
-fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
-}
+use crate::cm_types::text_utils::truncate_to_char_boundary;
 
 pub(crate) fn truncate_for_summary(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {

@@ -405,17 +405,10 @@ pub fn run_command_output_try(
     }
 }
 
-/// UTF-8 安全的字节截断：在 `max_bytes` 以内找到最近的 char boundary 并截取。
-pub fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
-}
+/// UTF-8 安全的字节截断：实现已上移至 [`crate::cm_types::text_utils::truncate_to_char_boundary`]（`#1247`）。
+///
+/// 保留本路径的 `pub use` 转发，`cm_tools` 内的十余处调用点无需改动。
+pub use crate::cm_types::text_utils::truncate_to_char_boundary;
 
 /// 行数 + 字节数双重截断（UTF-8 安全）。
 ///
