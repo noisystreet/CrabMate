@@ -97,6 +97,15 @@ impl CtlPaths {
         self.instances_dir().join(name)
     }
 
+    /// 实例专属 home，**带名字校验**。
+    ///
+    /// [`Self::instance_home`] 故意不校验（调用方都刚验过），但 `gc` 会按这个路径
+    /// 递归删目录：一份被改过的状态文件不该能把删除指到 `instances/` 之外。
+    pub fn instance_home_checked(&self, name: &str) -> Result<PathBuf, CtlError> {
+        validate_name(name)?;
+        Ok(self.instance_home(name))
+    }
+
     /// 子实例日志：`<instances>/<name>.log`。
     pub fn log_path(&self, name: &str) -> PathBuf {
         self.instances_dir().join(format!("{name}.log"))

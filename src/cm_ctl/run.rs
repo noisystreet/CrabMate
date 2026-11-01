@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::config::cli::ctl::{
-    CtlCmd, CtlSubCmd, DownCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, UpCmd,
+    CtlCmd, CtlSubCmd, DownCmd, GcCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, UpCmd,
 };
 
 use super::control;
 use super::decl;
+use super::gc;
 use super::identity;
 use super::instances;
 use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
@@ -61,6 +62,7 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
             render::prune(&items, c.dry_run);
             Ok(())
         }
+        CtlSubCmd::Gc(c) => gc_cmd(&ctx, c),
         // 声明类命令只写 `instances.toml`（实现在 `decl.rs`，与 socket 控制面共用）：
         // 一次性命令里不顺手起停进程，收敛语义只属于 `supervise`。
         CtlSubCmd::Add(c) => decl::cli_add(&ctx, c),
@@ -566,6 +568,24 @@ fn run_foreground(ctx: &Ctx, c: &RunCmd, workspace_cli: Option<&str>) -> Result<
             format!("实例 {} 退出码 {:?}", c.name, status.code()),
         ))
     }
+}
+
+/// `gc`：回收已停止实例的数据面（实例目录与日志）。
+///
+/// 默认只报计划 —— 删的是会话库与 cwd，不是一条可以重建的状态记录，所以要显式
+/// `--yes`。`--older-than` 的解析放在这里（CLI 边界），`gc` 模块只认 `Duration`。
+fn gc_cmd(ctx: &Ctx, c: &GcCmd) -> Result<(), CtlError> {
+    let older_than = match c.older_than.as_deref() {
+        Some(raw) => Some(gc::parse_age(raw)?),
+        None => None,
+    };
+    let opts = gc::GcOpts {
+        older_than,
+        keep_data: c.keep_data,
+    };
+    let plan = gc::purge(ctx, &opts, c.yes)?;
+    render::gc(&plan, c.yes);
+    Ok(())
 }
 
 fn logs_cmd(ctx: &Ctx, c: &LogsCmd) -> Result<(), CtlError> {

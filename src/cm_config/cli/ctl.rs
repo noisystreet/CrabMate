@@ -35,6 +35,8 @@ pub enum CtlSubCmd {
     Logs(LogsCmd),
     /// 清理 stale / 已退出 / 失败的记录（不碰健康实例）
     Prune(PruneCmd),
+    /// 回收已停止实例的实例目录与日志（**数据面**；`prune` 只删记录）
+    Gc(GcCmd),
     /// 新增一条实例声明（只写 `instances.toml`，不起进程）
     Add(AddCmd),
     /// 删除一条实例声明（不删实例目录与日志）
@@ -259,6 +261,24 @@ pub struct PruneCmd {
     pub force: bool,
 }
 
+/// 回收已停止实例的数据面（实例目录与日志）。
+#[derive(Parser, Debug, Clone)]
+pub struct GcCmd {
+    /// 真的删除；省略时只打印将删除的路径与可释放空间
+    #[arg(long)]
+    pub yes: bool,
+
+    /// 只看空闲超过此时长的实例（`30m` / `24h` / `7d`，单位必填）
+    ///
+    /// 按记录文件与待删路径的 **mtime** 计，不保证等于精确的停机时刻。
+    #[arg(long = "older-than", value_name = "DUR")]
+    pub older_than: Option<String>,
+
+    /// 保留实例目录（会话库、上传），只回收日志
+    #[arg(long = "keep-data")]
+    pub keep_data: bool,
+}
+
 /// 新增一条实例声明（**只写 `instances.toml`，不起进程**）。
 #[derive(Parser, Debug, Clone)]
 pub struct AddCmd {
@@ -328,6 +348,7 @@ pub const SUBCOMMAND_NAMES: &[&str] = &[
     "status",
     "logs",
     "prune",
+    "gc",
     "add",
     "remove",
     "disable",
