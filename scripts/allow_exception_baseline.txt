@@ -9,12 +9,11 @@
 # 格式：相对路径<TAB>lint<TAB>处数
 #
 # 备注（只在基线里说明，脚本不解析）：
-# - `src/cm_mcp/stub.rs` 与 `src/cm_sse_protocol/sse/line.rs` 是有注释说明的
-#   语义锚点 / 桩，按 #1229 非目标保持原样。
-# - 两处 `unused_imports` 是模块级再导出面（`pub use` 供外部使用，正文不引用）。
-# - #1230 合并后本基线已由 14 处下调至 4 处（`lib_server.rs` 那 10 处模块级
-#   `#[allow(unused)]` 已清除）。
+# - 只剩 2 处，且都是**刻意保留**的模块级 `dead_code`，不是欠账：
+#   `cm_mcp/stub.rs`（`mcp` feature 关闭时的同名桩，符号面必须齐全）与
+#   `cm_sse_protocol/sse/line.rs`（AGENTS.md 明文「勿按死代码清理」的语义锚点）。
+# - 历史：14 →（#1230 清掉 `lib_server.rs` 的 10 处）→ 4 →（本 PR 清掉
+#   `http_fetch` 的再导出面 allow 与 `cm_workflow/tests.rs` 的 allow，
+#   后者改由 `#[cfg(test)] mod tests;` 解决）→ 2。
 src/cm_mcp/stub.rs	dead_code	1
 src/cm_sse_protocol/sse/line.rs	dead_code	1
-src/cm_tools/tools/http_fetch/mod.rs	unused_imports	1
-src/cm_workflow/tests.rs	unused_imports	1

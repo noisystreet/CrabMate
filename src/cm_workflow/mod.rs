@@ -22,6 +22,10 @@ mod placeholders;
 pub(crate) mod resolve_json_path;
 mod run;
 mod run_if;
+// 整个文件都是 `#[test]` 用例：不给声明加 cfg 的话，lib 构建也会编译它，里面的
+// `use` 在非测试目标下无人引用，只能靠模块级 `#![allow(unused_imports)]` 罩住
+// （#1231 要消灭的形态）。加 `#[cfg(test)]` 后 allow 可删，且 lib 构建不再编译测试。
+#[cfg(test)]
 mod tests;
 mod types;
 mod workflow_templates;
