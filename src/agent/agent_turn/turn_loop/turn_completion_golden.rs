@@ -29,37 +29,13 @@ struct GoldenLine {
     via: Option<String>,
 }
 
-fn msg(role: &str, text: &str) -> Message {
-    Message {
-        role: role.to_string(),
-        content: Some(text.into()),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }
-}
-
-fn tool_env(name: &str, output: &str) -> Message {
-    let parsed = crate::tool_result::parse_tool_output(name, output);
-    msg(
-        "tool",
-        &crate::tool_result::encode_tool_message_envelope_v1(
-            name,
-            name.to_string(),
-            &parsed,
-            output,
-            None,
-        ),
-    )
-}
+use crate::test_fixtures::{msg, tool_env};
 
 fn fixture_messages(name: &str) -> Vec<Message> {
     match name {
         "readonly_satisfied" => vec![
             msg("user", "分析当前目录"),
-            tool_env(tool_names::LIST_TREE, "list tree: ."),
+            tool_env(tool_names::LIST_TREE, tool_names::LIST_TREE, "list tree: ."),
             msg(
                 "assistant",
                 "当前目录包含三个压缩包，分析结果如下，总结完成。",
@@ -68,6 +44,7 @@ fn fixture_messages(name: &str) -> Vec<Message> {
         "build_satisfied" => vec![
             msg("user", "编译 hpcg"),
             tool_env(
+                tool_names::RUN_COMMAND,
                 tool_names::RUN_COMMAND,
                 "命令：make\n退出码：0\n标准输出：\nBuilt target hpcg",
             ),

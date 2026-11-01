@@ -557,31 +557,8 @@ pub fn check_goal_completion_evidence_from_messages(
 mod tests {
     use super::*;
 
-    fn msg(role: &str, text: &str) -> Message {
-        Message {
-            role: role.to_string(),
-            content: Some(text.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
+    use crate::test_fixtures::{msg, tool_env};
 
-    fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-        let parsed = crate::cm_tools::tool_result::parse_tool_output(name, output);
-        msg(
-            "tool",
-            &crate::cm_tools::tool_result::encode_tool_message_envelope_v1(
-                name,
-                summary.to_string(),
-                &parsed,
-                output,
-                None,
-            ),
-        )
-    }
 
     #[test]
     fn message_history_evidence_passes_cpp_build_run() {

@@ -3,7 +3,7 @@
 use crate::cm_agent::plan_rewrite::PlanRewriteExhaustedReason;
 use crate::cm_agent::plan_semantic::PlanSemanticLlmOutcome;
 use crate::cm_config::AgentConfig;
-use crate::cm_types::{Message, MessageContent};
+use crate::cm_types::Message;
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
 use super::final_plan_gate::{
@@ -116,15 +116,7 @@ fn assistant_from_label(label: &str) -> Message {
             name: None,
             tool_call_id: None,
         },
-        "no_plan" => Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text("no json plan".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        "no_plan" => Message::assistant_only("no json plan".to_string()),
         other => panic!("unknown assistant label: {other}"),
     }
 }
