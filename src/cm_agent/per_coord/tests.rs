@@ -1,5 +1,5 @@
 use super::*;
-use crate::cm_types::{MessageContent, ToolCall};
+use crate::cm_types::ToolCall;
 
 fn test_cfg() -> AgentConfig {
     crate::cm_config::load_config(None).expect("embed default config")
@@ -79,15 +79,7 @@ fn final_assistant_stops_when_plan_present() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist_one_node = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc0".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc0".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -101,20 +93,9 @@ fn final_assistant_stops_when_plan_present() {
                 tool_call_id: Some("tc0".to_string()),
             },
         ];
-    let ok = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
+    let ok = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step","workflow_node_id":"only"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&ok, &hist_one_node, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -128,15 +109,7 @@ fn plan_semantics_requires_enough_steps_vs_validate_layers() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -150,42 +123,20 @@ fn plan_semantics_requires_enough_steps_vs_validate_layers() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let one_step = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&one_step, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let three_steps = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let three_steps = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s0","description":"layer 0","workflow_node_id":"a"},
   {"id":"s1","description":"layer 1","workflow_node_id":"b"},
   {"id":"s2","description":"layer 2","workflow_node_id":"c"}
 ]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&three_steps, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -199,15 +150,7 @@ fn plan_rewrite_exhausted_reason_layer_mismatch() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -221,20 +164,9 @@ fn plan_rewrite_exhausted_reason_layer_mismatch() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let one_step = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&one_step, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
@@ -254,15 +186,7 @@ fn plan_workflow_node_id_must_match_last_workflow_nodes() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -276,41 +200,19 @@ fn plan_workflow_node_id_must_match_last_workflow_nodes() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let bad_link = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
+    let bad_link = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"no-such-node"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&bad_link, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let ok_link = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let ok_link = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"step1","description":"run fmt","workflow_node_id":"fmt"},
   {"id":"step2","description":"run test","workflow_node_id":"test"}
 ]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&ok_link, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -324,15 +226,7 @@ fn validate_only_duplicate_nodes_plan_must_repeat_workflow_node_id() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -346,41 +240,19 @@ fn validate_only_duplicate_nodes_plan_must_repeat_workflow_node_id() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step_dup = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
+    let one_step_dup = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"both","workflow_node_id":"dup"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&one_step_dup, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let two_steps_dup = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let two_steps_dup = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s1","description":"first","workflow_node_id":"dup"},
   {"id":"s2","description":"second","workflow_node_id":"dup"}
 ]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&two_steps_dup, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -401,15 +273,7 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
     let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(
@@ -423,41 +287,19 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let partial = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
+    let partial = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"only fmt","workflow_node_id":"fmt"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&partial, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let both = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"```json
+    let both = Message::assistant_only(r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s1","description":"fmt","workflow_node_id":"fmt"},
   {"id":"s2","description":"test","workflow_node_id":"test"}
 ]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&both, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -510,21 +352,10 @@ fn always_policy_requests_rewrite_without_workflow() {
 fn always_policy_stops_when_plan_present() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::Always, 2);
-    let ok = Message {
-        role: "assistant".to_string(),
-        content: Some(
-            r#"Here is my plan:
+    let ok = Message::assistant_only(r#"Here is my plan:
 ```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do the thing"}]}
-```"#
-                .into(),
-        ),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+```"#);
     assert!(matches!(
         c.after_final_assistant(&ok, &[], &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -674,15 +505,7 @@ fn layer_count_from_empty_history() {
 #[test]
 fn layer_count_from_non_workflow_history() {
     let msgs = vec![
-        Message {
-            role: "user".to_string(),
-            content: Some(MessageContent::Text("hello".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::user_only("hello".to_string()),
         Message::assistant_only("hi".to_string()),
     ];
     assert_eq!(
@@ -693,15 +516,7 @@ fn layer_count_from_non_workflow_history() {
 
 fn hist_with_validate_layer_3() -> Vec<Message> {
     vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_tool_calls(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
             Message {
                 role: "tool".to_string(),
                 content: Some(

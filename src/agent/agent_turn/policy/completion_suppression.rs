@@ -275,17 +275,7 @@ mod tests {
     #[test]
     fn satisfied_goal_marks_exact_run_command_repeat_redundant() {
         use crate::cm_types::Message;
-        let messages = vec![Message {
-            role: "tool".into(),
-            content: Some(
-                "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello".into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some("tc1".into()),
-        }];
+        let messages = vec![Message::tool_result("tc1", "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello")];
         let calls = vec![run_command_tool(
             r#"{"command":"cmake","args":["--build","build"]}"#,
         )];
@@ -297,17 +287,7 @@ mod tests {
     #[test]
     fn satisfied_goal_does_not_mark_different_run_command_redundant() {
         use crate::cm_types::Message;
-        let messages = vec![Message {
-            role: "tool".into(),
-            content: Some(
-                "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello".into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some("tc1".into()),
-        }];
+        let messages = vec![Message::tool_result("tc1", "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello")];
         let calls = vec![run_command_tool(r#"{"command":"./build/hello","args":[]}"#)];
         assert!(!tool_calls_are_redundant_when_goal_satisfied(
             &calls, &messages

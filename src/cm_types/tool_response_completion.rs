@@ -1,6 +1,6 @@
 //! 为缺失 `tool` 响应的 `assistant.tool_calls` 补齐占位消息（出站拼装与取消落盘共用）。
 
-use super::{Message, MessageContent, assistant_has_non_empty_tool_calls, is_assistant_role};
+use super::{Message, assistant_has_non_empty_tool_calls, is_assistant_role};
 
 #[inline]
 fn is_tool_role(role: &str) -> bool {
@@ -24,17 +24,10 @@ pub fn contiguous_tool_response_ids(messages: &[Message], start: usize) -> (Vec<
 }
 
 fn tool_placeholder_message(tool_call_id: &str, tool_name: &str, prefix: &str) -> Message {
-    Message {
-        role: "tool".to_string(),
-        content: Some(MessageContent::Text(format!(
-            "{prefix}（工具：{tool_name}）"
-        ))),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: Some(tool_call_id.to_string()),
-    }
+    Message::tool_result(
+        tool_call_id.to_string(),
+        format!("{prefix}（工具：{tool_name}）"),
+    )
 }
 
 /// 为**所有**「`assistant.tool_calls` 缺少紧邻 `tool` 响应」的调用补齐占位 `tool` 消息，返回新增条数。
