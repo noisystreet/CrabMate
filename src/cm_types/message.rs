@@ -429,36 +429,9 @@ pub fn merge_system_text_prefix_into_user_content(msg: &mut Message, prefix: &st
 }
 
 /// 构建带图片的 `user` 消息（OpenAI 兼容 `content` 数组）；`text` 可为空（仅图）。
+#[deprecated(note = "use `Message::user_with_images`")]
 pub fn message_user_with_images(text: &str, image_urls: &[String]) -> Message {
-    let mut parts = Vec::new();
-    let t = text.trim();
-    if !t.is_empty() {
-        parts.push(serde_json::json!({"type": "text", "text": t}));
-    }
-    for url in image_urls {
-        let u = url.trim();
-        if u.is_empty() {
-            continue;
-        }
-        parts.push(serde_json::json!({
-            "type": "image_url",
-            "image_url": {"url": u}
-        }));
-    }
-    let content = if parts.is_empty() {
-        None
-    } else {
-        Some(MessageContent::Parts(parts))
-    };
-    Message {
-        role: "user".to_string(),
-        content,
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }
+    Message::user_with_images(text, image_urls)
 }
 
 /// 单条消息：发往供应商时默认去掉 `reasoning_content` / `reasoning_details`。
