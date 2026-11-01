@@ -1,16 +1,6 @@
 use std::path::{Path, PathBuf};
 
-/// 与 `cm_tools::workspace::path::is_sensitive_workspace_path` 保持一致（config 不能依赖 tools）。
-const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
-    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
-];
-
-fn is_sensitive_workspace_path(path: &Path) -> bool {
-    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
-        let p = Path::new(prefix);
-        path == p || path.starts_with(p)
-    })
-}
+use crate::cm_types::path_utils::is_sensitive_workspace_path;
 
 /// 解析 Web 工作区白名单：未配置或空列表时允许任意路径（返回空列表）；
 /// 否则每项须为已存在目录的绝对或相对路径（相对路径相对**进程当前目录**）。

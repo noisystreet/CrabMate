@@ -6,6 +6,9 @@
 
 #![cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 
+use crate::cm_memory::memory::vector_math::bytes_to_f32_slice;
+#[cfg(feature = "fastembed")]
+use crate::cm_memory::memory::vector_math::f32_slice_to_bytes;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -75,28 +78,6 @@ pub(super) fn chunk_text(s: &str, max_chunk: usize) -> Vec<String> {
     out
 }
 
-
-pub(super) fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
-    let mut b = Vec::with_capacity(v.len() * 4);
-    for x in v {
-        b.extend_from_slice(&x.to_le_bytes());
-    }
-    b
-}
-
-fn bytes_to_f32_slice(b: &[u8]) -> Option<Vec<f32>> {
-    if !b.len().is_multiple_of(4) {
-        return None;
-    }
-    let n = b.len() / 4;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let chunk = b.get(i * 4..i * 4 + 4)?;
-        let arr: [u8; 4] = chunk.try_into().ok()?;
-        out.push(f32::from_le_bytes(arr));
-    }
-    Some(out)
-}
 
 fn validate_explicit_remember_scope_and_text<'a>(
     cfg: &AgentConfig,

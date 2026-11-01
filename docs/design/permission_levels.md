@@ -490,7 +490,7 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 `PathScope::Any` 不等于“无校验”。规则：
 
 1. 新增 `resolve_any_path(base, sub)`：不做根内 `starts_with` 校验，但仍走 `canonicalize`（拒绝不存在的祖先链、解析 symlink 真实位置），并在日志中记录 `canonical` 结果。
-2. **默认不设敏感前缀黑名单**（`permission_deny_system_paths = []`）：L4 的承诺是“不受工作区路径限制”，带默认黑名单的 `unrestricted` 名实不符。需要加固的人**显式**填写（推荐 `["/proc", "/sys", "/dev"]`）。`workspace_roots.rs:4` 的同款黑名单服务于工作区**选址**，语义不同，不要顺带复用。
+2. **默认不设敏感前缀黑名单**（`permission_deny_system_paths = []`）：L4 的承诺是“不受工作区路径限制”，带默认黑名单的 `unrestricted` 名实不符。需要加固的人**显式**填写（推荐 `["/proc", "/sys", "/dev"]`）。`cm_types::path_utils::SENSITIVE_WORKSPACE_PREFIXES`（由 `cm_config::workspace_roots` 与 `cm_tools::workspace::path` 共用，`#1247` 上移）的同款黑名单服务于工作区**选址**，语义不同，不要顺带复用。
 3. 输出仍按“相对工作区路径优先”展示（`path_for_tool_display`），工作区外才回退绝对路径——避免把宿主绝对路径大量灌进模型上下文（也顺带减 token）。
 
 ---
@@ -920,7 +920,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | `PolicyDecision` 结构 | 同上（`run_command/approval.rs`，`struct PolicyDecision`） |
 | 白名单 `*` 哨兵 | `src/cm_tools/tools/command_shell_script.rs:29` |
 | 文件路径解析/写入 | `src/cm_tools/tools/file/path.rs:127`、`:159` |
-| 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_config/workspace_roots.rs:4` |
+| 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_types/path_utils.rs`（`SENSITIVE_WORKSPACE_PREFIXES`，单一来源） |
 | `read_dir` 工作区外审批 | `src/cm_internal/tool_registry/execute/mod.rs:134` |
 | http 前缀 + 审批 preflight | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed` / `http_tool_preflight`） |
 | 审批能力域 | `src/cm_approval/mod.rs:26` |
