@@ -5374,7 +5374,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",
@@ -6404,7 +6404,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -6962,9 +6962,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.1.0"
+version = "9.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2886b00003a72c4ccee3f42cfc34908d33b2508a74d827dc2a4244706475c704"
+checksum = "848dad21639597378c3be94c59fd4de683f0f6d8a5387575896e1245737d4f37"
 dependencies = [
  "crc32fast",
  "flate2",
