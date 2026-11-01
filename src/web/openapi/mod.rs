@@ -1,5 +1,6 @@
 //! `GET /openapi.json`：OpenAPI 3.0 机器可读契约（与 `server.rs` 路由对齐；**不**替代 `docs/SSE协议.md` 对 SSE 行级语义的说明）。
 
+mod fragment_merge;
 mod openapi_components;
 mod openapi_components_user_data;
 mod openapi_paths;

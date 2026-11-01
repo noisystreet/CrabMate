@@ -323,36 +323,40 @@ fn command_node_disallowed(allowed: &[String], cmd_lower: &str) -> bool {
         && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd_lower))
 }
 
-fn command_not_allowed_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
+/// 命令类失败结果的公共形状：`id` 取自节点、`attempt` 恒为 1、无退出码与工作区变更（#1239）。
+fn command_failure_result(
+    node: &WorkflowNodeSpec,
+    cmd_lower: &str,
+    reason: &str,
+    error_code: &str,
+) -> NodeRunResult {
     NodeRunResult {
         id: node.id.clone(),
         status: NodeRunStatus::Failed,
-        output: format!(
-            "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
-            cmd_lower
-        )
-        .into(),
+        output: format!("workflow 执行失败：{reason}：{cmd_lower}").into(),
         workspace_changed: false,
         exit_code: None,
-        error_code: Some("command_not_allowed".to_string()),
+        error_code: Some(error_code.to_string()),
         attempt: 1,
     }
 }
 
+fn command_not_allowed_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
+    command_failure_result(
+        node,
+        cmd_lower,
+        "run_command 命令不在允许列表且无法人工审批",
+        "command_not_allowed",
+    )
+}
+
 fn command_denied_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
-    NodeRunResult {
-        id: node.id.clone(),
-        status: NodeRunStatus::Failed,
-        output: format!(
-            "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
-            cmd_lower
-        )
-        .into(),
-        workspace_changed: false,
-        exit_code: None,
-        error_code: Some("command_denied".to_string()),
-        attempt: 1,
-    }
+    command_failure_result(
+        node,
+        cmd_lower,
+        "用户拒绝执行命令（run_command）",
+        "command_denied",
+    )
 }
 
 async fn request_disallowed_command_approval(

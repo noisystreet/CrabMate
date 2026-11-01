@@ -165,21 +165,13 @@ pub fn hash_chunk(rel_path: &str, body: &str) -> String {
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-pub fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let mut dot = 0.0f32;
-    let mut na = 0.0f32;
-    let mut nb = 0.0f32;
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-    }
-    let d = na.sqrt() * nb.sqrt();
-    if d <= f32::EPSILON { 0.0 } else { dot / d }
-}
+/// 余弦相似度实现见 [`crate::cm_memory::memory::vector_math::cosine_sim`]（不受 `fastembed`
+/// 门控，`long_term_memory` 与索引路径共用）；此处在原位置再导出，保持既有调用路径不变。
+///
+/// 仅在 `fastembed` 构建下由 `codebase_semantic_index::mod` 再导出（`search` 走
+/// `super::cosine_sim`）；非 `fastembed` 构建没有人用该路径，故同步门控。
+#[cfg(feature = "fastembed")]
+pub use crate::cm_memory::memory::vector_math::cosine_sim;
 
 pub fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
     let mut b = Vec::with_capacity(v.len() * 4);

@@ -11,6 +11,7 @@ use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::FindSymbolArgs;
 
 use super::code_nav_paths::{resolve_search_root, search_io_failed};
+use super::text_truncate::truncate_line;
 
 const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024; // 2MB
 const DEFAULT_MAX_RESULTS: usize = 30;
@@ -303,20 +304,3 @@ fn read_context_lines(path: &PathBuf, line_no: usize, ctx: usize) -> Result<Stri
     Ok(out)
 }
 
-fn truncate_line(s: &str, max_chars: usize) -> String {
-    let s = s.trim_end();
-    let mut chars = s.chars();
-    let mut out = String::new();
-    for _ in 0..max_chars {
-        if let Some(ch) = chars.next() {
-            out.push(ch);
-        } else {
-            return out;
-        }
-    }
-    if s.chars().count() > max_chars {
-        format!("{}... (截断)", out)
-    } else {
-        out
-    }
-}

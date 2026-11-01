@@ -34,18 +34,10 @@ pub const CHAT_API_USER_ERROR_MSG_CHARS: usize = 180;
 pub const MESSAGE_LOG_PREVIEW_CHARS: usize = 320;
 
 /// 按 Unicode 标量截断；超出则后缀 `…(truncated)`。
-pub fn preview_chars(s: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let mut iter = s.chars();
-    let prefix: String = iter.by_ref().take(max_chars).collect();
-    if iter.next().is_some() {
-        format!("{prefix}…(truncated)")
-    } else {
-        prefix
-    }
-}
+///
+/// 唯一实现位于 [`crate::cm_types::text_utils::preview_chars`]；此处保留同名再导出，
+/// 以免既有的 `redact::preview_chars` 调用路径与文档链接失效。
+pub use crate::cm_types::text_utils::preview_chars;
 
 /// 将空白（含换行、制表）规范为**单空格**后截断，便于结构化日志单行输出。
 pub fn single_line_preview(s: &str, max_chars: usize) -> String {

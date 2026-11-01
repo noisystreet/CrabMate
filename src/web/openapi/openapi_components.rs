@@ -2,7 +2,9 @@
 //!
 //! 拆成多段 `json!` + `merge_component_objects`，降低单函数 `nloc`（`fn-nloc` 棘轮）；运行时合并为单一 object。
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+
+use super::fragment_merge::merge_object_fragments;
 
 use super::openapi_components_user_data;
 
@@ -10,20 +12,6 @@ fn openapi_components_schemas_from_contract() -> Value {
     Value::Object(crate::cm_api_contract::openapi::openapi_component_schemas())
 }
 
-fn merge_component_objects(fragments: &[Value]) -> Value {
-    let mut map = Map::new();
-    for fragment in fragments {
-        let Value::Object(o) = fragment else {
-            panic!("openapi components fragment must be a JSON object");
-        };
-        for (k, v) in o {
-            if map.insert(k.clone(), v.clone()).is_some() {
-                panic!("duplicate OpenAPI components/schemas key: {k}");
-            }
-        }
-    }
-    Value::Object(map)
-}
 
 fn openapi_components_security_schemes() -> Value {
     json!({
@@ -54,7 +42,9 @@ fn openapi_components_schemas_chat_llm_webui() -> Value {
 }
 
 fn openapi_components_schemas_chat_core() -> Value {
-    merge_component_objects(&[openapi_components_schemas_chat_llm_webui()])
+    merge_object_fragments("openapi components", "OpenAPI components/schemas", &[
+        openapi_components_schemas_chat_llm_webui(),
+    ])
 }
 
 fn openapi_components_schemas_workspace_tasks_config() -> Value {
@@ -281,7 +271,7 @@ fn openapi_components_schemas_memory() -> Value {
 }
 
 pub(super) fn openapi_components_value() -> Value {
-    let schemas_merged = merge_component_objects(&[
+    let schemas_merged = merge_object_fragments("openapi components", "OpenAPI components/schemas", &[
         openapi_components_schemas_from_contract(),
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),

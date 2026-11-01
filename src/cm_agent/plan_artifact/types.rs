@@ -216,71 +216,77 @@ pub fn plan_step_acceptance_implies_build_progress(a: &PlanStepAcceptance) -> bo
         .is_some_and(|p| plan_acceptance_path_looks_like_build_artifact(p.as_str()))
 }
 
+/// 步描述是否**命中**任一关键词（三个 `implies_*` 的唯一实现；#1239 前各抄一份）。
+fn plan_step_description_matches_any(desc: &str, keywords: &[&str]) -> bool {
+    let lower = desc.to_lowercase();
+    keywords.iter().any(|k| lower.contains(k))
+}
+
+/// 编译 / 构建 / 测试执行阶段的关键词。
+const BUILD_EXECUTION_KEYWORDS: &[&str] = &[
+    "编译",
+    "构建",
+    "build",
+    "compile",
+    "make ",
+    "cmake",
+    "link",
+    "test_runner",
+    "运行测试",
+    "跑测试",
+    "cargo test",
+    "cargo build",
+    "pytest",
+    "go test",
+    "ninja",
+    "meson",
+];
+
+/// 只读准备阶段（解压 / 阅读 / 分析）的关键词。
+const READONLY_SETUP_KEYWORDS: &[&str] = &[
+    "解压",
+    "unpack",
+    "extract",
+    "查看",
+    "阅读",
+    "读取",
+    "分析",
+    "inspect",
+    "read ",
+    "list ",
+    "列目录",
+    "了解",
+    "配置说明",
+    "构建说明",
+    "环境",
+    "探查",
+];
+
+/// 解压 / 归档阶段的关键词。
+const UNPACK_KEYWORDS: &[&str] = &[
+    "解压",
+    "unpack",
+    "extract",
+    "archive_unpack",
+    "tar.gz",
+    "tar.bz2",
+    "tar.xz",
+    ".tar",
+    ".zip",
+    ".tgz",
+];
+
 /// 步描述是否像「编译/构建/测试执行」阶段（而非仅解压/阅读/分析）。
 pub fn plan_step_description_implies_build_execution(desc: &str) -> bool {
-    let lower = desc.to_lowercase();
-    [
-        "编译",
-        "构建",
-        "build",
-        "compile",
-        "make ",
-        "cmake",
-        "link",
-        "test_runner",
-        "运行测试",
-        "跑测试",
-        "cargo test",
-        "cargo build",
-        "pytest",
-        "go test",
-        "ninja",
-        "meson",
-    ]
-    .iter()
-    .any(|k| lower.contains(k))
+    plan_step_description_matches_any(desc, BUILD_EXECUTION_KEYWORDS)
 }
 
 fn plan_step_description_implies_readonly_setup_phase(desc: &str) -> bool {
-    let lower = desc.to_lowercase();
-    [
-        "解压",
-        "unpack",
-        "extract",
-        "查看",
-        "阅读",
-        "读取",
-        "分析",
-        "inspect",
-        "read ",
-        "list ",
-        "列目录",
-        "了解",
-        "配置说明",
-        "构建说明",
-        "环境",
-        "探查",
-    ]
-    .iter()
-    .any(|k| lower.contains(k))
+    plan_step_description_matches_any(desc, READONLY_SETUP_KEYWORDS)
 }
 
 fn plan_step_description_implies_unpack(desc: &str) -> bool {
-    let lower = desc.to_lowercase();
-    [
-        "解压",
-        "unpack",
-        "extract",
-        "archive_unpack",
-        "tar.gz",
-        "tar.bz2",
-        "tar.xz",
-        ".tar",
-        ".zip",
-        ".tgz",
-    ]
-    .iter()
-    .any(|k| lower.contains(k))
+    plan_step_description_matches_any(desc, UNPACK_KEYWORDS)
 }
 
 fn strip_command_stream_acceptance_fields(acc: &mut PlanStepAcceptance) {

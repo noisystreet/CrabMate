@@ -13,6 +13,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::code_nav_paths::{resolve_search_root, resolve_workspace_file, search_io_failed};
+use super::text_truncate::truncate_line;
 
 const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 80;
@@ -298,23 +299,6 @@ fn search_refs_in_file(
     Ok(())
 }
 
-fn truncate_line(s: &str, max_chars: usize) -> String {
-    let s = s.trim_end();
-    let mut chars = s.chars();
-    let mut out = String::new();
-    for _ in 0..max_chars {
-        if let Some(ch) = chars.next() {
-            out.push(ch);
-        } else {
-            return out;
-        }
-    }
-    if s.chars().count() > max_chars {
-        format!("{}... (截断)", out)
-    } else {
-        out
-    }
-}
 
 #[cfg(test)]
 mod tests {

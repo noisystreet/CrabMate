@@ -1,26 +1,14 @@
 //! OpenAPI `paths` 对象（由 `openapi::build_openapi_spec` 组装）；多段 `json!` 合并，降低单函数 `nloc`。
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+
+use super::fragment_merge::merge_object_fragments;
 use super::{
     openapi_paths_chat_stream, openapi_paths_memory, openapi_paths_permission,
     openapi_paths_session_state, openapi_paths_tool_jobs, openapi_paths_tools,
     openapi_paths_user_data, openapi_paths_user_data_mcp, openapi_paths_workspace,
 };
 
-fn merge_path_fragments(fragments: &[Value]) -> Value {
-    let mut map = Map::new();
-    for fragment in fragments {
-        let Value::Object(o) = fragment else {
-            panic!("openapi path fragment must be a JSON object");
-        };
-        for (k, v) in o {
-            if map.insert(k.clone(), v.clone()).is_some() {
-                panic!("duplicate OpenAPI path key: {k}");
-            }
-        }
-    }
-    Value::Object(map)
-}
 
 fn openapi_paths_fragment_system() -> Value {
     json!({
@@ -888,7 +876,7 @@ fn openapi_paths_fragment_github() -> Value {
 }
 
 pub(super) fn openapi_paths_value() -> Value {
-    merge_path_fragments(&[
+    merge_object_fragments("openapi path", "OpenAPI path", &[
         openapi_paths_fragment_system(),
         openapi_paths_fragment_chat_core(),
         openapi_paths_chat_stream::openapi_paths_fragment_chat_stream_cancel(),
