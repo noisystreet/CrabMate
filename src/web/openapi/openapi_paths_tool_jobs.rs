@@ -8,7 +8,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
             "get": {
                 "tags": ["tool_jobs"],
                 "summary": "轮询后台工具任务状态与（终态）输出",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "tool_job_id",
@@ -27,11 +27,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
                 "responses": {
                     "200": {
                         "description": "任务状态快照",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ToolJobStatusResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ToolJobStatusResponseBody" }))
                     },
                     "403": { "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）" },
                     "404": { "description": "不存在 / 从未创建（JOB_NOT_FOUND）" },
@@ -43,7 +39,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
             "get": {
                 "tags": ["tool_jobs"],
                 "summary": "轮询后台工具任务实时输出（增量游标；tail -f 语义）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "tool_job_id",
@@ -69,11 +65,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
                 "responses": {
                     "200": {
                         "description": "输出增量快照（含 status/cursor/truncated/eof）",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ToolJobOutputResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ToolJobOutputResponseBody" }))
                     },
                     "403": { "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）" },
                     "404": { "description": "不存在 / 从未创建（JOB_NOT_FOUND）" },
@@ -85,7 +77,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
             "post": {
                 "tags": ["tool_jobs"],
                 "summary": "取消后台工具任务（queued 直接转移；running 置取消标记）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "tool_job_id",
@@ -104,11 +96,7 @@ pub(super) fn openapi_paths_fragment_tool_jobs() -> Value {
                 "responses": {
                     "200": {
                         "description": "已取消（幂等；已是 cancelled 亦 200）",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/ToolJobCancelResponseBody" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/ToolJobCancelResponseBody" }))
                     },
                     "403": { "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）" },
                     "404": { "description": "不存在 / 从未创建（JOB_NOT_FOUND）" },

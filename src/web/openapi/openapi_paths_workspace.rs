@@ -8,7 +8,7 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "读取工作区内常见图片原始字节（png/jpg/jpeg/webp/gif；上限 8 MiB）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -34,7 +34,7 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
             "put": {
                 "tags": ["workspace"],
                 "summary": "写入工作区文件原始字节（任意类型；上限 16 MiB；与 POST /workspace/file 的 JSON content 上限一致）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -76,7 +76,7 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "读取工作区文件原始字节（任意类型；上限 16 MiB；供 Client 保存到本机）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -103,7 +103,7 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "将工作区目录打包为 zip（未压缩合计与条目有上限；不跟随符号链接）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -130,14 +130,10 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
             "post": {
                 "tags": ["workspace"],
                 "summary": "移动或重命名工作区常规文件（非目录；可选写入会话变更集）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/WorkspaceFileMoveBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceFileMoveBody" }))
                 },
                 "responses": {
                     "204": { "description": "已移动" },
@@ -154,15 +150,11 @@ pub(super) fn openapi_paths_fragment_skills() -> Value {
             "get": {
                 "tags": ["skills"],
                 "summary": "列出当前工作区 skills（供 composer `/` 浮层）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "skills 目录 JSON",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/SkillsListResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/SkillsListResponse" }))
                     }
                 }
             }
@@ -176,7 +168,7 @@ pub(super) fn openapi_paths_fragment_workspace_file() -> Value {
             "get": {
                 "tags": ["workspace"],
                 "summary": "读取工作区内文本文件（有大小上限）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -200,30 +192,22 @@ pub(super) fn openapi_paths_fragment_workspace_file() -> Value {
             "post": {
                 "tags": ["workspace"],
                 "summary": "写入工作区文件",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/WorkspaceFileWriteBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceFileWriteBody" }))
                 },
                 "responses": {
                     "200": {
                         "description": "写入结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceFileWriteResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceFileWriteResponse" }))
                     }
                 }
             },
             "delete": {
                 "tags": ["workspace"],
                 "summary": "删除工作区文件（path 单文件；或 paths 批量删除，任一非法则整批拒绝）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "parameters": [
                     {
                         "name": "path",
@@ -243,11 +227,7 @@ pub(super) fn openapi_paths_fragment_workspace_file() -> Value {
                 "responses": {
                     "200": {
                         "description": "删除结果",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WorkspaceFileDeleteResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WorkspaceFileDeleteResponse" }))
                     }
                 }
             }

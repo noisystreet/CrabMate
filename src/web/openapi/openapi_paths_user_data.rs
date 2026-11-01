@@ -8,29 +8,21 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
             "get": {
                 "tags": ["user_data"],
                 "summary": "读取本机用户偏好",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "prefs.json",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/UserPrefs" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/UserPrefs" }))
                     }
                 }
             },
             "put": {
                 "tags": ["user_data"],
                 "summary": "写回本机用户偏好",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/UserPrefs" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/UserPrefs" }))
                 },
                 "responses": { "204": { "description": "已保存" } }
             }
@@ -39,29 +31,21 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
             "get": {
                 "tags": ["user_data"],
                 "summary": "读取 LLM 非机密覆盖",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "llm_overrides.json",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/LlmOverridesFile" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/LlmOverridesFile" }))
                     }
                 }
             },
             "put": {
                 "tags": ["user_data"],
                 "summary": "写回 LLM 非机密覆盖",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/LlmOverridesFile" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/LlmOverridesFile" }))
                 },
                 "responses": { "204": { "description": "已保存" } }
             }
@@ -70,15 +54,11 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
             "get": {
                 "tags": ["user_data"],
                 "summary": "密钥槽脱敏状态（无明文）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串）",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/SecretsStatusResponse" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/SecretsStatusResponse" }))
                     }
                 }
             }
@@ -87,29 +67,21 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
             "get": {
                 "tags": ["user_data"],
                 "summary": "当前工作区侧栏会话列表",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "web_sessions.json",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/WebSessionsFile" }
-                            }
-                        }
+                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WebSessionsFile" }))
                     }
                 }
             },
             "put": {
                 "tags": ["user_data"],
                 "summary": "写当前工作区侧栏会话",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "requestBody": {
                     "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/PutWebSessionsBody" }
-                        }
-                    }
+                    "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/PutWebSessionsBody" }))
                 },
                 "responses": { "204": { "description": "已保存" } }
             }
@@ -118,18 +90,14 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
             "get": {
                 "tags": ["user_data"],
                 "summary": "列举已分桶工作区",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "security": super::openapi_helpers::protected_security(),
                 "responses": {
                     "200": {
                         "description": "manifest 摘要列表",
-                        "content": {
-                            "application/json": {
-                                "schema": {
+                        "content": super::openapi_helpers::json_content(json!({
                                     "type": "array",
                                     "items": { "$ref": "#/components/schemas/WorkspaceListEntry" }
-                                }
-                            }
-                        }
+                                }))
                     }
                 }
             }
