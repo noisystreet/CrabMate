@@ -11,7 +11,8 @@
 use super::message::{
     CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX, CRABMATE_CONTEXT_SUMMARY_NAME,
     CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
-    CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, Message, MessageContent,
+    CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, FunctionCall, Message,
+    MessageContent, ToolCall,
 };
 
 impl Message {
@@ -128,6 +129,84 @@ impl Message {
             tool_calls: None,
             name: None,
             tool_call_id: None,
+        }
+    }
+
+    /// 空 `assistant`（`content: None`、无 `tool_calls`）：流式占位与归一化中间态。
+    pub fn assistant_empty() -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// `assistant` + `tool_calls`（`content: None`）：模型发起工具调用的一轮。
+    pub fn assistant_tool_calls(calls: Vec<ToolCall>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: Some(calls),
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// `tool` 结果消息：`tool_call_id` 必填，正文为工具输出。
+    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
+
+    /// 带 `name` 的 `tool` 结果消息（OpenAI `function` 风格会回显工具名）。
+    pub fn tool_result_named(
+        tool_call_id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(name.into()),
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
+}
+
+impl ToolCall {
+    /// 构造 OpenAI 兼容的 `function` 调用（`typ` 恒为 `"function"`）。
+    ///
+    /// 覆盖全仓约 90 处
+    /// `ToolCall { id, typ: "function", function: FunctionCall { .. } }`
+    /// 的 8 行样板——其中只有 `id` / `name` / `arguments` 是变量。
+    pub fn function(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.into(),
+                arguments: arguments.into(),
+            },
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::cm_types::{FunctionCall, MessageContent, ToolCall};
+use crate::cm_types::{MessageContent, ToolCall};
 
 fn test_cfg() -> AgentConfig {
     crate::cm_config::load_config(None).expect("embed default config")
@@ -54,15 +54,7 @@ fn final_assistant_rewrites_then_stops() {
     let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 2);
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan here".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan here".to_string());
     let hist: Vec<Message> = vec![];
     assert!(matches!(
         c.after_final_assistant(&empty, &hist, &cfg, false),
@@ -92,14 +84,7 @@ fn final_assistant_stops_when_plan_present() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc0".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc0".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -148,14 +133,7 @@ fn plan_semantics_requires_enough_steps_vs_validate_layers() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -226,14 +204,7 @@ fn plan_rewrite_exhausted_reason_layer_mismatch() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -288,14 +259,7 @@ fn plan_workflow_node_id_must_match_last_workflow_nodes() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -365,14 +329,7 @@ fn validate_only_duplicate_nodes_plan_must_repeat_workflow_node_id() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -449,14 +406,7 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
@@ -538,15 +488,7 @@ fn never_policy_skips_plan_rewrite_even_after_workflow_reflection_inject() {
     let mut c = pc(FinalPlanRequirementMode::Never, 2);
     let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
     let _ = c.prepare_workflow_execute(wf_args);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan here".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan here".to_string());
     assert!(matches!(
         c.after_final_assistant(&empty, &[], &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -557,15 +499,7 @@ fn never_policy_skips_plan_rewrite_even_after_workflow_reflection_inject() {
 fn always_policy_requests_rewrite_without_workflow() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::Always, 2);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan".to_string());
     assert!(matches!(
         c.after_final_assistant(&empty, &[], &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
@@ -601,15 +535,7 @@ fn always_policy_stops_when_plan_present() {
 fn always_policy_exhausts_rewrites_then_stops() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::Always, 1);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan at all".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan at all".to_string());
     assert!(matches!(
         c.after_final_assistant(&empty, &[], &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
@@ -626,15 +552,7 @@ fn always_policy_exhausts_rewrites_then_stops() {
 fn workflow_reflection_no_inject_means_no_requirement() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 2);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan".to_string());
     assert!(matches!(
         c.after_final_assistant(&empty, &[], &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -668,15 +586,7 @@ fn prepare_workflow_reflection_disabled_passes_through() {
 fn plan_rewrite_attempts_increments_correctly() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::Always, 3);
-    let empty = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no plan".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let empty = Message::assistant_only("no plan".to_string());
     assert_eq!(c.plan_rewrite_attempts_snapshot(), 0);
     let _ = c.after_final_assistant(&empty, &[], &cfg, false);
     assert_eq!(c.plan_rewrite_attempts_snapshot(), 1);
@@ -773,15 +683,7 @@ fn layer_count_from_non_workflow_history() {
             name: None,
             tool_call_id: None,
         },
-        Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text("hi".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::assistant_only("hi".to_string()),
     ];
     assert_eq!(
         plan_rewrite::last_workflow_validate_layer_count(&msgs),
@@ -796,14 +698,7 @@ fn hist_with_validate_layer_3() -> Vec<Message> {
                 content: None,
                 reasoning_content: None,
                 reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc1".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "workflow_execute".to_string(),
-                        arguments: "{}".to_string(),
-                    },
-                }]),
+                tool_calls: Some(vec![ToolCall::function("tc1".to_string(), "workflow_execute".to_string(), "{}".to_string())]),
                 name: None,
                 tool_call_id: None,
             },
