@@ -475,15 +475,7 @@ mod tests {
         for turn in 0..4 {
             messages.push(Message::user_only(format!("turn-{turn}")));
             messages.push(Message::assistant_only("calling tool"));
-            messages.push(Message {
-                role: "tool".to_string(),
-                content: Some("ok".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: Some("read_file".to_string()),
-                tool_call_id: Some(format!("call-{turn}")),
-            });
+            messages.push(Message::tool_result_named(format!("call-{turn}"), "read_file".to_string(), "ok"));
             messages.push(Message::assistant_only("done"));
         }
         let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
@@ -520,15 +512,7 @@ mod tests {
     }
 
     fn tool_message(content: String) -> Message {
-        Message {
-            role: "tool".to_string(),
-            content: Some(MessageContent::Text(content)),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: Some("run_command".to_string()),
-            tool_call_id: Some("call-1".to_string()),
-        }
+        Message::tool_result_named("call-1".to_string(), "run_command".to_string(), content)
     }
 
     /// 分级释放 ①：只压缩最近两组之外的 `tool` 正文。

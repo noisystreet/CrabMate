@@ -447,15 +447,7 @@ mod tests {
                 name: None,
                 tool_call_id: None,
             },
-            Message {
-                role: "tool".into(),
-                content: Some("退出码：0\n(无输出)".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("c1".into()),
-            },
+            Message::tool_result("c1", "退出码：0\n(无输出)"),
         ];
         let raw = crate::cm_types::message_content_as_str(&messages[2].content).unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
@@ -484,15 +476,7 @@ mod tests {
                 name: None,
                 tool_call_id: None,
             },
-            Message {
-                role: "tool".into(),
-                content: Some(envelope.into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("c1".into()),
-            },
+            Message::tool_result("c1", envelope),
         ];
         let out = tool_content_for_display_for_message(envelope, &messages, 2);
         assert_eq!(out, "读：a.rs");

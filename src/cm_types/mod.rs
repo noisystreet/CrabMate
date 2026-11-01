@@ -370,15 +370,7 @@ mod normalize_messages_tests {
     use super::*;
 
     fn asst(content: &str) -> Message {
-        Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text(content.to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
+        Message::assistant_only(content.to_string())
     }
 
     fn asst_with_tc(content: &str) -> Message {
@@ -569,15 +561,7 @@ mod normalize_messages_tests {
         let v = vec![
             Message::system_only("s"),
             Message::user_only("u1"),
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: None,
-            },
+            Message::assistant_empty(),
             Message::user_only("u2"),
         ];
         let n = normalize_messages_for_openai_compatible_request(v);
@@ -616,15 +600,7 @@ mod complete_missing_tool_responses_tests {
     }
 
     fn tool_response(id: &str) -> Message {
-        Message {
-            role: "tool".to_string(),
-            content: Some(MessageContent::Text("ok".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some(id.to_string()),
-        }
+        Message::tool_result(id.to_string(), "ok".to_string())
     }
 
     #[test]
@@ -699,15 +675,7 @@ mod fold_system_messages_tests {
 
     #[test]
     fn system_before_assistant_inserts_user_carrier() {
-        let a = Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text("reply".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
+        let a = Message::assistant_only("reply".to_string());
         let v = vec![Message::system_only("instr"), a];
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 2);

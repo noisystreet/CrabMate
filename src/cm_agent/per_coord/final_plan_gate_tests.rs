@@ -1,7 +1,7 @@
 use super::*;
 use crate::cm_agent::plan_rewrite::PlanRewriteExhaustedReason;
 use crate::cm_agent::plan_semantic::PlanSemanticLlmOutcome;
-use crate::cm_types::{FunctionCall, MessageContent, ToolCall};
+use crate::cm_types::{FunctionCall, Message, ToolCall};
 
 fn minimal_cfg() -> AgentConfig {
     crate::cm_config::load_config(None).expect("embed default config")
@@ -70,15 +70,7 @@ fn gate_route_accept_ok_when_plan_valid() {
 #[test]
 fn gate_route_rewrite_when_parse_fails() {
     let cfg = minimal_cfg();
-    let bad = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no json plan".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let bad = Message::assistant_only("no json plan".to_string());
     let hist: Vec<Message> = vec![];
     let o = step_check_structured_plan(gate_args(
         &bad,
@@ -168,15 +160,7 @@ fn gate_route_rewrite_when_layer_count_mismatches_includes_feedback() {
 #[test]
 fn gate_route_exhausted_when_attempts_maxed() {
     let cfg = minimal_cfg();
-    let bad = Message {
-        role: "assistant".to_string(),
-        content: Some(MessageContent::Text("no json plan".to_string())),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let bad = Message::assistant_only("no json plan".to_string());
     let hist: Vec<Message> = vec![];
     let o = step_check_structured_plan(gate_args(
         &bad,
@@ -208,15 +192,7 @@ fn resolve_phase_never_is_no_requirement() {
 #[test]
 fn run_gate_no_requirement_returns_stop_turn() {
     let cfg = minimal_cfg();
-    let msg = Message {
-        role: "assistant".to_string(),
-        content: Some("x".into()),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    };
+    let msg = Message::assistant_only("x");
     let o = run_final_plan_gate(
         FinalPlanGatePhase::NoRequirement,
         FinalPlanGateEvent::FinalAssistantArrived,
@@ -272,15 +248,7 @@ fn gate_route_pending_semantic_when_digest_present() {
             name: None,
             tool_call_id: None,
         },
-        Message {
-            role: "tool".to_string(),
-            content: Some("file contents".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some("tc0".to_string()),
-        },
+        Message::tool_result("tc0".to_string(), "file contents"),
     ];
     let o = step_check_structured_plan(FinalPlanGateArgs {
         msg: &ok,

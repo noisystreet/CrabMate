@@ -59,15 +59,7 @@ mod tests {
     #[test]
     fn tool_role_omits_display_fields() {
         let envelope = r#"{"crabmate_tool":{"v":1,"name":"read_file","summary":"读：a.rs","ok":true,"output":"content"}}"#;
-        let m = Message {
-            role: "tool".into(),
-            content: Some(envelope.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some("c1".into()),
-        };
+        let m = Message::tool_result("c1", envelope);
         let rows = web_client_snapshot_messages(&[m]);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].display_content.is_none());

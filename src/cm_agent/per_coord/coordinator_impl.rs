@@ -273,15 +273,7 @@ impl PerCoordinator {
         result: String,
         reflection_inject: Option<Value>,
     ) {
-        messages.push(Message {
-            role: "tool".to_string(),
-            content: Some(result.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some(tool_call_id),
-        });
+        messages.push(Message::tool_result(tool_call_id, result));
         // 后台任务启动帧（`run_command` 的 `async=true`，含 `tool_job` 键）：只作为 SSE 软字段，
         // 不注入模型上下文（轮询结果由调用方带回后续回合）。
         let is_tool_job_start = reflection_inject

@@ -1,30 +1,14 @@
 mod push_assistant_merge_tests {
-    use crate::types::{Message, MessageContent, message_content_as_str};
+    use crate::types::{Message, message_content_as_str};
 
     use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
 
     fn empty_assistant() -> Message {
-        Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text(String::new())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
+        Message::assistant_only(String::new())
     }
 
     fn assistant_body(s: &str) -> Message {
-        Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text(s.to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
+        Message::assistant_only(s.to_string())
     }
 
     #[test]
