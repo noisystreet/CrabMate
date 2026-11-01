@@ -13,7 +13,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 - **Source tree**: Pre-generated **`man/crabmate.1`** and **`man/crabmatectl.1`** (troff), both aligned with the current `clap` definitions; the **Debian `.deb`** installs them to **`/usr/share/man/man1/`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
 - **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1` **and** `man/crabmatectl.1` (one run writes both; the second page comes from the same clap definition as the `crabmatectl` binary).
 - **Granularity (important)**: these are **single pages** — top-level options and subcommand names only (**not** each subcommand's own flags; use `crabmatectl up --help`, since `-h` is always newer than the man page). Changing a subcommand's flags therefore needs **no** regeneration and produces **no** diff; only top-level options or subcommand additions/removals change the output.
-- **`cargo install crabmate`** (crates.io **stable `0.7.0`**, default **`server`**; git tag **`v0.7.0`** matches this package): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` and `man/crabmatectl.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
+- **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default **`server`**; git tag **`v0.8.0`** matches this package): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` and `man/crabmatectl.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
 
 ## Subcommand overview
 

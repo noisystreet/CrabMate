@@ -100,7 +100,7 @@ cd ../crabmate-client && make frontend   # 再指向 http://127.0.0.1:8080/ 并�
 
 | 方式 | 命令 / 说明 |
 | --- | --- |
-| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.7.0`**，默认 feature **`server`**；git tag **`v0.7.0`**）。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)**。 |
+| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.8.0`**，默认 feature **`server`**；git tag **`v0.8.0`**）。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)**。 |
 | **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh`**）→ **`dist/`**（二进制、`config/`、**`man/`**（`crabmate.1` + `crabmatectl.1`）、**`systemd/`**（system 级）、**`systemd-user/`**（用户级示例）、**`etc/crabmate/`**；**server-only，不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。 |
 | **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
 | **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**。 |
