@@ -173,27 +173,10 @@ pub fn hash_chunk(rel_path: &str, body: &str) -> String {
 #[cfg(feature = "fastembed")]
 pub use crate::cm_memory::memory::vector_math::cosine_sim;
 
-pub fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
-    let mut b = Vec::with_capacity(v.len() * 4);
-    for x in v {
-        b.extend_from_slice(&x.to_le_bytes());
-    }
-    b
-}
-
-pub fn bytes_to_f32_slice(blob: &[u8]) -> Option<Vec<f32>> {
-    if !blob.len().is_multiple_of(4) {
-        return None;
-    }
-    let n = blob.len() / 4;
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let chunk = blob.get(i * 4..i * 4 + 4)?;
-        let arr: [u8; 4] = chunk.try_into().ok()?;
-        out.push(f32::from_le_bytes(arr));
-    }
-    Some(out)
-}
+// 同 `cosine_sim`：非 `fastembed` 构建下没有人经本模块用这两个路径
+// （`long_term_memory` 直接引 `vector_math`），故同步门控以免 `unused_imports`。
+#[cfg(feature = "fastembed")]
+pub use crate::cm_memory::memory::vector_math::{bytes_to_f32_slice, f32_slice_to_bytes};
 
 #[cfg(feature = "fastembed")]
 pub fn ensure_embedder() -> Result<TextEmbedding, String> {

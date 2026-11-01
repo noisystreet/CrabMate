@@ -4,29 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 分阶段 `executor_kind`。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanStepExecutorKind {
-    /// 仅允许语义只读工具。
-    #[default]
-    ReviewReadonly,
-    /// 只读工具 + 受限写补丁类。
-    PatchWrite,
-    /// 只读工具 + 常见测试运行器。
-    TestRunner,
-}
-
-impl PlanStepExecutorKind {
-    /// 与规划 JSON / SSE 中 `executor_kind` 字符串一致（蛇形）。
-    pub fn as_snake_case_str(self) -> &'static str {
-        match self {
-            PlanStepExecutorKind::ReviewReadonly => "review_readonly",
-            PlanStepExecutorKind::PatchWrite => "patch_write",
-            PlanStepExecutorKind::TestRunner => "test_runner",
-        }
-    }
-}
+use crate::cm_agent::plan_artifact::PlanStepExecutorKind;
 
 /// 工作流节点在 DAG 内允许的工具类别；JSON 键名 `node_tool_role`（可选 `executor_kind` 作为别名）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

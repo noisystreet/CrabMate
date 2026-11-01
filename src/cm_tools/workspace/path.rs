@@ -199,24 +199,20 @@ pub fn validate_workspace_project_set_path(
     validate_workspace_set_path(cfg, &dir.display().to_string())
 }
 
-/// Web `POST /workspace` 与「当前会话工作区根」校验共用的敏感路径前缀（canonical 后命中即拒绝）。
-const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
-    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
-];
-
 /// 将工作目录（可为符号链接）解析为 **canonical** 绝对路径，供工具与 Web 共用。
+///
+/// **有意不与 `cm_types::path_utils::canonical_workspace_root` 合并**：两者函数体文本相同，
+/// 但返回的是**不同的** `WorkspacePathError`——本模块的枚举还含 `WorkspaceSetPathEmpty` /
+/// `CurrentDirUnavailable` / `WorkspacePathInvalid` 等变体，`cm_types` 的精简版只有 4 个。
+/// 强行统一错误类型会改变 `web::workspace` 与 `cm_tools::tools::file` 的错误分支行为
+/// （`#1247` 复测时按「字节级相同」列为候选，实为不可合并项）。
 pub fn canonical_workspace_root(base: &Path) -> Result<PathBuf, WorkspacePathError> {
     base.canonicalize()
         .map_err(WorkspacePathError::WorkspaceResolveFailed)
 }
 
-/// 规范化后的路径是否命中敏感系统目录前缀（用于拒绝把工作区设到或解析到此类路径）。
-pub fn is_sensitive_workspace_path(path: &Path) -> bool {
-    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
-        let p = Path::new(prefix);
-        path == p || path.starts_with(p)
-    })
-}
+/// 敏感前缀判定以 `cm_types::path_utils` 为单一来源（`#1247`）；返回 `bool`，无类型耦合。
+pub use crate::cm_types::path_utils::is_sensitive_workspace_path;
 
 /// `candidate` 与 `root` 均须已为 **canonical** 路径；要求 `candidate == root` 或 `candidate` 为 `root` 之下的子孙路径。错误文案与工具层越界一致。
 pub fn ensure_canonical_within_root(

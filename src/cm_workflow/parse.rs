@@ -168,7 +168,11 @@ pub fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     })
 }
 
-fn json_map_trimmed<'a>(
+/// 取 JSON 对象中某键的字符串值，`trim` 后非空；缺失 / 非字符串 / 空白一律 `None`。
+///
+/// `cm_workflow` 内曾有 `map_trimmed_str` / `json_nonempty_str_field` / `json_map_trimmed`
+/// 三份字节级相同的实现（`#1247` 收敛到此处）。
+pub(super) fn trimmed_str_field<'a>(
     obj: &'a serde_json::Map<String, serde_json::Value>,
     key: &str,
 ) -> Option<&'a str> {
@@ -192,10 +196,10 @@ fn parse_one_for_each_pending(
         })
         .unwrap_or_default();
     Ok(ForEachPendingSpec {
-        base_id: json_map_trimmed(obj, "base_id")
+        base_id: trimmed_str_field(obj, "base_id")
             .ok_or_else(|| format!("for_each_pending[{i}] 缺少 base_id"))?
             .to_string(),
-        from: json_map_trimmed(obj, "from")
+        from: trimmed_str_field(obj, "from")
             .ok_or_else(|| format!("for_each_pending[{i}] 缺少 from"))?
             .to_string(),
         json_path: obj

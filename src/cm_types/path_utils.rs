@@ -32,6 +32,25 @@ pub fn canonical_workspace_root(base: &Path) -> Result<PathBuf, WorkspacePathErr
         .map_err(WorkspacePathError::WorkspaceResolveFailed)
 }
 
+/// 敏感系统目录前缀：canonical 后命中即拒绝用作工作区根。
+///
+/// `cm_config::workspace_roots`（配置校验）与 `cm_tools::workspace::path`（工具 / Web 校验）
+/// 曾各持一份**逐字相同**的副本，后者注释写着「config 不能依赖 tools」；`#1247` 把策略
+/// 上移到两者都依赖的此处，既保持依赖方向，也消除「改一处漏一处」。
+///
+/// **判定逻辑与列表内容未做任何改动**（上移前已逐项比对两份列表完全相同）。
+pub const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
+    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
+];
+
+/// `path` 规范化后是否命中 [`SENSITIVE_WORKSPACE_PREFIXES`]（其自身或子孙路径）。
+pub fn is_sensitive_workspace_path(path: &Path) -> bool {
+    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
+        let p = Path::new(prefix);
+        path == p || path.starts_with(p)
+    })
+}
+
 /// `sub` 必须为相对路径；在已 canonical 的 `workspace_root` 下解析并去掉 `.` / `..`，且不得越出根。
 pub fn absolutize_relative_under_root(
     workspace_root: &Path,

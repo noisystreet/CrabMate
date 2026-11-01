@@ -1,5 +1,6 @@
 //! 节点 `run_if`（由作者层 `when` 编译）求值。
 
+use super::parse::trimmed_str_field;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -79,21 +80,11 @@ fn json_values_equal(a: &Value, b: &Value) -> bool {
     }
 }
 
-fn json_nonempty_str_field<'a>(
-    obj: &'a serde_json::Map<String, Value>,
-    key: &str,
-) -> Option<&'a str> {
-    obj.get(key)
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
 fn parse_run_if_branch(
     obj: &serde_json::Map<String, Value>,
     branch: &str,
 ) -> Result<WorkflowRunIf, String> {
-    let from = json_nonempty_str_field(obj, "from")
+    let from = trimmed_str_field(obj, "from")
         .ok_or("run_if.branch 须提供 from")?
         .to_string();
     let branch = match branch {
@@ -111,10 +102,10 @@ fn parse_run_if_branch(
 fn parse_run_if_match(obj: &serde_json::Map<String, Value>) -> Result<WorkflowRunIf, String> {
     let match_v = obj.get("match").ok_or("run_if 须含 branch 或 match")?;
     let match_obj = match_v.as_object().ok_or("run_if.match 必须是对象")?;
-    let from = json_nonempty_str_field(obj, "from")
+    let from = trimmed_str_field(obj, "from")
         .ok_or("run_if.match 须提供 from")?
         .to_string();
-    let field = json_nonempty_str_field(match_obj, "field")
+    let field = trimmed_str_field(match_obj, "field")
         .ok_or("run_if.match 须提供 field")?
         .to_string();
     let equals = match_obj.get("equals").cloned();

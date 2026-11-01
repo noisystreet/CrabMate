@@ -29,10 +29,12 @@ pub struct AgentReplyPlanV1 {
 
 /// 分阶段规划单步「子代理」角色：收窄该步内外层循环可见的 **OpenAI tools 列表**，并在执行层拒绝越权 `tool_calls`（与 `write_effect_tools` / 只读判定一致）。
 /// 省略或 `null` 表示不限制（与历史行为一致）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanStepExecutorKind {
     /// 仅允许语义只读工具（`is_readonly_tool`）；禁止 MCP 代理工具。
+    /// 同时是 `Default`（`cm_workflow` 侧的旧副本以此为默认，`#1247` 合并时保留该语义）。
+    #[default]
     ReviewReadonly,
     /// 只读工具 + 受限写补丁类（`apply_patch` / `search_replace` / `structured`（其 `action=patch` 是写侧，合并后整工具按写处理）/ `create_file` / `modify_file` / `append_file`）。
     PatchWrite,

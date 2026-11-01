@@ -9,6 +9,7 @@ use crate::cm_names as tool_names;
 
 use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
+    sqlite_like_escape,
 };
 use crate::cm_config::AgentConfig;
 use crate::cm_types::path_utils::canonical_workspace_root;
@@ -346,16 +347,7 @@ fn apply_rel_scope_invalidation(
     }
 }
 
-fn sqlite_like_escape(s: &str) -> String {
-    let mut o = String::with_capacity(s.len());
-    for ch in s.chars() {
-        if matches!(ch, '\\' | '%' | '_') {
-            o.push('\\');
-        }
-        o.push(ch);
-    }
-    o
-}
+
 
 /// `run_tool` 成功语义：`crabmate_tool` 信封的 `ok`，或旧式解析的 `ok`。
 pub fn tool_output_semantic_success(_tool_name: &str, output: &str) -> bool {

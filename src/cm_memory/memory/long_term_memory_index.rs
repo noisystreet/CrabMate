@@ -5,7 +5,7 @@
 #![cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 
 #[cfg(feature = "fastembed")]
-use crate::cm_memory::memory::long_term_memory::f32_slice_to_bytes;
+use crate::cm_memory::memory::vector_math::f32_slice_to_bytes;
 use crate::cm_memory::memory::long_term_memory::{
     LongTermMemoryRuntime, chunk_text, clamp_text, last_user_assistant_final_pair_for_turn,
 };

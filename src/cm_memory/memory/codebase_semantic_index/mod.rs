@@ -16,7 +16,7 @@ mod schema;
 
 #[cfg(feature = "fastembed")]
 pub use numeric::{bytes_to_f32_slice, cosine_sim, ensure_embedder};
-pub use numeric::{fts5_match_expression, norm_scores_bm25};
+pub use numeric::{fts5_match_expression, norm_scores_bm25, sqlite_like_escape};
 pub use params::CodebaseSemanticToolParams;
 pub use schema::{
     CODEBASE_SEMANTIC_FILES_TABLE, TABLE, TABLE_FTS, index_path_for_workspace,

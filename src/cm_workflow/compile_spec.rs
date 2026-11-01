@@ -1,5 +1,6 @@
 //! `workflow_spec` v2（YAML/JSON 作者层）→ `workflow.nodes` + `for_each_pending` 编译。
 
+use super::parse::trimmed_str_field;
 use serde_json::{Map, Value};
 
 use super::author_validate::{should_validate_author_spec, validate_workflow_author_document};
@@ -9,15 +10,8 @@ use super::model::ForEachPendingSpec;
 const MAX_STEPS: usize = 64;
 const MAX_REPEAT_COUNT: usize = 5;
 
-fn map_trimmed_str<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    obj.get(key)
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
 fn map_required_id(obj: &Map<String, Value>, step_index: usize, ctx: &str) -> Result<String, String> {
-    map_trimmed_str(obj, "id").map(str::to_string).ok_or_else(|| format!("steps[{step_index}] {ctx}"))
+    trimmed_str_field(obj, "id").map(str::to_string).ok_or_else(|| format!("steps[{step_index}] {ctx}"))
 }
 
 fn map_tool_name(obj: &Map<String, Value>, step_index: usize) -> Result<String, String> {
@@ -416,7 +410,7 @@ fn resolve_plain_step_id(
 ) -> Result<String, String> {
     id_override
         .map(str::to_string)
-        .or_else(|| map_trimmed_str(obj, "id").map(str::to_string))
+        .or_else(|| trimmed_str_field(obj, "id").map(str::to_string))
         .ok_or_else(|| format!("steps[{step_index}] 缺少 id"))
 }
 
