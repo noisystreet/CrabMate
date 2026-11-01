@@ -255,22 +255,11 @@ pub fn remove(path: &Path) -> Result<(), CtlError> {
 mod tests {
     use super::*;
 
-    fn tmpdir() -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "cm_ctl_record_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        fs::create_dir_all(&p).expect("建临时目录");
-        p
-    }
+    use crate::test_fixtures::tempdir;
 
     #[test]
     fn roundtrip_via_atomic_write() {
-        let dir = tmpdir();
+        let dir = tempdir("record");
         let path = dir.join("a.json");
         let mut rec = InstanceRecord::new("a");
         rec.state = InstanceState::Ready;
@@ -296,7 +285,7 @@ mod tests {
 
     #[test]
     fn tolerates_unknown_and_missing_fields() {
-        let dir = tmpdir();
+        let dir = tempdir("record");
         let path = dir.join("b.json");
         // 缺几乎所有字段 + 多一个未知字段
         fs::write(
@@ -314,7 +303,7 @@ mod tests {
 
     #[test]
     fn missing_file_is_none_not_error() {
-        let dir = tmpdir();
+        let dir = tempdir("record");
         let got = read_optional(&dir.join("nope.json")).expect("不应报错");
         assert!(got.is_none());
         let _ = fs::remove_dir_all(&dir);
@@ -322,7 +311,7 @@ mod tests {
 
     #[test]
     fn read_required_reports_not_found() {
-        let dir = tmpdir();
+        let dir = tempdir("record");
         let err = read_required(&dir.join("nope.json")).expect_err("应报不存在");
         assert_eq!(err.error_code, "instance_not_found");
         let _ = fs::remove_dir_all(&dir);
@@ -330,7 +319,7 @@ mod tests {
 
     #[test]
     fn remove_is_idempotent() {
-        let dir = tmpdir();
+        let dir = tempdir("record");
         let path = dir.join("c.json");
         remove(&path).expect("不存在时删除也应成功");
         let _ = fs::remove_dir_all(&dir);

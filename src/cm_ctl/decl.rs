@@ -246,18 +246,7 @@ mod tests {
     use crate::cm_ctl::paths::CtlPaths;
     use crate::cm_ctl::port_pool::PortPool;
 
-    fn tempdir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "cm_ctl_decl_{tag}_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&dir).expect("建临时目录");
-        dir
-    }
+    use crate::test_fixtures::tempdir;
 
     fn ctx_at(dir: &Path) -> Ctx {
         Ctx {
