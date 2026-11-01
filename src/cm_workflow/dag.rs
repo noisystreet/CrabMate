@@ -97,7 +97,7 @@ fn kahn_visit_count(nodes: &[WorkflowNodeSpec]) -> Result<usize, String> {
     Ok(visited)
 }
 
-pub(crate) fn validate_dag(nodes: &[WorkflowNodeSpec]) -> Result<(), String> {
+pub fn validate_dag(nodes: &[WorkflowNodeSpec]) -> Result<(), String> {
     unknown_dependency_error(nodes)?;
     let visited = kahn_visit_count(nodes)?;
     if visited != nodes.len() {

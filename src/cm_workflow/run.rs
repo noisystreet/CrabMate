@@ -14,11 +14,35 @@ use super::execute::{
     WorkflowApprovalMode, WorkflowSemanticParams, WorkflowToolExecCtx, execute_workflow_dag,
     truncate_for_summary,
 };
+use super::model::WorkflowSpec;
 use super::parse::parse_workflow_spec;
+use super::tool_name_check::validate_tool_names;
 use super::types::{
     WORKFLOW_RUN_SEQ, WorkflowExecutionCompensationReport, WorkflowExecutionNodeReport,
     WorkflowExecutionReport, WorkflowExecutionStats,
 };
+
+/// 加载期工具名校验的失败 JSON：`validate_only` 与真执行共用形状，只有 `type` 与提示前缀不同。
+///
+/// 返回 `None` 表示全部通过；失败时一并记 WARN，便于对照「文件里写的是哪个名字」。
+fn tool_name_check_failure(spec: &WorkflowSpec, report_type: &str, prefix: &str) -> Option<String> {
+    let err = validate_tool_names(spec).err()?;
+    warn!(
+        target: "crabmate",
+        "workflow tool_name check failed report_type={} error={}",
+        report_type,
+        err
+    );
+    Some(
+        serde_json::json!({
+            "type": report_type,
+            "status": "failed",
+            "workspace_changed": false,
+            "human_summary": format!("{prefix}：{err}")
+        })
+        .to_string(),
+    )
+}
 
 /// `validate_only`：静态 DAG / 拓扑与规划输出（降低 `run_workflow_execute_tool` 单函数 nloc）。
 fn workflow_validate_only_finish(args_json: &str, workflow_run_id: u64) -> Result<String, String> {
@@ -37,6 +61,14 @@ fn workflow_validate_only_finish(args_json: &str, workflow_run_id: u64) -> Resul
         })
         .to_string()
     })?;
+
+    if let Some(err_json) = tool_name_check_failure(
+        &spec,
+        "workflow_validate_error",
+        "workflow_validate 工具名校验失败",
+    ) {
+        return Err(err_json);
+    }
 
     if let Err(e) = validate_dag(&spec.nodes) {
         warn!(
@@ -200,6 +232,14 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
             return (report.to_string(), false);
         }
     };
+
+    if let Some(err_json) = tool_name_check_failure(
+        &spec,
+        "workflow_execute_error",
+        "workflow_execute 工具名校验失败",
+    ) {
+        return (err_json, false);
+    }
 
     if let Err(e) = validate_dag(&spec.nodes) {
         warn!(
@@ -402,4 +442,33 @@ pub async fn run_workflow_execute_tool(
         permission,
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_name_check_failure_reports_node_id_in_json() {
+        let json = r#"{"workflow":{"nodes":[{"id":"verify","tool":"cargo_tst","tool_args":{}}]}}"#;
+        let spec = parse_workflow_spec(json).unwrap();
+        let out = tool_name_check_failure(&spec, "workflow_validate_error", "工具名校验失败")
+            .expect("拼错的 tool_name 应失败");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["type"], "workflow_validate_error");
+        assert_eq!(v["status"], "failed");
+        let summary = v["human_summary"].as_str().unwrap();
+        assert!(summary.contains("verify"), "错误须含节点 id，got {summary}");
+        assert!(
+            summary.contains("cargo_tst"),
+            "错误须含工具名，got {summary}"
+        );
+    }
+
+    #[test]
+    fn tool_name_check_failure_is_none_when_all_registered() {
+        let json = r#"{"workflow":{"nodes":[{"id":"a","tool":"read_file","tool_args":{}}]}}"#;
+        let spec = parse_workflow_spec(json).unwrap();
+        assert!(tool_name_check_failure(&spec, "workflow_execute_error", "工具名校验失败").is_none());
+    }
 }

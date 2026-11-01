@@ -5,7 +5,9 @@ use std::path::Path;
 use crate::agent::workflow::{
     WorkflowApprovalMode, compile_workflow_author_yaml, extract_first_crabmate_workflow_block,
     parse_workflow_spec_from_json, run_workflow_execute_tool, workflow_topo_layers,
+    workflow_validate_dag, workflow_validate_tool_names,
 };
+use crate::agent::workflow::model::WorkflowSpec;
 use crate::config::cli::WorkflowFileCli;
 use crate::config::{AgentConfig, ExposeSecret};
 use crate::runtime::cli::cli_effective_work_dir;
@@ -99,9 +101,13 @@ fn print_workflow_validate_human(
     }
 }
 
-/// `workflow validate`：编译 + `parse_workflow_spec` + 拓扑层（等同 validate_only 核心检查）。
-pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String> {
-    let path = Path::new(&cli.file);
+/// 读文件 → 作者层编译 → `parse` → 加载期校验（`tool_name` + DAG）→ 拓扑层。
+///
+/// 单独成函数是为了让 `run_workflow_validate_command` 只保留「打印」一件事：每步的 `?`
+/// 都会计一个分支，堆在一起会被 `scripts/lizard-rust.sh` 判为 CCN>10。
+fn load_validated_workflow(
+    path: &Path,
+) -> Result<(String, WorkflowSpec, Vec<Vec<String>>), String> {
     let yaml = load_author_yaml_source(path)?;
     let root: serde_json::Value =
         serde_yaml::from_str(&yaml).map_err(|e| format!("workflow_spec YAML 解析失败: {e}"))?;
@@ -112,7 +118,18 @@ pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String
     let args_json =
         serde_json::to_string(&compiled).map_err(|e| format!("JSON 序列化失败: {e}"))?;
     let spec = parse_workflow_spec_from_json(&args_json)?;
+    // 加载期即校验工具名与 DAG 结构：`workflow run` 的前序节点可能已有副作用，
+    // 拼错的 `tool_name` 必须在这里暴露，而不是执行到该节点才报 `unknown_tool`。
+    workflow_validate_tool_names(&spec)?;
+    workflow_validate_dag(&spec.nodes)?;
     let layers = workflow_topo_layers(&spec.nodes)?;
+    Ok((author_mode, spec, layers))
+}
+
+/// `workflow validate`：编译 + `parse_workflow_spec` + 加载期校验 + 拓扑层。
+pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String> {
+    let path = Path::new(&cli.file);
+    let (author_mode, spec, layers) = load_validated_workflow(path)?;
 
     if cli.json {
         print_workflow_validate_json(path, &author_mode, &spec, &layers)?;

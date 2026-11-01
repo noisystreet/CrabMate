@@ -6,6 +6,7 @@ use super::model::WorkflowNodeSpec;
 use super::parse::parse_workflow_spec;
 use super::placeholders::inject_placeholders;
 use super::run_if::node_deps_resolved;
+use super::tool_name_check::validate_tool_names;
 use super::types::{NodeRunResult, NodeRunStatus};
 
 #[test]
@@ -143,6 +144,101 @@ fn test_validate_dag_cycle_detection() {
         },
     ];
     assert!(validate_dag(&nodes).is_err());
+}
+
+#[test]
+fn test_validate_tool_names_rejects_typo_with_node_id() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"edit","tool":"apply_patch","tool_args":{}},
+            {"id":"verify","tool":"cargo_tst","tool_args":{},"deps":["edit"]}
+          ]
+        }
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    let err = validate_tool_names(&spec).unwrap_err();
+    assert!(err.contains("verify"), "错误信息须含节点 id，got {err}");
+    assert!(err.contains("cargo_tst"), "错误信息须含工具名，got {err}");
+}
+
+#[test]
+fn test_validate_tool_names_rejects_removed_legacy_name() {
+    let json = r#"{"workflow":{"nodes":[{"id":"g","tool":"glob","tool_args":{}}]}}"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert!(validate_tool_names(&spec).is_err());
+}
+
+#[test]
+fn test_validate_tool_names_allows_external_tool_prefixes() {
+    // 运行时注册的工具（MCP 代理 / 工作区动态插件）不在内建表里，硬校验会误伤。
+    let json = r#"{
+        "workflow":{"nodes":[
+            {"id":"m","tool":"mcp__fanalyzer__list","tool_args":{}},
+            {"id":"d","tool":"dyn__deploy","tool_args":{}}
+        ]}
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert!(validate_tool_names(&spec).is_ok());
+}
+
+#[test]
+fn test_validate_tool_names_builtin_templates_pass() {
+    // `refactor_precheck` 需要在 workflow 上提供 `refactor_symbol`，另两个不需要。
+    let cases = [
+        (
+            r#"{"workflow":{"workflow_template":"rust_ci_light"}}"#,
+            "rust_ci_light",
+        ),
+        (
+            r#"{"workflow":{"workflow_template":"code_review"}}"#,
+            "code_review",
+        ),
+        (
+            r#"{"workflow":{"workflow_template":"refactor_precheck","refactor_symbol":"MyService"}}"#,
+            "refactor_precheck",
+        ),
+    ];
+    for (json, name) in cases {
+        let spec = parse_workflow_spec(json).unwrap();
+        assert!(
+            validate_tool_names(&spec).is_ok(),
+            "内建模板 {name} 的工具名必须全部已注册"
+        );
+    }
+}
+
+#[test]
+fn test_validate_tool_names_covers_for_each_pending() {
+    // `for_each` 的 tool 不在 spec.nodes 里，漏看就会给拼错留后门。
+    let yaml = r#"
+version: 2
+workflow:
+  fail_fast: true
+steps:
+  - id: scan
+    tool: git
+    args:
+      action: diff
+  - id: outline_each
+    tool: read_fil
+    after: [scan]
+    for_each:
+      from: scan
+      json_path: "/changed"
+      item_var: path
+    args: {}
+"#;
+    let compiled = super::compile_workflow_author_yaml(yaml).unwrap();
+    let spec = parse_workflow_spec(&compiled.to_string()).unwrap();
+    assert_eq!(
+        spec.for_each_pending.len(),
+        1,
+        "for_each 应留在待展开列表里，而非直接进 nodes"
+    );
+    let err = validate_tool_names(&spec).unwrap_err();
+    assert!(err.contains("outline_each"), "got {err}");
+    assert!(err.contains("read_fil"), "got {err}");
 }
 
 #[test]
