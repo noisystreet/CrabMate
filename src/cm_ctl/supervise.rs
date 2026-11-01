@@ -21,6 +21,7 @@ use super::instances::{self, Declaration, InstancesFile};
 use super::ops::{self, Ctx, Origin, UpArgs};
 use super::probe::{Observed, Probe};
 use super::profiles::{self, ProfilesFile};
+use super::query;
 use super::record::{DesiredState, InstanceRecord};
 use super::restart;
 use super::CtlError;
@@ -154,7 +155,7 @@ pub fn plan_with(
     profiles_file: &ProfilesFile,
     profiles_path: &Path,
 ) -> Result<Vec<Step>, CtlError> {
-    let observed = ops::ls(ctx)?;
+    let observed = query::ls(ctx)?;
     let mut steps = Vec::with_capacity(file.instances.len() + observed.len());
 
     for (name, decl) in &file.instances {

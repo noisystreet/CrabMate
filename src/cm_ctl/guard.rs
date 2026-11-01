@@ -87,6 +87,7 @@ mod tests {
     use crate::cm_ctl::ops::{self, Ctx, Origin, UpArgs};
     use crate::cm_ctl::paths::CtlPaths;
     use crate::cm_ctl::port_pool::PortPool;
+    use crate::cm_ctl::query;
     use crate::cm_ctl::record::{self, InstanceRecord, InstanceState};
     use crate::cm_ctl::signal;
 
@@ -237,7 +238,7 @@ mod tests {
         let (live, rec) = live_lookalike(&tmp);
         let path = write_record(&ctx, &rec);
 
-        let items = ops::prune(&ctx, false, false).expect("prune 应成功");
+        let items = query::prune(&ctx, false, false).expect("prune 应成功");
         assert_eq!(items.len(), 1, "记录应被列出（只是被跳过）：{items:?}");
         let Some(reason) = items[0].refused.as_deref() else {
             panic!(
@@ -253,7 +254,7 @@ mod tests {
         assert!(path.exists(), "活进程的记录不能被清掉");
 
         // 显式 `--force` 才清：那时孤儿是用户自己确认承担的结果
-        let forced = ops::prune(&ctx, false, true).expect("prune --force");
+        let forced = query::prune(&ctx, false, true).expect("prune --force");
         assert!(forced[0].refused.is_none(), "force 时不再拒绝");
         assert!(!path.exists(), "force 应真的删掉记录");
 
@@ -280,7 +281,7 @@ mod tests {
         rec.port = Some(1);
         let path = write_record(&ctx, &rec);
 
-        let items = ops::prune(&ctx, false, false).expect("prune 应成功");
+        let items = query::prune(&ctx, false, false).expect("prune 应成功");
         assert_eq!(items.len(), 1);
         assert!(
             items[0].refused.is_none(),
