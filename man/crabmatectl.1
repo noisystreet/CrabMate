@@ -43,6 +43,9 @@ Print version
 \fBprune\fR
 清理 stale / 已退出 / 失败的记录（不碰健康实例）
 .TP
+\fBgc\fR
+回收已停止实例的实例目录与日志（**数据面**；`prune` 只删记录）
+.TP
 \fBadd\fR
 新增一条实例声明（只写 `instances.toml`，不起进程）
 .TP

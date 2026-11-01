@@ -8,6 +8,7 @@ use std::path::Path;
 use serde_json::json;
 
 use super::decl;
+use super::gc::{GcItem, GcPlan, GcTargetKind};
 use super::ops::{DownOutcome, UpOutcome};
 use super::query::PruneItem;
 use super::probe::{Observed, Probe};
@@ -251,6 +252,84 @@ pub fn prune(items: &[PruneItem], dry_run: bool) {
             "提示：跳过项由 `crabmatectl prune --force` 强制清理（会让仍在运行的进程失去记录）"
         );
     }
+}
+
+/// `gc` 输出。
+///
+/// 三类行刻意分开：**将删 / 已删**、**跳过（带原因）**、**只报告的残留**。混在一起
+/// 会让「没删」看起来像「删了」，而这三类之后的动作完全不同（`--yes` / 先 `down` /
+/// 人工确认）。
+pub fn gc(plan: &GcPlan, applied: bool) {
+    let reclaimable: Vec<&GcItem> = plan.items.iter().filter(|i| i.refused.is_none()).collect();
+    if reclaimable.is_empty() && plan.orphans.is_empty() {
+        println!("没有可回收的实例数据");
+    }
+    let verb = if applied { "已删除" } else { "将删除" };
+    for item in &plan.items {
+        print_gc_item(item, verb);
+    }
+    if !reclaimable.is_empty() {
+        let total = human_bytes(reclaimable.iter().map(|i| i.bytes()).sum());
+        if applied {
+            println!("（合计释放 {total}）");
+        } else {
+            println!("（合计可释放 {total}；未实际删除，加 --yes 执行）");
+        }
+    }
+    if !plan.orphans.is_empty() {
+        println!(
+            "提示：下列残留没有状态记录（多半是早前 `prune` 掉的），gc 不删它们 —— 请人工确认后清理："
+        );
+        for orphan in &plan.orphans {
+            let paths: Vec<String> = orphan.paths.iter().map(|p| p.display().to_string()).collect();
+            println!(
+                "  {}：{}（{}）",
+                orphan.name,
+                paths.join("，"),
+                human_bytes(orphan.bytes)
+            );
+        }
+    }
+}
+
+fn print_gc_item(item: &GcItem, verb: &str) {
+    if let Some(reason) = item.refused.as_deref() {
+        println!("跳过 {}（{}）：{reason}", item.name, item.observed.as_str());
+        return;
+    }
+    println!(
+        "{verb} {}（{}，{}）",
+        item.name,
+        item.observed.as_str(),
+        human_bytes(item.bytes())
+    );
+    for target in &item.targets {
+        let what = match target.kind {
+            GcTargetKind::Dir => "目录",
+            GcTargetKind::File => "文件",
+        };
+        println!(
+            "  [{what}] {}（{}）",
+            target.path.display(),
+            human_bytes(target.bytes)
+        );
+    }
+}
+
+/// 字节数的人读形式（`gc` 报「能释放多少」用；精确值仍可由 `ls -l` 得到）。
+fn human_bytes(n: u64) -> String {
+    const KIB: f64 = 1024.0;
+    let value = n as f64;
+    if n < 1024 {
+        return format!("{n} B");
+    }
+    if value < KIB * KIB {
+        return format!("{:.1} KiB", value / KIB);
+    }
+    if value < KIB * KIB * KIB {
+        return format!("{:.1} MiB", value / (KIB * KIB));
+    }
+    format!("{:.1} GiB", value / (KIB * KIB * KIB))
 }
 
 /// `add` 输出。
