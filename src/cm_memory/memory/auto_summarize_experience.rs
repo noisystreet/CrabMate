@@ -150,15 +150,7 @@ mod tests {
     }
 
     fn tool_msg(name: &str, body: &str) -> Message {
-        Message {
-            role: "tool".to_string(),
-            content: Some(crate::cm_types::MessageContent::Text(body.to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: Some(name.to_string()),
-            tool_call_id: Some("tc1".to_string()),
-        }
+        Message::tool_result_named("tc1".to_string(), name.to_string(), body.to_string())
     }
 
     fn asst_final(text: &str) -> Message {

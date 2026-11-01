@@ -149,15 +149,7 @@ mod tests {
     }
 
     fn tool(name: &str, body: &str) -> Message {
-        Message {
-            role: "tool".to_string(),
-            content: Some(body.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: Some(name.to_string()),
-            tool_call_id: Some("t1".to_string()),
-        }
+        Message::tool_result_named("t1".to_string(), name.to_string(), body)
     }
 
     #[test]

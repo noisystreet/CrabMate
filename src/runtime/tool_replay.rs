@@ -266,15 +266,7 @@ mod tests {
                 name: None,
                 tool_call_id: None,
             },
-            Message {
-                role: "tool".into(),
-                content: Some("4".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("c1".into()),
-            },
+            Message::tool_result("c1", "4"),
         ]
     }
 
@@ -316,24 +308,8 @@ mod tests {
                 name: None,
                 tool_call_id: None,
             },
-            Message {
-                role: "tool".into(),
-                content: Some("one".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("a".into()),
-            },
-            Message {
-                role: "tool".into(),
-                content: Some("two".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("b".into()),
-            },
+            Message::tool_result("a", "one"),
+            Message::tool_result("b", "two"),
         ];
         let steps = extract_tool_replay_steps(&messages);
         assert_eq!(steps.len(), 2);
