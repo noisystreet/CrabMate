@@ -16,18 +16,7 @@ fn ctx_at(dir: &Path) -> Ctx {
     }
 }
 
-fn tempdir(tag: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!(
-        "cmc{tag}{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    std::fs::create_dir_all(&p).expect("建临时目录");
-    p
-}
+use crate::test_fixtures::tempdir;
 
 /// 在临时目录里跑一次「主循环 + 一次往返」。
 fn roundtrip(tag: &str, req: &str) -> (Value, PathBuf, PathBuf) {

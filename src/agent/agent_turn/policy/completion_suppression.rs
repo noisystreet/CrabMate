@@ -200,21 +200,9 @@ pub fn redundant_tool_names_for_log(tool_calls: &[ToolCall]) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_agent::plan_artifact::PlanStepV1;
     use crate::cm_types::{FunctionCall, ToolCall};
 
-    fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
-        PlanStepV1 {
-            id: id.to_string(),
-            description: description.to_string(),
-            workflow_node_id: None,
-            executor_kind: None,
-            step_kind: kind.map(str::to_string),
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        }
-    }
+    use crate::test_fixtures::step;
 
     fn run_command_tool(args: &str) -> ToolCall {
         ToolCall {

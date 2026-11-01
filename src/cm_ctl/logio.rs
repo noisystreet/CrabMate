@@ -125,18 +125,7 @@ fn read_fully(file: &mut File, chunk: &mut [u8]) -> io::Result<usize> {
 mod tests {
     use super::*;
 
-    fn tempdir(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "cm_ctl_logio_{tag}_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&p).expect("建临时目录");
-        p
-    }
+    use crate::test_fixtures::tempdir;
 
     fn write_lines(path: &Path, rows: usize) {
         let mut text = String::new();

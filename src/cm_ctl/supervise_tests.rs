@@ -15,18 +15,7 @@ fn ctx_at(dir: &std::path::Path) -> Ctx {
     }
 }
 
-fn tempdir(tag: &str) -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(format!(
-        "cm_ctl_supervise_{tag}_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    std::fs::create_dir_all(&p).expect("建临时目录");
-    p
-}
+use crate::test_fixtures::tempdir;
 
 fn decl(workspace: &str, enabled: bool, port: Option<u16>) -> Declaration {
     Declaration {

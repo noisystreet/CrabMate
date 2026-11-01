@@ -9,12 +9,32 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
+#[cfg(feature = "server")]
+use crate::cm_agent::plan_artifact::PlanStepV1;
 use crate::cm_types::Message;
 
 /// 仓库根。本 crate 就是 workspace 根，故 `CARGO_MANIFEST_DIR` 即所需路径。
 #[must_use]
 pub(crate) fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// 建一个唯一临时目录并返回其路径（`cmc{tag}{pid}_{nanos}`）。
+///
+/// 名字里必须带 pid + 纳秒：多个用例在同进程内并发取临时目录，少这一层就会互相
+/// 覆盖——`cm_ctl` 的 `lock` / `port_pool` 用例依赖该唯一性（#1241：此前 13 份副本）。
+#[must_use]
+pub(crate) fn tempdir(tag: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!(
+        "cmc{tag}{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&p).expect("建临时目录");
+    p
 }
 
 /// 金样断言的上下文串：`<path>:<1-based 行号> (<id>)`。
@@ -99,4 +119,22 @@ pub(crate) fn tool_env(name: &str, summary: &str, output: &str) -> Message {
             None,
         ),
     )
+}
+
+/// `PlanStepV1` 测试构造器：只填 `id` / `step_kind` / `description`，其余字段留 `None`。
+///
+/// **仅 `server` feature**（`cm_agent` 随 `lib_server.rs` 编译）：此前
+/// `turn_completion` 与 `completion_suppression` 各抄一份同构副本（#1241）。
+#[cfg(feature = "server")]
+pub(crate) fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
+    PlanStepV1 {
+        id: id.to_string(),
+        description: description.to_string(),
+        workflow_node_id: None,
+        executor_kind: None,
+        step_kind: kind.map(str::to_string),
+        acceptance: None,
+        max_step_retries: None,
+        transitions: None,
+    }
 }

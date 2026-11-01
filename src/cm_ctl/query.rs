@@ -103,7 +103,7 @@ mod tests {
     use crate::cm_ctl::paths::CtlPaths;
     use crate::cm_ctl::port_pool::PortPool;
     use crate::cm_ctl::record::InstanceState;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     fn ctx_at(dir: &Path) -> Ctx {
         Ctx {
@@ -162,16 +162,5 @@ mod tests {
         assert_eq!(err.error_code, "log_not_found");
     }
 
-    fn tempdir(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "cm_ctl_query_{tag}_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&p).expect("建临时目录");
-        p
-    }
+    use crate::test_fixtures::tempdir;
 }

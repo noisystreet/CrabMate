@@ -152,24 +152,9 @@ pub(crate) fn outer_loop_truncated_feedback_if_needed(
 mod tests {
 
     use super::*;
-    use crate::agent::plan_artifact::PlanStepV1;
     use crate::types::Message;
 
-    use crate::test_fixtures::{msg, tool_env};
-
-
-    fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
-        PlanStepV1 {
-            id: id.to_string(),
-            description: description.to_string(),
-            workflow_node_id: None,
-            executor_kind: None,
-            step_kind: kind.map(str::to_string),
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        }
-    }
+    use crate::test_fixtures::{msg, step, tool_env};
 
     #[test]
     fn build_task_heuristic_satisfied_does_not_allow_staged_early_exit() {
