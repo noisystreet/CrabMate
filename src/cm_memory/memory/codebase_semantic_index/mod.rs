@@ -227,9 +227,10 @@ mod search;
 #[cfg(test)]
 mod tests {
     use super::numeric::{
-        chunk_text_lines, cosine_sim, fts5_match_expression, norm_scores_bm25,
+        chunk_text_lines, fts5_match_expression, norm_scores_bm25,
         posix_subdir_prefix_for_delete, rust_symbol_hints_for_chunk, sqlite_like_escape,
     };
+    use crate::cm_memory::memory::vector_math::cosine_sim;
 
     /// 参数校验用的最小配置（三条用例都在打开索引库之前返回，不碰磁盘）。
     fn test_params(enabled: bool) -> super::CodebaseSemanticToolParams {

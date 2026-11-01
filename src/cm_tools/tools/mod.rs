@@ -78,6 +78,7 @@ mod table_text;
 mod test_result_cache;
 #[cfg(feature = "diff-tools")]
 mod text_diff;
+mod text_truncate;
 #[cfg(feature = "schema-tools")]
 mod tool_args_validate;
 mod tool_json_schema;
@@ -167,6 +168,36 @@ impl<'a> ToolContext<'a> {
     pub fn with_path_scope(mut self, scope: crate::cm_types::PathScope) -> Self {
         self.path_scope = scope;
         self
+    }
+
+    /// 只读聚合工具（`docs_health_sweep` / `repo_overview`）的占位上下文：不联网、不跑命令、
+    /// 无记忆与后台任务宿主，只保留工作区根与命令输出上限（#1239：此前两处各手抄 26 行字段）。
+    #[must_use]
+    pub fn stub(working_dir: &'a std::path::Path, command_max_output_len: usize) -> Self {
+        Self {
+            cfg: None,
+            codebase_semantic_host: None,
+            command_max_output_len,
+            weather_timeout_secs: 0,
+            allowed_commands: &[],
+            working_dir,
+            web_search_timeout_secs: 0,
+            web_search_provider: crate::cm_config::WebSearchProvider::Brave,
+            web_search_api_key: "",
+            web_search_max_results: 0,
+            web_search_proxy: "",
+            http_fetch_allowed_prefixes: &[],
+            http_fetch_timeout_secs: 0,
+            http_fetch_max_response_bytes: 0,
+            command_timeout_secs: 30,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            test_result_cache_enabled: false,
+            test_result_cache_max_entries: 8,
+            long_term_memory_host: None,
+            tool_jobs_host: None,
+            path_scope: crate::cm_types::PathScope::SessionRoot,
+        }
     }
 }
 

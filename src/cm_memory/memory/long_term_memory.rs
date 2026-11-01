@@ -19,6 +19,7 @@ use crate::cm_memory::memory::long_term_memory_recall as recall;
 use crate::cm_memory::memory::long_term_memory_store::{
     self, MemoryListFilter, MemoryProjectionRow, MemoryRow,
 };
+use crate::cm_memory::memory::vector_math::cosine_sim;
 use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_types::text_utils::preview_chars;
 use crate::cm_types::{
@@ -74,21 +75,6 @@ pub(super) fn chunk_text(s: &str, max_chunk: usize) -> Vec<String> {
     out
 }
 
-fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let mut dot = 0.0f32;
-    let mut na = 0.0f32;
-    let mut nb = 0.0f32;
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-    }
-    let d = na.sqrt() * nb.sqrt();
-    if d <= f32::EPSILON { 0.0 } else { dot / d }
-}
 
 pub(super) fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
     let mut b = Vec::with_capacity(v.len() * 4);

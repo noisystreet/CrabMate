@@ -10,7 +10,6 @@
 pub mod acceptance;
 /// 单轮 `TurnBudgetCounter` 与 `message_pipeline` / 上下文摘要的联动策略。
 pub mod context_budget_pressure;
-mod log_preview;
 pub mod message_pipeline;
 pub mod per_coord;
 /// 权限等级 → 六轴投影与回合 min 链（唯一 `match level` 处；设计 `docs/design/permission_levels.md`）。
@@ -41,4 +40,4 @@ mod acceptance_regression_golden;
 #[cfg(test)]
 mod plan_artifact_golden;
 
-pub(crate) use log_preview::preview_chars;
+pub(crate) use crate::cm_types::text_utils::preview_chars;

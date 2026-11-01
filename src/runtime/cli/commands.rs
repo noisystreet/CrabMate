@@ -186,34 +186,41 @@ struct PluginCheckJsonRow {
     errors: Vec<String>,
 }
 
-fn print_plugin_validate_machine_output(
-    cli: &PluginValidateCli,
+/// 插件类子命令的机器可读输出：`jsonl` 逐行 + 汇总行、`json` 单对象、否则人读摘要。
+///
+/// `scope` 只决定 JSON 里的 `type` 前缀（`crabmate_plugin_<scope>_summary` / `_result`），
+/// `human_summary` 是人读分支的前缀文案——由调用点传入各自的原始文本，故输出与合并前逐字相同（#1239）。
+fn print_plugin_machine_output(
+    scope: &str,
+    jsonl: bool,
+    json: bool,
+    human_summary: &str,
     rows: &[PluginCheckJsonRow],
     ok_count: usize,
     fail_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if cli.jsonl {
+    if jsonl {
         for row in rows {
             println!("{}", serde_json::to_string(row)?);
         }
         println!(
             "{}",
             serde_json::to_string(&serde_json::json!({
-                "type": "crabmate_plugin_validate_summary",
+                "type": format!("crabmate_plugin_{scope}_summary"),
                 "ok_count": ok_count,
                 "failed_count": fail_count,
             }))?
         );
-    } else if cli.json {
+    } else if json {
         let payload = serde_json::json!({
-            "type": "crabmate_plugin_validate_result",
+            "type": format!("crabmate_plugin_{scope}_result"),
             "ok_count": ok_count,
             "failed_count": fail_count,
             "rows": rows,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("校验完成：ok={ok_count}, failed={fail_count}");
+        println!("{human_summary}：ok={ok_count}, failed={fail_count}");
     }
     Ok(())
 }
@@ -420,44 +427,21 @@ pub fn run_plugin_validate_command(
         let checked = validate_plugin_file(&p, cfg);
         record_plugin_validate_file(&cli, checked, &mut ok_count, &mut fail_count, &mut rows);
     }
-    print_plugin_validate_machine_output(&cli, &rows, ok_count, fail_count)?;
+    print_plugin_machine_output(
+        "validate",
+        cli.jsonl,
+        cli.json,
+        "校验完成",
+        &rows,
+        ok_count,
+        fail_count,
+    )?;
     if fail_count > 0 {
         return Err(CliExitError::new(EXIT_USAGE, "存在动态工具校验失败").into());
     }
     Ok(())
 }
 
-fn print_plugin_list_machine_output(
-    cli: &PluginListCli,
-    rows: &[PluginCheckJsonRow],
-    ok_count: usize,
-    fail_count: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if cli.jsonl {
-        for row in rows {
-            println!("{}", serde_json::to_string(row)?);
-        }
-        println!(
-            "{}",
-            serde_json::to_string(&serde_json::json!({
-                "type": "crabmate_plugin_list_summary",
-                "ok_count": ok_count,
-                "failed_count": fail_count,
-            }))?
-        );
-    } else if cli.json {
-        let payload = serde_json::json!({
-            "type": "crabmate_plugin_list_result",
-            "ok_count": ok_count,
-            "failed_count": fail_count,
-            "rows": rows,
-        });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        println!("汇总：ok={ok_count}, failed={fail_count}");
-    }
-    Ok(())
-}
 
 fn print_plugin_list_human_row(checked: &PluginCheckResult, status: &str) {
     let name = checked.name.as_deref().unwrap_or("-");
@@ -507,7 +491,7 @@ pub fn run_plugin_list_command(
             errors: checked.errors,
         });
     }
-    print_plugin_list_machine_output(&cli, &rows, ok_count, fail_count)?;
+    print_plugin_machine_output("list", cli.jsonl, cli.json, "汇总", &rows, ok_count, fail_count)?;
     Ok(())
 }
 

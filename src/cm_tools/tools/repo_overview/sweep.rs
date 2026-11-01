@@ -49,32 +49,6 @@ fn rel_path_safe(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
     }
 }
 
-fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolContext<'a> {
-    ToolContext {
-        cfg: None,
-        codebase_semantic_host: None,
-        command_max_output_len: max_output_len,
-        weather_timeout_secs: 0,
-        allowed_commands: &[],
-        working_dir: workspace_root,
-        path_scope: crate::cm_types::PathScope::SessionRoot,
-        web_search_timeout_secs: 0,
-        web_search_provider: crate::cm_config::WebSearchProvider::Brave,
-        web_search_api_key: "",
-        web_search_max_results: 0,
-        web_search_proxy: "",
-        http_fetch_allowed_prefixes: &[],
-        http_fetch_timeout_secs: 0,
-        http_fetch_max_response_bytes: 0,
-        command_timeout_secs: 30,
-        read_file_turn_cache: None,
-        workspace_changelist: None,
-        test_result_cache_enabled: false,
-        test_result_cache_max_entries: 8,
-        long_term_memory_host: None,
-        tool_jobs_host: None,
-    }
-}
 
 fn sweep_append_project_profile(
     out: &mut String,
@@ -284,7 +258,7 @@ pub fn repo_overview_sweep_try(
 ) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let params = RepoSweepParams::from_json(&v);
-    let ctx = tool_ctx_stub(workspace_root, max_output_len);
+    let ctx = ToolContext::stub(workspace_root, max_output_len);
 
     let mut out = String::new();
     out.push_str("=== repo_overview_sweep（只读聚合）===\n");

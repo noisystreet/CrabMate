@@ -7,7 +7,7 @@ use crate::cm_tools::tool_result::{
 use crate::cm_types::Message;
 use serde_json::Value;
 
-use crate::cm_agent::log_preview::preview_chars;
+use crate::cm_types::text_utils::preview_chars;
 use crate::cm_agent::plan_artifact;
 use crate::cm_names as tool_names;
 

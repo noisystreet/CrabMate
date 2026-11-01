@@ -10,3 +10,4 @@ pub mod long_term_memory;
 pub mod long_term_memory_index;
 pub mod long_term_memory_recall;
 pub mod long_term_memory_store;
+pub(crate) mod vector_math;

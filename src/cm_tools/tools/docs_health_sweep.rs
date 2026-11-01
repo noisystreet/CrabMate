@@ -43,32 +43,6 @@ fn markdown_links_failed(block: &str) -> bool {
     block.contains("结论: 发现")
 }
 
-fn tool_context_for_sweep(workspace_root: &Path, max_output_len: usize) -> ToolContext<'_> {
-    ToolContext {
-        cfg: None,
-        codebase_semantic_host: None,
-        command_max_output_len: max_output_len,
-        weather_timeout_secs: 0,
-        allowed_commands: &[],
-        working_dir: workspace_root,
-        path_scope: crate::cm_types::PathScope::SessionRoot,
-        web_search_timeout_secs: 0,
-        web_search_provider: crate::cm_config::WebSearchProvider::Brave,
-        web_search_api_key: "",
-        web_search_max_results: 0,
-        web_search_proxy: "",
-        http_fetch_allowed_prefixes: &[],
-        http_fetch_timeout_secs: 0,
-        http_fetch_max_response_bytes: 0,
-        command_timeout_secs: 30,
-        read_file_turn_cache: None,
-        workspace_changelist: None,
-        test_result_cache_enabled: false,
-        test_result_cache_max_entries: 8,
-        long_term_memory_host: None,
-        tool_jobs_host: None,
-    }
-}
 
 /// `docs_health_sweep` 各阶段共用的 JSON / 路径 / 输出上限（避免 phase 函数长参数列表）。
 struct DocsSweepPhaseEnv<'a> {
@@ -437,7 +411,7 @@ pub fn docs_health_sweep_try(
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
 
-    let ctx = tool_context_for_sweep(workspace_root, max_output_len);
+    let ctx = ToolContext::stub(workspace_root, max_output_len);
 
     let mut sections: Vec<String> = Vec::new();
     let mut summary: Vec<(String, String)> = Vec::new();
