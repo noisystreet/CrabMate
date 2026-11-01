@@ -82,6 +82,11 @@ pub(crate) fn msg(role: &str, text: &str) -> Message {
 ///
 /// `summary` 单独给，是因为完成判定要区分「摘要」与「原始输出」；此前 3 份副本里
 /// 有一份写死 `summary = name`，调用方补同一个值即可。
+///
+/// **仅 `server` feature**：`cm_tools` 随 `lib_server.rs` 一起编译，`protocol`-only
+/// 构建（Client WASM / SSE 金样检查）里没有 `crate::cm_tools`。本模块的其余辅助
+/// 只依赖 `cm_types` 与 std，故不加门控。
+#[cfg(feature = "server")]
 pub(crate) fn tool_env(name: &str, summary: &str, output: &str) -> Message {
     let parsed = crate::cm_tools::tool_result::parse_tool_output(name, output);
     msg(
