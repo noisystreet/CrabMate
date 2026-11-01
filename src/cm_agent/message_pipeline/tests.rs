@@ -1,4 +1,4 @@
-use crate::cm_types::{FunctionCall, Message, ToolCall};
+use crate::cm_types::{Message, ToolCall};
 
 use super::{
     MessagePipelineConfig, MessagePipelineReport, MessagePipelineStage,
@@ -8,15 +8,7 @@ use super::{
 };
 
 fn tool_msg(s: &str) -> Message {
-    Message {
-        role: "tool".to_string(),
-        content: Some(s.into()),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: None,
-        tool_call_id: Some("1".into()),
-    }
+    Message::tool_result("1", s)
 }
 
 #[test]
@@ -33,15 +25,7 @@ fn compress_tool_truncates() {
 #[test]
 fn trim_by_count_keeps_system_and_latest_complete_group() {
     let mut v = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some("s".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only("s"),
         Message {
             role: "user".to_string(),
             content: Some("a".into()),
@@ -51,15 +35,7 @@ fn trim_by_count_keeps_system_and_latest_complete_group() {
             name: None,
             tool_call_id: None,
         },
-        Message {
-            role: "assistant".to_string(),
-            content: Some("b".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::assistant_only("b"),
         Message {
             role: "user".to_string(),
             content: Some("c".into()),
@@ -84,24 +60,8 @@ fn trim_by_count_keeps_only_complete_group_even_when_it_exceeds_cap() {
     let mut v = vec![
         Message::system_only("s"),
         Message::user_only("old_u"),
-        Message {
-            role: "assistant".to_string(),
-            content: Some("a1".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "assistant".to_string(),
-            content: Some("a2".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::assistant_only("a1"),
+        Message::assistant_only("a2"),
     ];
     trim_messages_by_count(&mut v, 2);
     assert_eq!(v.len(), 4);
@@ -117,15 +77,7 @@ fn trim_by_count_keeps_only_complete_group_even_when_it_exceeds_cap() {
 #[test]
 fn char_budget_drops_oldest_after_system() {
     let mut v = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some("s".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only("s"),
         Message {
             role: "user".to_string(),
             content: Some("aaaaaaaaaa".into()),
@@ -159,14 +111,7 @@ fn assistant_with_tool_calls() -> Message {
         content: None,
         reasoning_content: None,
         reasoning_details: None,
-        tool_calls: Some(vec![ToolCall {
-            id: "call_1".to_string(),
-            typ: "function".to_string(),
-            function: FunctionCall {
-                name: "x".to_string(),
-                arguments: "{}".to_string(),
-            },
-        }]),
+        tool_calls: Some(vec![ToolCall::function("call_1".to_string(), "x".to_string(), "{}".to_string())]),
         name: None,
         tool_call_id: None,
     }
@@ -175,14 +120,7 @@ fn assistant_with_tool_calls() -> Message {
 #[test]
 fn count_fallback_keeps_parallel_tool_chain_in_latest_group() {
     let mut assistant = assistant_with_tool_calls();
-    assistant.tool_calls.as_mut().expect("tool calls").push(ToolCall {
-        id: "call_2".to_string(),
-        typ: "function".to_string(),
-        function: FunctionCall {
-            name: "y".to_string(),
-            arguments: "{}".to_string(),
-        },
-    });
+    assistant.tool_calls.as_mut().expect("tool calls").push(ToolCall::function("call_2".to_string(), "y".to_string(), "{}".to_string()));
     let mut first_tool = tool_msg("one");
     first_tool.tool_call_id = Some("call_1".to_string());
     let mut second_tool = tool_msg("two");
@@ -243,15 +181,7 @@ fn server_injected_user_does_not_split_real_user_turn_group() {
 #[test]
 fn drop_orphan_tool_removes_leading_tools_after_trim() {
     let mut v = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some("s".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only("s"),
         tool_msg("orphan1"),
         tool_msg("orphan2"),
         Message {
@@ -276,15 +206,7 @@ fn drop_orphan_tool_removes_leading_tools_after_trim() {
 #[test]
 fn drop_orphan_tool_keeps_chain_after_assistant_tool_calls() {
     let mut v = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some("s".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only("s"),
         assistant_with_tool_calls(),
         tool_msg("a"),
         tool_msg("b"),
@@ -305,24 +227,8 @@ fn drop_orphan_tool_keeps_chain_after_assistant_tool_calls() {
 #[test]
 fn drop_orphan_tool_removes_tool_after_assistant_without_tool_calls() {
     let mut v = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some("s".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "assistant".to_string(),
-            content: Some("text only".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only("s"),
+        Message::assistant_only("text only"),
         tool_msg("bad"),
     ];
     drop_orphan_tool_messages(&mut v);
@@ -497,14 +403,7 @@ fn complete_pending_tool_responses_fills_missing_response() {
         .tool_calls
         .as_mut()
         .expect("tool calls")
-        .push(ToolCall {
-            id: "call_2".to_string(),
-            typ: "function".to_string(),
-            function: FunctionCall {
-                name: "y".to_string(),
-                arguments: "{}".to_string(),
-            },
-        });
+        .push(ToolCall::function("call_2".to_string(), "y".to_string(), "{}".to_string()));
     let mut first_tool = tool_msg("done");
     first_tool.tool_call_id = Some("call_1".to_string());
     let mut messages = vec![Message::user_only("u"), assistant, first_tool];
@@ -540,14 +439,7 @@ fn assistant_with_call_args(id: &str, args: &str) -> Message {
         content: None,
         reasoning_content: None,
         reasoning_details: None,
-        tool_calls: Some(vec![ToolCall {
-            id: id.to_string(),
-            typ: "function".to_string(),
-            function: FunctionCall {
-                name: "run_command".to_string(),
-                arguments: args.to_string(),
-            },
-        }]),
+        tool_calls: Some(vec![ToolCall::function(id.to_string(), "run_command".to_string(), args.to_string())]),
         name: None,
         tool_call_id: None,
     }
