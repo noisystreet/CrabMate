@@ -1,19 +1,27 @@
-//! 金样 fixture 的公共读取工具（`#[cfg(test)]`）。
+//! 金样 fixture 的公共读取工具（`#[cfg(all(test, feature = "protocol"))]`）。
 //!
 //! 8 个 golden 测试原先各自手抄同一段「读文件 → 逐行 `trim` → 跳过空行与 `#`
 //! 注释 → `serde_json` 解析 → 带 `文件:行号` 的失败文案」，另有 3 份 `line_ctx`
 //! 与 2 份 `repo_root` 副本。副本各自漂移的风险高于收益，故集中于此。语义与
 //! 失败文案保持不变（唯一例外见 [`for_each_jsonl_record`]）。
+//!
+//! **feature 门控**：本模块随 `protocol` 编译（[`msg`] 需要 `cm_types`）；其余辅助的
+//! 使用者全在 `server` 侧（`cm_ctl` / `agent` / `cm_agent`），故单独挂 `server`——否则
+//! `protocol`-only 构建会得到 4 个 `dead_code` 警告。
 
+#[cfg(feature = "server")]
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "server")]
 use serde::de::DeserializeOwned;
 
 #[cfg(feature = "server")]
 use crate::cm_agent::plan_artifact::PlanStepV1;
+#[cfg(feature = "protocol")]
 use crate::cm_types::Message;
 
 /// 仓库根。本 crate 就是 workspace 根，故 `CARGO_MANIFEST_DIR` 即所需路径。
+#[cfg(feature = "server")]
 #[must_use]
 pub(crate) fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,6 +31,7 @@ pub(crate) fn repo_root() -> PathBuf {
 ///
 /// 名字里必须带 pid + 纳秒：多个用例在同进程内并发取临时目录，少这一层就会互相
 /// 覆盖——`cm_ctl` 的 `lock` / `port_pool` 用例依赖该唯一性（#1241：此前 13 份副本）。
+#[cfg(feature = "server")]
 #[must_use]
 pub(crate) fn tempdir(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!(
@@ -40,6 +49,7 @@ pub(crate) fn tempdir(tag: &str) -> PathBuf {
 /// 金样断言的上下文串：`<path>:<1-based 行号> (<id>)`。
 ///
 /// 断言失败时靠它定位「哪个 fixture 的第几行、哪条用例」，因此格式被各金样共用。
+#[cfg(feature = "server")]
 #[must_use]
 pub(crate) fn line_ctx(path: &Path, line_no: usize, id: &str) -> String {
     format!("{}:{} ({})", path.display(), line_no + 1, id)
@@ -53,6 +63,7 @@ pub(crate) fn line_ctx(path: &Path, line_no: usize, id: &str) -> String {
 ///
 /// 与旧副本的**唯一**差异：`turn_completion_golden` 过去用
 /// `expect("parse golden line")`，现在统一成上面这条可诊断文案。
+#[cfg(feature = "server")]
 pub(crate) fn for_each_jsonl_record<T, F>(rel_path: &str, mut f: F)
 where
     T: DeserializeOwned,
@@ -86,6 +97,10 @@ where
 /// 此前 6 个文件各抄了一份同名同义的副本（`session_export` / `turn_completion` /
 /// `turn_completion_golden` / `task_level_evidence::verify` / `cm_chat_export::{schema,markdown}`），
 /// 任一字段改动都要改 6 处，故收敛于此。
+///
+/// **`protocol` feature**：`cm_types` 自身受 `protocol` 门控（见 `src/lib.rs`），
+/// 无任何 feature 的构建里 `Message` 并不存在，故本函数与上面的 import 一起门控。
+#[cfg(feature = "protocol")]
 pub(crate) fn msg(role: &str, text: &str) -> Message {
     Message {
         role: role.to_string(),
@@ -104,8 +119,8 @@ pub(crate) fn msg(role: &str, text: &str) -> Message {
 /// 有一份写死 `summary = name`，调用方补同一个值即可。
 ///
 /// **仅 `server` feature**：`cm_tools` 随 `lib_server.rs` 一起编译，`protocol`-only
-/// 构建（Client WASM / SSE 金样检查）里没有 `crate::cm_tools`。本模块的其余辅助
-/// 只依赖 `cm_types` 与 std，故不加门控。
+/// 构建（Client WASM / SSE 金样检查）里没有 `crate::cm_tools`。逐函数的门控理由
+/// 见模块头。
 #[cfg(feature = "server")]
 pub(crate) fn tool_env(name: &str, summary: &str, output: &str) -> Message {
     let parsed = crate::cm_tools::tool_result::parse_tool_output(name, output);
