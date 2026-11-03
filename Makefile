@@ -20,6 +20,7 @@ BACKEND_BIN := $(if $(filter 1 true yes,$(RELEASE)),$(BACKEND_BIN_RELEASE),$(BAC
 	backend backend-release \
 	workspace workspace-release \
 	package package-tar package-deb package-docker \
+	set-version \
 	test check fmt clippy \
 	clean clean-backend clean-dist
 
@@ -40,6 +41,12 @@ help:
 	@echo "  make package-tar      仅 tar.gz"
 	@echo "  make package-deb      仅 .deb（Linux + cargo-deb）"
 	@echo "  make package-docker   在 Docker 工具链镜像内 package（产物写入宿主 dist/）"
+	@echo ""
+	@echo "版本号（#1269；Cargo.toml 是唯一源头）："
+	@echo "  make set-version VERSION=X.Y.Z[-pre]"
+	@echo "                        改 [package] version，并重解 Cargo.lock、重生成"
+	@echo "                        docs/openapi.json 与 man/*.1，打印 CHANGELOG 骨架"
+	@echo "                        （只写文件，不 commit / 不打 tag / 不推送）"
 	@echo ""
 	@echo "质检："
 	@echo "  make test             cargo test --workspace"
@@ -109,6 +116,16 @@ package-docker:
 		-w /workspace \
 		"$(DOCKER_IMAGE)" \
 		make package
+
+# --- 版本号（#1269）：Cargo.toml 是唯一源头，派生文件由脚本一并重生成 ---
+# 用法：make set-version VERSION=0.8.1-alpha.0
+# 只写文件（Cargo.toml / Cargo.lock / docs/openapi.json / man/*.1），不 commit、不打 tag。
+SET_VERSION_SH := $(ROOT)/scripts/set-version.sh
+
+set-version:
+	@test -n "$(VERSION)" || { echo "用法：make set-version VERSION=X.Y.Z[-pre]（如 VERSION=0.8.1-alpha.0）" >&2; exit 1; }
+	@test -f "$(SET_VERSION_SH)" || { echo "缺少 $(SET_VERSION_SH)" >&2; exit 1; }
+	bash "$(SET_VERSION_SH)" "$(VERSION)"
 
 # --- 质检（可选）---
 
