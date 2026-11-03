@@ -11,8 +11,9 @@ use super::super::command_line_prepare::{
 use super::{
     PreparedRunCommand, RunCommandError, check_shell_variable_references,
     command_shell_script::{
-        allowlist_allows_all, argv_needs_posix_shell_wrap, is_shell_dash_c_invocation,
-        maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
+        allowlist_allows_all, argv_needs_posix_shell_wrap, glob_tokens_suppressed_by_quoting,
+        is_shell_dash_c_invocation, maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
+        ShellWrap,
     },
 };
 
@@ -412,6 +413,25 @@ fn skip_shell_variable_check(cmd_raw: &str, cmd_args: &[String], allowed: &[Stri
             && argv_needs_posix_shell_wrap(cmd_raw, cmd_args))
 }
 
+/// 经 `bash -c` 包装后的改写回显文案。
+fn shell_wrap_rewrite_label(before: &str, wrap: &ShellWrap) -> String {
+    format!(
+        "{before} → {} -c '{}'（shell 包装：{}）",
+        wrap.shell, wrap.script, wrap.reason
+    )
+}
+
+/// 含空白 + glob 的 token 会被引用成字面量，glob 不展开；给出可见提示而不是静默降级。
+fn quoted_glob_rewrite_label(tokens: &[String]) -> Option<String> {
+    if tokens.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "以下参数含空白，glob 不会展开（如需展开请用 script）：{}",
+        tokens.join("、")
+    ))
+}
+
 fn wrap_posix_shell_reresolve(
     cmd_raw: &mut String,
     cmd_args: &mut Vec<String>,
@@ -419,13 +439,14 @@ fn wrap_posix_shell_reresolve(
     exec_path: &mut Option<PathBuf>,
     working_dir: &Path,
     allowed_commands: &[String],
-) -> Result<(), RunCommandError> {
-    if maybe_wrap_argv_with_posix_shell(cmd_raw, cmd_args, allowed_commands) {
-        let wrapped = resolve_run_command_exec_path(cmd_raw, working_dir, allowed_commands)?;
-        *cmd_name = wrapped.0;
-        *exec_path = wrapped.1;
-    }
-    Ok(())
+) -> Result<Option<ShellWrap>, RunCommandError> {
+    let Some(wrap) = maybe_wrap_argv_with_posix_shell(cmd_raw, cmd_args, allowed_commands) else {
+        return Ok(None);
+    };
+    let wrapped = resolve_run_command_exec_path(cmd_raw, working_dir, allowed_commands)?;
+    *cmd_name = wrapped.0;
+    *exec_path = wrapped.1;
+    Ok(Some(wrap))
 }
 
 /// 初始 argv：显式 `script` 走 `shell -c`，否则沿用 `command` + `args`。
@@ -460,13 +481,13 @@ fn finalize_invocation(
     allowed_commands: &[String],
     skip_arg_safety: bool,
     validate_args: bool,
-) -> Result<(String, Option<PathBuf>), RunCommandError> {
+) -> Result<(String, Option<PathBuf>, Option<ShellWrap>), RunCommandError> {
     let (mut cmd_name, mut exec_path) =
         resolve_run_command_exec_path(cmd_raw, working_dir, allowed_commands)?;
     if validate_args && !skip_arg_safety {
         validate_run_command_args_safety(&cmd_name, cmd_args, exec_path.is_some())?;
     }
-    wrap_posix_shell_reresolve(
+    let wrap = wrap_posix_shell_reresolve(
         cmd_raw,
         cmd_args,
         &mut cmd_name,
@@ -474,6 +495,41 @@ fn finalize_invocation(
         working_dir,
         allowed_commands,
     )?;
+    Ok((cmd_name, exec_path, wrap))
+}
+
+/// [`finalize_invocation`] + 把 shell 包装相关的改写写入 `rewrites`。
+///
+/// 单独成函数，避免把这些分支堆进 `prepare_run_command_spec`（Rust CCN 棘轮 ≤10）。
+fn finalize_invocation_and_record(
+    cmd_raw: &mut String,
+    cmd_args: &mut Vec<String>,
+    working_dir: &Path,
+    allowed_commands: &[String],
+    skip_arg_safety: bool,
+    validate_args: bool,
+    rewrites: &mut Vec<String>,
+) -> Result<(String, Option<PathBuf>), RunCommandError> {
+    let before_finalize = super::format_invocation_for_display(cmd_raw, cmd_args);
+    let cmd_before_wrap = cmd_raw.clone();
+    let args_before_wrap = cmd_args.clone();
+    let (cmd_name, exec_path, wrap) = finalize_invocation(
+        cmd_raw,
+        cmd_args,
+        working_dir,
+        allowed_commands,
+        skip_arg_safety,
+        validate_args,
+    )?;
+    if let Some(wrap) = wrap.as_ref() {
+        rewrites.push(shell_wrap_rewrite_label(&before_finalize, wrap));
+        if let Some(note) = quoted_glob_rewrite_label(&glob_tokens_suppressed_by_quoting(
+            &cmd_before_wrap,
+            &args_before_wrap,
+        )) {
+            rewrites.push(note);
+        }
+    }
     Ok((cmd_name, exec_path))
 }
 
@@ -521,13 +577,14 @@ pub(super) fn prepare_run_command_spec(
         check_shell_variable_references(&cmd_raw, &cmd_args)?;
     }
 
-    let (cmd_name, exec_path) = finalize_invocation(
+    let (cmd_name, exec_path) = finalize_invocation_and_record(
         &mut cmd_raw,
         &mut cmd_args,
         &effective_working_dir,
         allowed_commands,
         skip_arg_safety,
         explicit_script.is_none(),
+        &mut rewrites,
     )?;
 
     Ok(PreparedRunCommand {
