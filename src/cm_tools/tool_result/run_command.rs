@@ -94,14 +94,7 @@ pub(super) fn extract_streams(output: &str) -> (String, String) {
 }
 
 pub(super) fn run_command_structured_payload(raw_output: &str) -> Value {
-    let invocation = raw_output
-        .lines()
-        .next()
-        .and_then(|line| line.strip_prefix("命令："))
-        .map(str::trim)
-        .unwrap_or("")
-        .to_string();
-    let body = strip_leading_command_invocation_line(raw_output);
+    let (invocation, body) = split_invocation_and_body(raw_output);
     let first = body.lines().next().unwrap_or("").trim();
     // 先按首行解析（单行命令的常态），失配再扫头部区域（多行回显的兜底）。
     let exit_code = parse_exit_code(first).or_else(|| exit_code_in_header_region(raw_output));
@@ -122,6 +115,44 @@ pub(super) fn run_command_structured_payload(raw_output: &str) -> Value {
         "stdout_nonempty": !stdout.is_empty(),
         "stderr_nonempty": !stderr.is_empty(),
     })
+}
+
+/// 渲染正文里 invocation 的终止标记行（`CommandOutcome::render_body` 的固定格式）。
+fn is_invocation_terminator(line: &str) -> bool {
+    line == "标准输出："
+        || line == "标准错误："
+        || line == "(无输出)"
+        || line.starts_with("退出码：")
+}
+
+/// 切出完整 invocation 与其后的正文。
+///
+/// 渲染格式是 `命令：{invocation}\n退出码：{code}\n[标准输出：…][标准错误：…]`，
+/// 而 invocation **可以跨多行**（多行脚本、多行 commit message）。只取 `.lines().next()`
+/// 会把它截断到第一行，下游据此展示或重放就只剩半截。超时与取消还会在最前面多一行提示，
+/// 所以也不能直接看首行前缀。
+///
+/// 残余歧义：invocation 自身若有**一整行**恰好以 `退出码：` 开头（脚本正文里写死这种文本），
+/// 会被当成边界。取第一个命中符合渲染顺序，且这种字面量极罕见。
+fn split_invocation_and_body(raw_output: &str) -> (String, &str) {
+    let Some(pos) = raw_output.find("命令：") else {
+        return (String::new(), raw_output);
+    };
+    let tail = &raw_output[pos + "命令：".len()..];
+    let mut invocation = String::new();
+    let mut consumed = 0usize;
+    for line in tail.split_inclusive('\n') {
+        let stripped = line.strip_suffix('\n').unwrap_or(line);
+        if is_invocation_terminator(stripped.trim()) {
+            break;
+        }
+        if !invocation.is_empty() {
+            invocation.push('\n');
+        }
+        invocation.push_str(stripped);
+        consumed += line.len();
+    }
+    (invocation.trim().to_string(), &tail[consumed..])
 }
 
 #[cfg(test)]
@@ -163,5 +194,39 @@ mod tests {
         assert_eq!(payload["exit_code"], serde_json::json!(0));
         assert_eq!(payload["ok"], serde_json::json!(true));
         assert_eq!(payload["stderr_nonempty"], serde_json::json!(false));
+    }
+
+    /// 多行 invocation 必须完整保留：曾只取 `.lines().next()`，
+    /// 多行脚本 / 多行 commit message 在载荷里只剩首行。
+    #[test]
+    fn multi_line_invocation_is_kept_whole() {
+        let raw = "命令：printf '[%s]' \"line1\nline2\"\n退出码：0\n标准输出：\n[line1\nline2]\n";
+        let payload = run_command_structured_payload(raw);
+        assert_eq!(
+            payload["invocation"],
+            serde_json::json!("printf '[%s]' \"line1\nline2\"")
+        );
+        assert_eq!(payload["exit_code"], serde_json::json!(0));
+    }
+
+    /// 多行 commit message（`-m` 里带真实换行与 `$` 字面量）同样完整。
+    #[test]
+    fn multi_line_commit_message_invocation_is_kept_whole() {
+        let raw =
+            "命令：git commit -m 'add $foo $bar\nhehe'\n退出码：0\n标准输出：\n[main 1234] add\n";
+        let payload = run_command_structured_payload(raw);
+        assert_eq!(
+            payload["invocation"],
+            serde_json::json!("git commit -m 'add $foo $bar\nhehe'")
+        );
+    }
+
+    /// 超时 / 取消时正文前多一行提示，invocation 仍要取到（曾因首行失配整段变空）。
+    #[test]
+    fn invocation_survives_timeout_prefix() {
+        let raw = "命令执行超时（5 秒）；子进程已发送终止信号。\n命令：sleep 30\n退出码：-1\n";
+        let payload = run_command_structured_payload(raw);
+        assert_eq!(payload["invocation"], serde_json::json!("sleep 30"));
+        assert_eq!(payload["exit_code"], serde_json::json!(-1));
     }
 }

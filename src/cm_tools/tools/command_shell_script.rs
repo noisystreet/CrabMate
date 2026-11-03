@@ -113,19 +113,22 @@ pub fn argv_needs_posix_shell_wrap(cmd: &str, args: &[String]) -> bool {
 /// 会被拼成 `env FOO=inner bash -c "echo FOO="`，内层永远看不到 `inner`。
 /// 因此命中它时不包装，让 argv 原样交给内层。
 ///
-/// 判定只看「跳过 `env FOO=bar …` 赋值前缀后的第一个非赋值元素」，
-/// 所以 `["echo", "bash", "-c"]` 这类把 shell 名当文字的调用不会被误判。
-/// 局限：`xargs bash -c …` 之类把 shell 名深埋在中段的包装器不在此列。
+/// 扫描**整个** argv 而不是只看第一个元素：包装器可以是 `env FOO=1`（赋值前缀），
+/// 也可以是 `env -u HOME` / `timeout 10` / `nice -n 5`（带选项或前置数字）。
+/// 只认「首个非赋值元素」时后一类会漏判，`$VAR` 仍被外层抢先展开
+/// （`env -u HOME bash -c "echo H=$HOME"` 曾输出真实路径而非空）。
+///
+/// 代价是有意宽松：`["cat", "bash", "-c"]` 这类把 shell 名当普通参数、
+/// 或 `["bash", "run.sh", "-c"]`（`-c` 实际传给 `run.sh`）也会被判为内层 shell。
+/// 代价方向是「少包装 → `$VAR` 不展开」，比静默错值轻。
 #[must_use]
 pub fn argv_invokes_nested_shell(cmd: &str, args: &[String]) -> bool {
     if is_shell_dash_c_invocation(cmd, args) {
         return true;
     }
-    let mut rest = args.iter().skip_while(|a| a.contains('='));
-    let Some(shell) = rest.next() else {
-        return false;
-    };
-    is_posix_shell_name(shell) && rest.any(|a| arg_is_shell_c_flag(a))
+    args.iter().enumerate().any(|(i, a)| {
+        is_posix_shell_name(a) && args[i + 1..].iter().any(|b| arg_is_shell_c_flag(b))
+    })
 }
 
 /// 返回第一个命中的模式标签（供错误/审批文案）。
@@ -550,9 +553,9 @@ mod tests {
 
     #[test]
     fn nested_shell_detection_edges() {
-        // 有意保守：只认「跳过赋值前缀后的首个元素」，不解析 cmd 是否为包装器。
+        // 有意宽松：只问「argv 里有没有 shell 名 + c flag」，不建模包装器程序。
         // 代价是 `echo bash -c "$HOME"` 这类把 shell 名当参数的调用也不再被外层包装
-        // （$VAR 不展开）；换来的是 `env` / `env FOO=1` 等包装器不会出现静默错误。
+        // （$VAR 不展开）；换来的是各种包装器形态都不会出现静默错值。
         assert!(argv_invokes_nested_shell(
             "echo",
             &["bash".into(), "-c".into()]
@@ -566,17 +569,55 @@ mod tests {
             "bash",
             &["-c".into(), "echo".into()]
         ));
-        // 有 shell 名但没有 -c：不是内层 shell 调用。
+        // 有 shell 名但没有 c flag：不是内层 shell 调用。
         assert!(!argv_invokes_nested_shell(
             "env",
             &["bash".into(), "run.sh".into()]
         ));
-        // 首个非赋值元素不是 shell 名。
+        // 没有 shell 名。
         assert!(!argv_invokes_nested_shell(
             "grep",
             &["a=b".into(), "file".into()]
         ));
         assert!(!argv_invokes_nested_shell("ls", &[]));
+    }
+
+    #[test]
+    fn nested_shell_detected_behind_wrapper_options() {
+        // 包装器的选项 / 前置数字不能掩盖内层 shell：只认「首个非赋值元素」会漏判，
+        // 外层照旧抢先展开 `$VAR`（`env -u HOME bash -c "echo H=$HOME"` 曾输出真实路径）。
+        assert!(argv_invokes_nested_shell(
+            "env",
+            &[
+                "-u".into(),
+                "HOME".into(),
+                "bash".into(),
+                "-c".into(),
+                "echo H=$HOME".into()
+            ]
+        ));
+        assert!(argv_invokes_nested_shell(
+            "env",
+            &[
+                "-i".into(),
+                "bash".into(),
+                "-c".into(),
+                "echo $HOME".into()
+            ]
+        ));
+        assert!(argv_invokes_nested_shell(
+            "timeout",
+            &[
+                "10".into(),
+                "bash".into(),
+                "-c".into(),
+                "echo $HOME".into()
+            ]
+        ));
+        assert!(argv_invokes_nested_shell(
+            "nice",
+            &["-n".into(), "5".into(), "bash".into(), "-c".into(), "x".into()]
+        ));
     }
 
     #[test]
