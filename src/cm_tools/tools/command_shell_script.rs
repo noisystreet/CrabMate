@@ -109,7 +109,7 @@ pub fn argv_needs_posix_shell_wrap(cmd: &str, args: &[String]) -> bool {
 /// 返回第一个命中的模式标签（供错误/审批文案）。
 ///
 /// 反引号与 `$(` 属于**命令替换**，不在此列出：它们不触发 shell 包装，
-/// 且在包装时会被转义为字面量（见 [`escape_command_substitution`]）。
+/// 且在包装时会被双引号包裹成字面量（见 [`quote_script_token`]）。
 #[must_use]
 pub fn detect_shell_expansion_token(s: &str) -> Option<&'static str> {
     let bytes = s.as_bytes();
@@ -177,47 +177,6 @@ fn contains_command_substitution(s: &str) -> bool {
     false
 }
 
-/// 把命令替换转义为字面量（供不经双引号的 token 使用）。
-///
-/// - 未转义的 `` ` `` 改写为 `` \` ``；
-/// - 未转义的 `$(` 改写为 `\$(`；
-/// - 已有的 `\X` 原样保留，避免二次转义把 `\$` 变成 `\\$`；
-/// - `$VAR` / glob / `~` 等既有展开行为不受影响。
-fn escape_command_substitution(arg: &str) -> String {
-    let chars: Vec<char> = arg.chars().collect();
-    let mut s = String::with_capacity(arg.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let ch = chars[i];
-        if ch == '\\' {
-            s.push('\\');
-            if let Some(next) = chars.get(i + 1) {
-                s.push(*next);
-                i += 2;
-            } else {
-                i += 1;
-            }
-            continue;
-        }
-        if ch == '`' {
-            s.push('\\');
-            s.push('`');
-            i += 1;
-            continue;
-        }
-        if ch == '$' && chars.get(i + 1) == Some(&'(') {
-            s.push('\\');
-            s.push('$');
-            s.push('(');
-            i += 2;
-            continue;
-        }
-        s.push(ch);
-        i += 1;
-    }
-    s
-}
-
 /// 用双引号包裹 token，尽量保持其 shell 原文语义。
 ///
 /// - 已有的 `\X` 转义（如 `\$`、`\"`、`\\`）原样保留，避免二次转义把 `\$` 变成 `\\$`（后者会先还原成 `\` 再展开变量）；
@@ -276,11 +235,10 @@ fn quote_script_token(arg: &str) -> String {
     let has_expansion = detect_shell_expansion_token(arg).is_some();
     let has_substitution = contains_command_substitution(arg);
     if has_expansion || has_substitution {
-        if arg.chars().any(char::is_whitespace) {
+        // 命令替换一律走双引号：双引号内 `\$` 是字面 `$`、`(` 无特殊性；
+        // 而裸改写 `\$(` 会留下未引用的 `(`，整行变成 bash 语法错误。
+        if has_substitution || arg.chars().any(char::is_whitespace) {
             return double_quote_token(arg);
-        }
-        if has_substitution {
-            return escape_command_substitution(arg);
         }
         return arg.to_string();
     }
@@ -332,25 +290,71 @@ pub fn dash_c_script_body(args: &[String]) -> Option<&str> {
     None
 }
 
+/// `bash -c` 包装的决策结果（供 `PreparedRunCommand::rewrites` 回显）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellWrap {
+    /// 实际使用的 shell（`bash` / `sh`）。
+    pub shell: &'static str,
+    /// 首个触发包装的模式标签（供回显 / 排障）。
+    pub reason: &'static str,
+    /// 拼成一行后的脚本正文。
+    pub script: String,
+}
+
+/// 首个触发包装的标签：优先展开类（`glob` / `$VAR` / `~`），其次 shell 操作符。
+fn wrap_reason(cmd: &str, args: &[String]) -> &'static str {
+    for t in argv_tokens(cmd, args) {
+        if let Some(label) = detect_shell_expansion_token(t.trim()) {
+            return label;
+        }
+    }
+    for t in argv_tokens(cmd, args) {
+        if token_is_shell_operator(t) {
+            return "shell operator";
+        }
+    }
+    "shell"
+}
+
+/// 含空白且含 glob 的 token 会被双引号包裹，其 glob **不会**展开（供回显提示）。
+#[must_use]
+pub fn glob_tokens_suppressed_by_quoting(cmd: &str, args: &[String]) -> Vec<String> {
+    argv_tokens(cmd, args)
+        .filter(|t| {
+            let t = t.trim();
+            !t.is_empty()
+                && t.chars().any(char::is_whitespace)
+                && matches!(detect_shell_expansion_token(t), Some("glob"))
+        })
+        .map(str::to_string)
+        .collect()
+}
+
 /// 若白名单含 bash/sh 且 argv 需要展开或含操作符，则改写为 `bash -c` / `sh -c`。
+///
+/// 返回包装信息（`None` = 未改写），供调用方写入 `rewrites` 显式回显——
+/// 包装本身会改变展开语义，静默改写会让调用方看不出差异。
 pub fn maybe_wrap_argv_with_posix_shell(
     cmd_raw: &mut String,
     cmd_args: &mut Vec<String>,
     allowed_commands: &[String],
-) -> bool {
+) -> Option<ShellWrap> {
     if is_shell_dash_c_invocation(cmd_raw, cmd_args) {
-        return false;
+        return None;
     }
-    let Some(shell) = posix_shell_on_allowlist(allowed_commands) else {
-        return false;
-    };
+    let shell = posix_shell_on_allowlist(allowed_commands)?;
     if !argv_needs_posix_shell_wrap(cmd_raw, cmd_args) {
-        return false;
+        return None;
     }
+    let reason = wrap_reason(cmd_raw, cmd_args);
     let script = join_run_command_shell_script(cmd_raw, cmd_args);
     *cmd_raw = shell.to_string();
-    *cmd_args = vec!["-c".to_string(), script];
-    true
+    *cmd_args = vec!["-c".to_string(), script.clone()];
+    Some(ShellWrap {
+        shell,
+        reason,
+        script,
+    })
 }
 
 #[cfg(test)]
@@ -394,9 +398,10 @@ mod tests {
         let mut cmd = "git".to_string();
         let mut args = vec!["commit".to_string(), "-m".to_string(), "fix `id`".to_string()];
         let allowed = vec!["git".to_string(), "bash".to_string()];
-        assert!(!maybe_wrap_argv_with_posix_shell(
-            &mut cmd, &mut args, &allowed
-        ));
+        assert!(
+            maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
+            "命令替换不应触发 shell 包装"
+        );
         assert_eq!(cmd, "git");
     }
 
@@ -408,7 +413,8 @@ mod tests {
         );
         assert_eq!(s, r#"git commit -m "fix \`id\`""#);
         let s = join_run_command_shell_script("echo", &["$(id)".into()]);
-        assert_eq!(s, r"echo \$(id)");
+        // 双引号内 `\$` 仍是字面 `$`、`(` 无特殊性，因此不会再出现裸 `\$(` 的语法错误。
+        assert_eq!(s, r#"echo "\$(id)""#);
         let s = join_run_command_shell_script("echo", &[r"a \`id\`".into()]);
         assert_eq!(s, r#"echo "a \`id\`""#);
         // 既有展开行为不变
@@ -419,7 +425,8 @@ mod tests {
     #[test]
     fn command_substitution_inside_expanding_token_stays_literal() {
         let s = join_run_command_shell_script("echo", &["$HOME/`id`".into()]);
-        assert_eq!(s, r"echo $HOME/\`id\`");
+        // 命令替换走双引号：双引号内 `\`` 是字面反引号，`$HOME` 仍展开。
+        assert_eq!(s, r#"echo "$HOME/\`id\`""#);
     }
 
     #[test]
@@ -440,11 +447,43 @@ mod tests {
         let mut cmd = "ls".to_string();
         let mut args = vec!["*.rs".to_string()];
         let allowed = vec!["ls".into(), "bash".into()];
-        assert!(maybe_wrap_argv_with_posix_shell(
-            &mut cmd, &mut args, &allowed
-        ));
+        let wrap = maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed)
+            .expect("glob 应触发 bash -c 包装");
         assert_eq!(cmd, "bash");
         assert_eq!(args, vec!["-c".to_string(), "ls *.rs".to_string()]);
+        assert_eq!(wrap.shell, "bash");
+        assert_eq!(wrap.reason, "glob");
+        assert_eq!(wrap.script, "ls *.rs");
+    }
+
+    #[test]
+    fn wrap_reports_reason_for_variable_and_operator() {
+        let mut cmd = "echo".to_string();
+        let mut args = vec!["$HOME".to_string()];
+        let allowed = vec!["echo".into(), "bash".into()];
+        let wrap = maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed)
+            .expect("$VAR 应触发包装");
+        assert_eq!(wrap.reason, "$VAR");
+        assert_eq!(wrap.script, "echo $HOME");
+
+        let mut cmd = "ls".to_string();
+        let mut args = vec!["src".to_string(), "&&".to_string(), "pwd".to_string()];
+        let allowed = vec!["ls".into(), "bash".into()];
+        let wrap = maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed)
+            .expect("独立操作符应触发包装");
+        assert_eq!(wrap.reason, "shell operator");
+        assert_eq!(wrap.script, "ls src && pwd");
+    }
+
+    #[test]
+    fn glob_with_whitespace_is_reported_as_suppressed() {
+        // 含空白 + glob 会被双引号包裹 → glob 不展开，必须能检测出来给提示。
+        let got = glob_tokens_suppressed_by_quoting("echo", &["src/*.rs count:".into()]);
+        assert_eq!(got, vec!["src/*.rs count:".to_string()]);
+        // 无空白的 glob 正常展开，不应误报。
+        assert!(glob_tokens_suppressed_by_quoting("ls", &["*.rs".into()]).is_empty());
+        // 纯文字含空白但无 glob，不报。
+        assert!(glob_tokens_suppressed_by_quoting("echo", &["hello world".into()]).is_empty());
     }
 
     #[test]
@@ -452,9 +491,10 @@ mod tests {
         let mut cmd = "git".to_string();
         let mut args = vec!["status".to_string()];
         let allowed = vec!["git".into(), "bash".into()];
-        assert!(!maybe_wrap_argv_with_posix_shell(
-            &mut cmd, &mut args, &allowed
-        ));
+        assert!(
+            maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
+            "无展开/操作符时不应包装"
+        );
         assert_eq!(cmd, "git");
     }
 
@@ -463,9 +503,10 @@ mod tests {
         let mut cmd = "bash".to_string();
         let mut args = vec!["-c".to_string(), "echo $HOME".to_string()];
         let allowed = vec!["bash".into()];
-        assert!(!maybe_wrap_argv_with_posix_shell(
-            &mut cmd, &mut args, &allowed
-        ));
+        assert!(
+            maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
+            "bash -c 已是 shell 调用，不应重复包装"
+        );
     }
 
     #[test]
@@ -486,9 +527,10 @@ mod tests {
         let mut cmd = "rg".to_string();
         let mut args = vec!["-e".to_string(), "foo?".to_string()];
         let allowed = vec!["rg".into(), "bash".into()];
-        assert!(!maybe_wrap_argv_with_posix_shell(
-            &mut cmd, &mut args, &allowed
-        ));
+        assert!(
+            maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
+            "foo? 不按 glob 处理，不应包装"
+        );
     }
 
     #[test]
@@ -545,7 +587,7 @@ mod tests {
         assert_eq!(posix_shell_on_allowlist(&star), Some("bash"));
         let mut cmd = "ls".to_string();
         let mut args = vec!["*.rs".to_string()];
-        assert!(maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &star));
+        assert!(maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &star).is_some());
         assert_eq!(cmd, "bash");
         assert_eq!(args, vec!["-c".to_string(), "ls *.rs".to_string()]);
     }
