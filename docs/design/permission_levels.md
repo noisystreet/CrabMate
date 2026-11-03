@@ -36,7 +36,7 @@
 
 1. **请求只能降级，不能提权**：`permission_level` 由客户端传入时须 ≤ 服务端上限，越界即钳制并记审计。
 2. **上限不由客户端控制**：`permission_level_max` 只来自服务端（显式 TOML / `CM_*`，或**按部署形态推导**，见 §5.1），不经 `client_llm` 等客户端可控字段。
-3. **L4 不等于免除不可逆操作确认**：删除/强推类确认仍在（§9 MB-4）。
+3. **L4 只免除「路径与命令白名单」，不免除工具自身的确认参数**：`delete_files` / `delete_dir` 的 `confirm=true` 与等级无关（§9 MB-4）。反过来也要说清：**命令轴没有 argv 门**，L4 下 `run_command` 执行 `git reset --hard` 与 `echo` 同路；该门已按 #1259 结案为「不实现」（理由见 MB-4）。
 
 ---
 
@@ -134,7 +134,7 @@
 - **L2 `workspace`**：能干活的**硬边界**档。越界不是“弹个窗”，而是明确报错并说明原因（文案须点出 `permission_level = workspace`），供无人值守场景安全使用。
   - **同时禁用 MCP 与动态工具**（`external_tools = Denied`）：`mcp__*` 与 `plugins/*.json` 的实际能力由**外部进程**决定，宿主侧的路径 / 命令 / 网络三轴**管不到**它们——放进来就等于没有硬边界。要 MCP 就用 L3（审批）或 L4（放行 + 审计），并接受它们不受 caps 约束。
 - **L3 `approved`**：**默认档**，与今天完全一致。越界弹审批，`AllowAlways` 在会话内持续有效。
-- **L4 `unrestricted`**：不受工作区路径与命令白名单限制。**仍需**不可逆操作确认（§9 MB-4），并写审计。
+- **L4 `unrestricted`**：不受工作区路径与命令白名单限制，并写审计。**命令轴全放行**——没有 argv 门，`git reset --hard` 与 `echo` 同路（MB-4，按 #1259 结案）；工具自身的 `confirm` 参数（`delete_files` / `delete_dir`）不因等级取消。
 
 ### 4.3 与既有四套机制的组合（只收紧）
 
@@ -512,7 +512,7 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 | **MB-1** | 请求体 `permission_level` 只能是**降级**；> `min(ceiling, role cap)` 时钳制到上限，**不静默**：由 `GET /permission` 的 `clamped_by` 对外解释。**落地修订**：早期草案要求「SSE 时间线与 `tracing` 同时记一条被钳制事件」，实现时已撤销该概念——`PermissionDecision` 刻意**没有** `clamped` 变体（钳制发生在 `resolve_permission_level_for_turn`，不属六轴任何一轴），审计事件只记 `allowed` / `denied` / `approved`；授权面本身也已无提权路径（见 §6.1）。 |
 | **MB-2** | `permission_level_max` 只来自服务端（显式 TOML / `CM_PERMISSION_LEVEL_MAX` / §5.1 的启动期推导）。**不得**加入 `/chat` 请求体、`client_llm`、`saved_model_*` 或任何客户端可控槽位。`POST /config/reload` 可**降**（即时生效）不可**升**（启动期冻结，实现形态见 §9.1）。 |
 | **MB-3** | 非 loopback 绑定时 **ceiling 推导值固定为 `approved`**（不因“没配”而变 `unrestricted`）；若**显式**配置 `permission_level_max = "unrestricted"` 而缺少 `CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`，则**启动失败**。共享 Bearer 的 Web 部署不得默认拿到 L4。 |
-| **MB-4** | **L4 不免除不可逆操作确认**：确认由工具自身 `confirm` 参数承担——`delete_files` / `delete_dir` 在 `cm_tools::tools::file::mutate` 里硬编码要求 `confirm=true`，与等级无关、也没有配置开关（曾经承诺的清单键因无消费点已按 #1260 移除）；`run_command` 的危险 argv（`git reset --hard` / `git push --force`）按设计应由 policy 单独判定，**但该门在实现中不存在**（见 `docs/待办清单.md` 权限等级章）。L4 只免除“路径与命令白名单”，不免除“删库确认”。 |
+| **MB-4** | **L4 不免除工具自身的确认参数；命令轴没有 argv 门（已结案，不实现）**：确认由工具自身 `confirm` 参数承担——`delete_files` / `delete_dir` 在 `cm_tools::tools::file::mutate` 里硬编码要求 `confirm=true`，与等级无关、也没有配置开关（曾经承诺的清单键因无消费点已按 #1260 移除）。命令轴的「不可逆 argv」门**明确决定不做**（#1259）：`run_command` 的 `git reset --hard` / `git push --force` 在允许它的每一档上都与 `echo` 同路。三条理由——(1) 它们本就是白名单内 `git` 的普通调用，而 `script` 字段、`terminal_session`、`python_snippet_run` 都能达到同样效果，故 argv 门只能算护栏、不是边界；(2) L4 的 `approval = AuditOnly` 没有弹窗，在那里硬拒会让 L4 比 L3 **更弱**，与 §6.1「等级只收窄」不一致；(3) 唯一的现实实现形态是 L2 硬拒 + L3 弹窗 + L4 放行，收益远小于被过度承诺的风险。**已知边界**：`git` 在默认白名单内，因此 L2 下 `git reset --hard` 也是静默执行的；要更窄的命令面就缩小 `allowed_commands`，不要指望等级。 |
 | **MB-5** | **审计必须脱敏**：L4 的 argv / URL 审计走 `src/cm_tools/redact.rs`，不得原样落日志（AGENTS.md → Secrets & logging 为硬约束）。 |
 | **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。**当前未落地**（§6.4 末尾「落地状态」）：`project_caps` 不读沙盒配置、`PermissionClamp` 无 `sandbox`，故这条规则今天是**待实现**而非既有保证。 |
 | **MB-7** | **L0 不得被绕过**：即便 `tools` 数组为空，执行侧仍有 early-deny（§8.1）；两层都生效，防止模型伪造 `tool_calls` 直穿。 |
@@ -603,7 +603,7 @@ dst.permission.permission_level_max =
 | 集成 | `evaluate_policy` 在 L2（未命中→`Denied`，无审批弹窗）/ L3（逐字等价现状）/ L4（`Any`，永不弹窗）—— 直接扩 `execute_run_command_gate_tests.rs` |
 | 集成 | `resolve_for_read` / `resolve_for_write` 在 `PathScope::Any` 下接受绝对路径与 `..`；L2 下仍拒（现有断言保留不动） |
 | 安全 | **原计划的 `tests/permission_matrix.rs` 未按该文件名建立**（现状如实）：同一条矩阵目前分散在——`cm_config::permission::tests::{derives_ceiling_by_deployment_shape, non_loopback_unrestricted_requires_explicit_switch, reload_only_lowers_the_ceiling}`（ceiling 推导 / 热重载只降 / MB-3 启动校验）、`cm_agent::permission_tests::{request_above_ceiling_is_clamped, persisted_intent_is_reclamped_against_new_ceiling}`（钳制与持久值重算）、`cm_internal::tool_registry::execute::execute_allowlist_scope_tests::allow_always_key_does_not_cross_permission_levels`（`l{n}|` 键不跨级命中：L3 批过的命令在 L2 落硬拒、不留裸键）、`tests/workflow_permission_levels.rs`（二级执行面：L2 硬拒 / L4 `AuditOnly`） |
-| 安全 | **MB-4 的确认门已按 L4 覆盖**：`cm_tools::tools::file::permission_confirm_gate_tests`（`PathScope::Any` 驱动 `delete_dir` / `delete_files`，含「L2 带 `confirm` 仍被硬拒」的判别式对照，证明 L4 的放行来自路径轴而非确认门被放宽）。**危险 argv 门在实现中不存在**：`src/` 无 `git reset --hard` / `git push --force` 判定，`SensitiveCapability` 无该能力类——故无对象可测，去向见 `docs/待办清单.md` 权限等级章；曾经描述该承诺的配置键已按 #1260 移除 |
+| 安全 | **MB-4 的确认门已按 L4 覆盖**：`cm_tools::tools::file::permission_confirm_gate_tests`（`PathScope::Any` 驱动 `delete_dir` / `delete_files`，含「L2 带 `confirm` 仍被硬拒」的判别式对照，证明 L4 的放行来自路径轴而非确认门被放宽）。**命令轴 argv 门按 #1259 结案：决定不实现**——`src/` 无 `git reset --hard` / `git push --force` 判定、`SensitiveCapability` 无该能力类，故无对象可测；理由（L4 无弹窗、被 `script` / `terminal_session` / `python_snippet_run` 旁路、会破坏等级单调性）见 MB-4，`docs/工具说明.md` 与 `docs/en/TOOLS.md` 的旧承诺已同步删除 |
 | 单元 | **ceiling 推导三态**：`bind_ip.is_loopback()` → `unrestricted`；非 loopback → `approved`；显式配置时 → `config`（`ceiling_source` 随之变化） |
 | 集成 | `GET /permission?agent_role=<id>` 的 `available` 随角色 cap 收窄；缺省用 `default_agent_role_id` |
 | 安全 | **L1 不依赖 `is_readonly_tool`**：故意配置 `tool_registry_write_effect_tools` 漏掉 `run_command` 后，L1 仍须拒它（防性能开关变安全开关） |
