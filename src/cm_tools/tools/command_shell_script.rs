@@ -106,6 +106,28 @@ pub fn argv_needs_posix_shell_wrap(cmd: &str, args: &[String]) -> bool {
     argv_needs_shell_expansion(cmd, args) || argv_has_shell_operators(cmd, args)
 }
 
+/// argv 中是否已经存在内层 shell 调用（`bash`/`sh` 后跟 `-c`）。
+///
+/// 这类调用自带完整的 shell 语义：glob / `$VAR` / `$(…)` 都由内层自己解释。
+/// 外层再包装一次只会**抢先**把 `$VAR` 展开——`env FOO=inner bash -c "echo FOO=$FOO"`
+/// 会被拼成 `env FOO=inner bash -c "echo FOO="`，内层永远看不到 `inner`。
+/// 因此命中它时不包装，让 argv 原样交给内层。
+///
+/// 判定只看「跳过 `env FOO=bar …` 赋值前缀后的第一个非赋值元素」，
+/// 所以 `["echo", "bash", "-c"]` 这类把 shell 名当文字的调用不会被误判。
+/// 局限：`xargs bash -c …` 之类把 shell 名深埋在中段的包装器不在此列。
+#[must_use]
+pub fn argv_invokes_nested_shell(cmd: &str, args: &[String]) -> bool {
+    if is_shell_dash_c_invocation(cmd, args) {
+        return true;
+    }
+    let mut rest = args.iter().skip_while(|a| a.contains('='));
+    let Some(shell) = rest.next() else {
+        return false;
+    };
+    is_posix_shell_name(shell) && rest.any(|a| arg_is_shell_c_flag(a))
+}
+
 /// 返回第一个命中的模式标签（供错误/审批文案）。
 ///
 /// 反引号与 `$(` 属于**命令替换**，不在此列出：它们不触发 shell 包装，
@@ -334,12 +356,17 @@ pub fn glob_tokens_suppressed_by_quoting(cmd: &str, args: &[String]) -> Vec<Stri
 ///
 /// 返回包装信息（`None` = 未改写），供调用方写入 `rewrites` 显式回显——
 /// 包装本身会改变展开语义，静默改写会让调用方看不出差异。
+///
+/// argv 里已有内层 shell 调用时一律不包装（见 [`argv_invokes_nested_shell`]）：
+/// 那种情况下展开应全部交给内层，外层插手只会破坏 `$VAR` 的值。
+/// 注意 `argv_needs_posix_shell_wrap` 仍返回 `true`，因此变量检查豁免与审批
+/// `needs_shell` 保持原样——只有「实际包装」这一步被切断。
 pub fn maybe_wrap_argv_with_posix_shell(
     cmd_raw: &mut String,
     cmd_args: &mut Vec<String>,
     allowed_commands: &[String],
 ) -> Option<ShellWrap> {
-    if is_shell_dash_c_invocation(cmd_raw, cmd_args) {
+    if argv_invokes_nested_shell(cmd_raw, cmd_args) {
         return None;
     }
     let shell = posix_shell_on_allowlist(allowed_commands)?;
@@ -484,6 +511,72 @@ mod tests {
         assert!(glob_tokens_suppressed_by_quoting("ls", &["*.rs".into()]).is_empty());
         // 纯文字含空白但无 glob，不报。
         assert!(glob_tokens_suppressed_by_quoting("echo", &["hello world".into()]).is_empty());
+    }
+
+    #[test]
+    fn nested_shell_in_argv_is_not_wrapped() {
+        // `env FOO=inner bash -c "echo FOO=$FOO"`：外层若包装会抢先把 $FOO 展开成空，
+        // 内层永远看不到 inner。命中内层 shell 时必须放弃包装，让 argv 原样传递。
+        let mut cmd = "env".to_string();
+        let mut args = vec![
+            "FOO=inner".to_string(),
+            "bash".to_string(),
+            "-c".to_string(),
+            "echo FOO=$FOO".to_string(),
+        ];
+        let allowed = vec!["env".to_string(), "bash".to_string()];
+        assert!(
+            maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
+            "内层已有 bash -c 时不应由外层包装"
+        );
+        assert_eq!(cmd, "env");
+        assert_eq!(args[3], "echo FOO=$FOO");
+    }
+
+    #[test]
+    fn nested_shell_keeps_wrap_and_approval_semantics() {
+        // 只切断「实际包装」这一步：变量检查豁免与审批 needs_shell 仍须为 true，
+        // 否则 `$FOO` 会被 check_shell_variable_references 误报为 ShellVariableDetected。
+        let cmd = "env";
+        let args = vec![
+            "FOO=inner".to_string(),
+            "bash".to_string(),
+            "-c".to_string(),
+            "echo FOO=$FOO".to_string(),
+        ];
+        assert!(argv_needs_posix_shell_wrap(cmd, &args));
+        assert!(argv_invokes_nested_shell(cmd, &args));
+    }
+
+    #[test]
+    fn nested_shell_detection_edges() {
+        // 有意保守：只认「跳过赋值前缀后的首个元素」，不解析 cmd 是否为包装器。
+        // 代价是 `echo bash -c "$HOME"` 这类把 shell 名当参数的调用也不再被外层包装
+        // （$VAR 不展开）；换来的是 `env` / `env FOO=1` 等包装器不会出现静默错误。
+        assert!(argv_invokes_nested_shell(
+            "echo",
+            &["bash".into(), "-c".into()]
+        ));
+        assert!(argv_invokes_nested_shell(
+            "env",
+            &["FOO=1".into(), "sh".into(), "-c".into(), "echo".into()]
+        ));
+        // cmd 本身是 shell -c：统一口径也算。
+        assert!(argv_invokes_nested_shell(
+            "bash",
+            &["-c".into(), "echo".into()]
+        ));
+        // 有 shell 名但没有 -c：不是内层 shell 调用。
+        assert!(!argv_invokes_nested_shell(
+            "env",
+            &["bash".into(), "run.sh".into()]
+        ));
+        // 首个非赋值元素不是 shell 名。
+        assert!(!argv_invokes_nested_shell(
+            "grep",
+            &["a=b".into(), "file".into()]
+        ));
+        assert!(!argv_invokes_nested_shell("ls", &[]));
     }
 
     #[test]
