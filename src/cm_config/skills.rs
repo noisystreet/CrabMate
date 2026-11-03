@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::cm_config::skills_frontmatter::parse_skill_frontmatter;
 use crate::cm_config::types::SkillsConfigSection;
 
 #[derive(Debug, Clone)]
@@ -8,7 +9,7 @@ pub struct SkillDoc {
     pub display_path: String,
     pub content: String,
     pub name: Option<String>,
-    /// Frontmatter `description:`（单行）；缺省时 UI 可用正文首行作回退。
+    /// Frontmatter `description:`（YAML 块标量已折叠为单行文本）；缺省时 UI 可用正文首行作回退。
     pub description: Option<String>,
 }
 
@@ -99,39 +100,6 @@ pub(crate) fn skill_path_stem(display_path: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn parse_frontmatter_scalar(rest: &str) -> Option<String> {
-    let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
-    if v.is_empty() {
-        None
-    } else {
-        Some(v.to_string())
-    }
-}
-
-fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>) {
-    let mut lines = content.lines();
-    if lines.next().map(str::trim) != Some("---") {
-        return (None, None);
-    }
-    let mut name = None;
-    let mut description = None;
-    for line in lines {
-        let t = line.trim();
-        if t == "---" {
-            break;
-        }
-        if let Some(rest) = t.strip_prefix("name:") {
-            if name.is_none() {
-                name = parse_frontmatter_scalar(rest);
-            }
-        } else if let Some(rest) = t.strip_prefix("description:")
-            && description.is_none()
-        {
-            description = parse_frontmatter_scalar(rest);
-        }
-    }
-    (name, description)
-}
 
 /// UI / 补全用短描述：优先 frontmatter `description`，否则取正文首个非空行（去 `#` 标题前缀）。
 pub fn skill_ui_description(doc: &SkillDoc) -> String {
@@ -824,5 +792,26 @@ mod tests {
         .unwrap();
         assert_eq!(docs.len(), 1);
         assert_eq!(docs[0].name.as_deref(), Some("ok"));
+    }
+
+    /// 真实技能文件的常见写法：`description: >-` + 缩进多行（YAML 折叠块标量）。
+    const BLOCK_DESC_SKILL: &str = "---\nname: api-design\ndescription: >-\n  Design and review APIs,\n  including REST/HTTP contracts.\n---\n# API Design\n\nBody.\n";
+    #[test]
+    fn block_scalar_description_survives_the_layer_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skills = tmp.path().join(".crabmate/skills");
+        write_skill(&skills.join("api-design"), "SKILL.md", BLOCK_DESC_SKILL);
+        let docs = list_skills(SkillsListOpts {
+            workspace_base_dir: tmp.path(),
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: "",
+            skills_system_dir: "",
+        })
+        .unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(
+            docs[0].description.as_deref(),
+            Some("Design and review APIs, including REST/HTTP contracts.")
+        );
     }
 }
