@@ -51,6 +51,12 @@ jobs:
       - name: builtin tool name literals (ratchet, #1155)
         run: bash scripts/tool-name-literal-ratchet.sh
 
+      # 版本号衍生文件守卫（#1269）：docs/openapi.json 的 info.version 与 man/*.1 的版本串
+      # 必须等于 Cargo.toml 的 [package] version。与 pre-commit 同一个脚本；比 client-contract
+      # 里的 openapi 快照测试更直白（后者报「drifted (fields: ["info"])」，看不出是版本号）。
+      - name: version sync guard (Cargo.toml → openapi.json · man/*.1)
+        run: bash scripts/check-version-sync.sh
+
       - name: cargo check (crabmate default features)
         run: cargo check -p crabmate
 

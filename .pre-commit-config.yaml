@@ -125,6 +125,18 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # 版本号衍生文件（#1269）：`docs/openapi.json` 的 info.version 与两个 man 页的
+      # 版本串都由 `[package] version` 派生。openapi 快照本身有 cargo test 守着，但它只在
+      # client-contract job 跑、失败信息是「drifted (fields: ["info"])」，看不出与版本号
+      # 有关（#1267 就是这么红的）；man 页此前**完全没有信号**——没人跑 gen-man 就永远绿。
+      # 只做几次 grep/awk，毫秒级，故 always_run。修法：`make set-version VERSION=…`。
+      - id: check-version-sync
+        name: version sync (Cargo.toml → Cargo.lock · openapi.json · man/*.1)
+        entry: bash scripts/check-version-sync.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       - id: check-docs-links
         name: docs relative link check
         entry: python3 scripts/check-docs-links.py

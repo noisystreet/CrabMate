@@ -11,7 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- **`make set-version VERSION=X.Y.Z[-pre]` (`scripts/set-version.sh`) + `scripts/check-version-sync.sh`: a version bump is one command again, and the derived files can no longer drift silently.** `AGENTS.md` claimed `Cargo.toml` → `[package] version` was the single point of truth, which is true of the *source* but not of its *products*: at least three spots carry the version and were expected to be edited from memory. Cutting **`v0.8.1-alpha.0`** showed the cost — `docs/openapi.json` → `info.version` was missed, and the `client-contract` job went red with `docs/openapi.json drifted (fields: ["info"])`, a message that looks like contract drift and says nothing about versions (patched by #1268); the two `man/*.1` pages still said **`0.8.0`** and had **no** signal at all, because regeneration was manual and nothing failed when nobody ran it. The new entry point removes the memory requirement: `make set-version` rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` via `CRABMATE_BLESS=1`, regenerates both man pages via `crabmate-gen-man`, and then prints the two lines the CHANGELOG needs — the `## [X.Y.Z]` heading using the **core** version (a `-pre` heading silently breaks `release.yml`'s `^## \[<core>\]` extraction and degrades the Release body to a stub) plus the bottom link-reference line. It writes files only: no commit, no tag, no push, and the CHANGELOG prose stays hand-written. The companion guard `scripts/check-version-sync.sh` (pre-commit hook `check-version-sync` + a `ci.yml` step) asserts `docs/openapi.json` → `info.version`, both man pages' `.TH`/`VERSION` strings and the `Cargo.lock` entry all equal `[package] version`, and fails with `derived file X says A, Cargo.toml says B` instead of making the reader infer the cause. Re-running `make set-version` with the *current* version is the supported way to re-sync derived files. Refs #1269.
 
 ### Changed
 
@@ -19,7 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- (none yet)
+- **`man/crabmate.1` / `man/crabmatectl.1` were still stamped `0.8.0` while the package was `0.8.1-alpha.0`**, so a `.deb`/tarball install showed a man page whose `.TH` and VERSION section disagreed with `crabmate -V` — nothing caught it because man regeneration was manual and untested. Both pages are regenerated here, and the new version-sync guard keeps them in step from now on. Refs #1269.
 
 ## [0.8.1] - 2026-11-03
 

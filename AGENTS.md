@@ -112,7 +112,7 @@ Three entry points exist and they are **not** interchangeable — running the wr
 
 | When | Command | Covers |
 |------|---------|--------|
-| Before every commit | `pre-commit run --all-files` | `cargo fmt`, `cargo clippy -D warnings`, `cargo doc` (rustdoc warnings denied), crate-dep policy, lizard CCN, fn param/nloc ratchets, builtin tool-name literal ratchet, `taplo` |
+| Before every commit | `pre-commit run --all-files` | `cargo fmt`, `cargo clippy -D warnings`, `cargo doc` (rustdoc warnings denied), crate-dep policy, lizard CCN, fn param/nloc ratchets, builtin tool-name literal ratchet, version sync (`scripts/check-version-sync.sh`), `taplo` |
 | Build / package | `make backend` / `make package` (see `make help`) | Compilation and release artifacts; **not** a gate |
 | Full test suite | `make test` (i.e. `cargo test --workspace`) | Also run in CI |
 
@@ -221,7 +221,10 @@ Adding or renaming a tool — 3 steps:
 
 ### Release & versioning
 
-**Single source of version truth: `Cargo.toml` → `[package] version`.** There is no separate version file to keep in sync.
+**Single source of version truth: `Cargo.toml` → `[package] version`.** There is no second **source** — but there are **derived files**, so a bump is not a one-line edit:
+
+- **Bump with `make set-version VERSION=X.Y.Z[-pre]`** (= `scripts/set-version.sh`), never by hand. One command rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` (`CRABMATE_BLESS=1`) and both `man/*.1` pages (`crabmate-gen-man`), then prints the suggested `## [X.Y.Z]` heading + link-reference line for `CHANGELOG.md` (the prose stays hand-written). It **writes files only** — no commit, no tag, no push. Re-running it with the current version is the supported way to re-sync the derived files.
+- **`scripts/check-version-sync.sh`** guards the result (pre-commit hook `check-version-sync` + a step in `ci.yml`): it asserts `docs/openapi.json` → `info.version`, both `man/*.1` version strings and the `Cargo.lock` entry equal `[package] version`, and says `derived file X says A, Cargo.toml says B` — unlike `openapi_docs_snapshot_matches_spec`, which only runs in the `client-contract` job and reports `drifted (fields: ["info"])`, and unlike the man pages, which previously had **no** signal at all (#1269).
 
 - **Tag format**: `vX.Y.Z`, optionally `vX.Y.Z-rc.N`. `.github/workflows/release.yml` rejects anything not matching `^v[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$`, and **fails the run** when the tag's core `X.Y.Z` does not match `Cargo.toml`. A prerelease tag (`v0.1.0-rc.1`) is allowed while `Cargo.toml` stays at `0.1.0`.
 - **Cut the CHANGELOG before tagging**: the workflow extracts the `## [X.Y.Z]` section from `CHANGELOG.md` as the GitHub Release body; a missing section yields a stub body plus a warning. So “move `[Unreleased]` into `## [X.Y.Z]`” is part of the release, not an afterthought.
