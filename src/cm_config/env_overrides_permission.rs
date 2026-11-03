@@ -28,10 +28,6 @@ pub(super) fn apply_env_permission_overrides(b: &mut ConfigBuilder) {
         &mut perm.permission_deny_system_paths,
         "CM_PERMISSION_DENY_SYSTEM_PATHS",
     );
-    apply_csv_allow_empty(
-        &mut perm.permission_confirm_tools,
-        "CM_PERMISSION_CONFIRM_TOOLS",
-    );
     apply_bool(
         &mut perm.allow_unrestricted_permission_for_non_loopback,
         "CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK",

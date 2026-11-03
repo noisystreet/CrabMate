@@ -173,7 +173,6 @@ pub(crate) struct ConfigBuilderPermission {
     /// 显式空数组 = 配置错误（见 `validate_permission_config`），故用允许空的覆盖。
     pub(crate) permission_read_tools: Option<Vec<String>>,
     pub(crate) permission_deny_system_paths: Option<Vec<String>>,
-    pub(crate) permission_confirm_tools: Option<Vec<String>>,
     pub(crate) allow_unrestricted_permission_for_non_loopback: Option<bool>,
 }
 

@@ -84,10 +84,6 @@ impl ConfigBuilder {
             &mut perm.permission_deny_system_paths,
             &agent.permission_deny_system_paths,
         );
-        override_opt_vec_allow_empty(
-            &mut perm.permission_confirm_tools,
-            &agent.permission_confirm_tools,
-        );
         perm.allow_unrestricted_permission_for_non_loopback = agent
             .allow_unrestricted_permission_for_non_loopback
             .or(perm.allow_unrestricted_permission_for_non_loopback);
