@@ -16,6 +16,7 @@ mod load;
 mod permission;
 mod scheduled_agent_task;
 pub mod skills;
+mod skills_frontmatter;
 pub mod skills_slash;
 mod source;
 
