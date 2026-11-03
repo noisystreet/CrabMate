@@ -9,6 +9,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- (none yet)
+
+### Changed
+
+- (none yet)
+
+### Fixed
+
+- (none yet)
+
+## [0.8.1] - 2026-11-03
+
+**Git pre-release `v0.8.1-alpha.0`** (first alpha after **`v0.8.0`**). crates.io remains **`0.8.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+
+One entry below is **BREAKING** for existing configs: `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`), and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
+
 ### Removed
 
 - **The `permission_confirm_tools` config key and `CM_PERMISSION_CONFIRM_TOOLS` are removed — the key never had a consumer.** It was parsed from TOML, merged from the environment variable, trimmed, and stored on `PermissionConfig`; nothing ever read it. The confirm gate that does exist is hard-coded inside the tools (`delete_files` / `delete_dir` require `confirm=true` in `cm_tools::tools::file::mutate`, regardless of permission level), so the key advertised a switch that did nothing: `docs/配置说明.md` and design §9 MB-4 told operators they could decide *which* tools must confirm by editing that list, an empty list looked like a way to switch the confirmation off entirely, and neither was true. Wiring the list up was considered and rejected deliberately — there is no generic confirm middleware, so honouring it would have turned a hard-coded safety default into a switch that `CM_PERMISSION_CONFIRM_TOOLS=[]` disables. **Removed**: the TOML key (`config/default_config.toml`), the env override, the `PermissionConfig` field, and its builder / merge plumbing. The permission docs now state plainly that the confirm requirement comes from each tool's own `confirm` argument and has no configuration switch. **Migration — breaking for existing configs**: delete the line from `[agent]` in your TOML. `AgentSection` is `deny_unknown_fields`, so a leftover `permission_confirm_tools` now **fails the config load** rather than being ignored; a leftover `CM_PERMISSION_CONFIRM_TOOLS` in the environment is simply no longer read (silently ignored, no startup failure). Behaviour is unchanged either way: `delete_files` / `delete_dir` still require `confirm=true` at every level, including `unrestricted`. The neighbouring gap — `run_command`'s dangerous-argv gate (`git reset --hard` / `git push --force`) being promised by the docs but never implemented — is a separate issue and stays tracked in `docs/待办清单.md`. Refs #1260.
@@ -488,7 +506,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.0...HEAD
+[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.0...v0.8.1-alpha.0
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...v0.6.0
