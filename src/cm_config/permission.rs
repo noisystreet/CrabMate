@@ -132,8 +132,8 @@ pub fn reconcile_default_level_with_ceiling(
 }
 
 /// 校验权限配置（启动期）。当前只做**无需工具注册表**的检查：`cm_config` 不得依赖 `cm_tools`，
-/// 「`permission_chat_control_tools` / `permission_confirm_tools` 里的名字须存在于
-/// `tool_specs_registry`」放在消费点（S2 的 early-deny / 确认门）校验。
+/// 「`permission_chat_control_tools` 里的名字须存在于 `tool_specs_registry`」放在消费点
+/// （S2 的 early-deny）校验。
 pub fn validate_permission_config(perm: &PermissionConfig) -> Result<(), String> {
     if let Some(list) = &perm.permission_read_tools
         && list.is_empty()
@@ -184,9 +184,6 @@ pub(crate) fn derive_permission_config(
         permission_read_tools: read_tools,
         permission_deny_system_paths: trim_drop_empty(
             raw.permission_deny_system_paths.clone().unwrap_or_default(),
-        ),
-        permission_confirm_tools: trim_drop_empty(
-            raw.permission_confirm_tools.clone().unwrap_or_default(),
         ),
         allow_unrestricted_permission_for_non_loopback: raw
             .allow_unrestricted_permission_for_non_loopback

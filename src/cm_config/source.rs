@@ -275,8 +275,6 @@ pub(super) struct AgentSection {
     pub(super) permission_read_tools: Option<Vec<String>>,
     /// 仅 L4 生效的可选敏感前缀加固；默认空 = 不设黑名单。`CM_PERMISSION_DENY_SYSTEM_PATHS`
     pub(super) permission_deny_system_paths: Option<Vec<String>>,
-    /// 任何等级都不豁免的不可逆操作确认清单。`CM_PERMISSION_CONFIRM_TOOLS`
-    pub(super) permission_confirm_tools: Option<Vec<String>>,
     /// 非 loopback 下显式允许把上限提到 `unrestricted`；否则启动失败。`CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK`
     pub(super) allow_unrestricted_permission_for_non_loopback: Option<bool>,
     pub(super) web_api_bearer_token: Option<String>,
@@ -480,6 +478,9 @@ typo_unknown_key = 1
             "cursor_rules_dir = \".cursor/rules\"",
             "cursor_rules_include_agents_md = true",
             "cursor_rules_max_chars = 48000",
+            // 已移除：`permission_confirm_tools` 从来没有消费点（确认由工具自身 `confirm` 承担），
+            // 留着只会让人以为改它能改变行为；见 #1260 与 CHANGELOG 的 Removed 条。
+            "permission_confirm_tools = [\"delete_dir\", \"delete_files\"]",
         ] {
             let toml = format!(
                 r#"

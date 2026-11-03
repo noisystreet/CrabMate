@@ -180,8 +180,6 @@ pub struct PermissionConfig {
     pub permission_read_tools: Option<Vec<String>>,
     /// 仅 L4 生效的**可选**敏感前缀加固（默认空 = 不设黑名单，§8.3）。
     pub permission_deny_system_paths: Vec<String>,
-    /// 任何等级都不豁免的不可逆操作确认清单（§9 MB-4）。
-    pub permission_confirm_tools: Vec<String>,
     /// 非 loopback 绑定下显式允许把上限提到 `unrestricted`（否则启动失败，§9 MB-3）。
     pub allow_unrestricted_permission_for_non_loopback: bool,
 }

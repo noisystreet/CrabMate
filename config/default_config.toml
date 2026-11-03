@@ -110,8 +110,6 @@ permission_level = "approved"
 # permission_read_tools = ["read_file", "read_dir", "glob_files"]
 # 仅 L4 生效的**可选**敏感前缀加固；默认空（unrestricted 名实相符）。CM_PERMISSION_DENY_SYSTEM_PATHS
 # permission_deny_system_paths = ["/proc", "/sys", "/dev"]
-# 任何等级都不豁免的不可逆操作确认清单（delete 类）。CM_PERMISSION_CONFIRM_TOOLS
-permission_confirm_tools = ["delete_dir", "delete_files"]
 # 非 loopback 绑定下显式允许把上限提到 unrestricted（不安全，见上）。CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK
 # allow_unrestricted_permission_for_non_loopback = false
 
