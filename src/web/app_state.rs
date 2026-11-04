@@ -477,4 +477,95 @@ mod tests {
             "被归档消息引用的 /uploads 文件不得判为孤儿: {refs:?}"
         );
     }
+
+    /// revision CAS 的四条不变量，内存与 SQLite 两条后端**跑同一组断言**。
+    ///
+    /// 合并门面（S1-a）最容易走样的就是这里：两条后端各自演化时，
+    /// 「过期 revision」与「会话不存在却带 expected」都容易在一边退化成静默覆盖。
+    #[tokio::test]
+    async fn save_if_revision_cas_invariants_hold_for_both_backends() {
+        for sqlite in [false, true] {
+            let rt = runtime(sqlite).await;
+            // 首次写入（expected = None）成功，revision 落为 1。
+            save(&rt, "c1").await;
+            let seed = rt.load_conversation_seed("c1").await.expect("seed");
+            assert_eq!(seed.expected_revision, Some(1), "sqlite={sqlite}");
+
+            // ① 过期的 expected_revision → Conflict，且不覆盖既有内容。
+            assert_eq!(
+                rt.save_conversation_messages_if_revision(
+                    "c1".to_string(),
+                    one_user_msg("stale"),
+                    None,
+                    None,
+                    None,
+                    Some(999),
+                    Vec::new(),
+                )
+                .await,
+                SaveConversationOutcome::Conflict,
+                "过期 revision 必须冲突 sqlite={sqlite}"
+            );
+            let after_conflict = rt.load_conversation_seed("c1").await.expect("seed");
+            assert_eq!(
+                after_conflict.messages.len(),
+                1,
+                "冲突不得改写既有内容 sqlite={sqlite}"
+            );
+
+            // ② 命中当前 revision → Saved，revision 递增。
+            assert_eq!(
+                rt.save_conversation_messages_if_revision(
+                    "c1".to_string(),
+                    one_user_msg("fresh"),
+                    None,
+                    None,
+                    None,
+                    Some(1),
+                    Vec::new(),
+                )
+                .await,
+                SaveConversationOutcome::Saved,
+                "命中 revision 必须成功 sqlite={sqlite}"
+            );
+            let bumped = rt.load_conversation_seed("c1").await.expect("seed");
+            assert_eq!(bumped.expected_revision, Some(2), "sqlite={sqlite}");
+
+            // ③ 会话不存在却带 expected_revision → Conflict（不得凭空建行）。
+            assert_eq!(
+                rt.save_conversation_messages_if_revision(
+                    "missing".to_string(),
+                    one_user_msg("ghost"),
+                    None,
+                    None,
+                    None,
+                    Some(1),
+                    Vec::new(),
+                )
+                .await,
+                SaveConversationOutcome::Conflict,
+                "带 expected 的新 id 必须冲突 sqlite={sqlite}"
+            );
+            assert!(
+                rt.load_conversation_seed("missing").await.is_none(),
+                "冲突不得凭空建行 sqlite={sqlite}"
+            );
+
+            // ④ 同一「更新」重复提交必须冲突（幂等性来自 CAS，不来自去重）。
+            assert_eq!(
+                rt.save_conversation_messages_if_revision(
+                    "c1".to_string(),
+                    one_user_msg("fresh-again"),
+                    None,
+                    None,
+                    None,
+                    Some(1),
+                    Vec::new(),
+                )
+                .await,
+                SaveConversationOutcome::Conflict,
+                "重放的旧 revision 必须冲突 sqlite={sqlite}"
+            );
+        }
+    }
 }
