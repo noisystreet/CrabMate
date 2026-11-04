@@ -316,28 +316,11 @@ impl ModelContextView {
     }
 }
 
-/// 结构性提交结果：本轮被移出 canonical 的原文（归档候选）与追加条数（见 §3.7）。
-#[derive(Clone, Debug, Default)]
-pub struct StructuralCommit {
-    /// 被移出 canonical 的连续原文前缀（逐字原文，交由调用方归档）。
-    pub archived_prefix: Vec<Message>,
-    /// 该前缀是否由摘要替换移出（`true` → `summarized`，否则 `removed_turn_group`）。
-    pub prefix_summarized: bool,
-    /// 超出「canonical 至多 1 条」上限、被回收的旧 artifact 旁注（见 §3.9）。
-    pub archived_artifacts: Vec<Message>,
-    /// 本次追加回 canonical 的当前回合消息条数。
-    pub appended: usize,
-    /// 移出区间在提交前 canonical 中的下标快照（**仅**人审 / 排查）。
-    pub range_start: usize,
-    pub range_end: usize,
-}
-
-impl StructuralCommit {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.archived_prefix.is_empty() && self.archived_artifacts.is_empty() && self.appended == 0
-    }
-}
+/// 结构性提交结果已上移到 `protocol` 层（[`crate::cm_types::StructuralCommit`]）：
+/// 存储层（`conversation_store`）需要把它转成归档行，而存储层不应依赖回合编排层
+/// （S1-b，见 #1278）。这里 re-export，保持既有 `agent::model_context_view::StructuralCommit`
+/// 路径对所有调用点不变。
+pub use crate::cm_types::StructuralCommit;
 
 fn count_real_users(messages: &[Message]) -> usize {
     messages

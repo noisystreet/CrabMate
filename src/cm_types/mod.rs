@@ -6,6 +6,9 @@ pub use llm_config::*;
 pub mod llm_gateway_presets;
 pub use llm_gateway_presets::*;
 
+pub mod structural_commit;
+pub use structural_commit::*;
+
 use serde::Serialize;
 
 /// 拼接在 `api_base` 后的 OpenAI 兼容 chat 路径（无前导斜杠）。

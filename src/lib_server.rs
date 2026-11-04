@@ -48,9 +48,8 @@ pub mod e2e_scenario;
 pub use crate::cm_config as config;
 pub use crate::cm_sse_protocol::sse;
 pub use crate::cm_types as types;
-/// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
-#[cfg(feature = "web")]
-mod conversation_store;
+/// `conversation_id` 持久化（可选 SQLite）。模块本体已在 `src/lib.rs` 按 `sqlite` 门控，
+/// 这里只把结果类型留在 crate 内部可见。
 pub use crate::cm_llm::http_client;
 pub mod llm;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。
@@ -507,8 +506,8 @@ impl<'a> RunAgentTurnParams<'a> {
     }
 }
 
-#[cfg(feature = "web")]
-pub(crate) use conversation_store::SaveConversationOutcome;
+#[cfg(feature = "sqlite")]
+pub(crate) use crate::conversation_store::SaveConversationOutcome;
 #[cfg(feature = "web")]
 pub(crate) use web::AppState;
 #[cfg(feature = "web")]

@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{Message, message_content_as_str};
+use crate::cm_types::{Message, message_content_as_str};
 
 #[test]
 fn truncate_before_user_ordinal_skips_first_turn_workspace_injection() {
@@ -29,7 +29,7 @@ fn truncate_before_user_ordinal_skips_first_turn_workspace_injection() {
     );
     assert_eq!(
         after.messages[1].name.as_deref(),
-        Some(crate::types::CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
+        Some(crate::cm_types::CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
     );
 }
 
@@ -73,7 +73,16 @@ fn save_load_active_agent_role_roundtrip() {
     assert_eq!(loaded.active_agent_role, "");
 
     assert_eq!(
-        save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), None, None, Some(1)).unwrap(),
+        save_if_revision(
+            &conn,
+            "c1",
+            msgs.clone(),
+            Some("reviewer"),
+            None,
+            None,
+            Some(1)
+        )
+        .unwrap(),
         SaveConversationOutcome::Saved
     );
     let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -167,7 +176,6 @@ fn migrate_adds_active_permission_level_column_to_legacy_table() {
     let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(loaded.active_permission_level, "workspace");
 }
-
 
 #[test]
 fn load_optional_layout_meta_json_without_touching_save_path() {
