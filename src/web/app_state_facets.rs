@@ -27,55 +27,6 @@ use super::app_state::{
     workspace_is_set_from_override,
 };
 
-/// 与 [`super::app_state::sqlite_conversation_store_op`] 同构，但**把失败上抛**。
-///
-/// 需要区分「业务上的否」与「存储层失败」时用它：`fallback` 会把两者压成同一个值，
-/// 于是 `POST /conversation/state` 的库写失败（锁中毒 / SQLite 报错 / `spawn_blocking` 崩）
-/// 会被 handler 当成「会话不存在」回 404，把排查方向带偏。
-///
-/// 放在本文件而不是 `app_state.rs`：那里已经贴着 **920 行**的文件行数棘轮上限
-/// （`scripts/fn-nloc-ratchet.sh`），而这里正是它唯一的调用方。
-pub(crate) async fn sqlite_conversation_store_op_result<T>(
-    conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
-    id_log: String,
-    op_zh: &'static str,
-    run: impl FnOnce(&rusqlite::Connection) -> Result<T, rusqlite::Error> + Send + 'static,
-) -> Result<T, String>
-where
-    T: Send + 'static,
-{
-    match tokio::task::spawn_blocking(move || {
-        let g = conn
-            .lock()
-            .map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
-        run(&g).map_err(|e: rusqlite::Error| e.to_string())
-    })
-    .await
-    {
-        Ok(Ok(out)) => Ok(out),
-        Ok(Err(e)) => {
-            log::error!(
-                target: "crabmate",
-                "会话 SQLite {}失败 conversation_id={} error={}",
-                op_zh,
-                id_log,
-                e
-            );
-            Err(e)
-        }
-        Err(e) => {
-            log::error!(
-                target: "crabmate",
-                "会话 SQLite {}任务失败 conversation_id={} error={}",
-                op_zh,
-                id_log,
-                e
-            );
-            Err(e.to_string())
-        }
-    }
-}
-
 impl AppStateConversationRuntime {
     /// 只改会话级 `active_*` 意图列（`POST /conversation/state`）。
     ///
@@ -93,40 +44,9 @@ impl AppStateConversationRuntime {
         level: Option<&str>,
     ) -> Result<bool, String> {
         let backing = self.conversation_backing.read().await;
-        match &*backing {
-            ConversationBacking::Memory(map) => {
-                let mut guard = map.write().await;
-                match guard.get_mut(&conversation_id) {
-                    Some(entry) => {
-                        entry.apply_active_state(role, mode, level);
-                        Ok(true)
-                    }
-                    None => Ok(false),
-                }
-            }
-            ConversationBacking::Sqlite(conn) => {
-                let c = Arc::clone(conn);
-                // 闭包要求 `'static`：借用无法跨 `spawn_blocking`，先把三列取值复制成 owned。
-                let role = role.map(str::to_string);
-                let mode = mode.map(str::to_string);
-                let level = level.map(str::to_string);
-                sqlite_conversation_store_op_result(
-                    c,
-                    conversation_id.clone(),
-                    "写入会话状态",
-                    move |g| {
-                        crate::conversation_store::set_active_state(
-                            g,
-                            &conversation_id,
-                            role.as_deref(),
-                            mode.as_deref(),
-                            level.as_deref(),
-                        )
-                    },
-                )
-                .await
-            }
-        }
+        backing
+            .set_active_state(conversation_id, role, mode, level)
+            .await
     }
 }
 
