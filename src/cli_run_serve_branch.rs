@@ -1,8 +1,9 @@
 //! `serve` 分支装配：运行时状态构建、uploads 清理、优雅关闭信号与 `run_serve_branch` 的两个 feature 变体。
 //!
-//! 从 [`crate::cli_run`] 拆出（S5-a 第二步）：**纯搬移，不改语义**。留在 `cli_run.rs`
-//! 的 `parse_bind_ip` / `serve_log_bind_warnings` / `print_desktop_ready_json` /
-//! `spawn_conversation_prune` 由本模块按 `super::` 引用——它们是子的可见性范围内的父模块私有项。
+//! 从 [`crate::cli_run`] 拆出（S5-a 第二步）：**纯搬移，不改语义**。与 `run_serve_branch` 同族的
+//! `parse_bind_ip` / `serve_log_bind_warnings` / `print_desktop_ready_json` 与两个后台定时器
+//! （uploads 清理、会话保留兜底）也一并在本模块内：它们只被这里的装配调用，留在 `cli_run.rs`
+//! 只会让「serve 起了哪些后台循环」分散在两个文件里。
 
 use std::sync::Arc;
 
@@ -22,10 +23,6 @@ use log::info;
 
 #[cfg(feature = "web")]
 use super::cli_run_serve;
-#[cfg(feature = "web")]
-use super::{
-    parse_bind_ip, print_desktop_ready_json, serve_log_bind_warnings, spawn_conversation_prune,
-};
 #[cfg(feature = "web")]
 use crate::AppState;
 #[cfg(feature = "web")]
@@ -156,6 +153,56 @@ async fn build_serve_runtime_state(
     }))
 }
 
+/// `--http-bind-host` 解析；错误信息直接面向用户，故保留原文。
+#[cfg(feature = "web")]
+fn parse_bind_ip(http_bind_host: &str) -> Result<std::net::IpAddr, std::io::Error> {
+    http_bind_host.parse().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "无效的 Web 监听地址 {:?}（请使用有效 IP，如 127.0.0.1 或 0.0.0.0）",
+                http_bind_host
+            ),
+        )
+    })
+}
+
+/// 启动期把「实际监听地址 + 是否启用鉴权」讲清楚：不配 token 不是错误，但必须显式提示。
+#[cfg(feature = "web")]
+fn serve_log_bind_warnings(bind_ip: std::net::IpAddr, auth_enabled: bool, actual_addr: SocketAddr) {
+    if bind_ip.is_unspecified() && !auth_enabled {
+        eprintln!(
+            "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
+            actual_addr
+        );
+    }
+    if bind_ip.is_loopback() && !auth_enabled {
+        eprintln!(
+            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token / `crabmate web-bearer set`，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
+        );
+    }
+    if bind_ip.is_unspecified() && auth_enabled {
+        println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
+    }
+}
+
+/// `--web-ready-json` / `--desktop-ready-json`：给宿主进程（Desktop / `crabmate ctl`）的单行 JSON。
+#[cfg(feature = "web")]
+fn print_desktop_ready_json(
+    actual_addr: SocketAddr,
+    web_api_bearer_layer_enabled: bool,
+    instance_id: Option<&str>,
+    config: Option<&str>,
+) {
+    let ready = cli_run_serve::serve_ready_json(
+        actual_addr,
+        web_api_bearer_layer_enabled,
+        instance_id,
+        config,
+    );
+    println!("{}", serde_json::to_string(&ready).unwrap_or_default());
+}
+
 #[cfg(feature = "web")]
 fn spawn_uploads_cleanup(state: Arc<AppState>) {
     // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB；会话仍引用的文件跳过
@@ -178,6 +225,18 @@ fn spawn_uploads_cleanup(state: Arc<AppState>) {
                 &referenced,
             )
             .await;
+        }
+    });
+}
+
+/// 会话保留策略的兜底清理：启动时立即执行一次，此后每小时一次；TTL / 条数上限取自配置（可热更）。
+#[cfg(feature = "web")]
+fn spawn_conversation_prune(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            state.conversation.prune_conversations_now().await;
         }
     });
 }

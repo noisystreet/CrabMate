@@ -14,15 +14,10 @@ mod cli_run_serve_branch;
 mod cli_run_bench;
 
 use std::env;
-use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
 use log::info;
 
-#[cfg(feature = "web")]
-use crate::AppState;
 use crate::config;
 use crate::config::cli::{
     E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
@@ -397,81 +392,6 @@ async fn run_models_or_probe(
         crate::runtime::cli_doctor::run_probe_cli(&client, &cfg, api_key.trim()).await?;
     }
     Ok(())
-}
-
-#[cfg(feature = "web")]
-fn parse_bind_ip(http_bind_host: &str) -> Result<std::net::IpAddr, std::io::Error> {
-    http_bind_host.parse().map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "无效的 Web 监听地址 {:?}（请使用有效 IP，如 127.0.0.1 或 0.0.0.0）",
-                http_bind_host
-            ),
-        )
-    })
-}
-
-#[cfg(feature = "web")]
-async fn validate_bind_auth(
-    cfg_holder: &config::SharedAgentConfig,
-    bind_ip: std::net::IpAddr,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let (auth_enabled, allow_insec) = cli_run_serve::serve_bind_auth_flags(cfg_holder).await;
-    if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / CM_WEB_API_BEARER_TOKEN、`crabmate web-bearer set`，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
-        )
-        .into());
-    }
-    Ok(auth_enabled)
-}
-
-#[cfg(feature = "web")]
-fn serve_log_bind_warnings(bind_ip: std::net::IpAddr, auth_enabled: bool, actual_addr: SocketAddr) {
-    if bind_ip.is_unspecified() && !auth_enabled {
-        eprintln!(
-            "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
-            actual_addr
-        );
-    }
-    if bind_ip.is_loopback() && !auth_enabled {
-        eprintln!(
-            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token / `crabmate web-bearer set`，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
-        );
-    }
-    if bind_ip.is_unspecified() && auth_enabled {
-        println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
-    }
-}
-
-#[cfg(feature = "web")]
-fn print_desktop_ready_json(
-    actual_addr: SocketAddr,
-    web_api_bearer_layer_enabled: bool,
-    instance_id: Option<&str>,
-    config: Option<&str>,
-) {
-    let ready = cli_run_serve::serve_ready_json(
-        actual_addr,
-        web_api_bearer_layer_enabled,
-        instance_id,
-        config,
-    );
-    println!("{}", serde_json::to_string(&ready).unwrap_or_default());
-}
-
-/// 会话保留策略的兜底清理：启动时立即执行一次，此后每小时一次；TTL / 条数上限取自配置（可热更）。
-#[cfg(feature = "web")]
-fn spawn_conversation_prune(state: Arc<AppState>) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            state.conversation.prune_conversations_now().await;
-        }
-    });
 }
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
