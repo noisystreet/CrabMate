@@ -89,12 +89,13 @@
 | [web_tui_stream_to_opencode_style.md](web_tui_stream_to_opencode_style.md) | Web 聊天：OpenCode / OpenClaw 式流式跟底演进 |
 | [web_ui_todo.md](web_ui_todo.md) | Web UI 未来功能规划 |
 
-## 8. 工程 / 基础设施（6）
+## 8. 工程 / 基础设施（7）
 
 | 文档 | 说明 |
 |---|---|
 | [crate_dep_policy.md](crate_dep_policy.md) | Crate 依赖策略（降低耦合） |
 | [crates_io_single_package.md](crates_io_single_package.md) | ADR：单包 `crabmate` 发布到 crates.io |
+| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案未实施**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；切片 S1–S6，其中 **S5-a** 有硬截止（`cli_run.rs` 912/920 行） |
 | [user_data_dir.md](user_data_dir.md) | 本机用户数据目录（`~/.local/share/crabmate`）设计 |
 | [e2e_real_llm_testing_architecture.md](e2e_real_llm_testing_architecture.md) | E2E 真实 LLM 自动化测试架构 |
 | [ide_mode_roadmap.md](ide_mode_roadmap.md) | Web / 桌面内置 IDE 模式：完善规划 |
