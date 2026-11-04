@@ -23,7 +23,7 @@ pub(in crate::cm_internal::tool_registry::execute) struct TerminalSessionExecInv
     pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
     pub(in crate::cm_internal::tool_registry::execute) workspace_changed: &'a mut bool,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
     pub(in crate::cm_internal::tool_registry::execute) sse_out_tx:
         Option<&'a tokio::sync::mpsc::Sender<String>>,

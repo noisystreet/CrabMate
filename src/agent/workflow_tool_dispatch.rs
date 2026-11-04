@@ -57,20 +57,21 @@ pub async fn dispatch_workflow_execute_tool(
                 workspace_changed: workspace_changed_ref,
                 ctx,
             } = runtime;
-            let approval_mode = if let Some(web_ctx) = ctx {
-                workflow::WorkflowApprovalMode::Interactive {
-                    out_tx: web_ctx.out_tx.clone(),
-                    approval_rx: web_ctx.approval_rx_shared.clone(),
-                    approval_request_guard: web_ctx.approval_request_guard.clone(),
-                    persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
-                    cancel: web_ctx.cancel.clone(),
+            // 审批通道经 `ApprovalBroker` 端口取（P3，S3-a）：不再触碰 `WebToolRuntime` 的字段。
+            let approval_sink = ctx.and_then(|w| w.approval_sink());
+            let approval_mode = match (ctx, approval_sink) {
+                (Some(web_ctx), Some(sink)) => workflow::WorkflowApprovalMode::Interactive {
+                    out_tx: sink.out_tx.clone(),
+                    approval_rx: sink.approval_rx_shared.clone(),
+                    approval_request_guard: sink.approval_request_guard.clone(),
+                    persistent_allowlist: web_ctx.persistent_allowlist().clone(),
+                    cancel: sink.cancel.cloned(),
                     // 节点内 `AllowAlways` 写进本回合等级的作用域（设计 §6.3）。
                     permission_level: permission.map(|c| c.level),
                     // 节点层也要看等级给的越界策略：L2 直接拒、L4 放行，都不弹窗。
                     approval: permission.map(|c| c.approval),
-                }
-            } else {
-                workflow::WorkflowApprovalMode::NoApproval
+                },
+                _ => workflow::WorkflowApprovalMode::NoApproval,
             };
             let wf_cfg = WorkflowConfig {
                 command_timeout_secs: cfg.command_exec.command_timeout_secs,

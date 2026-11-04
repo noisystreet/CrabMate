@@ -101,7 +101,7 @@ pub struct AgentTurnTransport<'a> {
     pub no_stream: bool,
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub per_flight: Option<std::sync::Arc<PerTurnFlight>>,
-    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     /// 无 `/chat/stream` 通道时镜像 SSE 控制面（与 Web [`crate::sse::SsePayload`] 同形），供 TUI 等终端界面展示。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
@@ -193,7 +193,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub workspace_is_set: bool,
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub per_flight: std::sync::Arc<PerTurnFlight>,
-    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub temperature_override: Option<f32>,
     pub model_override: Option<String>,
     pub use_executor_model: bool,

@@ -93,7 +93,7 @@ pub(super) fn parsed_run_command(args_json: &str) -> ParsedRunCommandJson {
 
 pub(super) fn test_policy_context<'a>(
     cfg: &'a Arc<AgentConfig>,
-    web_ctx: Option<&'a crate::cm_tools::tool_runtime::WebToolRuntime>,
+    web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mode: ExecMode,
 ) -> PolicyContext<'a> {
     PolicyContext {
@@ -111,7 +111,7 @@ pub(super) fn test_policy_context<'a>(
 pub(super) fn test_policy_context_with_caps<'a>(
     cfg: &'a Arc<AgentConfig>,
     permission: &'a crate::cm_agent::permission::PermissionCaps,
-    web_ctx: Option<&'a crate::cm_tools::tool_runtime::WebToolRuntime>,
+    web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mode: ExecMode,
 ) -> PolicyContext<'a> {
     PolicyContext {
@@ -482,7 +482,7 @@ pub(super) fn async_test_env<'a>(
 pub(super) async fn run_command_impl_for_test<'a>(
     env: &'a ToolExecEnv<'a>,
     wd: &'a Path,
-    web_ctx: Option<&'a WebToolRuntime>,
+    web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
     args: &'a str,
 ) -> (String, Option<serde_json::Value>) {

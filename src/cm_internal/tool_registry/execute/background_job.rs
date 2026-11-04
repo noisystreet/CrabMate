@@ -60,7 +60,7 @@ pub(in crate::cm_internal::tool_registry::execute) enum BackgroundAsyncGate {
 pub(in crate::cm_internal::tool_registry::execute) fn try_dispatch_background_async_tool(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     name: &str,
     args: &str,
     tool_jobs: Option<&Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
@@ -177,7 +177,7 @@ fn background_async_unsupported_message(name: &str) -> String {
 /// `tool_name` 须为**真实**工具名（终态补发摘要 `summarize_tool_call` 使用）。
 pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
     registry: &Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     tool_name: &str,
     args: &str,
     effective_working_dir: &Path,
@@ -186,7 +186,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
     let finished_sink = background_job_finished_sink(web_ctx, tool_name, args);
     // 来源回合 `job_id`：供 `POST /chat/stream/{job_id}/cancel` 级联取消本回合后台任务。
     // 无同进程 SSE（运维 CLI 等）时为 `None`。
-    let source_turn_job_id = web_ctx.and_then(|c| c.turn_job_id);
+    let source_turn_job_id = web_ctx.and_then(|c| c.turn_job_id());
     let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
         Arc::clone(registry),
         effective_working_dir.to_path_buf(),
@@ -227,11 +227,11 @@ pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
 /// 升级成功即「回合仍持有发送端 = 原连接仍存活」，此时 `try_send` 投递，否则静默丢弃。
 /// 仅 Web SSE 路径有 `web_ctx`；运维 CLI 无同进程 SSE，`None` 即不补发。
 fn background_job_finished_sink(
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     tool_name: &str,
     args: &str,
 ) -> Option<crate::cm_internal::tool_jobs::JobFinishedSink> {
-    let tx_weak = web_ctx?.out_tx.downgrade();
+    let tx_weak = web_ctx?.out_tx().downgrade();
     let tool_name = tool_name.to_string();
     let args = args.to_string();
     let sink: crate::cm_internal::tool_jobs::JobFinishedSink = Arc::new(

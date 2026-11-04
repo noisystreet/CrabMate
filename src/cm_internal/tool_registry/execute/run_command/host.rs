@@ -110,7 +110,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_
 pub async fn prefetch_http_fetch_parallel_approvals(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();

@@ -22,7 +22,7 @@ use crate::cm_names as tool_names;
 pub(in crate::cm_internal::tool_registry::execute) struct RunCommandAsyncInvoke<'a> {
     pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
     pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
     pub(in crate::cm_internal::tool_registry::execute) tool_jobs: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
     pub(in crate::cm_internal::tool_registry::execute) parsed: ParsedRunCommandJson,

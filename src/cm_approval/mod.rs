@@ -45,6 +45,35 @@ pub struct WebApprovalSink<'a> {
     pub cancel: Option<&'a Arc<AtomicBool>>,
 }
 
+/// 执行面所需的审批通道端口（P3，S3-a）。
+///
+/// 暴露 `agent` 执行面**实际用到**的能力：审批 sink、当前回合 job id、SSE 输出端、
+/// 持久白名单表、协作式取消标志。[`crate::cm_tools::tool_runtime::WebToolRuntime`]
+/// 是它的 SSE 实现；终端 / 无头 / 测试路径可以各自实现，不必把 `tool_registry`
+/// 的具体类型写进执行面签名。
+///
+/// 面比草案（§5.2 只写 `ask`）宽，是因为现有代码直接读这些字段——按实际消费面
+/// 收口，而不是先定一个更窄的 trait 再在调用点 `downcast` 回具体类型。
+///
+/// **只包现有审批语义**：本 trait 不新增任何审批门，也不改变
+/// `permission_levels` 的判定（见 `docs/design/sdk_facade.md` §5.2）。
+pub trait ApprovalBroker: Send + Sync {
+    /// 本次工具分发可用的审批通道；无交互通道（运维 CLI / 无头）时为 `None`。
+    fn approval_sink(&self) -> Option<WebApprovalSink<'_>>;
+
+    /// 当前回合的流任务 id（后台任务级联取消用）；非 SSE 路径为 `None`。
+    fn turn_job_id(&self) -> Option<u64>;
+
+    /// SSE 输出端（后台任务持有弱引用以便在流关闭后自然失活）。
+    fn out_tx(&self) -> &mpsc::Sender<String>;
+
+    /// 「永久允许」白名单表（审批通过后可写入）。
+    fn persistent_allowlist(&self) -> &Arc<Mutex<HashSet<String>>>;
+
+    /// 当前回合的协作式取消标志；非 Web / 无取消来源时为 `None`。
+    fn cancel(&self) -> Option<&Arc<AtomicBool>>;
+}
+
 /// 一次交互审批的展示与 SSE 载荷（`CommandApprovalBody` 同源字段）。
 #[derive(Debug, Clone)]
 pub struct ApprovalRequestSpec {
