@@ -110,7 +110,7 @@ pub(super) fn test_policy_context<'a>(
 /// [`test_policy_context`]，两者刻意分开，避免「忘传 caps」被默认值掩盖。
 pub(super) fn test_policy_context_with_caps<'a>(
     cfg: &'a Arc<AgentConfig>,
-    permission: &'a crate::cm_agent::permission::PermissionCaps,
+    permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
     web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mode: ExecMode,
 ) -> PolicyContext<'a> {

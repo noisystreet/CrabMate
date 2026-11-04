@@ -119,10 +119,10 @@ fn build_planner_round_tools(p: &RunLoopParams<'_>) -> PlannerRoundTools {
         None => p.ctx.core.tools_defs.to_vec(),
     };
     // 权限等级可见性（S2）：L0 → 空表；L1 → 只留只读正列表内的；L2–L4 → 不裁剪。
-    // 与 early-deny 共用 [`crate::cm_agent::permission::tool_allowed_by_caps`]，不留第二套判据。
+    // 与 early-deny 共用策略端口的 `allows_tool`（内部即 `tool_allowed_by_caps`），不留第二套判据。
     let caps = &p.ctx.attach.permission;
     definitions.retain(|t| {
-        crate::cm_agent::permission::tool_allowed_by_caps(caps, t.function.name.as_str())
+        crate::cm_agent::permission::PolicyEngine::allows_tool(caps, t.function.name.as_str())
     });
     PlannerRoundTools { definitions }
 }

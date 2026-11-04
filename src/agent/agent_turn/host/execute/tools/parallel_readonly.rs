@@ -45,7 +45,7 @@ struct ParallelUniqueBatchParts<'a> {
     tools_defs_hint: Arc<Vec<crate::types::Tool>>,
     turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
-    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
@@ -93,7 +93,7 @@ async fn parallel_prefetch_approval_failures(
     cfg: &Arc<AgentConfig>,
     web_tool_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     handler_lookup: &HandlerLookupTable,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> HashMap<(String, String), String> {
     let host = CrabmateParallelToolDispatch;
     host.prefetch_parallel_approval_failures(ParallelPrefetchParams {
@@ -317,7 +317,7 @@ async fn parallel_emit_tool_starts(
     cfg: &AgentConfig,
     messages: &[Message],
     control: &crate::agent::agent_turn::TurnControlSink<'_>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> ExecuteToolsBatchOutcome {
     let out = control.out;
     let sse_mirror_ref = control.sse_control_mirror.as_ref();

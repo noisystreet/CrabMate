@@ -571,3 +571,95 @@ fn each_axis_narrows_selectable_levels() {
         "ask / plan 收到 L1"
     );
 }
+
+/// S3-b：策略端口必须与自由函数**逐字等价**——端口层不允许藏第二套判据。
+///
+/// 等价关系是这次重构的全部安全理由：执行面签名从 `&PermissionCaps` 换成
+/// `&dyn PolicyEngine` 之后，行为不变必须由这条测试兜住（金样只覆盖具体几条路径，
+/// 覆盖不到 `denied_axis` 的归因顺序）。
+#[test]
+fn policy_engine_port_matches_free_functions_for_all_levels() {
+    use crate::cm_agent::permission_audit::PermissionAxis;
+
+    let cfg = test_cfg();
+    // 四条先决否决路径 + 常态放行各取样例：只读白名单内/外、普通写工具、命令类、外部工具。
+    let names = [
+        "read_file",
+        "glob_files",
+        "modify_file",
+        "run_command",
+        "terminal_session",
+        "mcp__demo__tool",
+        "dyn__deploy",
+    ];
+    let levels = [
+        PermissionLevel::Chat,
+        PermissionLevel::Read,
+        PermissionLevel::Workspace,
+        PermissionLevel::Approved,
+        PermissionLevel::Unrestricted,
+    ];
+    for level in levels {
+        let caps = project_caps(level, &cfg);
+        assert_eq!(PolicyEngine::level(&caps), caps.level, "{level}");
+        assert_eq!(PolicyEngine::approval(&caps), caps.approval, "{level}");
+        assert_eq!(PolicyEngine::path_scope(&caps), caps.path_scope, "{level}");
+        assert_eq!(
+            PolicyEngine::outbound_denied(&caps),
+            caps.net_scope == NetScope::None,
+            "{level}"
+        );
+        assert_eq!(
+            PolicyEngine::outbound_allows_any(&caps),
+            caps.net_scope == NetScope::Any,
+            "{level}"
+        );
+        assert_eq!(
+            PolicyEngine::outbound_uses_prefixes(&caps),
+            matches!(caps.net_scope, NetScope::Prefixes(_)),
+            "{level}"
+        );
+        assert_eq!(
+            PolicyEngine::command_allowlist(&caps),
+            caps.command_allowlist(),
+            "{level}"
+        );
+        for name in names {
+            let allowed = tool_allowed_by_caps(&caps, name);
+            assert_eq!(
+                PolicyEngine::allows_tool(&caps, name),
+                allowed,
+                "{level} / {name}：端口与自由函数的放行结论必须一致"
+            );
+            assert_eq!(
+                PolicyEngine::denied_axis(&caps, name).is_none(),
+                allowed,
+                "{level} / {name}：放行判定与审计归因必须同源"
+            );
+            if !allowed {
+                assert_eq!(
+                    PolicyEngine::deny_message(&caps, name),
+                    permission_denied_message(&caps, name),
+                    "{level} / {name}"
+                );
+            }
+        }
+    }
+
+    // 归因轴本身（顺序 = 先决否决顺序）：外部工具轴 → 命令类硬拒 → 可见性。
+    let l0 = project_caps(PermissionLevel::Chat, &cfg);
+    assert_eq!(
+        PolicyEngine::denied_axis(&l0, "run_command"),
+        Some(PermissionAxis::Command)
+    );
+    assert_eq!(
+        PolicyEngine::denied_axis(&l0, "mcp__demo__tool"),
+        Some(PermissionAxis::External)
+    );
+    let l1 = project_caps(PermissionLevel::Read, &cfg);
+    assert_eq!(
+        PolicyEngine::denied_axis(&l1, "modify_file"),
+        Some(PermissionAxis::Tool)
+    );
+    assert_eq!(PolicyEngine::denied_axis(&l1, "read_file"), None);
+}

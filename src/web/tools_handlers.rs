@@ -308,7 +308,7 @@ fn tool_list_item(
 ) -> ToolListItem {
     // 须在 `entry.name` 被 move 进结构体之前算：判据吃的是 `&str`。
     let available_at_level =
-        crate::cm_agent::permission::tool_allowed_by_caps(caps, &entry.name);
+        crate::cm_agent::permission::PolicyEngine::allows_tool(caps, &entry.name);
     ToolListItem {
         name: entry.name,
         description: entry.description,
@@ -456,7 +456,8 @@ pub(crate) async fn tool_detail_handler(
             format!("未注册的工具：{tool_name}"),
         ));
     };
-    let available_at_level = crate::cm_agent::permission::tool_allowed_by_caps(&caps, &entry.name);
+    let available_at_level =
+        crate::cm_agent::permission::PolicyEngine::allows_tool(&caps, &entry.name);
     let parameters = parameters_for(&cfg, &ws, &entry.name, entry.source);
     let policy = policy_view(&cfg, &entry.name);
     drop(cfg);

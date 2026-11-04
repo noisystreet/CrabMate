@@ -62,7 +62,7 @@ struct SerialToolLoopState<'a> {
     tools_defs_full: &'a [crate::types::Tool],
     turn_allow: Option<&'a std::collections::HashSet<String>>,
     /// 本回合权限能力快照（early-deny / 可见性共用判据）。
-    permission: &'a crate::cm_agent::permission::PermissionCaps,
+    permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
     long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,

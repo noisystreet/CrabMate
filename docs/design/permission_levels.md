@@ -442,6 +442,16 @@ struct PolicyDecision<'a> {
 
 ## 8. 执行点接线
 
+**S3-b（#1282）后的统一入口**：执行面不再直接解构 `PermissionCaps`，而是手持策略端口
+`cm_agent::permission::PolicyEngine`——`level()` / `approval()` / `path_scope()` /
+`outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` /
+`command_allowlist()` / `denied_axis()` / `deny_message()`。其中 `allows_tool()` 由
+`denied_axis()` 派生、`outbound_uses_prefixes()` 由出站两档派生，都是**默认方法**，实现方
+不覆盖，所以「放行判定 / 审计归因 / 网络三态」不会各算一遍。`PermissionCaps` 仍是唯一生产
+实现（`impl` 与其同文件，逐字委托 `tool_allowed_by_caps` 等自由函数）；持有形态不变：owned
+快照在 `agent_turn::host::params`，执行面只借用 `&dyn PolicyEngine`。可见性裁剪
+（`turn_loop::outer_loop`）与 Web 的 `available_at_level` 也走同一个 `allows_tool()`。
+
 ### 8.1 改动表
 
 | 层 | 文件 | 改动 |
