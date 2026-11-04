@@ -63,7 +63,7 @@ pub(super) struct SerialEarlyToolPolicyDenyParams<'a> {
     pub(super) tools_defs_full: &'a [crate::types::Tool],
     pub(super) turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
-    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub(super) permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 pub(super) struct SerialTtlAfterDispatchParams<'a> {
@@ -93,7 +93,7 @@ pub(super) struct SerialEmitEarlyWithoutDispatchParams<'a> {
     pub(super) tools_defs_full: &'a [crate::types::Tool],
     pub(super) turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照（early-deny 用）；`None` 不额外限制。
-    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub(super) permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
     pub(super) readonly_cache: &'a mut HashMap<(String, String), String>,
     pub(super) readonly_tool_ttl_cache:
         &'a Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
@@ -109,5 +109,5 @@ pub(super) struct SerialToolIterationSsePreface<'a> {
     pub(super) args: &'a str,
     pub(super) messages: &'a [crate::types::Message],
     /// 本回合权限能力快照；`tool_call` 时间线据此带上等级（设计 §11.3），`None` 则省略该字段。
-    pub(super) permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub(super) permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }

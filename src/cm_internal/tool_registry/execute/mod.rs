@@ -86,7 +86,10 @@ pub struct DispatchToolPolicy<'a> {
     /// `None` = 调用方尚未接线（运维 CLI、单测、内部直调），等价于现状：只按 `cfg` 判。
     /// **不要**在这里默认造一份 `project_caps`——那会让未接线路径凭空获得一个等级，
     /// 等于把「没接线」变成「按某等级静默收窄」。
-    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    ///
+    /// S3-b 起认**端口**而非具体类型：宿主可以传别的 [`crate::cm_agent::permission::PolicyEngine`]
+    /// 实现；生产路径仍传 `PermissionCaps`（它实现了该 trait），行为不变。
+    pub permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 pub struct DispatchToolObs<'a> {
@@ -122,7 +125,7 @@ struct ToolExecEnv<'a> {
     cfg: &'a Arc<AgentConfig>,
     sandbox_backend: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判定）。
-    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 mod background_job;

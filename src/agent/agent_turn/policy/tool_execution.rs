@@ -88,7 +88,7 @@ pub struct ToolPolicyEarlyDenyParams<'a> {
     pub tools_defs: &'a [crate::cm_types::Tool],
     pub turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照；`None` = 调用方尚未接线（等价于不额外限制）。
-    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 /// 串行 / 并行路径共用的策略 early-deny（不含 TTL / run_command 预检）。
@@ -96,23 +96,12 @@ pub fn tool_policy_early_deny_message(p: &ToolPolicyEarlyDenyParams<'_>) -> Opti
     // 权限等级先行：它比「角色白名单」更硬（L0/L1 下连工具定义都没下发），
     // 先拒能让模型收到「等级不允许」而不是「角色白名单不允许」这一误导性归因。
     if let Some(caps) = p.permission
-        && !crate::cm_agent::permission::tool_allowed_by_caps(caps, p.name)
+        && let Some(axis) = crate::cm_agent::permission::PolicyEngine::denied_axis(caps, p.name)
     {
-        // 审计轴按 `tool_allowed_by_caps` 的**先决否决顺序**归因，与拒因一致：
-        // 外部工具轴 → `external`；L0/L1 的命令类四工具硬拒 → `command`；其余算工具可见性。
-        let axis = if !crate::cm_agent::permission::external_tools_allowed_by_caps(caps, p.name) {
-            crate::cm_agent::permission_audit::PermissionAxis::External
-        } else if matches!(
-            caps.command_scope,
-            crate::cm_agent::permission::CommandScope::None
-        ) && crate::cm_agent::permission::is_command_tool(p.name)
-        {
-            crate::cm_agent::permission_audit::PermissionAxis::Command
-        } else {
-            crate::cm_agent::permission_audit::PermissionAxis::Tool
-        };
+        // 归因与放行判定同源（端口的 `denied_axis`）：外部工具轴 → 命令类硬拒 → 可见性。
+        // 调用点不再自己按 `command_scope` / 外部工具轴重算一遍，避免两处顺序漂移。
         crate::cm_agent::permission_audit::record_denied(caps, axis, Some(p.name), None);
-        return Some(crate::cm_agent::permission::permission_denied_message(
+        return Some(crate::cm_agent::permission::PolicyEngine::deny_message(
             caps, p.name,
         ));
     }
@@ -180,6 +169,53 @@ mod tests {
         assert_eq!(mode, ToolBatchExecutionMode::Serial);
     }
 
+    /// 一个**非** `PermissionCaps` 的端口实现：固定全拒。
+    ///
+    /// 它存在的唯一目的是证明端口的**可替换性**——等价性测试只覆盖「`PermissionCaps`
+    /// 这个实现 ≡ 自由函数」，证明不了「执行面真的只认 trait、宿主能换实现」。
+    struct StubDenyAll;
+
+    impl crate::cm_agent::permission::PolicyEngine for StubDenyAll {
+        fn level(&self) -> crate::cm_types::PermissionLevel {
+            crate::cm_types::PermissionLevel::Read
+        }
+
+        fn approval(&self) -> crate::cm_types::ApprovalPolicy {
+            crate::cm_types::ApprovalPolicy::Deny
+        }
+
+        fn path_scope(&self) -> crate::cm_types::PathScope {
+            crate::cm_types::PathScope::SessionRoot
+        }
+
+        fn outbound_denied(&self) -> bool {
+            true
+        }
+
+        fn outbound_allows_any(&self) -> bool {
+            false
+        }
+
+        fn outbound_prefixes(&self) -> &[String] {
+            &[]
+        }
+
+        fn command_allowlist(&self) -> Option<std::sync::Arc<[String]>> {
+            None
+        }
+
+        fn denied_axis(
+            &self,
+            _name: &str,
+        ) -> Option<crate::cm_agent::permission_audit::PermissionAxis> {
+            Some(crate::cm_agent::permission_audit::PermissionAxis::Tool)
+        }
+
+        fn deny_message(&self, name: &str) -> String {
+            format!("stub-denied:{name}")
+        }
+    }
+
     #[test]
     fn early_deny_turn_allow_blocks_tool() {
         let cfg = test_cfg();
@@ -195,5 +231,21 @@ mod tests {
         });
         assert!(msg.is_some());
         assert!(msg.unwrap().contains("run_command"));
+    }
+
+    #[test]
+    fn early_deny_follows_injected_policy_engine_not_caps() {
+        let cfg = test_cfg();
+        let msg = tool_policy_early_deny_message(&ToolPolicyEarlyDenyParams {
+            cfg: &cfg,
+            name: "read_file",
+            step_executor_constraint: None,
+            tools_defs: &[],
+            turn_allow: None,
+            permission: Some(&StubDenyAll),
+        });
+        // 拒因文案来自端口实现本身（`deny_message`），而不是 `permission_denied_message(caps)`：
+        // 这条断言就是「执行面只认 trait」的证据。
+        assert_eq!(msg.as_deref(), Some("stub-denied:read_file"));
     }
 }

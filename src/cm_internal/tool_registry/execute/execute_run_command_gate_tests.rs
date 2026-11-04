@@ -236,7 +236,7 @@ type GateOutcome = Result<(Vec<String>, bool), String>;
 
 async fn gate_outcome(
     cfg: &Arc<crate::cm_config::AgentConfig>,
-    caps: Option<&crate::cm_agent::permission::PermissionCaps>,
+    caps: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
     web: Option<&dyn crate::cm_approval::ApprovalBroker>,
     parsed: &ParsedRunCommandJson,
     mode: ExecMode,

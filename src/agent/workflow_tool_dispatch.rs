@@ -24,7 +24,7 @@ pub async fn dispatch_workflow_execute_tool(
     workspace_is_set: bool,
     args: &str,
     request_chrome_merge: Option<Arc<RequestTurnTrace>>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> (String, Option<serde_json::Value>) {
     let args = match workflow::resolve_workflow_execute_args(
         args,
@@ -57,7 +57,7 @@ pub async fn dispatch_workflow_execute_tool(
                 workspace_changed: workspace_changed_ref,
                 ctx,
             } = runtime;
-            // 审批通道经 `ApprovalBroker` 端口取（P3，S3-a）：不再触碰 `WebToolRuntime` 的字段。
+            // 审批通道经 `ApprovalBroker` 端口取（S3-a）：不碰具体实现类型的字段。
             let approval_sink = ctx.and_then(|w| w.approval_sink());
             let approval_mode = match (ctx, approval_sink) {
                 (Some(web_ctx), Some(sink)) => workflow::WorkflowApprovalMode::Interactive {
@@ -67,9 +67,9 @@ pub async fn dispatch_workflow_execute_tool(
                     persistent_allowlist: web_ctx.persistent_allowlist().clone(),
                     cancel: sink.cancel.cloned(),
                     // 节点内 `AllowAlways` 写进本回合等级的作用域（设计 §6.3）。
-                    permission_level: permission.map(|c| c.level),
+                    permission_level: permission.map(|c| c.level()),
                     // 节点层也要看等级给的越界策略：L2 直接拒、L4 放行，都不弹窗。
-                    approval: permission.map(|c| c.approval),
+                    approval: permission.map(|c| c.approval()),
                 },
                 _ => workflow::WorkflowApprovalMode::NoApproval,
             };

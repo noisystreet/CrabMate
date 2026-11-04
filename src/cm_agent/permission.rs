@@ -340,6 +340,137 @@ pub fn permission_denied_message(caps: &PermissionCaps, name: &str) -> String {
     )
 }
 
+/// 工具执行面的**策略端口**（S3-b）。
+///
+/// 执行面（`DispatchToolPolicy`、串行 / 并行只读批、工作流节点）此前直接解构
+/// [`PermissionCaps`] 的字段（`level` / `approval` / `path_scope` / `net_scope` /
+/// `command_allowlist()`），宿主无法替换策略来源。本 trait 把执行面**实际消费**的那部分
+/// 收成一个端口，执行面签名从此只认 `&dyn PolicyEngine`。
+///
+/// **判定规则没有第二套**：唯一的生产实现仍是 [`PermissionCaps`]（下方 `impl`），逐字委托
+/// 本模块的既有自由函数。本 trait 不新增审批门，也不改 `permission_levels` 的语义。
+///
+/// 落点在 `cm_agent` 而不是叶子层：`NetScope` / `CommandScope` / `ToolVisibility` 这些轴
+/// 本就定义在本模块，往 `cm_types` 复制一份会变成两套枚举。消费者（`agent` / `cm_workflow` /
+/// `cm_internal`）都在本层之上，`cm_tools` 不消费本端口，因此不构成反向依赖。
+///
+/// `None` 语义由调用方保留（`Option<&dyn PolicyEngine>` 的 `None` = 未接线，等价于现状
+/// 「只按 `cfg` 判」）；本 trait **不**提供「空策略」实现，避免把「没接线」变成
+/// 「按某等级静默收窄」。
+pub trait PolicyEngine: Send + Sync {
+    /// 本回合权限等级（SSE 载荷、审计与拒因文案共用）。
+    fn level(&self) -> PermissionLevel;
+
+    /// 审批轴（`Deny` / `Gate` / `AuditOnly`）。
+    fn approval(&self) -> crate::cm_types::ApprovalPolicy;
+
+    /// 文件类工具的路径范围。
+    fn path_scope(&self) -> crate::cm_types::PathScope;
+
+    /// 出站网络是否**全禁**（`NetScope::None`，仅 L0）。
+    fn outbound_denied(&self) -> bool;
+
+    /// 出站网络是否**全放行**（`NetScope::Any`，仅 L4）。
+    fn outbound_allows_any(&self) -> bool;
+
+    /// 出站前缀白名单（`Prefixes` 的列表；全禁 / 全放行时返回空表）。
+    ///
+    /// 端口**不交出 `NetScope` 枚举本身**：调用点只需要「能不能出、放哪些前缀」；交出枚举
+    /// 意味着将来新增一个网络档位时，每个调用点都要跟着改 match。
+    fn outbound_prefixes(&self) -> &[String];
+
+    /// 出站是否落在「查前缀」这一档。
+    ///
+    /// 由上面两个方法派生，保证「全禁 / 全放行 / 查前缀」三态不会各算一遍。
+    fn outbound_uses_prefixes(&self) -> bool {
+        !self.outbound_denied() && !self.outbound_allows_any()
+    }
+
+    /// 命令白名单；`None` = 本等级全禁命令，`["*"]` 哨兵 = 全放行。
+    ///
+    /// **实现契约**：`Some(vec![])` 表示**空白名单**（未列出的命令照常走审批），
+    /// **不**表示「全禁」；全禁只能是 `None`。`run_command` 的 L0/L1 双保险就靠这个
+    /// 区分——若实现方用空表表达全禁，那条闸门会静默失效。
+    fn command_allowlist(&self) -> Option<Arc<[String]>>;
+
+    /// 拒绝归因：`Some(axis)` = 该工具在本策略下不可执行，并按此审计轴留痕；`None` = 放行。
+    ///
+    /// **唯一判据**：实现方必须逐字复用既有判定，不要在端口层另写一份规则。归因顺序须与
+    /// 判定的**先决否决顺序**一致（外部工具轴 → 命令类硬拒 → 可见性），否则拒绝理由与审计
+    /// 事件会互相打脸。做成端口方法而不是让每个调用点自己判断，是为了让「谁被拒、按哪条轴」
+    /// 只有一处实现。
+    ///
+    /// 返回值刻意复用审计轴（`PermissionAxis`）而不另立 `DenyReason`：决策与留痕分类
+    /// 同源，调用点没有机会把「被拒」记到另一条轴上。
+    fn denied_axis(&self, name: &str) -> Option<crate::cm_agent::permission_audit::PermissionAxis>;
+
+    /// 单工具是否允许执行。
+    ///
+    /// 默认由 [`Self::denied_axis`] 派生，保证「放行判定」与「审计归因」不可能漂移；
+    /// 实现方**不要**覆盖它去另算一遍。
+    fn allows_tool(&self, name: &str) -> bool {
+        self.denied_axis(name).is_none()
+    }
+
+    /// 被拒时的工具结果正文（含等级与一句话承诺）。
+    fn deny_message(&self, name: &str) -> String;
+}
+
+/// 执行面策略端口的唯一生产实现：**逐字**委托本模块的自由函数，不做第二次判定。
+///
+/// 端口层唯一新增的是 `denied_axis` 的归因顺序（外部工具轴 → 命令类硬拒 → 可见性），
+/// 它与 [`tool_allowed_by_caps`] 的先决否决顺序一一对应；`allows_tool` 由 `denied_axis`
+/// 派生（见 trait 默认实现），所以「是否拒绝」与「按哪条轴留痕」不会各算一遍。
+impl PolicyEngine for PermissionCaps {
+    fn level(&self) -> PermissionLevel {
+        self.level
+    }
+
+    fn approval(&self) -> crate::cm_types::ApprovalPolicy {
+        self.approval
+    }
+
+    fn path_scope(&self) -> crate::cm_types::PathScope {
+        self.path_scope
+    }
+
+    fn outbound_denied(&self) -> bool {
+        matches!(self.net_scope, NetScope::None)
+    }
+
+    fn outbound_allows_any(&self) -> bool {
+        matches!(self.net_scope, NetScope::Any)
+    }
+
+    fn outbound_prefixes(&self) -> &[String] {
+        match &self.net_scope {
+            NetScope::Prefixes(list) => list.as_slice(),
+            NetScope::None | NetScope::Any => &[],
+        }
+    }
+
+    fn command_allowlist(&self) -> Option<Arc<[String]>> {
+        PermissionCaps::command_allowlist(self)
+    }
+
+    fn denied_axis(&self, name: &str) -> Option<crate::cm_agent::permission_audit::PermissionAxis> {
+        use crate::cm_agent::permission_audit::PermissionAxis;
+        if !external_tools_allowed_by_caps(self, name) {
+            Some(PermissionAxis::External)
+        } else if matches!(self.command_scope, CommandScope::None) && is_command_tool(name) {
+            Some(PermissionAxis::Command)
+        } else if tool_allowed_by_caps(self, name) {
+            None
+        } else {
+            Some(PermissionAxis::Tool)
+        }
+    }
+
+    fn deny_message(&self, name: &str) -> String {
+        permission_denied_message(self, name)
+    }
+}
+
 /// 回合权限 `min` 链的四档输入（设计 §6.1）。
 ///
 /// 收成结构体而不是继续平铺形参：`RunAgentTurnAttach` 与三个 build args 都要把它穿到

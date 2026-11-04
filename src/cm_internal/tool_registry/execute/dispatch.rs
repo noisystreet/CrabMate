@@ -71,7 +71,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn read_dir_path_is_external(
 async fn approve_external_read_dir_if_needed(
     args: &str,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> Result<(), String> {
     let Some(ext_path) = read_dir_path_is_external(args) else {
         return Ok(());
@@ -80,7 +80,7 @@ async fn approve_external_read_dir_if_needed(
     if let Some(caps) = permission {
         // 审计正文只留末两段路径（完整绝对路径不进日志）。
         let audit_detail = crate::cm_tools::tools::audit_path_detail(&ext_path);
-        if caps.path_scope.is_unrestricted() {
+        if caps.path_scope().is_unrestricted() {
             crate::cm_agent::permission_audit::record_allowed(
                 caps,
                 crate::cm_agent::permission_audit::PermissionAxis::Path,
@@ -89,7 +89,7 @@ async fn approve_external_read_dir_if_needed(
             );
             return Ok(());
         }
-        if caps.approval == crate::cm_agent::permission::ApprovalPolicy::Deny {
+        if caps.approval() == crate::cm_agent::permission::ApprovalPolicy::Deny {
             crate::cm_agent::permission_audit::record_denied(
                 caps,
                 crate::cm_agent::permission_audit::PermissionAxis::Path,
@@ -98,9 +98,9 @@ async fn approve_external_read_dir_if_needed(
             );
             return Err(format!(
                 "错误：当前权限等级（{}）下不允许 read_dir 访问工作区外路径 \"{}\"：{}。",
-                caps.level.as_str(),
+                caps.level().as_str(),
                 ext_path,
-                caps.level.promise_zh()
+                caps.level().promise_zh()
             ));
         }
     }
@@ -112,7 +112,7 @@ async fn approve_external_read_dir_if_needed(
     }
     let spec = tool_approval::approval_spec_read_dir_external_path(&ext_path);
     let allow_handles =
-        tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level));
+        tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level()));
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.and_then(|w| w.approval_sink()),
         &spec,
@@ -260,7 +260,7 @@ async fn dispatch_sync_default_tool(
     // 各工具实现只读 `ctx.path_scope`。
     let path_scope = env
         .permission
-        .map(|c| c.path_scope)
+        .map(|c| c.path_scope())
         .unwrap_or(crate::cm_types::PathScope::SessionRoot);
 
     if name == crate::cm_names::READ_DIR {
@@ -460,7 +460,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
     let workspace_changelist = workspace_changelist.clone();
     let cfg: &Arc<AgentConfig> = cfg;
     let turn_allow: Option<&HashSet<String>> = *turn_allow;
-    let permission: Option<&crate::cm_agent::permission::PermissionCaps> = *permission;
+    let permission: Option<&dyn crate::cm_agent::permission::PolicyEngine> = *permission;
     let sse_out_tx = *sse_out_tx;
     let sse_control_mirror = *sse_control_mirror;
     let cancel = cancel.clone();
@@ -627,7 +627,7 @@ pub async fn prefetch_parallel_syncdefault_approvals(
     tool_calls: &[ToolCall],
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     handler_lookup: &HandlerLookupTable,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();

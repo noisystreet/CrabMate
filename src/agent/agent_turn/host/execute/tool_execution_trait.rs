@@ -24,7 +24,7 @@ pub struct ParallelPrefetchParams<'a> {
     pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub handler_lookup: &'a HandlerLookupTable,
     /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判）。
-    pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    pub permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 /// 根包实现的工具分发（经 [`super::ToolDispatch`] 与 `workflow_execute` 等）。

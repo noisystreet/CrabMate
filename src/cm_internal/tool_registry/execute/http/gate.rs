@@ -25,23 +25,20 @@ use super::super::ToolExecEnv;
 async fn http_tool_url_allowed(
     cfg: &crate::cm_config::AgentConfig,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
     url: &reqwest::Url,
     storage_key: &str,
 ) -> bool {
-    use crate::cm_agent::permission::NetScope;
-    let prefixes: &[String] = match permission.map(|c| &c.net_scope) {
-        Some(NetScope::Prefixes(list)) => list.as_slice(),
-        // `Any` / `None` 已由 `http_net_gate` 先行定论。这两个调用点都有
-        // `needs_prefix_lookup` 守卫，所以 `Any` 分支当前不可达；保留它是为了让
-        // 「误加调用点」时失败方向是**更严**（不放行）而不是放宽。
-        Some(_) => &[],
+    // `Any` / `None` 已由 `http_net_gate` 先行定论：端口对这两档返回空表，所以
+    // 「误加调用点」时失败方向仍是**更严**（不放行）而不是放宽。
+    let prefixes: &[String] = match permission {
+        Some(caps) => caps.outbound_prefixes(),
         None => cfg.http_fetch.http_fetch_allowed_prefixes.as_slice(),
     };
     if tools::http_fetch::url_matches_allowed_prefixes(url, prefixes) {
         return true;
     }
-    let key = crate::cm_types::scoped_allowlist_key(permission.map(|c| c.level), storage_key);
+    let key = crate::cm_types::scoped_allowlist_key(permission.map(|c| c.level()), storage_key);
     match web_ctx {
         Some(w) => w.persistent_allowlist().lock().await.contains(&key),
         None => false,
@@ -61,24 +58,24 @@ enum HttpNetGate {
 
 /// 权限等级拒绝出站访问时的正文。只报 origin，不回显完整 URL（query 里可能有敏感参数）。
 fn http_tool_net_denied_message(
-    caps: &crate::cm_agent::permission::PermissionCaps,
+    caps: &dyn crate::cm_agent::permission::PolicyEngine,
     url: &reqwest::Url,
 ) -> String {
     format!(
         "错误：当前权限等级（{}）下不允许访问出站地址 {}：{}。",
-        caps.level.as_str(),
+        caps.level().as_str(),
         url.origin().ascii_serialization(),
-        caps.level.promise_zh()
+        caps.level().promise_zh()
     )
 }
 
 /// 由 `caps` + 前缀命中结果判定三态；`caps = None`（未接线）回落现状「命中即放行，否则审批」。
 fn http_net_gate(
-    caps: Option<&crate::cm_agent::permission::PermissionCaps>,
+    caps: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
     url: &reqwest::Url,
     url_allowed: bool,
 ) -> HttpNetGate {
-    use crate::cm_agent::permission::{ApprovalPolicy, NetScope};
+    use crate::cm_agent::permission::ApprovalPolicy;
     let Some(caps) = caps else {
         return if url_allowed {
             HttpNetGate::Allow
@@ -88,44 +85,45 @@ fn http_net_gate(
     };
     // 懒算：`Prefixes(_) if url_allowed`（L0–L3 常态放行）既不记录也不需要它。
     let audit_origin = || url.origin().ascii_serialization();
-    match caps.net_scope {
-        NetScope::None => {
-            crate::cm_agent::permission_audit::record_denied(
-                caps,
-                crate::cm_agent::permission_audit::PermissionAxis::Net,
-                None,
-                Some(&audit_origin()),
-            );
-            HttpNetGate::Deny(http_tool_net_denied_message(caps, url))
-        }
-        NetScope::Any => {
-            // L4 的唯一留痕点之一：出站不再有前缀与审批，全靠这条审计事件。
-            crate::cm_agent::permission_audit::record_allowed(
-                caps,
-                crate::cm_agent::permission_audit::PermissionAxis::Net,
-                None,
-                Some(&audit_origin()),
-            );
-            HttpNetGate::Allow
-        }
-        NetScope::Prefixes(_) if url_allowed => HttpNetGate::Allow,
-        NetScope::Prefixes(_) if caps.approval == ApprovalPolicy::Deny => {
-            crate::cm_agent::permission_audit::record_denied(
-                caps,
-                crate::cm_agent::permission_audit::PermissionAxis::Net,
-                None,
-                Some(&audit_origin()),
-            );
-            HttpNetGate::Deny(http_tool_net_denied_message(caps, url))
-        }
-        NetScope::Prefixes(_) => HttpNetGate::NeedApproval,
+    if caps.outbound_denied() {
+        crate::cm_agent::permission_audit::record_denied(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Net,
+            None,
+            Some(&audit_origin()),
+        );
+        return HttpNetGate::Deny(http_tool_net_denied_message(caps, url));
     }
+    if caps.outbound_allows_any() {
+        // L4 的唯一留痕点之一：出站不再有前缀与审批，全靠这条审计事件。
+        crate::cm_agent::permission_audit::record_allowed(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Net,
+            None,
+            Some(&audit_origin()),
+        );
+        return HttpNetGate::Allow;
+    }
+    // 余下即「查前缀」档：命中前缀直接放行；未命中时 L2 硬拒、L3 走审批。
+    if url_allowed {
+        return HttpNetGate::Allow;
+    }
+    if caps.approval() == ApprovalPolicy::Deny {
+        crate::cm_agent::permission_audit::record_denied(
+            caps,
+            crate::cm_agent::permission_audit::PermissionAxis::Net,
+            None,
+            Some(&audit_origin()),
+        );
+        return HttpNetGate::Deny(http_tool_net_denied_message(caps, url));
+    }
+    HttpNetGate::NeedApproval
 }
 
 /// 未放行时发起 Web 审批；`Ok(())` 表示可继续本地执行。
 async fn http_tool_gate_url_approval(
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
     spec: &crate::cm_internal::tool_approval::ApprovalRequestSpec,
     sse_log_label: &'static str,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
@@ -137,7 +135,7 @@ async fn http_tool_gate_url_approval(
     }
     match tool_approval::interactive_gate_web_runtime(
         web_ctx,
-        permission.map(|c| c.level),
+        permission.map(|c| c.level()),
         spec,
         sse_log_label,
     )
@@ -171,7 +169,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn http_tool_preflight(
     // S3：先按 `net_scope` 判三态。`Any` / `None` 不必再查前缀与 persistent allowlist
     // （省一次加锁，也让 L0 的拒绝不依赖配置长什么样）。
     let needs_prefix_lookup = p.env.permission.is_none_or(|c| {
-        matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
+        c.outbound_uses_prefixes()
     });
     let url_allowed = needs_prefix_lookup
         && http_tool_url_allowed(
@@ -237,13 +235,13 @@ pub(in crate::cm_internal::tool_registry::execute) async fn spawn_blocking_http_
 pub(in crate::cm_internal::tool_registry::execute) async fn http_fetch_prefetch_approval(
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     cfg: &crate::cm_config::AgentConfig,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
     url: &reqwest::Url,
     storage_key: &str,
     approval_args: &str,
 ) -> Result<(), String> {
     let needs_prefix_lookup = permission.is_none_or(|c| {
-        matches!(c.net_scope, crate::cm_agent::permission::NetScope::Prefixes(_))
+        c.outbound_uses_prefixes()
     });
     let url_allowed = needs_prefix_lookup
         && http_tool_url_allowed(cfg, web_ctx, permission, url, storage_key).await;

@@ -199,7 +199,7 @@ struct WorkflowExecuteDagParams<'a> {
     command_max_output_len: usize,
     request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
     /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判）。
-    permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, bool) {
@@ -268,13 +268,13 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         None => cfg.allowed_commands.clone().into(),
     };
     let path_scope = permission
-        .map(|c| c.path_scope)
+        .map(|c| c.path_scope())
         .unwrap_or(crate::cm_types::PathScope::SessionRoot);
-    let http_fetch_allowed_prefixes: Vec<String> = match permission.map(|c| &c.net_scope) {
+    let http_fetch_allowed_prefixes: Vec<String> = match permission {
         // L4：`*` 哨兵即「不查前缀」（`prefix_allows_any_http_url` 认它）。
-        Some(crate::cm_agent::permission::NetScope::Any) => vec!["*".to_string()],
+        Some(caps) if caps.outbound_allows_any() => vec!["*".to_string()],
         // L0：出站全禁；空表让前缀匹配必然失败。
-        Some(crate::cm_agent::permission::NetScope::None) => Vec::new(),
+        Some(caps) if caps.outbound_denied() => Vec::new(),
         _ => cfg.http_fetch_allowed_prefixes.clone(),
     };
     let weather_timeout_secs = cfg.weather_timeout_secs;
@@ -347,7 +347,7 @@ pub async fn run_workflow_execute_tool(
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
     request_chrome_merge: Option<Arc<dyn std::any::Any + Send + Sync>>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> (String, bool) {
     let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
     info!(

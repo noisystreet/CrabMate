@@ -111,7 +111,7 @@ pub async fn prefetch_http_fetch_parallel_approvals(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
-    permission: Option<&crate::cm_agent::permission::PermissionCaps>,
+    permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();

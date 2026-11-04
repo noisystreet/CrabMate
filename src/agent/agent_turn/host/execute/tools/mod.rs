@@ -80,7 +80,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照（可见性已在规划侧生效，这里供 early-deny 与执行期判定）。
-    pub permission: &'a crate::cm_agent::permission::PermissionCaps,
+    pub permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
@@ -162,7 +162,7 @@ struct ExecuteToolsCommonCtx<'a> {
     step_executor_constraint: Option<PlanStepExecutorKind>,
     tools_defs_full: &'a [Tool],
     turn_allow: Option<&'a HashSet<String>>,
-    permission: &'a crate::cm_agent::permission::PermissionCaps,
+    permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
