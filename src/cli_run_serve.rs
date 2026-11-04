@@ -348,6 +348,25 @@ pub(super) fn serve_ready_json(
     })
 }
 
+/// Web 鉴权门槛：非 loopback 且未配 `web_api_bearer_token`（也没显式放开）时直接拒启。
+///
+/// 从 `cli_run.rs` 搬到本文件（#1274 审查跟进）：唯一调用方是 [`serve_validate_bind_gates`]，
+/// 与 `serve_bind_auth_flags` 同族，放在这里才不用跨国取父模块的私有项。
+async fn validate_bind_auth(
+    cfg_holder: &SharedAgentConfig,
+    bind_ip: std::net::IpAddr,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let (auth_enabled, allow_insec) = serve_bind_auth_flags(cfg_holder).await;
+    if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / CM_WEB_API_BEARER_TOKEN、`crabmate web-bearer set`，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
+        )
+        .into());
+    }
+    Ok(auth_enabled)
+}
+
 /// `serve` 启动期的「绑定地址 → 安全门槛」校验，一次做完两件事：
 ///
 /// 1. Web 鉴权（非 loopback 无 token 直接拒启）；
@@ -355,12 +374,12 @@ pub(super) fn serve_ready_json(
 ///    非 loopback 下显式要 `unrestricted` 而缺 `allow_unrestricted_permission_for_non_loopback`
 ///    时直接启动失败，而不是悄悄降档——否则远端部署会以为拿到了 L4。
 ///
-/// 合并成一个入口也避免 `cli_run::run_serve_branch` 的 `?` 计数继续增长（CCN ≤ 10 门禁）。
+/// 合并成一个入口也避免 `cli_run_serve_branch::run_serve_branch` 的 `?` 计数继续增长（CCN ≤ 10 门禁）。
 pub(super) async fn serve_validate_bind_gates(
     cfg_holder: &SharedAgentConfig,
     bind_ip: std::net::IpAddr,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let auth_enabled = super::validate_bind_auth(cfg_holder, bind_ip).await?;
+    let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
     let (ceiling, source) =
         crate::cm_config::freeze_permission_ceiling_for_bind(cfg_holder, bind_ip).await?;
     info!(
