@@ -7,9 +7,9 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::json;
 
-use crate::agent::model_context_view::StructuralCommit;
 use crate::cm_api_contract::chat::ConversationLayoutMeta;
-use crate::types::Message;
+use crate::cm_types::Message;
+use crate::cm_types::StructuralCommit;
 
 mod archive;
 #[cfg(test)]
@@ -651,7 +651,7 @@ fn persist_messages_bump_revision(
 pub(crate) fn branch_cut_index(messages: &[Message], ordinal: usize) -> usize {
     let mut u = 0usize;
     for (i, m) in messages.iter().enumerate() {
-        if crate::types::user_message_counts_for_branch_truncation(m) {
+        if crate::cm_types::user_message_counts_for_branch_truncation(m) {
             if u == ordinal {
                 return i;
             }
@@ -668,12 +668,12 @@ pub(crate) fn branch_cut_index(messages: &[Message], ordinal: usize) -> usize {
 fn reexpand_canonical(canonical: &[Message], archived_original: Vec<Message>) -> Vec<Message> {
     let mut stripped: Vec<Message> = canonical
         .iter()
-        .filter(|m| !crate::types::is_context_summary_injection(m))
+        .filter(|m| !crate::cm_types::is_context_summary_injection(m))
         .cloned()
         .collect();
     let insert_at = stripped
         .iter()
-        .position(crate::types::user_message_counts_for_branch_truncation)
+        .position(crate::cm_types::user_message_counts_for_branch_truncation)
         .or_else(|| stripped.iter().position(|m| m.role != "system"))
         .unwrap_or(stripped.len());
     let mut out = Vec::with_capacity(stripped.len() + archived_original.len());
@@ -684,7 +684,7 @@ fn reexpand_canonical(canonical: &[Message], archived_original: Vec<Message>) ->
 }
 
 /// 截断到「第 `user_ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
-/// 计数不含长期记忆 / 变更集 / 首轮工作区画像 / 上下文摘要等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
+/// 计数不含长期记忆 / 变更集 / 首轮工作区画像 / 上下文摘要等注入条（见 [`crate::cm_types::user_message_counts_for_branch_truncation`]）。
 ///
 /// `user_ordinal` 是客户端**会话级**序号（含已归档回合，见 §3.11）：
 /// - 分支点落在 canonical 保留窗口内（`user_ordinal >= 已归档真实用户数`）时，换算为 canonical 内序号直接截断；

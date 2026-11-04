@@ -39,6 +39,14 @@ pub mod cm_turn_layout;
 #[cfg(feature = "protocol")]
 pub mod cm_types;
 
+/// `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
+///
+/// 挂在 **`sqlite`** 而非 `web` / `server` 之下，且**不**随 `lib_server.rs` 一起编译：
+/// 存储层只需要 `protocol` 的类型（`cm_types` / `cm_api_contract`）加 `rusqlite`，
+/// 与 Axum、回合编排都无关（S1-b，见 #1278）。`web = ["sqlite"]` 保证既有构建不变。
+#[cfg(feature = "sqlite")]
+mod conversation_store;
+
 #[cfg(feature = "server")]
 include!("lib_server.rs");
 

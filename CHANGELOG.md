@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- (none yet)
+- **The conversation store no longer rides on the `web` (or `server`) feature graph: a new `sqlite` feature carries it, and `StructuralCommit` moved into `cm_types`.** `conversation_store` used to be `#[cfg(feature = "web")] mod conversation_store;` inside `lib_server.rs`, so the storage layer inherited Axum *and* the whole agent turn orchestration — although it only needs `rusqlite` plus the `protocol` types. That is why "reuse the session store from `save-session` / `bench` / a future terminal" was not merely untidy but impossible. Two things had to move first: `StructuralCommit` lived in `agent::model_context_view` and is now `cm_types::StructuralCommit` (**additive public surface** on the `protocol` promise — the old path is re-exported, so no caller changes), and the module itself is now declared in `src/lib.rs` under `#[cfg(feature = "sqlite")]`. The feature graph is `sqlite = ["dep:rusqlite", "dep:flate2", "dep:base64"]`, `web = ["sqlite", …]`, with `default = ["server"]` unchanged, so **existing builds compile exactly the same code**. The verification is the substance here: `cargo check --no-default-features --features protocol,sqlite` now genuinely compiles the store (it previously skipped `lib_server.rs` wholesale, so the check proved nothing), while `--features protocol` alone still does not. That standalone build emits `dead_code` warnings — the store's callers all live in `server` — which is the honest state of the extraction rather than a regression. No wire protocol, config key or runtime behaviour changes. Refs #1278.
 
 ### Fixed
 

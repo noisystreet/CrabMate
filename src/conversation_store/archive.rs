@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 use super::{ARCHIVE_TABLE, messages_from_json, messages_to_json, now_unix};
-use crate::types::Message;
+use crate::cm_types::Message;
 
 /// 归档区间被移出 canonical 的原因（设计文档 §3.8）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,10 @@ pub struct ArchiveRow {
 pub enum ArchiveError {
     Sqlite(rusqlite::Error),
     /// 某条归档行无法解码（`seq` + 原因），供调用方诊断。
-    Decode { seq: i64, reason: String },
+    Decode {
+        seq: i64,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ArchiveError {
@@ -122,7 +125,9 @@ fn decode_archive_payload(
     codec: &str,
 ) -> Result<Vec<Message>, ArchiveError> {
     match codec {
-        "identity" => messages_from_json(payload).map_err(|reason| ArchiveError::Decode { seq, reason }),
+        "identity" => {
+            messages_from_json(payload).map_err(|reason| ArchiveError::Decode { seq, reason })
+        }
         "gzip" => {
             use base64::Engine as _;
             let bytes = base64::engine::general_purpose::STANDARD
@@ -134,10 +139,11 @@ fn decode_archive_payload(
             use std::io::Read as _;
             let mut dec = flate2::read::GzDecoder::new(bytes.as_slice());
             let mut s = String::new();
-            dec.read_to_string(&mut s).map_err(|e| ArchiveError::Decode {
-                seq,
-                reason: format!("归档 gzip 解压失败: {e}"),
-            })?;
+            dec.read_to_string(&mut s)
+                .map_err(|e| ArchiveError::Decode {
+                    seq,
+                    reason: format!("归档 gzip 解压失败: {e}"),
+                })?;
             messages_from_json(&s).map_err(|reason| ArchiveError::Decode { seq, reason })
         }
         other => Err(ArchiveError::Decode {
@@ -303,7 +309,7 @@ pub fn archive_real_user_count(
     let messages = load_archive_messages(conn, conversation_id)?;
     Ok(messages
         .iter()
-        .filter(|message| crate::types::user_message_counts_for_branch_truncation(message))
+        .filter(|message| crate::cm_types::user_message_counts_for_branch_truncation(message))
         .count())
 }
 
