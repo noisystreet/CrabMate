@@ -89,7 +89,8 @@ pub(super) async fn run_cli_main_routes(
     if let Some(port) = serve_port {
         #[cfg(feature = "web")]
         {
-            super::run_serve_branch(super::ServeBranchArgs {
+            super::cli_run_serve_branch::run_serve_branch(
+                super::cli_run_serve_branch::ServeBranchArgs {
                 cfg_holder: &cfg_holder,
                 config_path: &config_path,
                 client,
