@@ -98,7 +98,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         workspace_is_set,
         cancel: rt.cancel.clone(),
         per_flight: std::sync::Arc::clone(&rt.flight),
-        web_tool_ctx: rt.web_tool_ctx.as_ref(),
+        web_tool_ctx: rt.web_tool_ctx.as_ref().map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
         temperature_override,
         model_override: rt.client_model_override,
         use_executor_model: false,

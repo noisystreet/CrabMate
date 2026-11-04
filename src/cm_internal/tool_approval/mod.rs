@@ -24,18 +24,6 @@ pub use crate::cm_approval::{
 };
 use crate::cm_types::CommandApprovalDecision;
 
-/// 从 [`crate::cm_internal::tool_registry::WebToolRuntime`] 构造 Web 审批通道（类型定义在 `cm_tools`）。
-pub fn web_tool_runtime_approval_sink(
-    rt: &crate::cm_tools::tool_runtime::WebToolRuntime,
-) -> WebApprovalSink<'_> {
-    WebApprovalSink {
-        out_tx: &rt.out_tx,
-        approval_rx_shared: &rt.approval_rx_shared,
-        approval_request_guard: &rt.approval_request_guard,
-        cancel: rt.cancel.as_ref(),
-    }
-}
-
 /// 审批能力域 → 审计轴（设计 §11.2）。
 ///
 /// `WorkflowGate` 是节点级的跨轴放行（可能是命令、也可能是任意工具），归 `Tool`：
@@ -126,29 +114,29 @@ pub async fn request_tool_interactive_approval(
     Err(ToolApprovalWebError::ChannelUnavailable)
 }
 
-/// 从 [`crate::cm_tools::tool_runtime::WebToolRuntime`] 构造 persistent allowlist 句柄。
+/// 从审批端口构造 persistent allowlist 句柄。
 ///
 /// `level` 是本回合生效等级，用于给 `AllowAlways` 的键加**作用域前缀**（设计 §6.3）：
 /// 只传 `Option` 而不是 `&PermissionCaps`，是因为本层只需要「键写进哪一档」这一件事。
 pub fn shared_allowlist_handles_web(
-    web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     level: Option<crate::cm_types::PermissionLevel>,
 ) -> SharedAllowlistHandles<'_> {
     SharedAllowlistHandles {
-        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+        web: web_ctx.map(|w| w.persistent_allowlist()),
         level,
     }
 }
 
 /// Web 会话下的交互审批门控（封装 allowlist 句柄与 sink 构造）。
 pub async fn interactive_gate_web_runtime(
-    web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     level: Option<crate::cm_types::PermissionLevel>,
     spec: &ApprovalRequestSpec,
     sse_log_label: &'static str,
 ) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
     interactive_gate_after_whitelist_miss(
-        web_ctx.map(web_tool_runtime_approval_sink),
+        web_ctx.and_then(|w| w.approval_sink()),
         spec,
         sse_log_label,
         &shared_allowlist_handles_web(web_ctx, level),

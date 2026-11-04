@@ -23,7 +23,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_fetch_i
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -76,7 +76,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_request
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {

@@ -119,7 +119,7 @@ impl RunCommandCaps {
 pub(in crate::cm_internal::tool_registry::execute) struct PolicyContext<'a> {
     pub(in crate::cm_internal::tool_registry::execute) cfg: &'a Arc<AgentConfig>,
     pub(in crate::cm_internal::tool_registry::execute) workspace: &'a Path,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::cm_internal::tool_registry::execute) mode: ExecMode,
     pub(in crate::cm_internal::tool_registry::execute) sse_command: &'a str,
     /// 本回合权限能力快照；`None` = 未接线，回落 `cfg` 白名单（S3）。
@@ -330,7 +330,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn request_unknown_cmd_
         &cmd_show,
     );
     let decision = match crate::cm_internal::tool_approval::request_tool_interactive_approval(
-        Some(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink(web_ctx)),
+        web_ctx.approval_sink(),
         &spec,
         "tool_registry::run_command approval",
         // 与 `allow_handles` 同一档：弹窗上的等级必须就是这次批准将要写入的作用域档，
@@ -422,7 +422,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn resolve_unknown_cmd_
             ctx.permission.map(|c| c.level),
             parsed.cmd.as_str(),
         );
-        if w.persistent_allowlist_shared
+        if w.persistent_allowlist()
             .lock()
             .await
             .contains(&stored_cmd_key)
@@ -562,7 +562,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn approve_posix_shell_
         ctx.permission.map(|c| c.level),
     );
     match tool_approval::interactive_gate_after_whitelist_miss(
-        ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        ctx.web_ctx.and_then(|w| w.approval_sink()),
         &spec,
         "tool_registry::run_command shell script approval",
         &allow_handles,
@@ -697,7 +697,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn approve_external_run
         ctx.permission.map(|c| c.level),
     );
     match tool_approval::interactive_gate_after_whitelist_miss(
-        ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        ctx.web_ctx.and_then(|w| w.approval_sink()),
         &spec,
         "tool_registry::run_command external path approval",
         &allow_handles,

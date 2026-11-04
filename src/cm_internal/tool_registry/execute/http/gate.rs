@@ -24,7 +24,7 @@ use super::super::ToolExecEnv;
 /// 不得继续命中，否则「L2 = 人工例外通道关闭」名不副实。
 async fn http_tool_url_allowed(
     cfg: &crate::cm_config::AgentConfig,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     url: &reqwest::Url,
     storage_key: &str,
@@ -43,7 +43,7 @@ async fn http_tool_url_allowed(
     }
     let key = crate::cm_types::scoped_allowlist_key(permission.map(|c| c.level), storage_key);
     match web_ctx {
-        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
+        Some(w) => w.persistent_allowlist().lock().await.contains(&key),
         None => false,
     }
 }
@@ -124,7 +124,7 @@ fn http_net_gate(
 
 /// 未放行时发起 Web 审批；`Ok(())` 表示可继续本地执行。
 async fn http_tool_gate_url_approval(
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     spec: &crate::cm_internal::tool_approval::ApprovalRequestSpec,
     sse_log_label: &'static str,
@@ -154,7 +154,7 @@ pub(in crate::cm_internal::tool_registry::execute) struct HttpToolPreflightParam
     pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
     pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a WebToolRuntime>,
+    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
     pub(in crate::cm_internal::tool_registry::execute) tool_name: &'static str,
     pub(in crate::cm_internal::tool_registry::execute) url: &'a reqwest::Url,
@@ -235,7 +235,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn spawn_blocking_http_
 
 /// 并行预取：`http_fetch` URL 审批（与单工具路径共用 spec 构建器与网络门）。
 pub(in crate::cm_internal::tool_registry::execute) async fn http_fetch_prefetch_approval(
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     cfg: &crate::cm_config::AgentConfig,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
     url: &reqwest::Url,
@@ -372,7 +372,7 @@ mod http_net_gate_tests {
         // 只借 `persistent_allowlist_shared`：本用例完全不走审批，所以自己搭一个最小句柄，
         // 不复用 `super::tests::approval_fixture`（那会 preseed 一条没人消费的决策）。
         let (web, _out_rx, _decision_tx) = bare_web_runtime();
-        web.persistent_allowlist_shared
+        crate::cm_approval::ApprovalBroker::persistent_allowlist(&web)
             .lock()
             .await
             .insert(crate::cm_types::scoped_allowlist_key(

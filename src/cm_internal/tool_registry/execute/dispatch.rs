@@ -49,7 +49,7 @@ struct SyncDefaultToolDispatchArgs<'a> {
 }
 
 /// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
-fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a WebToolRuntime> {
+fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a dyn crate::cm_approval::ApprovalBroker> {
     runtime.ctx
 }
 
@@ -70,7 +70,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn read_dir_path_is_external(
 
 async fn approve_external_read_dir_if_needed(
     args: &str,
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> Result<(), String> {
     let Some(ext_path) = read_dir_path_is_external(args) else {
@@ -114,7 +114,7 @@ async fn approve_external_read_dir_if_needed(
     let allow_handles =
         tool_approval::shared_allowlist_handles_web(web_ctx, permission.map(|c| c.level));
     match tool_approval::interactive_gate_after_whitelist_miss(
-        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        web_ctx.and_then(|w| w.approval_sink()),
         &spec,
         "tool_registry::read_dir external path approval",
         &allow_handles,
@@ -625,7 +625,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
 /// 返回 `(name, args) -> 错误文案`；未出现的键表示已获准或无需审批。
 pub async fn prefetch_parallel_syncdefault_approvals(
     tool_calls: &[ToolCall],
-    web_ctx: Option<&WebToolRuntime>,
+    web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     handler_lookup: &HandlerLookupTable,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {

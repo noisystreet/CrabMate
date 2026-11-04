@@ -15,7 +15,6 @@ use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SseEncoder, SsePayload, encode_message};
-use crate::tool_registry;
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, Tool, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
@@ -68,7 +67,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub control: crate::agent::agent_turn::TurnControlSink<'a>,
     /// 用户取消标志（与 [`crate::agent::agent_turn::RunLoopIo::cancel`] 同源）。
     pub cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
@@ -157,7 +156,7 @@ struct ExecuteToolsCommonCtx<'a> {
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     tool_result_envelope_v1: bool,
-    web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,

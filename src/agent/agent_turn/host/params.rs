@@ -38,7 +38,6 @@ use crate::agent::agent_turn::messages::{
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
 
 /// LLM 接入、配置快照与工作目录（整场不变）。
@@ -63,7 +62,7 @@ pub(crate) struct RunLoopIo<'a> {
 
 /// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。
 pub(crate) struct RunLoopAttach<'a> {
-    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub per_flight: Option<Arc<PerTurnFlight>>,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。

@@ -55,7 +55,7 @@ struct SerialToolLoopState<'a> {
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     tool_result_envelope_v1: bool,
-    web_tool_ctx: Option<&'a crate::tool_registry::WebToolRuntime>,
+    web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,

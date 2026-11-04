@@ -1,6 +1,6 @@
 # SDK 面与命令薄封装（设计草案）
 
-**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 trait 抽取与 S2 / S3 / S4 / S5 / S6 未开工**。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。
+**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S3-a 的审批端口已实施（#1280）；S1-b 的 trait 抽取、S3-b 与 S2 / S4 / S5 / S6 未开工**。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。
 **受众**：维护者、Client（Web / `crabmate-tui`）维护者、贡献者。
 **语言**：中文。
 **维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：[#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
@@ -202,7 +202,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S5-a**（先做） | `cli_run.rs` 减行，纯搬移一分为三 | 见 §12.3 | 见 §12.2；**唯一有硬截止的一步** |
 | **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `lib_server.rs`；**`SessionStore` trait ⏳ 未做**——形态取决于目标（复用 vs 承诺面），见 §7.1 |
 | **S2** | `TurnRequest` / `TurnEvent` / `TurnEngine`；旧 BuildArgs 转 `#[deprecated]` 封装（P2） | `fixtures/sse_ag_ui_golden.jsonl`、`tool_result_envelope_golden.jsonl` **不改即绿** | **无前置**（2026-11-04 已核销：`RunAgentTurnSession<'a>` 只有 3 个字段、**不含** store 句柄 ⇒ S1/S2/S3 互不阻塞）；按「一组一组搬」，每组一次提交 |
-| **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | 无前置；只包现有 `tool_approval`，**不新增审批语义** |
+| **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b ⏳**：`PolicyEngine` / `ToolSandbox` / `ToolHost` 本体未做。全程只包现有 `tool_approval`，**不新增审批语义** |
 | **S4** | `cm_internal` 拆桶；禁边表改为「上层只准引用 `ports`」（P1） | `scripts/check-crate-deps.sh` 白名单式规则；外部引用数 **20 → 0** | **前置**：先跑 `code_nav call_graph_sketch` 复核分桶假设（§10.2）；回退成本最高，务必最后做 |
 | **S5** | CLI 分派表 + `cm_cli/` 禁边 + serve builder（P4） | `crabmate --help` 与 `man/crabmate.1` **无 diff** | 须在 S5-a 之后：余量恢复后才值得做语义重构 |
 | **S6** | 承诺面从「模块存在」升级为「类型 + trait 清单」（P6、P7） | rustdoc 白名单 + semver 检查脚本 | ⚠️ 承诺面所在章节未复核（早期稿引「§2.4」但未定位）；改承诺面即关联 Client 的 `client-contract-v*` 钉版本 |
@@ -220,7 +220,15 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 直接照 §5.3 草案签名抽一个 trait 会同时踩两条：它拿 `web` 的类型当参数（污染承诺面），而当前唯一消费者 `AppStateConversationRuntime` 也不需要一个 trait（它持有具体 enum 就够）。**等目标定下来再做，不为「把 S1 打勾」而抽。**
 
-**当前推荐顺序（2026-11-05 更新）**：S5-a 已完成（§12），**硬截止已解除**；**S1-a 与 S1-b 的 feature 解绑已完成**（#1279）。下一步是 **S3**（无前置、只包现有 `tool_approval`，最干净）与 **S1-b 的 trait 抽取**（形态待定，见 §7.1），其后 **S2** → **S4**（仍放最后，开工前先跑 `call_graph_sketch`）→ **S6**（改承诺面须同步判断 Client `client-contract-v*`）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
+### 7.2 S3-a 的端口面为什么比 §5.2 草案宽
+
+§5.2 草案只写了一个 `async fn ask(&self, spec) -> ApprovalOutcome`。实际动手时，编译器把执行面**真正在用的全部能力**列了出来：审批 `sink`、`turn_job_id`、`out_tx`、`persistent_allowlist`、`cancel`——其中后三项原本是**直接读字段**（`workflow_tool_dispatch` 组装 `WorkflowApprovalMode::Interactive`、`background_job` 取 `out_tx` 的弱引用、`http/gate` 查白名单表）。
+
+于是 `ApprovalBroker` 按**实际消费面**收口，而不是先定一个更窄的 trait、再在调用点 `downcast` 回 `WebToolRuntime`。后者会造出「端口存在但立刻被穿透」的假解耦，与 S1-b 那次「check 通过、目标模块根本没编译」是同一类错误。
+
+代价是端口面偏宽（5 个方法）。这是诚实的：执行面确实需要这些能力。若 S3-b 引入 `ToolHost` 后某些能力只由宿主使用，再逐个从端口上收窄。
+
+**当前推荐顺序（2026-11-05 更新）**：S5-a 已完成（§12），**硬截止已解除**；S1-a / S1-b 解绑（#1279）与 S3-a（#1280）已完成。下一步是 **S3-b**（`PolicyEngine` / `ToolSandbox` / `ToolHost` 本体）与 **S1-b 的 trait 抽取**（形态待定，见 §7.1），其后 **S2** → **S4**（仍放最后，开工前先跑 `call_graph_sketch`）→ **S6**（改承诺面须同步判断 Client `client-contract-v*`）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
 

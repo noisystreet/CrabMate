@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::ToolCall;
 
-use crate::tool_registry::{DispatchToolParams, HandlerLookupTable, WebToolRuntime};
+use crate::tool_registry::{DispatchToolParams, HandlerLookupTable};
 
 /// 并行只读批预取审批失败映射的键。
 pub type ParallelPrefetchFailureKey = (String, String);
@@ -21,7 +21,7 @@ pub type ParallelPrefetchFailures = HashMap<ParallelPrefetchFailureKey, String>;
 pub struct ParallelPrefetchParams<'a> {
     pub tool_calls: &'a [ToolCall],
     pub cfg: &'a Arc<AgentConfig>,
-    pub web_tool_ctx: Option<&'a WebToolRuntime>,
+    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub handler_lookup: &'a HandlerLookupTable,
     /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判）。
     pub permission: Option<&'a crate::cm_agent::permission::PermissionCaps>,

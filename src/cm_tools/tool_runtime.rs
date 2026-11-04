@@ -10,7 +10,9 @@ use tokio::sync::{Mutex as TokioMutex, mpsc};
 /// 单次工具分发的运行时句柄（仅 Web SSE 审批通道；运维 CLI 无同进程对话审批）。
 pub struct ToolRuntime<'a> {
     pub workspace_changed: &'a mut bool,
-    pub ctx: Option<&'a WebToolRuntime>,
+    /// 审批通道（P3，S3-a）：只依赖 `crate::cm_approval::ApprovalBroker` 端口，
+    /// 不再写进具体实现类型 `WebToolRuntime`。
+    pub ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
 }
 
 pub struct WebToolRuntime {
@@ -26,4 +28,31 @@ pub struct WebToolRuntime {
     pub turn_job_id: Option<u64>,
     /// 当前回合的协作式取消标志；交互审批等待据此在用户点「停止」后提前退出。
     pub cancel: Option<Arc<AtomicBool>>,
+}
+
+impl crate::cm_approval::ApprovalBroker for WebToolRuntime {
+    fn approval_sink(&self) -> Option<crate::cm_approval::WebApprovalSink<'_>> {
+        Some(crate::cm_approval::WebApprovalSink {
+            out_tx: &self.out_tx,
+            approval_rx_shared: &self.approval_rx_shared,
+            approval_request_guard: &self.approval_request_guard,
+            cancel: self.cancel.as_ref(),
+        })
+    }
+
+    fn turn_job_id(&self) -> Option<u64> {
+        self.turn_job_id
+    }
+
+    fn out_tx(&self) -> &mpsc::Sender<String> {
+        &self.out_tx
+    }
+
+    fn persistent_allowlist(&self) -> &Arc<TokioMutex<HashSet<String>>> {
+        &self.persistent_allowlist_shared
+    }
+
+    fn cancel(&self) -> Option<&Arc<AtomicBool>> {
+        self.cancel.as_ref()
+    }
 }

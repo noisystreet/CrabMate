@@ -12,7 +12,8 @@ use crate::agent::agent_turn::policy::{ToolPolicyEarlyDenyParams, tool_policy_ea
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::tool_registry::{self, HandlerId, HandlerLookupTable, ToolRuntime, WebToolRuntime};
+use crate::tool_registry;
+use crate::tool_registry::{HandlerId, HandlerLookupTable, ToolRuntime};
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
@@ -39,7 +40,7 @@ struct ParallelUniqueBatchParts<'a> {
     effective_working_dir: &'a std::path::Path,
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    web_tool_ctx: Option<&'a WebToolRuntime>,
+    web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
     tools_defs_hint: Arc<Vec<crate::types::Tool>>,
     turn_allow: Option<&'a HashSet<String>>,
@@ -90,7 +91,7 @@ fn parallel_readonly_turn_replay_batch(
 async fn parallel_prefetch_approval_failures(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
-    web_tool_ctx: Option<&WebToolRuntime>,
+    web_tool_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     handler_lookup: &HandlerLookupTable,
     permission: Option<&crate::cm_agent::permission::PermissionCaps>,
 ) -> HashMap<(String, String), String> {
