@@ -27,6 +27,7 @@ pub(crate) fn json_error_response(
         })),
     )
 }
+mod conversation_backing;
 mod memory;
 mod permission;
 
