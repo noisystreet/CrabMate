@@ -116,7 +116,7 @@ pub(super) async fn run_cli_main_routes(
         }
     }
 
-    if super::run_benchmark_batch_if_requested(
+    if super::cli_run_bench::run_benchmark_batch_if_requested(
         &cfg_holder,
         &client,
         api_key.trim(),

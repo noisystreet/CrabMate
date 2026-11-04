@@ -297,11 +297,11 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 |---|---|---|
 | `cli_run_serve.rs`（原 730） | 拆出 instance lock 一族，**只减不增** | **已完成（#1275）：730 → 391** |
 | **新** `cli_run_serve_lock.rs` | 常量 ×3、`parse_instance_id` 166-191、`serve_instance_id` 194-205、`env_flag_enabled` 207-214、`serve_instance_lock_targets` 267-287、`serve_acquire_instance_lock_at` 301-352、`serve_acquire_instance_locks` 372-403，+ 7 个单测 | **已建：369 行**（业务 151 + 测试 135 + 头/常量） |
-| **新** `cli_run_serve_branch.rs` | `build_serve_runtime_state` 432-520、`spawn_uploads_cleanup` 586-609、`build_serve_shutdown_signal` 714-734、`run_serve_branch` 两变体 624-712 / 737-745，**外加 `ServeBranchArgs` 的两个 cfg 变体（404 web / 748 非 web）** | 待做：≈232 + 类型定义 |
-| **新** `cli_run_bench.rs` | `run_benchmark_batch_if_requested` 764-814（**无 `cfg` 门**） | 待做：≈51 |
-| `cli_run.rs` | 只剩 `EarlyCliDispatch`、`run_cli_from_parsed` 的一次分派、各 `try_early_*` | 待做：912 → ≈650（余量 8 → ≈270） |
+| **新** `cli_run_serve_branch.rs` | `build_serve_runtime_state` 432-520、`spawn_uploads_cleanup` 586-609、`build_serve_shutdown_signal` 714-734、`run_serve_branch` 两变体 624-712 / 737-745，**外加 `ServeBranchArgs` 的两个 cfg 变体（404 web / 748 非 web）** | **已完成（#1274）：323 物理行 / 291 非注释非空行**（`ServeRuntimeBuildInput` 随 `build_serve_runtime_state` 一并搬入） |
+| **新** `cli_run_bench.rs` | `run_benchmark_batch_if_requested` 764-814（**无 `cfg` 门**） | **已完成（#1274）：60 物理行 / 50 非注释非空行** |
+| `cli_run.rs` | 只剩 `EarlyCliDispatch`、`run_cli_from_parsed` 的一次分派、各 `try_early_*` | **已完成（#1274）：912 → 573**（余量 8 → **347**） |
 
-**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」更彻底——原估漏算了随代码搬走的 135 行单测。
+**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」更彻底——原估漏算了随代码搬走的 135 行单测。第二、三步同 PR 落地（#1274）：`cli_run.rs` 912 → **573**，比本表原估的「≈650」更低——`ServeRuntimeBuildInput` 随 `build_serve_runtime_state` 一起搬走，主文件的 `HashMap` / `AtomicU64` / `chat_job_queue` / `web` / `runtime` 五处 `use` 也随之失去消费点。
 
 #### 12.2.1 已实测的搬移约束（开工前核对，勿凭直觉改）
 
@@ -330,6 +330,9 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 | serve 装配「合计 211 行」 | **232 行**：漏了 `build_serve_shutdown_signal`（714-734，web-only，21 行） | 第二步的搬移清单与预计行数已相应调整 |
 | 第一步后 `cli_run_serve.rs`「≈580 行」 | **391 行**：原估只算业务代码，漏算随代码搬走的 135 行单测 | 该文件已无行数压力；第二步的目标回到 `cli_run.rs` 本身 |
 | — | **新增规律：搬移会改变可见性需求** | `ServeInstanceLocks` 必须 `pub(in crate::cli_run)`（出现在 `ServePrecheck` 公开字段类型里）；`ENV_DISABLE_INSTANCE_LOCK` 必须 `pub(super)`（自检日志要打印它）。照抄原可见性会在 `-D warnings` 下失败 |
+
+| — | **新增（#1274）：`server` feature 无条件包含 `web`** | `#[cfg(not(feature = "web"))]` 的 `run_serve_branch` / `ServeBranchArgs` 变体，在现有 feature 图下**任何组合都不编译**；`cargo check --no-default-features` 也不覆盖它（那组 feature 下 `cli_run` 整个不进编译图） | 搬移保持原样、未新增缺口；下文验收里「`--no-default-features` 覆盖两条 cfg 路径」这句**不成立**，不要再当已验证据引用 |
+| 「每个新文件 ≤ 200 行 nloc」（§12.3） | 与本表「`cli_run_serve_branch.rs` ≈232 + 类型定义」**自相矛盾**；实测 **291** 非注释非空行 | 按本表的三文件分配执行，未为凑 200 再切第四个文件：真正生效的门禁是 fn nloc ≤ 200（本 PR 最大 **89**）与 file ≤ 920（本文件 **323**，余量 597） |
 
 ### 12.3 验收
 
