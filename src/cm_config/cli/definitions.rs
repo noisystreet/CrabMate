@@ -58,6 +58,21 @@ pub struct ServeCmd {
     pub yes: bool,
 }
 
+/// `serve` 默认端口（`crabmate serve` 不带参数时的 CLI 契约）。
+pub const DEFAULT_SERVE_PORT: u16 = 8080;
+
+impl ServeCmd {
+    /// 实际监听端口：`--port` 优先，其次位置参数 `PORT`，都没有则 [`DEFAULT_SERVE_PORT`]。
+    ///
+    /// 派生量做成方法而不是 `ParsedCliArgs` 的字段（S5，见 #1295）：它是「我们怎么解释
+    /// 参数」，不是「用户给了什么」；契约测试也能直接断言它。
+    pub fn bind_port(&self) -> u16 {
+        self.port
+            .or(self.port_positional)
+            .unwrap_or(DEFAULT_SERVE_PORT)
+    }
+}
+
 /// 批量测评
 #[derive(Parser, Debug, Clone)]
 pub struct BenchCmd {
@@ -399,25 +414,17 @@ pub struct E2eCliArgs {
     pub judge: bool,
 }
 
-/// `parse_args` 扩展槽：非默认 CLI 流程（doctor / models / probe）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ExtraCliCommand {
-    #[default]
-    None,
-    Doctor,
-    Models,
-    Probe,
-    /// `mcp list`（`probe` 见子命令 `--probe`）
-    McpList {
-        probe: bool,
-    },
-    /// `mcp serve`（`--no-tools` / `--port` 见子命令）
-    McpServe {
-        no_tools: bool,
-        port: u16,
-    },
+impl From<&E2eCmd> for E2eCliArgs {
+    fn from(c: &E2eCmd) -> Self {
+        Self {
+            mode: c.mode.clone(),
+            output_dir: c.output_dir.clone(),
+            recordings_dir: c.recordings_dir.clone(),
+            scenarios_file: c.scenarios_file.clone(),
+            judge: c.judge,
+        }
+    }
 }
-
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// 启动 HTTP API（纯 API，不托管 UI；默认端口 8080）
@@ -488,49 +495,47 @@ pub struct BenchmarkCliArgs {
     pub system_prompt_file: Option<String>,
 }
 
-/// [`parse_args`](super::parse::parse_args) 的返回值：具名字段替代长元组，便于增删选项与调用方阅读。
+impl From<&BenchCmd> for BenchmarkCliArgs {
+    fn from(c: &BenchCmd) -> Self {
+        Self {
+            benchmark: c.benchmark.clone(),
+            batch: c.batch.clone(),
+            batch_output: c.batch_output.clone(),
+            task_timeout: c.task_timeout,
+            max_tool_rounds: c.max_tool_rounds,
+            samples: c.samples,
+            resume: c.resume,
+            system_prompt_file: c.bench_system_prompt.clone(),
+        }
+    }
+}
+
+/// 解析后的全局选项（[`ParsedCliArgs::global`]）。
+///
+/// 与 clap 的 [`GlobalOpts`] 分开：这里是**清洗后**形态（`--log` 去空白、`--llm-context-tokens`
+/// 的 `0` 折叠为 `None`），且不含任何子命令载荷——子命令原样留在 [`ParsedCliArgs::command`]。
+#[derive(Debug, Clone, Default)]
+pub struct CliGlobals {
+    pub config_path: Option<String>,
+    pub workspace: Option<String>,
+    pub no_tools: bool,
+    pub log_file: Option<String>,
+    pub llm_context_tokens: Option<u32>,
+}
+
+/// [`parse_args`](super::parse::parse_args) 的返回值。
+///
+/// **子命令载荷原样保留在 [`Self::command`] 里**（S5，见 #1295）。早先这里把 14 个
+/// [`Commands`] 变体拆成二十多个平铺 `Option<XxxCli>` 字段，`cli_run` 再用一串 `try_*`
+/// 猜回「到底是哪个子命令」：那段往返会丢信息（字段与子命令的对应关系没有类型约束），
+/// 加一个子命令要同时改 `Commands` / 本结构 / `EarlyCliDispatch` 三处。
+///
+/// 派生量（`serve` 的端口默认值、`CM_HTTP_HOST` 回退）不属于解析结果，下沉到对应
+/// 子命令分支自己算，放在这里等于把「用户给了什么」和「我们怎么解释」混成一个字段。
 #[derive(Debug, Clone)]
 pub struct ParsedCliArgs {
-    pub config_path: Option<String>,
-    pub serve_port: Option<u16>,
-    /// `serve --desktop-ready-json` / `--web-ready-json`：监听成功后打印 `web_ready`（已弃用命名；壳不依赖）
-    pub serve_desktop_ready_json: bool,
-    /// `serve --workspace-unset`：以待绑定工作区启动（等 client `POST /workspace`），未绑定时工具面拒绝
-    pub serve_workspace_unset: bool,
-    /// `serve --yes`：跳过命令白名单（`allowed_commands` → `*`），`run_command` 一律放行
-    pub serve_yes: bool,
-    /// `serve` 时使用；来自 `serve --host`、`CM_HTTP_HOST` 或默认 `127.0.0.1`。
-    pub http_bind_host: String,
-    pub workspace_cli: Option<String>,
-    pub no_tools: bool,
-    pub dry_run: bool,
-    pub log_file: Option<String>,
-    pub bench_args: BenchmarkCliArgs,
-    pub extra_cli: ExtraCliCommand,
-    /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
-    pub save_session: Option<SaveSessionCli>,
-    /// `Some` 时执行 `web-bearer` 后退出（不要求 API_KEY）
-    pub web_bearer: Option<WebBearerCli>,
-    /// `Some` 时执行工具重放子命令后退出（不要求 API_KEY）
-    pub tool_replay: Option<ToolReplayCli>,
-    /// `Some` 时执行 SSE replay 回放后退出（不要求 API_KEY）
-    pub sse_replay: Option<SseReplayCli>,
-    /// `Some` 时执行动态工具模板生成后退出（不要求 API_KEY）
-    pub plugin_init: Option<PluginInitCli>,
-    /// `Some` 时执行动态工具校验后退出（不要求 API_KEY）
-    pub plugin_validate: Option<PluginValidateCli>,
-    /// `Some` 时执行动态工具列表后退出（不要求 API_KEY）
-    pub plugin_list: Option<PluginListCli>,
-    /// `Some` 时执行 `workflow validate` 后退出（不要求 API_KEY）
-    pub workflow_validate: Option<WorkflowFileCli>,
-    /// `Some` 时执行 `workflow compile` 后退出（不要求 API_KEY）
-    pub workflow_compile: Option<WorkflowFileCli>,
-    /// `Some` 时执行 `workflow run` 后退出（不要求 API_KEY）
-    pub workflow_run: Option<WorkflowFileCli>,
-    /// 全局 `--llm-context-tokens`：非零时覆盖已加载配置中的 `llm_context_tokens`
-    pub llm_context_tokens_cli: Option<u32>,
-    /// `Some` 时执行 e2e 测试后退出（需 API_KEY）
-    pub e2e: Option<E2eCliArgs>,
+    pub global: CliGlobals,
+    pub command: Commands,
 }
 
 /// `plugin init` 解析结果（供 `runtime::cli` 执行）

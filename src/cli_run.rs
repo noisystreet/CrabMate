@@ -1,4 +1,9 @@
 //! `cargo run` / 库入口 [`crate::run`] 的 CLI 编排（从 `lib.rs` 拆出以降低单函数圈复杂度）。
+//!
+//! **S5（#1295）：一次 `match` 分派**。这里不再有 `EarlyCliDispatch` + 一串 `try_early_*`。
+//! 那套写法的前提是 `ParsedCliArgs` 把子命令摊平成互斥的 `Option` 字段，于是只能
+//! 「逐个问一遍你是不是这个命令」把信息猜回来。子命令现在原样保留在
+//! `ParsedCliArgs::command`，因此新增子命令时编译器会在这里强制你处理。
 
 #[cfg(feature = "web")]
 #[path = "cli_run_serve.rs"]
@@ -18,11 +23,14 @@ use std::path::PathBuf;
 
 use log::info;
 
-use crate::config;
-use crate::config::cli::{
-    E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
-    SaveSessionCli, WebBearerCli, WorkflowFileCli, parse_args,
+use crate::cm_config::cli::CliGlobals;
+use crate::cm_config::cli::definitions::{
+    Commands, E2eCmd, McpCmd, McpSubCmd, ParsedCliArgs, PluginCmd, PluginInitCli, PluginListCli,
+    PluginSubCmd, PluginValidateCli, SaveSessionCli, SaveSessionCmd, SseReplayCli, SseReplayCmd,
+    ToolReplayCli, ToolReplayCmd, ToolReplaySubCmd, WebBearerCli, WebBearerCmd, WebBearerSubCmd,
+    WorkflowCmd, WorkflowFileCli, WorkflowSubCmd,
 };
+use crate::config;
 use crate::http_client;
 use crate::observability;
 
@@ -91,275 +99,89 @@ fn load_cli_agent_config(
     Ok(cfg)
 }
 
-struct EarlyCliDispatch<'a> {
-    config_path: &'a Option<String>,
-    workspace_cli: &'a Option<String>,
-    extra_cli: ExtraCliCommand,
-    save_session: Option<SaveSessionCli>,
-    web_bearer: Option<WebBearerCli>,
-    tool_replay: Option<crate::config::cli::ToolReplayCli>,
-    sse_replay: Option<crate::config::cli::SseReplayCli>,
-    plugin_init: Option<PluginInitCli>,
-    plugin_validate: Option<PluginValidateCli>,
-    plugin_list: Option<PluginListCli>,
-    workflow_validate: Option<WorkflowFileCli>,
-    workflow_compile: Option<WorkflowFileCli>,
-    workflow_run: Option<WorkflowFileCli>,
-    e2e: Option<E2eCliArgs>,
+/// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web 等。
+pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    run_cli_from_parsed(crate::parse_args()?).await
 }
 
-fn try_early_web_bearer(d: &EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(cmd) = d.web_bearer.clone() else {
-        return Ok(false);
-    };
-    crate::runtime::cli_web_bearer::run_web_bearer_command(cmd)?;
-    Ok(true)
-}
-
-fn try_early_save_session(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(ss) = d.save_session.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
-    Ok(true)
-}
-
-async fn try_early_tool_replay(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(tr) = d.tool_replay.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr).await?;
-    Ok(true)
-}
-
-fn try_early_sse_replay(d: &EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(sr) = d.sse_replay.clone() else {
-        return Ok(false);
-    };
-    crate::runtime::cli::run_sse_replay_command(sr)?;
-    Ok(true)
-}
-
-fn try_early_plugin_init(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(pi) = d.plugin_init.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
-    Ok(true)
-}
-
-fn try_early_plugin_validate(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(pv) = d.plugin_validate.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
-    Ok(true)
-}
-
-fn try_early_plugin_list(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(pl) = d.plugin_list.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
-    Ok(true)
-}
-
-fn try_early_workflow_validate(
-    d: &EarlyCliDispatch<'_>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(wv) = d.workflow_validate.clone() else {
-        return Ok(false);
-    };
-    crate::runtime::cli_workflow::run_workflow_validate_command(&wv)
-        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
-    Ok(true)
-}
-
-fn try_early_workflow_compile(
-    d: &EarlyCliDispatch<'_>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(wc) = d.workflow_compile.clone() else {
-        return Ok(false);
-    };
-    crate::runtime::cli_workflow::run_workflow_compile_command(&wc)
-        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
-    Ok(true)
-}
-
-async fn try_early_workflow_run(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(wr) = d.workflow_run.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli_workflow::run_workflow_run_command(&cfg, d.workspace_cli, wr)
-        .await
-        .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
-    Ok(true)
-}
-
-async fn try_early_e2e(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(e2e) = d.e2e.clone() else {
-        return Ok(false);
-    };
-    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    let api_key = read_llm_api_key_from_env_lenient(&cfg);
-
-    let mode = match e2e.mode.as_str() {
-        "record" => crate::cm_llm::E2eMode::Record,
-        "replay" => crate::cm_llm::E2eMode::Replay,
-        _ => crate::cm_llm::E2eMode::Real,
-    };
-
-    let artifacts_root = e2e
-        .output_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".crabmate/e2e_artifacts"));
-    let recordings_dir = e2e
-        .recordings_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("tests/fixtures/llm_recordings"));
-
-    let scenarios_file = e2e.scenarios_file.map(PathBuf::from);
-
-    let run_cfg = crate::e2e_scenario::E2eRunConfig {
-        api_key,
-        artifacts_root,
-        recordings_dir,
-        mode,
-        judge_config: crate::e2e_scenario::JudgeConfig {
-            enabled: e2e.judge,
-            ..Default::default()
-        },
-    };
-    crate::e2e_scenario::run_e2e_cli(&run_cfg, scenarios_file.as_deref()).await?;
-    Ok(true)
-}
-
-/// `doctor` / `mcp list` / `mcp serve`：由 [`ExtraCliCommand`] 分流。
-async fn try_dispatch_early_extra_cli(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    match d.extra_cli {
-        ExtraCliCommand::Doctor => {
-            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-            crate::runtime::cli_doctor::print_doctor_report(&cfg, d.workspace_cli.as_deref());
-            Ok(Some(true))
-        }
-        ExtraCliCommand::McpList { probe } => {
-            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-            crate::runtime::cli_mcp::run_mcp_list(&cfg, probe).await;
-            Ok(Some(true))
-        }
-        ExtraCliCommand::McpServe { no_tools, port } => {
-            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-            crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools, port)
-                .await
-                .map_err(std::io::Error::other)?;
-            Ok(Some(true))
-        }
-        _ => Ok(None),
-    }
-}
-
-/// `save-session` / `plugin *` 等非默认主流程（同步）。
-fn try_dispatch_early_workspace_commands(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    type DispatchFn =
-        fn(&EarlyCliDispatch<'_>, Option<u32>) -> Result<bool, Box<dyn std::error::Error>>;
-    type DispatchFnNoTokens = fn(&EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>>;
-    // 接受 tokens 参数的子命令
-    let with_tokens: &[DispatchFn] = &[
-        try_early_save_session,
-        try_early_plugin_init,
-        try_early_plugin_validate,
-        try_early_plugin_list,
-    ];
-    for f in with_tokens {
-        if f(d, tokens)? {
-            return Ok(Some(true));
-        }
-    }
-    // 不含 tokens 的子命令
-    let no_tokens: &[DispatchFnNoTokens] = &[
-        try_early_web_bearer,
-        try_early_sse_replay,
-        try_early_workflow_validate,
-        try_early_workflow_compile,
-    ];
-    for f in no_tokens {
-        if f(d)? {
-            return Ok(Some(true));
-        }
-    }
-    Ok(None)
-}
-
-/// 组合分流：`tool-replay`（异步）与 `save-session` / `plugin *` 等（同步）。
-///
-/// 二者合并为单一 helper，避免 `run_early_commands` 中重复的 `if ... ?` 抬升圈复杂度。
-async fn try_dispatch_early_tool_replay_and_workspace(
-    d: &EarlyCliDispatch<'_>,
-    tokens: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    if try_early_tool_replay(d, tokens).await? {
-        return Ok(true);
-    }
-    Ok(try_dispatch_early_workspace_commands(d, tokens)?.is_some())
-}
-
-async fn run_early_commands(
-    d: EarlyCliDispatch<'_>,
-    llm_context_tokens_cli: Option<u32>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    if let Some(true) = try_dispatch_early_extra_cli(&d, llm_context_tokens_cli).await? {
-        return Ok(true);
-    }
-    if try_dispatch_early_tool_replay_and_workspace(&d, llm_context_tokens_cli).await? {
-        return Ok(true);
-    }
-    if try_early_workflow_run(&d, llm_context_tokens_cli).await? {
-        return Ok(true);
-    }
-    if try_early_e2e(&d, llm_context_tokens_cli).await? {
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-async fn run_dry_run(
-    config_path: &Option<String>,
-    llm_context_tokens_cli: Option<u32>,
+/// 已解析 argv：初始化日志，然后按子命令分派。
+pub(super) async fn run_cli_from_parsed(
+    args: ParsedCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
+    // serve 模式默认只输出 WARN/ERROR（避免 INFO 日志刷屏）；设 RUST_LOG=info 可恢复。
+    observability::init_tracing_subscriber(
+        args.global.log_file.as_deref().map(std::path::Path::new),
+        /* quiet_cli_default */ true,
+    )?;
+
+    let ParsedCliArgs { mut global, command } = args;
+    global.config_path = finalize_cli_config_path(global.config_path.take());
+    dispatch(global, command).await
+}
+
+/// 顶层分派：`serve` / `bench` 需要会话初始化（HTTP client、工具表、进程句柄），其余不需要。
+async fn dispatch(
+    global: CliGlobals,
+    command: Commands,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::Serve(serve) => run_session(global, Commands::Serve(serve)).await,
+        Commands::Bench(bench) => run_session(global, Commands::Bench(bench)).await,
+        other => dispatch_offline(global, other).await,
+    }
+}
+
+/// 不初始化会话句柄的运维子命令（诊断 / 离线产物）。
+async fn dispatch_offline(
+    global: CliGlobals,
+    command: Commands,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::Doctor => run_doctor(&global),
+        Commands::Config => run_dry_run(&global).await,
+        Commands::Models => run_models_or_probe(&global, false).await,
+        Commands::Probe => run_models_or_probe(&global, true).await,
+        Commands::WebBearer(cmd) => run_web_bearer(cmd),
+        Commands::SaveSession(cmd) => run_save_session(&global, cmd),
+        Commands::SseReplay(cmd) => run_sse_replay(cmd),
+        other => dispatch_toolish(global, other).await,
+    }
+}
+
+/// 需要配置与 HTTP 客户端，但不进 `serve` / `bench` 主循环的子命令。
+async fn dispatch_toolish(
+    global: CliGlobals,
+    command: Commands,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::ToolReplay(cmd) => run_tool_replay(&global, cmd).await,
+        Commands::Plugin(cmd) => run_plugin(&global, cmd),
+        Commands::Workflow(cmd) => run_workflow(&global, cmd).await,
+        Commands::Mcp(cmd) => run_mcp(&global, cmd).await,
+        Commands::E2e(cmd) => run_e2e(&global, cmd).await,
+        // `serve` / `bench` 已在 `dispatch` 分走，其余在 `dispatch_offline` 分走。
+        // 兜底返回用户可读的用法错误（而不是 `unreachable!()`）：真走到这里说明
+        // 分派表漏了一层，报错比 panic 更容易定位。
+        _ => Err(unspecified_subcommand_error()),
+    }
+}
+
+fn unspecified_subcommand_error() -> Box<dyn std::error::Error> {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "未指定可执行的子命令。请使用 `crabmate serve`（API）或运维子命令（如 `doctor`）；官方终端为 Client 仓 `crabmate-tui`。同进程 `chat|repl|tui` 入口已移除。",
+    )
+    .into()
+}
+
+fn run_doctor(global: &CliGlobals) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    crate::runtime::cli_doctor::print_doctor_report(&cfg, global.workspace.as_deref());
+    Ok(())
+}
+
+async fn run_dry_run(global: &CliGlobals) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
     let key_note = match cfg.llm.llm_http_auth_mode {
         config::LlmHttpAuthMode::None => "llm_http_auth_mode=none（API_KEY 可选）".to_string(),
         config::LlmHttpAuthMode::Bearer => {
@@ -379,114 +201,226 @@ async fn run_dry_run(
 }
 
 async fn run_models_or_probe(
-    config_path: &Option<String>,
-    extra_cli: ExtraCliCommand,
-    llm_context_tokens_cli: Option<u32>,
+    global: &CliGlobals,
+    probe: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
     let api_key = require_api_key_for_cli_models_probe(&cfg)?;
     let client = http_client::build_shared_api_client(&cfg.llm_http_retry)?;
-    if extra_cli == ExtraCliCommand::Models {
-        crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
-    } else {
+    if probe {
         crate::runtime::cli_doctor::run_probe_cli(&client, &cfg, api_key.trim()).await?;
+    } else {
+        crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
     }
     Ok(())
 }
 
-/// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    run_cli_from_parsed(parse_args()?).await
-}
-
-/// 已解析 argv：初始化日志并处理 `doctor` / `save-session` 等早退子命令。
-pub(super) async fn run_cli_from_parsed(
-    mut args: ParsedCliArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // serve 模式默认只输出 WARN/ERROR（避免 INFO 日志刷屏）；设 RUST_LOG=info 可恢复。
-    observability::init_tracing_subscriber(
-        args.log_file.as_deref().map(std::path::Path::new),
-        /* quiet_cli_default */ true,
-    )?;
-
-    args.config_path = finalize_cli_config_path(args.config_path.take());
-
-    if run_early_commands(
-        EarlyCliDispatch {
-            config_path: &args.config_path,
-            workspace_cli: &args.workspace_cli,
-            extra_cli: args.extra_cli,
-            save_session: args.save_session.clone(),
-            web_bearer: args.web_bearer.clone(),
-            tool_replay: args.tool_replay.clone(),
-            sse_replay: args.sse_replay.clone(),
-            plugin_init: args.plugin_init.clone(),
-            plugin_validate: args.plugin_validate.clone(),
-            plugin_list: args.plugin_list.clone(),
-            workflow_validate: args.workflow_validate.clone(),
-            workflow_compile: args.workflow_compile.clone(),
-            workflow_run: args.workflow_run.clone(),
-            e2e: args.e2e.clone(),
+fn run_web_bearer(cmd: WebBearerCmd) -> Result<(), Box<dyn std::error::Error>> {
+    let cli = match cmd.sub {
+        WebBearerSubCmd::Status => WebBearerCli::Status,
+        WebBearerSubCmd::Set(s) => WebBearerCli::Set {
+            token: s.token,
+            stdin: s.stdin,
+            from_env: s.from_env,
         },
-        args.llm_context_tokens_cli,
-    )
-    .await?
-    {
-        return Ok(());
-    }
-
-    Box::pin(run_cli_default_main(args)).await
+        WebBearerSubCmd::Clear => WebBearerCli::Clear,
+    };
+    crate::runtime::cli_web_bearer::run_web_bearer_command(cli)?;
+    Ok(())
 }
 
-/// 默认主路径：`config`（一次性配置检查）、`models`/`probe`，或 `serve` / `bench`。
-async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
-    if args.dry_run {
-        run_dry_run(&args.config_path, args.llm_context_tokens_cli).await?;
-        return Ok(());
-    }
-
-    let cfg = load_cli_agent_config(args.config_path.as_deref(), args.llm_context_tokens_cli)?;
-
-    if matches!(
-        args.extra_cli,
-        ExtraCliCommand::Models | ExtraCliCommand::Probe
-    ) {
-        run_models_or_probe(
-            &args.config_path,
-            args.extra_cli,
-            args.llm_context_tokens_cli,
-        )
-        .await?;
-        return Ok(());
-    }
-
-    Box::pin(run_cli_interactive_session(args, cfg)).await
-}
-
-/// 载入配置并进入 `serve` / `bench` 分发。
-async fn run_cli_interactive_session(
-    args: ParsedCliArgs,
-    mut cfg: config::AgentConfig,
+fn run_save_session(
+    global: &CliGlobals,
+    cmd: SaveSessionCmd,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if args.serve_yes {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    let cli = SaveSessionCli {
+        format: cmd.format,
+        projection: cmd.projection,
+        session_file: cmd.session_file,
+    };
+    crate::runtime::cli::run_save_session_command(&cfg, &global.workspace, cli)?;
+    Ok(())
+}
+
+fn run_sse_replay(cmd: SseReplayCmd) -> Result<(), Box<dyn std::error::Error>> {
+    crate::runtime::cli::run_sse_replay_command(SseReplayCli {
+        file: cmd.file,
+        format: cmd.format,
+        job_id: cmd.job_id,
+    })?;
+    Ok(())
+}
+
+async fn run_tool_replay(
+    global: &CliGlobals,
+    cmd: ToolReplayCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    let cli = match cmd.sub {
+        ToolReplaySubCmd::Export(e) => ToolReplayCli::Export {
+            session_file: e.session_file,
+            output: e.output,
+            note: e.note,
+        },
+        ToolReplaySubCmd::Run(r) => ToolReplayCli::Run {
+            fixture: r.fixture,
+            compare_recorded: r.compare_recorded,
+        },
+    };
+    crate::runtime::cli::run_tool_replay_command(&cfg, &global.workspace, cli).await?;
+    Ok(())
+}
+
+fn run_plugin(global: &CliGlobals, cmd: PluginCmd) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    match cmd.sub {
+        PluginSubCmd::Init(i) => crate::runtime::cli::run_plugin_init_command(
+            &cfg,
+            &global.workspace,
+            PluginInitCli {
+                name: i.name,
+                description: i.description,
+                command: i.command,
+                args: i.args,
+                pass_args_json: i.pass_args_json,
+                output: i.output,
+            },
+        )?,
+        PluginSubCmd::Validate(v) => crate::runtime::cli::run_plugin_validate_command(
+            &cfg,
+            &global.workspace,
+            PluginValidateCli {
+                file: v.file,
+                json: v.json,
+                jsonl: v.jsonl,
+            },
+        )?,
+        PluginSubCmd::List(l) => crate::runtime::cli::run_plugin_list_command(
+            &cfg,
+            &global.workspace,
+            PluginListCli {
+                file: l.file,
+                json: l.json,
+                jsonl: l.jsonl,
+            },
+        )?,
+    }
+    Ok(())
+}
+
+async fn run_workflow(
+    global: &CliGlobals,
+    cmd: WorkflowCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    fn usage_err<E: Into<String>>(e: E) -> Box<dyn std::error::Error> {
+        Box::new(crate::CliExitError::new(2, e))
+    }
+    match cmd.sub {
+        // 校验 / 编译不读配置：只做作者层 YAML/Markdown 的静态检查。
+        WorkflowSubCmd::Validate(v) => {
+            crate::runtime::cli_workflow::run_workflow_validate_command(&WorkflowFileCli {
+                file: v.file,
+                json: v.json,
+            })
+            .map_err(usage_err)?;
+        }
+        WorkflowSubCmd::Compile(c) => {
+            crate::runtime::cli_workflow::run_workflow_compile_command(&WorkflowFileCli {
+                file: c.file,
+                json: c.json,
+            })
+            .map_err(usage_err)?;
+        }
+        WorkflowSubCmd::Run(r) => {
+            let cfg =
+                load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+            crate::runtime::cli_workflow::run_workflow_run_command(
+                &cfg,
+                &global.workspace,
+                WorkflowFileCli {
+                    file: r.file,
+                    json: r.json,
+                },
+            )
+            .await
+            .map_err(usage_err)?;
+        }
+    }
+    Ok(())
+}
+
+async fn run_mcp(global: &CliGlobals, cmd: McpCmd) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    match cmd.sub {
+        McpSubCmd::List(l) => crate::runtime::cli_mcp::run_mcp_list(&cfg, l.probe).await,
+        McpSubCmd::Serve(s) => {
+            crate::runtime::cli_mcp::run_mcp_serve(&cfg, &global.workspace, s.no_tools, s.port)
+                .await
+                .map_err(std::io::Error::other)?
+        }
+    }
+    Ok(())
+}
+
+async fn run_e2e(global: &CliGlobals, cmd: E2eCmd) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    let api_key = read_llm_api_key_from_env_lenient(&cfg);
+
+    let mode = match cmd.mode.as_str() {
+        "record" => crate::cm_llm::E2eMode::Record,
+        "replay" => crate::cm_llm::E2eMode::Replay,
+        _ => crate::cm_llm::E2eMode::Real,
+    };
+
+    let artifacts_root = cmd
+        .output_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".crabmate/e2e_artifacts"));
+    let recordings_dir = cmd
+        .recordings_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("tests/fixtures/llm_recordings"));
+    let scenarios_file = cmd.scenarios_file.as_deref().map(PathBuf::from);
+
+    let run_cfg = crate::e2e_scenario::E2eRunConfig {
+        api_key,
+        artifacts_root,
+        recordings_dir,
+        mode,
+        judge_config: crate::e2e_scenario::JudgeConfig {
+            enabled: cmd.judge,
+            ..Default::default()
+        },
+    };
+    crate::e2e_scenario::run_e2e_cli(&run_cfg, scenarios_file.as_deref()).await?;
+    Ok(())
+}
+
+/// `serve` / `bench`：载入配置、初始化会话句柄，再由 `cli_run_session` 分两条主路径。
+async fn run_session(
+    global: CliGlobals,
+    command: Commands,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cfg = load_cli_agent_config(global.config_path.as_deref(), global.llm_context_tokens)?;
+    if let Commands::Serve(serve) = &command
+        && serve.yes
+    {
         cfg.command_exec.allowed_commands = std::sync::Arc::from(vec!["*".to_string()]);
         log::warn!(
             target: "crabmate",
             "serve --yes：已跳过命令白名单（allowed_commands → \"*\"），run_command 不再校验命令名；仅请在完全信任或已隔离的环境使用"
         );
     }
-    let session = cli_run_session::init_cli_session_start(cfg, args.no_tools).await?;
+    let session = cli_run_session::init_cli_session_start(cfg, global.no_tools).await?;
 
     Box::pin(cli_run_session::run_cli_main_routes(
         cli_run_session::CliDispatchArgs {
             session,
-            config_path: args.config_path,
-            serve_port: args.serve_port,
-            serve_desktop_ready_json: args.serve_desktop_ready_json,
-            serve_workspace_unset: args.serve_workspace_unset,
-            http_bind_host: args.http_bind_host,
-            workspace_cli: args.workspace_cli,
-            bench_args: args.bench_args,
+            global,
+            command,
         },
     ))
     .await

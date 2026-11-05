@@ -45,7 +45,7 @@ pub fn normalize_help_argv(args: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod help_argv_tests {
     use super::normalize_help_argv;
-    use crate::cm_config::cli::definitions::{Commands, ExtraCliCommand, RootCli};
+    use crate::cm_config::cli::definitions::{Commands, RootCli};
     use crate::cm_config::cli::parse::parse_args_from_argv;
     use clap::Parser;
 
@@ -174,15 +174,20 @@ mod help_argv_tests {
     }
 
     #[test]
-    fn parse_args_from_argv_doctor_matches_extra_cli() {
+    fn parse_args_from_argv_doctor_routes_to_doctor() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "doctor".to_string()]).unwrap();
-        assert_eq!(p.extra_cli, ExtraCliCommand::Doctor);
+        assert!(matches!(p.command, Commands::Doctor));
     }
 
+    /// `serve` 的端口默认值不在解析层（S5 下沉到 serve 分支），这里只钉住路由本身；
+    /// 8080 默认由 `cli_run_session::route_tests::serve_default_port_is_8080` 覆盖。
     #[test]
-    fn parse_serve_default_is_api_only() {
+    fn parse_serve_routes_to_serve() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()]).unwrap();
-        assert_eq!(p.serve_port, Some(8080));
+        let Commands::Serve(serve) = p.command else {
+            panic!("expected serve subcommand");
+        };
+        assert_eq!(serve.port, None, "解析层不再填默认端口（派生量下沉）");
     }
 
     #[test]
@@ -197,9 +202,9 @@ mod help_argv_tests {
     }
 
     #[test]
-    fn parse_config_default_is_dry_run() {
+    fn parse_config_routes_to_config() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "config".to_string()]).unwrap();
-        assert!(p.dry_run);
+        assert!(matches!(p.command, Commands::Config));
     }
 
     #[test]

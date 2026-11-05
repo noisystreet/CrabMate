@@ -8,7 +8,7 @@ pub(crate) mod parse;
 
 pub use ctl::CtlCmd;
 pub use definitions::{
-    E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
+    CliGlobals, Commands, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
     SaveSessionCli, SaveSessionFormat, SaveSessionProjection, SseReplayCli, ToolReplayCli,
     WebBearerCli, WorkflowFileCli, root_clap_command_for_man_page,
 };
