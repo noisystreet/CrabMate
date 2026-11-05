@@ -418,7 +418,10 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
 
 /// `run_agent_turn` 之后的流式任务收尾：落盘、SSE 错误/冲突、`stream_ended` 等。
 pub(super) struct StreamJobOutcomeCtx<'a> {
-    pub(super) r: crate::turn_runner::TurnOutcome,
+    pub(super) r: Result<
+        crate::turn_runner::TurnOutcome,
+        crate::agent::agent_turn::RunAgentTurnError,
+    >,
     pub(super) cancelled_by_signal: bool,
     /// 层 1：本轮最后一次 assistant 输出是否被截断（来自 [`crate::per_turn_flight::PerTurnFlight`]）。
     pub(super) truncated: bool,
@@ -460,7 +463,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         stream_ended_sent,
     } = ctx;
     match r {
-        Ok(commit) if cancelled_by_signal => {
+        Ok(outcome) if cancelled_by_signal => {
             info!(target: "crabmate", "chat stream 任务已取消 job_id={}", job_id);
             // 本轮 partial 输出已在 `messages`（agent 已 push + 提交视图）；落盘使下一轮上下文可见。
             save_cancelled_turn_best_effort(CancelledTurnSaveParams {
@@ -473,13 +476,13 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 request_permission_level,
                 job_id,
                 archive_rows: crate::conversation_store::archive_rows_from_structural_commit(
-                    &commit,
+                    &outcome.commit,
                 ),
             })
             .await;
             (false, true, None, StreamEndReason::Cancelled)
         }
-        Ok(commit) => {
+        Ok(outcome) => {
             let fallback_emitted = emit_missing_final_response_fallback_if_needed(
                 queue_deps.sse_stream_hub.as_ref(),
                 sse_tx,
@@ -505,7 +508,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 request_agent_role,
                 request_session_mode,
                 request_permission_level,
-                structural_commit: commit,
+                structural_commit: outcome.commit,
             })
             .await
             {

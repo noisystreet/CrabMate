@@ -94,6 +94,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 #[allow(unused_imports)] // `DefaultTurnEngine` 供文档与类型探查；装配走 `default_turn_engine`
 pub(crate) use turn_runner::{DefaultTurnEngine, TurnEngine, default_turn_engine};
+// `run_agent_turn` 是 crate 根的公开入口，其返回类型因此必须公开可达（S2-4，见 #1285）。
+pub use turn_runner::{TurnOutcome, TurnStats};
 
 /// 回合传输与端点表现（SSE、取消、审批上下文等），与模型采样/路由覆盖解耦。
 pub struct AgentTurnTransport<'a> {

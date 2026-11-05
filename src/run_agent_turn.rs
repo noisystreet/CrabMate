@@ -70,8 +70,7 @@ async fn emit_mcp_servers_skipped_notice(
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
     p: TurnRequest<'a>,
-) -> Result<crate::agent::model_context_view::StructuralCommit, crate::agent::agent_turn::RunAgentTurnError>
-{
+) -> Result<crate::turn_runner::TurnOutcome, crate::agent::agent_turn::RunAgentTurnError> {
     let TurnRequest {
         shared,
         session,
@@ -251,14 +250,25 @@ pub async fn run_agent_turn<'a>(
         seed_override,
     });
     let mut model_context_artifacts = std::mem::take(&mut loop_params.turn.model_context_artifacts);
+    // 聚合快照必须在 `drop(loop_params)` 之前取：`turn_budget` 是 `Arc`（可克隆出环），
+    // 而 `per_flight` 只在 `attach` 里有一份。
+    let turn_budget = Arc::clone(&loop_params.turn.turn_budget);
+    let truncated = loop_params.ctx.attach.per_flight.as_ref().is_some_and(|f| {
+        f.last_assistant_finish_truncated
+            .load(std::sync::atomic::Ordering::Relaxed)
+    });
     drop(loop_params);
-    finish_turn_result(
+    let commit = finish_turn_result(
         res,
         interrupted_cancel,
         messages,
         &model_context_view,
         &mut model_context_artifacts,
-    )
+    )?;
+    Ok(crate::turn_runner::TurnOutcome {
+        commit,
+        stats: crate::turn_runner::TurnStats::from_budget(turn_budget.as_ref(), truncated),
+    })
 }
 
 /// `RunLoopParams` 的装配中间体（S2-0，见 #1285）。
