@@ -1,82 +1,30 @@
 //! `parse_args` / `parse_args_from_argv` 与 `RootCli` → [`ParsedCliArgs`] 映射。
+//!
+//! 这里**只做组装**：把 clap 的全局选项清洗成 [`CliGlobals`]，子命令**原样**留在
+//! [`ParsedCliArgs::command`]。子命令载荷不再拆成平铺字段（S5，见 #1295）——派生量
+//! （`serve` 的端口默认值、`CM_HTTP_HOST` 回退）由各子命令分支自己算。
 
-use super::definitions::{
-    BenchmarkCliArgs, Commands, E2eCliArgs, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
-    PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
-    SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WebBearerCli, WebBearerSubCmd, WorkflowFileCli,
-    WorkflowSubCmd,
-};
+use super::definitions::{CliGlobals, Commands, GlobalOpts, ParsedCliArgs, RootCli};
 use super::help_argv::normalize_help_argv;
 use clap::Parser;
 use std::io;
 
-fn resolve_http_bind_host(host_opt: Option<String>) -> String {
-    host_opt
+/// 全局选项清洗：`--log` 去空白、`--llm-context-tokens` 的 `0` 折叠为 `None`。
+///
+/// `0` 表示「不覆盖」（见 [`GlobalOpts::llm_context_tokens`] 的说明），
+/// 若原样透传会被下游当成「上下文窗口 0 token」。
+fn globals_from(opts: &GlobalOpts) -> CliGlobals {
+    let log_file = opts
+        .log
         .as_ref()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            std::env::var("CM_HTTP_HOST")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or_else(|| "127.0.0.1".to_string())
-}
-
-/// 全局选项解析一次后供各子命令分支复用（降低 `build_parsed_cli_args` 的 `nloc`）。
-struct CliParseCtx {
-    config_path: Option<String>,
-    workspace_cli: Option<String>,
-    no_tools: bool,
-    log_file: Option<String>,
-    llm_context_tokens_cli: Option<u32>,
-}
-
-impl CliParseCtx {
-    fn new(global: &GlobalOpts) -> Self {
-        let llm_context_tokens_cli = global.llm_context_tokens.filter(|&n| n > 0);
-        let log_file = global
-            .log
-            .as_ref()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        Self {
-            config_path: global.config.clone(),
-            workspace_cli: global.workspace.clone(),
-            no_tools: global.no_tools,
-            log_file,
-            llm_context_tokens_cli,
-        }
-    }
-
-    fn base_parsed(&self) -> ParsedCliArgs {
-        ParsedCliArgs {
-            config_path: self.config_path.clone(),
-            llm_context_tokens_cli: self.llm_context_tokens_cli,
-            serve_port: None,
-            serve_desktop_ready_json: false,
-            serve_workspace_unset: false,
-            serve_yes: false,
-            http_bind_host: resolve_http_bind_host(None),
-            workspace_cli: self.workspace_cli.clone(),
-            no_tools: self.no_tools,
-            dry_run: false,
-            log_file: self.log_file.clone(),
-            bench_args: BenchmarkCliArgs::default(),
-            extra_cli: ExtraCliCommand::None,
-            save_session: None,
-            web_bearer: None,
-            tool_replay: None,
-            sse_replay: None,
-            plugin_init: None,
-            plugin_validate: None,
-            plugin_list: None,
-            workflow_validate: None,
-            workflow_compile: None,
-            workflow_run: None,
-            e2e: None,
-        }
+        .filter(|s| !s.is_empty());
+    CliGlobals {
+        config_path: opts.config.clone(),
+        workspace: opts.workspace.clone(),
+        no_tools: opts.no_tools,
+        log_file,
+        llm_context_tokens: opts.llm_context_tokens.filter(|&n| n > 0),
     }
 }
 
@@ -110,7 +58,10 @@ pub fn parse_args_from_argv(raw: Vec<String>) -> io::Result<ParsedCliArgs> {
 /// （实测 `--workspace /tmp serve --workspace-unset` 仍被接受），故在此兜底：
 /// 待绑定模式与显式工作区同时出现属于用户误解，必须拒绝而不是「后者赢」。
 fn validate_parsed(p: &ParsedCliArgs) -> io::Result<()> {
-    if p.serve_workspace_unset && p.workspace_cli.is_some() {
+    if let Commands::Serve(serve) = &p.command
+        && serve.workspace_unset
+        && p.global.workspace.is_some()
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "`--workspace` 与 `--workspace-unset` 互斥：待绑定模式下工作区由 client 通过 `POST /workspace` 设置",
@@ -120,161 +71,72 @@ fn validate_parsed(p: &ParsedCliArgs) -> io::Result<()> {
 }
 
 fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
-    let ctx = CliParseCtx::new(&root.global);
-    let mut b = ctx.base_parsed();
+    ParsedCliArgs {
+        global: globals_from(&root.global),
+        command: root.command,
+    }
+}
 
-    match root.command {
-        Commands::Serve(s) => {
-            b.serve_port = s.port.or(s.port_positional).or(Some(8080));
-            b.serve_desktop_ready_json = s.desktop_ready_json;
-            b.serve_workspace_unset = s.workspace_unset;
-            b.serve_yes = s.yes;
-            b.http_bind_host = resolve_http_bind_host(s.host);
-        }
-        Commands::Bench(be) => {
-            b.bench_args = BenchmarkCliArgs {
-                benchmark: be.benchmark,
-                batch: be.batch,
-                batch_output: be.batch_output,
-                task_timeout: be.task_timeout,
-                max_tool_rounds: be.max_tool_rounds,
-                samples: be.samples,
-                resume: be.resume,
-                system_prompt_file: be.bench_system_prompt,
-            };
-        }
-        Commands::Config => {
-            b.dry_run = true;
-        }
-        Commands::Doctor => {
-            b.extra_cli = ExtraCliCommand::Doctor;
-        }
-        Commands::WebBearer(w) => {
-            b.web_bearer = Some(match w.sub {
-                WebBearerSubCmd::Status => WebBearerCli::Status,
-                WebBearerSubCmd::Set(s) => WebBearerCli::Set {
-                    token: s.token,
-                    stdin: s.stdin,
-                    from_env: s.from_env,
-                },
-                WebBearerSubCmd::Clear => WebBearerCli::Clear,
-            });
-        }
-        Commands::Models => {
-            b.extra_cli = ExtraCliCommand::Models;
-        }
-        Commands::Probe => {
-            b.extra_cli = ExtraCliCommand::Probe;
-        }
-        Commands::SaveSession(e) => {
-            b.save_session = Some(SaveSessionCli {
-                format: e.format,
-                projection: e.projection,
-                session_file: e.session_file,
-            });
-        }
-        Commands::ToolReplay(tr) => {
-            let tr_cli = match tr.sub {
-                ToolReplaySubCmd::Export(e) => ToolReplayCli::Export {
-                    session_file: e.session_file,
-                    output: e.output,
-                    note: e.note,
-                },
-                ToolReplaySubCmd::Run(r) => ToolReplayCli::Run {
-                    fixture: r.fixture,
-                    compare_recorded: r.compare_recorded,
-                },
-            };
-            b.tool_replay = Some(tr_cli);
-        }
-        Commands::SseReplay(sr) => {
-            b.sse_replay = Some(SseReplayCli {
-                file: sr.file,
-                format: sr.format,
-                job_id: sr.job_id,
-            });
-        }
-        Commands::Mcp(m) => {
-            let (extra_cli, no_tools_mcp) = match m.sub {
-                McpSubCmd::List(l) => (ExtraCliCommand::McpList { probe: l.probe }, ctx.no_tools),
-                McpSubCmd::Serve(s) => (
-                    ExtraCliCommand::McpServe {
-                        no_tools: s.no_tools,
-                        port: s.port,
-                    },
-                    ctx.no_tools,
-                ),
-            };
-            b.extra_cli = extra_cli;
-            b.no_tools = no_tools_mcp;
-        }
-        Commands::Plugin(p) => {
-            let (plugin_init, plugin_validate, plugin_list) = match p.sub {
-                PluginSubCmd::Init(i) => (
-                    Some(PluginInitCli {
-                        name: i.name,
-                        description: i.description,
-                        command: i.command,
-                        args: i.args,
-                        pass_args_json: i.pass_args_json,
-                        output: i.output,
-                    }),
-                    None,
-                    None,
-                ),
-                PluginSubCmd::List(l) => (
-                    None,
-                    None,
-                    Some(PluginListCli {
-                        file: l.file,
-                        json: l.json,
-                        jsonl: l.jsonl,
-                    }),
-                ),
-                PluginSubCmd::Validate(v) => (
-                    None,
-                    Some(PluginValidateCli {
-                        file: v.file,
-                        json: v.json,
-                        jsonl: v.jsonl,
-                    }),
-                    None,
-                ),
-            };
-            b.plugin_init = plugin_init;
-            b.plugin_validate = plugin_validate;
-            b.plugin_list = plugin_list;
-        }
-        Commands::Workflow(w) => match w.sub {
-            WorkflowSubCmd::Validate(v) => {
-                b.workflow_validate = Some(WorkflowFileCli {
-                    file: v.file,
-                    json: v.json,
-                });
-            }
-            WorkflowSubCmd::Compile(c) => {
-                b.workflow_compile = Some(WorkflowFileCli {
-                    file: c.file,
-                    json: c.json,
-                });
-            }
-            WorkflowSubCmd::Run(r) => {
-                b.workflow_run = Some(WorkflowFileCli {
-                    file: r.file,
-                    json: r.json,
-                });
-            }
-        },
-        Commands::E2e(e) => {
-            b.e2e = Some(E2eCliArgs {
-                mode: e.mode,
-                output_dir: e.output_dir,
-                recordings_dir: e.recordings_dir,
-                scenarios_file: e.scenarios_file,
-                judge: e.judge,
-            });
-        }
+#[cfg(test)]
+mod parse_tests {
+    use super::parse_args_from_argv;
+    use crate::cm_config::cli::definitions::{Commands, McpSubCmd, WorkflowSubCmd};
+
+    fn parse(argv: &[&str]) -> crate::cm_config::cli::definitions::ParsedCliArgs {
+        parse_args_from_argv(argv.iter().map(|s| (*s).to_string()).collect())
+            .expect("argv should parse")
     }
 
-    b
+    /// 子命令载荷必须**原样**到达：这里钉住「不再摊平」这件事本身。
+    #[test]
+    fn command_payload_is_preserved() {
+        let p = parse(&["crabmate", "workflow", "run", "a.yaml"]);
+        let Commands::Workflow(w) = p.command else {
+            panic!("expected workflow, got {:?}", p.command);
+        };
+        let WorkflowSubCmd::Run(r) = w.sub else {
+            panic!("expected workflow run");
+        };
+        assert_eq!(r.file, "a.yaml");
+    }
+
+    #[test]
+    fn mcp_serve_keeps_port() {
+        let p = parse(&["crabmate", "mcp", "serve", "--port", "9999"]);
+        let Commands::Mcp(m) = p.command else {
+            panic!("expected mcp");
+        };
+        let McpSubCmd::Serve(s) = m.sub else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(s.port, 9999);
+    }
+
+    #[test]
+    fn globals_are_cleaned() {
+        let p = parse(&["crabmate", "--log", "  ", "--workspace", "/tmp", "doctor"]);
+        assert_eq!(p.global.log_file, None, "空白 --log 应折成 None");
+        assert_eq!(p.global.workspace.as_deref(), Some("/tmp"));
+    }
+
+    #[test]
+    fn zero_context_tokens_folds_to_none() {
+        let p = parse(&["crabmate", "--llm-context-tokens", "0", "doctor"]);
+        assert_eq!(p.global.llm_context_tokens, None);
+        let p = parse(&["crabmate", "--llm-context-tokens", "1234", "doctor"]);
+        assert_eq!(p.global.llm_context_tokens, Some(1234));
+    }
+
+    /// `--workspace` 与 `serve --workspace-unset` 互斥（clap 的 global 冲突失效，见 `validate_parsed`）。
+    #[test]
+    fn workspace_unset_conflicts_with_workspace() {
+        let err = parse_args_from_argv(
+            ["crabmate", "--workspace", "/tmp", "serve", "--workspace-unset"]
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+        )
+        .expect_err("must reject --workspace + --workspace-unset");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
 }

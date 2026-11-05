@@ -84,8 +84,8 @@ pub use per_turn_flight::PerTurnFlight;
 pub use request_audit::WebRequestAudit;
 
 pub use config::cli::{
-    E2eCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli, WebBearerCli,
-    normalize_help_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
+    ParsedCliArgs, SaveSessionFormat, ToolReplayCli, WebBearerCli, normalize_help_argv,
+    parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
 pub use run_agent_turn::run_agent_turn;

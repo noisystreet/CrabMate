@@ -3,11 +3,13 @@
 //!
 //! Fixture 位于 `tests/fixtures/cli/`；增删子命令或改映射时请同步更新 JSON。
 
+use crabmate::config::cli::definitions::{
+    Commands, McpSubCmd, ParsedCliArgs, ServeCmd, ToolReplaySubCmd, WebBearerSubCmd,
+};
 use crabmate::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
-    EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand,
-    SaveSessionFormat, ToolReplayCli, WebBearerCli, classify_model_error_message,
-    normalize_help_argv, parse_args_from_argv,
+    EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, SaveSessionFormat,
+    classify_model_error_message, normalize_help_argv, parse_args_from_argv,
 };
 use std::sync::Mutex;
 
@@ -41,19 +43,33 @@ fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cli")
 }
 
-fn parse_extra_cli(case: &serde_json::Value) -> ExtraCliCommand {
-    let s = case["extra_cli"].as_str().expect("extra_cli");
-    match s {
-        "None" => ExtraCliCommand::None,
-        "Doctor" => ExtraCliCommand::Doctor,
-        "Models" => ExtraCliCommand::Models,
-        "Probe" => ExtraCliCommand::Probe,
+fn expect_serve(p: &ParsedCliArgs) -> &ServeCmd {
+    match &p.command {
+        Commands::Serve(serve) => serve,
+        other => panic!("expected serve subcommand, got {other:?}"),
+    }
+}
+
+/// fixture 沿用旧的 `extra_cli` 字段名（不改 fixture 数据），这里把它翻译成子命令断言。
+///
+/// S5（#1295）后 `ParsedCliArgs` 不再有 `extra_cli` 槽，断言改为直接看 `p.command`。
+fn assert_extra_cli(name: &str, case: &serde_json::Value, p: &ParsedCliArgs) {
+    let want = case["extra_cli"].as_str().expect("extra_cli");
+    let ok = match want {
+        "None" => !matches!(
+            &p.command,
+            Commands::Doctor | Commands::Models | Commands::Probe | Commands::Mcp(_)
+        ),
+        "Doctor" => matches!(&p.command, Commands::Doctor),
+        "Models" => matches!(&p.command, Commands::Models),
+        "Probe" => matches!(&p.command, Commands::Probe),
         "McpList" => {
             let probe = case["mcp_probe"].as_bool().unwrap_or(false);
-            ExtraCliCommand::McpList { probe }
+            matches!(&p.command, Commands::Mcp(m) if matches!(&m.sub, McpSubCmd::List(l) if l.probe == probe))
         }
         other => panic!("unknown extra_cli in fixture: {other}"),
-    }
+    };
+    assert!(ok, "{name}: extra_cli want {want}, got {:?}", p.command);
 }
 
 fn parse_save_session_format(s: &str) -> SaveSessionFormat {
@@ -127,8 +143,11 @@ fn serve_workspace_unset_flag_is_parsed() {
             "--workspace-unset".to_string(),
         ])
         .expect("--workspace-unset 应被接受");
-        assert!(p.serve_workspace_unset, "标志须落到 ParsedCliArgs");
-        assert_eq!(p.workspace_cli, None, "待绑定模式下不应同时给 --workspace");
+        assert!(expect_serve(&p).workspace_unset, "标志须落到 ServeCmd");
+        assert_eq!(
+            p.global.workspace, None,
+            "待绑定模式下不应同时给 --workspace"
+        );
     });
 }
 
@@ -138,7 +157,7 @@ fn serve_workspace_unset_defaults_off() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()])
             .expect("serve 无其它参数应可解析");
         assert!(
-            !p.serve_workspace_unset,
+            !expect_serve(&p).workspace_unset,
             "默认不是待绑定模式（CLI 直启仍用配置的默认目录）"
         );
     });
@@ -175,133 +194,100 @@ fn fixture_parse_args_from_argv_contract() {
                 .collect();
             let p = parse_args_from_argv(argv).unwrap();
 
-            let want_extra = parse_extra_cli(case);
-            assert_eq!(p.extra_cli, want_extra, "{name} extra_cli");
+            assert_extra_cli(name, case, &p);
             assert_eq!(
-                p.dry_run,
+                matches!(&p.command, Commands::Config),
                 case["dry_run"].as_bool().unwrap(),
                 "{name} dry_run"
             );
-            let want_port = case["serve_port"].as_u64().map(|u| u as u16);
-            assert_eq!(p.serve_port, want_port, "{name} serve_port");
+
+            if let Some(want_port) = case["serve_port"].as_u64().map(|u| u as u16) {
+                assert_eq!(expect_serve(&p).bind_port(), want_port, "{name} serve_port");
+            }
 
             if let Some(ws) = case.get("workspace").and_then(|v| v.as_str()) {
-                assert_eq!(p.workspace_cli.as_deref(), Some(ws), "{name} workspace");
+                assert_eq!(p.global.workspace.as_deref(), Some(ws), "{name} workspace");
             }
 
             if let Some(ef) = case.get("save_session_format").and_then(|v| v.as_str()) {
-                let ss = p
-                    .save_session
-                    .as_ref()
-                    .unwrap_or_else(|| panic!("{name}: expected save_session"));
+                let Commands::SaveSession(cmd) = &p.command else {
+                    panic!("{name}: expected save_session");
+                };
                 assert_eq!(
-                    ss.format,
+                    cmd.format,
                     parse_save_session_format(ef),
                     "{name} save_session_format"
-                );
-            } else {
-                assert!(
-                    p.save_session.is_none(),
-                    "{name}: save_session should be absent"
                 );
             }
 
             if let Some(wb) = case.get("web_bearer").and_then(|v| v.as_str()) {
-                let got = p
-                    .web_bearer
-                    .as_ref()
-                    .unwrap_or_else(|| panic!("{name}: expected web_bearer"));
+                let Commands::WebBearer(cmd) = &p.command else {
+                    panic!("{name}: expected web_bearer");
+                };
                 match wb {
                     "Status" => assert!(
-                        matches!(got, WebBearerCli::Status),
+                        matches!(&cmd.sub, WebBearerSubCmd::Status),
                         "{name} web_bearer Status"
                     ),
                     "Clear" => assert!(
-                        matches!(got, WebBearerCli::Clear),
+                        matches!(&cmd.sub, WebBearerSubCmd::Clear),
                         "{name} web_bearer Clear"
                     ),
                     other => panic!("{name}: unknown web_bearer fixture {other}"),
                 }
-            } else {
-                assert!(
-                    p.web_bearer.is_none(),
-                    "{name}: web_bearer should be absent"
-                );
             }
 
             if let Some(tr) = case.get("tool_replay") {
                 let tr = tr.as_object().expect("tool_replay object");
                 let kind = tr["kind"].as_str().expect("tool_replay.kind");
-                let got = p
-                    .tool_replay
-                    .as_ref()
-                    .unwrap_or_else(|| panic!("{name}: expected tool_replay"));
+                let Commands::ToolReplay(cmd) = &p.command else {
+                    panic!("{name}: expected tool_replay");
+                };
                 match kind {
                     "Export" => {
-                        let ToolReplayCli::Export {
-                            session_file,
-                            output,
-                            note,
-                        } = got
-                        else {
-                            panic!("{name}: expected ToolReplayCli::Export");
+                        let ToolReplaySubCmd::Export(e) = &cmd.sub else {
+                            panic!("{name}: expected ToolReplaySubCmd::Export");
                         };
-                        let want_session = tr
-                            .get("session_file")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
                         assert_eq!(
-                            session_file.as_ref(),
-                            want_session.as_ref(),
+                            e.session_file.as_deref(),
+                            tr.get("session_file").and_then(|v| v.as_str()),
                             "{name} tool_replay.session_file"
                         );
-                        let want_output = tr
-                            .get("output")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
                         assert_eq!(
-                            output.as_ref(),
-                            want_output.as_ref(),
+                            e.output.as_deref(),
+                            tr.get("output").and_then(|v| v.as_str()),
                             "{name} tool_replay.output"
                         );
-                        let want_note = tr
-                            .get("note")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        assert_eq!(note.as_ref(), want_note.as_ref(), "{name} tool_replay.note");
+                        assert_eq!(
+                            e.note.as_deref(),
+                            tr.get("note").and_then(|v| v.as_str()),
+                            "{name} tool_replay.note"
+                        );
                     }
                     "Run" => {
-                        let ToolReplayCli::Run {
-                            fixture,
-                            compare_recorded,
-                        } = got
-                        else {
-                            panic!("{name}: expected ToolReplayCli::Run");
+                        let ToolReplaySubCmd::Run(r) = &cmd.sub else {
+                            panic!("{name}: expected ToolReplaySubCmd::Run");
                         };
                         assert_eq!(
-                            fixture.as_str(),
+                            r.fixture.as_str(),
                             tr["fixture"].as_str().expect("tool_replay.fixture"),
                             "{name} tool_replay.fixture"
                         );
                         assert_eq!(
-                            *compare_recorded,
+                            r.compare_recorded,
                             tr["compare_recorded"].as_bool().unwrap_or(false),
                             "{name} tool_replay.compare_recorded"
                         );
                     }
                     other => panic!("unknown tool_replay.kind: {other}"),
                 }
-            } else {
-                assert!(
-                    p.tool_replay.is_none(),
-                    "{name}: tool_replay should be absent"
-                );
             }
 
-            assert_eq!(
-                p.http_bind_host, "127.0.0.1",
-                "{name} http_bind_host default"
-            );
+            // `http_bind_host` 的默认 127.0.0.1 已下沉到 serve 分支（`CM_HTTP_HOST` 亦不再由
+            // 解析层读取）；解析层只需保证 `--host` 未被凭空填值。
+            if let Commands::Serve(serve) = &p.command {
+                assert_eq!(serve.host, None, "{name} serve --host 未给");
+            }
         }
     });
 }
