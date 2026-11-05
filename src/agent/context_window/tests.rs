@@ -411,14 +411,18 @@ fn archive_union_canonical_preserves_full_original_history() {
 }
 
 /// 尾部底线取「摘要**实际**保留条数」而非配置值：实际更大时不许删到配置值。
+///
+/// 夹具须落在「保护后剩余仍在输入硬上限内」的窄区间，否则第 2 级会放开尾部保护、
+/// 两种 tail 都被删到最近两整组，就没有可比性了。
 #[test]
 fn finalize_uses_actual_summary_tail_as_group_removal_floor() {
     let mut cfg = crate::config::load_config(None).expect("embed default");
-    cfg.llm_sampling.llm_context_tokens = 4_096;
+    cfg.llm_sampling.llm_context_tokens = 32_768;
     cfg.llm_sampling.max_tokens = 512;
+    cfg.context_pipeline.context_token_safety_margin_tokens = 2_048;
     cfg.context_pipeline.context_summary_tail_messages = 4;
     let bulky = |tag: &str| -> String {
-        (0..300)
+        (0..350)
             .map(|i| format!("第{i}行 {tag} 内容 value_{i}\n"))
             .collect()
     };

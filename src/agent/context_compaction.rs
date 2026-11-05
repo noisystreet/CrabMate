@@ -287,42 +287,97 @@ struct GroupRemovalOutcome {
     prefix: RemovedPrefix,
 }
 
-/// 删除最旧完整交互组直到收敛到目标 Token；返回删除统计与最终估算。
+/// 单轮删到目标：`tail_guard` 为 `0` 时不保护本回合摘要保留的尾部。
 ///
-/// 每次删组后重算一次估算（确定性、有界），因此单独成函数以保持
-/// [`compact_messages_to_token_budget`] 的分支复杂度可读。
+/// 返回 `true` 表示已收敛到 `target_tokens`；`false` 表示停手（只剩最近
+/// [`MIN_RECENT_TURN_GROUPS`] 组、被 `tail_guard` 挡住，或已无可删完整组）。
+/// 每次删组后重算一次估算（确定性、有界）。
+fn remove_groups_until_target(
+    outcome: &mut GroupRemovalOutcome,
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    tools: &[Tool],
+    model_override: Option<&str>,
+    target_tokens: u32,
+    tail_guard: usize,
+) -> bool {
+    while outcome.after.used_input_tokens > target_tokens {
+        let groups = conversation_turn_groups(messages);
+        if groups.len() <= MIN_RECENT_TURN_GROUPS {
+            return false;
+        }
+        // 删掉最旧一组后的尾部消息数；低于摘要保留条数就停手（那是这次摘要刻意留下的）。
+        if tail_guard > 0 && messages.len().saturating_sub(groups[1].start) < tail_guard {
+            return false;
+        }
+        let step = remove_oldest_turn_group(messages, MIN_RECENT_TURN_GROUPS);
+        if step.is_empty() {
+            return false;
+        }
+        outcome.turn_groups = outcome.turn_groups.saturating_add(1);
+        outcome.messages = outcome.messages.saturating_add(step.removed);
+        outcome.prefix = outcome.prefix.union(step);
+        outcome.after = estimate_final_request_tokens(cfg, messages, tools, model_override);
+    }
+    true
+}
+
+/// [`remove_old_groups_to_target`] 的预算参数：软目标、输入硬上限与摘要尾部保护。
+#[derive(Clone, Copy, Debug)]
+struct RemovalBudget {
+    /// 软目标：达成就停，不再动摘要刻意保留的尾部。
+    target_tokens: u32,
+    /// 输入硬上限：软目标没达成但会撞它时，才放开尾部保护继续删。
+    hard_limit_tokens: Option<u32>,
+    /// 本回合 LLM 摘要刻意保留的尾部条数；`0` 表示本回合未做摘要。
+    min_tail_messages: usize,
+}
+
+/// 删除最旧完整交互组直到收敛；返回删除统计与最终估算。
+///
+/// 分两级：
+/// 1. 删到**软目标** `target_tokens`，全程尊重 `min_tail_messages`（本回合 LLM 摘要刻意保留的尾部）；
+/// 2. 软目标没达成、但已经会撞**硬上限** `hard_limit_tokens` 时，放开尾部保护删到硬上限。
+///
+/// 为什么要第 2 级：摘要后的视图只剩「摘要 + 尾部」，第 1 级的守卫恒成立、一次都不会删，
+/// 于是**摘要保留的尾部本身超窗口时压缩到此为止**，请求会带着超预算的 messages 发出并被
+/// 上游拒绝——那比丢掉「已在 canonical、提交时进归档表」的原文更糟。反过来，软目标只是个
+/// 理想值，撞不上窗口就不值得为它牺牲摘要刻意留下的原文，所以第 2 级不按软目标判断。
 fn remove_old_groups_to_target(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
     tools: &[Tool],
     model_override: Option<&str>,
     after: ContextTokenEstimate,
-    target_tokens: u32,
-    min_tail_messages: usize,
+    budget: RemovalBudget,
 ) -> GroupRemovalOutcome {
     let mut outcome = GroupRemovalOutcome {
         after,
         ..GroupRemovalOutcome::default()
     };
-    while outcome.after.used_input_tokens > target_tokens {
-        let groups = conversation_turn_groups(messages);
-        if groups.len() <= MIN_RECENT_TURN_GROUPS {
-            break;
-        }
-        // 删掉最旧一组后的尾部消息数；低于摘要保留条数就停手（那是这次摘要刻意留下的）。
-        if min_tail_messages > 0
-            && messages.len().saturating_sub(groups[1].start) < min_tail_messages
-        {
-            break;
-        }
-        let step = remove_oldest_turn_group(messages, MIN_RECENT_TURN_GROUPS);
-        if step.is_empty() {
-            break;
-        }
-        outcome.turn_groups = outcome.turn_groups.saturating_add(1);
-        outcome.messages = outcome.messages.saturating_add(step.removed);
-        outcome.prefix = outcome.prefix.union(step);
-        outcome.after = estimate_final_request_tokens(cfg, messages, tools, model_override);
+    if remove_groups_until_target(
+        &mut outcome,
+        cfg,
+        messages,
+        tools,
+        model_override,
+        budget.target_tokens,
+        budget.min_tail_messages,
+    ) {
+        return outcome;
+    }
+    if let Some(hard_limit) = budget.hard_limit_tokens
+        && outcome.after.used_input_tokens > hard_limit
+    {
+        let _ = remove_groups_until_target(
+            &mut outcome,
+            cfg,
+            messages,
+            tools,
+            model_override,
+            hard_limit,
+            0,
+        );
     }
     outcome
 }
@@ -335,8 +390,9 @@ fn remove_old_groups_to_target(
 /// 而在启用「工具调用回传思维链」的供应商（Kimi k2.5 thinking / DeepSeek thinking）上剥离
 /// 会让上游要求回传的正文变空串，属契约冲突。
 ///
-/// `min_tail_messages` 非零时（本回合做过 LLM 摘要），删组不会吃掉摘要刻意保留的尾部条数，
-/// 否则那次摘要等于白烧一次模型调用。
+/// `min_tail_messages` 非零时（本回合做过 LLM 摘要），删组**优先**不吃掉摘要刻意保留的
+/// 尾部条数，否则那次摘要等于白烧一次模型调用；只有尾部本身就会撞输入硬上限时才会放开
+/// 这层保护（见 `remove_old_groups_to_target` 的第 2 级）。
 pub fn compact_messages_to_token_budget(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
@@ -373,8 +429,11 @@ pub fn compact_messages_to_token_budget(
             tools,
             model_override,
             after,
-            value.target_tokens,
-            min_tail_messages,
+            RemovalBudget {
+                target_tokens: value.target_tokens,
+                hard_limit_tokens: Some(value.max_input_tokens),
+                min_tail_messages,
+            },
         );
     }
     ContextCompactionReport {
@@ -465,6 +524,79 @@ mod tests {
                     .is_some_and(|content| content.starts_with("turn-3"))
             }),
             "latest user group must remain"
+        );
+    }
+
+    /// 摘要保留的尾部**本身**就超目标时，必须放开尾部保护继续删组。
+    ///
+    /// 摘要后的视图只剩「摘要 + 尾部」，第 1 级的 `tail_guard` 守卫恒成立、一次都不删，
+    /// 若没有第 2 级，请求会带着超预算的 messages 发出并被上游拒绝。
+    #[test]
+    fn summary_tail_guard_yields_when_tail_alone_exceeds_target() {
+        let mut cfg = crate::config::load_config(None).expect("embedded config");
+        cfg.llm_sampling.llm_context_tokens = 4_096;
+        cfg.llm_sampling.max_tokens = 512;
+        cfg.context_pipeline.context_token_safety_margin_tokens = 128;
+        cfg.context_pipeline.context_token_trigger_percent = 50;
+        cfg.context_pipeline.context_token_target_percent = 40;
+
+        let big = bulky_text("tail", 800);
+        let mut messages = vec![
+            Message::system_only("system"),
+            Message::user_context_summary_injection("压缩要点：早期对话已折叠"),
+        ];
+        for turn in 0..3 {
+            messages.push(Message::user_only(format!("u{turn} {big}")));
+            messages.push(Message::assistant_only(format!("a{turn}")));
+        }
+        let budget = ContextTokenBudget::from_config(&cfg).expect("token budget");
+        let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
+        assert!(
+            before.used_input_tokens > budget.target_tokens,
+            "夹具须让摘要尾部自身就超目标: before={} target={}",
+            before.used_input_tokens,
+            budget.target_tokens
+        );
+
+        // 6 = 摘要刻意保留的尾部条数（3 组 × 2 条）：第 1 级守卫必然挡住删组。
+        let report =
+            compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, true, 6);
+
+        assert!(
+            report.removed_turn_groups > 0,
+            "尾部自身超目标时必须放开 tail_guard 继续删组"
+        );
+        assert_eq!(
+            conversation_turn_groups(&messages).len(),
+            MIN_RECENT_TURN_GROUPS,
+            "仍须保留最近两整组"
+        );
+    }
+
+    /// 未做摘要（`min_tail_messages == 0`）时，第 2 级不得引起额外删除。
+    #[test]
+    fn zero_tail_guard_does_not_double_remove() {
+        let mut cfg = crate::config::load_config(None).expect("embedded config");
+        cfg.llm_sampling.llm_context_tokens = 4_096;
+        cfg.llm_sampling.max_tokens = 512;
+        let mut messages = vec![Message::system_only("system")];
+        for turn in 0..4 {
+            messages.push(Message::user_only(format!(
+                "turn-{turn} {}\n",
+                bulky_text("x", 600)
+            )));
+            messages.push(Message::assistant_only(format!("answer-{turn}")));
+        }
+        let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
+        let report =
+            compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
+        assert_eq!(
+            conversation_turn_groups(&messages).len(),
+            MIN_RECENT_TURN_GROUPS
+        );
+        assert_eq!(
+            report.removed_turn_groups, 2,
+            "4 组删到最近 2 组，第 2 级不能多删"
         );
     }
 
@@ -573,12 +705,16 @@ mod tests {
         assert!(report.after.used_input_tokens <= target);
     }
 
-    /// `min_tail_messages` 非零时（刚做过摘要），删组不得吃掉摘要保留的尾部条数。
+    /// 第 1 级（软目标）必须尊重摘要保留的尾部：保护范围覆盖全部消息时一组都不删。
+    ///
+    /// 这里直接驱动单级函数：端到端的**撞硬上限放开**由
+    /// `summary_tail_guard_yields_when_tail_alone_exceeds_target` 覆盖。
     #[test]
     fn min_tail_messages_stops_group_removal() {
         let mut cfg = crate::config::load_config(None).expect("embedded config");
         cfg.llm_sampling.llm_context_tokens = 4_096;
         cfg.llm_sampling.max_tokens = 512;
+        let budget = ContextTokenBudget::from_config(&cfg).expect("token budget");
         let build = || {
             let mut messages = vec![Message::system_only("system")];
             for turn in 0..4 {
@@ -590,16 +726,21 @@ mod tests {
 
         let mut guarded_messages = build();
         let before = estimate_final_request_tokens(&cfg, &guarded_messages, &[], None);
-        let guarded = compact_messages_to_token_budget(
+        let mut guarded = GroupRemovalOutcome {
+            after: before,
+            ..GroupRemovalOutcome::default()
+        };
+        let converged = remove_groups_until_target(
+            &mut guarded,
             &cfg,
             &mut guarded_messages,
             &[],
             None,
-            before,
-            false,
+            budget.target_tokens,
             100,
         );
-        assert_eq!(guarded.removed_turn_groups, 0, "尾部保护应阻止删组");
+        assert!(!converged, "尾部保护覆盖全部消息时不可能收敛到软目标");
+        assert_eq!(guarded.turn_groups, 0, "尾部保护应阻止删组");
 
         let mut free_messages = build();
         let before = estimate_final_request_tokens(&cfg, &free_messages, &[], None);
@@ -608,14 +749,18 @@ mod tests {
         assert!(freed.removed_turn_groups > 0, "无尾部保护时应删组");
     }
 
-    /// `min_tail_messages` 取生产默认尾部条数（12）时的真实区间：保护优先于继续删组。
+    /// 生产默认尾部条数（12）下，第 1 级保护让保留的组多于无保护情形。
     #[test]
     fn min_tail_messages_default_tail_keeps_more_groups_than_no_guard() {
         let mut cfg = crate::config::load_config(None).expect("embedded config");
         cfg.llm_sampling.llm_context_tokens = 4_096;
         cfg.llm_sampling.max_tokens = 512;
-        let tail = cfg.context_pipeline.context_summary_tail_messages.clamp(4, 64);
+        let tail = cfg
+            .context_pipeline
+            .context_summary_tail_messages
+            .clamp(4, 64);
         assert_eq!(tail, 12, "默认配置的摘要尾部条数");
+        let budget = ContextTokenBudget::from_config(&cfg).expect("token budget");
         let build = || {
             let mut messages = vec![Message::system_only("system")];
             for turn in 0..8 {
@@ -627,25 +772,43 @@ mod tests {
 
         let mut guarded_messages = build();
         let before = estimate_final_request_tokens(&cfg, &guarded_messages, &[], None);
-        let guarded =
-            compact_messages_to_token_budget(&cfg, &mut guarded_messages, &[], None, before, false, tail);
+        let mut guarded = GroupRemovalOutcome {
+            after: before,
+            ..GroupRemovalOutcome::default()
+        };
+        let _ = remove_groups_until_target(
+            &mut guarded,
+            &cfg,
+            &mut guarded_messages,
+            &[],
+            None,
+            budget.target_tokens,
+            tail,
+        );
 
         let mut free_messages = build();
-        let before = estimate_final_request_tokens(&cfg, &free_messages, &[], None);
-        let freed =
-            compact_messages_to_token_budget(&cfg, &mut free_messages, &[], None, before, false, 0);
+        let before_free = estimate_final_request_tokens(&cfg, &free_messages, &[], None);
+        let freed = compact_messages_to_token_budget(
+            &cfg,
+            &mut free_messages,
+            &[],
+            None,
+            before_free,
+            false,
+            0,
+        );
 
-        assert!(guarded.removed_turn_groups > 0, "预算超限时应至少删一组");
+        assert!(guarded.turn_groups > 0, "预算超限时应至少删一组");
         assert!(
-            freed.removed_turn_groups > guarded.removed_turn_groups,
+            freed.removed_turn_groups > guarded.turn_groups,
             "无尾部保护应删得更多: guarded={} freed={}",
-            guarded.removed_turn_groups,
+            guarded.turn_groups,
             freed.removed_turn_groups
         );
-        let kept_messages = guarded_messages.len();
         assert!(
-            kept_messages >= tail,
-            "保护生效后应保留至少 {tail} 条消息: {kept_messages}"
+            guarded_messages.len() >= tail,
+            "保护生效后应保留至少 {tail} 条消息: {}",
+            guarded_messages.len()
         );
     }
 }
