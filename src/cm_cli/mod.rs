@@ -3,8 +3,9 @@
 //! 三条结构约束，由脚本而非注释兜住：
 //!
 //! 1. `cm_cli/*.rs` 单文件 ≤ 200 行、**每命令一个模块**（`scripts/fn_nloc_rust_metrics.py`）；
-//! 2. `cm_cli/` **不得**引用 `crate::cm_internal`（`scripts/check-crate-deps.sh`）——分派层
-//!    只认「子命令 → 执行体」，需要内部能力时由执行体自己取，别让 CLI 层长成第二个内部门面；
+//! 2. `cm_cli/` **不得**引用内部实现门面 `cm_internal`（`scripts/check-crate-deps.sh`）——
+//!    分派层只认「子命令 → 执行体」，需要内部能力时由执行体自己取，别让 CLI 层长成
+//!    第二个内部门面；
 //! 3. 命令内部的装配细节放子目录（如 `cm_cli/serve/`），仍受全局 920 行/文件上限。
 //!
 //! [`CliContext`] **刻意不持有已加载的配置**：`web-bearer` / `sse-replay` 这类命令不读配置，

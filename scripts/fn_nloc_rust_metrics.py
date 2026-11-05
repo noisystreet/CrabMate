@@ -3,6 +3,7 @@
 
 - 全体函数 **最大 nloc** 不得高于 [`MAX_NLOC_CAP`]（200）。
 - 全体已扫描 `.rs` **单文件最大物理行数** 不得高于 [`MAX_FILE_LINES_CAP`]（920）。
+- [`PER_DIR_FILE_LINES_CAPS`] 里的目录另有更严的**直接子文件**行数上限。
 """
 import sys
 from pathlib import Path
@@ -17,6 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 RUST_ROOTS = (ROOT / "src", ROOT / "crates")
 MAX_NLOC_CAP = 200
 MAX_FILE_LINES_CAP = 920
+# 目录级「直接子文件」行数上限（不递归：子目录仍只受全局 MAX_FILE_LINES_CAP 约束）。
+# `src/cm_cli/` = CLI 分派层：每类命令一个模块，入口文件必须薄（设计
+# `docs/design/sdk_facade.md` §6 的三条硬约束之一，见 #1295）。
+PER_DIR_FILE_LINES_CAPS: dict[Path, int] = {ROOT / "src" / "cm_cli": 200}
 
 
 def _rust_files() -> list[str]:
@@ -102,13 +107,39 @@ def _check_file_physical_lines(files: list[str]) -> int:
     return 1
 
 
+def _check_per_dir_file_lines() -> int:
+    """目录级「直接子文件」行数上限（[`PER_DIR_FILE_LINES_CAPS`]）。"""
+    failures = 0
+    for base, cap in PER_DIR_FILE_LINES_CAPS.items():
+        if not base.is_dir():
+            print(f"fn-nloc: 目录级上限指向不存在的目录 {base}", file=sys.stderr)
+            return 1
+        for p in sorted(base.glob("*.rs")):
+            nlines = _file_physical_line_count(p)
+            if nlines > cap:
+                print(
+                    f"fn-nloc: {p} 行数 {nlines} 超过目录级上限 {cap}"
+                    f"（{base.name}/ 每命令一个模块，见 docs/design/sdk_facade.md §6）",
+                    file=sys.stderr,
+                )
+                failures += 1
+    if failures == 0:
+        caps = ", ".join(f"{b.name}<={c}" for b, c in PER_DIR_FILE_LINES_CAPS.items())
+        print(f"fn-nloc Rust 目录级上限: {caps}")
+    return 1 if failures else 0
+
+
 def main() -> int:
     files = _rust_files()
     if not files:
         print("fn-nloc: 未找到 Rust 源文件", file=sys.stderr)
         return 1
 
-    return _check_function_nloc(files) or _check_file_physical_lines(files)
+    return (
+        _check_function_nloc(files)
+        or _check_file_physical_lines(files)
+        or _check_per_dir_file_lines()
+    )
 
 
 if __name__ == "__main__":
