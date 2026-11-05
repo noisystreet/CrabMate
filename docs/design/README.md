@@ -95,7 +95,7 @@
 |---|---|
 | [crate_dep_policy.md](crate_dep_policy.md) | Crate 依赖策略（降低耦合） |
 | [crates_io_single_package.md](crates_io_single_package.md) | ADR：单包 `crabmate` 发布到 crates.io |
-| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案；S5-a（#1274/#1275）、S1-a + S1-b 的 feature 解绑（#1279）、S1-b 的 `SessionStore` 端口（#1284/#1286）、S3-a 的审批端口（#1280）、S3-b 的 `PolicyEngine` 端口（#1282）与端口收窄（5 → 4）、S2-0 / S2-1（#1288）/ S2-2（#1291）/ S2-4（#1290）已实施；S4 / S5 / S6 未开工**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；Q1–Q4 已决（§11），原三条「实施前必查」已核销（§10.3）。**S1 / S2 / S3 三条线闭环**；下一步只剩 **S4**（拆桶）与 **S6**（承诺面），S5 其余视 CLI 需求插入 |
+| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案；S5-a（#1274/#1275）、S1-a + S1-b 的 feature 解绑（#1279）、S1-b 的 `SessionStore` 端口（#1284/#1286）、S3-a 的审批端口（#1280）、S3-b 的 `PolicyEngine` 端口（#1282）与端口收窄（5 → 4）、S2-0 / S2-1（#1288）/ S2-2（#1291）/ S2-4（#1290）、S5（#1295）已实施；S4 / S6 未开工**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；Q1–Q4 已决（§11），原三条「实施前必查」已核销（§10.3）。**S1 / S2 / S3 / S5 四条线闭环**；下一步只剩 **S4**（拆桶）与 **S6**（承诺面） |
 | [user_data_dir.md](user_data_dir.md) | 本机用户数据目录（`~/.local/share/crabmate`）设计 |
 | [e2e_real_llm_testing_architecture.md](e2e_real_llm_testing_architecture.md) | E2E 真实 LLM 自动化测试架构 |
 | [ide_mode_roadmap.md](ide_mode_roadmap.md) | Web / 桌面内置 IDE 模式：完善规划 |
