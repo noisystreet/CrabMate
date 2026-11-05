@@ -210,7 +210,22 @@ fn map_single_sse_value(val: &serde_json::Value) -> Vec<TurnEvent> {
                 _ => Vec::new(),
             }
         }
-        _ => Vec::new(),
+        _ => {
+            // S2-2：映射表（`docs/design/sdk_facade.md` §5.1.1）没覆盖的帧，**仍然返回空**——
+            // 行为与以前一致——但不再完全静默：debug 下留一条诊断，便于发现线上冒出的新事件。
+            // 「新增事件必须有人做决策」由 `cm_sdk_event` 的穷尽性测试承担，这里只负责可观测。
+            if matches!(
+                crate::cm_sdk_event::project_frame(val),
+                crate::cm_sdk_event::Projection::Unknown
+            ) {
+                tracing::debug!(
+                    target: "crabmate::turn_layout",
+                    frame_type = %type_str,
+                    "未在 AG-UI 映射表中的帧，已忽略"
+                );
+            }
+            Vec::new()
+        }
     }
 }
 
