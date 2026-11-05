@@ -47,6 +47,8 @@ pub mod cm_types;
 #[cfg(feature = "sqlite")]
 mod conversation_store;
 
+/// S2-2：SDK 面 `TurnEvent` 的有损投影（设计 `docs/design/sdk_facade.md` §5.1.1）。
+pub(crate) mod cm_sdk_event;
 /// 会话存储端口（`SessionStore`）与内存 / SQLite 实现（S1-b，见 `docs/design/sdk_facade.md` §5.3）。
 ///
 /// 与 `conversation_store` 的分层：后者是纯 SQLite 语句层（只挂 `sqlite`，不依赖 tokio /
