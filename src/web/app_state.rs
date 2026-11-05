@@ -9,15 +9,14 @@ use tokio::sync::mpsc;
 
 use crate::chat_job_queue::{ChatJobQueue, WebChatQueueDeps};
 use crate::config::SharedAgentConfig;
-use crate::cm_api_contract::chat::ConversationLayoutMeta;
 use crate::conversation_store::{BranchTruncateOutcome, SaveConversationOutcome};
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
 use crate::sse::SseStreamHub;
 
-pub(crate) use super::conversation_backing::{
-    ConversationBacking, ConversationRetention, open_conversation_sqlite,
+pub(crate) use crate::cm_session_store::{
+    ConversationBacking, ConversationRetention, SessionStore, open_conversation_sqlite,
 };
 
 /// 与 `chat_handlers::normalize_client_conversation_id` 及存储上限对齐。
@@ -40,18 +39,7 @@ pub(crate) fn purge_expired_approval_sessions(
     map.retain(|_, slot| now.duration_since(slot.created_at) <= ttl);
 }
 
-#[derive(Clone)]
-pub(crate) struct ConversationTurnSeed {
-    pub messages: Vec<Message>,
-    pub expected_revision: Option<u64>,
-    pub persisted_active_agent_role: Option<String>,
-    /// 持久化的会话工作模式（ask/plan/act）；`None` 表示未设置。
-    pub persisted_active_session_mode: Option<String>,
-    /// 持久化的权限等级**意图**（chat/…/unrestricted）；`None` 表示未设置。
-    pub persisted_active_permission_level: Option<String>,
-    /// 可选布局元数据；缺省时 GET 省略。会话级，不随消息分页切片。
-    pub layout: Option<ConversationLayoutMeta>,
-}
+pub(crate) use crate::cm_session_store::ConversationTurnSeed;
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
 ///

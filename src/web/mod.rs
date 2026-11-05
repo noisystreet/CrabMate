@@ -27,13 +27,12 @@ pub(crate) fn json_error_response(
         })),
     )
 }
-mod conversation_backing;
 mod memory;
 mod permission;
 
 pub(crate) use app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
-    ConversationBacking, WebChatJobAppFacet, open_conversation_sqlite,
+    WebChatJobAppFacet, open_conversation_sqlite,
 };
 pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_line};
 pub(crate) use chat_handlers::spawn_tiktoken_baseline_warmup;

@@ -47,6 +47,15 @@ pub mod cm_types;
 #[cfg(feature = "sqlite")]
 mod conversation_store;
 
+/// 会话存储端口（`SessionStore`）与内存 / SQLite 实现（S1-b，见 `docs/design/sdk_facade.md` §5.3）。
+///
+/// 与 `conversation_store` 的分层：后者是纯 SQLite 语句层（只挂 `sqlite`，不依赖 tokio /
+/// 回合编排），本模块是**门面 + 端口**，需要 `tokio`、`cm_turn_layout` 与 `cm_api_contract`
+/// 的类型，因此挂 `server`。搬出 `web/` 的收益是运维 CLI 与 Web 共用同一入口，
+/// 而不是「能让它在 `--features protocol,sqlite` 下编译」。
+#[cfg(feature = "server")]
+pub(crate) mod cm_session_store;
+
 #[cfg(feature = "server")]
 include!("lib_server.rs");
 

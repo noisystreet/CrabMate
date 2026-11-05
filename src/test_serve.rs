@@ -122,7 +122,7 @@ pub async fn start_test_serve_with_config(
         },
         conversation: web::AppStateConversationRuntime {
             conversation_backing: Arc::new(tokio::sync::RwLock::new(
-                web::ConversationBacking::memory_default(),
+                crate::cm_session_store::ConversationBacking::memory_default(),
             )),
             conversation_id_counter: Arc::new(AtomicU64::new(1)),
             cfg: Arc::clone(&cfg_holder),

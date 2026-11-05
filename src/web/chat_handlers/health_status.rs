@@ -1,5 +1,6 @@
 //! `GET /health`、`GET /status`。
 
+use crate::cm_session_store::SessionStore;
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
