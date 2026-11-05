@@ -1,6 +1,6 @@
 # SDK 面与命令薄封装（设计草案）
 
-**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S3-a 的审批端口已实施（#1280）；S1-b 的 trait 抽取、S3-b 的 `PolicyEngine` 端口已实施（#1282）、**S2 的 S2-0 / S2-1 / S2-2 / S2-4 已实施（#1285 / #1289；S2-3 核销放弃）**、S4 / S5 / S6 未开工**。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
+**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S4 / S5 / S6 未开工。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
 **受众**：维护者、Client（Web / `crabmate-tui`）维护者、贡献者。
 **语言**：中文。
 **维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：[#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
@@ -285,12 +285,12 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S5-a**（先做） | `cli_run.rs` 减行，纯搬移一分为三 | 见 §12.3 | 见 §12.2；**唯一有硬截止的一步** |
 | **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `lib_server.rs`；**`SessionStore` trait ⏳ 未做**——形态取决于目标（复用 vs 承诺面），见 §7.1 |
 | **S2** | `TurnRequest` / `TurnEvent` / `TurnEngine`；旧 BuildArgs 转 `#[deprecated]` 封装（P2） | `fixtures/sse_ag_ui_golden.jsonl`、`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl` **不改即绿** | **无前置**（2026-11-04 已核销：`RunAgentTurnSession<'a>` 只有 3 个字段、**不含** store 句柄 ⇒ S1/S2/S3 互不阻塞）；按「一组一组搬」，每组一次提交。**进度**：**S2-0 / S2-1 / S2-4 ✅**：三项正名已落地（`TurnRequest` / `TurnEngine` / `TurnOutcome`；`RunAgentTurnParams` 留 `#[deprecated]` 别名，因它经 `include!` 落在 crate 根属公开 API）；`TurnOutcome` 已 struct 化为 `{ commit, stats: TurnStats }`，六个聚合字段**全部取自既有账本**（`TurnBudgetCounter` × 5 + `PerTurnFlight::last_assistant_finish_truncated`），**刻意不含「本轮工具调用次数」**（`ToolOutcomeRecorder` 是进程级累计，无单轮维度）；`run_agent_turn` `nloc` 197 → 177 → 185；**S2-2 ✅**：投影口径见 §5.1.1（三层结构 + 映射表 A/B + `ToolResult` 必须带 `partial` + 缺口 G1/G2 + 三态 `Dropped`/`Unknown`），代码落在 `cm_sdk_event`，`replay` 的静默兜底改为 debug 诊断；`messages` owned 化经核销**建议放弃**（`&mut` 仅跨 3 行，且 `ModelContextView::derive` 已 `to_vec()`） |
-| **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b 🚧**（#1282）：`PolicyEngine` 端口已落地（`cm_agent::permission::PolicyEngine`，执行面签名由 `Option<&PermissionCaps>` 改为 `Option<&dyn PolicyEngine>`，并加「端口 ≡ 自由函数」等价性测试）；**`ToolSandbox` 早已是端口**（`Arc<dyn SyncDefaultSandboxBackend>`，`cm_internal::tool_sandbox`），**`ToolHost` 本体也已存在**（`ToolExecutionHost` + `ToolDispatch`）——剩余只是把这两个面收进 `ports` 命名并逐个收窄端口宽度。全程只包现有代码，**不新增审批语义** |
+| **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b ✅**（#1282/S3-b）：`PolicyEngine` 端口已落地（`cm_agent::permission::PolicyEngine`，执行面签名由 `Option<&PermissionCaps>` 改为 `Option<&dyn PolicyEngine>`，并加「端口 ≡ 自由函数」等价性测试）；**`ToolSandbox` 早已是端口**（`Arc<dyn SyncDefaultSandboxBackend>`，`cm_internal::tool_sandbox`），**`ToolHost` 本体也已存在**（`ToolExecutionHost` + `ToolDispatch`）。**端口收窄已完成**：`ApprovalBroker` 从 5 个方法收到 **4**（`cancel()` 全仓 0 调用点，能力已由 `approval_sink().cancel` 送达，详见 §7.2）；`ports` 命名收口**主动不做**（收益在 S4 的禁边表，单独落只是无消费者的间接层，见 §8）。全程只包现有代码，**不新增审批语义** |
 | **S4** | `cm_internal` 拆桶；禁边表改为「上层只准引用 `ports`」（P1） | `scripts/check-crate-deps.sh` 白名单式规则；外部引用数 **20 → 0** | **前置**：先跑 `code_nav call_graph_sketch` 复核分桶假设（§10.2）；回退成本最高，务必最后做 |
 | **S5** | CLI 分派表 + `cm_cli/` 禁边 + serve builder（P4） | `crabmate --help` 与 `man/crabmate.1` **无 diff** | 须在 S5-a 之后：余量恢复后才值得做语义重构 |
 | **S6** | 承诺面从「模块存在」升级为「类型 + trait 清单」（P6、P7） | rustdoc 白名单 + semver 检查脚本 | ⚠️ 承诺面所在章节未复核（早期稿引「§2.4」但未定位）；改承诺面即关联 Client 的 `client-contract-v*` 钉版本 |
 
-**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：`net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；`ApprovalBroker` 的 5 方法收窄留待 `ToolHost` 落地后处理。
+**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：`net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；**S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；`ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。`ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
 
 ### 7.1 S1-b 的 `SessionStore` trait 为什么没有跟着解绑一起做
 
@@ -313,7 +313,20 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 代价是端口面偏宽（5 个方法）。这是诚实的：执行面确实需要这些能力。若 S3-b 引入 `ToolHost` 后某些能力只由宿主使用，再逐个从端口上收窄。
 
-**当前推荐顺序（2026-11-05 更新）**：S5-a 已完成（§12），**硬截止已解除**；S1-a / S1-b 解绑（#1279）与 S3-a（#1280）已完成。下一步是 **S3-b**（`PolicyEngine` / `ToolSandbox` / `ToolHost` 本体）与 **S1-b 的 trait 抽取**（形态待定，见 §7.1），其后 **S2** → **S4**（仍放最后，开工前先跑 `call_graph_sketch`）→ **S6**（改承诺面须同步判断 Client `client-contract-v*`）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
+**S3-b 核实结果（已收窄为 4）**：逐个点消费点后，`cancel()` 是唯一没有消费者的方法——全仓 **0 个调用点**。而它想提供的能力并没有丢：`approval_sink()` 返回的 `WebApprovalSink` 本来就带着 `cancel: Option<&'a Arc<AtomicBool>>`，审批等待靠它感知「停止」。也就是说**同一条能力开了两条路**，端口因此看起来比实际需要的宽。删掉 `cancel()` 方法、保留 `WebToolRuntime::cancel` 字段（`approval_sink` 仍用它），端口从 5 收到 4。
+
+其余四个都留着，各有真实消费点且语义不重叠：
+
+| 方法 | 消费点 | 为什么不能并 |
+|---|---|---|
+| `approval_sink()` | 6 处（`workflow_tool_dispatch` + `cm_internal` 审批链）| 交互审批的唯一入口 |
+| `turn_job_id()` | 1 处（`background_job.rs`）| 级联取消要写入 `JobRecord.source_turn_job_id` |
+| `out_tx()` | 1 处（`background_job.rs`）| 后台任务只发 SSE、不审批；经 `approval_sink()` 取会语义失真 |
+| `persistent_allowlist()` | 4 处（审批写入 + `http/gate` 查询）| 「永久允许」是共享状态，不是通道 |
+
+**`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
+
+**当前推荐顺序（2026-11-05 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含本次端口收窄）**全部已完成**，S1 / S2 / S3 三条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）与 **S6**（改承诺面须同步判断 Client `client-contract-v*`）；S5 的其余部分视 CLI 需求插入。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
 
