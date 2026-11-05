@@ -78,7 +78,7 @@ pub struct DispatchToolPolicy<'a> {
     pub cfg: &'a Arc<AgentConfig>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
-    /// 与 `crate::cm_internal::RunAgentTurnParams::obs` 的 `process_handles` 同源。
+    /// 与 `crate::cm_internal::TurnRequest::obs` 的 `process_handles` 同源。
     pub handler_lookup: &'a HandlerLookupTable,
     pub sync_default_sandbox_backend: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 本回合权限能力快照（S3 接线：命令白名单 / 路径 / 网络 / 外部工具）。

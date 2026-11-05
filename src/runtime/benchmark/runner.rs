@@ -191,7 +191,7 @@ async fn run_single_task(
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let timeout_secs = batch_cfg.task_timeout_secs;
-    let run_fut = crate::run_agent_turn(crate::RunAgentTurnParams::benchmark_batch(
+    let run_fut = crate::run_agent_turn(crate::TurnRequest::benchmark_batch(
         client,
         api_key,
         &task_cfg,

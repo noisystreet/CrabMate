@@ -1,5 +1,5 @@
 #![cfg(feature = "server")]
-//! 编排级集成测：通过 [`crabmate::RunAgentTurnParams`] 注入 [`crabmate::llm::ChatCompletionsBackend`]，
+//! 编排级集成测：通过 [`crabmate::TurnRequest`] 注入 [`crabmate::llm::ChatCompletionsBackend`]，
 //! 钉住 `run_agent_turn` → `run_agent_outer_loop` 的「Planner → 工具 → Planner → 终答」入口链，**不**访问真实网络。
 //!
 //! **PER 外循环 `OuterLoopDriver`** 路径 mock：
@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, RunAgentTurnAttach, RunAgentTurnObs,
-    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs, StreamChatParams, ToolCall,
-    TurnProcessHandles, build_tools, load_config, message_content_as_str, run_agent_turn,
+    RunAgentTurnSession, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, TurnProcessHandles,
+    TurnRequest, build_tools, load_config, message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -97,7 +97,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
     )));
 
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let params = RunAgentTurnParams {
+    let params = TurnRequest {
         shared: RunAgentTurnSharedInputs {
             client: &client,
             api_key: "",
@@ -175,7 +175,7 @@ async fn run_mock_agent_turn(
     let client = reqwest::Client::new();
     let tools = build_tools();
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let params = RunAgentTurnParams {
+    let params = TurnRequest {
         shared: RunAgentTurnSharedInputs {
             client: &client,
             api_key: "",
@@ -293,7 +293,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
         Message::user_only("你好，请用一句话介绍你自己。".to_string()),
     ];
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let params = RunAgentTurnParams {
+    let params = TurnRequest {
         shared: RunAgentTurnSharedInputs {
             client: &client,
             api_key: "",

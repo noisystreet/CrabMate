@@ -107,7 +107,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     let client_model_override = llm_override.as_ref().and_then(|o| o.model.clone());
     let r = queue_deps
         .turn_runner
-        .run(crate::RunAgentTurnParams::web_chat_json(
+        .run(crate::TurnRequest::web_chat_json(
             crate::WebChatJsonBuildArgs {
                 shared: crate::RunAgentTurnSharedInputs {
                     client: &queue_deps.client,
@@ -230,7 +230,7 @@ struct JsonTurnFinishParams<'a> {
 }
 
 async fn finish_json_queued_job_after_turn(
-    r: crate::turn_runner::TurnRunOutcome,
+    r: crate::turn_runner::TurnOutcome,
     p: JsonTurnFinishParams<'_>,
 ) -> (bool, bool, Option<String>) {
     match r {

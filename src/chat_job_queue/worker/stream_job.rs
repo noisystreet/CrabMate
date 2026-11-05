@@ -86,7 +86,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         }
     };
 
-    let mut params = crate::RunAgentTurnParams::web_chat_stream(crate::WebChatStreamBuildArgs {
+    let mut params = crate::TurnRequest::web_chat_stream(crate::WebChatStreamBuildArgs {
         shared: crate::RunAgentTurnSharedInputs {
             client: &queue_deps.client,
             api_key: rt.api_key_turn.as_str(),

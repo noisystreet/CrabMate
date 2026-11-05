@@ -92,8 +92,8 @@ pub use run_agent_turn::run_agent_turn;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-#[allow(unused_imports)] // `DefaultTurnRunner` 供文档与类型探查；装配走 `default_turn_runner`
-pub(crate) use turn_runner::{DefaultTurnRunner, TurnRunner, default_turn_runner};
+#[allow(unused_imports)] // `DefaultTurnEngine` 供文档与类型探查；装配走 `default_turn_engine`
+pub(crate) use turn_runner::{DefaultTurnEngine, TurnEngine, default_turn_engine};
 
 /// 回合传输与端点表现（SSE、取消、审批上下文等），与模型采样/路由覆盖解耦。
 pub struct AgentTurnTransport<'a> {
@@ -175,7 +175,7 @@ pub struct RunAgentTurnObs {
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
 ///
 /// 顶层分组（turn_host **P3d**）：`shared` / `session` / `transport` / `llm` / `attach` / `obs`（字段不删，仅嵌套）。
-pub struct RunAgentTurnParams<'a> {
+pub struct TurnRequest<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
     pub session: RunAgentTurnSession<'a>,
     pub transport: AgentTurnTransport<'a>,
@@ -184,7 +184,14 @@ pub struct RunAgentTurnParams<'a> {
     pub obs: RunAgentTurnObs,
 }
 
-/// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
+/// 旧名兼容别名（S2 正名，见 #1285）：新代码请用 [`TurnRequest`]。
+///
+/// `TurnRequest` 经 `include!("lib_server.rs")` 落在 crate 根，属公开 API，
+/// 故保留一版别名供外部调用方迁移；本仓内已全部改用新名（`-D warnings` 下用旧名会失败）。
+#[deprecated(note = "改名为 TurnRequest（S2，见 #1285）")]
+pub type RunAgentTurnParams<'a> = TurnRequest<'a>;
+
+/// 构造 [`TurnRequest::web_chat_stream`] 所需的参数包（避免长形参列表）。
 #[cfg(feature = "web")]
 pub struct WebChatStreamBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
@@ -217,7 +224,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
-/// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
+/// 构造 [`TurnRequest::web_chat_json`] 所需的参数包。
 #[cfg(feature = "web")]
 pub struct WebChatJsonBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
@@ -266,7 +273,7 @@ struct WebChatJobCommonParts<'a> {
     tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
-impl<'a> RunAgentTurnParams<'a> {
+impl<'a> TurnRequest<'a> {
     #[cfg(feature = "web")]
     fn from_web_job_common(parts: WebChatJobCommonParts<'a>) -> Self {
         let WebChatJobCommonParts {

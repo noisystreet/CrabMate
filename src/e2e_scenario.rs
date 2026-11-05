@@ -51,7 +51,7 @@ use crate::tool_stats::ToolOutcomeRecorder;
 use crate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend,
     LlmSeedOverride, Message, ProcessHandles, RunAgentTurnAttach, RunAgentTurnObs,
-    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs, build_tools, run_agent_turn,
+    TurnRequest, RunAgentTurnSession, RunAgentTurnSharedInputs, build_tools, run_agent_turn,
 };
 use crate::cm_names as tool_names;
 
@@ -478,7 +478,7 @@ struct SingleAgentTurnCfg<'a> {
     session_mode: crate::types::SessionMode,
 }
 
-/// 构造 e2e 后端并注入 `RunAgentTurnParams`，执行单轮 agent turn。
+/// 构造 e2e 后端并注入 `TurnRequest`，执行单轮 agent turn。
 async fn run_single_agent_turn(
     args: SingleAgentTurnCfg<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -493,7 +493,7 @@ async fn run_single_agent_turn(
     let client = reqwest::Client::new();
     let tools = build_tools();
 
-    let params = RunAgentTurnParams {
+    let params = TurnRequest {
         shared: RunAgentTurnSharedInputs {
             client: &client,
             api_key: args.api_key,
