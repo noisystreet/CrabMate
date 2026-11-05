@@ -40,6 +40,10 @@ check_forbidden_mod src/cm_approval crate::cm_internal \
   "approval types must stay below internal"
 check_forbidden_mod src/cm_web_host crate::cm_internal \
   "web host must not depend on internal facade"
+# CLI 分派层（S5，见 #1295）：只认「子命令 → 执行体」。需要内部能力时由执行体自己取，
+# 或由根包提供门面（如 `crate::build_serve_tool_job_registry`）。
+check_forbidden_mod src/cm_cli crate::cm_internal \
+  "cli dispatch layer must not depend on internal facade; use a root-package facade"
 
 # 工具名边界（#1155）：`cm_names` 是零依赖叶子，`cm_config` / `cm_types` 不得反向依赖 `cm_tools`。
 # 这几条边此前只靠注释约束 —— Rust 单 crate 内模块循环引用照样编译，不加检查就没人拦得住。

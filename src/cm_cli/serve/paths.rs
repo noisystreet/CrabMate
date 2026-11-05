@@ -118,7 +118,7 @@ fn serve_log_resolved_paths(
         }
     };
     let ltm = long_term_memory_display(paths);
-    // `cm_cli/` 禁边不许引用 `crate::cm_internal`（`scripts/check-crate-deps.sh`）；
+    // `cm_cli/` 禁边不许引用内部实现门面（`scripts/check-crate-deps.sh`）；
     // 根包 `user_data` 已 re-export 同一函数。
     let user_data = crate::user_data::user_data_root();
     let cache = crate::config::user_cache_dir();

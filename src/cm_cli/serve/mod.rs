@@ -1,7 +1,7 @@
 //! `serve` 子命令：装配 HTTP 宿主并跑到底（S5 第二步，见设计 `docs/design/sdk_facade.md` §6）。
 //!
 //! **装配仍在根包侧**（本模块随 `cm_cli` 编译于根包）：`cm_web_host` 被禁边不许引用
-//! `crate::cm_internal`，而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。
+//! 内部实现门面，而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。
 //! 因此宿主模块只提供 builder / 路由层，装配产物（`Arc<AppState>`）由这里注入。
 //!
 //! 需要 `cm_internal` 的两处（后台任务注册表 + TTL 清理定时器）经
