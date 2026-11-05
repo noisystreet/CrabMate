@@ -17,6 +17,7 @@ use crate::process_handles::ProcessHandles;
 use crate::sse::SseStreamHub;
 use crate::web::async_chat_job::AsyncChatJobsMap;
 
+use crate::cm_session_store::SessionStore;
 use crate::chat_job_queue::ChatJobQueue;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 

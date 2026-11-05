@@ -19,9 +19,9 @@ use crate::web;
 
 pub(super) fn conversation_backing_from_sqlite_path(
     conv_sqlite: &str,
-) -> Result<web::ConversationBacking, std::io::Error> {
+) -> Result<crate::cm_session_store::ConversationBacking, std::io::Error> {
     if conv_sqlite.trim().is_empty() {
-        return Ok(web::ConversationBacking::memory_default());
+        return Ok(crate::cm_session_store::ConversationBacking::memory_default());
     }
     let p = std::path::Path::new(conv_sqlite.trim());
     let conn = web::open_conversation_sqlite(p).map_err(|e| {
@@ -35,22 +35,22 @@ pub(super) fn conversation_backing_from_sqlite_path(
         "Web 会话持久化已启用 path={}",
         p.display()
     );
-    Ok(web::ConversationBacking::Sqlite(conn))
+    Ok(crate::cm_session_store::ConversationBacking::Sqlite(conn))
 }
 
 pub(super) fn serve_long_term_memory_runtime(
     ltm_enabled: bool,
-    conversation_backing: &web::ConversationBacking,
+    conversation_backing: &crate::cm_session_store::ConversationBacking,
     ltm_store_path: &str,
 ) -> Option<Arc<LongTermMemoryRuntime>> {
     if !ltm_enabled {
         return None;
     }
     match conversation_backing {
-        web::ConversationBacking::Sqlite(conn) => {
+        crate::cm_session_store::ConversationBacking::Sqlite(conn) => {
             Some(LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(conn)))
         }
-        web::ConversationBacking::Memory(_) => {
+        crate::cm_session_store::ConversationBacking::Memory(_) => {
             let p = ltm_store_path.trim();
             if p.is_empty() {
                 info!(

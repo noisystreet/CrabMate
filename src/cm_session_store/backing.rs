@@ -8,7 +8,8 @@
 //! 这里把分派与 SQLite 错误收敛收拢成 [`ConversationBacking`] 的方法，runtime 只做薄委托。
 //! 行为与搬移前逐字等价：内存后端不持久化归档、SQLite 分支的日志文案与 fallback 口径均未改。
 //!
-//! S1-b 将在这个门面上抽 `SessionStore` trait，并把 SQLite 实现从 `web` feature 解绑。
+//! S1-b（#1282 后续）：本文件已搬出 `web/`，门面上抽出 [`super::SessionStore`] 端口；
+//! 运维 CLI 不再需要引用 `web::` 的具体类型。
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -20,7 +21,9 @@ use crate::conversation_store::{self, BranchTruncateOutcome, SaveConversationOut
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::types::Message;
 
-use crate::web::app_state::ConversationTurnSeed;
+use async_trait::async_trait;
+
+use super::{ConversationTurnSeed, SessionStore, collect_upload_filenames_from_text};
 
 /// 内存后端单条会话（与 SQLite 行同语义）。
 #[derive(Clone)]
@@ -146,13 +149,16 @@ impl ConversationBacking {
     pub(crate) fn memory_default() -> Self {
         Self::Memory(Arc::new(tokio::sync::RwLock::new(HashMap::new())))
     }
+}
 
-    pub(crate) fn is_sqlite(&self) -> bool {
+#[async_trait]
+impl SessionStore for ConversationBacking {
+    fn is_sqlite(&self) -> bool {
         matches!(self, Self::Sqlite(_))
     }
 
     /// 按策略清理过期 / 超量会话（`serve` 启动时与低频定时任务调用）。
-    pub(crate) async fn prune(&self, r: ConversationRetention) {
+    async fn prune(&self, r: ConversationRetention) {
         match self {
             Self::Memory(map) => {
                 let mut guard = map.write().await;
@@ -183,7 +189,7 @@ impl ConversationBacking {
     /// 读会话种子：`messages` + revision + 三列 `active_*` + layout。
     ///
     /// 内存后端按 `ttl_secs` 惰性淘汰过期条目；SQLite 把 TTL 交给 `conversation_store::load`。
-    pub(crate) async fn load_seed(
+    async fn load_seed(
         &self,
         conversation_id: &str,
         ttl_secs: u64,
@@ -257,7 +263,7 @@ impl ConversationBacking {
     ///
     /// 仅 SQLite 后端持久化归档；内存后端无归档，返回空。锁 / 读取 / 解码失败记录日志并返回空，
     /// 不阻断快照响应（与 `list_all_messages_json` 对归档失败的容错口径一致）。
-    pub(crate) async fn load_archive_messages(&self, conversation_id: &str) -> Vec<Message> {
+    async fn load_archive_messages(&self, conversation_id: &str) -> Vec<Message> {
         let Self::Sqlite(conn) = self else {
             return Vec::new();
         };
@@ -292,7 +298,7 @@ impl ConversationBacking {
     ///
     /// `None` 传参表示「保持原值」——回合结束的落盘不该覆盖期间 `POST /conversation/state` 的写入。
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn save_if_revision(
+    async fn save_if_revision(
         &self,
         conversation_id: String,
         messages: Vec<Message>,
@@ -310,16 +316,15 @@ impl ConversationBacking {
                 // `None` = 保持原值：回合结束的落盘不该覆盖期间 `POST /conversation/state` 的写入。
                 let role_owned =
                     conversation_store::active_state_column(active_agent_role).map(str::to_string);
-                let mode_owned =
-                    conversation_store::active_state_column(active_session_mode).map(str::to_string);
+                let mode_owned = conversation_store::active_state_column(active_session_mode)
+                    .map(str::to_string);
                 let level_owned = conversation_store::active_state_column(active_permission_level)
                     .map(str::to_string);
                 if let Some(entry) = guard.get_mut(&conversation_id) {
                     match expected_revision {
                         Some(exp) if entry.revision == exp => {
-                            entry.layout = Some(crate::cm_turn_layout::layout_meta_from_messages(
-                                &messages,
-                            ));
+                            entry.layout =
+                                Some(crate::cm_turn_layout::layout_meta_from_messages(&messages));
                             entry.messages = messages;
                             entry.apply_active_state(
                                 role_owned.as_deref(),
@@ -391,7 +396,7 @@ impl ConversationBacking {
     ///
     /// 内存后端无归档，不做 re-expand，故只可能返回 [`BranchTruncateOutcome::Saved`] / [`BranchTruncateOutcome::Conflict`]；
     /// SQLite 后端可能因归档前缀被回收而返回 [`BranchTruncateOutcome::ArchiveIncomplete`]（见 §3.11 / §5.3.6）。
-    pub(crate) async fn truncate_before_user_ordinal_if_revision(
+    async fn truncate_before_user_ordinal_if_revision(
         &self,
         conversation_id: String,
         user_ordinal: usize,
@@ -461,7 +466,7 @@ impl ConversationBacking {
     ///
     /// `Ok(false)` = 会话不存在；`Err` = 存储层失败（锁中毒 / SQLite 报错 / 任务崩）。
     /// 两者必须分开：把存储失败压成 `false` 会让「磁盘满」对客户端表现为「会话不存在」。
-    pub(crate) async fn set_active_state(
+    async fn set_active_state(
         &self,
         conversation_id: String,
         role: Option<&str>,
@@ -485,23 +490,27 @@ impl ConversationBacking {
                 let role = role.map(str::to_string);
                 let mode = mode.map(str::to_string);
                 let level = level.map(str::to_string);
-                sqlite_conversation_store_op(c, conversation_id.clone(), "写入会话状态", move |g| {
-                    crate::conversation_store::set_active_state(
-                        g,
-                        &conversation_id,
-                        role.as_deref(),
-                        mode.as_deref(),
-                        level.as_deref(),
-                    )
-                })
+                sqlite_conversation_store_op(
+                    c,
+                    conversation_id.clone(),
+                    "写入会话状态",
+                    move |g| {
+                        crate::conversation_store::set_active_state(
+                            g,
+                            &conversation_id,
+                            role.as_deref(),
+                            mode.as_deref(),
+                            level.as_deref(),
+                        )
+                    },
+                )
                 .await
             }
         }
     }
 
     /// 会话正文里仍引用的 **`/uploads/<filename>`**（清理附图时跳过）。
-    pub(crate) async fn referenced_upload_filenames(&self) -> HashSet<String> {
-        use crate::web::chat_uploads_paths::collect_upload_filenames_from_text;
+    async fn referenced_upload_filenames(&self) -> HashSet<String> {
         match self {
             Self::Memory(map) => {
                 let guard = map.read().await;
@@ -535,7 +544,7 @@ impl ConversationBacking {
         }
     }
 
-    pub(crate) async fn conversation_count(&self) -> usize {
+    async fn conversation_count(&self) -> usize {
         match self {
             Self::Memory(map) => map.read().await.len(),
             Self::Sqlite(conn) => {
@@ -556,7 +565,7 @@ impl ConversationBacking {
     /// 删除持久化会话行；**幂等**（不存在时静默成功）。
     ///
     /// 供 Web `DELETE /conversation/{conversation_id}` 与 E2E 夹具 `replace` 使用。
-    pub(crate) async fn delete(&self, conversation_id: &str) {
+    async fn delete(&self, conversation_id: &str) {
         match self {
             Self::Memory(map) => {
                 let mut guard = map.write().await;
@@ -574,7 +583,9 @@ impl ConversationBacking {
             }
         }
     }
+}
 
+impl ConversationBacking {
     fn prune_memory_locked(
         guard: &mut HashMap<String, MemoryConversationEntry>,
         now: std::time::Instant,

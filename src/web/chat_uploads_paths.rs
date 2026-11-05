@@ -1,7 +1,6 @@
 //! 聊天附图落盘：与会话 SQLite **同目录**（`conversations.db` 旁的 `chat_uploads/`）。
 //! 进程启动时选定后**不**随 `POST /workspace` 切换（会话库本身也不跟工作区走）。
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::web::app_state::AppStateHttpCore;
@@ -40,35 +39,10 @@ pub(crate) async fn sync_chat_runtime_paths_for_workspace(
     g.chat_workspace_root = Some(workspace_root.to_path_buf());
 }
 
-/// 从会话 JSON / 消息正文收集 `/uploads/<filename>` 引用。
-pub(crate) fn collect_upload_filenames_from_text(s: &str) -> HashSet<String> {
-    let mut out = HashSet::new();
-    let mut rest = s;
-    while let Some(i) = rest.find("/uploads/") {
-        rest = &rest[i + "/uploads/".len()..];
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-            .collect();
-        if !name.is_empty() && !name.contains("..") {
-            out.insert(name.clone());
-        }
-        rest = rest.get(name.len()..).unwrap_or("");
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn collect_upload_names_from_session_json() {
-        let s = r#"{"url":"/uploads/u1_2_3.png","x":"/uploads/../x"}"#;
-        let names = collect_upload_filenames_from_text(s);
-        assert!(names.contains("u1_2_3.png"));
-        assert!(!names.iter().any(|n| n.contains("..")));
-    }
 
     #[test]
     fn uploads_dir_is_sibling_of_conversations_db() {
