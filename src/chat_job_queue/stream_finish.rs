@@ -418,7 +418,7 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
 
 /// `run_agent_turn` 之后的流式任务收尾：落盘、SSE 错误/冲突、`stream_ended` 等。
 pub(super) struct StreamJobOutcomeCtx<'a> {
-    pub(super) r: crate::turn_runner::TurnRunOutcome,
+    pub(super) r: crate::turn_runner::TurnOutcome,
     pub(super) cancelled_by_signal: bool,
     /// 层 1：本轮最后一次 assistant 输出是否被截断（来自 [`crate::per_turn_flight::PerTurnFlight`]）。
     pub(super) truncated: bool,

@@ -95,7 +95,7 @@
 |---|---|
 | [crate_dep_policy.md](crate_dep_policy.md) | Crate 依赖策略（降低耦合） |
 | [crates_io_single_package.md](crates_io_single_package.md) | ADR：单包 `crabmate` 发布到 crates.io |
-| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案；S5-a（#1274/#1275）、S1-a + S1-b 的 feature 解绑（#1279）、S3-a 的审批端口（#1280）已实施；S1-b 的 trait 抽取、S3-b 与 S2 / S4 / S5 / S6 未开工**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；Q1–Q4 已决（§11），原三条「实施前必查」已核销（§10.3）。下一步：**S3-b** 与 **S1-b 的 trait 抽取**（形态待定，见 §7.1 / §7.2） |
+| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案；S5-a（#1274/#1275）、S1-a + S1-b 的 feature 解绑（#1279）、S3-a 的审批端口（#1280）、S2-0 / S2-1 的正名与 `nloc` 减行（#1285）已实施；S1-b 的 trait 抽取、S3-b 与 S2 其余部分 / S4 / S5 / S6 未开工**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；Q1–Q4 已决（§11），原三条「实施前必查」已核销（§10.3）。下一步：**S3-b** 与 **S1-b 的 trait 抽取**（形态待定，见 §7.1 / §7.2） |
 | [user_data_dir.md](user_data_dir.md) | 本机用户数据目录（`~/.local/share/crabmate`）设计 |
 | [e2e_real_llm_testing_architecture.md](e2e_real_llm_testing_architecture.md) | E2E 真实 LLM 自动化测试架构 |
 | [ide_mode_roadmap.md](ide_mode_roadmap.md) | Web / 桌面内置 IDE 模式：完善规划 |

@@ -7,7 +7,7 @@ use tracing::Instrument;
 use crate::llm as llm_mod;
 use crate::{
     AgentTurnLlmOverrides, AgentTurnTransport, RunAgentTurnAttach, RunAgentTurnObs,
-    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
+    TurnRequest, RunAgentTurnSession, RunAgentTurnSharedInputs,
 };
 
 fn resolved_turn_llm_backend<'a>(
@@ -69,10 +69,10 @@ async fn emit_mcp_servers_skipped_notice(
 /// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；运维 CLI 传 `None`。
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
-    p: RunAgentTurnParams<'a>,
+    p: TurnRequest<'a>,
 ) -> Result<crate::agent::model_context_view::StructuralCommit, crate::agent::agent_turn::RunAgentTurnError>
 {
-    let RunAgentTurnParams {
+    let TurnRequest {
         shared,
         session,
         transport,
@@ -173,54 +173,37 @@ pub async fn run_agent_turn<'a>(
 
     let mut model_context_view =
         crate::agent::model_context_view::ModelContextView::derive(messages);
-    let mut loop_params = crate::agent::agent_turn::RunLoopParams {
-        ctx: crate::agent::agent_turn::RunLoopCtx {
-            core: crate::agent::agent_turn::RunLoopCore {
-                llm_backend,
-                client,
-                api_key,
-                cfg,
-                tools_defs: tools_for_turn.as_slice(),
-                effective_working_dir,
-                workspace_is_set,
-            },
-            io: crate::agent::agent_turn::RunLoopIo {
-                no_stream,
-                cancel: cancel.clone(),
-                control: crate::agent::agent_turn::TurnControlSink {
-                    out,
-                    sse_encoder: crate::sse::default_encoder(),
-                    sse_control_mirror,
-                },
-            },
-            attach: crate::agent::agent_turn::RunLoopAttach {
-                web_tool_ctx,
-                per_flight,
-                long_term_memory,
-                long_term_memory_scope_id,
-                mcp_turn,
-                read_file_turn_cache,
-                workspace_changelist,
-                turn_allowed_tool_names: turn_allowed_tool_names.clone(),
-                session_mode: permission_stages.session_mode,
-                // 能力快照（`PermissionCaps`）与 `permission_stages` 同名不同物：
-                // 前者是投影结果，后者是 min 链的输入档位——两者都要穿进环内。
-                permission,
-            },
-            obs: crate::agent::agent_turn::RunLoopObs {
-                request_chrome_trace: request_chrome_trace.clone(),
-                tracing_chat_turn: tracing_chat_turn.clone(),
-                request_audit: request_audit.clone(),
-                process_handles: Arc::clone(&process_handles),
-                trace_sink,
-                tool_job_registry,
-            },
-        },
-        turn: crate::agent::agent_turn::RunLoopTurnState {
-            messages_buf: model_context_view.messages_mut(),
-            messages_revision: 0,
-            sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
-            turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
+    let mut loop_params = assemble_run_loop_params(
+        RunLoopAssembly {
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            tools_defs: tools_for_turn.as_slice(),
+            effective_working_dir,
+            workspace_is_set,
+            no_stream,
+            cancel: cancel.clone(),
+            out,
+            sse_control_mirror,
+            web_tool_ctx,
+            per_flight,
+            long_term_memory,
+            long_term_memory_scope_id,
+            mcp_turn,
+            read_file_turn_cache,
+            workspace_changelist,
+            turn_allowed_tool_names,
+            session_mode: permission_stages.session_mode,
+            // 能力快照（`PermissionCaps`）与 `permission_stages` 同名不同物：
+            // 前者是投影结果，后者是 min 链的输入档位——两者都要穿进环内。
+            permission,
+            tracing_chat_turn: tracing_chat_turn.clone(),
+            request_audit: request_audit.clone(),
+            process_handles: Arc::clone(&process_handles),
+            tool_job_registry,
+            request_chrome_trace: request_chrome_trace.clone(),
+            trace_sink,
             temperature_override,
             model_override,
             use_executor_model,
@@ -228,12 +211,9 @@ pub async fn run_agent_turn<'a>(
             executor_api_base,
             executor_api_key,
             seed_override,
-            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
-            context_timeline: Default::default(),
-            model_context_artifacts: Vec::new(),
-            provider_usage: Arc::new(std::sync::Mutex::new(None)),
         },
-    };
+        model_context_view.messages_mut(),
+    );
 
     let res = run_agent_turn_common_with_optional_trace(&mut loop_params, wall_ms).await;
     // 中断 / 取消路径同样要 flush：本轮已产出的 timeline 标记须随部分输出一起落盘，
@@ -279,6 +259,171 @@ pub async fn run_agent_turn<'a>(
         &model_context_view,
         &mut model_context_artifacts,
     )
+}
+
+/// `RunLoopParams` 的装配中间体（S2-0，见 #1285）。
+///
+/// 字段与 [`crate::agent::agent_turn::RunLoopParams`] 的各子结构逐段对应：
+/// `llm_backend`…`workspace_is_set` → `RunLoopCore`；`no_stream`…`sse_control_mirror` → `RunLoopIo`；
+/// `web_tool_ctx`…`permission` → `RunLoopAttach`；`obs`…`trace_sink` → `RunLoopObs`；
+/// `llm` → `RunLoopTurnState` 的采样覆盖段。
+///
+/// **为什么需要它**：这段装配原本是 `run_agent_turn` 里的 61 行结构体字面量，使该函数
+/// `nloc` 达到 197（棘轮上限 200，余量 3 行），此后任何改动都极易撞线。抽成「中间体 +
+/// 单个装配函数」而非多个多参构造器，是因为 `RunLoopAttach` / `RunLoopTurnState` 的字段数
+/// 同样超过形参棘轮（≤9）。本结构体**不导出、仅本文件可见**，不是第四套对外参数袋。
+struct RunLoopAssembly<'a> {
+    // → RunLoopCore
+    llm_backend: &'a (dyn crate::llm::ChatCompletionsBackend + 'static),
+    client: &'a reqwest::Client,
+    api_key: &'a str,
+    cfg: &'a Arc<crate::config::AgentConfig>,
+    tools_defs: &'a [crate::types::Tool],
+    effective_working_dir: &'a std::path::Path,
+    workspace_is_set: bool,
+    // → RunLoopIo
+    no_stream: bool,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    out: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    // → RunLoopAttach
+    web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    per_flight: Option<Arc<crate::per_turn_flight::PerTurnFlight>>,
+    long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    long_term_memory_scope_id: Option<String>,
+    mcp_turn: Option<crate::mcp::McpTurnHandle>,
+    read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    workspace_changelist: Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
+    turn_allowed_tool_names: Option<Arc<std::collections::HashSet<String>>>,
+    session_mode: crate::cm_types::SessionMode,
+    permission: crate::cm_agent::permission::PermissionCaps,
+    // → RunLoopObs（`RunAgentTurnObs` 已在外层解构，这里收其字段）
+    tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    request_audit: Option<Arc<crate::request_audit::WebRequestAudit>>,
+    process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    trace_sink: Option<Arc<dyn crate::llm::TraceSink>>,
+    // → RunLoopTurnState 的采样覆盖段（`AgentTurnLlmOverrides` 已在外层解构）
+    temperature_override: Option<f32>,
+    model_override: Option<String>,
+    use_executor_model: bool,
+    executor_model_override: Option<String>,
+    executor_api_base: Option<String>,
+    executor_api_key: Option<String>,
+    seed_override: crate::cm_types::LlmSeedOverride,
+}
+
+/// 由 [`RunLoopAssembly`] 组装 [`crate::agent::agent_turn::RunLoopParams`]。
+///
+/// `messages_buf` 单独传而不是放进中间体：它借用 `ModelContextView` 的内部缓冲，与中间体里
+/// 那些来自入口参数的引用生命周期不同；混在一起会让借用检查器要求 `ModelContextView`
+/// 在整个装配期被独占，进而与收尾阶段的 `&model_context_view` 冲突。
+fn assemble_run_loop_params<'a>(
+    asm: RunLoopAssembly<'a>,
+    messages_buf: &'a mut Vec<crate::types::Message>,
+) -> crate::agent::agent_turn::RunLoopParams<'a> {
+    use crate::agent::agent_turn::{
+        AgentTurnSubPhase, RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs,
+        RunLoopParams, RunLoopTurnState, TurnControlSink, TurnPlannerHints,
+    };
+
+    let RunLoopAssembly {
+        llm_backend,
+        client,
+        api_key,
+        cfg,
+        tools_defs,
+        effective_working_dir,
+        workspace_is_set,
+        no_stream,
+        cancel,
+        out,
+        sse_control_mirror,
+        web_tool_ctx,
+        per_flight,
+        long_term_memory,
+        long_term_memory_scope_id,
+        mcp_turn,
+        read_file_turn_cache,
+        workspace_changelist,
+        turn_allowed_tool_names,
+        session_mode,
+        permission,
+        tracing_chat_turn,
+        request_audit,
+        process_handles,
+        tool_job_registry,
+        request_chrome_trace,
+        trace_sink,
+        temperature_override,
+        model_override,
+        use_executor_model,
+        executor_model_override,
+        executor_api_base,
+        executor_api_key,
+        seed_override,
+    } = asm;
+
+    RunLoopParams {
+        ctx: RunLoopCtx {
+            core: RunLoopCore {
+                llm_backend,
+                client,
+                api_key,
+                cfg,
+                tools_defs,
+                effective_working_dir,
+                workspace_is_set,
+            },
+            io: RunLoopIo {
+                no_stream,
+                cancel,
+                control: TurnControlSink {
+                    out,
+                    sse_encoder: crate::sse::default_encoder(),
+                    sse_control_mirror,
+                },
+            },
+            attach: RunLoopAttach {
+                web_tool_ctx,
+                per_flight,
+                long_term_memory,
+                long_term_memory_scope_id,
+                mcp_turn,
+                read_file_turn_cache,
+                workspace_changelist,
+                turn_allowed_tool_names,
+                session_mode,
+                permission,
+            },
+            obs: RunLoopObs {
+                request_chrome_trace,
+                tracing_chat_turn,
+                request_audit,
+                process_handles,
+                trace_sink,
+                tool_job_registry,
+            },
+        },
+        turn: RunLoopTurnState {
+            messages_buf,
+            messages_revision: 0,
+            sub_phase: AgentTurnSubPhase::Planner,
+            turn_planner_hints: TurnPlannerHints::default(),
+            temperature_override,
+            model_override,
+            use_executor_model,
+            executor_model_override,
+            executor_api_base,
+            executor_api_key,
+            seed_override,
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+            context_timeline: Default::default(),
+            model_context_artifacts: Vec::new(),
+            provider_usage: Arc::new(std::sync::Mutex::new(None)),
+        },
+    }
 }
 
 /// `run_agent_turn` 收尾：正常完成 → 提交视图；中断 / 取消 → 仅追加写回部分输出后仍返回 `Err`。
