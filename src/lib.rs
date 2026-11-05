@@ -48,6 +48,12 @@ pub mod cm_types;
 mod conversation_store;
 
 /// S2-2：SDK 面 `TurnEvent` 的有损投影（设计 `docs/design/sdk_facade.md` §5.1.1）。
+///
+/// 唯一的生产消费点是 `cm_turn_layout::replay` 的未知帧诊断，而那条诊断本身挂在
+/// `server` feature 下（它要用 `tracing`）。因此 `protocol`-only 构建里本模块没有
+/// 消费者——用 `cfg_attr` 把 `dead_code` 对齐到 feature，而不是开一个全程生效的
+/// allow 罩子（#1231）。
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod cm_sdk_event;
 /// 会话存储端口（`SessionStore`）与内存 / SQLite 实现（S1-b，见 `docs/design/sdk_facade.md` §5.3）。
 ///
