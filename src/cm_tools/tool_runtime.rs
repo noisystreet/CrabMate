@@ -51,8 +51,4 @@ impl crate::cm_approval::ApprovalBroker for WebToolRuntime {
     fn persistent_allowlist(&self) -> &Arc<TokioMutex<HashSet<String>>> {
         &self.persistent_allowlist_shared
     }
-
-    fn cancel(&self) -> Option<&Arc<AtomicBool>> {
-        self.cancel.as_ref()
-    }
 }
