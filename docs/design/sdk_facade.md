@@ -132,6 +132,89 @@ pub enum TurnEvent {
 - `TurnRunner` 签名改为 `run(&self, req: TurnRequest)`，否则注入点仍在传递 6 组借用袋。
 - 收益可测：**25** 字段的 `WebChatStreamBuildArgs` 消失；`chat_job_queue`、`bench`、未来终端走同一条构造路径。
 
+#### 5.1.1 `TurnEvent` 的投影口径（S2-2，ADR）
+
+上面那个 5 变体的 `TurnEvent` 是**草案**。落到代码前必须先把口径钉死，否则会做出一个「看起来存在、但消费方无法安全穷尽」的枚举。本节记录实测事实、决策与映射表。
+
+**实测事实一：线上不是「一个事件流」，是三层。**
+
+| 层 | 类型 | 变体数 | 谁在读 |
+|---|---|---|---|
+| 线上帧 | `cm_sse_protocol::sse::ag_ui_event::AgUiEvent` | **16** | 前端 `parser_v2.rs`（Client 仓）；`AGENTS.md` 的 `client-contract-v*` 钉的是它 |
+| `CUSTOM` 载荷 | `SsePayload` | **22** | 作为 `AgUiEvent::Custom { custom_type, data }` 的 `data` 出现 |
+| reducer 输入 | `cm_turn_layout::event::TurnEvent` | **6** | 仅 `cm_turn_layout`（`project.rs` / `replay.rs`），根上无 re-export |
+
+**实测事实二：草案 §7 风险表里「`SsePayload` → `TurnEvent` 单向派生」的前提不成立。** 文本增量**不在** `SsePayload` 里——22 个变体中没有任何 `*Delta` 载荷，`AssistantAnswerPhase` 只是个 `bool` 标志位。真正的文本流是 `AgUiEvent::TextMessageContent { delta }`。所以正确的派生源是**线上帧 `AgUiEvent`**，`SsePayload` 只是它的 `Custom` 子载荷。
+
+**实测事实三：`AgUiEvent` 只有 `Serialize`，没有 `Deserialize`。** 因此服务端侧的投影实现只能基于 `serde_json::Value` 读 `type` / `customType` 字段（这也是 `replay.rs` 现有做法），**不可能**用 `match event { AgUiEvent::.. }` 拿到编译期穷尽性。穷尽性改由「已知 `type` 常量表 + 测试遍历」保证，见下文。
+
+> **决策（ADR）**：`TurnEvent` 的**唯一真源是线上 AG-UI 帧**；SDK 面 `TurnEvent` 是它的**有损投影**；`cm_turn_layout::TurnEvent` 保持独立（reducer 输入），**不合并**。三者关系单向：`AgUiEvent` → `SdkTurnEvent`，且 `cm_turn_layout` 不复用 SDK 面的枚举（两者投影目标不同：一个喂 reducer 算 UI 状态，一个给 SDK 消费方观察回合）。
+
+**映射表 A：AG-UI 帧（16）**
+
+| # | `type` | → `SdkTurnEvent` | 理由 |
+|---|---|---|---|
+| 1 | `RUN_STARTED` | **丢弃** | 无回合语义（调用方自己知道开始了） |
+| 2 | `RUN_FINISHED` | `Finished { status: Ok }` | 唯一的正常终止信号 |
+| 3 | `RUN_ERROR` | `Finished { status: Err(..) }` | 错误也是终止；**不**另起 `Error` 变体，避免消费方要匹配两处终止 |
+| 4 | `TEXT_MESSAGE_START` | **丢弃** | 消息生命周期 |
+| 5 | `TEXT_MESSAGE_CONTENT` | `TextDelta { delta }` | **唯一的文本增量源**（见事实二） |
+| 6 | `TEXT_MESSAGE_END` | **丢弃** | 消息生命周期 |
+| 7 | `TOOL_CALL_START` | `ToolCall { tool_call_id, name, summary }` | 卡片标题所需字段在 START 帧已齐 |
+| 8 | `TOOL_CALL_ARGS` | **丢弃** | 增量参数；`ToolCall` 已带预览 |
+| 9 | `TOOL_CALL_END` | **丢弃** | 结束标记 |
+| 10 | `TOOL_CALL_RESULT` | `ToolResult { tool_call_id, content, partial }` | **必须带 `partial`**：`tool_output_chunk` 也落到本事件上（见事实四） |
+| 11 | `REASONING_MESSAGE_START` | **丢弃** | 思维链不进 SDK 面（见缺口 G2） |
+| 12 | `REASONING_MESSAGE_CONTENT` | **丢弃** | 同上 |
+| 13 | `REASONING_MESSAGE_END` | **丢弃** | 同上 |
+| 14 | `STATE_SNAPSHOT` | **丢弃** | 客户端状态同步，非回合语义 |
+| 15 | `STATE_DELTA` | **丢弃** | 同上 |
+| 16 | `CUSTOM` | **按 `customType` 分流** → 表 B | |
+
+**实测事实四：`SsePayload` 的 22 个变体只有 17 个走 `Custom`，另 5 个走标准事件——而 `tool_output_chunk` 是其中最危险的一个。**
+
+`cm_sse_protocol::sse::ag_ui_convert` 是唯一的 `SsePayload → AgUiEvent` 转换点：
+
+| `SsePayload` | → AG-UI |
+|---|---|
+| `StreamEnded` | `RUN_FINISHED` |
+| `Error` | `RUN_ERROR` |
+| `ToolCall` | `TOOL_CALL_START`（再补 `TOOL_CALL_ARGS` / `TOOL_CALL_END`） |
+| `ToolResult` | `TOOL_CALL_RESULT` |
+| `ToolOutputChunk` | `TOOL_CALL_RESULT` + `metadata.partial = true` |
+| 其余 **17** 个 | `CUSTOM` |
+
+所以 `customType` 全集是 **18** 个（17 个来自 `SsePayload`，加 `orchestration_route`——后者由编码器内部/测试直接构造，不来自 `SsePayload`）。**它与 `SsePayload` 的 22 个不是同一个集合**，按 `SsePayload` 数变体是错的。
+
+**这里有一个必须点明的真实陷阱**：`tool_output_chunk`（长任务的流式输出片段）与 `tool_result`（最终结果）落在**同一个** `TOOL_CALL_RESULT` 上，只靠 `metadata.partial` 区分。若 SDK 的 `ToolResult` 不带 `partial`，消费方会把每一段流式片段都当成最终结果——这是**语义错误**，不是信息缺失。因此 `ToolResult` 变体**必须**携带 `partial: bool`，本片据此落地。
+
+**映射表 B：`customType`（18）**
+
+| `customType` | → `SdkTurnEvent` | 理由 |
+|---|---|---|
+| `command_approval` | `Approval { command, args, permission_level }` | 唯一需要人工介入的回合内事件 |
+| `clarification_questionnaire` | **丢弃 —— 已知缺口 G1** | 见下 |
+| `tool_job_finished` | **丢弃** | 后台任务域的完成通知；回合内已由 `TOOL_CALL_RESULT` 覆盖 |
+| `tool_running` / `parsing_tool_calls` / `assistant_answer_phase` / `plan_required` / `turn_tool_phase_end` / `stream_draining` / `workspace_changed` | **丢弃** | 纯 UI 状态位（多为 `bool`），不属于回合语义 |
+| `turn_segment_start` / `turn_segment_end` / `chat_ui_separator` / `timeline_log` / `thinking_trace` | **丢弃** | 渲染面，喂 `cm_turn_layout` 的 reducer |
+| `conversation_saved` / `sse_capabilities` | **丢弃** | 持久化 / 能力协商 |
+| `orchestration_route` | **丢弃** | 编排内部路由，不属回合事件 |
+
+**「不投影」的表达方式：三态，不是 `Option` 也不是 `Other` 变体。** 投影结果必须区分两件事——「映射表里**明确丢弃**」与「映射表**漏了**」。前者是决策，后者是缺陷。合成一个 `None` 就又回到 `replay.rs` 现有的静默兜底；留一个 `TurnEvent::Other(Value)` 则会让消费方的 `match` 永久有默认分支，穷尽性保护全部失效。两者都正是 S2-2 要消除的漂移，所以用 `Event(..)` / `Dropped` / `Unknown` 三态。
+
+**已知缺口（不擅自扩面，记录在案）**
+
+- **G1 `clarification_questionnaire`**：问卷是交互面。`Approval` 变体已承载「回合暂停等人」这一类，但把问卷塞进 `Approval` 会让两者的处理逻辑混淆。**本片不扩**——此阶段 SDK 消费方拿不到问卷。
+- **G2 `REASONING_MESSAGE_*`（思维链）**：草案 5 变体无位置，且「思维链是否属回合可观察面」本身需要产品判断。**本片不扩**。
+
+> 原先以为的「`tool_output_chunk` 缺口」经核实**不成立**：它已被合流到 `TOOL_CALL_RESULT`，闭合方式是给 `ToolResult` 加 `partial`（见事实四），而非新增变体。这条留在这里，是因为「拍脑袋列缺口」很容易漏掉这种——真实情况往往比缺口清单更复杂。
+
+**穷尽性怎么保证（`AgUiEvent` 没有 `Deserialize` 的前提下）**
+
+1. 代码维护 `AG_UI_KNOWN_TYPES`（16 项）与 `CUSTOM_KNOWN_TYPES`（18 项）两张常量表，两者**互不相交**。
+2. 测试遍历两张表的每一项，断言投影结果是 `Event` 或 `Dropped`，**不得落进 `Unknown`**；再断言表长等于各自的变体数。新增变体而忘了更新表 → 测试红。
+3. 未知字面量必须落进 `Unknown`（用一个反向测试钉住），证明兜底不是静默的。
+
 ### 5.2 工具执行面（`ToolHost` + 三端口）
 
 ```rust
