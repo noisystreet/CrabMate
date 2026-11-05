@@ -214,6 +214,11 @@ fn map_single_sse_value(val: &serde_json::Value) -> Vec<TurnEvent> {
             // S2-2：映射表（`docs/design/sdk_facade.md` §5.1.1）没覆盖的帧，**仍然返回空**——
             // 行为与以前一致——但不再完全静默：debug 下留一条诊断，便于发现线上冒出的新事件。
             // 「新增事件必须有人做决策」由 `cm_sdk_event` 的穷尽性测试承担，这里只负责可观测。
+            //
+            // `tracing` 只在 `server` feature 下可选（`protocol`-only 构建拿不到它，CI 的
+            // client-contract job 正是用 `--no-default-features --features protocol` 编 lib test）。
+            // 因此诊断本身也按 feature 门控：协议层构建只是少一条日志，不会引入依赖。
+            #[cfg(feature = "server")]
             if matches!(
                 crate::cm_sdk_event::project_frame(val),
                 crate::cm_sdk_event::Projection::Unknown
