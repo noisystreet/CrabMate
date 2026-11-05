@@ -87,25 +87,34 @@ impl ModelContextArtifact {
         }
     }
 
+    /// 把这次模型调用的压缩结果绑定到 canonical 坐标。
+    ///
+    /// 顺序有讲究：先算摘要折叠区间，再从**它之后**取被删的交互组。摘要把中间段折叠成
+    /// 一条注入行后，视图只剩「摘要 + 尾部」，删组删的是尾部的旧组；若仍从 prefix 头部
+    /// 取最旧 N 组，区间会落在摘要区间之前，回放会拼出「错位原文 + 摘要」。
     pub fn bind_canonical_ranges(&mut self, canonical: &[Message]) {
         let prefix_len = self
             .canonical_message_count_before_turn
             .min(canonical.len());
         let prefix = &canonical[..prefix_len];
-        self.removed_turn_group_ranges =
-            crate::cm_agent::message_pipeline::conversation_turn_groups(prefix)
-                .into_iter()
-                .take(self.compaction.removed_turn_groups)
-                .map(|group| CanonicalMessageRange {
-                    start: group.start,
-                    end: group.end,
-                })
-                .collect();
         self.summarized_canonical_range = self.summary_tail_kept.and_then(|tail| {
             let start = usize::from(prefix.first().is_some_and(|message| message.role == "system"));
             let end = prefix_len.saturating_sub(tail);
             (end > start).then_some(CanonicalMessageRange { start, end })
         });
+        let groups_start = self
+            .summarized_canonical_range
+            .map_or(0, |range| range.end)
+            .min(prefix_len);
+        self.removed_turn_group_ranges =
+            crate::cm_agent::message_pipeline::conversation_turn_groups(&prefix[groups_start..])
+                .into_iter()
+                .take(self.compaction.removed_turn_groups)
+                .map(|group| CanonicalMessageRange {
+                    start: group.start.saturating_add(groups_start),
+                    end: group.end.saturating_add(groups_start),
+                })
+                .collect();
     }
 
     #[must_use]
@@ -371,6 +380,39 @@ fn enforce_single_artifact(messages: &mut Vec<Message>) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 摘要与删组同时发生时，被删组区间必须落在摘要折叠区间**之后**。
+    ///
+    /// 摘要把中间段折叠成一条注入行后，视图只剩「摘要 + 尾部」，删组删的是尾部旧组；
+    /// 若仍从 prefix 头部取最旧 N 组，区间会与摘要区间重叠，回放拼出错位原文。
+    #[test]
+    fn summary_plus_group_removal_binds_ranges_after_summary() {
+        let mut canonical = vec![Message::system_only("system")];
+        for turn in 0..3 {
+            canonical.push(Message::user_only(format!("u{turn}")));
+            canonical.push(Message::assistant_only(format!("a{turn}")));
+        }
+        let prefix_len = canonical.len(); // system + 3 组 = 7 条
+        let mut artifact = ModelContextArtifact::capture(
+            1,
+            prefix_len,
+            &canonical,
+            ContextCompactionReport {
+                removed_turn_groups: 1,
+                ..ContextCompactionReport::default()
+            },
+            Some(4), // 摘要保留尾部 u1,a1,u2,a2
+        );
+        artifact.bind_canonical_ranges(&canonical);
+
+        let summary_range = artifact.summarized_canonical_range.expect("summary range");
+        assert_eq!(summary_range, CanonicalMessageRange { start: 1, end: 3 });
+        assert_eq!(
+            artifact.removed_turn_group_ranges,
+            vec![CanonicalMessageRange { start: 3, end: 5 }],
+            "被删组须从摘要折叠点之后开始，不能落在 prefix 头部"
+        );
+    }
 
     #[test]
     fn view_compaction_archives_removed_prefix_and_keeps_canonical_tail() {

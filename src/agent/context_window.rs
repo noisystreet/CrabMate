@@ -300,6 +300,21 @@ fn finalize_token_budget_compaction(
     if compaction.removed_turn_groups > 0 {
         let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
     }
+    // 压缩已尽力（分级释放 + 删到最近两整组）仍超硬上限：多半是 `llm_context_tokens`
+    // 与模型真实窗口不一致，而配置了窗口后 `context_char_budget` 已被停用
+    // （见 `message_pipeline_config_for_turn`），此时没有任何一级还能兜住。给出显式信号，
+    // 不要让它静默变成上游的上下文超限错误。
+    if let Some(budget) = compaction.budget
+        && compaction.after.used_input_tokens > budget.max_input_tokens
+    {
+        warn!(
+            target: "crabmate::context_compaction",
+            "上下文压缩后仍超出输入预算：after_tokens={} max_input_tokens={} context_window_tokens={}；请检查 llm_context_tokens 是否与模型真实窗口一致",
+            compaction.after.used_input_tokens,
+            budget.max_input_tokens,
+            budget.context_window_tokens
+        );
+    }
     compaction
 }
 
