@@ -42,6 +42,7 @@ pub(crate) use crate::cm_internal::{
 #[cfg(feature = "web")]
 mod chat_job_queue;
 mod cli_run;
+mod cm_cli;
 /// 集成测试 / `crabmate e2e` 场景入口；**不**承诺 semver。
 #[doc(hidden)]
 pub mod e2e_scenario;
@@ -519,6 +520,22 @@ impl<'a> TurnRequest<'a> {
 pub(crate) use crate::conversation_store::SaveConversationOutcome;
 #[cfg(feature = "web")]
 pub(crate) use web::AppState;
+
+/// `serve` 装配用的后台任务注册表：按配置建表并挂 TTL 清理定时器（终态过期 → 轮询 410）。
+///
+/// 放在根包而不是 `cm_cli::serve`：`cm_cli/` 被禁边（`scripts/check-crate-deps.sh`）
+/// 不许引用 `crate::cm_internal`，这里是那两处调用的唯一门面。
+#[cfg(feature = "web")]
+pub(crate) fn build_serve_tool_job_registry(
+    cfg: &config::AgentConfig,
+) -> std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry> {
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(cfg);
+    crate::cm_internal::tool_jobs::spawn_cleanup_task(
+        std::sync::Arc::clone(&registry),
+        std::time::Duration::from_secs(60),
+    );
+    registry
+}
 #[cfg(feature = "web")]
 pub(crate) use web::conversation_conflict_sse_line;
 

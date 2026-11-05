@@ -1,18 +1,46 @@
-//! `--benchmark` / `--batch` 批量评测入口（S5-a 第三步：从 [`crate::cli_run`] 拆出，纯搬移）。
+//! `bench` 批量评测入口（纯搬移，行为与 `cli_run_bench` 一致）。
 //!
-//! 该函数**没有 `cfg` 门**（两套构建都有），被 `cli_run_session` 无条件调用。
+//! 该函数**没有 `cfg` 门**（两套构建都有），由 [`super::session`] 无条件调用。
 //! 早期设计稿曾误判它只在非 web 构建存在——那是 `#[cfg]` 只作用于紧跟项的经典误读，已更正。
 
+use crate::cm_config::cli::definitions::{BenchCmd, BenchmarkCliArgs};
 use crate::config;
 use crate::runtime;
 
+/// `serve`/`bench` 已初始化好的会话句柄交给本模块。
+pub(super) async fn run(
+    session: super::session::CliSessionStart,
+    bench: &BenchCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let super::session::CliSessionStart {
+        cfg_holder,
+        client,
+        tools,
+        api_key,
+        ..
+    } = session;
+    let bench_args = BenchmarkCliArgs::from(bench);
+    if run_benchmark_batch_if_requested(
+        &cfg_holder,
+        &client,
+        api_key.trim(),
+        &tools,
+        &bench_args,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+    Err(super::unspecified_subcommand_error())
+}
+
 /// `--benchmark` / `--batch`：跑批量评测后返回 `true`（调用方应结束进程）。
-pub(super) async fn run_benchmark_batch_if_requested(
+async fn run_benchmark_batch_if_requested(
     cfg_holder: &config::SharedAgentConfig,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
-    bench_args: &config::cli::definitions::BenchmarkCliArgs,
+    bench_args: &BenchmarkCliArgs,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if bench_args.benchmark.is_none() && bench_args.batch.is_none() {
         return Ok(false);

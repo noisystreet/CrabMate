@@ -1,22 +1,20 @@
-//! `serve` 实例标识与实例锁（从 [`super`] 拆出以降低单文件行数）。
+//! `serve` 实例标识与实例锁。
 //!
 //! 语义与拆分前逐字一致：锁必须在打开/迁移会话库与长期记忆库**之前**获取，
 //! `Drop` 时释放（进程退出亦由内核释放）；目标顺序固定，避免并发启动时交叉等待。
-
-#![cfg(feature = "web")]
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use log::{info, warn};
 
-use super::ServeResolvedPaths;
+use super::paths::ServeResolvedPaths;
 
 /// 可选实例标识：`[A-Za-z0-9._-]`，最长 64 字节。
 const ENV_INSTANCE_ID: &str = "CM_INSTANCE_ID";
 /// 显式跳过实例锁（多 `serve` 共享同一隔离域时的逃生开关）。
 ///
-/// `pub(super)`：启动自检日志（[`super::serve_log_resolved_paths`]）要把它原样打印出来，
+/// `pub(super)`：启动自检日志（[`super::paths`]）要把它原样打印出来，
 /// 让运维一眼看到是哪个变量关掉了锁。
 pub(super) const ENV_DISABLE_INSTANCE_LOCK: &str = "CM_SERVE_DISABLE_INSTANCE_LOCK";
 const INSTANCE_ID_MAX_LEN: usize = 64;
@@ -75,8 +73,8 @@ fn env_flag_enabled(key: &str) -> bool {
 /// 一个实例锁目标；`label` 仅用于日志与错误提示。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ServeLockTarget {
-    pub label: &'static str,
-    pub path: PathBuf,
+    pub(super) label: &'static str,
+    pub(super) path: PathBuf,
 }
 
 /// 实例锁目标推导（顺序固定，避免并发启动时交叉等待）。
@@ -174,10 +172,9 @@ fn serve_acquire_instance_lock_at(
 
 /// 已获取的实例锁集合；`Drop` 时释放全部锁。
 ///
-/// 可见性是 `pub(in crate::cli_run)` 而非 `pub(super)`：它出现在
-/// [`super::ServePrecheck`] 的**公开字段**类型里，若比该结构体更窄会触发
-/// `private_interfaces`。
-pub(in crate::cli_run) struct ServeInstanceLocks {
+/// 可见性是 `pub(super)`：它出现在 [`ServePrecheck`] 的**公开字段**类型里
+/// （两者同在 `cm_cli::serve` 内），若比该结构体更窄会触发 `private_interfaces`。
+pub(super) struct ServeInstanceLocks {
     disabled: bool,
     targets: Vec<ServeLockTarget>,
     _locks: Vec<ServeInstanceLock>,
@@ -279,7 +276,10 @@ mod tests {
         let targets = serve_instance_lock_targets(&paths_with("  ", ws));
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].label, "工作区");
-        assert_eq!(targets[0].path, PathBuf::from("/tmp/ws/.crabmate/serve.lock"));
+        assert_eq!(
+            targets[0].path,
+            PathBuf::from("/tmp/ws/.crabmate/serve.lock")
+        );
     }
 
     #[test]
