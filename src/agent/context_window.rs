@@ -318,6 +318,26 @@ fn finalize_token_budget_compaction(
     compaction
 }
 
+/// 一行 debug 撮要：主路径与只读路径共用，避免两处字段各自漂移。
+///
+/// 刻意**不**按 `budget.is_some()` 门控：未配置 `llm_context_tokens` 时走字符预算降级路径，
+/// 那条路径同样需要观察 before/after 用量，否则「字符裁剪到底裁掉了多少」无从判断。
+fn log_compaction_report(
+    phase: &str,
+    report: &crate::agent::context_compaction::ContextCompactionReport,
+) {
+    // `format_for_log()` 会拼出整行字符串：级别判断放在它之前，别为写不出去的日志付费。
+    if !log::log_enabled!(target: "crabmate::context_compaction", log::Level::Debug) {
+        return;
+    }
+    log::debug!(
+        target: "crabmate::context_compaction",
+        "context_compaction phase={} {}",
+        phase,
+        report.format_for_log(),
+    );
+}
+
 /// 摘要触发判定与「摘要后保留尾部长度」的共用计算（ADR §5.3.4）。
 ///
 /// 主路径 [`prepare_session_messages_shared`] 与只读入口
@@ -630,31 +650,7 @@ pub async fn prepare_messages_for_model(
             summary_tail_kept: delta.summary_tail_kept,
         },
     );
-    if let Some(budget) = delta.compaction.budget {
-        log::debug!(
-            target: "crabmate::context_compaction",
-            "context_compaction before_tokens={} after_tokens={} max_input_tokens={} trigger_tokens={} target_tokens={} reserved_output_tokens={} safety_margin_tokens={} message_tokens={} tool_schema_tokens={} attachment_tokens={} removed_turn_groups={} removed_messages={} counting_source={} reason={}",
-            delta.compaction.before.used_input_tokens,
-            delta.compaction.after.used_input_tokens,
-            budget.max_input_tokens,
-            budget.trigger_tokens,
-            budget.target_tokens,
-            budget.reserved_output_tokens,
-            budget.safety_margin_tokens,
-            delta.compaction.after.message_tokens,
-            delta.compaction.after.tool_schema_tokens,
-            delta.compaction.after.attachment_tokens,
-            delta.compaction.removed_turn_groups,
-            delta.compaction.removed_messages,
-            delta
-                .compaction
-                .after
-                .counting_source
-                .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str)
-                .unwrap_or("unknown"),
-            delta.compaction.compaction_reason(),
-        );
-    }
+    log_compaction_report("session", &delta.compaction);
     if let Some(p) = hooks.per_coord_layer_cache {
         p.invalidate_workflow_validate_layer_cache_after_context_mutation();
     }
@@ -729,6 +725,7 @@ pub async fn prepare_readonly_model_messages(
             summary_tail_kept,
         },
     );
+    log_compaction_report("readonly", &compaction);
     Ok(PrepareMessagesDelta {
         pipeline,
         summarized,

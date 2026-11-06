@@ -44,6 +44,14 @@ fn turn_replay_dir_from_env() -> Option<std::path::PathBuf> {
     }
 }
 
+/// replay 是否已启用（`CM_REPLAY_DUMP_DIR` 非空且非空白）。
+///
+/// 调用方据此**跳过** detail 序列化/解析等准备工作——`append_*` 自己也会检查目录，
+/// 但那已经是准备工作之后的事了。
+pub(crate) fn replay_dump_enabled() -> bool {
+    turn_replay_dir_from_env().is_some()
+}
+
 fn now_unix_ms() -> u64 {
     match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
         Ok(d) => d.as_millis() as u64,

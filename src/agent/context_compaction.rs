@@ -134,6 +134,47 @@ pub struct ContextCompactionReport {
 }
 
 impl ContextCompactionReport {
+    /// 单行撮要，供 `RUST_LOG` debug 汇总与排障 grep（**不含** `removed_prefix`，它是 canonical 坐标）。
+    /// budget 为 `None`（未配置 `llm_context_tokens`、走字符预算降级路径）时预算字段写 `-`，但
+    /// before/after 与分项照常输出——那条路径同样需要观察用量。
+    ///
+    /// `pub(crate)`：没有外部消费者；两层模块都是 `pub mod`，写成 `pub` 会悄悄扩大 crate 可见面，
+    /// 而 `scripts/check-public-api.py` 只扫根级顶格名字，覆盖不到这一层。
+    #[must_use]
+    pub(crate) fn format_for_log(&self) -> String {
+        let budget = self.budget;
+        format!(
+            "context_window_tokens={} before_tokens={} after_tokens={} max_input_tokens={} \
+             trigger_tokens={} target_tokens={} reserved_output_tokens={} safety_margin_tokens={} \
+             message_tokens={} tool_schema_tokens={} attachment_tokens={} vendor_overhead_tokens={} \
+             removed_turn_groups={} removed_messages={} compressed_old_tool_messages={} \
+             token_triggered={} summarized_for_token_budget={} provider_input_tokens={} \
+             counting_source={} reason={}",
+            opt_num(budget.map(|b| b.context_window_tokens)),
+            self.before.used_input_tokens,
+            self.after.used_input_tokens,
+            opt_num(budget.map(|b| b.max_input_tokens)),
+            opt_num(budget.map(|b| b.trigger_tokens)),
+            opt_num(budget.map(|b| b.target_tokens)),
+            opt_num(budget.map(|b| b.reserved_output_tokens)),
+            opt_num(budget.map(|b| b.safety_margin_tokens)),
+            self.after.message_tokens,
+            self.after.tool_schema_tokens,
+            self.after.attachment_tokens,
+            self.after.vendor_overhead_tokens,
+            self.removed_turn_groups,
+            self.removed_messages,
+            self.compressed_old_tool_messages,
+            self.token_triggered,
+            self.summarized_for_token_budget,
+            opt_num(self.provider_input_tokens),
+            self.after
+                .counting_source
+                .map_or("unknown", ContextTokenCountingSource::as_str),
+            self.compaction_reason(),
+        )
+    }
+
     #[must_use]
     pub const fn removed_history(self) -> bool {
         self.removed_turn_groups > 0 || self.summarized_for_token_budget
@@ -151,6 +192,11 @@ impl ContextCompactionReport {
             "none"
         }
     }
+}
+
+/// `Some(v)` 打印值、`None` 打印 `-`：debug 行里「未配置」与「值为 0」必须能分辨。
+fn opt_num<T: std::fmt::Display>(value: Option<T>) -> String {
+    value.map_or_else(|| "-".to_string(), |v| v.to_string())
 }
 
 fn attachment_token_estimate(messages: &[Message]) -> u32 {
@@ -454,6 +500,66 @@ pub fn compact_messages_to_token_budget(
 mod tests {
     use super::*;
     use crate::types::{FunctionDef, Tool};
+
+    #[test]
+    fn format_for_log_reports_budget_and_compaction_counters() {
+        let report = ContextCompactionReport {
+            budget: Some(ContextTokenBudget {
+                context_window_tokens: 128_000,
+                max_input_tokens: 117_952,
+                trigger_tokens: 70_771,
+                target_tokens: 58_976,
+                ..Default::default()
+            }),
+            before: ContextTokenEstimate { used_input_tokens: 120_000, ..Default::default() },
+            after: ContextTokenEstimate {
+                used_input_tokens: 58_000,
+                tool_schema_tokens: 5_800,
+                ..Default::default()
+            },
+            removed_turn_groups: 3,
+            removed_messages: 9,
+            token_triggered: true,
+            summarized_for_token_budget: true,
+            compressed_old_tool_messages: 2,
+            provider_input_tokens: Some(57_500),
+            ..Default::default()
+        };
+        let line = report.format_for_log();
+        for needle in [
+            "context_window_tokens=128000",
+            "before_tokens=120000",
+            "after_tokens=58000",
+            "max_input_tokens=117952",
+            // `Some(0)` 必须打成 `0`，不能与「未配置」的 `-` 混同（`opt_num` 存在的全部理由）。
+            "reserved_output_tokens=0",
+            "tool_schema_tokens=5800",
+            "removed_turn_groups=3",
+            "removed_messages=9",
+            "compressed_old_tool_messages=2",
+            "token_triggered=true",
+            "provider_input_tokens=57500",
+            "reason=token_budget_summary",
+        ] {
+            assert!(line.contains(needle), "缺少 {needle}：{line}");
+        }
+    }
+
+    #[test]
+    fn format_for_log_keeps_usage_without_budget() {
+        // 字符预算降级路径（`llm_context_tokens = 0`）：没有 budget，用量仍必须可见，
+        // 否则「字符裁剪到底裁掉了多少」在日志里无从判断。
+        let report = ContextCompactionReport {
+            budget: None,
+            after: ContextTokenEstimate { used_input_tokens: 4_096, ..Default::default() },
+            ..Default::default()
+        };
+        let line = report.format_for_log();
+        assert!(line.contains("after_tokens=4096"), "{line}");
+        assert!(line.contains("max_input_tokens=-"), "{line}");
+        assert!(line.contains("provider_input_tokens=-"), "{line}");
+        assert!(line.contains("reason=none"), "{line}");
+    }
 
     fn tool(name: &str, description_len: usize) -> Tool {
         Tool {
