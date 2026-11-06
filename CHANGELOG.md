@@ -153,18 +153,48 @@ One entry below is **BREAKING** for existing configs: `permission_confirm_tools`
   an empty block falling back to the first body line, and one end-to-end `list_skills` scan of a `<id>/SKILL.md` file.
 - **`run_command`: command substitution no longer breaks the generated `bash -c` script.** When `args` contained a backtick or `$(` alongside another expansion trigger (glob / `$VAR` / `~` / an operator token), the token was rewritten to `\$(`, which only literalises the `$` and leaves an unquoted `(` behind, so the whole line died with `bash: -c: line 1: syntax error near unexpected token '('`. Such tokens are now always double-quoted (inside double quotes `\$` is a literal `$` and `(` is ordinary), so they stay literal as `docs/工具说明.md` already promised. Command substitution is still not executed and still does not trigger wrapping on its own.
 - **`run_command`: a glob inside an argument that also contains whitespace no longer fails silently.** `["src/*.rs count:", "wc"]` is quoted (it has whitespace), so the glob never expands — previously with no trace at all. When wrapping happens the decision is now recorded in the `rewrites` channel (`echo *.toml → bash -c 'echo *.toml'（shell 包装：glob）`), plus a dedicated note listing tokens whose glob was suppressed by quoting. `rewrites` stays opt-in via **`CM_RUN_COMMAND_ECHO_REWRITES`**, so default output is unchanged byte-for-byte.
-- **`run_command`: a nested shell call is no longer double-wrapped, which used to blank out its variables.** `env FOO=inner bash -c "echo FOO=$FOO"` was treated as an ordinary argv needing expansion, so the outer wrapper expanded `$FOO` **before** the inner shell ever ran — the inner shell received `echo FOO=` and printed nothing, while `$(…)` in the same string was deferred to the inner shell, making one token carry two different expansion layers. The same fault silently corrupted file content: `env bash -c "cat > f <<'EOF' … $HOME … EOF"` wrote the **expanded** path instead of the literal `$HOME`, because the outer layer expanded it before the quoted heredoc could protect it. When argv already contains a nested shell invocation (`bash`/`sh` followed by `-c`, after any `NAME=VALUE` prefix) the outer wrap is now skipped and argv is handed over verbatim; the inner shell does all the expanding, as it would without the tool. `argv_needs_posix_shell_wrap` deliberately still reports `true` for these calls, so the `$VAR` check exemption and the approval `needs_shell` path are untouched — only the actual wrapping step is cut. The detection is intentionally coarse (it does not model wrapper programs, so `["echo","bash","-c"]` also counts), trading a rare missed expansion for the absence of silent wrong values.
+- **`run_command`: a nested shell call is no longer double-wrapped, which used to blank out its variables.**
+  `env FOO=inner bash -c "echo FOO=$FOO"` was treated as an ordinary argv needing expansion,
+  so the outer wrapper expanded `$FOO` **before** the inner shell ever ran — the inner shell received `echo FOO=` and printed nothing,
+  while `$(…)` in the same string was deferred to the inner shell,
+  making one token carry two different expansion layers. The same fault silently corrupted file content:
+  `env bash -c "cat > f <<'EOF' … $HOME … EOF"` wrote the **expanded** path instead of the literal `$HOME`,
+  because the outer layer expanded it before the quoted heredoc could protect it. When argv already contains a nested shell invocation (`bash`/`sh`
+  followed by `-c`, after any `NAME=VALUE` prefix) the outer wrap is now skipped and argv is handed over verbatim;
+  the inner shell does all the expanding, as it would without the tool. `argv_needs_posix_shell_wrap` deliberately still reports `true` for these calls,
+  so the `$VAR` check exemption and the approval `needs_shell` path are untouched — only the actual wrapping step is cut. The detection is
+  intentionally coarse (it does not model wrapper programs, so `["echo","bash","-c"]` also counts),
+  trading a rare missed expansion for the absence of silent wrong values.
 - **`run_command`: `structured_payload.invocation` no longer truncates a multi-line invocation.** The payload is rebuilt by re-parsing the rendered text and took `.lines().next()`, so any invocation spanning lines — a heredoc script, a multi-line `git commit -m` — reached the client as its **first line only** (`printf '[%s]' "line1` for a two-line script); timeout and cancel responses, which prepend a notice line, lost the invocation entirely. The splitter now walks from `命令：` to the first terminator (`退出码：` / `标准输出：` / `标准错误：` / `(无输出)`) and keeps every line in between, and it no longer assumes `命令：` is on line 1. Residual ambiguity: an invocation containing its own line that starts with `退出码：` is still cut there.
 
 ## [0.8.0] - 2026-11-01
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.8.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): two themes dominate and one of them rewires the tool surface, so read the **BREAKING** entries and the **Removed** section before upgrading.
 
-**`crabmatectl` — a local multi-instance manager, new in this release.** A second binary (Linux-only; other platforms are refused at the entry point as `platform_unsupported`) supervises several `serve` processes: `up` / `down` / `restart --grace` / `run` / `ls` / `status` / `logs` / `prune` / `gc` / `supervise`, plus `add` / `remove` / `disable` / `enable` so the declaration is editable from the shell again. Convergence is declarative (`instances.toml` + `supervise --from-config` / `--watch` / `--restart on-failure` / `--socket`), and `ls --json` / `status --json` / the on-disk record are pinned as contracts because `crabmate-client` reads them directly. Safety is deliberately asymmetric: `gc` never removes a directory whose record is already gone, `up` / `prune` refuse to touch a record whose process is still identity-verified, and nothing is deleted without `--yes`.
+**`crabmatectl` — a local multi-instance manager, new in this release.** A second binary (Linux-only;
+  other platforms are refused at the entry point as `platform_unsupported`) supervises several `serve` processes:
+  `up` / `down` / `restart --grace` / `run` / `ls` / `status` / `logs` / `prune` / `gc` / `supervise`,
+  plus `add` / `remove` / `disable` / `enable` so the declaration is editable from the shell again. Convergence is declarative (`instances.toml` +
+  `supervise --from-config` / `--watch` / `--restart on-failure` / `--socket`),
+  and `ls --json` / `status --json` / the on-disk record are pinned as contracts because `crabmate-client` reads them directly. Safety is deliberately asymmetric:
+  `gc` never removes a directory whose record is already gone, `up` / `prune` refuse to touch a record whose process is still identity-verified,
+  and nothing is deleted without `--yes`.
 
-**The tool surface moved to typed runners and lost its fine-grained wrappers.** Nearly every built-in tool now parses arguments through a typed `Args` struct, which closes the "silent success" family where a malformed call used to return OK. In parallel, thin wrappers were merged into action-dispatch tools — **`code_nav`**, **`rust_analyzer`**, **`git`**, **`gh_pr`** / **`gh_run`**, **`background_job`**, **`structured`**, **`reminder`** / **`event`** — and a long tail was removed outright (`run_lints`, `hash_file`, `chmod_file`, `format_files`, `rust_compiler_json`, `get_current_time`, `calc`, `convert_units`, and three aggregate quality-check tools), reachable instead through generic **`run_command`** and the expanded default allowlist. Both merges are **BREAKING** for callers that named the old tools.
+**The tool surface moved to typed runners and lost its fine-grained wrappers.** Nearly every built-in tool now parses arguments through a typed `Args` struct,
+  which closes the "silent success" family where a malformed call used to return OK. In parallel,
+  thin wrappers were merged into action-dispatch tools — **`code_nav`**, **`rust_analyzer`**, **`git`**, **`gh_pr`** / **`gh_run`**, **`background_job`**,
+  **`structured`**, **`reminder`** / **`event`** — and a long tail was removed outright (`run_lints`, `hash_file`, `chmod_file`, `format_files`,
+  `rust_compiler_json`, `get_current_time`, `calc`, `convert_units`, and three aggregate quality-check tools),
+  reachable instead through generic **`run_command`** and the expanded default allowlist. Both merges are **BREAKING** for callers that named the old tools.
 
-Also in this release: **workspace binding became one-way** — `POST /workspace` answers **409 `WORKSPACE_ALREADY_SET`** to a second *different* path (re-sending the same path stays an idempotent 200), a pending workspace now refuses `SyncDefault` tools with **`WORKSPACE_NOT_SET`** instead of silently falling back to the configured default directory, and **`serve --workspace-unset`** is the explicit way to start pending. **Permission levels** advanced through S5b/c/d: `POST /chat` accepts a session level, `GET /tools` reports `available_at_level` per tool, approval dialogs and timeline entries carry the level, and level decisions emit structured audit events. **Security**: `AGENTS.md` no longer follows a symlink that resolves outside the workspace, and three RustSec advisories were cleared (`rustls-webpki` / `webpki-roots` / `webpki-root-certs`).
+Also in this release:
+  **workspace binding became one-way** — `POST /workspace` answers **409 `WORKSPACE_ALREADY_SET`** to a second *different* path (re-sending the same path stays
+  an idempotent 200),
+  a pending workspace now refuses `SyncDefault` tools with **`WORKSPACE_NOT_SET`** instead of silently falling back to the configured default directory,
+  and **`serve --workspace-unset`** is the explicit way to start pending. **Permission levels** advanced through S5b/c/d: `POST /chat` accepts a session level,
+  `GET /tools` reports `available_at_level` per tool, approval dialogs and timeline entries carry the level,
+  and level decisions emit structured audit events. **Security**: `AGENTS.md` no longer follows a symlink that resolves outside the workspace,
+  and three RustSec advisories were cleared (`rustls-webpki` / `webpki-roots` / `webpki-root-certs`).
 
 ### Added
 
@@ -328,19 +358,87 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   the exit-condition order and the early cancel return. Tests added: `output_matches` inference and its blank-pattern counterpart,
   a multibyte pattern split across two pushes (the new bridge code must not panic on a non-char boundary), hit-wins-over-pending-cancel,
   `running`-cancel releasing the waiter immediately, and the host-level 「已请求取消」 wording.
-- **`glob_files` and `search_in_files` were never treated as redundant read-only probes**: `READONLY_PROBE_TOOL_NAMES` listed `list_dir` / `glob` / `search` — three names that have never been real tools (cleaned up in #1155) — so the list read like six entries while only three were live (`read_file` / `read_dir` / `list_tree`). Neither real search tool had an entry of its own, so once the active goal already had completion evidence a `glob_files` / `search_in_files` call was *not* suppressed and the turn ran one more search instead of stopping, while the strictly weaker `list_tree` was. Both are now in the list (as `crate::cm_names::*`), pinned by a new `redundant_tools` golden row (`readonly_redundant_glob_probe` in `fixtures/turn_completion_golden.jsonl`) and by `completed_gate_marks_search_family_probe_tools_redundant`; dropping either constant makes the golden fail with `tools_not_redundant`. Refs #1204.
+- **`glob_files` and `search_in_files` were never treated as redundant read-only probes**:
+  `READONLY_PROBE_TOOL_NAMES` listed `list_dir` / `glob` / `search` — three names that have never been real tools (cleaned up in #1155)
+  — so the list read like six entries while only three were live (`read_file` / `read_dir` / `list_tree`). Neither real search tool had an entry of its
+  own,
+  so once the active goal already had completion evidence a `glob_files` / `search_in_files` call was *not* suppressed and the turn ran one more search
+  instead of stopping, while the strictly weaker `list_tree` was. Both are now in the list (as `crate::cm_names::*`),
+  pinned by a new `redundant_tools` golden row (`readonly_redundant_glob_probe` in `fixtures/turn_completion_golden.jsonl`)
+  and by `completed_gate_marks_search_family_probe_tools_redundant`;
+  dropping either constant makes the golden fail with `tools_not_redundant`. Refs #1204.
 
-- **`crabmatectl` claimed macOS support while its process management silently misread every instance**: identity and liveness (`boot_id` / `pid_start_ticks` / `cmdline` / `pid_alive`) all read `procfs`, and `src/cm_ctl` had no platform gate — so on macOS `pid_alive` was permanently `false`. That value is not merely optimistic, it inverted the meaning of `down`: `down_record` filters on `identity::pid_alive`, so the process was never signalled, the record was rewritten as `stopped` with `pid` cleared, and the command reported「未在运行（无需停止）」 while `serve` kept running as an orphan nobody could address afterwards. `ls` reported every lane as `stopped` and `--restart on-failure` treated that as a crash, starting one more `serve` per sweep. The root cause is conceptual: "no answer from procfs" was being expressed as "the process is dead". `cm_ctl::PLATFORM_SUPPORTED` (`cfg!(target_os = "linux")`) is now checked at the single entry point `cm_ctl::run`, rejecting everything else with `platform_unsupported` before any state file is read or written; the binary's `about`, module docs, `README.md`, `docs/命令行与路由.md`, `docs/开发文档.md`, `AGENTS.md` and the regenerated `man/crabmatectl.1` said "Unix" and now say "Linux" with the reason attached. A real macOS port (start time via `proc_pidinfo`, liveness via `kill(pid, 0)`) is deliberately **not** part of this entry — it needs a decision, not a side effect.
+- **`crabmatectl` claimed macOS support while its process management silently misread every instance**:
+  identity and liveness (`boot_id` / `pid_start_ticks` / `cmdline` / `pid_alive`) all read `procfs`,
+  and `src/cm_ctl` had no platform gate — so on macOS `pid_alive` was permanently `false`. That value is not merely optimistic,
+  it inverted the meaning of `down`: `down_record` filters on `identity::pid_alive`, so the process was never signalled,
+  the record was rewritten as `stopped` with `pid` cleared, and the command reported「未在运行（无需停止）」
+  while `serve` kept running as an orphan nobody could address afterwards. `ls` reported every lane as `stopped` and `--restart on-failure` treated
+  that as a crash, starting one more `serve` per sweep. The root cause is conceptual: "no answer from procfs" was being expressed as "
+  the process is dead". `cm_ctl::PLATFORM_SUPPORTED` (`cfg!(target_os = "linux")`) is now checked at the single entry point `cm_ctl::run`,
+  rejecting everything else with `platform_unsupported` before any state file is read or written; the binary's `about`, module docs, `README.md`,
+  `docs/命令行与路由.md`, `docs/开发文档.md`, `AGENTS.md` and the regenerated `man/crabmatectl.1` said "Unix" and now say "Linux"
+  with the reason attached. A real macOS port (start time via `proc_pidinfo`, liveness via `kill(pid, 0)`)
+  is deliberately **not** part of this entry — it needs a decision, not a side effect.
 
-- **`crabmatectl restart` silently dropped `--yes`, turning「跳过白名单」into「白名单生效」**: `ops::restart` rebuilt its launch spec from the state record — which is the right source, since it is the only thing that survives a ctl restart — but the record had no `yes` field and the call site passed `yes: false` unconditionally. An instance started with `crabmatectl up --yes` therefore came back, after any `restart`, with the command allowlist enforced again: a permission **narrowing**, but also a different instance than the one the user asked to restart, announced by nothing except "the tools suddenly stopped working". `InstanceRecord` gained `yes` (`#[serde(default)]`, so existing records on disk read back as `false` — the pre-fix behaviour), `up` / `run` write it, `restart` restores it, `supervise` keeps passing `false` (its own comment already forbids `--yes` from the declaration side), and `status` prints it — as do `ls --json` / `status --json`, since a client that only sees the JSON would otherwise have to read the state file behind the public contract — so the answer does not require digging through shell history. `fixtures/ctl_contract.json` gained `yes` in `record_fields` **and** in `ls_row` / `status_row` — the deliberate review step that keeps `crabmate-client` from discovering the field by accident.
+- **`crabmatectl restart` silently dropped `--yes`, turning「跳过白名单」into「白名单生效」**:
+  `ops::restart` rebuilt its launch spec from the state record — which is the right source,
+  since it is the only thing that survives a ctl restart — but the record had no `yes` field and the call site passed `yes: false` unconditionally. An
+  instance started with `crabmatectl up --yes` therefore came back, after any `restart`, with the command allowlist enforced again:
+  a permission **narrowing**, but also a different instance than the one the user asked to restart, announced by nothing except "
+  the tools suddenly stopped working". `InstanceRecord` gained `yes` (`#[serde(default)]`,
+  so existing records on disk read back as `false` — the pre-fix behaviour), `up` / `run` write it, `restart` restores it,
+  `supervise` keeps passing `false` (its own comment already forbids `--yes` from the declaration side),
+  and `status` prints it — as do `ls --json` / `status --json`,
+  since a client that only sees the JSON would otherwise have to read the state file behind the public contract — so the answer does not require
+  digging through shell history. `fixtures/ctl_contract.json` gained `yes` in `record_fields` **and** in `ls_row` / `status_row` — the deliberate
+  review step that keeps `crabmate-client` from discovering the field by accident.
 
-- **Resetting a bound workspace is no longer misread as "a different workspace"**: the one-workspace-per-instance gate compared `!raw.is_empty() && already == raw`, so the empty path counted as *different* — once an instance was bound to `/a`, `POST /workspace {"path":""}` answered `409 WORKSPACE_ALREADY_SET` instead of resetting. That closed the escape hatch `docs/design/ctl_workspace_unset.md` §3.1 spells out (`Some(x) --{path:""}--> Some("")`) and made "switch workspace" impossible in practice: the client TUI's `/workspace off` (which maps `off` / `default` to an empty path) failed first, so the second step could never run. The empty path is now outside the gate — an idempotent replay of the *same* path and the 409 for a *different* path are unchanged — and the 409 message names the next step (reset first, or start another instance). Pinned by `web::workspace::handlers_workspace_set_http_tests::workspace_set_is_one_bind_per_instance`; `docs/命令行与路由.md` now documents the three outcomes. Refs #1183.
+- **Resetting a bound workspace is no longer misread as "a different workspace"**:
+  the one-workspace-per-instance gate compared `!raw.is_empty() && already == raw`,
+  so the empty path counted as *different* — once an instance was bound to `/a`,
+  `POST /workspace {"path":""}` answered `409 WORKSPACE_ALREADY_SET` instead of resetting. That closed the escape hatch
+  `docs/design/ctl_workspace_unset.md` §3.1 spells out (`Some(x) --{path:""}--> Some("")`) and made "switch workspace" impossible in practice:
+  the client TUI's `/workspace off` (which maps `off` / `default` to an empty path) failed first,
+  so the second step could never run. The empty path is now outside the gate — an idempotent replay of the *same* path and the 409 for a *different*
+  path are unchanged — and the 409 message names the next step (reset first,
+  or start another instance). Pinned by `web::workspace::handlers_workspace_set_http_tests::workspace_set_is_one_bind_per_instance`;
+  `docs/命令行与路由.md` now documents the three outcomes. Refs #1183.
 
-- **`crabmatectl up --port` 撞上已被占用的端口时报「已就绪」，且 `base_url` 指向别人的进程**: `up b --port 8080` 在 8080 已被实例 `a` 监听时会「成功」，写出 `state: ready` 的记录并把 `base_url` 写成 `http://127.0.0.1:8080/` —— 和 `a` **一模一样**。根因在 `readiness::wait_tcp`：它把「我 spawn 的 pid 还活着」和「这个地址能连上」当作两件独立的事来检查，端口被别人占着时 `connect` 连到的是**别人**，于是判定自己的实例就绪。后果不是显示错误而是数据串台：客户端连 `b` 全落到 `a` 上，两个 lane 共用一份会话库，正是 `crabmatectl` 每实例独立 cwd / 会话库的初衷被绕过；同时 `b` 的 serve 还活着但没监听，被记成健康后连 `supervise --restart on-failure` 也不会去救。现在显式 `--port` 在 spawn 之前先检查 `127.0.0.1:PORT` 是否已被监听，占用则报 `port_in_use`（退出码 2）并指出端口号，不进 readiness 等待。auto 分配不受影响（端口池本就跳过占用，其 TOCTOU 窗口仍由 `port_race` 顺延兜住）。新增单测与真进程集成测试各一条，后者钉的是**行为**而不只是错误码：失败的 `up` 不得留下任何记录。已把修复临时短路复验过——测试会如期报「端口被占用时 up 应失败」。见 `docs/命令行与路由.md` → 关键语义第 9 条。
+- **`crabmatectl up --port` 撞上已被占用的端口时报「已就绪」，且 `base_url` 指向别人的进程**:
+  `up b --port 8080` 在 8080 已被实例 `a` 监听时会「成功」，
+  写出 `state: ready` 的记录并把 `base_url` 写成 `http://127.0.0.1:8080/` —— 和 `a` **一模一样**。根因在 `readiness::wait_tcp`：
+  它把「我 spawn 的 pid 还活着」和「这个地址能连上」当作两件独立的事来检查，端口被别人占着时 `connect` 连到的是**别人**，于是判定自己的实例就绪。
+  后果不是显示错误而是数据串台：客户端连 `b` 全落到 `a` 上，两个 lane 共用一份会话库，正是 `crabmatectl` 每实例独立 cwd / 会话库的初衷被绕过；
+  同时 `b` 的 serve 还活着但没监听，被记成健康后连 `supervise --restart on-failure` 也不会去救。
+  现在显式 `--port` 在 spawn 之前先检查 `127.0.0.1:PORT` 是否已被监听，占用则报 `port_in_use`（退出码 2）并指出端口号，不进 readiness 等待。
+  auto 分配不受影响（端口池本就跳过占用，其 TOCTOU 窗口仍由 `port_race` 顺延兜住）。新增单测与真进程集成测试各一条，后者钉的是**行为**而不只是错误码：
+  失败的 `up` 不得留下任何记录。已把修复临时短路复验过——测试会如期报「端口被占用时 up 应失败」。见 `docs/命令行与路由.md` → 关键语义第 9 条。
 
-- **A `crabmatectl up` whose readiness wait times out no longer parks the instance in `starting`**: on timeout `up` used to leave the child alive and keep `state: starting`, writing only a `last_error`. That combination is a dead end, and the reason is structural rather than cosmetic: `probe::observe` maps "`starting` + process alive + port closed" to `Observed::Starting`, while `restart::is_failure` only accepts `stopped` / `failed` / `stale` — so `supervise --restart on-failure` skipped the instance on **every** sweep, and it was neither retried nor reclaimed (exactly the "`starting` never self-heals" gap recorded in #1177 / #1180). Clients saw an ambiguous `starting` plus a non-empty `last_error` and could not tell "still booting" from "gave up". `#1163`'s own semantics table already said the opposite of the code ("timeout → `failed` + `last_error`, reclaim the process just started"), so the code moved: the timeout path now terminates the child's **process group** (`signal::terminate`, `SIGTERM` → grace → `SIGKILL`), clears `pid` / `pgid` / `base_url`, and writes `state: failed` with a readable `last_error` (pid and log path, plus a note when `SIGKILL` was needed or reclamation itself failed). A slow `serve` therefore either becomes `ready` or becomes an explicit `failed` that the backoff sweep can pick up, instead of lingering in a state nothing acts on. See `docs/命令行与路由.md` → 关键语义第 10 条.
+- **A `crabmatectl up` whose readiness wait times out no longer parks the instance in `starting`**:
+  on timeout `up` used to leave the child alive and keep `state: starting`, writing only a `last_error`. That combination is a dead end,
+  and the reason is structural rather than cosmetic: `probe::observe` maps "`starting` + process alive + port closed" to `Observed::Starting`,
+  while `restart::is_failure` only accepts `stopped` / `failed` / `stale` — so `supervise --restart on-failure` skipped the instance on **every** sweep,
+  and it was neither retried nor reclaimed (exactly the "`starting` never self-heals"
+  gap recorded in #1177 / #1180). Clients saw an ambiguous `starting` plus a non-empty `last_error` and could not tell "still booting" from "
+  gave up". `#1163`'s own semantics table already said the opposite of the code ("timeout → `failed` + `last_error`, reclaim the process just started"),
+  so the code moved: the timeout path now terminates the child's **process group** (`signal::terminate`, `SIGTERM` → grace → `SIGKILL`),
+  clears `pid` / `pgid` / `base_url`, and writes `state: failed` with a readable `last_error` (pid and log path,
+  plus a note when `SIGKILL` was needed or reclamation itself failed). A slow `serve` therefore either becomes `ready` or becomes an explicit `failed`
+  that the backoff sweep can pick up, instead of lingering in a state nothing acts on. See `docs/命令行与路由.md` → 关键语义第 10 条.
 
-- **`enable` on an instance whose declaration was already `enabled = true` answered `ok` and converged nothing**: the socket response's second value — "re-converge now" — was `changed` from `instances::set_enabled`, which only tracks the `enabled` field. `enable` *also* clears the `desired_state = stopped` marker a `down` leaves behind (without it `supervise` skips the instance forever), and that is a separate write, so the two disagreed: a client retrying `enable` — the obvious way to bring back a lane someone stopped with `crabmatectl down` — got `ok / changed:false / cleared_down:true` while no convergence ran at all. With the default `--restart never` and `--watch` following only the declaration fingerprint (a `desired_state` change is not part of it), the instance then stayed down indefinitely while the client showed it as running. The convergence flag is now `changed || cleared_down`, pinned by `enable_on_already_enabled_but_downed_instance_reconverges` — the earlier test could not reach this case because it went through a real `disable` first, so `changed` was always true there. Three doc comments and the `--socket` `--help` text also still listed `add` / `remove` / `list` only; they now name `disable` / `enable`.
+- **`enable` on an instance whose declaration was already `enabled = true` answered `ok` and converged nothing**:
+  the socket response's second value — "re-converge now" — was `changed` from `instances::set_enabled`,
+  which only tracks the `enabled` field. `enable` *also* clears the `desired_state = stopped` marker a `down` leaves behind (without it `supervise`
+  skips the instance forever), and that is a separate write, so the two disagreed:
+  a client retrying `enable` — the obvious way to bring back a lane someone stopped with `crabmatectl down` — got
+  `ok / changed:false / cleared_down:true` while no convergence ran at all. With the default `--restart never` and `--watch` following only the
+  declaration fingerprint (a `desired_state` change is not part of it),
+  the instance then stayed down indefinitely while the client showed it as running. The convergence flag is now `changed || cleared_down`,
+  pinned by `enable_on_already_enabled_but_downed_instance_reconverges` — the earlier test could not reach this case because it went through a real
+  `disable` first,
+  so `changed` was always true there. Three doc comments and the `--socket` `--help` text also still listed `add` / `remove` / `list` only;
+  they now name `disable` / `enable`.
 
 ### Changed
 
@@ -428,7 +526,18 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   first-N not re-hitting inserted text, regex `$1` under a limit, scope conflict, whitespace-only anchor, unified-diff preview, stale `base_revision`)
   plus `search_replace_ambiguous_match_is_invalid_input_and_does_not_write` in `tests_typed_write_ops.rs`. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
 
-- **`POST /workspace` refuses to replace a workspace the instance is already bound to** (409 `WORKSPACE_ALREADY_SET`): the endpoint used to overwrite `workspace_override` on every call, so one `serve` process could serve two projects over its lifetime — and the second client inherited a running agent whose tools were pointed at a directory it never chose. `#1183` settles the model as **one workspace per instance**: a second *different* path is a 409 that names the current binding and says to start another instance, while re-sending the *same* path is an idempotent `200` (no runtime re-sync). The nuance that keeps this from being a breaking change for existing deployments: `Some("")` — "no `--workspace` given, use the configured default directory" — is **not** treated as bound, so the Web UI's first directory pick still works as before. Switching workspaces still has an explicit escape hatch (`POST /workspace` with an empty path resets), but it is no longer reachable by accident. Implemented in `set_workspace_from_raw_path`; `apply_workspace_override` (the internal path used by config reload and startup) is deliberately left unfiltered — it must be able to (re)establish the initial value. The `WORKSPACE_NOT_SET` gate on tool calls landed in a separate slice — see the `Added` entry below, which closes the gap this paragraph originally recorded.
+- **`POST /workspace` refuses to replace a workspace the instance is already bound to**
+  (409 `WORKSPACE_ALREADY_SET`): the endpoint used to overwrite `workspace_override` on every call,
+  so one `serve` process could serve two projects over its lifetime — and the second client inherited a running agent whose tools were pointed at a
+  directory it never chose. `#1183` settles the model as **one workspace per instance**:
+  a second *different* path is a 409 that names the current binding and says to start another instance,
+  while re-sending the *same* path is an idempotent `200` (no runtime re-sync). The nuance that keeps this from being a breaking change for existing
+  deployments: `Some("")` — "no `--workspace` given, use the configured default directory" — is **not** treated as bound,
+  so the Web UI's first directory pick still works as before. Switching workspaces still has an explicit escape hatch (`POST /workspace` with an empty
+  path resets), but it is no longer reachable by accident. Implemented in `set_workspace_from_raw_path`;
+  `apply_workspace_override` (the internal path used by config reload and startup) is deliberately left unfiltered — it must be able to (re)
+  establish the initial value. The `WORKSPACE_NOT_SET` gate on tool calls landed in a separate slice — see the `Added` entry below,
+  which closes the gap this paragraph originally recorded.
 
 ### Added
 
@@ -494,8 +603,29 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   and `restart` of a pending instance stays pending rather than inventing a path. `crabmatectl ls` / `--dry-run` show `（待绑定：等 client 设置）`
   instead of pretending the default directory is the instance's. See `docs/design/ctl_workspace_unset.md` and `docs/命令行与路由.md`.
 
-- **`crabmatectl`'s socket `list` reports the derived observation state and can include instances it does not manage**: `list` returned only the on-disk `state` (four values), while `stale` — "the record says it is running, but the port is closed or the process identity does not match" — is deliberately never written to disk (it is a read-time fact, see `probe`). So `crabmatectl ls` could report `stale` while socket `list` still answered `ready` together with the old `base_url`; a client using `list` as its connection source would then dial a dead port — the very "fake ready" that #1180 fixed inside ctl, resurfacing at the client boundary. Every item now carries an additional `observed` field (`ready` / `starting` / `stale` / `stopped` / `failed` / `held`) next to an unchanged `state`, which keeps its meaning per #1163 (additive only). `list` also accepts `{"op":"list","include_unmanaged":true}` to merge in instances that have a state record but no declaration (started by a command-line `up`), each item carrying `declared` (bool) and `managed_by` (`cli` / `supervise`); the default stays "only what the declaration contains", byte-for-byte as before. Both are pinned by unit tests: a `ready` record whose port is closed must report `observed: stale` while `state` stays `ready`, and an unmanaged instance must appear only when explicitly requested. See `docs/命令行与路由.md` → 本地多实例（`crabmatectl`）.
- `list` returned only the on-disk `state` (four values), while `stale` — "the record says it is running, but the port is closed or the process identity does not match" — is deliberately never written to disk (it is a read-time fact, see `probe`). So `crabmatectl ls` could report `stale` while socket `list` still answered `ready` together with the old `base_url`; a client using `list` as its connection source would then dial a dead port — the very "fake ready" that #1180 fixed inside ctl, resurfacing at the client boundary. Every item now carries an additional `observed` field (`ready` / `starting` / `stale` / `stopped` / `failed` / `held`) next to an unchanged `state`, which keeps its meaning per #1163 (additive only). `list` also accepts `{"op":"list","include_unmanaged":true}` to merge in instances that have a state record but no declaration (started by a command-line `up`), each item carrying `declared` (bool) and `managed_by` (`cli` / `supervise`); the default stays "only what the declaration contains", byte-for-byte as before. Both are pinned by unit tests: a `ready` record whose port is closed must report `observed: stale` while `state` stays `ready`, and an unmanaged instance must appear only when explicitly requested. See `docs/命令行与路由.md` → 本地多实例（`crabmatectl`）.
+- **`crabmatectl`'s socket `list` reports the derived observation state and can include instances it does not manage**:
+  `list` returned only the on-disk `state` (four values), while `stale` — "the record says it is running,
+  but the port is closed or the process identity does not match" — is deliberately never written to disk (it is a read-time fact,
+  see `probe`). So `crabmatectl ls` could report `stale` while socket `list` still answered `ready` together with the old `base_url`;
+  a client using `list` as its connection source would then dial a dead port — the very "fake ready" that #1180 fixed inside ctl,
+  resurfacing at the client boundary. Every item now carries an additional `observed` field (`ready` / `starting` / `stale` / `stopped` / `failed` /
+  `held`) next to an unchanged `state`,
+  which keeps its meaning per #1163 (additive only). `list` also accepts `{"op":"list","include_unmanaged":true}` to merge in instances that have a
+  state record but no declaration (started by a command-line `up`), each item carrying `declared` (bool) and `managed_by` (`cli` / `supervise`);
+  the default stays "only what the declaration contains", byte-for-byte as before. Both are pinned by unit tests:
+  a `ready` record whose port is closed must report `observed: stale` while `state` stays `ready`,
+  and an unmanaged instance must appear only when explicitly requested. See `docs/命令行与路由.md` → 本地多实例（`crabmatectl`）.
+ `list` returned only the on-disk `state` (four values), while `stale` — "the record says it is running,
+   but the port is closed or the process identity does not match" — is deliberately never written to disk (it is a read-time fact,
+   see `probe`). So `crabmatectl ls` could report `stale` while socket `list` still answered `ready` together with the old `base_url`;
+   a client using `list` as its connection source would then dial a dead port — the very "fake ready" that #1180 fixed inside ctl,
+   resurfacing at the client boundary. Every item now carries an additional `observed` field (`ready` / `starting` / `stale` / `stopped` / `failed` / `held`)
+   next to an unchanged `state`,
+   which keeps its meaning per #1163 (additive only). `list` also accepts `{"op":"list","include_unmanaged":true}` to merge in instances that have a state record
+   but no declaration (started by a command-line `up`), each item carrying `declared` (bool) and `managed_by` (`cli` / `supervise`); the default stays "
+   only what the declaration contains", byte-for-byte as before. Both are pinned by unit tests:
+   a `ready` record whose port is closed must report `observed: stale` while `state` stays `ready`,
+   and an unmanaged instance must appear only when explicitly requested. See `docs/命令行与路由.md` → 本地多实例（`crabmatectl`）.
 
 - **`crabmatectl`'s JSON output and state file are now pinned as contracts**:
   `#1163` requires the state file to be a stable contract because `crabmate-client` reads it directly,
@@ -969,9 +1099,26 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `file::path::tests::unrestricted_scope_emits_path_audit` assert the emitted event rather than the return value,
   so deleting a `record_*` call turns them red. See `docs/design/permission_levels.md` §6.3 / §11.2 and `docs/配置说明.md`.
 
-- **`modify_file` gained `expect_first_line` / `expect_last_line` for line-range guards**: `expect_content` validates a replaced range line by line, which is exact but forces the caller to re-transcribe the whole span — painful for deletions, where the block often starts or ends on a blank line and every `\n` has to be hand-written (a slip is only caught by `dry_run`). The new pair anchors just the first (`start_line`) and last (`end_line`) line of the range, enough to prove "this is the block I meant". They are **mutually exclusive** with `expect_content` (supplying both is rejected rather than silently picking one), are rejected for `insert_after_line` (that keeps `expect_line_content`), and work in both top-level `replace_lines` and per-edit `edits[]` replace entries. Failure text matches `expect_line_content`: actual content plus the relocate hint (`实际位于行 N` / `出现 N 处` / `未找到`), so a drifted line number self-corrects. Pinned by five tests in `tests_guards_batch.rs`. See `docs/工具说明.md`.
+- **`modify_file` gained `expect_first_line` / `expect_last_line` for line-range guards**:
+  `expect_content` validates a replaced range line by line,
+  which is exact but forces the caller to re-transcribe the whole span — painful for deletions,
+  where the block often starts or ends on a blank line and every `\n` has to be hand-written (a slip is only caught by `dry_run`). The new pair anchors
+  just the first (`start_line`) and last (`end_line`) line of the range, enough to prove "
+  this is the block I meant". They are **mutually exclusive** with `expect_content` (supplying both is rejected rather than silently picking one),
+  are rejected for `insert_after_line` (that keeps `expect_line_content`),
+  and work in both top-level `replace_lines` and per-edit `edits[]` replace entries. Failure text matches `expect_line_content`:
+  actual content plus the relocate hint (`实际位于行 N` / `出现 N 处` / `未找到`),
+  so a drifted line number self-corrects. Pinned by five tests in `tests_guards_batch.rs`. See `docs/工具说明.md`.
 
-- **`GET /status` reports the tool-definition token cost**: new optional field **`tiktoken_tool_definitions_tokens`** on the full (non-`view=shell`) status payload — the `tiktoken` estimate for the serialized **`tools`** array. It closes the last blind spot of the per-request fixed prefix: `tiktoken_new_session_baseline_by_agent_role` counts `messages` only, so tool JSON (the single largest fixed constant once the registry reaches three digits) was invisible. Computed once per **300s** — same TTL as the baseline cache, keyed by model + tool count + first/last tool name — via `spawn_blocking`, then cached. The value is an **upper bound** for "Act + a role without `allowed_tools`": Ask/Plan and role-filtered turns narrow the array at turn-execution time (`run_dispatch` / `session_mode_turn`), which this view cannot see. Reports `0` under `--no-tools`; the key is omitted when serialization fails. See `docs/命令行与路由.md`.
+- **`GET /status` reports the tool-definition token cost**:
+  new optional field **`tiktoken_tool_definitions_tokens`** on the full (non-`view=shell`)
+  status payload — the `tiktoken` estimate for the serialized **`tools`** array. It closes the last blind spot of the per-request fixed prefix:
+  `tiktoken_new_session_baseline_by_agent_role` counts `messages` only,
+  so tool JSON (the single largest fixed constant once the registry reaches three digits)
+  was invisible. Computed once per **300s** — same TTL as the baseline cache, keyed by model + tool count + first/last tool name — via `spawn_blocking`,
+  then cached. The value is an **upper bound** for "Act + a role without `allowed_tools`":
+  Ask/Plan and role-filtered turns narrow the array at turn-execution time (`run_dispatch` / `session_mode_turn`),
+  which this view cannot see. Reports `0` under `--no-tools`; the key is omitted when serialization fails. See `docs/命令行与路由.md`.
 
 ### Changed
 
@@ -996,7 +1143,18 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `runner_docs_health_sweep_try` joins `define_runners_cwd_maxlen_try!`,
   and `define_runners_cwd_maxlen!` lost its last instance and is deleted (`unused_macros` would fire otherwise). See
   `docs/design/tool_runner_typed_migration.md` §4.19.
-- **`present_clarification_questionnaire` moved to a typed runner, so a malformed questionnaire is no longer "a success with an exit code"**: the control-plane tool validated `questionnaire_id` / `intro` / `questions` and, on failure, returned `退出码：1\n{e}\n` — a shape only `parse_legacy_output`'s exit-code branch recognised as a failure, so `{}` (every required field missing) relied entirely on that fallback. It now returns `Err(ToolError::invalid_args(…))`, and every validation branch (invalid questionnaire id, blank / over-long `intro`, question count outside 1–12, malformed or duplicate question `id`, blank / over-long `label` or `hint`, unknown `kind`) lands on the same code. **The success body is byte-identical, header included**: `cm_internal::clarification_sse_bridge` decides "this was a registered questionnaire" by `tool_output.trim_start().starts_with("退出码：0")`, so touching that first line would have silently disabled the Web SSE control event — pinned by `present_runner_keeps_exit_zero_header_and_reports_invalid_args`. With the last args-only Legacy tool gone, `define_runners_args_only!` becomes `define_runners_args_only_try!` and gains a `try_macro_typecheck` expansion, so every macro shape now has a real `_try` implementation type-checked against it. **Legacy ratchet 3 → 2**; the audit row is replaced by a comment. See `docs/design/tool_runner_typed_migration.md` §4.20.
+- **`present_clarification_questionnaire` moved to a typed runner, so a malformed questionnaire is no longer "a success with an exit code"**:
+  the control-plane tool validated `questionnaire_id` / `intro` / `questions` and, on failure,
+  returned `退出码：1\n{e}\n` — a shape only `parse_legacy_output`'s exit-code branch recognised as a failure, so `{}` (every required field missing)
+  relied entirely on that fallback. It now returns `Err(ToolError::invalid_args(…))`, and every validation branch (invalid questionnaire id,
+  blank / over-long `intro`, question count outside 1–12, malformed or duplicate question `id`, blank / over-long `label` or `hint`, unknown `kind`)
+  lands on the same code. **The success body is byte-identical, header included**: `cm_internal::clarification_sse_bridge` decides "
+  this was a registered questionnaire" by `tool_output.trim_start().starts_with("退出码：0")`,
+  so touching that first line would have silently disabled the Web SSE control event — pinned by
+  `present_runner_keeps_exit_zero_header_and_reports_invalid_args`. With the last args-only Legacy tool gone,
+  `define_runners_args_only!` becomes `define_runners_args_only_try!` and gains a `try_macro_typecheck` expansion,
+  so every macro shape now has a real `_try` implementation type-checked against it. **Legacy ratchet 3 → 2**;
+  the audit row is replaced by a comment. See `docs/design/tool_runner_typed_migration.md` §4.20.
 
 - **`diagnostic_summary` / `repo_overview_sweep` / `crate_contract_map` moved to typed runners, with "tolerates bad input" kept apart from "bad arguments"**:
   each of the three read-only aggregators had exactly one real failure point — `parse_args_json` — answered with a bare `String`,
@@ -1231,7 +1389,16 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   claim on `hash_file` was corrected to SHA-256 / SHA-512 only (what the implementation actually accepts;
   `read_binary_meta`'s prefix hash is also SHA-256 only).
 
-- **`text_transform` moved to a typed runner, closing three silent-success branches**: it signalled failure with `String` bodies whose first line matched none of the keywords `parse_legacy_output` scans for, so `text 过长：N 字节，上限 M`, `delimiter 过长：…` / `lines_split 必须提供非空 delimiter`, and `切分后段数 N 超过上限 M` all came back **`ok: true`**. It now returns `Result<String, ToolError>` (`run_try`, behind a hand-written `runner_text_transform_try` — the args-only macro has no Typed twin), taking the Legacy ratchet baseline **51 → 49** (48 → 46 with `archive-tools`) together with `structured_patch` below. Success bodies are unchanged; those three branches plus `Base64 解码失败：…` and `URL 解码失败：…` now report `invalid_args`. Two things worth recording: a non-UTF-8 Base64 result keeps returning **success** with a hex preview (unchanged — that output *is* the answer), and the plan's worry about `urlencoding::decode` returning `Ok` on invalid UTF-8 did **not** hold: it already mapped `Err` to `URL 解码失败`. Pinned by `oversized_text_is_invalid_args` / `lines_split_without_delimiter_is_invalid_args`.
+- **`text_transform` moved to a typed runner, closing three silent-success branches**:
+  it signalled failure with `String` bodies whose first line matched none of the keywords `parse_legacy_output` scans for,
+  so `text 过长：N 字节，上限 M`, `delimiter 过长：…` / `lines_split 必须提供非空 delimiter`,
+  and `切分后段数 N 超过上限 M` all came back **`ok: true`**. It now returns `Result<String, ToolError>` (`run_try`,
+  behind a hand-written `runner_text_transform_try` — the args-only macro has no Typed twin),
+  taking the Legacy ratchet baseline **51 → 49** (48 → 46 with `archive-tools`) together with `structured_patch` below. Success bodies are unchanged;
+  those three branches plus `Base64 解码失败：…` and `URL 解码失败：…` now report `invalid_args`. Two things worth recording:
+  a non-UTF-8 Base64 result keeps returning **success** with a hex preview (unchanged — that output *is* the answer),
+  and the plan's worry about `urlencoding::decode` returning `Ok` on invalid UTF-8 did **not** hold:
+  it already mapped `Err` to `URL 解码失败`. Pinned by `oversized_text_is_invalid_args` / `lines_split_without_delimiter_is_invalid_args`.
 
 - **`structured_patch` moved to a typed runner, the last mutating tool on the legacy surface**:
   two branches were silently `ok: true` — `read_limited`'s errors were forwarded as a bare `e.to_string()` (no `错误：` prefix, no keyword),
@@ -1463,7 +1630,19 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   any `allowed_tools` list naming these three must drop them. `docs/工具说明.md` / `docs/en/TOOLS.md` now teach the `run_command` equivalents;
   the design docs keep the historical decisions but mark them as superseded.
 
-- **Read-only Git tools merged into one `git` tool with a required `action` selector**: the ten `git_*` tools (`git_status` / `git_diff` / `git_clean_check` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list`) are now one **`git`** tool. The always-resend tool-definition prefix drops ten parameter objects to one, and ten descriptions (277 tokens combined) to one; nothing else moved — `git::read_ops` still owns each subcommand, the new `dispatch` only decides which one to call, and the repository check, path safety and error text are unchanged. Each `action` reads only its own field group, so extra fields are ignored rather than rejected; `action=diff` keeps the `stat` / `name_only` / `base` it absorbed earlier. **Breaking**: (1) any `allowed_tools` entry, workflow `tool_name` or saved session that names a `git_*` tool must become `git` + `action` — the built-in `code_review` template, the workflow fixtures (`fixtures/workflows/*`, `examples/workflows/*`) and the `tool_name_implies_readonly_probe` list are updated here; (2) read-only probe detection now keys on `git` alone, which is safe because every action is read-only (write operations went to `run_command` in §8.5.4). Pinned by three `dispatch` tests (missing / unknown action, known actions actually forwarded) plus a schema test asserting `action` is required and the union fields survive. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **Read-only Git tools merged into one `git` tool with a required `action` selector**:
+  the ten `git_*` tools (`git_status` / `git_diff` / `git_clean_check` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list`
+  / `git_remote_status` / `git_remote_list`) are now one **`git`** tool. The always-resend tool-definition prefix drops ten parameter objects to one,
+  and ten descriptions (277 tokens combined) to one; nothing else moved — `git::read_ops` still owns each subcommand,
+  the new `dispatch` only decides which one to call, and the repository check,
+  path safety and error text are unchanged. Each `action` reads only its own field group, so extra fields are ignored rather than rejected;
+  `action=diff` keeps the `stat` / `name_only` / `base` it absorbed earlier. **Breaking**: (1) any `allowed_tools` entry,
+  workflow `tool_name` or saved session that names a `git_*` tool must become `git` + `action` — the built-in `code_review` template,
+  the workflow fixtures (`fixtures/workflows/*`, `examples/workflows/*`) and the `tool_name_implies_readonly_probe` list are updated here; (2)
+  read-only probe detection now keys on `git` alone,
+  which is safe because every action is read-only (write operations went to `run_command` in §8.5.4). Pinned by three `dispatch` tests (missing /
+  unknown action, known actions actually forwarded)
+  plus a schema test asserting `action` is required and the union fields survive. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
 
 - **`structured_patch` now commits through the shared write pipeline (optional CAS + atomic replace) and previews a unified diff**:
   it was the only **structured-data** write tool that rewrote a whole file with a bare `fs::write` — no revision check, no temp file,
@@ -1501,21 +1680,104 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   and it alone accounted for 20% of the whole `file_core` spec file. New `file::write_guard` unit tests pin the precedence (guard beats legacy)
   and the legacy fallback. See `docs/工具说明.md`.
 
-- **Preview no longer requires a revision baseline, and `append_file` joined the single write knob**: a preview writes nothing, so gating it behind `missing_revision_baseline` / `stale_revision` only punished the safe path — with `dry_run` defaulting to `true`, "just show me the diff" became "refused to write" for any line-mode call that had not `read_file`'d the target this turn, and the error text (「拒绝写入」) described an operation nobody asked for. `modify_file_try` now resolves `dry_run` once, before dispatch, and skips only the *turn-binding* baseline check for previews (an explicit `base_revision` still always validates, and the write path still verifies right before the rename). Preview tests that had been forced to pass `allow_stale_revision=true` dropped it, and `test_write_tools_default_to_preview_without_dry_run` now pins "preview works with no baseline". **`append_file` was the last write tool outside the knob** (`#[serde(default)]`, so it wrote when `dry_run` was omitted) — the one direction where the new mental model was unsafe: a caller who learned "omit `dry_run` → preview" would have silently written. It now defaults to `true` too, so all four write tools share one rule. The four scattered `dry_run` reads collapsed into `write_ops::dry_run_arg`, so a new dispatch branch cannot re-introduce an old default. `SearchReplaceArgs.confirm` / `StructuredPatchArgs.confirm` are marked deprecated in their schema doc. See `docs/工具说明.md`.
+- **Preview no longer requires a revision baseline, and `append_file` joined the single write knob**:
+  a preview writes nothing,
+  so gating it behind `missing_revision_baseline` / `stale_revision` only punished the safe path — with `dry_run` defaulting to `true`, "
+  just show me the diff" became "refused to write" for any line-mode call that had not `read_file`'d the target this turn,
+  and the error text (「拒绝写入」) described an operation nobody asked for. `modify_file_try` now resolves `dry_run` once, before dispatch,
+  and skips only the *turn-binding* baseline check for previews (an explicit `base_revision` still always validates,
+  and the write path still verifies right before the rename). Preview tests that had been forced to pass `allow_stale_revision=true` dropped it,
+  and `test_write_tools_default_to_preview_without_dry_run` now pins "
+  preview works with no baseline". **`append_file` was the last write tool outside the knob** (`#[serde(default)]`,
+  so it wrote when `dry_run` was omitted) — the one direction where the new mental model was unsafe: a caller who learned "omit `dry_run` → preview"
+  would have silently written. It now defaults to `true` too,
+  so all four write tools share one rule. The four scattered `dry_run` reads collapsed into `write_ops::dry_run_arg`,
+  so a new dispatch branch cannot re-introduce an old default. `SearchReplaceArgs.confirm` / `StructuredPatchArgs.confirm` are marked deprecated in
+  their schema doc. See `docs/工具说明.md`.
 
-- **`modify_file` now defaults to preview (`dry_run=true`), and the three write tools share one write gate** — breaking for callers that relied on "omit `dry_run` and it writes". The old state had **two** separate inconsistencies: `modify_file` defaulted `dry_run=false` (wrote unless told otherwise) while `search_replace` / `structured_patch` defaulted `true`; and those two additionally demanded `confirm=true` on top of `dry_run=false`, a second lock that the model always supplied anyway — its only reliable effect was producing "silently didn't write" when forgotten (it happened to me mid-session). Now there is one rule: **omit `dry_run` and you get a preview; pass `dry_run=false` and it writes.** `confirm` is no longer checked by `search_replace` / `structured_patch` (fields kept so existing calls stay valid). Still deliberately kept: `delete_files` / `delete_dir`'s `confirm` (destructive) and `modify_file`'s `confirm_full_overwrite` (high-risk shrink). **Migration**: add `"dry_run":false` to any `modify_file` call that expects a write — 47 test call sites and 4 default-value read sites updated here. New `test_write_tools_default_to_preview_without_dry_run` pins the default; `search_replace_try_missing_confirm_is_invalid_input` became `search_replace_try_writes_without_confirm_when_dry_run_false`. See `docs/工具说明.md`.
+- **`modify_file` now defaults to preview (`dry_run=true`), and the three write tools share one write gate**
+  — breaking for callers that relied on "omit `dry_run` and it writes". The old state had **two** separate inconsistencies:
+  `modify_file` defaulted `dry_run=false` (wrote unless told otherwise) while `search_replace` / `structured_patch` defaulted `true`;
+  and those two additionally demanded `confirm=true` on top of `dry_run=false`,
+  a second lock that the model always supplied anyway — its only reliable effect was producing "silently didn't write"
+  when forgotten (it happened to me mid-session). Now there is one rule: **omit `dry_run` and you get a preview;
+  pass `dry_run=false` and it writes.** `confirm` is no longer checked by `search_replace` / `structured_patch` (fields kept so existing calls stay
+  valid). Still deliberately kept: `delete_files` / `delete_dir`'s `confirm` (destructive)
+  and `modify_file`'s `confirm_full_overwrite` (high-risk shrink). **Migration**:
+  add `"dry_run":false` to any `modify_file` call that expects a write — 47 test call sites and 4 default-value read sites updated here. New
+  `test_write_tools_default_to_preview_without_dry_run` pins the default;
+  `search_replace_try_missing_confirm_is_invalid_input` became `search_replace_try_writes_without_confirm_when_dry_run_false`. See `docs/工具说明.md`.
 
-- **`modify_file` line-mode edits now require a snapshot baseline**: previously, if the model had never `read_file`'d the target during the turn **and** passed no `base_revision`, `verify_write_revision` returned `Ok(())` — line numbers written from memory (or from an earlier turn) were applied with **no validation at all**, the exact failure mode the revision ticket exists to prevent. It now returns **`错误[missing_revision_baseline]`** and refuses to write (`NOT_WRITTEN_HINT`), naming three ways forward: `read_file` first, pass the `revision` it returns as `base_revision`, or opt out explicitly with `allow_stale_revision=true`. Everything else is unchanged — an explicit `base_revision` still always validates, `allow_stale_revision` still only skips the turn binding, and `mode=full/overwrite` (which does not depend on line numbers) is still not auto-bound. **Batch `edits` path**: its commit failure was re-wrapped as `写入文件失败: {e}`, which pushed `错误[...]` to line 2 and silently dropped the typed code (`parse_legacy_output` only reads the first line) — it now returns the body as-is, so `stale_revision` / `missing_revision_baseline` survive. Existing tests that exercise replacement / guard / metadata semantics opt out via `allow_stale_revision`; `test_line_mode_without_read_baseline_is_rejected_with_code` pins the new rejection. See `docs/工具说明.md`.
+- **`modify_file` line-mode edits now require a snapshot baseline**:
+  previously, if the model had never `read_file`'d the target during the turn **and** passed no `base_revision`,
+  `verify_write_revision` returned `Ok(())` — line numbers written from memory (or from an earlier turn) were applied with **no validation at all**,
+  the exact failure mode the revision ticket exists to prevent. It now returns **`错误[missing_revision_baseline]`** and refuses to write
+  (`NOT_WRITTEN_HINT`), naming three ways forward: `read_file` first, pass the `revision` it returns as `base_revision`,
+  or opt out explicitly with `allow_stale_revision=true`. Everything else is unchanged — an explicit `base_revision` still always validates,
+  `allow_stale_revision` still only skips the turn binding, and `mode=full/overwrite` (which does not depend on line numbers)
+  is still not auto-bound. **Batch `edits` path**: its commit failure was re-wrapped as `写入文件失败: {e}`,
+  which pushed `错误[...]` to line 2 and silently dropped the typed code (`parse_legacy_output` only reads the first line)
+  — it now returns the body as-is,
+  so `stale_revision` / `missing_revision_baseline` survive. Existing tests that exercise replacement / guard / metadata semantics opt out via
+  `allow_stale_revision`; `test_line_mode_without_read_baseline_is_rejected_with_code` pins the new rejection. See `docs/工具说明.md`.
 
-- **Repository engineering rules moved into `AGENTS.md`**: dropping `.cursor/rules` compatibility also stopped the 14 `.cursor/rules/*.mdc` files from reaching the agent (only the workspace-root `AGENTS.md` is injected), which silently retired rules the repo still referenced from its PR template. Their enforceable content — commit/push flow, `cargo test` scoping, `unwrap`/`unsafe` rules, secret redaction, security-sensitive surfaces, doc-sync triggers, the chat/SSE two-end checklist, tool-registration steps, dependency licensing, CLI/TUI/Web sharing — is now one **`AGENTS.md` → Repository engineering rules** section (rendered 28979 chars, well under the 48000 cap). The 28 `.mdc` files (14 under `.cursor/rules/` plus the `.trae/rules/` copy) were **deleted** in the same change, and ~50 doc/PR references now point at the authoritative section instead — `AGENTS.md` is the single rule source.
+- **Repository engineering rules moved into `AGENTS.md`**:
+  dropping `.cursor/rules` compatibility also stopped the 14 `.cursor/rules/*.mdc` files from reaching the agent (only the workspace-root `AGENTS.md`
+  is injected), which silently retired rules the repo still referenced from its PR template. Their enforceable content — commit/push flow,
+  `cargo test` scoping, `unwrap`/`unsafe` rules, secret redaction, security-sensitive surfaces, doc-sync triggers, the chat/SSE two-end checklist,
+  tool-registration steps, dependency licensing,
+  CLI/TUI/Web sharing — is now one **`AGENTS.md` → Repository engineering rules** section (rendered 28979 chars,
+  well under the 48000 cap). The 28 `.mdc` files (14 under `.cursor/rules/` plus the `.trae/rules/` copy) were **deleted** in the same change,
+  and ~50 doc/PR references now point at the authoritative section instead — `AGENTS.md` is the single rule source.
 
-- **`AGENTS.md` is now injected from the session workspace root, at runtime**: the rule appendix is appended to the first `system` by `context_bootstrap::prompt_compose` (right after the L3 base, before L4/L5) instead of being baked into the finalized `system_prompt`. Two consequences — **(1)** the path is the **session workspace root**, not the process `cwd`, so switching workspaces on Web now switches the rules (previously `std::env::current_dir()` was read at config load, so a pooled-workspace switch silently kept the server's own `AGENTS.md`); **(2)** it is **not** composed once: for existing Web conversations the first `system` is recomposed **every turn** (`refresh_existing_turn_system`), so editing `AGENTS.md` takes effect on the next turn and invalidates that session's prefix cache (rule freshness chosen over cache hit rate); it is also no longer attached to every agent role's system separately — one copy applies to all roles. Absent/empty file or `agents_md_enabled = false` appends nothing (same as before), while `agents_md_max_chars` must stay within **1024–1000000** (out-of-range values fail startup validation — a `0` does **not** disable it). The `GET /status` baseline (`tiktoken_new_session_baseline_by_agent_role`) now goes through the same compose entry, so it counts the `AGENTS.md` block instead of silently omitting it. See `docs/配置说明.md` / `docs/design/system_prompt_assembly.md`.
+- **`AGENTS.md` is now injected from the session workspace root, at runtime**:
+  the rule appendix is appended to the first `system` by `context_bootstrap::prompt_compose` (right after the L3 base, before L4/L5)
+  instead of being baked into the finalized `system_prompt`. Two consequences — **(1)** the path is the **session workspace root**,
+  not the process `cwd`, so switching workspaces on Web now switches the rules (previously `std::env::current_dir()` was read at config load,
+  so a pooled-workspace switch silently kept the server's own `AGENTS.md`); **(2)** it is **not** composed once:
+  for existing Web conversations the first `system` is recomposed **every turn** (`refresh_existing_turn_system`),
+  so editing `AGENTS.md` takes effect on the next turn and invalidates that session's prefix cache (rule freshness chosen over cache hit rate);
+  it is also no longer attached to every agent role's system separately — one copy applies to all roles. Absent/empty file or
+  `agents_md_enabled = false` appends nothing (same as before),
+  while `agents_md_max_chars` must stay within **1024–1000000** (out-of-range values fail startup validation — a `0` does **not** disable it). The
+  `GET /status` baseline (`tiktoken_new_session_baseline_by_agent_role`) now goes through the same compose entry,
+  so it counts the `AGENTS.md` block instead of silently omitting it. See `docs/配置说明.md` / `docs/design/system_prompt_assembly.md`.
 
-- **First-turn context injection no longer includes the project profile**: `build_first_turn_user_context_markdown` (Web `/chat*` and CLI `chat` / `repl` / TUI first turn) now merges only **living docs**, **`agent_memory`** and the **dependency brief**; the project-profile Markdown is dropped from the injected `user` block. That removes a **full-workspace scan (tokei, or the extension walk on default builds) plus a `cargo metadata --no-deps` subprocess per new conversation** — both ran unconditionally even though the dependency brief already shells out to `cargo metadata` a second time. The profile stays available **on demand**: **`GET /workspace/profile`** (Web sidebar) and the **`repo_overview_sweep`** tool (`include_project_profile`, default on) still call the same `build_project_profile_markdown` — note the **tool is not gated** by `project_profile_inject_enabled`; it keeps its own `include_project_profile` / `project_profile_max_chars` arguments. Config keys are **kept but re-scoped**: `project_profile_inject_enabled` is now the **master switch for `GET /workspace/profile`** (empty body when `false`) and `project_profile_inject_max_chars` (`0` = disabled) caps that body. **Behavior change**: `project_profile_inject_enabled = false` used to leave the sidebar working (it only skipped first-turn injection) and now blanks it. `merge_first_turn_injections` lost its `profile_markdown` parameter. See `docs/配置说明.md` / `docs/命令行与路由.md`.
+- **First-turn context injection no longer includes the project profile**:
+  `build_first_turn_user_context_markdown` (Web `/chat*` and CLI `chat` / `repl` / TUI first turn) now merges only **living docs**,
+  **`agent_memory`** and the **dependency brief**;
+  the project-profile Markdown is dropped from the injected `user` block. That removes a **full-workspace scan (tokei,
+  or the extension walk on default builds)
+  plus a `cargo metadata --no-deps` subprocess per new conversation** — both ran unconditionally even though the dependency brief already shells out to
+  `cargo metadata` a second time. The profile stays available **on demand**: **`GET /workspace/profile`** (Web sidebar)
+  and the **`repo_overview_sweep`** tool (`include_project_profile`, default on)
+  still call the same `build_project_profile_markdown` — note the **tool is not gated** by `project_profile_inject_enabled`;
+  it keeps its own `include_project_profile` / `project_profile_max_chars` arguments. Config keys are **kept but re-scoped**:
+  `project_profile_inject_enabled` is now the **master switch for `GET /workspace/profile`** (empty body when `false`)
+  and `project_profile_inject_max_chars` (`0` = disabled) caps that body. **Behavior change**:
+  `project_profile_inject_enabled = false` used to leave the sidebar working (it only skipped first-turn injection)
+  and now blanks it. `merge_first_turn_injections` lost its `profile_markdown` parameter. See `docs/配置说明.md` / `docs/命令行与路由.md`.
 
-- **`command_max_output_len` default lowered from 512KiB to 64KiB**: a single long command (a full `cargo test` log, a `grep -rn` over a large tree) could previously dump hundreds of thousands of tokens into the model context in one tool result, tripping the compaction threshold and paying for a summary plus re-exploration. **`git diff` / `git diff_base` are unaffected** — they clamp to `max(config, GIT_DIFF_MIN_CAP_BYTES)` (512KiB) — so full patches are still delivered; for other long output, redirect to a file and read it back by line or anchor. **Background jobs are affected too**: `run_command` with `async:true` trims each stream's terminal tail to the output cap, so a finished job's captured output now maxes out at 64KiB (live streaming via `GET /tools/jobs/{id}/output` stays bounded by `background_job_output_buffer_bytes`, default 256KiB). Raise the key explicitly if a workflow depends on the old ceiling. See `docs/配置说明.md`.
+- **`command_max_output_len` default lowered from 512KiB to 64KiB**:
+  a single long command (a full `cargo test` log, a `grep -rn` over a large tree)
+  could previously dump hundreds of thousands of tokens into the model context in one tool result,
+  tripping the compaction threshold and paying for a summary plus re-exploration. **`git diff` / `git diff_base` are unaffected** — they clamp to
+  `max(config, GIT_DIFF_MIN_CAP_BYTES)` (512KiB) — so full patches are still delivered; for other long output,
+  redirect to a file and read it back by line or anchor. **Background jobs are affected too**:
+  `run_command` with `async:true` trims each stream's terminal tail to the output cap,
+  so a finished job's captured output now maxes out at 64KiB (live streaming via `GET /tools/jobs/{id}/output` stays bounded by
+  `background_job_output_buffer_bytes`, default 256KiB). Raise the key explicitly if a workflow depends on the old ceiling. See `docs/配置说明.md`.
 
-- **`archive-tools` is no longer part of the default `server` build**: the three archive model tools (**`archive_pack`** / **`archive_unpack`** / **`archive_list`**) now sit behind the opt-in **`archive-tools`** feature (`cargo build --features archive-tools`). This trims the always-resend tool-definition prefix by three tools and drops **`tar`** / **`bzip2`** / **`xz2`** from default builds. **`GET /workspace/dir/archive` is unaffected**: it only needs the `zip` crate, which moved into the **`web`** feature, and `web/workspace/handlers_dir_archive.rs` lost its `cfg(feature = "archive-tools")` gate — the old **501** `WORKSPACE_ARCHIVE_UNAVAILABLE` branch is gone, so the Client "save folder" flow keeps working on a default build. **Behavior change**: with default features the model can no longer pack/unpack archives through dedicated tools; `run_command` already allowlists **`7z`** / **`unrar`** for extraction (`tar` / `zip` CLIs are not allowlisted). See `docs/命令行与路由.md` / `docs/en/CLI.md` / `docs/后端核心框架设计.md`.
+- **`archive-tools` is no longer part of the default `server` build**:
+  the three archive model tools (**`archive_pack`** / **`archive_unpack`** / **`archive_list`**)
+  now sit behind the opt-in **`archive-tools`** feature (`cargo build --features archive-tools`). This trims the always-resend tool-definition prefix
+  by three tools and drops **`tar`** / **`bzip2`** / **`xz2`** from default builds. **`GET /workspace/dir/archive` is unaffected**:
+  it only needs the `zip` crate, which moved into the **`web`** feature,
+  and `web/workspace/handlers_dir_archive.rs` lost its `cfg(feature = "archive-tools")` gate — the old **501** `WORKSPACE_ARCHIVE_UNAVAILABLE` branch
+  is gone, so the Client "save folder" flow keeps working on a default build. **Behavior change**:
+  with default features the model can no longer pack/unpack archives through dedicated tools;
+  `run_command` already allowlists **`7z`** / **`unrar`** for extraction (`tar` / `zip` CLIs are not allowlisted). See `docs/命令行与路由.md` /
+  `docs/en/CLI.md` / `docs/后端核心框架设计.md`.
 
 - **`gh_*` wrappers merged into `gh_pr` / `gh_run`**:
   the seven PR wrappers (`gh_pr_checks` / `gh_pr_create` / `gh_pr_merge` / `gh_pr_review` / `gh_pr_comment` / `gh_pr_edit` / `gh_pr_body_draft`)
@@ -1559,7 +1821,19 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `orch_single_agent_tool` e2e scenario — whose prompt told the model to call `text_transform` — was **retargeted at `json_format`** rather than
   deleted, because it exists to prove the tool-call → final-answer loop, not that specific tool. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
 
-- **`rust_compiler_json` removed: its JSON output duplicated `cargo_check`**: the tool ran `cargo check --message-format=json`, filtered `reason == "compiler-message"` lines and re-rendered each as `[error] E0308 mismatched types` + `message.rendered` + the first 5 spans + the first 8 children. Every one of those pieces is something cargo already prints — `rendered` *is* cargo's human-readable block (arrow, snippet, labels) and the extra span / child lists restate it — so the net value over the existing typed, read-only `cargo_check` was only "number the diagnostics and cap them at `max_diagnostics`". Deleted: the `ToolSpec`, the `cwd_maxlen` runner entry, `RustCompilerJsonArgs`, the `dev_tag` tag, the `builtin_parallel_sync_denied_exact` entry (it was already excluded from the parallel read-only batch, precisely because it shells out to cargo), and the whole `cargo / rustc JSON` section of `rust_ide.rs` (~230 lines incl. `parse_cargo_check_args` / `build_cargo_check_command` / `collect_compiler_messages` / `format_compiler_message` and its smoke test). Legacy-ratchet baseline **33 → 32** (30 → 29 without `archive-tools`). **No read-only capability is lost** — unlike a downgrade to `run_command`, the replacement `cargo_check` is itself read-only, so the read-only retry, `Ask`·`Plan` gating and TTL cache still apply. **Breaking**: anything pinning the name in `allowed_tools`, roles or workflows must switch to `cargo_check` (raw JSON: `run_command` + `jq`).
+- **`rust_compiler_json` removed: its JSON output duplicated `cargo_check`**:
+  the tool ran `cargo check --message-format=json`,
+  filtered `reason == "compiler-message"` lines and re-rendered each as `[error] E0308 mismatched types` + `message.rendered` + the first 5 spans + the
+  first 8 children. Every one of those pieces is something cargo already prints — `rendered` *is* cargo's human-readable block (arrow, snippet, labels)
+  and the extra span / child lists restate it — so the net value over the existing typed, read-only `cargo_check` was only "
+  number the diagnostics and cap them at `max_diagnostics`". Deleted: the `ToolSpec`, the `cwd_maxlen` runner entry, `RustCompilerJsonArgs`,
+  the `dev_tag` tag, the `builtin_parallel_sync_denied_exact` entry (it was already excluded from the parallel read-only batch,
+  precisely because it shells out to cargo),
+  and the whole `cargo / rustc JSON` section of `rust_ide.rs` (~230 lines incl. `parse_cargo_check_args` / `build_cargo_check_command` /
+  `collect_compiler_messages` / `format_compiler_message` and its smoke test). Legacy-ratchet baseline **33 → 32** (30 → 29 without `archive-tools`).
+  **No read-only capability is lost** — unlike a downgrade to `run_command`, the replacement `cargo_check` is itself read-only, so the read-only retry,
+  `Ask`·`Plan` gating and TTL cache still apply. **Breaking**: anything pinning the name in `allowed_tools`,
+  roles or workflows must switch to `cargo_check` (raw JSON: `run_command` + `jq`).
 
 - **`changelog_draft` / `license_notice` tools removed, taking the `release_docs` module with them**:
   both were release-time conveniences with strong command-line substitutes,
@@ -1575,43 +1849,150 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   the first-turn project profile and dependency brief still use it. Legacy-ratchet baseline **35 → 33** (32 → 30 without `archive-tools`). **Breaking**:
   anything pinning either name in `allowed_tools`, roles or workflows must switch to `run_command` / `gh_release_create`.
 
-- **`/health` no longer probes optional CLIs that only matter once a command runs**: `mvn`, `gradle`, `ast-grep`, `podman`, `typos` and `codespell` are gone from the dependency checks, so `dep_mvn` / `dep_gradle` / `dep_ast_grep` / `dep_podman` / `dep_typos` / `dep_codespell` no longer appear in `GET /health`, can no longer push the report to `degraded`, and no longer land in the `serve` startup summary's 「可选 CLI 未安装」 group. A missing Maven / Gradle / ast-grep / container / spell CLI only matters at the moment `run_command` actually invokes it, which already fails loudly there — pre-checking it just produced startup noise on machines that never touch those stacks. **No capability is lost**: all six stay on the embedded `allowed_commands` (`config/tools.toml`), `output_util` keeps their install hints, and `docs_health_sweep` still calls `typos` / `codespell` (that step reports `skipped` when the CLI is absent). `dep_check_label` lost its `ast_grep` arm together with the probe.
+- **`/health` no longer probes optional CLIs that only matter once a command runs**:
+  `mvn`, `gradle`, `ast-grep`, `podman`, `typos` and `codespell` are gone from the dependency checks,
+  so `dep_mvn` / `dep_gradle` / `dep_ast_grep` / `dep_podman` / `dep_typos` / `dep_codespell` no longer appear in `GET /health`,
+  can no longer push the report to `degraded`, and no longer land in the `serve` startup summary's 「可选 CLI 未安装」
+  group. A missing Maven / Gradle / ast-grep / container / spell CLI only matters at the moment `run_command` actually invokes it,
+  which already fails loudly there — pre-checking it just produced startup noise on machines that never touch those stacks. **No capability is lost**:
+  all six stay on the embedded `allowed_commands` (`config/tools.toml`), `output_util` keeps their install hints,
+  and `docs_health_sweep` still calls `typos` / `codespell` (that step reports `skipped` when the CLI is absent). `dep_check_label` lost its `ast_grep`
+  arm together with the probe.
 
-- **`.cursor/rules` compatibility removed; `cursor_rules_*` keys replaced by `agents_md_*`**: `cm_config::cursor_rules` (the `*.mdc` reader, `AGENTS.md` merge and 48k-char appendix renderer) is deleted. `AGENTS.md` is now the **only** rule source, and the four config keys shrink to two: `cursor_rules_enabled` → `agents_md_enabled`, `cursor_rules_max_chars` → `agents_md_max_chars` (same 48000 default, validated to 1024–1000000, out-of-range fails startup); `cursor_rules_dir` and `cursor_rules_include_agents_md` are gone (the directory concept no longer exists, and `AGENTS.md` is no longer optional-on-top). The env vars follow: `CM_CURSOR_RULES_ENABLED` → `CM_AGENTS_MD_ENABLED`, `CM_CURSOR_RULES_MAX_CHARS` → `CM_AGENTS_MD_MAX_CHARS`; `CM_CURSOR_RULES_DIR` / `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` are dropped from the tracked-env list in `doctor`. **Breaking**: any `.cursor/rules/*.mdc` content must be moved into the workspace root `AGENTS.md` by hand, and old keys now fail as unknown keys in `[agent]` (`deny_unknown_fields`). See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
+- **`.cursor/rules` compatibility removed; `cursor_rules_*` keys replaced by `agents_md_*`**:
+  `cm_config::cursor_rules` (the `*.mdc` reader, `AGENTS.md` merge and 48k-char appendix renderer)
+  is deleted. `AGENTS.md` is now the **only** rule source, and the four config keys shrink to two: `cursor_rules_enabled` → `agents_md_enabled`,
+  `cursor_rules_max_chars` → `agents_md_max_chars` (same 48000 default, validated to 1024–1000000, out-of-range fails startup);
+  `cursor_rules_dir` and `cursor_rules_include_agents_md` are gone (the directory concept no longer exists,
+  and `AGENTS.md` is no longer optional-on-top). The env vars follow: `CM_CURSOR_RULES_ENABLED` → `CM_AGENTS_MD_ENABLED`,
+  `CM_CURSOR_RULES_MAX_CHARS` → `CM_AGENTS_MD_MAX_CHARS`;
+  `CM_CURSOR_RULES_DIR` / `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` are dropped from the tracked-env list in `doctor`. **Breaking**:
+  any `.cursor/rules/*.mdc` content must be moved into the workspace root `AGENTS.md` by hand,
+  and old keys now fail as unknown keys in `[agent]` (`deny_unknown_fields`). See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
 
-- **`format_files` tool removed** — its `.rs` branch was broken: it shelled out to `rustfmt` **without `--edition`**, and standalone rustfmt does not read `Cargo.toml` (that is `cargo fmt`'s job), so it parsed every file as **edition 2015** and failed on any edition-2018+ syntax. On this repo (`edition = "2024"`) that meant `format_files` answered `rustfmt 格式化失败，退出码：1` + `error: let chains are only allowed in Rust 2024 or later` for files such as `src/cm_tools/tools/format.rs`, **even though `cargo fmt --check` was clean** — the same wrapper worked on 2015-only files and failed on newer ones, which read like the file itself was broken. Rather than teach the wrapper to sniff editions per file, the tool is retired: formatting now goes through `run_command` (`cargo fmt` for Rust, `ruff format`, `clang-format -i`, `gofmt -w`, `shfmt -w`, `xmllint --format`, `sqlfluff format`, `prettier --write`). This also drops the extension→formatter router and the batch/partial-failure aggregation. **`prettier` was added to the embedded `allowed_commands`** — it was the only one of those formatters missing from the allowlist — so no capability is lost. **Breaking**: anything pinning `format_files` in `allowed_tools`, roles or workflows must switch to `run_command`.
+- **`format_files` tool removed**
+  — its `.rs` branch was broken: it shelled out to `rustfmt` **without `--edition`**,
+  and standalone rustfmt does not read `Cargo.toml` (that is `cargo fmt`'s job),
+  so it parsed every file as **edition 2015** and failed on any edition-2018+ syntax. On this repo (`edition = "2024"`)
+  that meant `format_files` answered `rustfmt 格式化失败，退出码：1` + `error: let chains are only allowed in Rust 2024 or later` for files such as
+  `src/cm_tools/tools/format.rs`, **even though `cargo fmt --check` was clean** — the same wrapper worked on 2015-only files and failed on newer ones,
+  which read like the file itself was broken. Rather than teach the wrapper to sniff editions per file, the tool is retired:
+  formatting now goes through `run_command` (`cargo fmt` for Rust, `ruff format`, `clang-format -i`, `gofmt -w`, `shfmt -w`, `xmllint --format`,
+  `sqlfluff format`,
+  `prettier --write`). This also drops the extension→formatter router and the batch/partial-failure aggregation. **`prettier` was added to the embedded
+  `allowed_commands`** — it was the only one of those formatters missing from the allowlist — so no capability is lost. **Breaking**:
+  anything pinning `format_files` in `allowed_tools`, roles or workflows must switch to `run_command`.
 
 ### Fixed
 
-- **The `search_replace` tool-card line now spells the tool the way the registry does**: `SearchReplaceSummaryArgs::summary_line` hard-coded `search-replace{}: …`, while the tool itself is `search_replace` — so every client showed a hyphenated name the tool list never uses (`search_replace (preview): a.rs / "foo"`; previously `search-replace (preview): …`). No other summary line spells a tool name with a hyphen: the rest either use plain words (`read file:` / `delete directory:` / `chmod:`) or the registry name itself (`terminal_session exec …` / `gh api …`), so this was a typo rather than a convention. No protocol change — the field, its type and its semantics are untouched, and the client TUI's `-`/`_` normaliser simply becomes a no-op: it can be deleted on its own schedule, with no behaviour change either way (nothing in this repo keys on the hyphenated form), so no Client-repo change is required to ship this. Pinned by tests in `cm_tools::tools::tests` covering both the preview and the write form.
+- **The `search_replace` tool-card line now spells the tool the way the registry does**:
+  `SearchReplaceSummaryArgs::summary_line` hard-coded `search-replace{}: …`,
+  while the tool itself is `search_replace` — so every client showed a hyphenated name the tool list never uses
+  (`search_replace (preview): a.rs / "foo"`; previously `search-replace (preview): …`). No other summary line spells a tool name with a hyphen:
+  the rest either use plain words (`read file:` / `delete directory:` / `chmod:`) or the registry name itself (`terminal_session exec …` / `gh api …`),
+  so this was a typo rather than a convention. No protocol change — the field, its type and its semantics are untouched,
+  and the client TUI's `-`/`_` normaliser simply becomes a no-op: it can be deleted on its own schedule,
+  with no behaviour change either way (nothing in this repo keys on the hyphenated form),
+  so no Client-repo change is required to ship this. Pinned by tests in `cm_tools::tools::tests` covering both the preview and the write form.
 
-- **`run_command` tool-card summary no longer degrades to the placeholder for array-shaped commands**: `RunCommandSummaryArgs.command` was declared `String`, so a model that wrote the whole command as an array (`{"command":["git","status","-sb"]}`) made the struct fail to deserialize — the summary fell back to `tool: run_command`, and every client then had to re-parse the argument JSON to recover the command (the Web shell and the TUI each carried their own copy of that recovery, which is exactly how the two drifted apart). `command` is now a `serde_json::Value`: a string stays verbatim (it *is* the line to display, so quoting it would be wrong), an array becomes one token per element, and `args` is appended in both shapes — `{"command":["git"],"args":["status","-sb"]}` renders `git status -sb` as well. An empty command still yields `None`, leaving the placeholder decision and any last-resort rendering to the client (unchanged). Pinned by three tests in `cm_tools::tools::tests` (array command, array plus `args`, empty command).
+- **`run_command` tool-card summary no longer degrades to the placeholder for array-shaped commands**:
+  `RunCommandSummaryArgs.command` was declared `String`, so a model that wrote the whole command as an array (`{"command":["git","status","-sb"]}`)
+  made the struct fail to deserialize — the summary fell back to `tool: run_command`,
+  and every client then had to re-parse the argument JSON to recover the command (the Web shell and the TUI each carried their own copy of that
+  recovery, which is exactly how the two drifted apart). `command` is now a `serde_json::Value`: a string stays verbatim (it *is* the line to display,
+  so quoting it would be wrong), an array becomes one token per element,
+  and `args` is appended in both shapes — `{"command":["git"],"args":["status","-sb"]}` renders `git status -sb` as well. An empty command still yields
+  `None`,
+  leaving the placeholder decision and any last-resort rendering to the client (unchanged). Pinned by three tests in `cm_tools::tools::tests` (array
+  command, array plus `args`, empty command).
 
-- **Spurious `run_command` failures on multi-line invocations**: the tool echoes the raw argv after `命令：`, so a multi-line argument (`git commit -m "…" -m "…"`) makes that echo span dozens of lines. `strip_leading_command_invocation_line` drops only up to the first newline, so the "first line" used for status was really **message body**: `parse_exit_code` missed `退出码：0`, the parser fell back to the `失败` / `超时` keyword heuristic, and reported `ok=false` with `exit_code=null` **even though the command had exited 0** (seen on `git commit` whose body contained 「失败」). The exit code is now also read by scanning the header region up to the first `标准输出：` / `标准错误：` marker, so multi-line echoes still yield the real code; the scan only trusts outputs carrying those markers, so an `退出码：N` inside another tool's payload (e.g. a file returned by `read_file`) is never mistaken for status. Non-zero exits still fail. The parser moved to `cm_tools::tool_result::run_command` — `tool_result/mod.rs` had been sitting exactly at the 920-line cap, so any further edit there was blocked.
+- **Spurious `run_command` failures on multi-line invocations**:
+  the tool echoes the raw argv after `命令：`, so a multi-line argument (`git commit -m "…" -m "…"`)
+  makes that echo span dozens of lines. `strip_leading_command_invocation_line` drops only up to the first newline, so the "first line"
+  used for status was really **message body**: `parse_exit_code` missed `退出码：0`, the parser fell back to the `失败` / `超时` keyword heuristic,
+  and reported `ok=false` with `exit_code=null` **even though the command had exited 0** (seen on `git commit` whose body contained 「失败」). The exit
+  code is now also read by scanning the header region up to the first `标准输出：` / `标准错误：` marker,
+  so multi-line echoes still yield the real code; the scan only trusts outputs carrying those markers,
+  so an `退出码：N` inside another tool's payload (e.g. a file returned by `read_file`)
+  is never mistaken for status. Non-zero exits still fail. The parser moved to `cm_tools::tool_result::run_command` — `tool_result/mod.rs` had been
+  sitting exactly at the 920-line cap, so any further edit there was blocked.
 
 ### Security
 
 - **`AGENTS.md` symlink escape blocked**: that file's content is injected into `system` and sent to the model, so a workspace symlink pointing at an arbitrary local file (e.g. `/etc/passwd`) would have pulled it into the conversation. The loader now canonicalizes the path and **ignores** the file when it resolves outside the workspace root; symlinks pointing inside the workspace still work. Unix-only. See `docs/配置说明.md`.
 
-- **Cleared the three RustSec vulnerabilities flagged by `cargo audit`**: bumped three transitive TLS crates to their fixed patch releases — **`rustls-webpki`** `0.103.15` → `0.103.16` (**RUSTSEC-2026-0382**, certificate verification may accept distrusted intermediates), **`webpki-roots`** `1.0.6` → `1.0.10` (**RUSTSEC-2026-0381**) and **`webpki-root-certs`** `1.0.6` → `1.0.10` (**RUSTSEC-2026-0383**) — the latter two because their bundled root sets still trusted distrusted emSign intermediates. All three live in the existing `rustls 0.23` graph, so this is a lockfile-only patch-level bump: no source, wire-protocol or config change. The five remaining `cargo audit` entries are upstream-blocked **`unmaintained`** warnings (`paste`, `term_size`, `zbus_names`, `zvariant`, `zvariant_derive`), which `cargo audit` reports as non-fatal and which stay documented as transitive.
+- **Cleared the three RustSec vulnerabilities flagged by `cargo audit`**:
+  bumped three transitive TLS crates to their fixed patch releases — **`rustls-webpki`** `0.103.15` → `0.103.16` (**RUSTSEC-2026-0382**,
+  certificate verification may accept distrusted intermediates), **`webpki-roots`** `1.0.6` → `1.0.10` (**RUSTSEC-2026-0381**)
+  and **`webpki-root-certs`** `1.0.6` → `1.0.10` (**RUSTSEC-2026-0383**)
+  — the latter two because their bundled root sets still trusted distrusted emSign intermediates. All three live in the existing `rustls 0.23` graph,
+  so this is a lockfile-only patch-level bump: no source,
+  wire-protocol or config change. The five remaining `cargo audit` entries are upstream-blocked **`unmaintained`** warnings (`paste`, `term_size`,
+  `zbus_names`, `zvariant`, `zvariant_derive`), which `cargo audit` reports as non-fatal and which stay documented as transitive.
 
 ## [0.7.0] - 2026-10-18
 
-**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.7.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): this release is dominated by **tool-surface consolidation** — dozens of thin CLI wrappers are removed and replaced by generic **`run_command`** (the default allowlist is expanded accordingly), so read the **BREAKING** entries below before upgrading. Additive highlights: **`serve --yes`**, background-job monitoring tools, **`GET /tools/plugins/{file}`**, context-archive retention keys, and **`GET /conversation/messages?include_archive=true`**.
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install:
+  **`cargo install crabmate`**. Git tag **`v0.7.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per
+  [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change):
+  this release is dominated by **tool-surface consolidation** — dozens of thin CLI wrappers are removed and replaced by generic **`run_command`** (the default
+  allowlist is expanded accordingly), so read the **BREAKING** entries below before upgrading. Additive highlights: **`serve --yes`**,
+  background-job monitoring tools, **`GET /tools/plugins/{file}`**, context-archive retention keys, and **`GET /conversation/messages?include_archive=true`**.
 
 ### Added
 
-- **`serve --yes` to bypass the command allowlist**: a new `serve` flag replaces `allowed_commands` with the allow-all sentinel **`["*"]`**, so **`run_command`** (and `terminal_session` first-frame `exec`) no longer validates the command name and runs any program. The sentinel is honored at the single host-side gate (`resolve_run_command_exec_path`), the approval layer (`cmd_missing_from_allowlist`, shell-wrap approval), and the peripheral consumers (`gh_allowed`, `error_output_playbook`, plugin/dynamic-tool validation, `doctor`), and is preserved across `POST /config/reload`. It is equivalent to **`CM_ALLOWED_COMMANDS=*`** and is intended **only** for fully trusted or already-isolated (container / dedicated host) environments; it does **not** disable workspace-external path approval or argument-safety checks. See `docs/命令行与路由.md` / `docs/工具说明.md` / `docs/配置说明.md`.
+- **`serve --yes` to bypass the command allowlist**:
+  a new `serve` flag replaces `allowed_commands` with the allow-all sentinel **`["*"]`**,
+  so **`run_command`** (and `terminal_session` first-frame `exec`)
+  no longer validates the command name and runs any program. The sentinel is honored at the single host-side gate (`resolve_run_command_exec_path`),
+  the approval layer (`cmd_missing_from_allowlist`, shell-wrap approval), and the peripheral consumers (`gh_allowed`, `error_output_playbook`,
+  plugin/dynamic-tool validation, `doctor`),
+  and is preserved across `POST /config/reload`. It is equivalent to **`CM_ALLOWED_COMMANDS=*`** and is intended **only** for fully trusted or
+  already-isolated (container / dedicated host) environments;
+  it does **not** disable workspace-external path approval or argument-safety checks. See `docs/命令行与路由.md` / `docs/工具说明.md` /
+  `docs/配置说明.md`.
 
-- **Background-job monitoring tools**: added two model-facing tools for the background tool-job lifecycle (design doc `docs/design/background_tool_jobs_contract.md` §9). **`background_job_output`** (read-only) incrementally pulls a job's output (`tail -f` semantics) via `tool_job_id` + optional `cursor` (the previous `next_cursor`), returning stdout/stderr deltas plus `next_cursor` and `eof`; it reuses the existing `ToolJobRegistry::poll_output` and is exempt from the same-turn read-only dedup cache (its output changes within a turn). **`background_job_cancel`** cancels a job (`queued` → `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success, other terminal states cannot be cancelled); it reuses `ToolJobRegistry::cancel`, is **termination** (not execution launch) so it does not violate the ADR's "no new execution-launching tool group" constraint, and is registered in `write_effect_tools` for auditing. Both are injected through `ToolJobsToolHost` (no allowlist approval). See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **Background-job monitoring tools**:
+  added two model-facing tools for the background tool-job lifecycle (design doc `docs/design/background_tool_jobs_contract.md` §9).
+  **`background_job_output`** (read-only) incrementally pulls a job's output (`tail -f` semantics)
+  via `tool_job_id` + optional `cursor` (the previous `next_cursor`), returning stdout/stderr deltas plus `next_cursor` and `eof`;
+  it reuses the existing `ToolJobRegistry::poll_output` and is exempt from the same-turn read-only dedup cache (its output changes within a turn).
+  **`background_job_cancel`** cancels a job (`queued` → `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success,
+  other terminal states cannot be cancelled); it reuses `ToolJobRegistry::cancel`, is **termination** (not execution launch)
+  so it does not violate the ADR's "no new execution-launching tool group" constraint,
+  and is registered in `write_effect_tools` for auditing. Both are injected through `ToolJobsToolHost` (no allowlist approval). See `docs/工具说明.md`
+  / `docs/en/TOOLS.md`.
 
 - **`GET /tools/plugins/{file}` endpoint**: read-only single-file detail for a workspace dynamic tool definition (`<workspace>/plugins/{file}`), returning `file` / `name` / `description` / `valid` / `error` / `command_allowed` / `parameters` / `args` / `pass_args_json`. `{file}` must match `[A-Za-z0-9_-]+.json` (otherwise **400** `INVALID_PLUGIN_DEFINITION`); an unset workspace or a missing file returns **404** `PLUGIN_NOT_FOUND`. Closes the read-only tail of the tool-management API (design doc `docs/design/tool_management_api.md` §3.4). See `docs/命令行契约.md` / `docs/命令行与路由.md`.
 
-- **Context-archive retention configuration**: two new `[agent]` keys make the cross-turn original-text archive (design doc `docs/design/context_window_compaction.md` §3.8 / §4.2) tunable. **`context_archive_max_rows_per_conversation`** (`CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION`, default **`256`**, `0` = unbounded) caps the per-conversation archived-prefix rows and drives the SQLite `prune` cascade; reclaiming an old prefix makes branch points older than the retained window fail to re-expand (the branch API returns an explicit error). **`context_archive_codec_min_bytes`** (`CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES`, default **`4096`**) is the archive-body codec threshold (below it `identity`, otherwise `gzip`). Both are hot-reloadable and validated (`0..=10_000_000` / `0..=4_194_304`). See `docs/配置说明.md` §会话持久与保留策略.
+- **Context-archive retention configuration**:
+  two new `[agent]` keys make the cross-turn original-text archive (design doc `docs/design/context_window_compaction.md` §3.8 / §4.2)
+  tunable. **`context_archive_max_rows_per_conversation`** (`CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION`, default **`256`**, `0` = unbounded)
+  caps the per-conversation archived-prefix rows and drives the SQLite `prune` cascade;
+  reclaiming an old prefix makes branch points older than the retained window fail to re-expand (the branch API returns an explicit error).
+  **`context_archive_codec_min_bytes`** (`CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES`, default **`4096`**)
+  is the archive-body codec threshold (below it `identity`,
+  otherwise `gzip`). Both are hot-reloadable and validated (`0..=10_000_000` / `0..=4_194_304`). See `docs/配置说明.md` §会话持久与保留策略.
 
-- **`/btw` LLM-summary toggle**: one new `[agent]` key, **`context_btw_summary_enabled`** (`CM_CONTEXT_BTW_SUMMARY_ENABLED`, default **`false`**), gates whether the off-the-record **`/btw`** side-question path (design doc `docs/design/context_window_compaction.md` §3.10 / §5.3.6) may make **one** optional LLM summary attempt while doing its read-only dry-run compaction. It is **off by default** so the default btw path stays purely local (no extra model call, no cost/latency); when enabled it follows the **same** summary-trigger rules as the main turn but still **never** persists (`/btw` never writes canonical, archive, or artifacts regardless). Hot-reloadable; the summary-only-optional behavior is also asserted by the regression `btw_readonly_summary_flag_defaults_off`. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
+- **`/btw` LLM-summary toggle**:
+  one new `[agent]` key, **`context_btw_summary_enabled`** (`CM_CONTEXT_BTW_SUMMARY_ENABLED`, default **`false`**),
+  gates whether the off-the-record **`/btw`** side-question path (design doc `docs/design/context_window_compaction.md` §3.10 / §5.3.6)
+  may make **one** optional LLM summary attempt while doing its read-only dry-run compaction. It is **off by default** so the default btw path stays
+  purely local (no extra model call, no cost/latency);
+  when enabled it follows the **same** summary-trigger rules as the main turn but still **never** persists (`/btw` never writes canonical, archive,
+  or artifacts regardless). Hot-reloadable;
+  the summary-only-optional behavior is also asserted by the regression `btw_readonly_summary_flag_defaults_off`. See `docs/配置说明.md` /
+  `docs/en/CONFIGURATION.md`.
 
-- **`GET /conversation/messages` can now include the archived original text**: a new optional query parameter **`include_archive`** (boolean, default **`false`**) makes the response carry an additional optional **`archive`** array with the conversation's already-archived (moved-out-of-canonical) original messages when set to `true` (design doc `docs/design/context_window_compaction.md` §5.3.4 C2). The field is omitted when empty (`skip_serializing_if`), so the default response body is byte-for-byte the same as before and old Clients are unaffected. Only the SQLite backend persists an archive (the memory backend returns an empty `archive`); `archive` rows share the same `WebClientSnapshotMessage` shape as `messages`. The OpenAPI snapshot (`docs/openapi.json`) and `docs/命令行与路由.md` are updated.
+- **`GET /conversation/messages` can now include the archived original text**:
+  a new optional query parameter **`include_archive`** (boolean, default **`false`**)
+  makes the response carry an additional optional **`archive`** array with the conversation's already-archived (moved-out-of-canonical)
+  original messages when set to `true` (design doc `docs/design/context_window_compaction.md` §5.3.4 C2). The field is omitted when empty
+  (`skip_serializing_if`),
+  so the default response body is byte-for-byte the same as before and old Clients are unaffected. Only the SQLite backend persists an archive (the
+  memory backend returns an empty `archive`);
+  `archive` rows share the same `WebClientSnapshotMessage` shape as `messages`. The OpenAPI snapshot (`docs/openapi.json`)
+  and `docs/命令行与路由.md` are updated.
 
 ### Changed
 
@@ -1633,18 +2014,46 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   snapshot / `stream_draining` and no long-term-memory async indexing. See `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md` /
   `docs/design/context_window_compaction.md`.
 
-- **Persist-time injection stripping now also drops execution-constraint ephemeral system messages**: the pre-persist / pre-structural-commit sanitize chain (design doc `docs/design/context_window_compaction.md` §3.7.1) is extracted into a single named helper **`strip_persist_injections`** (`src/chat_job_queue/stream_finish.rs`) and gains a fourth step — `retain(!is_execution_constraint_ephemeral_system)` — so any execution-constraint **system** injection that survives `outer_loop`'s per-turn `retain` is now **explicitly** removed before persistence instead of relying on that implicit side effect. **Behavior change**: previously such residue would have been persisted into `canonical`; the chain still **keeps** the baseline summary (`CRABMATE_CONTEXT_SUMMARY_NAME`) and the first-turn workspace profile (`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`).
-- **Raised the embedded default output/context budget for the shipped DeepSeek default**: `config/default_config.toml` now ships **`max_tokens = 16384`** (was **4096**) and **`llm_context_tokens = 262144`** (was **65536**, i.e. 256k), matching the real `deepseek-v4-flash` gateway (≈1M-token window, 384k max output, thinking on by default) instead of the old conservative "64k" placeholder. The higher completion cap reduces `finish_reason=length` truncation (reasoning tokens count toward the completion budget); the larger window stops the final-request token budgeter from over-trimming input, while `reserved_output_tokens = min(max_tokens, window - 256)` still keeps requests from exceeding the window. Both keys stay within their validated ranges (256–32768 / 0–10,000,000) and remain overridable via `config.toml` / `CM_MAX_TOKENS` / `CM_LLM_CONTEXT_TOKENS`. See `docs/配置说明.md` §上下文窗口.
+- **Persist-time injection stripping now also drops execution-constraint ephemeral system messages**:
+  the pre-persist / pre-structural-commit sanitize chain (design doc `docs/design/context_window_compaction.md` §3.7.1)
+  is extracted into a single named helper **`strip_persist_injections`** (`src/chat_job_queue/stream_finish.rs`)
+  and gains a fourth step — `retain(!is_execution_constraint_ephemeral_system)` — so any execution-constraint **system** injection that survives
+  `outer_loop`'s per-turn `retain` is now **explicitly** removed before persistence instead of relying on that implicit side effect. **Behavior
+  change**: previously such residue would have been persisted into `canonical`;
+  the chain still **keeps** the baseline summary (`CRABMATE_CONTEXT_SUMMARY_NAME`)
+  and the first-turn workspace profile (`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`).
+- **Raised the embedded default output/context budget for the shipped DeepSeek default**:
+  `config/default_config.toml` now ships **`max_tokens = 16384`** (was **4096**) and **`llm_context_tokens = 262144`** (was **65536**, i.e. 256k),
+  matching the real `deepseek-v4-flash` gateway (≈1M-token window, 384k max output, thinking on by default) instead of the old conservative "64k"
+  placeholder. The higher completion cap reduces `finish_reason=length` truncation (reasoning tokens count toward the completion budget);
+  the larger window stops the final-request token budgeter from over-trimming input,
+  while `reserved_output_tokens = min(max_tokens, window - 256)` still keeps requests from exceeding the window. Both keys stay within their validated
+  ranges (256–32768 / 0–10,000,000)
+  and remain overridable via `config.toml` / `CM_MAX_TOKENS` / `CM_LLM_CONTEXT_TOKENS`. See `docs/配置说明.md` §上下文窗口.
 
 - **Outer-loop recovery for truncated turns that also call tools**: when a turn is flagged truncated (upstream `finish_reason == "length"`, or the stream is cut off before `[DONE]`) **and** the same model response also carries `tool_calls`, the turn takes the `ProceedToExecuteTools` path and previously skipped the stop-turn continuation nudge. The outer loop now injects the same bounded continuation feedback **after the tools run** (still ≤2 per turn, shared with the stop-turn path) and forces the next iteration, so such turns resume instead of stalling as if complete. Pairs with the `stream_ended.reason="truncated"` terminal state; `SSE_PROTOCOL_VERSION` is unchanged (additive soft value). See `docs/design/run_loop_state_ownership.md` / `docs/design/client_contract_versioning.md`.
 
 - **Background jobs now enabled by default**: **`[tool_registry] background_jobs_enabled`** (`config/tools.toml`) now defaults to **`true`** (was **`false`**), so **`run_command`** (and any tool in **`background_job_async_tools`**) can be launched with **`async: true`** out of the box. The model must still pass **`async: true`** explicitly — synchronous behavior is unchanged — and the async path still **rejects interactive approval** (the command must already be allowlisted or `AllowAlways`), so this does not widen the approval surface. The default **`background_job_async_tools`** stays **`["run_command"]`**. See `docs/design/background_tool_jobs_contract.md` §6 / `docs/配置说明.md`.
 
-- **`run_command` allowlist expanded**: added 21 common developer CLIs to the default **`allowed_commands`** (`config/tools.toml`) so they can be driven through generic **`run_command`** instead of only via their dedicated tools — language toolchains **`npx`**, **`tsc`**, **`go`**, **`gofmt`**, **`golangci-lint`**, **`ruff`**, **`mypy`**, **`uv`**, **`rustfmt`**, **`clang-format`**, **`shfmt`**, **`xmllint`**, **`sqlfluff`**, **`pg_format`**; archives **`7z`**, **`unrar`**; system/package queries **`dpkg-query`**, **`rpm`**, **`ss`**, **`lsof`**, **`bc`**. This closes the previous gap where several built-in tools spawned these CLIs internally while `run_command` rejected them, and fixes the docs that already claimed **`npx`** / **`tsc`** were allowlisted. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
+- **`run_command` allowlist expanded**:
+  added 21 common developer CLIs to the default **`allowed_commands`** (`config/tools.toml`)
+  so they can be driven through generic **`run_command`** instead of only via their dedicated tools — language toolchains **`npx`**, **`tsc`**,
+  **`go`**, **`gofmt`**, **`golangci-lint`**, **`ruff`**, **`mypy`**, **`uv`**, **`rustfmt`**, **`clang-format`**, **`shfmt`**, **`xmllint`**,
+  **`sqlfluff`**, **`pg_format`**; archives **`7z`**, **`unrar`**; system/package queries **`dpkg-query`**, **`rpm`**, **`ss`**, **`lsof`**,
+  **`bc`**. This closes the previous gap where several built-in tools spawned these CLIs internally while `run_command` rejected them,
+  and fixes the docs that already claimed **`npx`** / **`tsc`** were allowlisted. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
 
 ### Removed
 
-- **BREAKING (tools)**: removed the orphaned **JVM implementation** (`jvm_tools`) and the **`quality_workspace` JVM flags** — **`run_maven_compile`**, **`run_maven_test`**, **`run_gradle_compile`**, **`run_gradle_test`** — together with the `QualityStep::{MavenCompile,MavenTest,GradleCompile,GradleTest}` variants, the `MavenCompileArgs` / `MavenTestArgs` / `GradleTasksArgs` schemas and their two schema tests, and the `maven_` / `gradle_` parallel-batch prefixes. Since the four `maven_*` / `gradle_*` `ToolSpec`s had already been removed (track A), `quality_workspace` was the only caller; drive Maven/Gradle through generic **`run_command`** (`mvn` / `gradle` are allowlisted). **`QualityWorkspaceArgs` keeps `deny_unknown_fields`**, so callers still sending the four flags now get a shape error instead of a silent ignore. The `mvn` allowlist entry, `/health` **`dep_mvn`**, install hints and `mvn` command recognition are independent and retained. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed the orphaned **JVM implementation** (`jvm_tools`) and the **`quality_workspace` JVM flags** — **`run_maven_compile`**, **`run_maven_test`**,
+  **`run_gradle_compile`**, **`run_gradle_test`** — together with the `QualityStep::{MavenCompile,MavenTest,GradleCompile,GradleTest}` variants,
+  the `MavenCompileArgs` / `MavenTestArgs` / `GradleTasksArgs` schemas and their two schema tests,
+  and the `maven_` / `gradle_` parallel-batch prefixes. Since the four `maven_*` / `gradle_*` `ToolSpec`s had already been removed (track A),
+  `quality_workspace` was the only caller;
+  drive Maven/Gradle through generic **`run_command`** (`mvn` / `gradle` are allowlisted). **`QualityWorkspaceArgs` keeps `deny_unknown_fields`**,
+  so callers still sending the four flags now get a shape error instead of a silent ignore. The `mvn` allowlist entry, `/health` **`dep_mvn`**,
+  install hints and `mvn` command recognition are independent and retained. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
 
 - **BREAKING (tools)**:
   removed **four spell/AST thin CLI wrappers** — **`typos_check`**, **`codespell_check`**, **`ast_grep_run`**,
@@ -1678,11 +2087,59 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `Ask`/`Plan` read-only gating and the read-only TTL cache (`run_command` is write-effect);
   `format_files` is **kept** (including its internal `run_formatter(..., check_only)` path). Design doc `docs/design/tool_thin_wrapper_candidates.md`
   §3.2 / §3.3 / §5. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
-- **BREAKING (tools)**: removed the six dedicated source-analysis tools — **`shellcheck_check`**, **`cppcheck_analyze`**, **`semgrep_scan`**, **`hadolint_check`**, **`bandit_scan`**, **`lizard_complexity`** — together with their `ToolSpec`, dispatch, implementation modules and typed argument schemas. Their underlying CLIs (**`shellcheck`**, **`cppcheck`**, **`semgrep`**, **`hadolint`**, **`bandit`**, **`lizard`**) are now on the default **`run_command`** allowlist (`config/tools.toml`) and are driven through generic **`run_command`**; missing-CLI install hints are still surfaced by **`error_output_playbook`**. `/health` no longer probes them, so the **`dep_shellcheck`** / **`dep_cppcheck`** / **`dep_semgrep`** / **`dep_hadolint`** / **`dep_bandit`** / **`dep_lizard`** checks are gone (see `docs/工具说明.md` / `docs/en/TOOLS.md`).
-- **BREAKING (tools)**: removed **17 write-side Git tools** — **`git_stage_files`**, **`git_commit`**, **`git_checkout`**, **`git_branch_create`**, **`git_branch_delete`**, **`git_push`**, **`git_merge`**, **`git_rebase`**, **`git_stash`**, **`git_tag`**, **`git_reset`**, **`git_cherry_pick`**, **`git_revert`**, **`git_clone`**, **`git_remote_set_url`**, **`git_apply`**, **`git_fetch`** — together with their `ToolSpec` / runner / typed-argument-schema / `write_effect` registrations (design doc `docs/design/tool_calling_evolution.md` §8.5.4 track B). **`git`** is on the default **`run_command`** allowlist, so drive these through generic **`run_command`** (e.g. `{"command":"git","args":["commit","-am","…"]}`); capabilities are loss-free. The **read-only** Git tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`) — they retain the read-only semantics that `run_command` lacks (parallel read-only batch, read-only retry, `Ask`/`Plan` gating, TTL cache). The former `git_diff_stat` / `git_diff_names` / `git_diff_base` are **merged into `git_diff`** via new optional `stat` / `name_only` / `base` fields. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
-- **BREAKING (tools)**: removed **14 low-frequency thin CLI wrappers** — JVM/container **`maven_compile`**, **`maven_test`**, **`gradle_compile`**, **`gradle_test`**, **`docker_build`**, **`docker_compose_ps`**, **`podman_images`** and Node/frontend **`npm_install`**, **`npm_run`**, **`npx_run`**, **`tsc_check`**, **`frontend_lint`**, **`frontend_build`**, **`frontend_test`** — together with their `ToolSpec` + runner registrations (design doc `docs/design/tool_calling_evolution.md` §8.5.4 track A). Their CLIs (**`mvn`** / **`gradle`** / **`docker`** / **`podman`** / **`npm`** / **`npx`** / **`tsc`**) are already on the default **`run_command`** allowlist, so drive them through generic **`run_command`** instead. The underlying implementation functions are **kept** (not dead code) because `quality_workspace` / `ci_pipeline_local` / `run_lints` still call them directly via their flags (`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images` / `run_frontend_lint` / `run_frontend_build`); the `npm_run` test-result-cache path is removed along with it. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
-- **BREAKING (tools)**: removed the thin CLI wrapper **`cargo_clean`** — together with its `ToolSpec`, runner registration, `cargo_clean_try` implementation and `CargoCleanArgs` typed schema. **`cargo`** is on the default **`run_command`** allowlist, so drive it through generic **`run_command`** (e.g. `{"command":"cargo","args":["clean","--dry-run"]}`). **Behavior note**: the former `dry_run`-defaults-to-**`true`** safety default is gone — pass **`--dry-run`** explicitly to preview only; the `package` / `release` / `doc` knobs remain reachable as raw argv. This loses **no** read-only semantics (both `cargo_clean` and `run_command` are write-effect tools, so `Ask`/`Plan` gating and semantic-index invalidation are unchanged). First pilot of the thin-CLI-wrapper consolidation — design doc `docs/design/tool_thin_wrapper_candidates.md` §3.1.1. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
-- **BREAKING (tools)**: removed three thin CLI wrappers with built-in safety gates — **`cargo_fix`**, **`go_mod_tidy`** and **`python_install_editable`** — together with their `ToolSpec`, runner registrations, implementations and typed argument schemas (`cargo_fix_try` / `CargoFixArgs`; `go_mod_tidy` / `GoModTidyArgs`; `python_install_editable` / `PythonInstallEditableArgs` + `PythonInstallBackend` + `summary_python_install_editable`). Their CLIs (**`cargo`** / **`go`** / **`uv`** / **`python3`**) are already on the default **`run_command`** allowlist, so drive them through generic **`run_command`** (e.g. `{"command":"cargo","args":["fix","--all-targets"]}`, `{"command":"go","args":["mod","tidy"]}`, `{"command":"uv","args":["pip","install","-e","."]}`). **Behavior note**: the former `confirm=true` gates plus the `Cargo.toml` / `go.mod` / `pyproject.toml`·`setup.py` existence pre-checks are gone. These gates were **not** a hard security boundary — `run_command` triggers approval only when a command is **not** allowlisted and has no sub-command-level policy, so `run_command cargo fix` could already bypass them. This loses **no** read-only semantics (all three are write-effect tools, so `Ask`/`Plan` gating and semantic-index invalidation are unchanged). Design doc `docs/design/tool_thin_wrapper_candidates.md` §3.1.2. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed the six dedicated source-analysis tools — **`shellcheck_check`**, **`cppcheck_analyze`**, **`semgrep_scan`**, **`hadolint_check`**,
+  **`bandit_scan`**, **`lizard_complexity`** — together with their `ToolSpec`, dispatch,
+  implementation modules and typed argument schemas. Their underlying CLIs (**`shellcheck`**, **`cppcheck`**, **`semgrep`**, **`hadolint`**,
+  **`bandit`**, **`lizard`**) are now on the default **`run_command`** allowlist (`config/tools.toml`) and are driven through generic **`run_command`**;
+  missing-CLI install hints are still surfaced by **`error_output_playbook`**. `/health` no longer probes them,
+  so the **`dep_shellcheck`** / **`dep_cppcheck`** / **`dep_semgrep`** / **`dep_hadolint`** / **`dep_bandit`** / **`dep_lizard`** checks are gone (see
+  `docs/工具说明.md` / `docs/en/TOOLS.md`).
+- **BREAKING (tools)**:
+  removed **17 write-side Git tools** — **`git_stage_files`**, **`git_commit`**, **`git_checkout`**, **`git_branch_create`**, **`git_branch_delete`**,
+  **`git_push`**, **`git_merge`**, **`git_rebase`**, **`git_stash`**, **`git_tag`**, **`git_reset`**, **`git_cherry_pick`**, **`git_revert`**,
+  **`git_clone`**, **`git_remote_set_url`**, **`git_apply`**,
+  **`git_fetch`** — together with their `ToolSpec` / runner / typed-argument-schema / `write_effect` registrations (design doc
+  `docs/design/tool_calling_evolution.md` §8.5.4 track B). **`git`** is on the default **`run_command`** allowlist,
+  so drive these through generic **`run_command`** (e.g. `{"command":"git","args":["commit","-am","…"]}`);
+  capabilities are loss-free. The **read-only** Git tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` /
+  `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`)
+  — they retain the read-only semantics that `run_command` lacks (parallel read-only batch, read-only retry, `Ask`/`Plan` gating,
+  TTL cache). The former `git_diff_stat` / `git_diff_names` / `git_diff_base` are **merged into `git_diff`** via new optional `stat` / `name_only` /
+  `base` fields. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed **14 low-frequency thin CLI wrappers** — JVM/container **`maven_compile`**, **`maven_test`**, **`gradle_compile`**, **`gradle_test`**,
+  **`docker_build`**, **`docker_compose_ps`**, **`podman_images`** and Node/frontend **`npm_install`**, **`npm_run`**, **`npx_run`**, **`tsc_check`**,
+  **`frontend_lint`**, **`frontend_build`**,
+  **`frontend_test`** — together with their `ToolSpec` + runner registrations (design doc `docs/design/tool_calling_evolution.md` §8.5.4 track A).
+  Their CLIs (**`mvn`** / **`gradle`** / **`docker`** / **`podman`** / **`npm`** / **`npx`** / **`tsc`**)
+  are already on the default **`run_command`** allowlist,
+  so drive them through generic **`run_command`** instead. The underlying implementation functions are **kept** (not dead code)
+  because `quality_workspace` / `ci_pipeline_local` / `run_lints` still call them directly via their flags (`run_maven_*` / `run_gradle_*` /
+  `run_docker_compose_ps` / `run_podman_images` / `run_frontend_lint` / `run_frontend_build`);
+  the `npm_run` test-result-cache path is removed along with it. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed the thin CLI wrapper **`cargo_clean`** — together with its `ToolSpec`, runner registration,
+  `cargo_clean_try` implementation and `CargoCleanArgs` typed schema. **`cargo`** is on the default **`run_command`** allowlist,
+  so drive it through generic **`run_command`** (e.g. `{"command":"cargo","args":["clean","--dry-run"]}`). **Behavior note**:
+  the former `dry_run`-defaults-to-**`true`** safety default is gone — pass **`--dry-run`** explicitly to preview only;
+  the `package` / `release` / `doc` knobs remain reachable as raw argv. This loses **no** read-only semantics (both `cargo_clean` and `run_command` are
+  write-effect tools,
+  so `Ask`/`Plan` gating and semantic-index invalidation are unchanged). First pilot of the thin-CLI-wrapper consolidation — design doc
+  `docs/design/tool_thin_wrapper_candidates.md` §3.1.1. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed three thin CLI wrappers with built-in safety gates — **`cargo_fix`**,
+  **`go_mod_tidy`** and **`python_install_editable`** — together with their `ToolSpec`, runner registrations,
+  implementations and typed argument schemas (`cargo_fix_try` / `CargoFixArgs`; `go_mod_tidy` / `GoModTidyArgs`;
+  `python_install_editable` / `PythonInstallEditableArgs` + `PythonInstallBackend` + `summary_python_install_editable`). Their CLIs (**`cargo`** /
+  **`go`** / **`uv`** / **`python3`**) are already on the default **`run_command`** allowlist,
+  so drive them through generic **`run_command`** (e.g. `{"command":"cargo","args":["fix","--all-targets"]}`, `{"command":"go","args":["mod","tidy"]}`,
+  `{"command":"uv","args":["pip","install","-e","."]}`). **Behavior note**:
+  the former `confirm=true` gates plus the `Cargo.toml` / `go.mod` / `pyproject.toml`·`setup.py` existence pre-checks are gone. These gates were
+  **not** a hard security boundary — `run_command` triggers approval only when a command is **not** allowlisted and has no sub-command-level policy,
+  so `run_command cargo fix` could already bypass them. This loses **no** read-only semantics (all three are write-effect tools,
+  so `Ask`/`Plan` gating and semantic-index invalidation are unchanged). Design doc `docs/design/tool_thin_wrapper_candidates.md` §3.1.2. See
+  `docs/工具说明.md` / `docs/en/TOOLS.md`.
 - **BREAKING (tools)**:
   removed **seven low-frequency read-only `cargo_*` thin CLI wrappers** — **`cargo_metadata`**, **`cargo_tree`**, **`cargo_doc`**, **`cargo_outdated`**,
   **`cargo_machete`**, **`cargo_udeps`**, **`cargo_publish_dry_run`** — together with their `ToolSpec`, runner registrations,
@@ -1758,21 +2215,76 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `uv_sync` / `uv_run` had no internal reuse, so they were deleted wholesale (with the `MAX_UV_RUN_*` constants,
   `collect_uv_run_argv` / `is_safe_uv_run_arg` helpers and their tests). **`pytest_run` is kept** (background-job assembly). Python slice of the
   Go/Python group — design doc `docs/design/tool_thin_wrapper_candidates.md` §3.2 / §4. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
-- **BREAKING (tools)**: removed the read-only **`pre_commit_run`** thin CLI wrapper — together with its `ToolSpec` (in `specs/quality_ast.inc.rs`), runner registration, implementation module (`precommit_tools.rs` deleted wholesale, including `has_precommit_config` / `parse_pre_commit_json` / `validate_pre_commit_hook_id` / `apply_pre_commit_cli_flags` / `is_safe_hook_id` / `parse_files_array` and their tests), typed argument schema (`PreCommitRunArgs`) and the summary binding (`PreCommitRunSummaryArgs`); **`pre-commit`** is on the default **`run_command`** allowlist, so drive it through generic **`run_command`** (e.g. `{"command":"pre-commit","args":["run","--all-files"]}`, `{"command":"pre-commit","args":["run","<hook>","--files","<path>"]}`). **Behavior note**: this was a **read-only** tool, so the downgrade **loses** read-only retry, `SessionMode::Ask`/`Plan` read-only gating and the read-only TTL cache (`run_command` is a write-effect tool); the parallel read-only batch never applied here (the `pre_commit` prefix is already excluded by `builtin_parallel_sync_prefix_hit`), and the former "skip when `.pre-commit-config.yaml` / `.yml` is absent" guard is gone. The implementation file had **no** internal reuse by any aggregator, so it was deleted wholesale. Quality slice of the Go/Python group — design doc `docs/design/tool_thin_wrapper_candidates.md` §3.2 / §4. See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+- **BREAKING (tools)**:
+  removed the read-only **`pre_commit_run`** thin CLI wrapper — together with its `ToolSpec` (in `specs/quality_ast.inc.rs`), runner registration,
+  implementation module (`precommit_tools.rs` deleted wholesale,
+  including `has_precommit_config` / `parse_pre_commit_json` / `validate_pre_commit_hook_id` / `apply_pre_commit_cli_flags` / `is_safe_hook_id` /
+  `parse_files_array` and their tests), typed argument schema (`PreCommitRunArgs`) and the summary binding (`PreCommitRunSummaryArgs`);
+  **`pre-commit`** is on the default **`run_command`** allowlist,
+  so drive it through generic **`run_command`** (e.g. `{"command":"pre-commit","args":["run","--all-files"]}`,
+  `{"command":"pre-commit","args":["run","<hook>","--files","<path>"]}`). **Behavior note**: this was a **read-only** tool,
+  so the downgrade **loses** read-only retry,
+  `SessionMode::Ask`/`Plan` read-only gating and the read-only TTL cache (`run_command` is a write-effect tool);
+  the parallel read-only batch never applied here (the `pre_commit` prefix is already excluded by `builtin_parallel_sync_prefix_hit`), and the former "
+  skip when `.pre-commit-config.yaml` / `.yml` is absent" guard is gone. The implementation file had **no** internal reuse by any aggregator,
+  so it was deleted wholesale. Quality slice of the Go/Python group — design doc `docs/design/tool_thin_wrapper_candidates.md` §3.2 / §4. See
+  `docs/工具说明.md` / `docs/en/TOOLS.md`.
 
 ### Fixed
-- **A cancelled turn can no longer poison the next request with an incomplete `tool_calls` batch**: when a Web stream turn is stopped while the model is still streaming a tool call, the persisted history could end with `assistant(tool_calls=…)` whose `arguments` were truncated and which had no `tool` response. Every later turn then failed upstream with **400** (`An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'`), so the conversation appeared to ignore "continue". Two layers now prevent it: (1) the cancel persistence path (`save_cancelled_turn_best_effort`) runs the same repair as the `Err`/`UserCancelled` path before writing — dropping calls that were never executed and whose `arguments` are not valid JSON, then filling placeholder `tool` messages for any remaining unanswered calls; (2) outbound request assembly (`conversation_messages_to_vendor_body` / `normalize_stripped_messages_for_vendor_body`) self-heals **existing** dirty histories by inserting the missing `tool` messages (logged as a warning), so already-affected conversations recover without manual database edits. Calls that do have a `tool` response keep their call/response pairing and their invalid `arguments` are still normalized to `{}` by the existing sanitizer.
+- **A cancelled turn can no longer poison the next request with an incomplete `tool_calls` batch**:
+  when a Web stream turn is stopped while the model is still streaming a tool call,
+  the persisted history could end with `assistant(tool_calls=…)` whose `arguments` were truncated and which had no `tool` response. Every later turn
+  then failed upstream with **400** (`An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'`),
+  so the conversation appeared to ignore "continue". Two layers now prevent it: (1) the cancel persistence path (`save_cancelled_turn_best_effort`)
+  runs the same repair as the `Err`/`UserCancelled` path before writing — dropping calls that were never executed and whose `arguments` are not valid
+  JSON, then filling placeholder `tool` messages for any remaining unanswered calls; (2)
+  outbound request assembly (`conversation_messages_to_vendor_body` / `normalize_stripped_messages_for_vendor_body`)
+  self-heals **existing** dirty histories by inserting the missing `tool` messages (logged as a warning),
+  so already-affected conversations recover without manual database edits. Calls that do have a `tool` response keep their call/response pairing and
+  their invalid `arguments` are still normalized to `{}` by the existing sanitizer.
 
 ## [0.6.0] - 2026-09-30
 
-**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.6.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): this release removes several legacy config / CLI / HTTP compatibility surfaces — TOML **`[agent] mcp_command`** / **`CM_MCP_COMMAND`**, the plaintext-secret file migration, the retired **`client_llm`** / **`executor_llm`** slots in **`GET /user-data/secrets/status`**, **`final_plan_semantic_check_accept_legacy_text`**, the flat CLI flag compatibility layer, and **`config --dry-run`** — so read the **BREAKING** entries below before upgrading. Additive endpoints (**`/btw`**, **`DELETE /conversation/{id}`**) and the new soft config keys are backward-compatible.
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install:
+  **`cargo install crabmate`**. Git tag **`v0.6.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per
+  [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change):
+  this release removes several legacy config / CLI / HTTP compatibility surfaces — TOML **`[agent] mcp_command`** / **`CM_MCP_COMMAND`**,
+  the plaintext-secret file migration, the retired **`client_llm`** / **`executor_llm`** slots in **`GET /user-data/secrets/status`**,
+  **`final_plan_semantic_check_accept_legacy_text`**, the flat CLI flag compatibility layer,
+  and **`config --dry-run`** — so read the **BREAKING** entries below before upgrading. Additive endpoints (**`/btw`**, **`DELETE /conversation/{id}`**)
+  and the new soft config keys are backward-compatible.
 
 ### Added
 
 - **`docs/openapi.json` snapshot**: committed OpenAPI 3.0.3 snapshot of `build_openapi_spec()` with a lock-step unit test (`openapi_docs_snapshot_matches_spec`); regenerate after route/contract changes or version bumps via `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec` — same maintenance model as `man/crabmate.1`. Import into Swagger Editor / VS Code OpenAPI extensions / Postman for browsing or multi-language client generation; `GET /openapi.json` remains the live source of truth.
-- **`DELETE /conversation/{conversation_id}`**: deletes one server-side persisted conversation record. **Idempotent** — **204** whether the row exists, is missing, or has already expired; an empty / over-long / illegal-character `conversation_id` returns **400** `INVALID_CONVERSATION_ID` (same `normalize_client_conversation_id` rules as `POST /conversation`). Deleting mid-turn is safe: the in-flight turn's next save hits the existing optimistic-concurrency path and fails with **`CONVERSATION_CONFLICT`** instead of resurrecting the row. The Client sidebar index is *not* cascaded — Clients keep maintaining their own `sessions` rows. Works for both backends (memory and SQLite) and is documented in `docs/openapi.json`, `docs/命令行与路由.md` / `docs/en/CLI.md`, and `docs/design/conversation_management_api.md`.
-- **Conversation retention config keys**: TOML **`[agent] conversation_store_ttl_secs`** (default **`86400`**, env **`CM_CONVERSATION_STORE_TTL_SECS`**) and **`conversation_store_max_entries`** (default **`512`**, env **`CM_CONVERSATION_STORE_MAX_ENTRIES`**). `0` means "never expire" / "unlimited" respectively, so the previous hard-coded behavior can be restored by setting both to `0`. Applies to both the memory and SQLite backends; pruning runs after each successful save and from an hourly background task (plus once at `serve` startup), so an idle SQLite process no longer accumulates rows forever. Both keys are **hot-reloadable** via `POST /config/reload`; lowering the cap does not delete existing rows on the spot but takes effect on the next save / prune. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
-- **`/btw` side-question built-in command**: `POST /chat` and `POST /chat/stream` now recognize **`/btw <问题>`** — a short-circuited *off-the-record* side question that answers **with the current conversation context but is never persisted** (the Q&A neither lands in `conversations.db` nor grows the session context) and is sent to the model with **no tools** (`tools: []` / `tool_choice: "none"`). It reuses the normal turn's message assembly (system / workspace profile / history) on a read-only clone, expands **`@` / `file:///` workspace file references** exactly like a normal turn (with a "select a workspace first" guard), shares the **`chat_queue_max_concurrent`** limit through the same queue semaphore and **fails fast with 503 `QUEUE_FULL`** when that limit is saturated (no indefinite wait), forwards attached **`image_urls`** and clarification answers, and prefixes the reply with a「旁路提问 · 未写入会话历史」marker. The model-facing hint is **prepended** so a question that itself starts with `/<skill-id>` is not misread as a forced-skill invocation. **`/btw` is unsupported on `POST /chat/async`** (returns **400** `ASYNC_BUILTIN_UNSUPPORTED`, same as `/skills`), and `btw` is added to the reserved slash-head list so Clients render it as a command rather than a skill chip. See `docs/命令行与路由.md` / `docs/en/CLI.md`.
+- **`DELETE /conversation/{conversation_id}`**:
+  deletes one server-side persisted conversation record. **Idempotent** — **204** whether the row exists, is missing, or has already expired;
+  an empty / over-long / illegal-character `conversation_id` returns **400** `INVALID_CONVERSATION_ID` (same `normalize_client_conversation_id` rules
+  as `POST /conversation`). Deleting mid-turn is safe:
+  the in-flight turn's next save hits the existing optimistic-concurrency path and fails with **`CONVERSATION_CONFLICT`** instead of resurrecting the
+  row. The Client sidebar index is *not* cascaded — Clients keep maintaining their own `sessions` rows. Works for both backends (memory and SQLite)
+  and is documented in `docs/openapi.json`, `docs/命令行与路由.md` / `docs/en/CLI.md`, and `docs/design/conversation_management_api.md`.
+- **Conversation retention config keys**:
+  TOML **`[agent] conversation_store_ttl_secs`** (default **`86400`**, env **`CM_CONVERSATION_STORE_TTL_SECS`**)
+  and **`conversation_store_max_entries`** (default **`512`**, env **`CM_CONVERSATION_STORE_MAX_ENTRIES`**). `0` means "never expire" / "unlimited"
+  respectively, so the previous hard-coded behavior can be restored by setting both to `0`. Applies to both the memory and SQLite backends;
+  pruning runs after each successful save and from an hourly background task (plus once at `serve` startup),
+  so an idle SQLite process no longer accumulates rows forever. Both keys are **hot-reloadable** via `POST /config/reload`;
+  lowering the cap does not delete existing rows on the spot but takes effect on the next save / prune. See `docs/配置说明.md` /
+  `docs/en/CONFIGURATION.md`.
+- **`/btw` side-question built-in command**:
+  `POST /chat` and `POST /chat/stream` now recognize **`/btw <问题>`** — a short-circuited *off-the-record* side question that answers **with the
+  current conversation context but is never persisted** (the Q&A neither lands in `conversations.db` nor grows the session context)
+  and is sent to the model with **no tools** (`tools: []` / `tool_choice: "none"`). It reuses the normal turn's message assembly (system / workspace
+  profile / history) on a read-only clone, expands **`@` / `file:///` workspace file references** exactly like a normal turn (with a "
+  select a workspace first" guard),
+  shares the **`chat_queue_max_concurrent`** limit through the same queue semaphore and **fails fast with 503 `QUEUE_FULL`** when that limit is
+  saturated (no indefinite wait), forwards attached **`image_urls`** and clarification answers,
+  and prefixes the reply with a「旁路提问 · 未写入会话历史」
+  marker. The model-facing hint is **prepended** so a question that itself starts with `/<skill-id>` is not misread as a forced-skill invocation.
+  **`/btw` is unsupported on `POST /chat/async`** (returns **400** `ASYNC_BUILTIN_UNSUPPORTED`, same as `/skills`),
+  and `btw` is added to the reserved slash-head list so Clients render it as a command rather than a skill chip. See `docs/命令行与路由.md` /
+  `docs/en/CLI.md`.
 
 ### Changed
 
@@ -1796,7 +2308,15 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
   `pub` inside the `protocol` promise surface yet with no production consumer, it is the reserved "single Rust-side implementation"
   alignment anchor — now annotated as such in the module docs, `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md`,
   and the two `api-sse-chat-protocol` rule files (whose stale `src/sse/line.rs` path is corrected).
-- **Internal outer-loop driver consolidation (no behavior change)**: `OuterLoopDriver::phase_transition_allowed` no longer accepts a blanket "any phase → `IterationEnter`" edge; it now enumerates the only two back-edges the production loop can take (`ReflectDecided` and `ToolsExecute`, both when the iteration ends in `ContinueNextIteration`), so an accidental mid-iteration reset fails loudly in debug. The stateless forwarder `OuterLoopDriver::decide_post_tools_exit` is gone — both call sites (root `agent_turn::turn_loop::outer_loop` and the phase golden driver) call `reduce_outer_loop_post_tools_exit` directly. The phase golden fixture gains a `ToolsExecute → IterationEnter` row and two new `#[should_panic]` unit tests pin the rejected transitions. Phase traces, SSE output and user-visible behavior are unchanged; `cm_agent` is `#[doc(hidden)]`, so none of this is part of the semver promise surface.
+- **Internal outer-loop driver consolidation (no behavior change)**:
+  `OuterLoopDriver::phase_transition_allowed` no longer accepts a blanket "any phase → `IterationEnter`" edge;
+  it now enumerates the only two back-edges the production loop can take (`ReflectDecided` and `ToolsExecute`,
+  both when the iteration ends in `ContinueNextIteration`),
+  so an accidental mid-iteration reset fails loudly in debug. The stateless forwarder `OuterLoopDriver::decide_post_tools_exit` is gone — both call
+  sites (root `agent_turn::turn_loop::outer_loop` and the phase golden driver)
+  call `reduce_outer_loop_post_tools_exit` directly. The phase golden fixture gains a `ToolsExecute → IterationEnter` row and two new `#[should_panic]`
+  unit tests pin the rejected transitions. Phase traces, SSE output and user-visible behavior are unchanged; `cm_agent` is `#[doc(hidden)]`,
+  so none of this is part of the semver promise surface.
 - Bump **`worbrow`** to **0.2.4**. Upstream moved its static-SERP HTML GET from `reqwest` to blocking `ureq` (run on the Tokio blocking pool) behind the same `search` entry point, so CrabMate's `web_search` code, config keys and SSE output are unchanged; CLI/MCP **`--proxy`** still applies to that path and `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` are now honored by ureq itself.
 
 ### Removed
@@ -1805,7 +2325,15 @@ Also in this release: **workspace binding became one-way** — `POST /workspace`
 
 ### Fixed
 
-- **Assistant prose keeps its paragraph blank lines in `display_content`**: the un-fenced prose dedup step `dedupe_adjacent_non_empty_trimmed_lines` (`cm_agent::text_sanitize`) used to **discard every blank line** and re-join the surviving non-empty lines with a single `\n`, so paragraph breaks written by the model disappeared from the assistant `display_content` served by `GET /conversation/messages`. Clients hydrate that field verbatim, so the chat area and session export showed run-together paragraphs even though the streaming deltas — and the persisted raw `content` in `conversations.db` — still carried the blank lines. Blank lines are now emitted as-is; the step still only removes **adjacent** non-empty lines whose trimmed text is identical (the occasional model repeat before a fence). Conversations stored before this fix keep the compressed text until they are re-hydrated or re-sent.
+- **Assistant prose keeps its paragraph blank lines in `display_content`**:
+  the un-fenced prose dedup step `dedupe_adjacent_non_empty_trimmed_lines` (`cm_agent::text_sanitize`)
+  used to **discard every blank line** and re-join the surviving non-empty lines with a single `\n`,
+  so paragraph breaks written by the model disappeared from the assistant `display_content` served by `GET /conversation/messages`. Clients hydrate
+  that field verbatim,
+  so the chat area and session export showed run-together paragraphs even though the streaming deltas — and the persisted raw `content` in
+  `conversations.db` — still carried the blank lines. Blank lines are now emitted as-is;
+  the step still only removes **adjacent** non-empty lines whose trimmed text is identical (the occasional model repeat before a fence). Conversations
+  stored before this fix keep the compressed text until they are re-hydrated or re-sent.
 
 ## [0.5.2] - 2026-09-07
 
