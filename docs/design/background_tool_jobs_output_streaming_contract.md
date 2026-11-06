@@ -1,6 +1,7 @@
 # 后台工具任务实时输出流：字段级接口规格（Contract）
 
-> **状态**：Proposed（随 [ADR：后台工具任务的实时输出流](./background_tool_jobs_output_streaming.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**父契约**：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（状态/取消端点与状态机）。**人读协议**：[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
+> **状态**：Proposed（随 [ADR：后台工具任务的实时输出流](./background_tool_jobs_output_streaming.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**父契约**：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（状态/取消端点与状态机）。**人读协议**：
+> [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
 
 ---
 

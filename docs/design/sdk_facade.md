@@ -274,11 +274,14 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 
 1. `cm_cli/*.rs` 单文件 ≤ 200 行，**每命令一个模块**；
 2. `cm_cli/` **禁止**出现 `crate::cm_internal::*` —— 加进 `scripts/check-crate-deps.sh` 禁边表（与既有 5 条同格式）；
-3. `serve.rs` 只允许 `Server::builder(cfg).workspace(..).cors(..).build()?.run(ctrlc).await` —— **S5 已落地（#1295），但没有按字面搬进 `cm_web_host`**：装配（`build_serve_runtime_state`、两个后台定时器、优雅关闭信号、`run_serve_branch`）现在在 `cm_cli/serve/`（`mod` / `paths` / `lock` / `store` / `auth` / `runtime_state`），`cli_run.rs` 只剩「日志初始化 → 分派」。原计划「搬进 `cm_web_host::serve` 的 builder」走不通：该模块被禁边不许引用 `cm_internal`，而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。可行形态是 **builder 在宿主模块、装配以闭包注入**（与 S3 的端口注入同手法），那是独立的一步、尚未做；现状的收益是「装配离开 `cli_run`」，不是「装配进入宿主」。
+3. `serve.rs` 只允许 `Server::builder(cfg).workspace(..).cors(..).build()?.run(ctrlc).await` —— **S5 已落地（#1295），但没有按字面搬进 `cm_web_host`**：装配（`build_serve_runtime_state`、两个后台定时器、优雅关闭信号、`run_serve_branch`）
+  现在在 `cm_cli/serve/`（`mod` / `paths` / `lock` / `store` / `auth` / `runtime_state`），`cli_run.rs` 只剩「日志初始化 → 分派」。原计划「搬进 `cm_web_host::serve` 的 builder」走不通：该模块被禁边不许引用 `cm_internal`，而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。
+  可行形态是 **builder 在宿主模块、装配以闭包注入**（与 S3 的端口注入同手法），那是独立的一步、尚未做；现状的收益是「装配离开 `cli_run`」，不是「装配进入宿主」。
 
 另加一条显式二分：**`EarlyCommand`**（doctor / save-session / web-bearer / plugin / workflow-validate，不碰网络）与 **`ServerCommand`**（serve / bench）。这样 11 个 `try_early_*` 归并为一次 `match`，`run_cli_from_parsed` 只剩「建 `CliContext` → dispatch」。
 
-> **实施记录（#1295）**：二分落地为 `dispatch`（serve/bench，需会话句柄）/ `dispatch_offline`（诊断与离线产物）/ `dispatch_toolish`（要配置与 client、但不进主循环）三层 `match`——三层而非两者的原因是要压住 `lizard` 的 CCN ≤ 10：14 个变体挤进一个 `match` 必然超标。`CliContext` 只装 `{ global, command }`，**不持有已加载配置**（否则 `web-bearer` / `sse-replay` 会在配置损坏时也跑不了）。`ExtraCliCommand` 已删除——它只是摊平的副产物。§6 约束 1 / 2 已分别由 `scripts/fn_nloc_rust_metrics.py` 的 `PER_DIR_FILE_LINES_CAPS` 与 `scripts/check-crate-deps.sh` 强制。
+> **实施记录（#1295）**：二分落地为 `dispatch`（serve/bench，需会话句柄）/ `dispatch_offline`（诊断与离线产物）/ `dispatch_toolish`（要配置与 client、但不进主循环）三层 `match`——三层而非两者的原因是要压住 `lizard` 的 CCN ≤ 10：14 个变体挤进一个 `match` 必然超标。
+> `CliContext` 只装 `{ global, command }`，**不持有已加载配置**（否则 `web-bearer` / `sse-replay` 会在配置损坏时也跑不了）。`ExtraCliCommand` 已删除——它只是摊平的副产物。§6 约束 1 / 2 已分别由 `scripts/fn_nloc_rust_metrics.py` 的 `PER_DIR_FILE_LINES_CAPS` 与 `scripts/check-crate-deps.sh` 强制。
 
 ## 7. 分阶段计划
 
@@ -295,11 +298,14 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S6-a/b/c** | 承诺面从「模块存在」升级为显式清单（P6、P7） | `fixtures/public_api_golden.txt` + `scripts/check-public-api.py`（pre-commit） | ✅ **已完成（#1297）**：根面 96 项（promised 50 / excluded 46），未归类即失败；§2.4 的「以 `src/lib.rs` 为准」已撤下；新增 `#[doc(hidden)]` 三处（`run_cli_from_parsed`、`WebChat*BuildArgs`） |
 | **S6-d** | 端口 trait 上根 + `prelude` 取舍 | 可换实现测试 | ⏳ **#1298**，排在 #1297 与 S4 之后；设计稿点名的 15 个名字里 **8 个在代码中不存在** |
 
-**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：`net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；**S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；`ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。`ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
+**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：
+  `net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；**S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；
+  `ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。`ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
 
 ### 7.1 S1-b 的 `SessionStore` trait 为什么没有跟着解绑一起做
 
-解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、`conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。`conversation_store` 现在**结构上**不依赖 Axum 与回合编排——`cargo check --no-default-features --features protocol,sqlite` 会**真的编译**它（59 条 `dead_code` 警告就是它进了编译图、而消费者都在 `server` 的证据），而 `--features protocol` 不会。
+解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、`conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
+  `conversation_store` 现在**结构上**不依赖 Axum 与回合编排——`cargo check --no-default-features --features protocol,sqlite` 会**真的编译**它（59 条 `dead_code` 警告就是它进了编译图、而消费者都在 `server` 的证据），而 `--features protocol` 不会。
 
 trait 没实现，是因为它对应两个互斥目标，产物不同：
 
@@ -318,7 +324,8 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 代价是端口面偏宽（5 个方法）。这是诚实的：执行面确实需要这些能力。若 S3-b 引入 `ToolHost` 后某些能力只由宿主使用，再逐个从端口上收窄。
 
-**S3-b 核实结果（已收窄为 4）**：逐个点消费点后，`cancel()` 是唯一没有消费者的方法——全仓 **0 个调用点**。而它想提供的能力并没有丢：`approval_sink()` 返回的 `WebApprovalSink` 本来就带着 `cancel: Option<&'a Arc<AtomicBool>>`，审批等待靠它感知「停止」。也就是说**同一条能力开了两条路**，端口因此看起来比实际需要的宽。删掉 `cancel()` 方法、保留 `WebToolRuntime::cancel` 字段（`approval_sink` 仍用它），端口从 5 收到 4。
+**S3-b 核实结果（已收窄为 4）**：逐个点消费点后，`cancel()` 是唯一没有消费者的方法——全仓 **0 个调用点**。而它想提供的能力并没有丢：`approval_sink()` 返回的 `WebApprovalSink` 本来就带着 `cancel: Option<&'a Arc<AtomicBool>>`，审批等待靠它感知「停止」。也就是说**同一条能力开了两条路**，
+  端口因此看起来比实际需要的宽。删掉 `cancel()` 方法、保留 `WebToolRuntime::cancel` 字段（`approval_sink` 仍用它），端口从 5 收到 4。
 
 其余四个都留着，各有真实消费点且语义不重叠：
 
@@ -331,7 +338,8 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 **`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
 
-**当前推荐顺序（2026-11-06 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、**S6-a/b/c（#1297）** 全部已完成，S1 / S2 / S3 / S5 四条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）与 **S6-d**（#1298，端口 trait 上根，排在 S4 之后）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
+**当前推荐顺序（2026-11-06 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、**S6-a/b/c（#1297）** 全部已完成，S1 / S2 / S3 / S5 四条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）
+  与 **S6-d**（#1298，端口 trait 上根，排在 S4 之后）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
 
@@ -421,11 +429,13 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 ### 12.1 为什么是它，而不是管线和端口
 
-SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912** 行 / 上限 **920**）是**阻塞**：下一个想给 `crabmate` 加子命令或改 CLI 的 PR，只要在 `cli_run.rs` 里多写 8 行就会撞上 `fn nloc + rust file lines` 棘轮。届时只有两个选择——为通过门禁而临时放宽上限（把安全阀拆掉），或在功能 PR 里顺手做一次大重构（把小 PR 变成大 PR）。两者都该避免，所以先把行数问题单独解掉。**已解**：S5-a 完成后 `cli_run.rs` **493** 行（余量 **427**），见 §12.2；本节保留为决策记录。
+SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912** 行 / 上限 **920**）是**阻塞**：下一个想给 `crabmate` 加子命令或改 CLI 的 PR，只要在 `cli_run.rs` 里多写 8 行就会撞上 `fn nloc + rust file lines` 棘轮。届时只有两个选择——为通过门禁而临时放宽上限（把安全阀拆掉），
+  或在功能 PR 里顺手做一次大重构（把小 PR 变成大 PR）。两者都该避免，所以先把行数问题单独解掉。**已解**：S5-a 完成后 `cli_run.rs` **493** 行（余量 **427**），见 §12.2；本节保留为决策记录。
 
 ### 12.2 做法：纯搬移，一分为三（**不能一步搬进 `cli_run_serve.rs`**）
 
-实测 `cli_run.rs` **912** 行、`cli_run_serve.rs` **730** 行。serve 装配在 `cli_run.rs` 里合计 **232** 行：`build_serve_runtime_state` 432-520（89）、`spawn_uploads_cleanup` 586-609（24）、`build_serve_shutdown_signal` 714-734（21，web-only）、`run_serve_branch` 的 web 变体 624-712（89）与非 web 变体 737-745（9）。`run_benchmark_batch_if_requested`（764-814，51）**没有 `cfg` 门**，两套构建都在，单独一站。**直接搬进 `cli_run_serve.rs` → 约 950 行，立刻撞上限**。按下面的分配搬（行范围已实测，见 §12.2.1）：
+实测 `cli_run.rs` **912** 行、`cli_run_serve.rs` **730** 行。serve 装配在 `cli_run.rs` 里合计 **232** 行：`build_serve_runtime_state` 432-520（89）、`spawn_uploads_cleanup` 586-609（24）、`build_serve_shutdown_signal` 714-734（21，web-only）、`run_serve_branch` 的 web 变体 624-712（89）
+  与非 web 变体 737-745（9）。`run_benchmark_batch_if_requested`（764-814，51）**没有 `cfg` 门**，两套构建都在，单独一站。**直接搬进 `cli_run_serve.rs` → 约 950 行，立刻撞上限**。按下面的分配搬（行范围已实测，见 §12.2.1）：
 
 | 目标文件 | 收什么 | 状态 / 行数 |
 |---|---|---|
@@ -435,7 +445,8 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 | **新** `cli_run_bench.rs` | `run_benchmark_batch_if_requested` 764-814（**无 `cfg` 门**） | **已完成（#1274）：60 物理行 / 50 非注释非空行** |
 | `cli_run.rs` | 只剩 `EarlyCliDispatch`、`run_cli_from_parsed` 的一次分派、各 `try_early_*` | **已完成（#1274）：912 → 493**（余量 8 → **427**）——serve 相关 helper 全部归位后，主文件不再有任何 `web` 装配痕迹 |
 
-**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」更彻底——原估漏算了随代码搬走的 135 行单测。第二、三步同 PR 落地（#1274）：`cli_run.rs` 912 → **493**（比原估的「≈650」还低：`ServeRuntimeBuildInput` 与四个 serve helper 一并搬走，`HashMap` / `AtomicU64` / `chat_job_queue` / `web` / `runtime` 五处 `use` 随之失去消费点）。**S5-a 到此完成**，`cli_run.rs` 只剩早退子命令分派。
+**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」更彻底——原估漏算了随代码搬走的 135 行单测。第二、三步同 PR 落地（#1274）：`cli_run.rs` 912 → **493**（比原估的「≈650」还低：`ServeRuntimeBuildInput` 与四个 serve helper 一并搬走，
+  `HashMap` / `AtomicU64` / `chat_job_queue` / `web` / `runtime` 五处 `use` 随之失去消费点）。**S5-a 到此完成**，`cli_run.rs` 只剩早退子命令分派。
 
 #### 12.2.1 已实测的搬移约束（开工前核对，勿凭直觉改）
 

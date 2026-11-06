@@ -6,7 +6,8 @@
 
 **工作区内**数据（`conversations.db`、导出、历史路径名 **`tui_session.json`** 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。旧同进程 REPL 曾写 **`repl_history.txt`**（D2.2 后不再写入）。
 
-**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
+**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；
+  日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
 
 **可清理缓存**：默认 **`$XDG_CACHE_HOME/crabmate/`**（**`CM_CRABMATE_CACHE_DIR`**）；含 **`fastembed/`** ONNX 模型。**不要**把会话/密钥放进 cache。
 
@@ -167,7 +168,9 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-本文件是 MCP 配置的**唯一来源**：不再从 TOML / `CM_MCP_COMMAND` 一次性导入（旧 **`toml_legacy_imported`** 字段已移除，磁盘上残留该键将被忽略）。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
+本文件是 MCP 配置的**唯一来源**：不再从 TOML / `CM_MCP_COMMAND` 一次性导入（旧 **`toml_legacy_imported`** 字段已移除，磁盘上残留该键将被忽略）。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，
+  仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、
+  `POST …/{id}/probe`。
 
 Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 

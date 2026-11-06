@@ -88,7 +88,8 @@ cd ../crabmate-client && make frontend   # 再指向 http://127.0.0.1:8080/ 并�
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关。
-- **Web API 鉴权**：嵌入默认 **`web_api_require_bearer = false`**——允许无共享密钥启动 **`serve`**；密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。可用 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`** 配置。浏览器须在 **设置 →「Web API 共享密钥」** 保存与服务端相同的值（`localStorage` **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。对外建议 **`web_api_require_bearer = true`**。
+- **Web API 鉴权**：嵌入默认 **`web_api_require_bearer = false`**——允许无共享密钥启动 **`serve`**；密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。可用 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`** 配置。
+  浏览器须在 **设置 →「Web API 共享密钥」** 保存与服务端相同的值（`localStorage` **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。对外建议 **`web_api_require_bearer = true`**。
 - **CORS**：官方壳 Origin 已默认放行；其它浏览器 Origin 用 **`CM_WEB_CORS_ALLOWED_ORIGINS`** 追加。
 - **`http_fetch` / `http_request`**：嵌入默认 **`http_fetch_allowed_prefixes = ["*"]`**，任意 **http/https** 不再走前缀审批（仍拒绝 `file:` 等）。多租户或非本机监听请改回具体前缀或 **`[]`**。
 - **LLM API Key**：Client 本机存放并经 **`client_llm.api_key`** 发送；进程环境变量 **`API_KEY`** 仍可作为 **`serve`** / 运维回退。

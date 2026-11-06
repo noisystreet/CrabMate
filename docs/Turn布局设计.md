@@ -3,7 +3,8 @@
 **状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；
   **已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；**E2 persist（会话 `layout` 落盘）已落地**；**E3 hydration 双读已落地**（消费 `layout` 记差分；GET 历史保持 legacy 行 id，不 stamp 流式活键；same-revision 守卫保留至 E4）。本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。
   运维 CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。
-**目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
+**目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、
+  **`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
 
 ---
 
@@ -491,7 +492,8 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 **顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
 
-**I15 的两条真实回归**（`real-llm-tool-bubble-vanish` 派生，见 `e2e/specs/mock-real-tool-bubble-vanish.spec.ts`）：真实 SSE 在 `parsing_tool_calls` 后**先**发 `turn_segment_start{beforeToolCallId}`、数百毫秒后才发 `TOOL_CALL_START`；而 `reset_loading_tail_streaming_text` 在段开始时已清 overlay。若 pending 段此刻仍无锚点，助手气泡会整段消失直到工具到达。`TOOL_CALL_RESULT` 未经 START 到达时同理（`drain(clear=true)` 已掏空 overlay，canonical 却无该工具步）。
+**I15 的两条真实回归**（`real-llm-tool-bubble-vanish` 派生，见 `e2e/specs/mock-real-tool-bubble-vanish.spec.ts`）：真实 SSE 在 `parsing_tool_calls` 后**先**发 `turn_segment_start{beforeToolCallId}`、数百毫秒后才发 `TOOL_CALL_START`；而 `reset_loading_tail_streaming_text` 在段开始时已清 overlay。
+  若 pending 段此刻仍无锚点，助手气泡会整段消失直到工具到达。`TOOL_CALL_RESULT` 未经 START 到达时同理（`drain(clear=true)` 已掏空 overlay，canonical 却无该工具步）。
 
 **`on_done`**：关 open 段 → `sync_turn_projection` → `drain_stream_tail_into_canonical_for_done`（补终答 + 清 loading 句柄）→ tail 决策。
 

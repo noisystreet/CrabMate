@@ -44,7 +44,8 @@
   - `list_recent_for_scope` 只回 `MemoryListRow = (id, chunk_text, source_kind, expires_at_unix, tags_json)`——**丢掉了 `created_at_unix` 与 `source_role`**（[L286-L314](../../src/cm_memory/memory/long_term_memory_store.rs#L286-L314)）；
   - `list_for_scope` 字段齐全，但 SELECT **包含 `embedding` BLOB**（[L141-L148](../../src/cm_memory/memory/long_term_memory_store.rs#L141-L148)），当 HTTP 投影会白读大对象；
   - 两者都**无分页 / 过滤 / 排序 / 总数**参数。
-- 过期行不参与读取（各 `WHERE` 按 `expires_at_unix` 过滤，**正确性不依赖物理删除**）；物理回收只在写入/删除路径机会性执行（`insert_*` 头部一次 `delete_expired_for_scope`，[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208) 的裁剪 `DELETE` 亦顺带回收），**无后台任务**；`max_entries` 淘汰只在写入路径触发（[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208)）。
+- 过期行不参与读取（各 `WHERE` 按 `expires_at_unix` 过滤，**正确性不依赖物理删除**）；物理回收只在写入/删除路径机会性执行（`insert_*` 头部一次 `delete_expired_for_scope`，[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208) 的裁剪 `DELETE` 亦顺带回收），**无后台任务**；
+  `max_entries` 淘汰只在写入路径触发（[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208)）。
 
 ### 1.4 运行时与对外可见性
 
@@ -172,11 +173,13 @@
 
 - **路由对齐是硬约束**：[route_table.rs](../../src/web/openapi/route_table.rs#L14-L18) 会递归扫描 `src/web/routes/**` 的 `.route(` 调用，与 OpenAPI `paths` 做双向比对（`openapi_ops_match_axum_route_source`）。新增 `/memory/*` **必须**同步 OpenAPI 条目，否则该测试直接失败。建议新增 `src/web/openapi/openapi_paths_memory.rs` 并挂到 `build_openapi_spec()`，随后再生成快照：
   `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`
-- **同步清单**：[routes/mod.rs](../../src/web/routes/mod.rs#L16-L25) 补 `memory` 子模块与文档表格行；[server.rs](../../src/web/server.rs#L16-L24) `protected_api` 追加 `.merge(routes::memory::router())`；[`docs/命令行与路由.md`](../命令行与路由.md) 补鉴权矩阵类别与路由表行；错误码写入 [error_codes.rs](../../src/cm_api_contract/error_codes.rs) 并对齐 `docs/命令行契约.md`——P0 需要 `INVALID_MEMORY_ID`、`INVALID_MEMORY_KIND` 与 `LONG_TERM_MEMORY_DISABLED`；`MEMORY_NOT_FOUND` 仅 D4（P1）的 `PUT` 未命中使用（`DELETE` 已定为 204 幂等，见 §7.1 Q4）。
+- **同步清单**：[routes/mod.rs](../../src/web/routes/mod.rs#L16-L25) 补 `memory` 子模块与文档表格行；[server.rs](../../src/web/server.rs#L16-L24) `protected_api` 追加 `.merge(routes::memory::router())`；[`docs/命令行与路由.md`](../命令行与路由.md) 补鉴权矩阵类别与路由表行；
+  错误码写入 [error_codes.rs](../../src/cm_api_contract/error_codes.rs) 并对齐 `docs/命令行契约.md`——P0 需要 `INVALID_MEMORY_ID`、`INVALID_MEMORY_KIND` 与 `LONG_TERM_MEMORY_DISABLED`；`MEMORY_NOT_FOUND` 仅 D4（P1）的 `PUT` 未命中使用（`DELETE` 已定为 204 幂等，见 §7.1 Q4）。
 - **禁用态语义**：`long_term_memory_enabled=false` **或** `AppState.long_term_memory` 为 `None` 时（[cli_run_serve.rs](../../src/cli_run_serve.rs#L34-L70) 在内存后端且未配 `long_term_memory_store_sqlite_path` 时会跳过 runtime），三个路由统一回 **503 `LONG_TERM_MEMORY_DISABLED`**（§7.1 Q2 已定），响应体带 `enabled: false` 便于 UI 直接展示原因。
 - **不改变既有行为**：`DELETE /conversation/{id}` 仍**不**清理 LTM（§1.4）；模型侧四个工具的行为与输出格式不变；`/status` 既有字段不变。
 - **schema**：D1 / D2 / D3 **不改表结构、不加索引**（现有 `scope_created` 索引可支撑 `created_at` 排序与 `scope_id` 收窄）；D4 只 `UPDATE` 既有列。`kind` 过滤在 SQL 内表达为 `source_role IN (…)`（`turn` → `user`/`assistant`；`experience` → 两个经验 role；`other` → `NOT IN` 取反）。若实测 `source_role` / `tag` 过滤走全表扫描，再单独评估 `(scope_id, source_role, created_at_unix DESC)` 索引。
-- **顺带修正（同一 PR 内）**：[`docs/配置说明.md`](../配置说明.md#L259) 称注入前缀统一为 `[记忆 #id]`，实际按 `source_role` 分三种（`【经验 #{id}】` / `【显式记忆 #{id}】` / `[记忆 #{id}]`，[long_term_memory_recall.rs](../../src/cm_memory/memory/long_term_memory_recall.rs#L129-L136)）；注入头文案也漏了 `【显式记忆 #id】`（[long_term_memory.rs](../../src/cm_memory/memory/long_term_memory.rs#L425)）。本设计新增的 `kind`（`experience` / `explicit` / `turn`）与三种注入前缀一一对应，会让该不一致更显眼，建议一并校正文档。
+- **顺带修正（同一 PR 内）**：[`docs/配置说明.md`](../配置说明.md#L259) 称注入前缀统一为 `[记忆 #id]`，实际按 `source_role` 分三种（`【经验 #{id}】` / `【显式记忆 #{id}】` / `[记忆 #{id}]`，[long_term_memory_recall.rs](../../src/cm_memory/memory/long_term_memory_recall.rs#L129-L136)）；
+  注入头文案也漏了 `【显式记忆 #id】`（[long_term_memory.rs](../../src/cm_memory/memory/long_term_memory.rs#L425)）。本设计新增的 `kind`（`experience` / `explicit` / `turn`）与三种注入前缀一一对应，会让该不一致更显眼，建议一并校正文档。
 - **安全**：响应不回显 embedding；日志不记正文（与 §1.4 现状一致）；删除/修改不返回被操作行内容。
 
 ---

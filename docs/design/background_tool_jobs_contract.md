@@ -1,6 +1,7 @@
 # 后台工具任务：字段级接口规格（Contract）
 
-> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**金样**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
+> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：
+> [`client_contract_versioning.md`](./client_contract_versioning.md)。**金样**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
 
 ---
 

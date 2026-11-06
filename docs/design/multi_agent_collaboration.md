@@ -283,7 +283,8 @@ L2 的三项机制**全部建立在进程内共享之上**，跨进程后逐条�
 | **取消** | 复用 `POST /chat/stream/{job_id}/cancel`（单进程内存态） | `job_id` 标识的是**流**而不是**任务**；父中止不该连带改变流的重连语义 | **任务 id 与流 id 分离**：`POST /agent/tasks/{task_id}/cancel`，幂等、可重试；不复用 `stream_job` 语义。 |
 | **断线续读** | SSE `stream_resume` 的环形缓冲**仅单进程内存**，任务结束或进程重启后回 `410 STREAM_JOB_GONE` | 跨进程重连没有可用缓冲 | 重连必须**回源任务状态**（`GET /agent/tasks/{id}`），**不得**依赖流缓冲。 |
 
-**另有一条部署约束（容易在方案里漏掉）**：`serve` 默认以 flock 独占会话库（`<conversation_store_sqlite_path>.serve.lock`），多进程共享同一隔离域时**拒绝启动**，而 `CM_SERVE_DISABLE_INSTANCE_LOCK` 的文档明确写着「仅用于确需多进程共享同一隔离域的特殊部署或排障」。因此多 Agent 跨进程协作的默认形态必须是**一实例一隔离域**（正是 `crabmatectl` 每实例独立 cwd / 会话库的本意），**不能**把一个工作区同时交给多个写者。
+**另有一条部署约束（容易在方案里漏掉）**：`serve` 默认以 flock 独占会话库（`<conversation_store_sqlite_path>.serve.lock`），多进程共享同一隔离域时**拒绝启动**，而 `CM_SERVE_DISABLE_INSTANCE_LOCK` 的文档明确写着「仅用于确需多进程共享同一隔离域的特殊部署或排障」。
+  因此多 Agent 跨进程协作的默认形态必须是**一实例一隔离域**（正是 `crabmatectl` 每实例独立 cwd / 会话库的本意），**不能**把一个工作区同时交给多个写者。
 
 **分期**：L2 定型 → L3 验证 DAG 内委托 → L4 进程间（任务端点 + 租约记账，见 §8.1 / §8.2）→ A2A（仅做映射与对外端点，**不**回改内部契约）。
 

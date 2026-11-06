@@ -311,13 +311,16 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
 
 - 摘要**成为 canonical 的一部分**：canonical 内以 `CRABMATE_CONTEXT_SUMMARY_NAME` 注入形状保留一条“基线摘要”，替代被它覆盖的前缀原文；
 - `canonical` 因此**不再单调增长**：压缩一旦发生，`canonical.len()` 随之下降并封顶；
-- **canonical 只做“结构性删减 + 摘要插入”，不做“就地内容改写”**：模型视图里对本就在保留窗口内的消息所做的**工具正文压缩**（[`compress_tool_message_contents`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L103-L122)，`*s = compressed`）与 **reasoning 剥离**属**视图层优化**，**不得**回写 canonical，canonical 内这些消息保持原文。否则“被就地改写的原文”既不在任何“移出区间”内、也不会进归档，会**绕过归档被静默丢失**；
+- **canonical 只做“结构性删减 + 摘要插入”，不做“就地内容改写”**：模型视图里对本就在保留窗口内的消息所做的**工具正文压缩**（[`compress_tool_message_contents`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L103-L122)，`*s = compressed`）
+  与 **reasoning 剥离**属**视图层优化**，**不得**回写 canonical，canonical 内这些消息保持原文。否则“被就地改写的原文”既不在任何“移出区间”内、也不会进归档，会**绕过归档被静默丢失**；
 - 由此，工具正文压缩会在每个回合对**有界的保留窗口**重新计算一次——它是确定性的、成本有界的，不构成“每回合全量重算”；
 - “被移出组的原文”与“被摘要覆盖的原文”**不丢弃**，原样迁入归档（见 §3.8）。
 
 ##### 3.7.1 提交前的净化链（必须显式复用，不得依赖隐式副作用）
 
-虽然 reconcile 只提交结构差异，但本回合**新增**的 assistant / tool / 时间线消息取自模型视图，仍可能连带把本回合的**临时注入**一起固化进 `canonical`。因此提交前必须经过与落盘**完全相同**的剥离链（抽为单一命名函数 [`strip_persist_injections`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L44-L49)，由 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L77) 调用），并写死为契约：
+虽然 reconcile 只提交结构差异，但本回合**新增**的 assistant / tool / 时间线消息取自模型视图，仍可能连带把本回合的**临时注入**一起固化进 `canonical`。
+  因此提交前必须经过与落盘**完全相同**的剥离链（抽为单一命名函数 [`strip_persist_injections`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L44-L49)，由 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L77) 调用），
+  并写死为契约：
 
 - [`strip_long_term_memory_injections`](file:///home/gzz/crabmate/server/src/cm_memory/memory/long_term_memory.rs#L730) — 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`；
 - [`strip_workspace_changelist_injections`](file:///home/gzz/crabmate/server/src/cm_tools/workspace/changelist.rs#L213) — 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`；
@@ -335,7 +338,8 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
  messages_json, codec, created_at_unix)
 ```
 
-- **归档恒为“被移出的原文前缀”**：压缩始终作用于最旧一端——`remove_oldest_turn_group` 删最旧组；LLM 摘要保留 `system` 与尾部 `context_summary_tail_messages` 条、替换其前的**全部**原文（见 [`apply_llm_summary_to_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L378-L391)）。因此“归档 ∪ canonical 原文部分 = 完整原始历史”，且归档按 `seq` 升序即为原始先后顺序。**这是 re-expand（§3.11）成立的前提，不得破坏**（例如未来若引入“中段摘要”，必须同步改造 re-expand）；
+- **归档恒为“被移出的原文前缀”**：压缩始终作用于最旧一端——`remove_oldest_turn_group` 删最旧组；LLM 摘要保留 `system` 与尾部 `context_summary_tail_messages` 条、替换其前的**全部**原文（见 [`apply_llm_summary_to_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L378-L391)）。
+  因此“归档 ∪ canonical 原文部分 = 完整原始历史”，且归档按 `seq` 升序即为原始先后顺序。**这是 re-expand（§3.11）成立的前提，不得破坏**（例如未来若引入“中段摘要”，必须同步改造 re-expand）；
 - `reason` ∈ { `summarized`（被摘要覆盖）, `removed_turn_group`（按 Token 预算移出）, `artifact`（被回收的旧 artifact 旁注，见 §3.9）};
 - `seq` 在会话内单调递增；
 - `range_start` / `range_end` 是**写入时刻 canonical 的下标快照**，仅供人审与排查；re-baseline 后**不再对应任何现存 canonical**，**不得**用作回放 / re-expand 的定位依据（回放按 `seq` 顺序 + `messages_json` 内容重放）；
@@ -359,13 +363,16 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
 `builtin_btw` 等旁路必须走**同一套**“构建模型请求视图”逻辑，但保持其“**不落盘**”语义（btw 是旁路查询，不得改写 canonical）。做法：
 
 - 抽出只读入口：输入 `canonical` + 本轮 user，输出“发模型的 messages”，内部复用 `prepare_messages_for_model` 的**同步压缩路径**，但**不写回 canonical、不写归档、不写 artifact**；
-- **btw 默认不触发 LLM 摘要**：只做同步裁剪 + 旧工具输出压缩。btw 是交互式旁路（[`try_acquire_owned` 队列满立即失败](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L119-L122)），长会话下额外摘要调用会抬高延迟与费用；确需摘要时通过显式配置开关 `context_btw_summary_enabled`（默认 `false`）启用——开启后只读入口按与主路径**相同**的触发规则尝试一次摘要，但仍**不**写 canonical / 归档 / artifact；
+- **btw 默认不触发 LLM 摘要**：只做同步裁剪 + 旧工具输出压缩。btw 是交互式旁路（[`try_acquire_owned` 队列满立即失败](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L119-L122)），长会话下额外摘要调用会抬高延迟与费用；
+  确需摘要时通过显式配置开关 `context_btw_summary_enabled`（默认 `false`）启用——开启后只读入口按与主路径**相同**的触发规则尝试一次摘要，但仍**不**写 canonical / 归档 / artifact；
 - 主路径（`run_agent_turn`）用同一入口的“可提交”变体；
 - 通过类型/参数区分“dry-run 视图”与“可提交视图”，避免未来再出现“忘记压缩”的新旁路。
 
 #### 3.11 分支锚点与 re-expand——修复“基线化破坏分支截断”
 
-基线化后 canonical 只保留“基线摘要 + 最近若干组”，更早的真实用户回合的原文只存在于归档；而分支接口（`POST /chat/branch`）当前按 **canonical 内的真实 user 序号**定位截断点（[`branch_truncation_cut_index`](file:///home/gzz/crabmate/server/src/web/app_state.rs#L455-L466) / [`truncate_before_user_ordinal_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L435-L466)）。**若沿用该口径，基线化会改变序号、并让“分支到已被归档的早期回合”无法定位**（压缩删除的是含真实 user 的最旧完整组，见 [`conversation_turn_groups`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L21-L37) / [`remove_oldest_turn_group`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L42-L45)）。因此必须显式定义锚点与回滚路径：
+基线化后 canonical 只保留“基线摘要 + 最近若干组”，更早的真实用户回合的原文只存在于归档；而分支接口（`POST /chat/branch`）当前按 **canonical 内的真实 user 序号**定位截断点（[`branch_truncation_cut_index`](file:///home/gzz/crabmate/server/src/web/app_state.rs#L455-L466)
+  / [`truncate_before_user_ordinal_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L435-L466)）。**若沿用该口径，基线化会改变序号、并让“分支到已被归档的早期回合”无法定位**（压缩删除的是含真实 user 的最旧完整组，
+  见 [`conversation_turn_groups`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L21-L37) / [`remove_oldest_turn_group`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L42-L45)）。因此必须显式定义锚点与回滚路径：
 
 - **锚点：会话级全局序号 `user_turn_ordinal`**（0-based，**按真实用户回合计数、含已归档回合、跨归档稳定**），取代“canonical 内下标”。注入条（长期记忆 / 变更集 / 首轮画像 / 上下文摘要）不计入，沿用 [`user_message_counts_for_branch_truncation`](file:///home/gzz/crabmate/server/src/cm_types/message.rs#L300-L333) 的判定；
 - **re-expand（回灌）**：分支点落在归档前缀时，先按 `seq` 升序把归档区间的 `messages_json`（必要时先 `gzip` 解压）重放回 canonical，得到**完整原文历史**，再按 `user_turn_ordinal` 截断。re-expand 后的 canonical 不再含基线摘要（摘要所代表的原文已还原）；
@@ -479,7 +486,8 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 **Phase A 落地状态与遗留**（2026-10-16 复核）：
 
-- 已落地：归档表与读写 API（[`archive.rs`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs)）；结构性提交 reconcile（[`commit_current_turn_to`](file:///home/gzz/crabmate/server/src/agent/model_context_view.rs#L202-L277)）；同事务原子落盘（[`save_with_archive_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L322-L346)）；`list_all_messages_json` 合并归档（A4）；`derive` 直读 canonical（A5）。
+- 已落地：归档表与读写 API（[`archive.rs`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs)）；结构性提交 reconcile（[`commit_current_turn_to`](file:///home/gzz/crabmate/server/src/agent/model_context_view.rs#L202-L277)）；
+  同事务原子落盘（[`save_with_archive_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L322-L346)）；`list_all_messages_json` 合并归档（A4）；`derive` 直读 canonical（A5）。
 - Phase A 的临时口径：分支点落回归档前缀时**返回 `Conflict`**（不作 re-expand），由 Phase C1 替换为 re-expand + 超窗显式错误；归档 `codec` 阈值仍为常量 [`ARCHIVE_CODEC_MIN_BYTES_DEFAULT`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L83)（配置化见 C3）。
 - 待接线的已实现 API：[`delete_archive_for_conversation`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L277) / [`prune_archive`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L292)（Phase C4 接线）。
 
@@ -500,7 +508,8 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 1. **（已实施，C1）** 分支路径改造：`truncate_before_user_ordinal_if_revision` 改用**会话级 `user_turn_ordinal`**（含归档）并接入 **re-expand**；`prune` 覆盖归档表并补测（含分支点落回归档前缀时先 re-expand 再截断、回滚后同事务清除该会话归档；见 §3.11）；
 2. **（已实施，C2）** 导出（`/conversation/messages`）支持可选携带归档（默认不返回，保持体积与兼容）：新增可选查询参数 `include_archive` 与可选响应字段 `archive`（`skip_serializing_if = "Vec::is_empty"`）；
-3. **（已实施，C3）** 新增 / 复用配置项并同步 `配置说明.md`：归档保留上限 `context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、归档 codec 选择阈值 `context_archive_codec_min_bytes`（默认 4096，见 §3.8），以及旁路摘要开关 `context_btw_summary_enabled`（默认 `false`，见 §3.10）；`context_baseline_*` **已确认不再需要（废弃）**——基线摘要复用既有 `context_summary_*` 配置，不引入独立基线键；
+3. **（已实施，C3）** 新增 / 复用配置项并同步 `配置说明.md`：归档保留上限 `context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、归档 codec 选择阈值 `context_archive_codec_min_bytes`（默认 4096，见 §3.8），以及旁路摘要开关 `context_btw_summary_enabled`（默认 `false`，见 §3.10）；
+  `context_baseline_*` **已确认不再需要（废弃）**——基线摘要复用既有 `context_summary_*` 配置，不引入独立基线键；
 4. **（已完成）** 更新 `CHANGELOG.md`；C2 完成后本文状态已改为 **Accepted**（见状态头）。
 
 ### 5.3 实施拆解（§5.2 工程附录）
@@ -524,12 +533,15 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 - `delete_archive_for_conversation`、`prune_archive`（保留上限 `context_archive_max_rows_per_conversation` + TTL）。
 
 **A2 — 结构性提交（核心重构）**：现状 [`commit_successful_model_context_view`](file:///home/gzz/crabmate/server/src/run_agent_turn.rs#L296-L310) 只 push artifact + 追加当前回合，[`commit_current_turn_to`](file:///home/gzz/crabmate/server/src/agent/model_context_view.rs#L201-L230) 只 append（canonical 永不收缩）。改造：
-1. **捕获被移出前缀**：把 [`remove_oldest_turn_group`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L42-L51) 由「返回条数」改为**返回被移除的 `Vec<Message>`**；在 [`apply_llm_summary_to_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L378-L391) `truncate(1)` 前捕获前缀原文；用 `StructuralCommit { archived_prefix, reason, baseline_summary }` 在 [`prepare_messages_for_model`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L477-L551) 链路上**累加**（同步裁剪 + token 预算压缩 + LLM 摘要多处均产生前缀）。
+1. **捕获被移出前缀**：把 [`remove_oldest_turn_group`](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L42-L51) 由「返回条数」改为**返回被移除的 `Vec<Message>`**；在 [`apply_llm_summary_to_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L378-L391)
+  `truncate(1)` 前捕获前缀原文；用 `StructuralCommit { archived_prefix, reason, baseline_summary }` 在 [`prepare_messages_for_model`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L477-L551) 链路上**累加**（同步裁剪 + token 预算压缩 + LLM 摘要多处均产生前缀）。
 2. **提交规则**（§3.7）：`canonical_after = [system] + [基线摘要?] + 保留窗口内 tail 原文（逐字不变） + 当前回合新增`；被移出的 `archived_prefix` → 归档行。`compress_tool_message_contents`（[transforms.rs](file:///home/gzz/crabmate/server/src/cm_agent/message_pipeline/transforms.rs#L103-L122)）与 reasoning 剥离**仅视图层、不回写 canonical**。
 3. **净化链**复用（§3.7.1），**保留** `CRABMATE_CONTEXT_SUMMARY_NAME` 与首轮画像；
 4. canonical 至多保留最近 1 条 artifact 旁注，旧旁注以 `reason = 'artifact'` 移入归档（§3.9）。
 
-**A3 — 原子落盘**：把 [`save_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L233-L291) 由单条 UPDATE 扩展为「canonical UPDATE + 归档 INSERT + revision+1 **同事务**」；`run_agent_turn` 的 `StructuralCommit` 随 messages 一并透传到 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L34-L76) 落库；内存后端（[app_state.rs](file:///home/gzz/crabmate/server/src/web/app_state.rs#L478) `ConversationBacking::Memory`）给出等价处理并在文档标注差异。
+**A3 — 原子落盘**：把 [`save_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L233-L291) 由单条 UPDATE 扩展为「canonical UPDATE + 归档 INSERT + revision+1 **同事务**」；
+  `run_agent_turn` 的 `StructuralCommit` 随 messages 一并透传到 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L34-L76) 落库；内存后端（[app_state.rs](file:///home/gzz/crabmate/server/src/web/app_state.rs#L478) `ConversationBacking::Memory`）
+  给出等价处理并在文档标注差异。
 
 **A4 — `list_all_messages_json` 收口**（与 A2 同 PR，堵不可逆清理窗口）：[`list_all_messages_json`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L332-L341) 追加读归档表（解压并入），使 [`referenced_upload_filenames`](file:///home/gzz/crabmate/server/src/web/app_state.rs#L531-L556) 不误删被归档消息引用的 `/uploads/` 文件（§9.2 item6）。
 
@@ -543,13 +555,15 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 #### 5.3.4 Phase C 工程拆解（C1 / C2 / C3 / C4 全部已实施）
 
-**C1 — 分支锚点改造（P0，最易踩坑，已实施）**：落点 [`truncate_before_user_ordinal_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L435-L466) + [`branch_truncation_cut_index`](file:///home/gzz/crabmate/server/src/web/app_state.rs#L455-L466) 及分支入口。改为按**会话级 `user_turn_ordinal`（含归档、跨归档稳定）**定位（§3.11），不再用 canonical 内下标；分支点落回归档前缀时先 **re-expand**（`load_archive_messages` 按 `seq` 重放回 canonical）再截断，并**同事务清除该会话归档**；分支点**早于保留窗口** → 返回**显式错误**（不静默截错）。
+**C1 — 分支锚点改造（P0，最易踩坑，已实施）**：落点 [`truncate_before_user_ordinal_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L435-L466) + [`branch_truncation_cut_index`](file:///home/gzz/crabmate/server/src/web/app_state.rs#L455-L466) 及分支入口。
+  改为按**会话级 `user_turn_ordinal`（含归档、跨归档稳定）**定位（§3.11），不再用 canonical 内下标；分支点落回归档前缀时先 **re-expand**（`load_archive_messages` 按 `seq` 重放回 canonical）再截断，并**同事务清除该会话归档**；分支点**早于保留窗口** → 返回**显式错误**（不静默截错）。
 
 **C2 — 导出携带归档（已实施）**：`GET /conversation/messages` 新增可选查询参数 `include_archive`（boolean，默认 `false`）与可选响应字段 `archive`（`skip_serializing_if = "Vec::is_empty"`，默认不返回以保持体积与旧客户端兼容）。落点：契约 [`ConversationMessagesQuery`](file:///home/gzz/crabmate/server/src/cm_api_contract/chat.rs)
   / [`ConversationMessagesResponseBody`](file:///home/gzz/crabmate/server/src/cm_api_contract/chat.rs)；读归档 [`load_conversation_archive_messages`](file:///home/gzz/crabmate/server/src/web/app_state.rs)（仅 SQLite 有归档，内存后端返回空，失败容错返回空）；handler [`conversation_messages_handler`](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/mod.rs)；
   OpenAPI 参数 [`openapi_paths.rs`](file:///home/gzz/crabmate/server/src/web/openapi/openapi_paths.rs) 与快照 `docs/openapi.json` 同步。`archive` 与 `messages` 同为 `WebClientSnapshotMessage` 形状（复用泛型响应体 `<M>`）。回归：契约解析、app_state 内存 / SQLite / 不存在会话、OpenAPI schema 与空值省略。
 
-**C3 — 配置与文档（已实施）**：新增并同步 `docs/配置说明.md` / `docs/en/CONFIGURATION.md` / `config/default_config.toml` / `CHANGELOG.md`：`context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、`context_archive_codec_min_bytes`（默认 4096）、`context_btw_summary_enabled`（默认 `false`，旁路摘要开关，见 §3.10）；同步 `cm_config/{builder,env_overrides,validate,hot_reload}` 与 `finalize_*`。`context_baseline_*` **已确认不再需要（废弃）**（见 §5.3.6）。C3 本身无新增导出字段；导出字段变更由 C2 引入并已同步 OpenAPI。
+**C3 — 配置与文档（已实施）**：新增并同步 `docs/配置说明.md` / `docs/en/CONFIGURATION.md` / `config/default_config.toml` / `CHANGELOG.md`：`context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、`context_archive_codec_min_bytes`（默认 4096）、
+  `context_btw_summary_enabled`（默认 `false`，旁路摘要开关，见 §3.10）；同步 `cm_config/{builder,env_overrides,validate,hot_reload}` 与 `finalize_*`。`context_baseline_*` **已确认不再需要（废弃）**（见 §5.3.6）。C3 本身无新增导出字段；导出字段变更由 C2 引入并已同步 OpenAPI。
 
 **C4 — `prune` 覆盖归档（已实施）**：[`prune`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L300-L324) 删除会话 / 超限时同事务删除归档行。
 

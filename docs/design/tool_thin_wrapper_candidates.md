@@ -37,7 +37,8 @@
 - `SessionMode::Ask` / `Plan` 的 `requires_readonly_tools()` 门控；
 - 只读结果 TTL 缓存 / 同轮去重（`readonly_tool_ttl_cache_secs`）。
 
-> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `npm_` / `frontend_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。（`typos_` / `codespell_` 前缀已于 2026-10-18 随对应工具删除一并清理；`maven_` / `gradle_` 前缀随 `jvm_tools` 整体删除同步清理。）
+> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `npm_` / `frontend_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；
+> 但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。（`typos_` / `codespell_` 前缀已于 2026-10-18 随对应工具删除一并清理；`maven_` / `gradle_` 前缀随 `jvm_tools` 整体删除同步清理。）
 
 ### 2.2 白名单与后台任务
 
@@ -76,7 +77,8 @@
 | ~~`go_mod_tidy`~~（**已收敛 2026-10-07**） | `go mod tidy` | 已删 ToolSpec + runner（`go_mod_tidy` / `GoModTidyArgs`）。失去 `confirm=true` **强制门** + `go.mod` 存在性跳过 |
 | ~~`python_install_editable`~~（**已收敛 2026-10-07**） | `uv pip install -e .` / `python3 -m pip install -e .` | 已删 ToolSpec + runner（`python_install_editable` / `PythonInstallEditableArgs` + `PythonInstallBackend` + `summary_python_install_editable`）。失去 `backend`（uv/pip）路由 + `pyproject.toml` / `setup.py` 存在性检查 |
 
-> **修订（2026-10-07）**：原计划「3.1.2 三项收敛前须先把 `confirm` 门映射到 **`tool_approval::SensitiveCapability`**，否则属安全回归」经复核后**不再适用**——`cargo` / `go` / `uv` / `python3` **本就在 `allowed_commands` 白名单**，`run_command` 仅在「命令名不在白名单」时触发审批，**无子命令级审批**；即 `confirm` 门在收敛前即可被 `run_command` 直接绕过，**并非强制安全边界**。故本次按「直接收敛、不新增机制」落地：收敛后审批面与既有白名单一致（三工具均为写副作用工具，`Ask`/`Plan` 门控与语义索引失效语义不变）。
+> **修订（2026-10-07）**：原计划「3.1.2 三项收敛前须先把 `confirm` 门映射到 **`tool_approval::SensitiveCapability`**，否则属安全回归」经复核后**不再适用**——`cargo` / `go` / `uv` / `python3` **本就在 `allowed_commands` 白名单**，`run_command` 仅在「命令名不在白名单」时触发审批，**无子命令级审批**；
+> 即 `confirm` 门在收敛前即可被 `run_command` 直接绕过，**并非强制安全边界**。故本次按「直接收敛、不新增机制」落地：收敛后审批面与既有白名单一致（三工具均为写副作用工具，`Ask`/`Plan` 门控与语义索引失效语义不变）。
 
 ### 3.2 视情况（只读薄封装，须权衡 §2.1 代价）
 
@@ -134,13 +136,19 @@
 
 ### 3.3 保留（无 CLI 对应 / 结构化 / 编排 / 状态 / 网络 / 高增值解析）
 
-- **文件与结构化**：全部 `file_core` / `file_extra`（`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `delete_dir` / `append_file` / `create_dir` / `search_replace` / `apply_patch` / `read_file` / `read_dir` / `glob_files` / `list_tree` / `read_binary_meta` / `search_in_files` / `codebase_semantic_search`）、`structured`（2026-10-28 由 `structured_validate` / `structured_query` / `structured_diff` / `structured_patch` 合并为单工具 + `action`，见本节末条）、`markdown_check_links`。`symlink_info` / `file_exists` / `extract_in_file` 已于 2026-10-18 移除（改用 `run_command readlink`·`realpath`·`stat` 与 `search_in_files`）。
+- **文件与结构化**：
+  全部 `file_core` / `file_extra`（`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `delete_dir` / `append_file` / `create_dir` / `search_replace` / `apply_patch` / `read_file` / `read_dir` / `glob_files` / `list_tree` / `read_binary_meta` / `search_in_files` /
+  `codebase_semantic_search`）、`structured`（2026-10-28 由 `structured_validate` / `structured_query` / `structured_diff` / `structured_patch` 合并为单工具 + `action`，见本节末条）、`markdown_check_links`。
+  `symlink_info` / `file_exists` / `extract_in_file` 已于 2026-10-18 移除（改用 `run_command readlink`·`realpath`·`stat` 与 `search_in_files`）。
 - **代码导航 / 度量**：`code_nav`（`find_symbol` / `find_references` / `file_outline` / `call_graph_sketch` 四个只读工具已于 2026-10-25 合并为一个 `action` 选择器）、`code_stats` / `dependency_graph` / `coverage_report`。
 - **归档**：`archive_pack` / `archive_unpack` / `archive_list`（用 Rust crate，非 CLI）。
 - **状态 / 记忆 / 配置**：`reminder` / `event`（reminders / events，2026-10-24 由九个工具合并为两个 `action` 选择器）、`long_term_*`、`self_config_info`、`skill_manage`。
-- **诊断 / 文档渲染**：`diagnostic_summary` / `present_clarification_questionnaire` / `repo_overview_sweep` / `crate_contract_map` / `summarize_experience` / `gh_pr_body_draft`（`changelog_draft` / `license_notice` 已于 2026-10-27 **整工具删除**，平替为 `run_command` / `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`；`error_output_playbook` 同日整工具删除，平替为模型自行归类 + `run_command`）。
+- **诊断 / 文档渲染**：`diagnostic_summary` / `present_clarification_questionnaire` / `repo_overview_sweep` / `crate_contract_map` / `summarize_experience` / `gh_pr_body_draft`（`changelog_draft` / `license_notice` 已于 2026-10-27 **整工具删除**，
+  平替为 `run_command` / `gh_release_create` 的 `auto_notes` / `cargo deny check licenses`；`error_output_playbook` 同日整工具删除，平替为模型自行归类 + `run_command`）。
 - **Rust 专属**：`rust_analyzer_*`（LSP stdio，非白名单 CLI，不可替代）。`rust_compiler_json` 已于 2026-10-27 **整工具删除**（其 JSON 输出里的 `rendered` 就是 cargo 自己的人类可读块，与只读的 `cargo_check` 重合）；`rust_backtrace_analyze` 同日**整工具删除**（纯计算分析器，模型可直读 panic 文本，或用 `run_command`（`c++filt` 在白名单）+ `code_nav` 定位帧）。
-- **纯计算 / 文本**：`json_format` / `regex_test` / `env_var_check` / `text_diff` / `table_text` / `date_calc`（`text_transform` 已于 2026-10-28 移除——Base64 由 `base64`、短哈希由 `sha256sum`+`cut`、行合并/切分由 `tr`/`paste`、URL 编解码由 `python3` 承担；`todo_scan` 已于 2026-10-18 移除，改用 `search_in_files`）。原 `get_current_time` / `calc` / `convert_units` 已于 2026-10-24 **整体移除**（`date` 已在白名单可代 `get_current_time`；`calc` / `convert_units` 由 `python_snippet_run` 或 `run_command` 承担 —— 代价是每次计算多一轮工具往返，且失去 `bc` 的任意精度与 `uom` 的类型安全）。**`date_calc` 保留**：它不止取当前时间，还提供 `offset`（`+30d` / `-2w` / `+1m`）与 `diff`（两日期间隔）两种模式，`date` 单条命令无法表达，且纯计算无 CLI 依赖。
+- **纯计算 / 文本**：`json_format` / `regex_test` / `env_var_check` / `text_diff` / `table_text` / `date_calc`（`text_transform` 已于 2026-10-28 移除——Base64 由 `base64`、短哈希由 `sha256sum`+`cut`、行合并/切分由 `tr`/`paste`、URL 编解码由 `python3` 承担；`todo_scan` 已于 2026-10-18 移除，
+  改用 `search_in_files`）。原 `get_current_time` / `calc` / `convert_units` 已于 2026-10-24 **整体移除**（`date` 已在白名单可代 `get_current_time`；`calc` / `convert_units` 由 `python_snippet_run` 或 `run_command` 承担 —— 代价是每次计算多一轮工具往返，且失去 `bc` 的任意精度与 `uom` 的类型安全）。
+  **`date_calc` 保留**：它不止取当前时间，还提供 `offset`（`+30d` / `-2w` / `+1m`）与 `diff`（两日期间隔）两种模式，`date` 单条命令无法表达，且纯计算无 CLI 依赖。
 - **网络 / 执行 / 会话**：`get_weather` / `web_search` / `http_fetch` / `http_request` / `terminal_session` / `background_job`（`status` / `list` / `output` 三个只读动作已合并为一个 `action` 选择器，2026-10-24）+ `background_job_cancel`（写副作用，保持独立） / `workflow_execute` / `run_command`。
 - **聚合编排**：`docs_health_sweep`；原 `ci_pipeline_local` / `release_ready_check` / `quality_workspace` 已于后续整体删除，改用 `run_command`；`playbook_run_commands`（原 `error_output_playbook` 启发式的执行半体）已于 2026-10-27 整工具删除。
 - **多动作合并记录（2026-10-28）**：`structured_validate` / `structured_query` / `structured_diff` / `structured_patch` 合并为 **`structured`** + `action`（`validate` / `query` / `diff` / `patch`），与 `git` / `gh_pr` / `code_nav` / `reminder`·`event` 同一形态。**代价按 §2.1 全额支付**：`builtin_write_effect_tools` 按工具名判定，而 `action=patch` 是写侧，
@@ -153,12 +161,15 @@
 ## 4. 建议切片顺序
 
 1. ~~**§3.1.1 试点**：`cargo_clean`~~（**已落地 2026-10-07**：删 ToolSpec + runner + `cargo_clean_try` + `CargoCleanArgs`，并同步 tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
-2. ~~**§3.1.2 写侧安全门族**（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）~~（**已落地 2026-10-07**：按「直接收敛、不新增机制」删 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`），并同步 `registry_policy` / `codebase_semantic_invalidation` / `dev_tag` / tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `docs/待办清单.md` / `CHANGELOG.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
-3. ~~**§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。~~ **Slice A 已落地 2026-10-07**（7 个元数据 / 旁路工具）；**Slice B 已落地 2026-10-07**（`cargo_fmt_check` / `cargo_nextest` / `cargo_audit` / `cargo_deny`，并改写内置工作流模板 `rust_ci_fmt` 与 fixtures / examples）。
+2. ~~**§3.1.2 写侧安全门族**（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）~~（**已落地 2026-10-07**：按「直接收敛、不新增机制」删 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`），
+  并同步 `registry_policy` / `codebase_semantic_invalidation` / `dev_tag` / tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `docs/待办清单.md` / `CHANGELOG.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
+3. ~~**§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。~~ **Slice A 已落地 2026-10-07**（7 个元数据 / 旁路工具）；
+  **Slice B 已落地 2026-10-07**（`cargo_fmt_check` / `cargo_nextest` / `cargo_audit` / `cargo_deny`，并改写内置工作流模板 `rust_ci_fmt` 与 fixtures / examples）。
 4. ~~**§3.2 Go / Python 族**：按频率评估；`cargo_test` / `pytest_run` 收敛前须核对后台任务装配。~~ **Go 族已落地 2026-10-12**（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`，接受 §2.1 代价；Go 族无后台任务装配耦合）。**Python 族已落地 2026-10-12**（`ruff_check` / `mypy_check` / `uv_sync` / `uv_run` 四个只读薄封装改用 `run_command`；
   评估确认 `ruff_check` / `mypy_check` 函数体被 `ci_tools` / `quality_tools` / `run_lints` 复用，故**保留函数体**、仅删 ToolSpec / runner / 参数结构体，`uv_sync` / `uv_run` 无复用则整函数删除；`pytest_run` 因后台任务装配**保留**；接受 §2.1 代价，`ruff_` / `mypy_` / `uv_` 前缀本就不在并行只读批）。**质量族 `pre_commit_run` 已落地 2026-10-12**（改用 `run_command`；
   `pre-commit` 已在 `allowed_commands` 白名单；`precommit_tools.rs` 整文件删除，无聚合器复用；原「无 `.pre-commit-config.yaml` 时跳过」保护消失；接受 §2.1 代价，`pre_commit` 前缀本就不在并行只读批）。
-5. ~~**`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。~~ **读类纯薄封装 10 个已落地 2026-10-07**（`gh_pr_list` / `gh_pr_view` / `gh_pr_diff` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_run_view` / `gh_release_list` / `gh_release_view` / `gh_search`，接受 §2.1 代价；`gh_` 前缀本就不在并行只读批）。保留读类增值 2 个（`gh_pr_checks` / `gh_run_failure_summary`）、写类 8 个与 `gh_pr_body_draft` / `gh_api`；写类因类型化参数价值高，**暂缓**。
+5. ~~**`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。~~ **读类纯薄封装 10 个已落地 2026-10-07**（`gh_pr_list` / `gh_pr_view` / `gh_pr_diff` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_run_view` / `gh_release_list` / `gh_release_view` / `gh_search`，
+  接受 §2.1 代价；`gh_` 前缀本就不在并行只读批）。保留读类增值 2 个（`gh_pr_checks` / `gh_run_failure_summary`）、写类 8 个与 `gh_pr_body_draft` / `gh_api`；写类因类型化参数价值高，**暂缓**。
 6. ~~**白名单外 CLI（`typos` / `codespell` / `ast-grep`）**：仅在决定扩白名单后再评估（风险最高，暂不推进）。~~ **已落地 2026-10-18**：先向 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装；typos/codespell 函数体保留供 `docs_health_sweep` 复用。
 
 保留项（§3.3，含 `gh_api`）不动（`playbook_run_commands` 已于 2026-10-27 整工具删除）；Git 只读（§3.2）维持 §8.5 的**保留**决策。

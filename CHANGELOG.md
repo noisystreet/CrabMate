@@ -113,7 +113,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 **Git pre-release `v0.8.1-alpha.0`** (first alpha after **`v0.8.0`**). crates.io remains **`0.8.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
 
-One entry below is **BREAKING** for existing configs: `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`), and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
+One entry below is **BREAKING** for existing configs:
+  `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is
+  behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`),
+  and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
 
 ### Removed
 
@@ -151,8 +154,19 @@ One entry below is **BREAKING** for existing configs: `permission_confirm_tools`
   so a block can never swallow the frontmatter boundary; flat single-line and quoted values keep their previous behaviour. Tests: folded `>-`,
   literal `|`, indented-plain multi-line, quoted single line, both block boundaries, an indented `name:` staying inside the description,
   an empty block falling back to the first body line, and one end-to-end `list_skills` scan of a `<id>/SKILL.md` file.
-- **`run_command`: command substitution no longer breaks the generated `bash -c` script.** When `args` contained a backtick or `$(` alongside another expansion trigger (glob / `$VAR` / `~` / an operator token), the token was rewritten to `\$(`, which only literalises the `$` and leaves an unquoted `(` behind, so the whole line died with `bash: -c: line 1: syntax error near unexpected token '('`. Such tokens are now always double-quoted (inside double quotes `\$` is a literal `$` and `(` is ordinary), so they stay literal as `docs/工具说明.md` already promised. Command substitution is still not executed and still does not trigger wrapping on its own.
-- **`run_command`: a glob inside an argument that also contains whitespace no longer fails silently.** `["src/*.rs count:", "wc"]` is quoted (it has whitespace), so the glob never expands — previously with no trace at all. When wrapping happens the decision is now recorded in the `rewrites` channel (`echo *.toml → bash -c 'echo *.toml'（shell 包装：glob）`), plus a dedicated note listing tokens whose glob was suppressed by quoting. `rewrites` stays opt-in via **`CM_RUN_COMMAND_ECHO_REWRITES`**, so default output is unchanged byte-for-byte.
+- **`run_command`: command substitution no longer breaks the generated `bash -c` script.**
+  When `args` contained a backtick or `$(` alongside another expansion trigger (glob / `$VAR` / `~` / an operator token),
+  the token was rewritten to `\$(`, which only literalises the `$` and leaves an unquoted `(` behind,
+  so the whole line died with `bash: -c: line 1: syntax error near unexpected token '('`. Such tokens are now always double-quoted (inside double
+  quotes `\$` is a literal `$` and `(` is ordinary),
+  so they stay literal as `docs/工具说明.md` already promised. Command substitution is still not executed and still does not trigger wrapping on its
+  own.
+- **`run_command`: a glob inside an argument that also contains whitespace no longer fails silently.**
+  `["src/*.rs count:", "wc"]` is quoted (it has whitespace),
+  so the glob never expands — previously with no trace at all. When wrapping happens the decision is now recorded in the `rewrites` channel
+  (`echo *.toml → bash -c 'echo *.toml'（shell 包装：glob）`),
+  plus a dedicated note listing tokens whose glob was suppressed by quoting. `rewrites` stays opt-in via **`CM_RUN_COMMAND_ECHO_REWRITES`**,
+  so default output is unchanged byte-for-byte.
 - **`run_command`: a nested shell call is no longer double-wrapped, which used to blank out its variables.**
   `env FOO=inner bash -c "echo FOO=$FOO"` was treated as an ordinary argv needing expansion,
   so the outer wrapper expanded `$FOO` **before** the inner shell ever ran — the inner shell received `echo FOO=` and printed nothing,
@@ -165,11 +179,20 @@ One entry below is **BREAKING** for existing configs: `permission_confirm_tools`
   so the `$VAR` check exemption and the approval `needs_shell` path are untouched — only the actual wrapping step is cut. The detection is
   intentionally coarse (it does not model wrapper programs, so `["echo","bash","-c"]` also counts),
   trading a rare missed expansion for the absence of silent wrong values.
-- **`run_command`: `structured_payload.invocation` no longer truncates a multi-line invocation.** The payload is rebuilt by re-parsing the rendered text and took `.lines().next()`, so any invocation spanning lines — a heredoc script, a multi-line `git commit -m` — reached the client as its **first line only** (`printf '[%s]' "line1` for a two-line script); timeout and cancel responses, which prepend a notice line, lost the invocation entirely. The splitter now walks from `命令：` to the first terminator (`退出码：` / `标准输出：` / `标准错误：` / `(无输出)`) and keeps every line in between, and it no longer assumes `命令：` is on line 1. Residual ambiguity: an invocation containing its own line that starts with `退出码：` is still cut there.
+- **`run_command`: `structured_payload.invocation` no longer truncates a multi-line invocation.**
+  The payload is rebuilt by re-parsing the rendered text and took `.lines().next()`, so any invocation spanning lines — a heredoc script,
+  a multi-line `git commit -m` — reached the client as its **first line only** (`printf '[%s]' "line1` for a two-line script);
+  timeout and cancel responses, which prepend a notice line,
+  lost the invocation entirely. The splitter now walks from `命令：` to the first terminator (`退出码：` / `标准输出：` / `标准错误：` / `(无输出)`)
+  and keeps every line in between, and it no longer assumes `命令：` is on line 1. Residual ambiguity:
+  an invocation containing its own line that starts with `退出码：` is still cut there.
 
 ## [0.8.0] - 2026-11-01
 
-**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.8.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): two themes dominate and one of them rewires the tool surface, so read the **BREAKING** entries and the **Removed** section before upgrading.
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install:
+  **`cargo install crabmate`**. Git tag **`v0.8.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per
+  [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change):
+  two themes dominate and one of them rewires the tool surface, so read the **BREAKING** entries and the **Removed** section before upgrading.
 
 **`crabmatectl` — a local multi-instance manager, new in this release.** A second binary (Linux-only;
   other platforms are refused at the entry point as `platform_unsupported`) supervises several `serve` processes:
@@ -281,7 +304,13 @@ Also in this release:
   `output_matches` wakes without waiting out the timeout, substring across two pushes, timeout leaves the job untouched,
   `queued`→`running`→terminal wake, cancel wake, two consecutive waits on the same id both observe new progress, `NotFound`/`Expired`,
   20× complete-vs-wait race), host-level wording, and tool-level clamping / `deny_unknown_fields` / no-host degradation.
-- **`crabmatectl restart --grace <SECS>`: the "gentle remedy" is no longer forced into `SIGKILL`**: `restart` hard-coded the 10 s default grace while `serve` measures **~30 s** to exit after `SIGTERM`, so the exact command `docs/命令行与路由.md` prescribes for "profile changed, needs a restart" reliably ended in `SIGKILL` — killing an instance mid-shutdown precisely in the flow that is supposed to be the polite one, with no way to widen the window. The flag reuses the knob `down --timeout` and `supervise --grace` already expose (same meaning: grace before `SIGKILL`), so no new semantics were invented; the readiness wait stays on `--timeout`. `docs/命令行与路由.md` now names both widenings instead of only `down`'s.
+- **`crabmatectl restart --grace <SECS>`: the "gentle remedy" is no longer forced into `SIGKILL`**:
+  `restart` hard-coded the 10 s default grace while `serve` measures **~30 s** to exit after `SIGTERM`,
+  so the exact command `docs/命令行与路由.md` prescribes for "profile changed, needs a restart"
+  reliably ended in `SIGKILL` — killing an instance mid-shutdown precisely in the flow that is supposed to be the polite one,
+  with no way to widen the window. The flag reuses the knob `down --timeout` and `supervise --grace` already expose (same meaning:
+  grace before `SIGKILL`), so no new semantics were invented;
+  the readiness wait stays on `--timeout`. `docs/命令行与路由.md` now names both widenings instead of only `down`'s.
 
 ### Fixed
 
@@ -1919,7 +1948,10 @@ Also in this release:
 
 ### Security
 
-- **`AGENTS.md` symlink escape blocked**: that file's content is injected into `system` and sent to the model, so a workspace symlink pointing at an arbitrary local file (e.g. `/etc/passwd`) would have pulled it into the conversation. The loader now canonicalizes the path and **ignores** the file when it resolves outside the workspace root; symlinks pointing inside the workspace still work. Unix-only. See `docs/配置说明.md`.
+- **`AGENTS.md` symlink escape blocked**:
+  that file's content is injected into `system` and sent to the model, so a workspace symlink pointing at an arbitrary local file (e.g. `/etc/passwd`)
+  would have pulled it into the conversation. The loader now canonicalizes the path and **ignores** the file when it resolves outside the workspace
+  root; symlinks pointing inside the workspace still work. Unix-only. See `docs/配置说明.md`.
 
 - **Cleared the three RustSec vulnerabilities flagged by `cargo audit`**:
   bumped three transitive TLS crates to their fixed patch releases — **`rustls-webpki`** `0.103.15` → `0.103.16` (**RUSTSEC-2026-0382**,
@@ -1963,7 +1995,12 @@ Also in this release:
   and is registered in `write_effect_tools` for auditing. Both are injected through `ToolJobsToolHost` (no allowlist approval). See `docs/工具说明.md`
   / `docs/en/TOOLS.md`.
 
-- **`GET /tools/plugins/{file}` endpoint**: read-only single-file detail for a workspace dynamic tool definition (`<workspace>/plugins/{file}`), returning `file` / `name` / `description` / `valid` / `error` / `command_allowed` / `parameters` / `args` / `pass_args_json`. `{file}` must match `[A-Za-z0-9_-]+.json` (otherwise **400** `INVALID_PLUGIN_DEFINITION`); an unset workspace or a missing file returns **404** `PLUGIN_NOT_FOUND`. Closes the read-only tail of the tool-management API (design doc `docs/design/tool_management_api.md` §3.4). See `docs/命令行契约.md` / `docs/命令行与路由.md`.
+- **`GET /tools/plugins/{file}` endpoint**:
+  read-only single-file detail for a workspace dynamic tool definition (`<workspace>/plugins/{file}`),
+  returning `file` / `name` / `description` / `valid` / `error` / `command_allowed` / `parameters` / `args` / `pass_args_json`. `{file}` must match
+  `[A-Za-z0-9_-]+.json` (otherwise **400** `INVALID_PLUGIN_DEFINITION`);
+  an unset workspace or a missing file returns **404** `PLUGIN_NOT_FOUND`. Closes the read-only tail of the tool-management API (design doc
+  `docs/design/tool_management_api.md` §3.4). See `docs/命令行契约.md` / `docs/命令行与路由.md`.
 
 - **Context-archive retention configuration**:
   two new `[agent]` keys make the cross-turn original-text archive (design doc `docs/design/context_window_compaction.md` §3.8 / §4.2)
@@ -2031,9 +2068,22 @@ Also in this release:
   ranges (256–32768 / 0–10,000,000)
   and remain overridable via `config.toml` / `CM_MAX_TOKENS` / `CM_LLM_CONTEXT_TOKENS`. See `docs/配置说明.md` §上下文窗口.
 
-- **Outer-loop recovery for truncated turns that also call tools**: when a turn is flagged truncated (upstream `finish_reason == "length"`, or the stream is cut off before `[DONE]`) **and** the same model response also carries `tool_calls`, the turn takes the `ProceedToExecuteTools` path and previously skipped the stop-turn continuation nudge. The outer loop now injects the same bounded continuation feedback **after the tools run** (still ≤2 per turn, shared with the stop-turn path) and forces the next iteration, so such turns resume instead of stalling as if complete. Pairs with the `stream_ended.reason="truncated"` terminal state; `SSE_PROTOCOL_VERSION` is unchanged (additive soft value). See `docs/design/run_loop_state_ownership.md` / `docs/design/client_contract_versioning.md`.
+- **Outer-loop recovery for truncated turns that also call tools**:
+  when a turn is flagged truncated (upstream `finish_reason == "length"`, or the stream is cut off before `[DONE]`)
+  **and** the same model response also carries `tool_calls`,
+  the turn takes the `ProceedToExecuteTools` path and previously skipped the stop-turn continuation nudge. The outer loop now injects the same bounded
+  continuation feedback **after the tools run** (still ≤2 per turn, shared with the stop-turn path) and forces the next iteration,
+  so such turns resume instead of stalling as if complete. Pairs with the `stream_ended.reason="truncated"` terminal state;
+  `SSE_PROTOCOL_VERSION` is unchanged (additive soft value). See `docs/design/run_loop_state_ownership.md` /
+  `docs/design/client_contract_versioning.md`.
 
-- **Background jobs now enabled by default**: **`[tool_registry] background_jobs_enabled`** (`config/tools.toml`) now defaults to **`true`** (was **`false`**), so **`run_command`** (and any tool in **`background_job_async_tools`**) can be launched with **`async: true`** out of the box. The model must still pass **`async: true`** explicitly — synchronous behavior is unchanged — and the async path still **rejects interactive approval** (the command must already be allowlisted or `AllowAlways`), so this does not widen the approval surface. The default **`background_job_async_tools`** stays **`["run_command"]`**. See `docs/design/background_tool_jobs_contract.md` §6 / `docs/配置说明.md`.
+- **Background jobs now enabled by default**:
+  **`[tool_registry] background_jobs_enabled`** (`config/tools.toml`) now defaults to **`true`** (was **`false`**),
+  so **`run_command`** (and any tool in **`background_job_async_tools`**)
+  can be launched with **`async: true`** out of the box. The model must still pass **`async: true`** explicitly — synchronous behavior is unchanged —
+  and the async path still **rejects interactive approval** (the command must already be allowlisted or `AllowAlways`),
+  so this does not widen the approval surface. The default **`background_job_async_tools`** stays **`["run_command"]`**. See
+  `docs/design/background_tool_jobs_contract.md` §6 / `docs/配置说明.md`.
 
 - **`run_command` allowlist expanded**:
   added 21 common developer CLIs to the default **`allowed_commands`** (`config/tools.toml`)
@@ -2256,7 +2306,12 @@ Also in this release:
 
 ### Added
 
-- **`docs/openapi.json` snapshot**: committed OpenAPI 3.0.3 snapshot of `build_openapi_spec()` with a lock-step unit test (`openapi_docs_snapshot_matches_spec`); regenerate after route/contract changes or version bumps via `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec` — same maintenance model as `man/crabmate.1`. Import into Swagger Editor / VS Code OpenAPI extensions / Postman for browsing or multi-language client generation; `GET /openapi.json` remains the live source of truth.
+- **`docs/openapi.json` snapshot**:
+  committed OpenAPI 3.0.3 snapshot of `build_openapi_spec()` with a lock-step unit test (`openapi_docs_snapshot_matches_spec`);
+  regenerate after route/contract changes or version bumps via
+  `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec` — same maintenance model as `man/crabmate.1`. Import into
+  Swagger Editor / VS Code OpenAPI extensions / Postman for browsing or multi-language client generation;
+  `GET /openapi.json` remains the live source of truth.
 - **`DELETE /conversation/{conversation_id}`**:
   deletes one server-side persisted conversation record. **Idempotent** — **204** whether the row exists, is missing, or has already expired;
   an empty / over-long / illegal-character `conversation_id` returns **400** `INVALID_CONVERSATION_ID` (same `normalize_client_conversation_id` rules
@@ -2288,13 +2343,44 @@ Also in this release:
 
 ### Changed
 
-- **BREAKING**: Removed the legacy MCP config key — TOML **`[agent] mcp_command`** and env var **`CM_MCP_COMMAND`** — together with the one-shot TOML→user-data import (`maybe_import_legacy_toml_mcp`) and the **`toml_legacy_imported`** marker field in **`$XDG_DATA_HOME/crabmate/mcp_servers.json`**. MCP servers are configured **only** in that user-data file (via the Web UI / `PUT /user-data/mcp-servers`); leftover `toml_legacy_imported` keys on disk are ignored, while an old `config.toml` still carrying `[agent] mcp_command` is **rejected under `deny_unknown_fields`** — remove the key, otherwise the whole config fails to load (startup and hot reload alike).
-- **BREAKING**: The system keyring is now the **only** source for persisted secrets. The legacy plaintext-file migration is removed: the server no longer reads, migrates, or deletes **`$XDG_DATA_HOME/crabmate/secrets/<account>`** files, and the **`secrets/`** subdirectory is no longer created under the user-data root. MCP server deletion now only clears the keyring entry (no on-disk prune). Any leftover plaintext files are ignored — re-enter the Web API Bearer / MCP Bearer via `crabmate web-bearer set` or the Web settings if a secret was never migrated.
-- **BREAKING**: `GET /user-data/secrets/status` no longer returns the retired **`client_llm` / `executor_llm`** slots (they were always `{ "set": false }` compatibility fields since the model-key authority moved to the Client request body); the payload is now just **`{ "web_api_bearer": … }`**. Readings through `SecretsStatusResponse` / OpenAPI (`docs/openapi.json`) are updated; `crabmate doctor` and `crabmate web-bearer` already only consumed `web_api_bearer`.
-- **BREAKING**: Removed TOML key **`final_plan_semantic_check_accept_legacy_text`**, env var **`CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT`**, and the **`final_plan_semantic_check_accept_legacy_text`** field in the **`GET /status`** payload. The side-check model now accepts **JSON only**; a plain-text `CONSISTENT` / `INCONSISTENT` reply fails open as consistent (previously it was only parsed when the flag was `true`). Old `config.toml` files carrying the key are rejected under `[agent]` (`deny_unknown_fields`) — remove it.
-- **BREAKING**: Removed the flat CLI flag compatibility layer. Legacy argv without a subcommand (`--serve`, bare `--dry-run`, `--benchmark` / `--batch` / `--resume`, …) is **no longer** rewritten into `serve` / `config` / `bench`; clap now reports a missing subcommand, so write the subcommand explicitly. The only remaining argv normalization is the `help` subcommand (`help` → root `--help`, `help <subcommand>` → that subcommand's `--help`), implemented in `src/cm_config/cli/help_argv.rs` (`normalize_help_argv`) with contract fixture `tests/fixtures/cli/help_normalize.json`. `config --dry-run` (subcommand option) was still accepted then; it is removed in the **Removed** entry below.
+- **BREAKING**:
+  Removed the legacy MCP config key — TOML **`[agent] mcp_command`** and env var **`CM_MCP_COMMAND`** — together with the one-shot TOML→user-data
+  import (`maybe_import_legacy_toml_mcp`)
+  and the **`toml_legacy_imported`** marker field in **`$XDG_DATA_HOME/crabmate/mcp_servers.json`**. MCP servers are configured **only** in that
+  user-data file (via the Web UI / `PUT /user-data/mcp-servers`); leftover `toml_legacy_imported` keys on disk are ignored,
+  while an old `config.toml` still carrying `[agent] mcp_command` is **rejected under `deny_unknown_fields`** — remove the key,
+  otherwise the whole config fails to load (startup and hot reload alike).
+- **BREAKING**:
+  The system keyring is now the **only** source for persisted secrets. The legacy plaintext-file migration is removed: the server no longer reads,
+  migrates, or deletes **`$XDG_DATA_HOME/crabmate/secrets/<account>`** files,
+  and the **`secrets/`** subdirectory is no longer created under the user-data root. MCP server deletion now only clears the keyring entry (no on-disk
+  prune). Any leftover plaintext files are ignored — re-enter the Web API Bearer / MCP Bearer via `crabmate web-bearer set` or the Web settings if a
+  secret was never migrated.
+- **BREAKING**:
+  `GET /user-data/secrets/status` no longer returns the retired **`client_llm` / `executor_llm`** slots (they were always `{ "set": false }`
+  compatibility fields since the model-key authority moved to the Client request body);
+  the payload is now just **`{ "web_api_bearer": … }`**. Readings through `SecretsStatusResponse` / OpenAPI (`docs/openapi.json`) are updated;
+  `crabmate doctor` and `crabmate web-bearer` already only consumed `web_api_bearer`.
+- **BREAKING**:
+  Removed TOML key **`final_plan_semantic_check_accept_legacy_text`**, env var **`CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT`**,
+  and the **`final_plan_semantic_check_accept_legacy_text`** field in the **`GET /status`** payload. The side-check model now accepts **JSON only**;
+  a plain-text `CONSISTENT` / `INCONSISTENT` reply fails open as consistent (previously it was only parsed when the flag was `true`). Old `config.toml`
+  files carrying the key are rejected under `[agent]` (`deny_unknown_fields`) — remove it.
+- **BREAKING**:
+  Removed the flat CLI flag compatibility layer. Legacy argv without a subcommand (`--serve`, bare `--dry-run`, `--benchmark` / `--batch` / `--resume`,
+  …) is **no longer** rewritten into `serve` / `config` / `bench`; clap now reports a missing subcommand,
+  so write the subcommand explicitly. The only remaining argv normalization is the `help` subcommand (`help` → root `--help`,
+  `help <subcommand>` → that subcommand's `--help`), implemented in `src/cm_config/cli/help_argv.rs` (`normalize_help_argv`)
+  with contract fixture `tests/fixtures/cli/help_normalize.json`. `config --dry-run` (subcommand option) was still accepted then;
+  it is removed in the **Removed** entry below.
 - **Internal dedup (no behavior change)**: the duplicated JSON-path resolver was merged into a single implementation at `cm_workflow::resolve_json_path` (used by both workflow `run_if` / `for_each` and plan-step acceptance); `cm_agent::acceptance` no longer defines or re-exports its own copy.
-- **Internal typed turn-budget denial (no behavior change)**: `TurnBudgetCounter::deny_llm_call_if_exhausted` now returns the structured `TurnBudgetDeny` (`WallClock` / `LlmCalls` / `Tokens`) instead of a user-facing `String`, so call sites branch on the variant rather than sniffing Chinese substrings; the dead `is_turn_budget_limit_user_message` helper is gone. User-visible SSE text and codes are byte-identical (wall clock still maps to `TIME_LIMIT_EXHAUSTED` in the outer loop, the retry gate still flattens to `LlmCompleteError::Other`). None of this is part of the semver promise surface: `cm_agent` is `#[doc(hidden)]` and the `TurnBudgetDeny` re-export is additive.
+- **Internal typed turn-budget denial (no behavior change)**:
+  `TurnBudgetCounter::deny_llm_call_if_exhausted` now returns the structured `TurnBudgetDeny` (`WallClock` / `LlmCalls` / `Tokens`)
+  instead of a user-facing `String`, so call sites branch on the variant rather than sniffing Chinese substrings;
+  the dead `is_turn_budget_limit_user_message` helper is gone. User-visible SSE text and codes are byte-identical (wall clock still maps to
+  `TIME_LIMIT_EXHAUSTED` in the outer loop,
+  the retry gate still flattens to `LlmCompleteError::Other`). None of this is part of the semver promise surface:
+  `cm_agent` is `#[doc(hidden)]` and the `TurnBudgetDeny` re-export is additive.
 - **Internal dead-symbol cleanup (no behavior change)**:
   removed three dead internal symbols with **zero consumers anywhere** (this repo plus the `client` / `crabmate-client-s3` / `crabmate-client-cratesio`
   checkouts), none of which is part of the semver promise surface in `docs/design/crates_io_single_package.md` §2.4. (1)
@@ -2321,7 +2407,11 @@ Also in this release:
 
 ### Removed
 
-- **BREAKING (CLI)**: the no-op **`config --dry-run`** option is gone. **`config`** now takes no options (it always runs a config self-check and exits) and **`config --dry-run`** is rejected by clap; `cargo run -- config` output is unchanged. `src/cm_config/cli/definitions.rs` drops the `ConfigCmd` struct for a unit `Config` variant; **`ParsedCliArgs::dry_run`** (which drives `cli_run::run_dry_run`) keeps the same meaning.
+- **BREAKING (CLI)**:
+  the no-op **`config --dry-run`** option is gone. **`config`** now takes no options (it always runs a config self-check and exits)
+  and **`config --dry-run`** is rejected by clap;
+  `cargo run -- config` output is unchanged. `src/cm_config/cli/definitions.rs` drops the `ConfigCmd` struct for a unit `Config` variant;
+  **`ParsedCliArgs::dry_run`** (which drives `cli_run::run_dry_run`) keeps the same meaning.
 
 ### Fixed
 
@@ -2337,14 +2427,34 @@ Also in this release:
 
 ## [0.5.2] - 2026-09-07
 
-**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.2`** matches this package. SSE wire protocol stays **v2**; all additions below are purely additive public protocol face (new exported types, wire JSON unchanged) — released as patch + notes per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2; existing Clients keep working.
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install:
+  **`cargo install crabmate`**. Git tag **`v0.5.2`** matches this package. SSE wire protocol stays **v2**;
+  all additions below are purely additive public protocol face (new exported types, wire JSON unchanged)
+  — released as patch + notes per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2; existing Clients keep working.
 
 ### Added
 
-- **Public workspace HTTP DTOs**: the full `/workspace*` JSON contract (`WorkspaceSetBody` / `WorkspacePickResponse` / `WorkspaceEntry` / `WorkspaceResponse` / `WorkspaceProjectsListResponse`, file/dir/clone/search/changelog bodies — 27 types) moved from the server-gated `cm_web_host` into the public `cm_api_contract::workspace` module (protocol face); the original path now re-exports it, so `cm_web_host` / `web` call sites are unchanged and wire JSON is identical. OpenAPI's hand-written `WorkspaceSetBody` component now documents the previously missing `project` key.
-- **Public sessions list-row projection**: `cm_api_contract::SessionListRow` (thin subset of the `GET/PUT /user-data/workspaces/current/sessions` row — `id` required; `title` / `updated_at` / `pinned` / `starred` / `server_conversation_id` / `server_revision` / `workspace_root` lenient defaults) plus `SessionListRow::parse_rows(&Value)` (non-array → empty, rows without `id` skipped). The server keeps storing client-authored rows opaquely (unknown fields like `messages` are tolerated, wire JSON unchanged); OpenAPI now `$ref`s the row component from `WebSessionsFile` / `PutWebSessionsBody`.
-- **Public `command_approval` AG-UI parse type**: `cm_sse_protocol::CommandApprovalData` (camelCase keys matching the wire JSON 1:1) is now exported for Clients, with `From<&CommandApprovalBody>` bridging the snake-face protocol type. `ag_ui_convert` now builds the CUSTOM `command_approval` `data` through this type instead of a hand-written `json!` — wire shape unchanged (absent `allowlistKey` still serializes as `null`, key kept, not omitted). Documented the `data` fields in `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md`.
-- **Public `/health` contract view**: `GET /health` responses serialize through the `cm_api_contract` view layer (`HealthReportView` / `HealthCheckItemView`), registered in OpenAPI `components` with the `/health` response `$ref`-linked. Wire JSON is unchanged; `checks` keys (`dep_*` etc.) stay dynamic — the view intentionally omits `deny_unknown_fields` so older Clients keep deserializing when new check keys appear.
+- **Public workspace HTTP DTOs**:
+  the full `/workspace*` JSON contract (`WorkspaceSetBody` / `WorkspacePickResponse` / `WorkspaceEntry` / `WorkspaceResponse` /
+  `WorkspaceProjectsListResponse`, file/dir/clone/search/changelog bodies — 27 types)
+  moved from the server-gated `cm_web_host` into the public `cm_api_contract::workspace` module (protocol face); the original path now re-exports it,
+  so `cm_web_host` / `web` call sites are unchanged and wire JSON is identical. OpenAPI's hand-written `WorkspaceSetBody` component now documents the
+  previously missing `project` key.
+- **Public sessions list-row projection**:
+  `cm_api_contract::SessionListRow` (thin subset of the `GET/PUT /user-data/workspaces/current/sessions` row — `id` required;
+  `title` / `updated_at` / `pinned` / `starred` / `server_conversation_id` / `server_revision` / `workspace_root` lenient defaults)
+  plus `SessionListRow::parse_rows(&Value)` (non-array → empty,
+  rows without `id` skipped). The server keeps storing client-authored rows opaquely (unknown fields like `messages` are tolerated,
+  wire JSON unchanged); OpenAPI now `$ref`s the row component from `WebSessionsFile` / `PutWebSessionsBody`.
+- **Public `command_approval` AG-UI parse type**:
+  `cm_sse_protocol::CommandApprovalData` (camelCase keys matching the wire JSON 1:1) is now exported for Clients,
+  with `From<&CommandApprovalBody>` bridging the snake-face protocol type. `ag_ui_convert` now builds the CUSTOM `command_approval` `data` through this
+  type instead of a hand-written `json!` — wire shape unchanged (absent `allowlistKey` still serializes as `null`, key kept,
+  not omitted). Documented the `data` fields in `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md`.
+- **Public `/health` contract view**:
+  `GET /health` responses serialize through the `cm_api_contract` view layer (`HealthReportView` / `HealthCheckItemView`),
+  registered in OpenAPI `components` with the `/health` response `$ref`-linked. Wire JSON is unchanged; `checks` keys (`dep_*` etc.)
+  stay dynamic — the view intentionally omits `deny_unknown_fields` so older Clients keep deserializing when new check keys appear.
 
 ### Fixed
 
@@ -2360,8 +2470,19 @@ Also in this release:
 
 ### Added
 
-- **Transparent tool-failure retry** (`[tool_registry] tool_retry_*`, **off by default**): readonly, approval-free tools retry transient failures (`timeout` / `http_timeout` / `rate_limited` / `http_network_error`) at the dispatch layer with exponential backoff (`min(backoff*2^(n-1), 5000)`) and user-cancel awareness. Intermediate failures are **not** written to model context; only the final result is returned. `codebase_semantic_search` is hard-excluded (its `rebuild_index` writes workspace SQLite); `http_fetch` URLs that would require approval and external-path `read_dir` calls are skipped to avoid re-prompting.
-- **Background tool job live output streaming**: `run_command` background jobs (`async:true`) expose **`GET /tools/jobs/{id}/output?cursor=`** incremental polling (`tail -f`): per-job bounded ring buffer (`seq`-monotonic items with `stdout`/`stderr`, `cursor` / `truncated` / `eof`), output not truncated by `command_max_output_len` during streaming, terminal tail trimmed to the output cap, ownership check identical to the status endpoint. New config `background_job_output_buffer_bytes` (default `262144`). Requires a matching **crabmate-client** build to show live output in the job bubble (old client ignores it; old `serve` falls back to status-only polling).
+- **Transparent tool-failure retry**
+  (`[tool_registry] tool_retry_*`, **off by default**): readonly,
+  approval-free tools retry transient failures (`timeout` / `http_timeout` / `rate_limited` / `http_network_error`)
+  at the dispatch layer with exponential backoff (`min(backoff*2^(n-1), 5000)`)
+  and user-cancel awareness. Intermediate failures are **not** written to model context;
+  only the final result is returned. `codebase_semantic_search` is hard-excluded (its `rebuild_index` writes workspace SQLite);
+  `http_fetch` URLs that would require approval and external-path `read_dir` calls are skipped to avoid re-prompting.
+- **Background tool job live output streaming**:
+  `run_command` background jobs (`async:true`) expose **`GET /tools/jobs/{id}/output?cursor=`** incremental polling (`tail -f`):
+  per-job bounded ring buffer (`seq`-monotonic items with `stdout`/`stderr`, `cursor` / `truncated` / `eof`),
+  output not truncated by `command_max_output_len` during streaming, terminal tail trimmed to the output cap,
+  ownership check identical to the status endpoint. New config `background_job_output_buffer_bytes` (default `262144`). Requires a matching
+  **crabmate-client** build to show live output in the job bubble (old client ignores it; old `serve` falls back to status-only polling).
 
 ### Changed
 
@@ -2389,9 +2510,18 @@ SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT
 - **`POST /workspace/file/move`**: rename/move a regular file (`from`/`to`, optional `overwrite` / `conversation_id`); **204**; records session changelist like `move_file`.
 - **`POST /chat/stream/{job_id}/cancel`**: cooperative cancel for an in-flight SSE turn (`job_id` = `x-stream-job-id`). Also cancels that turn’s background `run_command` jobs. Aborting the SSE connection alone does **not** cancel (so `stream_resume` still works). Missing/finished job → **410** `STREAM_JOB_GONE` (same code as `stream_resume`).
 - **`GET /workspace/file/raw`**: serve workspace **png/jpg/jpeg/webp/gif** bytes (relative `path`, 8 MiB cap, same auth as other protected APIs) so Client chat can show `![alt](relative.png)` without copying files onto `/uploads`.
-- **`PUT /workspace/file/raw`**: write **raw bytes** into the workspace (`path` query, optional `create_only` / `update_only`; **16 MiB** cap, same as JSON `POST /workspace/file`). HTTP body limit on this route is **16 MiB** (not the ~220 MiB protected-API default). **204** on success. Used by Client OS-file drop (text and binary). `GET` on this path remains image-only. Path segments `.` / `..` are rejected; names like `foo..bar.bin` are allowed.
+- **`PUT /workspace/file/raw`**:
+  write **raw bytes** into the workspace (`path` query, optional `create_only` / `update_only`; **16 MiB** cap,
+  same as JSON `POST /workspace/file`). HTTP body limit on this route is **16 MiB** (not the ~220 MiB protected-API default). **204** on success. Used
+  by Client OS-file drop (text and binary). `GET` on this path remains image-only. Path segments `.` / `..` are rejected;
+  names like `foo..bar.bin` are allowed.
 - System prompt + successful tool-result hint: embed those images with `![alt](relative.png)` in the final reply; do not tell users to copy files onto `CM_WEB_STATIC_DIR`.
-- Outbound `chat/completions`: session still stores **`/uploads/<file>`**. Files live next to the session SQLite (**`.crabmate/chat_uploads/`** beside **`conversations.db`**), not the current `POST /workspace` root. Text models drop `image_url` parts; vision models inline JPEG/PNG/GIF/WebP as **`data:`**. Workspace **`@rel.png` / `file:///rel.png`** skip text expansion and are inlined from that turn’s working directory. **`GET /uploads/{filename}`** uses the same auth as other protected APIs; cleanup skips files still referenced in the conversation store.
+- Outbound `chat/completions`:
+  session still stores **`/uploads/<file>`**. Files live next to the session SQLite (**`.crabmate/chat_uploads/`** beside **`conversations.db`**),
+  not the current `POST /workspace` root. Text models drop `image_url` parts;
+  vision models inline JPEG/PNG/GIF/WebP as **`data:`**. Workspace **`@rel.png` / `file:///rel.png`** skip text expansion and are inlined from that
+  turn’s working directory. **`GET /uploads/{filename}`** uses the same auth as other protected APIs;
+  cleanup skips files still referenced in the conversation store.
 - **Background tool jobs**: `run_command` can start **`async`** jobs; poll/cancel via **`GET /tools/jobs/{id}`** and **`POST /tools/jobs/{id}/cancel`**. AG-UI v2 forwards job metadata on **`TOOL_CALL_RESULT`**.
 - **`http_fetch`**: curl-like **`Accept` / `Accept-Encoding`** (gzip/brotli/deflate), default **`User-Agent` `crabmate/<version>`**, and a hint when the env proxy is **SOCKS** (reqwest 0.13 does not support it).
 - Shared subprocess sessions for **`python_snippet_run`**, **`cargo_test`**, and **`pytest_run`** (wall-clock / session stats).
@@ -2449,13 +2579,22 @@ Server cut after **D2.2**: in-process `chat` / `repl` / `tui` are gone; official
 - **BREAKING**: Removed in-process CLI tool runtime and terminal approval. Interactive tool approval is **Web SSE** only.
 - **BREAKING**: **`web_chat_json`** (`POST /chat`) no longer echoes assistant/tool transcript to the **`serve`** process stdout; remove direct dependencies on the in-process terminal render stack (`termimad` / `crossterm` / `indicatif`); **`CM_CLI_WAIT_SPINNER`** is ignored. **`unicode-width`** may remain transitively (e.g. via `console` for `web-bearer`).
 - **BREAKING**: Removed **`--no-web`** / **`--cli-only`** (they were no-ops after API-only default). Use bare **`serve`** / **`config`** for API-only; **`--with-web`** to mount or check UI dist. Scripts that still pass those flags will get clap unknown-argument errors.
-- **BREAKING**: TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
+- **BREAKING**:
+  TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**,
+  **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy
+  **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical
+  path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
 - **BREAKING**: Removed **`CM_GITHUB_OAUTH_CLIENT_ID`** and **`/user-data/secrets/github*`**. Device Flow carries `client_id` in the request body; git/gh credentials are request-scoped (header/Cookie). Requires a matching Client upgrade.
 - **BREAKING**: Server no longer reads/writes **`client_llm` / `executor_llm` / `saved_model_*`** keyring slots; **`PUT` client-llm** is removed. Secrets status for those slots is always unset. **`web_api_bearer`** and MCP bearer remain. LLM keys come from the Client request (`client_llm.api_key`) or process **`API_KEY`**.
 - **BREAKING**: Removed workspace crate **`crabmate-im-bridge`**. Feishu/IM sidecar is no longer part of this server repository.
 - **`GET /health`** and `serve` startup no longer treat a missing process **`API_KEY`** as a required failure (Client supplies `client_llm.api_key`).
 - **`run_command` tool-call summary**: join `command` + `args` even when `args` is a JSON string (not only a string array); quote tokens that contain spaces. Tool cards also read `run_command_exit_v1.invocation` when the output body no longer starts with `命令：`.
-- **`run_command`**: when argv needs glob / `$VAR` / `~` and **`bash`/`sh`** are allowlisted, join into one script and run **`bash -c`**. Standalone `&&` / `|` / `;` also wrap, but **Web always re-approves** that script (so `ls && rm` cannot silently bypass the single-command allowlist). `?` / `[` are not glob unless the token looks like a path glob (`file?.c`). Wrapped **`gh`** still receives **`GH_TOKEN`**. Plain argv still uses `execve`. Without bash/sh, expansion requires Web approval of the full script.
+- **`run_command`**:
+  when argv needs glob / `$VAR` / `~` and **`bash`/`sh`** are allowlisted,
+  join into one script and run **`bash -c`**. Standalone `&&` / `|` / `;` also wrap,
+  but **Web always re-approves** that script (so `ls && rm` cannot silently bypass the single-command allowlist). `?` / `[` are not glob unless the
+  token looks like a path glob (`file?.c`). Wrapped **`gh`** still receives **`GH_TOKEN`**. Plain argv still uses `execve`. Without bash/sh,
+  expansion requires Web approval of the full script.
 - **`bench --benchmark human_eval`**: adapter prepends a function-completion instruction and a system suffix so the default coding workbench does not ask clarifying questions; **`extract_humaneval_completion`** strips a repeated function prefix before scoring. Prefer global **`--no-tools`** (`--max-tool-rounds 0` does not disable tools).
 - Produce **`crabmate_tool_output`** headers from serde structs (same on-wire contract).
 - Maintainer docs point Client links at GitHub rather than a sibling checkout path.
@@ -2478,7 +2617,11 @@ Server cut after path-A Client split follow-ups: API-only `serve` by default, `-
 ### Changed
 
 - Default **`web_cors_allowed_origins`**: official Client shell Origins **`tauri://localhost`** + **`http://tauri.localhost`** (CORS on without env). Explicit empty env/TOML list still disables CORS; non-empty lists are merged with those defaults.
-- **BREAKING**: `serve` is **API-only by default** (no SPA mount). Host Client UI with **`--with-web`** / **`--web`** plus **`CM_WEB_STATIC_DIR`** (or probed dist). **`--no-web`** / **`--cli-only`** remain as compat no-ops (mutually exclusive with **`--with-web`**). **`config` / dry-run** now **skips** UI static checks by default (previously required dist unless `--no-web`); add **`--with-web`** to require dist. Docs, systemd comments, and man page updated accordingly.
+- **BREAKING**:
+  `serve` is **API-only by default** (no SPA mount). Host Client UI with **`--with-web`** / **`--web`** plus **`CM_WEB_STATIC_DIR`** (or probed dist).
+  **`--no-web`** / **`--cli-only`** remain as compat no-ops (mutually exclusive with **`--with-web`**). **`config` / dry-run** now **skips** UI static
+  checks by default (previously required dist unless `--no-web`); add **`--with-web`** to require dist. Docs, systemd comments,
+  and man page updated accordingly.
 - Default pure-API `serve` skips `resolve_web_static_dir` / SPA probe; static root is resolved only with **`--with-web`**.
 - Deb `depends` → **`libc6 (>= 2.39)`** to match binaries built on Ubuntu 24.04 / current CI (`ubuntu-latest`).
 - **`lizard-rust`** gate: per-module **count of functions with CCN>10** (exact ratchet vs `scripts/lizard_module_ccn_caps.toml`), aligned with Client; replaces per-module max-CCN caps (`global_ccn_ceiling` / `ccn_max`).

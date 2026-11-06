@@ -217,9 +217,12 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
   - `pub async fn run_tool_result_async(name, args_json, ctx) -> ToolResult`
   - 两入口内部：`name == "run_command"` 走新实现 `run_command_dispatch_async`；**其余工具直接委派**既有同步 `run_tool` / `run_tool_result`，行为逐字节不变。
 - **两阶段 strangler**：
-  - **阶段 1（本 PR0）**：`run_command_dispatch_async` 实现体用 `tokio::task::spawn_blocking` 复用既有同步 `command::run_try_wait`（含 `command_timeout_secs` 墙钟超时与测试缓存）；spawn 前捕获 github token，闭包内 `with_request_github_token_blocking` 重设（task-local 不跨 blocking，对齐 chat 宿主 `spawn_run_command_host_blocking`）；成功/失败收尾复用 `finish_dispatch_legacy`。S3/S4/S5/S6 消费点全部改调 async 入口；随后删除 S1 特判、S2 `runner_run_command`（spec runner 置提示性 stub，范本同 `runner_terminal_session`；stub 后续亦删除，改由 `ToolRunner::AsyncOnly` 表达）。风险小、可回滚。
+  - **阶段 1（本 PR0）**：`run_command_dispatch_async` 实现体用 `tokio::task::spawn_blocking` 复用既有同步 `command::run_try_wait`（含 `command_timeout_secs` 墙钟超时与测试缓存）；spawn 前捕获 github token，闭包内 `with_request_github_token_blocking` 重设（task-local 不跨 blocking，
+    对齐 chat 宿主 `spawn_run_command_host_blocking`）；成功/失败收尾复用 `finish_dispatch_legacy`。S3/S4/S5/S6 消费点全部改调 async 入口；随后删除 S1 特判、S2 `runner_run_command`（spec runner 置提示性 stub，范本同 `runner_terminal_session`；stub 后续亦删除，改由 `ToolRunner::AsyncOnly` 表达）。
+    风险小、可回滚。
   - **阶段 2（后续 PR1）**：仅把 `run_command_dispatch_async` 实现体换为 `tokio::process` 事件驱动版本，**接口契约不变**，S3–S6 消费点零改动。
-- **消费点迁移落点**：S3 [tool_replay.rs](../../src/runtime/tool_replay.rs) + [commands.rs](../../src/runtime/cli/commands.rs) + [cli_run.rs](../../src/cli_run.rs)；S4 [cli_mcp.rs](../../src/runtime/cli_mcp.rs)（`ToolCallbacks::run_tool` 改 `BoxFuture<'static, _>`）+ [server.rs](../../src/mcp/mcp_impl/server.rs)；S5 [node.rs](../../src/cm_workflow/execute/node.rs)；S6 [runner.rs](../../src/cm_internal/tool_sandbox/runner.rs) + [main.rs](../../src/main.rs)。
+- **消费点迁移落点**：S3 [tool_replay.rs](../../src/runtime/tool_replay.rs) + [commands.rs](../../src/runtime/cli/commands.rs) + [cli_run.rs](../../src/cli_run.rs)；S4 [cli_mcp.rs](../../src/runtime/cli_mcp.rs)
+  （`ToolCallbacks::run_tool` 改 `BoxFuture<'static, _>`）+ [server.rs](../../src/mcp/mcp_impl/server.rs)；S5 [node.rs](../../src/cm_workflow/execute/node.rs)；S6 [runner.rs](../../src/cm_internal/tool_sandbox/runner.rs) + [main.rs](../../src/main.rs)。
 
 **容器 runner（S6）与 D1 的冲突（必须在 PR0 定路线）**：
 
@@ -259,12 +262,14 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 
 ## PR 切片
 
-1. **PR0 — 调用面收敛（前置，独立可回滚）**：按上文「调用面收敛」节 re-route 同步消费点——S3 `run_tool_replay_command` 改 `async fn`（调用点 `await`）；S4 `ToolCallbacks::run_tool` 契约改返回 `Future`；S5 workflow `run_command` 节点改 async 直连；S6 容器 runner 定路线（(a) runtime 提前 + `block_on` / (b) 保留 sync 入口）；随后**删除** S1 `run_tool_dispatch` 的 `"run_command"` 特判与 S2 Legacy `runner_run_command`。**本切片确定路线 A/B 并写进 PR 描述**。仅做 re-route + 删死代码，**不改** `subprocess_session` / `command.rs` 内部实现，独立可构建、可回滚。
+1. **PR0 — 调用面收敛（前置，独立可回滚）**：按上文「调用面收敛」节 re-route 同步消费点——S3 `run_tool_replay_command` 改 `async fn`（调用点 `await`）；S4 `ToolCallbacks::run_tool` 契约改返回 `Future`；S5 workflow `run_command` 节点改 async 直连；S6 容器 runner 定路线（(a)
+  runtime 提前 + `block_on` / (b) 保留 sync 入口）；随后**删除** S1 `run_tool_dispatch` 的 `"run_command"` 特判与 S2 Legacy `runner_run_command`。**本切片确定路线 A/B 并写进 PR 描述**。仅做 re-route + 删死代码，**不改** `subprocess_session` / `command.rs` 内部实现，独立可构建、可回滚。
    - **已实施**：路线取 **A**，落地形式为「`run_tool_async` / `run_tool_result_async` 专用入口 + 两阶段 strangler」（见上「路线 A 落地形式」）；S6 取路线 **(a)**；S1/S2 已删除，受影响单测（`tools/mod/tests.rs`）已迁移至 `#[tokio::test]` + async 入口。
 2. **PR1 — 原语 + chat 同步宿主**：`subprocess_session` / `command.rs` async 化；`run_command/sync.rs` 去 `spawn_blocking`，token 改 async 版；模块头注释更新；`subprocess_session_tests.rs` 改 `#[tokio::test]`。路线已由 **PR0** 决定（见上）。
    - **已实施**：新增 `wait_child_session_async` 与 `command.rs` async 入口（`run_checked_wait_async` / `run_try_wait_async`），sync / async 共用同一 plan 层；chat 宿主与异步 funnel 去 `spawn_blocking`（token 走 task-local，无需 `*_blocking`）；`subprocess_session_tests.rs` 增 async 用例。**未**删同步 `wait_child_session`（路线 A 保留同步入口，供非 `run_command` 工具与 PR3 调用方复用）。
 3. **PR2 — 后台 job + workflow**：`worker.rs` `run_job_async`；`launch_job` 去 `spawn_blocking`；`node.rs` run_command 节点 async。
-   - **已实施**：`worker.rs` `run_job_blocking` → `run_job_async`（`tokio::process::Command` + `kill_on_drop(true)` + `wait_child_session_async`）；`launch_job` 去 `spawn_blocking` / `catch_unwind`，改内层 `tokio::spawn(run_job_async(...)).await`，`JoinError` → `failed(internal)`（不卡 `running`）；`mod.rs` 导出同步改名。`node.rs` run_command 节点在 **PR0 / S5** 已 async 直连，本 PR 无改动；测试改 `#[tokio::test]`（`thread::sleep` → `tokio::time::sleep`）。
+   - **已实施**：`worker.rs` `run_job_blocking` → `run_job_async`（`tokio::process::Command` + `kill_on_drop(true)` + `wait_child_session_async`）；`launch_job` 去 `spawn_blocking` / `catch_unwind`，改内层 `tokio::spawn(run_job_async(...)).await`，`JoinError` → `failed(internal)`（不卡 `running`）；
+     `mod.rs` 导出同步改名。`node.rs` run_command 节点在 **PR0 / S5** 已 async 直连，本 PR 无改动；测试改 `#[tokio::test]`（`thread::sleep` → `tokio::time::sleep`）。
 4. **PR3 — 其余 `run_and_capture` 调用方**：`python_tools.rs` / `cargo_subcommand.rs` / `error_playbook.rs`（路线 A 下注明残留 sync 入口）。
    - **已实施**：三个调用方在路线 A 下**保持同步** `run_tool` 面，沿用 `subprocess_session` 同步等待入口（`wait_child_session` / `run_and_capture` / `command::run_checked_wait`）；在三处调用点补注释说明残留 sync 入口的过渡性质。**未**改异步（需 `run_tool*` 整体 async 化，见「路线 B」）。
 5. **PR4 — 收尾与文档**：`docs/开发文档.md`（若涉及执行类别/线程模型描述）、`docs/design/README.md` 计数、`long_running_tool_execution_todo.md` §仍开放划项。
@@ -299,7 +304,8 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 
 - **`from_std` 是否稳定保留 `process_group(0)`**：需回归用例核实；若不可靠，改为「spawn 前用 `pre_exec`（`unsafe`）显式 `setpgid(0,0)`」的备选路径。
 - **`kill_on_drop` 与显式 kill 的关系**：避免重复 kill 造成的 `ESRCH` 噪声；约定显式 kill 后再置 `kill_on_drop` 无害化（或 kill 成功后由 reap 接管）。
-- **同步 `run_tool*` 面的最终形态**：**已定稿（PR0）**：取 **路线 A**（推荐）保留「非 `run_command` 同步入口 + `run_command` 走 async 直连」，代价是 `subprocess_session` 短期并存 sync/async 两个 wait 入口（薄封装，D2 的有限让步），已由 PR0–PR3 落地；**路线 B** 将 `run_tool*` 整体 async 化，波及 [web/workspace/handlers.rs](../../src/web/workspace/handlers.rs#L419)、[http/tools.rs](../../src/cm_internal/tool_registry/execute/http/tools.rs) 等同步调用点，本次**未**采用。
+- **同步 `run_tool*` 面的最终形态**：**已定稿（PR0）**：取 **路线 A**（推荐）保留「非 `run_command` 同步入口 + `run_command` 走 async 直连」，代价是 `subprocess_session` 短期并存 sync/async 两个 wait 入口（薄封装，D2 的有限让步），已由 PR0–PR3 落地；**路线 B** 将 `run_tool*` 整体 async 化，
+  波及 [web/workspace/handlers.rs](../../src/web/workspace/handlers.rs#L419)、[http/tools.rs](../../src/cm_internal/tool_registry/execute/http/tools.rs) 等同步调用点，本次**未**采用。
 - **容器 runner（S6）与 D1 的时序冲突**：[main.rs](../../src/main.rs#L5-L13) 在 runtime 构建前处理 `tool-runner-internal`，故「`command.rs` 全 async」与「容器 runner 保留原样」不能并存；**已定稿（PR0）**：取路线 **(a)** runtime 提前 + `block_on`。
 - **`extra_stop` 是否升级为 `Future`**：PR1 先保留 `Fn` 轮询（`sleep` 退避），`Future`（SSE `Sender::closed()`）作为后续增强切片；需评估对 workflow 只传超时场景的接口影响。
 - **Windows**：`from_std` 无 `process_group` 等价物；本次保持 Unix 优先，Windows 分支维持现状（`child.kill()` 兜底）。

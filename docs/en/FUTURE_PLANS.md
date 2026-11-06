@@ -8,7 +8,8 @@ This document holds **directional** product and deployment boundaries that are *
 
 ## Web identity and accounts (out of scope for the CrabMate process)
 
-**Consensus**: **Do not implement a per-user account system inside CrabMate** (sign-up/login, JWT sessions, `user_id`-scoped conversation stores, etc.). The process keeps the shared-secret model: **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`**; `Authorization: Bearer …` or `X-API-Key …` is compared in constant time to that configured value. Success means “authorized caller”, **not** a specific human. Implementation: **`src/web/chat_handlers/auth.rs`**.
+**Consensus**: **Do not implement a per-user account system inside CrabMate** (sign-up/login, JWT sessions, `user_id`-scoped conversation stores, etc.). The process keeps the shared-secret model: **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`**;
+  `Authorization: Bearer …` or `X-API-Key …` is compared in constant time to that configured value. Success means “authorized caller”, **not** a specific human. Implementation: **`src/web/chat_handlers/auth.rs`**.
 
 **Recommended deployment**: Place an **API gateway, reverse proxy, or BFF** in front of CrabMate (OAuth2/OIDC, Keycloak, Authentik, vendor API gateways, etc.) for identity, quotas, and audit; then inject credentials toward CrabMate:
 

@@ -101,7 +101,8 @@
 - 返回：exit / timeout / cancelled + 已截断 stdout/stderr。显式 `ToolError` 码（`timeout` / 取消），不要只靠正文含「超时」。
 - 优先 `tokio::process::Command` + `kill_on_drop`，避免长命令占死 `spawn_blocking` 线程池。若短期仍在 blocking 线程里 `try_wait` 轮询，须在文档/PR 写明占用时长与迁出计划。
 
-**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 测试类工具（✅ `cargo_test` / `pytest_run` 已迁入：超时杀进程组、部分输出进错误正文、稳定 `error_code`，共用 `subprocess_session::run_and_capture`）→ 其余 `run_and_format*`（未开始；P1 测试工具 chunk 之前）。（原同批迁入的 `cargo_nextest` 专用工具已按薄封装收敛删除、改用 `run_command`，见 `docs/design/tool_thin_wrapper_candidates.md` §3.2。）
+**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 测试类工具（✅ `cargo_test` / `pytest_run` 已迁入：超时杀进程组、部分输出进错误正文、稳定 `error_code`，共用 `subprocess_session::run_and_capture`）
+  → 其余 `run_and_format*`（未开始；P1 测试工具 chunk 之前）。（原同批迁入的 `cargo_nextest` 专用工具已按薄封装收敛删除、改用 `run_command`，见 `docs/design/tool_thin_wrapper_candidates.md` §3.2。）
 
 **安全**：改 wait **不得**绕过白名单、`..`/绝对路径、审批门闩。超时/取消 **不得** 走 `is_compile_command_success` 成功路径，**不得** 写入 `test_result_cache`，**不得** 把 `workspace_changed` 打成 true。
 
@@ -177,7 +178,9 @@
 - [ ] 其余子进程类迁入共享会话；短同步 SDK / 文件 IO 仍 `spawn_blocking`，墙钟按 P2 工具名表。
 - [ ] **Docker 沙盒超时 reap**（`docker stop/kill` 或 runner 生命周期）：单独设计，勿与 P0 混 PR。
 - [x] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`AGENTS.md` → Repository engineering rules → Secrets & logging）。**实现**：`cm_tools/subprocess_session.rs` 进程内原子计数 + 时长直方图（桶上界 1s/5s/30s/120s/600s/溢出），`session_stats_snapshot()` 快照；会话完成打 `debug`（`pid/kind/killed/duration_ms`）、reap 未确认打 `warn`（残留风险），均不含 argv 与密钥。
-- [x] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。**契约设计已出**：见 [`background_tool_jobs.md`](./background_tool_jobs.md)（`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；实现按该 ADR 切片，不与其它条目混 PR。**已落地**：后端 + Client 核心链路（ADR §1–§7）与模型侧只读查询工具 `background_job_status` / `background_job_list`（ADR §9，P0）；实施计划见 [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**仍待**：可选 `tool_job_finished` SSE 补发（Phase 2）、job 级观测扩展、多副本持久化（另立项）。
+- [x] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。**契约设计已出**：见 [`background_tool_jobs.md`](./background_tool_jobs.md)（`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；
+  实现按该 ADR 切片，不与其它条目混 PR。**已落地**：后端 + Client 核心链路（ADR §1–§7）与模型侧只读查询工具 `background_job_status` / `background_job_list`（ADR §9，P0）；实施计划见 [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**仍待**：可选 `tool_job_finished` SSE 补发（Phase 2）
+  、job 级观测扩展、多副本持久化（另立项）。
 
 与路线图「可观测与执行轨迹」、`tool_calling_evolution.md`「长任务进度事件」同向，落地时合并拆解。
 

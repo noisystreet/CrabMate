@@ -276,7 +276,8 @@ effective = min(chosen, ceiling, role.max_permission_level)
 - **载体**：`src/cm_types/permission_audit.rs`——`PermissionAxis`（`tool` / `path` / `command` / `net` / `external`）、`PermissionDecision`（`allowed` / `denied` / `approved`）、`PermissionAuditEvent`，以及唯一判据 `should_emit(approval, decision)`。`src/cm_agent/permission_audit.rs` 只保留「从 `PermissionCaps` 取 `level` / `approval`」的薄包装。
 - **为什么在 `cm_types`（叶子层）而不在 `cm_agent`**：路径轴要在 `cm_tools` 的 `PathAccess` 记录，而依赖方向是 `cm_types` → `cm_config` → `cm_tools` → `cm_agent`；放 `cm_agent` 会让叶子层反向依赖。`ApprovalPolicy` 随之从 `cm_agent::permission` 下沉到 `cm_types`（后者 `pub use` 重导出，调用点不变）。
 - **为什么 `Allowed` 只记 `AuditOnly`**：L0–L3 下「命中白名单」是每一步的常态，记进来会把「L4 到底放行了什么」这批真需要审计的记录淹没。`Denied` / `Approved` 一律记——它们是边界真的动了。
-- **接线点**：工具可见性 / early-deny（`Tool`，外部工具归 `External`，L0/L1 的命令类工具归 `Command`）、`http_net_gate` 的 `Any` 与两处 `Deny`（`Net`）、`run_command` 的 `external_path_gate_by_caps`（`Path`）、未知命令白名单命中与 L2 硬拒（`Command`）、`read_dir` 工作区外路径（`Path`）、**`PathAccess::for_read` / `for_read_open` / `for_write` 的 `PathScope::Any` 分支（`Path`；路径面的唯一收口，`read_file` / `write` / `copy_file` / `delete_*` 等全部经此）**、workflow 节点的等级结论（`approval_disposition` 的两个消费点：`run_command` 归 `Command`、通用审批阀门归 `Tool`）。
+- **接线点**：工具可见性 / early-deny（`Tool`，外部工具归 `External`，L0/L1 的命令类工具归 `Command`）、`http_net_gate` 的 `Any` 与两处 `Deny`（`Net`）、`run_command` 的 `external_path_gate_by_caps`（`Path`）、未知命令白名单命中与 L2 硬拒（`Command`）、`read_dir` 工作区外路径（`Path`）、
+  **`PathAccess::for_read` / `for_read_open` / `for_write` 的 `PathScope::Any` 分支（`Path`；路径面的唯一收口，`read_file` / `write` / `copy_file` / `delete_*` 等全部经此）**、workflow 节点的等级结论（`approval_disposition` 的两个消费点：`run_command` 归 `Command`、通用审批阀门归 `Tool`）。
 - **`approved` 落在审批门**：`cm_internal::tool_approval::interactive_gate_after_whitelist_miss` 是全部交互审批的唯一收口，`AllowOnce` / `AllowAlways` 在此记一条；轴由 `SensitiveCapability` 映射（`HostShell` → 命令、两个 `OutboundHttp*` → 网络、`WorkspaceExternalPath` → 路径、`WorkflowGate` → 工具）。只带 `sse_command`，不带 `sse_args`（后者可能含路径与 query）。
 - **不设 `clamped`**：等级钳制发生在 `resolve_permission_level_for_turn`，它不属于五轴中任何一轴；`GET /permission` 的 `clamped_by` 已是该信息的对外答案。原先预留的 `PermissionDecision::Clamped` 从未有 emit 点，本次随下沉一并删除，避免留下永远为空的枚举值。
 - **为什么先用 tracing 而非 SSE 审计事件**：§11.3 的 control-plane 方案需要双端同步（`cm_sse_protocol` + Client 解析器 + 协议 golden），留给 Client 那一波；tracing 零协议变更、可独立合并。
@@ -509,7 +510,8 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 §8.1 表最后一行（`self_config_info` / `GET /status` 的 `permission` 小节）已随 S3 落地，落点与 §16.1 / §16.2 的分工一致：
 
-1. **`self_config_info` 新增 `permission` 小节**：`permission_level_default`、`permission_level_max_effective`、`permission_level_max_source`、`allow_unrestricted_permission_for_non_loopback`，外加六轴轴名 `caps.*`。轴名来自 `cm_types::PermissionLevel::caps_view()`——它**不是**第二套投影，只做「等级 → 轴名」映射；与 `project_caps(...).view()` 的一致性由 `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住（`cm_tools` 是叶子层，不能反向依赖 `cm_agent`，故 `PermissionCapsView` 随之下沉到 `cm_types`）。
+1. **`self_config_info` 新增 `permission` 小节**：`permission_level_default`、`permission_level_max_effective`、`permission_level_max_source`、`allow_unrestricted_permission_for_non_loopback`，外加六轴轴名 `caps.*`。轴名来自 `cm_types::PermissionLevel::caps_view()`——它**不是**第二套投影，
+  只做「等级 → 轴名」映射；与 `project_caps(...).view()` 的一致性由 `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住（`cm_tools` 是叶子层，不能反向依赖 `cm_agent`，故 `PermissionCapsView` 随之下沉到 `cm_types`）。
 2. **`GET /status?view=shell` 只加两个标量**：`permission_level_default` 与 `permission_level_max`（§16.1 的「壳层稳定子集」口径），golden fixture 与 `docs/openapi.json` 同步；六轴投影仍留给 S5a 的 `GET /permission`。
 3. **白名单 / 前缀不进任何对外视图**：长度不可控，且属内部数据（AGENTS.md → Secrets & logging 的口径）。
 
@@ -576,9 +578,12 @@ dst.permission.permission_level_max =
 ## 11. 观测与对外契约
 
 1. **`GET /permission` / `GET /status` / `self_config_info`**：等级与投影的统一出口。`GET /permission` 的响应形状见 §16.2；`self_config_info` 的 `permission` 小节与其**同源序列化**（同一个 `PermissionCaps`），避免两处漂移。密钥类字段一律不出现（沿用现有“只报是否设置”的规矩）。
-2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，`cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
-3. **SSE（可选，需 Client 同步）**：若采纳审计事件，建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、`fixtures/sse_ag_ui_golden.jsonl`、`docs/SSE协议.md` 与 Client `parser_v2.rs` / `sse_dispatch/types.rs`，并跑双端 golden 测试。
-   **已落地（采纳「复用 control-plane」方案，未新增顶层键、未提升 `SSE_PROTOCOL_VERSION`）**：v1 面 `ToolCallSummary` 新增 `permission_level: Option<String>`（缺省省略），AG-UI 面 `ToolCallStart` 新增 `permissionLevel`（CrabMate 扩展字段，与 `summary` / `argsPreview` / `arguments` 同类）。取值是**本回合生效档**，由 `emit_tool_call_summary_sse` 的 `permission` 参数带入（串行路径经 `SerialToolIterationSsePreface.permission`，并行只读批次直接透传）。`None` 时不出站，旧客户端忽略即可。
+2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，
+  `cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
+3. **SSE（可选，需 Client 同步）**：若采纳审计事件，建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、
+  `fixtures/sse_ag_ui_golden.jsonl`、`docs/SSE协议.md` 与 Client `parser_v2.rs` / `sse_dispatch/types.rs`，并跑双端 golden 测试。
+   **已落地（采纳「复用 control-plane」方案，未新增顶层键、未提升 `SSE_PROTOCOL_VERSION`）**：v1 面 `ToolCallSummary` 新增 `permission_level: Option<String>`（缺省省略），AG-UI 面 `ToolCallStart` 新增 `permissionLevel`（CrabMate 扩展字段，与 `summary` / `argsPreview` / `arguments` 同类）。
+     取值是**本回合生效档**，由 `emit_tool_call_summary_sse` 的 `permission` 参数带入（串行路径经 `SerialToolIterationSsePreface.permission`，并行只读批次直接透传）。`None` 时不出站，旧客户端忽略即可。
 4. **Client（另仓）**：`crabmate-client` 侧在 `session_mode` 选择器旁加等级选择（只列 ≤ ceiling 的项），L4 需二次确认文案。**本次不涉及本仓 `frontend/`（本仓没有前端源码）。**
 
 ---
@@ -598,7 +603,8 @@ dst.permission.permission_level_max =
 | **S6** | 空闲态写入口 `POST /conversation/state`（§16.1.1；编号原与 S5d 并行，规划期未列在本表，落地时占用 S6） | 空闲态切档立即生效，不必等下一轮 `/chat` 顺带 | ✅ |
 | **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ❌ **未落地**：`cm_types::PathScope::AllowedRoots` 变体已在，但 `project_caps` 不产出它、`PathAccess` 无该分支（见 §17.5 停止条件） |
 
-排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
+排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”
+  的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
 
 ---
 
@@ -753,7 +759,9 @@ dst.permission.permission_level_max =
 **落地结果（S5b）**——三段式按 `session_mode` 的现成链路逐段对齐，没有新造管理层：
 
 - **写 / 校验**：`ChatRequestBody` + `ChatRequestBodyWire` 加 `permission_level`，`chat_keys` 白名单字母序插在 `"message"` 与 `"readonly_tool_ttl_cache_secs"` 之间（该表 `binary_search`，位置错会静默失效）。解析在 `turn_build::parse_chat_mode_and_permission_level`（与 `session_mode` 合并成一个 helper：`parse_chat_*_request_tail` 的 CCN 已贴上限），未知值 → **400 `INVALID_PERMISSION_LEVEL`**。
-- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入**只写本请求显式申请的字段**：`None` / 空白时该列不进 `SET`（见 §16.1.1 第 2 条）。原先「请求值优先，否则回写回合开始时的快照」的 `persisted_permission_level_after_turn` / `persisted_session_mode_after_turn` / `persisted_agent_role_after_turn` 三个助手已在 S6 删除——那份快照会把期间 `POST /conversation/state` 写入的值改回去，正是 §16.1.1 要堵的缺口。
+- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入**只写本请求显式申请的字段**：
+  `None` / 空白时该列不进 `SET`（见 §16.1.1 第 2 条）。原先「请求值优先，否则回写回合开始时的快照」的 `persisted_permission_level_after_turn` / `persisted_session_mode_after_turn` / `persisted_agent_role_after_turn` 三个助手已在 S6 删除——那份快照会把期间 `POST /conversation/state` 写入的值改回去，
+  正是 §16.1.1 要堵的缺口。
 - **回合内生效**：`RunAgentTurnAttach.permission_persisted` → `prepare_turn_cfg_and_permission(..., persisted)` → `PermissionTurnInput.persisted`。worker 侧 `worker::resolve_job_permission_persisted` 做「请求优先 → 会话持久 → 无」的选档，坏串回落配置默认并留 warn（与 `session_mode` 解析失败回落 `act` 同取向）。
 - **读**：`GET /conversation/messages` 回 `active_permission_level`（意图）+ `effective_permission_level`（生效），由 `web::permission::permission_levels_for_snapshot` 复用 `resolve_permission_level_for_turn` 算出——**不**另写一套比较，避免第二套判据。`GET /permission` 的 `level_source` 随之能真的报 `persisted`。
 - **兼容性**：客户端不传 `permission_level` 时 `persisted` 档为 `None`，`chosen` 仍落 `fallback`，与 S5b 之前逐字等价；`cron` / `/btw` 等无该字段的入口显式传 `None`。
@@ -902,7 +910,8 @@ S3 的必需改动点：
 | 命令执行 | `run_command/approval.rs` | `cwd` 越界判定 |
 | HTTP | `http/gate.rs` | 出站前缀判定 |
 
-不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`cm_llm/outbound_workspace_images.rs`×1。（原先还有 `tools/mod.rs::resolve_workspace_path_for_read`×1，那是对 `file::resolve_for_read` 的一行转发、无调用方，且与「`PathAccess` 是唯一判定点」冲突，已在 #1227 删除。）
+不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`cm_llm/outbound_workspace_images.rs`×1。
+  （原先还有 `tools/mod.rs::resolve_workspace_path_for_read`×1，那是对 `file::resolve_for_read` 的一行转发、无调用方，且与「`PathAccess` 是唯一判定点」冲突，已在 #1227 删除。）
 
 **可验证的停止条件**（比「改了几个文件」可靠）：
 

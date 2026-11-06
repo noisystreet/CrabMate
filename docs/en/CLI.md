@@ -2,7 +2,8 @@
 
 # CLI and subcommands
 
-Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`, `--log`. An explicit subcommand is required (e.g. `serve`); bare `cargo run` no longer defaults into dialogue.
+Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`,
+  `--log`. An explicit subcommand is required (e.g. `serve`); bare `cargo run` no longer defaults into dialogue.
 
 **Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` are hard-deleted** (D2.1 entry + D2.2 implementation—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
 
@@ -280,7 +281,11 @@ sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service
 ```
 
-- **tar.gz**: ships **`systemd/`**, **`systemd-user/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`**, the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed), and **`systemd-user/crabmate-supervise.service`** under **`/usr/lib/systemd/user/`** if you want the multi-instance supervisor. Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
-- **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`) or **`systemd-user/`** (tarball) runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the system unit above does not apply. `systemctl --user enable --now` starts it; add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**) must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose: that directory is globbed into **system** units, where a `%h` / `default.target` unit would be wrong.
+- **tar.gz**: ships **`systemd/`**, **`systemd-user/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`**, the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed),
+  and **`systemd-user/crabmate-supervise.service`** under **`/usr/lib/systemd/user/`** if you want the multi-instance supervisor. Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
+- **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`) or **`systemd-user/`** (tarball)
+  runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the system unit above does not apply. `systemctl --user enable --now` starts it;
+  add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**) must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose: that directory is globbed into **system** units,
+  where a `%h` / `default.target` unit would be wrong.
 
 Preview from tree: `man -l man/crabmate.1` / `man -l man/crabmatectl.1` (paths relative to repo root).

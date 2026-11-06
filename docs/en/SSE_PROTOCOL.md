@@ -10,15 +10,19 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 
 - Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
-- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
-- **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
+- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**,
+  `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
+- **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading;
+  the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
 - **Evolution**: Bump **`src/cm_sse_protocol`**, this doc and the Chinese twin, and run **`cargo test --lib --no-default-features --features protocol cm_sse_protocol`** (doc marker self-check).
 - **Semver / publishing / external pins**: Wire `SSE_PROTOCOL_VERSION` and Cargo crate semver are separate axes; breaking vs soft fields, **no N−1 wire decoder window today**, and git tag `client-contract-vX.Y.Z` pinning are in **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**. Gate: `bash scripts/check-client-contract.sh`.
 
 ## Transport and framing
 
 - **Route**: **`POST /chat/stream`**; response **`text/event-stream`**. (Ops **`POST /config/reload`** is JSON, not SSE—see **CONFIGURATION.md** § hot reload.)
-- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**, replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` = **`x-stream-job-id`**); **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
+- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**,
+  replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` = **`x-stream-job-id`**);
+  **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
 - **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n` and preserves leading spaces/newlines for dispatch (only `[DONE]` sentinel checks use `trim`), so whitespace-only deltas are not dropped (see `sendChatStream` and `join_sse_data_lines`).
 - **Text delta**: If the joined string is **not** valid control JSON, or parses as **`plain`**, it is treated as assistant content for `onDelta`.
 - **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content. See also **`stream_ended`**.
@@ -71,7 +75,8 @@ Common **`timeline_log.kind`** values include `context_inject` and `context_trim
   `counting_source`, `token_triggered`, `removed_turn_groups`, `removed_messages`, and `compaction_reason` fields. Counting sources are `matched_tokenizer`, `fallback_tokenizer`, or `conservative_bytes`; current reasons are `token_budget_summary`, `token_budget_turn_groups`, `token_budget_warning`, or `none`. When only `compress_hits > 0`,
   the wire title is **`已压缩工具输出`** (“Tool output compressed”); count/character/whole-group trimming or summarization uses **`已裁剪历史`** (“History trimmed”). All additions remain soft fields under the existing `timeline_log` shape.
 
-Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, `max_input_tokens` (context window after output reservation and safety margin), `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`, `counting_source`, and optional `provider_input_tokens`. The source is `matched_tokenizer`, `fallback_tokenizer`, `conservative_bytes`, or response-calibrated `provider_usage`. Older peers may continue exchanging only `prompt_tokens` and `tiktoken_model`; `SSE_PROTOCOL_VERSION` is unchanged.
+Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, `max_input_tokens` (context window after output reservation and safety margin), `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`, `counting_source`,
+  and optional `provider_input_tokens`. The source is `matched_tokenizer`, `fallback_tokenizer`, `conservative_bytes`, or response-calibrated `provider_usage`. Older peers may continue exchanging only `prompt_tokens` and `tiktoken_model`; `SSE_PROTOCOL_VERSION` is unchanged.
 
 ### `tool_result` common fields
 
@@ -135,7 +140,8 @@ Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, 
 
 **Optional `sub_phase`**: orchestration sub-phase at failure, aligned with PER: `planner` \| `executor` \| `reflect`; older clients may ignore it.
 
-**Optional `request_id`**: same value as HTTP **`x-request-id`** / JSON **`ApiError.request_id`** for the turn; Web stream jobs carry it via **`TracingChatTurn`** / the queue envelope (including in-turn `plan_rewrite_exhausted` and terminal failure frames) for support triage; does **not** bump `SSE_PROTOCOL_VERSION` (soft field). On AG-UI `RUN_ERROR.error` it is serialized as **`requestId`** (camelCase).
+**Optional `request_id`**: same value as HTTP **`x-request-id`** / JSON **`ApiError.request_id`** for the turn; Web stream jobs carry it via **`TracingChatTurn`** / the queue envelope (including in-turn `plan_rewrite_exhausted` and terminal failure frames) for support triage;
+  does **not** bump `SSE_PROTOCOL_VERSION` (soft field). On AG-UI `RUN_ERROR.error` it is serialized as **`requestId`** (camelCase).
 
 #### `reason_code` for `plan_rewrite_exhausted`
 

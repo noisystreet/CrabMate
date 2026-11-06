@@ -1,6 +1,8 @@
 # CLI → TUI 改造实施步骤（与 Web 布局对齐）
 
-> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。
+> 官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。
+> 历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
 
 本文面向维护者：在**不替换既有 Agent / 工具 / 配置栈**的前提下，将当前 **reedline 行式 REPL** 渐进演进为 **全屏 TUI**，并在**信息架构**上与 Web 侧栏 + 主会话区 + 状态/辅助区对齐。
 
@@ -73,7 +75,9 @@
 - **输入**：先单行提交即可；输出以 **增量追加** 为佳（若 CLI 已有流式回调，接到 **UI 线程安全队列** 再刷新列表）。
 - 验收：能调用模型与工具（工具输出可先纯文本块）；与 **`--no-stream`** 行为差异在文档中说明。
 
-**进展（仓库）**：**`runtime/tui/run_session.rs`** 的 **`run_tui_session`** 在 **`cli_run`** 与 **`repl`** 相同的配置/客户端/工具装载之后运行；ratatouille 在专用线程，异步侧调用 **`repl_prepare_messages_and_editor`** 与 **`repl_dispatch_chat_round`**；**`CliTerminalChatBuildArgs::suppress_stdout_render`**（库根装配）关闭助手 stdout 渲染，**`--no-stream`** 仍控制上游是否 SSE；中区由 **`messages_to_transcript`** 刷新。**`/api-key`**（**`/apikey`**）经 **`try_dispatch_api_key_slash_for_tui`** 写入 transcript；其它 **`/`** 前缀提示使用 **`repl`**（**不**发往模型）。
+**进展（仓库）**：**`runtime/tui/run_session.rs`** 的 **`run_tui_session`** 在 **`cli_run`** 与 **`repl`** 相同的配置/客户端/工具装载之后运行；ratatouille 在专用线程，异步侧调用 **`repl_prepare_messages_and_editor`** 与 **`repl_dispatch_chat_round`**；
+  **`CliTerminalChatBuildArgs::suppress_stdout_render`**（库根装配）关闭助手 stdout 渲染，**`--no-stream`** 仍控制上游是否 SSE；中区由 **`messages_to_transcript`** 刷新。**`/api-key`**（**`/apikey`**）经 **`try_dispatch_api_key_slash_for_tui`** 写入 transcript；
+  其它 **`/`** 前缀提示使用 **`repl`**（**不**发往模型）。
 
 ### 阶段 D：左侧栏数据化（工作区 / 会话）
 

@@ -1,7 +1,8 @@
 # ADR：展示 crate 下沉 Client（执行计划）
 
 > **状态**：**Proposed**（2026-08-16）；**W3/W4/W5 缓做**（2026-08-16：优先 [`crates_io_single_package.md`](./crates_io_single_package.md)）。  
-> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A（本仓只维护 Server）；[`client_contract_versioning.md`](./client_contract_versioning.md)（线契约钉版本）；Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)、[`client_shared_logic.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/client_shared_logic.md)。  
+> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A（本仓只维护 Server）；[`client_contract_versioning.md`](./client_contract_versioning.md)（线契约钉版本）；Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)、
+> [`client_shared_logic.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/client_shared_logic.md)。
 > **Client 仓勾选**：[`crabmate-client/docs/design/display_crate_sink.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)（消费侧清单；决策以本文为准）。  
 > **非目标**：把 `sse-protocol` / `api-contract` / `types` 搬进 Client；Server 依赖 Client git crate。**crates.io 单包**见 [`crates_io_single_package.md`](./crates_io_single_package.md)（不依赖 W3）。
 
