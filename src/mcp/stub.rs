@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use crate::cm_types::McpRemoteToolSummary;
 use crate::cm_types::Tool;
 
-use crate::cm_mcp::resolve::{McpStdioLaunch, ResolvedMcpConfig, ResolvedMcpServer};
+use crate::mcp::resolve::{McpStdioLaunch, ResolvedMcpConfig, ResolvedMcpServer};
 
 /// 与完整实现同名的占位类型（无 rmcp 会话）。
 #[derive(Debug)]
@@ -151,7 +151,7 @@ pub struct McpServerRuntimeStatus {
 
 fn stub_disabled_status(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
     let msg = "本构建未启用 `mcp` Cargo feature".to_string();
-    let kind = crate::cm_mcp::resolve::classify_mcp_connect_error(&msg).to_string();
+    let kind = crate::mcp::resolve::classify_mcp_connect_error(&msg).to_string();
     McpServerRuntimeStatus {
         id: server.id.clone(),
         name: server.name.clone(),

@@ -31,8 +31,8 @@ use tokio::sync::Mutex;
 use crate::cm_types::McpRemoteToolSummary;
 use crate::cm_types::{FunctionDef, Tool};
 
-use crate::cm_mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer, validate_mcp_remote_url};
-use crate::cm_mcp::turn_handle::{McpTurnHandle, McpTurnSessions};
+use crate::mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer, validate_mcp_remote_url};
+use crate::mcp::turn_handle::{McpTurnHandle, McpTurnSessions};
 
 pub use crate::cm_tools::tool_naming::MCP_PROXY_PREFIX;
 
@@ -64,6 +64,10 @@ fn new_client_config() -> ClientConfig {
 }
 
 /// 连接 MCP server（stdio，legacy 整行命令）。失败时返回 `Err`；调用方可降级为不启用 MCP。
+/// **保留但当前无 crate 内调用者**（S4-P1b，见 #1300）：并入 `crate::mcp` 后该模块仍为
+/// `pub(crate)`，原先靠 `cm_internal::mcp` 的 `#[doc(hidden)]` 可达性免于 `dead_code` 的
+/// 接入点就此暴露。它是 MCP stdio 客户端入口，接线或删除应另立 Issue。
+#[allow(dead_code)]
 pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, String> {
     let server = ResolvedMcpServer {
         id: String::new(),
@@ -82,7 +86,7 @@ pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, Str
 
 /// 按结构化 / legacy 规格连接 MCP stdio 子进程。
 pub async fn connect_stdio_client_launch(
-    launch: &crate::cm_mcp::resolve::McpStdioLaunch,
+    launch: &crate::mcp::resolve::McpStdioLaunch,
 ) -> Result<McpClientSession, String> {
     if launch.program.trim().is_empty() {
         return Err("MCP command 为空或仅空白".to_string());
@@ -162,7 +166,7 @@ pub async fn connect_streamable_http_client(
 }
 
 fn json_schema_to_parameters(schema: &serde_json::Map<String, Value>) -> Value {
-    crate::cm_mcp::sanitize_mcp_json_schema(schema)
+    crate::mcp::sanitize_mcp_json_schema(schema)
 }
 
 /// 将 MCP 工具转为 OpenAI `Tool` 列表（名称带 `mcp__` 前缀以免与内建工具冲突）。
@@ -536,6 +540,9 @@ impl McpTurnOpenResult {
         Self::default()
     }
 
+    /// **保留但当前无 crate 内调用者**（S4-P1b，见 #1300）：便利方法，原先靠
+    /// `cm_internal::mcp` 的 `#[doc(hidden)]` 可达性免于 `dead_code`。
+    #[allow(dead_code)]
     pub fn into_option_pair(self) -> Option<(McpTurnHandle, Vec<Tool>)> {
         self.handle.map(|h| (h, self.tools))
     }
@@ -630,7 +637,7 @@ fn runtime_status_connected(
         last_error_kind: entry
             .last_error
             .as_ref()
-            .map(|e| crate::cm_mcp::resolve::classify_mcp_connect_error(e).to_string()),
+            .map(|e| crate::mcp::resolve::classify_mcp_connect_error(e).to_string()),
     }
 }
 
@@ -640,7 +647,7 @@ fn runtime_status_disconnected(
 ) -> McpServerRuntimeStatus {
     let last_error_kind = last_error
         .as_ref()
-        .map(|e| crate::cm_mcp::resolve::classify_mcp_connect_error(e).to_string());
+        .map(|e| crate::mcp::resolve::classify_mcp_connect_error(e).to_string());
     McpServerRuntimeStatus {
         id: server.id.clone(),
         name: server.name.clone(),

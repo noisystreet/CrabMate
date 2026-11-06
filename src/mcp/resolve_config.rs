@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use crate::cm_config::AgentConfig;
-use crate::cm_mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
+use crate::mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
 
 use crate::user_data::{load_mcp_servers, read_secret_mcp_bearer};
 

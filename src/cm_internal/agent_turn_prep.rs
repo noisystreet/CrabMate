@@ -13,9 +13,9 @@ use crate::cm_types::Tool;
 
 pub struct ToolsForTurnPrepared {
     pub tools_for_turn: Vec<Tool>,
-    pub mcp_turn: Option<crate::cm_internal::mcp::McpTurnHandle>,
+    pub mcp_turn: Option<crate::mcp::McpTurnHandle>,
     /// 本轮尝试连接但失败的 MCP 服务器（供终端/SSE 提示）。
-    pub mcp_skipped: Vec<crate::cm_internal::mcp::McpServerSkipInfo>,
+    pub mcp_skipped: Vec<crate::mcp::McpServerSkipInfo>,
 }
 
 pub fn resolve_read_file_turn_cache_for_turn(
@@ -60,15 +60,15 @@ pub async fn prepare_tools_for_turn(
     turn_allowed_tool_names: Option<&HashSet<String>>,
 ) -> ToolsForTurnPrepared {
     let mut tools_for_turn: Vec<Tool> = tools.to_vec();
-    tools_for_turn = crate::cm_internal::mcp::merge_tool_lists(
+    tools_for_turn = crate::mcp::merge_tool_lists(
         tools_for_turn,
         crate::cm_internal::dynamic_tools::load_dynamic_tools(effective_working_dir),
     );
-    let open = crate::cm_internal::mcp::try_open_session_and_tools(cfg.as_ref()).await;
+    let open = crate::mcp::try_open_session_and_tools(cfg.as_ref()).await;
     let mcp_skipped = open.skipped;
     let mcp_turn = match (open.handle, open.tools) {
         (Some(handle), extra) => {
-            tools_for_turn = crate::cm_internal::mcp::merge_tool_lists(tools_for_turn, extra);
+            tools_for_turn = crate::mcp::merge_tool_lists(tools_for_turn, extra);
             Some(handle)
         }
         (None, _) => None,

@@ -20,7 +20,7 @@ pub mod cm_workflow;
 pub(crate) mod cm_approval;
 #[cfg(feature = "web")]
 pub(crate) mod cm_web_host;
-pub(crate) mod cm_mcp;
+pub(crate) mod mcp;
 pub(crate) mod cm_benchmark;
 #[doc(hidden)]
 #[allow(unused_imports)]
@@ -35,7 +35,7 @@ pub use crate::cm_internal::tool_sandbox;
 // 转发只会让内部桶看起来比实际更中心（S4-P1a，见 #1300），故按本体直连。
 pub(crate) use crate::cm_internal::{
     agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire_body_if_tool_ok,
-    context_bootstrap, health, mcp, memory_tool_hosts, observability, process_handles,
+    context_bootstrap, health, memory_tool_hosts, observability, process_handles,
     readonly_tool_ttl_cache, request_chrome_trace, session_mode_turn, text_util, tool_call_explain,
     tool_registry, tool_stats, user_message_file_refs,
 };

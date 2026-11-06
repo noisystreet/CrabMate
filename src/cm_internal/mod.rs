@@ -16,7 +16,6 @@ pub mod context_bootstrap;
 pub mod dynamic_tools;
 pub mod health;
 pub mod long_term_memory_tools;
-pub mod mcp;
 pub mod memory_tool_hosts;
 pub mod observability;
 pub mod process_handles;

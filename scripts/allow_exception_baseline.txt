@@ -10,10 +10,10 @@
 #
 # 备注（只在基线里说明，脚本不解析）：
 # - 只剩 2 处，且都是**刻意保留**的模块级 `dead_code`，不是欠账：
-#   `cm_mcp/stub.rs`（`mcp` feature 关闭时的同名桩，符号面必须齐全）与
+#   `mcp/stub.rs`（`mcp` feature 关闭时的同名桩，符号面必须齐全；S4-P1b 由 `cm_mcp` 改名）与
 #   `cm_sse_protocol/sse/line.rs`（AGENTS.md 明文「勿按死代码清理」的语义锚点）。
 # - 历史：14 →（#1230 清掉 `lib_server.rs` 的 10 处）→ 4 →（本 PR 清掉
 #   `http_fetch` 的再导出面 allow 与 `cm_workflow/tests.rs` 的 allow，
 #   后者改由 `#[cfg(test)] mod tests;` 解决）→ 2。
-src/cm_mcp/stub.rs	dead_code	1
+src/mcp/stub.rs	dead_code	1
 src/cm_sse_protocol/sse/line.rs	dead_code	1
