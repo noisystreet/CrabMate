@@ -11,6 +11,14 @@
   与编辑器/终端里的观感一致；制表符计 4 列。`--count-mode chars` 改按码位数计数。
 - 阈值默认 160 列（中文约 80 字），`--limit` 可临时覆盖。
 
+两层约束（正交，别混为一谈）
+- **每文件计数**（默认 160 列）：冻结现状 + 禁止新增，记在基线文件里。它只约束「多少个」，
+  管不住「删掉一条旧长行、再写一条更长的」——数量不变就放行。
+- **单行硬上限**（`HARD_LIMIT`，建仓时等于最长行 4883 列）：任何一行都不得越过，
+  **不受基线宽限**，正好堵上上面那个洞。硬上限**只许下调**：把长行折开之后把它改小，
+  脚本拒绝一切让它变大的调用（`--hard-limit` 上调、或 `--print-baseline` 顺手抬高）。
+  生效值以基线头部 `hard-limit=` 为准，缺省时用 `DEFAULT_HARD_LIMIT`。
+
 不计入的行（折行也修不掉，统计它们只能逼人删内容）
 - 围栏代码块内部（``` / ~~~ 包起来的行）：代码换行会改变语义。
 - markdown 表格行（以 `|` 开头）：表格语法不允许折行。
@@ -33,6 +41,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BASELINE_FILE = ROOT / "scripts" / "md_line_length_baseline.txt"
 
 DEFAULT_LIMIT = 160
+# 单行硬上限（显示列）。**只许下调**：折行之后把它改小（同时改基线头部 hard-limit=）。
+# 初始值 = 建仓时仓库里最长的一行（docs/工具说明.md:55），因此落地当天不需要改任何文档。
+DEFAULT_HARD_LIMIT = 4883
 SNIPPET_CHARS = 72
 TAB_COLUMNS = 4
 
@@ -113,18 +124,23 @@ def collect(limit: int, count_mode: str) -> dict[str, list[tuple[int, int, str]]
     return result
 
 
-def load_baseline_meta() -> tuple[int | None, str | None]:
-    """读基线头部记录的生成参数；用于提示「换了口径，差异不代表回归」。"""
+def load_baseline_meta() -> tuple[int | None, str | None, int | None]:
+    """读基线头部记录的 (阈值, 计数口径, 单行硬上限)；用于口径提示与硬上限取值。"""
     if not BASELINE_FILE.exists():
-        return None, None
+        return None, None, None
     for raw in BASELINE_FILE.read_text(encoding="utf-8").splitlines():
         if not raw.startswith("#"):
             break
         limit = re.search(r"limit=(\d+)", raw)
-        if limit:
+        hard = re.search(r"hard-limit=(\d+)", raw)
+        if limit or hard:
             mode = re.search(r"count-mode=(\w+)", raw)
-            return int(limit.group(1)), (mode.group(1) if mode else None)
-    return None, None
+            return (
+                int(limit.group(1)) if limit else None,
+                mode.group(1) if mode else None,
+                int(hard.group(1)) if hard else None,
+            )
+    return None, None, None
 
 
 def load_baseline() -> dict[str, int]:
@@ -141,16 +157,18 @@ def load_baseline() -> dict[str, int]:
 
 
 def render_baseline(
-    result: dict[str, list[tuple[int, int, str]]], limit: int, count_mode: str
+    result: dict[str, list[tuple[int, int, str]]], limit: int, count_mode: str, hard_limit: int
 ) -> str:
     out = [
         "# md 超长行基线（行长棘轮）。",
         "#",
         "# 由 `python3 scripts/md_line_length_ratchet.py --print-baseline` 生成。",
         "#",
-        f"# 生成参数：limit={limit} count-mode={count_mode}（脚本读这行判断你是否换了口径）。",
+        f"# 生成参数：limit={limit} hard-limit={hard_limit} count-mode={count_mode}",
+        "# （脚本读这行判断你是否换了口径、以及当前生效的单行硬上限）。",
         "#",
         "# 只许降不许升：把长行折开之后，请同步下调对应计数；归零的条目直接删除。",
+        "# 硬上限 hard-limit 也只许下调——折行到新上限之下后再改小这里。",
         "# 新增的超长行会被门禁拦下——请折行，而不是重跑本命令抬高基线。",
         "#",
         "# 格式：相对路径<TAB>超长行数",
@@ -161,13 +179,53 @@ def render_baseline(
 
 
 def warn_if_params_mismatch(limit: int, count_mode: str) -> None:
-    base_limit, base_mode = load_baseline_meta()
+    base_limit, base_mode, _ = load_baseline_meta()
     if base_limit is None or (base_limit == limit and base_mode == count_mode):
         return
     sys.stderr.write(
         f"警告：基线是用 limit={base_limit} count-mode={base_mode} 生成的，本次是 "
         f"limit={limit} count-mode={count_mode} —— 下面的差异来自口径变化，不代表回归。\n"
     )
+
+
+def resolve_hard_limit(requested: int | None) -> int | None:
+    """确定生效的单行硬上限；请求值大于基线记录时拒绝（硬上限只许下调）。"""
+    _, _, recorded = load_baseline_meta()
+    current = recorded if recorded is not None else DEFAULT_HARD_LIMIT
+    if requested is None:
+        return current
+    if recorded is not None and requested > recorded:
+        sys.stderr.write(
+            f"拒绝：单行硬上限当前为 {recorded} 列，不接受上调到 {requested} 列。\n"
+            "硬上限与每文件计数一样只许下调（这是防回退门禁，不是可调参数）。\n"
+            f"确需放宽时，人工编辑基线头部 hard-limit={requested} 并在 PR 里说明理由。\n"
+        )
+        return None
+    return requested
+
+
+def report_hard_violations(
+    hard_limit: int, result: dict[str, list[tuple[int, int, str]]], max_files: int
+) -> None:
+    """单行越过硬上限：不受基线宽限，必须先折行。"""
+    total = 0
+    shown = 0
+    for rel, offenders in sorted(result.items()):
+        over = [o for o in offenders if o[1] > hard_limit]
+        if not over:
+            continue
+        total += len(over)
+        if shown >= max_files:
+            continue
+        shown += 1
+        sys.stderr.write(f"  {rel}: {len(over)} 行越过硬上限 {hard_limit} 列\n")
+        for lineno, size, text in sorted(over, key=lambda o: -o[1])[:3]:
+            sys.stderr.write(f"      L{lineno} {size} 列: {text}\n")
+    if total:
+        sys.stderr.write(
+            f"\n单行硬上限：{total} 行越过 {hard_limit} 列。这一层**不吃基线宽限**——"
+            "计数没涨也得折行；折完之后再把基线头部 hard-limit= 改小，锁住收益。\n\n"
+        )
 
 
 def report_regressions(
@@ -218,17 +276,31 @@ def main() -> int:
     )
     parser.add_argument("--max-details", type=int, default=3, help="每个文件最多列出几行，默认 3")
     parser.add_argument("--max-files", type=int, default=20, help="最多列出几个超基线文件，默认 20")
+    parser.add_argument(
+        "--hard-limit",
+        type=int,
+        default=None,
+        help="单行硬上限（列）；只许下调，缺省用基线头部 hard-limit=",
+    )
     args = parser.parse_args()
 
     if args.limit < 1:
         parser.error("--limit 必须是正整数")
 
+    hard_limit = resolve_hard_limit(args.hard_limit)
+    if hard_limit is None:
+        return 1
+    if hard_limit <= args.limit:
+        parser.error(f"硬上限 {hard_limit} 必须大于计数阈值 {args.limit}")
+
     result = collect(args.limit, args.count_mode)
     if args.print_baseline:
-        sys.stdout.write(render_baseline(result, args.limit, args.count_mode))
+        sys.stdout.write(render_baseline(result, args.limit, args.count_mode, hard_limit))
         return 0
 
     warn_if_params_mismatch(args.limit, args.count_mode)
+    report_hard_violations(hard_limit, result, max(1, args.max_files))
+    hard_failed = any(size > hard_limit for offs in result.values() for _, size, _ in offs)
 
     baseline = load_baseline()
     regressions: list[tuple[str, list[tuple[int, int, str]], int | None]] = []
@@ -237,20 +309,28 @@ def main() -> int:
         if allowed is None or len(offenders) > allowed:
             regressions.append((rel, offenders, allowed))
 
-    if regressions:
-        report_regressions(
-            regressions, args.limit, args.count_mode, max(1, args.max_details), max(1, args.max_files)
-        )
+    if regressions or hard_failed:
+        if regressions:
+            report_regressions(
+                regressions,
+                args.limit,
+                args.count_mode,
+                max(1, args.max_details),
+                max(1, args.max_files),
+            )
         total = sum(len(v) for v in result.values())
         limit_sum = sum(baseline.values())
-        sys.stderr.write(f"\n当前合计 {total} 行超长 / {len(result)} 个文件，基线上限 {limit_sum} 行。\n")
+        sys.stderr.write(
+            f"\n当前合计 {total} 行超长 / {len(result)} 个文件，"
+            f"基线上限 {limit_sum} 行，硬上限 {hard_limit} 列。\n"
+        )
         return 1
 
     unit = "码位" if args.count_mode == "chars" else "列"
     total = sum(len(v) for v in result.values())
     print(
-        f"md 行长（≤ {args.limit} {unit}）：{total} 行超长 / {len(result)} 个文件；"
-        f"基线上限 {sum(baseline.values())} 行。"
+        f"md 行长（≤ {args.limit} {unit}，单行硬上限 {hard_limit} {unit}）："
+        f"{total} 行超长 / {len(result)} 个文件；基线上限 {sum(baseline.values())} 行。"
     )
     stale = [rel for rel, allowed in baseline.items() if allowed > len(result.get(rel, []))]
     if stale:
