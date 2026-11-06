@@ -2,7 +2,7 @@
 #
 # 由 `python3 scripts/md_line_length_ratchet.py --print-baseline` 生成。
 #
-# 生成参数：limit=160 hard-limit=4883 count-mode=width
+# 生成参数：limit=160 hard-limit=1500 count-mode=width
 # （脚本读这行判断你是否换了口径、以及当前生效的单行硬上限）。
 #
 # 只许降不许升：把长行折开之后，请同步下调对应计数；归零的条目直接删除。
@@ -12,7 +12,7 @@
 # 格式：相对路径<TAB>超长行数
 .github/pull_request_template.md	1
 AGENTS.md	81
-CHANGELOG.md	222
+CHANGELOG.md	145
 README.md	22
 README.zh.md	14
 benchmark/README.md	8
