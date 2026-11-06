@@ -4,7 +4,10 @@
 
 **Status**: design draft (**no committed implementation timeline**).  
 **Audience**: maintainers and product/protocol designers.  
-**Related docs**: runtime behavior remains defined by `workflow_execute` / `workflow_validate` contracts in **`docs/en/TOOLS.md`** and architecture sections in **`docs/en/DEVELOPMENT.md`**. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging from today's DAG semantics.
+**Related docs**:
+  runtime behavior remains defined by `workflow_execute` / `workflow_validate` contracts in **`docs/en/TOOLS.md`** and architecture sections in
+  **`docs/en/DEVELOPMENT.md`**. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging
+  from today's DAG semantics.
 
 ---
 
@@ -12,12 +15,16 @@
 
 CrabMate already has:
 
-- **In-turn DAG orchestration** via `workflow_execute` (`src/cm_workflow/`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
-- **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, final `agent_reply_plan` v1, and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
+- **In-turn DAG orchestration** via `workflow_execute` (`src/cm_workflow/`): topological deps, per-layer parallelism, `fail_fast`,
+  `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
+- **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, final `agent_reply_plan` v1,
+  and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
 
-Roadmap and product expectations are moving toward state-machine-style configurations and readable conditional/loop expression. The core tension is that current `WorkflowSpec` is a **DAG**, not a native FSM/cyclic graph runtime.
+Roadmap and product expectations are moving toward state-machine-style configurations and readable conditional/loop expression. The core tension is
+  that current `WorkflowSpec` is a **DAG**, not a native FSM/cyclic graph runtime.
 
-If we add syntax without explicit boundaries, risks include scheduler complexity blow-up, approval/trace/plan-alignment inconsistency, and termination safety regressions.
+If we add syntax without explicit boundaries, risks include scheduler complexity blow-up, approval/trace/plan-alignment inconsistency,
+  and termination safety regressions.
 
 ---
 
@@ -67,19 +74,27 @@ Documentation rule: whenever “state machine” is mentioned externally, explic
 
 ### 4.2 Conditions (branching)
 
-**Architectural boundary**: branching has two layers—**intra-turn** uses readonly nodes plus **`deps`** (or **`choice`**) to prune within the same DAG; **cross-turn** is carried by **session-level** narration (a new **`workflow`** JSON or a new **`agent_reply_plan`**), avoiding unbounded expressive power inside a single-turn DAG.
+**Architectural boundary**: branching has two layers—**intra-turn** uses readonly nodes plus **`deps`** (or **`choice`**)
+  to prune within the same DAG; **cross-turn** is carried by **session-level** narration (a new **`workflow`** JSON or a new **`agent_reply_plan`**),
+  avoiding unbounded expressive power inside a single-turn DAG.
 
-**Guard expressions**: introducing a free-form expression language in v1 is not advised (poor safety and testability). Prefer **“tool-as-guard”**: guard logic lives in a **readonly tool** or **controlled script tool** that emits structured JSON, and **`choice` parses only a fixed schema** (e.g. `branch: "a"|"b"`).
+**Guard expressions**: introducing a free-form expression language in v1 is not advised (poor safety and testability). Prefer **“tool-as-guard”**:
+  guard logic lives in a **readonly tool** or **controlled script tool** that emits structured JSON,
+  and **`choice` parses only a fixed schema** (e.g. `branch: "a"|"b"`).
 
-**Author-layer syntax** (`when.branch` / `when.match` / `kind: choice`) is documented in **`docs/工作流编写教程.md` §5.2–§5.3, §5.6**; unselected branches are recorded in the **trace** as **skipped**.
+**Author-layer syntax** (`when.branch` / `when.match` / `kind: choice`) is documented in **`docs/工作流编写教程.md` §5.2–§5.3, §5.6**;
+  unselected branches are recorded in the **trace** as **skipped**.
 
 ### 4.3 Loops
 
 Principle: no unbounded cycles in single-turn DAG execution. Safe subsets:
 
-1. **Bounded expansion**: `for_each` / `repeat N` declare hard limits (`max_items` / `count`) and compile into multiple nodes or chained **`deps`**; suited to CI matrices and homogeneous multi-file work.
-2. **Outer-loop (agent level)**: “until tests pass” is handled by **multiple `run_agent_turn` rounds** or regenerating a smaller DAG each round, keeping every DAG acyclic—consistent with the **`plan_rewrite`** retry narrative.
-3. **No default `while(true)` support**: if a general loop is ever added, it must include strict **step / wall-clock / token** caps and make each iteration distinguishable in the **trace**.
+1. **Bounded expansion**: `for_each` / `repeat N` declare hard limits (`max_items` / `count`) and compile into multiple nodes or chained **`deps`**;
+  suited to CI matrices and homogeneous multi-file work.
+2. **Outer-loop (agent level)**: “until tests pass” is handled by **multiple `run_agent_turn` rounds** or regenerating a smaller DAG each round,
+  keeping every DAG acyclic—consistent with the **`plan_rewrite`** retry narrative.
+3. **No default `while(true)` support**: if a general loop is ever added,
+  it must include strict **step / wall-clock / token** caps and make each iteration distinguishable in the **trace**.
 
 **Author-layer syntax** (`for_each` including `parallel`, and `repeat` fields/limits) is documented in **`docs/工作流编写教程.md` §5.4–§5.5**.
 
@@ -88,7 +103,8 @@ Principle: no unbounded cycles in single-turn DAG execution. Safe subsets:
 ## 5. Relation with workflow reflection
 
 - **`workflow_execute` DAG** fits intra-turn parallel dependency chains.
-- **Workflow reflection + `workflow_node_id`** should remain valid even if FSM is compiled into physical DAG nodes; mapping rules must stay explicit when logical and physical node IDs differ.
+- **Workflow reflection + `workflow_node_id`** should remain valid even if FSM is compiled into physical DAG nodes;
+  mapping rules must stay explicit when logical and physical node IDs differ.
 
 Recommended product narrative:
 
@@ -117,7 +133,8 @@ Any extension should explicitly define:
 | Phase 2 | choice-node support + trace branch-pruning semantics | parser/scheduler updates + golden fixtures |
 | Phase 3 | dynamic guards + bounded loops + approval policy integration | design + security reviews |
 
-Out of scope for current consensus: making `workflow_execute` simultaneously support unrestricted Turing-complete scripting and unbounded loops without additional resource caps.
+Out of scope for current consensus:
+  making `workflow_execute` simultaneously support unrestricted Turing-complete scripting and unbounded loops without additional resource caps.
 
 ---
 

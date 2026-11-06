@@ -1,22 +1,30 @@
 # ADR：单包 `crabmate` 发布到 crates.io
 
 > **状态**：**Accepted**（2026-08-16）  
-> **入口**：PR 853 / `client-contract-v0.2.0` 已合入 `main`（W2b：本仓无 `crabmate-tool-card`）。S2 **#854**、公开面收口 **#855**（`27c1fd3a`）已合 `main`。Client **S3** 钉该 rev + `protocol`。S4.5 **#857**、S4 **#858** 已合。S5：crates.io [`crabmate` 0.4.0](https://crates.io/crates/crabmate) + git **`v0.4.0`**。  
-> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A；[`client_contract_versioning.md`](./client_contract_versioning.md)；展示下沉 [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W3/W4 **缓做**，不阻塞本计划）。  
-> **Client 消费**：合入后钉 **一个** crate `crabmate`，`default-features = false, features = ["protocol"]`；禁止再 git 钉 `crabmate-sse-protocol` 等旧包名（`v0.3.0` / `client-contract-v0.2.0` 旧 Client 仍可用）。
+> **入口**：PR 853 / `client-contract-v0.2.0` 已合入 `main`（W2b：本仓无 `crabmate-tool-card`）。S2 **#854**、公开面收口 **#855**（`27c1fd3a`）
+> 已合 `main`。Client **S3** 钉该 rev + `protocol`。S4.5 **#857**、S4 **#858** 已合。S5：
+> crates.io [`crabmate` 0.4.0](https://crates.io/crates/crabmate) + git **`v0.4.0`**。
+> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A；[`client_contract_versioning.md`](./client_contract_versioning.md)；
+> 展示下沉 [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W3/W4 **缓做**，不阻塞本计划）。
+> **Client 消费**：合入后钉 **一个** crate `crabmate`，`default-features = false, features = ["protocol"]`；
+> 禁止再 git 钉 `crabmate-sse-protocol` 等旧包名（`v0.3.0` / `client-contract-v0.2.0` 旧 Client 仍可用）。
 
 ---
 
 ## 1. Context
 
-切仓前本仓是 Cargo workspace（根包 `crabmate` `0.3.0` + ~19 个 `crates/*`）。`cargo publish -p crabmate` 会把 path 依赖换成 crates.io 上的**同名版本**：内部 crate 只要还是独立 package，就会出现在 registry 上。S2 后树内只有根包 **`crabmate`**。
+切仓前本仓是 Cargo workspace（根包 `crabmate` `0.3.0` + ~19 个 `crates/*`）。
+  `cargo publish -p crabmate` 会把 path 依赖换成 crates.io 上的**同名版本**：内部 crate 只要还是独立 package，就会出现在 registry 上。
+  S2 后树内只有根包 **`crabmate`**。
 
-目标：**crates.io 上只有 `crabmate` 一个包**，同时官方 Client（WASM `frontend` + native `crabmate-tui-core`）仍能消费线契约，且**不能**链接 `tokio` 运行时 / `nix` / `rusqlite` / `axum`。
+目标：**crates.io 上只有 `crabmate` 一个包**，同时官方 Client（WASM `frontend` + native `crabmate-tui-core`）仍能消费线契约，
+  且**不能**链接 `tokio` 运行时 / `nix` / `rusqlite` / `axum`。
 
 约束：
 
 1. 已发布 crate 不得 path 依赖 `publish = false` 的 workspace 成员。
-2. 把现有成员**逐个**并进根包不可行：叶子（如 `types`）并入根包后，`sse-protocol` 等仍依赖 `types`，若改依赖根包会与「根包依赖 sse-protocol」成环。**切仓必须一次完成。**
+2. 把现有成员**逐个**并进根包不可行：叶子（如 `types`）并入根包后，`sse-protocol` 等仍依赖 `types`，若改依赖根包会与「根包依赖 sse-protocol」成环。
+  **切仓必须一次完成。**
 3. Client **禁止** `path` 回本开发树（`check-no-main-path.sh`）。切仓后钉 git tag / crates.io `version`，带 `protocol` feature。
 4. 线协议字节与 HTTP JSON **不**随本次搬家而变；破坏的是 **Cargo 包名**（`crabmate-sse-protocol` → `crabmate::cm_sse_protocol`）。
 5. 产品 git tag **`v0.3.0` 不得**用作 crates.io `0.3.0`：树形状不同。首发单包用 **`0.4.0`**。
@@ -47,9 +55,11 @@ protocol = []
 
 第三方依赖凡仅 server 使用的，一律 `optional = true`，由 `server`（或更细 feature）启用。`nix` 保持 `[target.'cfg(unix)'.dependencies]`。
 
-`protocol` 允许的第三方（白名单，S1 冻结）：`serde` / `serde_json` / `thiserror` / `schemars` / `log`（若分类路径需要）。**禁止**进入 `protocol` 编译图：`tokio`（含仅 `sync`）、`reqwest`、`axum`、`rusqlite`、`nix`、`tiktoken-rs`、`worbrow`。
+`protocol` 允许的第三方（白名单，S1 冻结）：`serde` / `serde_json` / `thiserror` / `schemars` / `log`（若分类路径需要）。
+  **禁止**进入 `protocol` 编译图：`tokio`（含仅 `sync`）、`reqwest`、`axum`、`rusqlite`、`nix`、`tiktoken-rs`、`worbrow`。
 
-> 现状：Client 已 git 钉带 `tokio` `sync` 的 `crabmate-sse-protocol`，wasm 能过。单包后**仍禁止**把 `tokio` 放进 `protocol`，避免根包再导出 `stream_hub` 时误开 runtime。
+> 现状：Client 已 git 钉带 `tokio` `sync` 的 `crabmate-sse-protocol`，wasm 能过。单包后**仍禁止**把 `tokio` 放进 `protocol`，
+> 避免根包再导出 `stream_hub` 时误开 runtime。
 
 ### 2.2 合并后模块名（Client `use` 映射）
 
@@ -64,7 +74,8 @@ protocol = []
 | `crabmate-turn-layout` | `crabmate::cm_turn_layout` |
 | `crabmate-sse-protocol` | `crabmate::cm_sse_protocol`（**不含** `stream_hub` / `mpsc_send` / 审批桥） |
 
-根包可再导出别名（**仅 `server` 组合面**，减少 `src/` 改写）：`cm_types` → `types`，`cm_sse_protocol::sse` → `sse`，`cm_config` → `config`。这些别名 **`cfg(feature = "server")`**，`protocol`-only **编译不过** `crabmate::types` / `crabmate::sse`。Client **不要**依赖这些别名，只钉 `cm_*`。
+根包可再导出别名（**仅 `server` 组合面**，减少 `src/` 改写）：`cm_types` → `types`，`cm_sse_protocol::sse` → `sse`，`cm_config` → `config`。
+  这些别名 **`cfg(feature = "server")`**，`protocol`-only **编译不过** `crabmate::types` / `crabmate::sse`。Client **不要**依赖这些别名，只钉 `cm_*`。
 
 Client 示例：
 
@@ -91,11 +102,13 @@ use crabmate::cm_turn_layout::project_turn_web_v2;
 | `SSE_PROTOCOL_VERSION`、`classify_*`、`sse_frame`、`StreamEndReason` | `sse::stream_hub`、`mpsc_send`、`control_mirror`、`web_approval`、终态 `send_*`（`Sender<String>`） |
 | `sse::protocol` 载荷类型与纯函数 `encode_message` | 依赖 `tokio::sync::mpsc` / `broadcast` 的桥 |
 
-S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），切仓时同一边界收在 `crabmate::cm_sse_protocol` 内用 `cfg(feature = "server")`（不再单列 `sse_runtime` 模块）。
+S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），
+  切仓时同一边界收在 `crabmate::cm_sse_protocol` 内用 `cfg(feature = "server")`（不再单列 `sse_runtime` 模块）。
 
 ### 2.4 首发 `0.4.0` 的 semver 承诺
 
-`0.4.0` 把默认 `server` 面冻进 crates.io。**承诺**与 **不承诺** 必须在改 `version` 之前写进 rustdoc / 中英 README（波次 **S4.5**），避免下游把 `#[doc(hidden)]` 当成稳定 SDK。
+`0.4.0` 把默认 `server` 面冻进 crates.io。**承诺**与 **不承诺** 必须在改 `version` 之前写进 rustdoc / 中英 README（波次 **S4.5**），
+  避免下游把 `#[doc(hidden)]` 当成稳定 SDK。
 
 | 承诺（semver） | 不承诺 |
 |----------------|--------|
@@ -103,15 +116,25 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 | **`server`**：组合面模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**；以及根上**显式清单**里的 50 项（`fixtures/public_api_golden.txt` 的 `promised`，由 `scripts/check-public-api.py` 校验——含 `run`、`run_agent_turn`、`TurnRequest` 及其公开字段类型、`TurnOutcome` / `TurnStats`、`build_tools*`、`ProcessHandles`、`tool_sandbox` 等）。**不**承诺「根上所有 `pub` 项」这个自动集合（S6，见 #1297） | 清单里 `excluded` 的 46 项（`#[doc(hidden)]` 模块、CLI 内部入口与解析助手、工具注册表内部元数据、S2 遗留参数袋 `WebChat*BuildArgs`）；`agent::agent_turn` 等组合面**内部路径**；把 `crabmate` 当通用嵌入式 Agent SDK |
 | 线协议：`docs/SSE协议.md` + `cm_api_contract` 错误码 + `ChatRequestBody` | 静态 SPA / `/uploads` 文件与 `CM_E2E_FIXTURES` 路由不进 OpenAPI |
 
-HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审批、会话 revision）。默认 `web_api_require_bearer=false` 与「密钥为空则中间件不校验」是产品选择，**不**在首发前改行为。
+HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审批、会话 revision）。
+  默认 `web_api_require_bearer=false` 与「密钥为空则中间件不校验」是产品选择，**不**在首发前改行为。
 
 **`0.5.x` / `0.6.x` / `0.7.x` 增量公开面**（镜像瘦身 B 清单，issue #939；全部落在既有六模块内，纯 additive、wire 不变）：
 
-- `0.5.1`（已发）：入站请求体补出站 `Serialize`——`ChatRequestBodyWire` / `ChatApprovalRequestBody` / `ClientLlmBody` / `ExecutorLlmBody` / `StreamResumeBody` / `ClarifyQuestionnaireAnswersBody`（PR #940）。
-- `0.5.2`（已发）：`cm_api_contract::HealthReportView` / `HealthCheckItemView`（`GET /health` 视图，PR #941）；`cm_sse_protocol::CommandApprovalData`（AG-UI CUSTOM `command_approval` data camel 面，PR #942）；`cm_api_contract::SessionListRow`（sessions 列表行瘦投影，PR #943，已合入 `main`）；`cm_api_contract::workspace`（`/workspace*` 全量 JSON 契约 27 类型自 `cm_web_host` 迁入、原址转发，B.1）。
-- `0.6.0`（已发）：公开协议面**无新增**符号；本体是一批 BREAKING 移除（TOML `[agent] mcp_command` / 明文密钥文件迁移 / `GET /user-data/secrets/status` 旧 `client_llm`·`executor_llm` 槽位 / `final_plan_semantic_check_accept_legacy_text` / 扁平 CLI flag 层 / `config --dry-run`），SSE wire 仍为 v2，六模块符号契约不变。
-- `0.7.0`（已发）：公开协议面**无新增**符号；本体是工具面收敛（大量薄封装 CLI 工具移除并改走 `run_command`，默认白名单相应扩充），SSE wire 仍为 v2，六模块符号契约不变。
-- `0.8.0`（本版）：新增 `crabmatectl` 本地多实例管理器（**独立 binary**，不进 `protocol` 六模块公开面），并完成工具面类型化收敛（工具合并 / 移除属 **server** 面 BREAKING）；SSE wire 仍为 v2，未打 `client-contract-v*` 展示契约 tag。
+- `0.5.1`（已发）：
+  入站请求体补出站 `Serialize`——`ChatRequestBodyWire` / `ChatApprovalRequestBody` / `ClientLlmBody` / `ExecutorLlmBody` / `StreamResumeBody` /
+  `ClarifyQuestionnaireAnswersBody`（PR #940）。
+- `0.5.2`（已发）：`cm_api_contract::HealthReportView` / `HealthCheckItemView`（`GET /health` 视图，PR #941）；
+  `cm_sse_protocol::CommandApprovalData`（AG-UI CUSTOM `command_approval` data camel 面，PR #942）；
+  `cm_api_contract::SessionListRow`（sessions 列表行瘦投影，PR #943，已合入 `main`）；
+  `cm_api_contract::workspace`（`/workspace*` 全量 JSON 契约 27 类型自 `cm_web_host` 迁入、原址转发，B.1）。
+- `0.6.0`（已发）：公开协议面**无新增**符号；
+  本体是一批 BREAKING 移除（TOML `[agent] mcp_command` / 明文密钥文件迁移 / `GET /user-data/secrets/status` 旧 `client_llm`·`executor_llm` 槽位 /
+  `final_plan_semantic_check_accept_legacy_text` / 扁平 CLI flag 层 / `config --dry-run`），SSE wire 仍为 v2，六模块符号契约不变。
+- `0.7.0`（已发）：公开协议面**无新增**符号；本体是工具面收敛（大量薄封装 CLI 工具移除并改走 `run_command`，默认白名单相应扩充），SSE wire 仍为 v2，
+  六模块符号契约不变。
+- `0.8.0`（本版）：新增 `crabmatectl` 本地多实例管理器（**独立 binary**，不进 `protocol` 六模块公开面），
+  并完成工具面类型化收敛（工具合并 / 移除属 **server** 面 BREAKING）；SSE wire 仍为 v2，未打 `client-contract-v*` 展示契约 tag。
 
 **首发前不做**（会把 S4 拖成又一次大切仓；若将来要做须**单独 PR 且在 S5 之前**，否则 `0.4.0` 后再缩是又一次 breaking）：
 
@@ -136,7 +159,8 @@ HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审
 - 一次大切仓：各原 crate 内 `crate::` 改为 `crate::<mod>::`（或等价 `super`）。
 - 禁边脚本 `check-crate-deps.sh`（`cargo tree -p`）失效，须改成**模块** DAG 检查。
 - Client 全量改 `use` + lockfile；旧包名无法从同一 crate 再导出为第二个 crates.io 名。
-- 根包 `lib.rs`：**`protocol` 为稳定契约**（六个 `cm_*`）；**`server` 组合面** `agent` / `config` / `llm` / `sse` / `types` 与显式 `pub use`。无再导出的实现模块 `pub(crate)`；因整模块 `pub use` 必须保持 `pub` 的标 `#[doc(hidden)]`。
+- 根包 `lib.rs`：**`protocol` 为稳定契约**（六个 `cm_*`）；**`server` 组合面** `agent` / `config` / `llm` / `sse` / `types` 与显式 `pub use`。
+  无再导出的实现模块 `pub(crate)`；因整模块 `pub use` 必须保持 `pub` 的标 `#[doc(hidden)]`。
 
 **后续约束**
 
@@ -175,7 +199,8 @@ S4  元数据 + cargo publish --dry-run
 S5  crates.io 真发 0.4.0 + 文档 / Client 改 version
 ```
 
-S3 可与 S2 末尾叠：S2 合入并打 **`v0.4.0-alpha.1`**（或 `rev`）后 Client 再合。禁止 S5 早于 S3 绿。**S4.5 须在 S4.1 改 `version` 之前合入**（可与 S4 同波，但不要和 dry-run 塞进同一个 PR）。
+S3 可与 S2 末尾叠：S2 合入并打 **`v0.4.0-alpha.1`**（或 `rev`）后 Client 再合。禁止 S5 早于 S3 绿。
+  **S4.5 须在 S4.1 改 `version` 之前合入**（可与 S4 同波，但不要和 dry-run 塞进同一个 PR）。
 
 ### S0 — 文档
 
@@ -199,9 +224,11 @@ Client **此波不必改钉**（仍用默认 feature 的 git tag 也能编）。
 
 ### S1 落地（2026-08-16）
 
-- **S1.1**：`default = ["runtime"]`，`runtime = ["dep:tokio"]`；`stream_hub` / `mpsc_send` / `web_approval` / `control_mirror` / `final_response_terminal` 均 `#[cfg(feature = "runtime")]`。
+- **S1.1**：`default = ["runtime"]`，`runtime = ["dep:tokio"]`；
+  `stream_hub` / `mpsc_send` / `web_approval` / `control_mirror` / `final_response_terminal` 均 `#[cfg(feature = "runtime")]`。
 - **S1.2**：根包、`crabmate-internal`、`crabmate-approval`、`crabmate-llm` 显式 `features = ["runtime"]`。
-- **S1.3 / S1.4**：`scripts/check-sse-protocol.sh` 跑 `--no-default-features` 测、`cargo tree` 禁 tokio、wasm32 `--lib` check（无该 target 则 skip）；`check-client-contract.sh` 消费者 `default-features = false`。
+- **S1.3 / S1.4**：`scripts/check-sse-protocol.sh` 跑 `--no-default-features` 测、`cargo tree` 禁 tokio、wasm32 `--lib` check（无该 target 则 skip）；
+  `check-client-contract.sh` 消费者 `default-features = false`。
 
 ### S2 — 切仓（一次 PR / 一条长分支）
 
@@ -219,7 +246,8 @@ resolver = "2"
 
 **包名**：crates.io / Cargo 只有 **`crabmate`**。不再保留 `crabmate-sse-protocol` 等 package 名（兼容空壳包否决，见 §4）。
 
-**规则**：`crabmate-<x>` → 目录 / `mod` **`cm_<x>`**（`-` → `_`）。与现有 `src/agent`、`src/llm`、`src/runtime` **自然错开**，不必再发明 `agent_domain` 一类名字。
+**规则**：`crabmate-<x>` → 目录 / `mod` **`cm_<x>`**（`-` → `_`）。与现有 `src/agent`、`src/llm`、`src/runtime` **自然错开**，
+  不必再发明 `agent_domain` 一类名字。
 
 **原则**
 
@@ -229,7 +257,9 @@ resolver = "2"
 4. `protocol` feature 只编译下表「P」列；其余 `cfg(feature = "server")`（默认）。
 5. 原 crate 内 `crate::foo` → `crate::cm_<x>::foo`。根包 `src/` 里 `crabmate_<pkg>::` → `crate::cm_<x>::`。
 6. 组合面别名（`types` / `sse` / `config` / `crate::tools`）仅服务本仓 `src/`，**`cfg(feature = "server")`**，不作为 Client 契约。
-7. 无组合面模块再导出的 server 实现（`cm_tools`、`cmd_mate`、`cm_runtime`、`cm_memory` 等）为 **`pub(crate)`**。`cm_agent` / `cm_config` / `cm_llm` / `cm_workflow` / `cm_internal` 因 `pub use` 整模块（`agent` / `config` / `http_client` / `workflow` / `tool_sandbox`）须保持 `pub`，标 **`#[doc(hidden)]`**，不作为 Client 契约。
+7. 无组合面模块再导出的 server 实现（`cm_tools`、`cmd_mate`、`cm_runtime`、`cm_memory` 等）为 **`pub(crate)`**。
+  `cm_agent` / `cm_config` / `cm_llm` / `cm_workflow` / `cm_internal` 因 `pub use` 整模块（`agent` / `config` / `http_client` / `workflow` /
+  `tool_sandbox`）须保持 `pub`，标 **`#[doc(hidden)]`**，不作为 Client 契约。
 
 **对外（Client / `protocol`）** — 与 §2.2 一致：
 

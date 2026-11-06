@@ -1,10 +1,13 @@
 # CLI → TUI 改造实施步骤（与 Web 布局对齐）
 
-> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。
-> 官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：
+> 本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。
+> 官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)
+> ）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。
 > 历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
 
-本文面向维护者：在**不替换既有 Agent / 工具 / 配置栈**的前提下，将当前 **reedline 行式 REPL** 渐进演进为 **全屏 TUI**，并在**信息架构**上与 Web 侧栏 + 主会话区 + 状态/辅助区对齐。
+本文面向维护者：在**不替换既有 Agent / 工具 / 配置栈**的前提下，将当前 **reedline 行式 REPL** 渐进演进为 **全屏 TUI**，
+  并在**信息架构**上与 Web 侧栏 + 主会话区 + 状态/辅助区对齐。
 
 **现状简述（撰写时仓库；D2.2 后已失效）**
 
@@ -13,8 +16,10 @@
 
 **原则（历史）**
 
-1. **编排复用**：会话消息、`run_agent_turn`、工具执行、审批与 **`CliToolRuntime`** 等与现有 REPL/`chat` 子命令共用；TUI 仅替换「渲染 + 输入 + 焦点」层（与 Web 前端的职责划分对称）。
-2. **三端约定**：新能力优先落在共享层；若某能力明确仅适合某一界面，须在注释或 **`docs/待办清单.md`** 中写明。参见仓库 **`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**。
+1. **编排复用**：会话消息、`run_agent_turn`、工具执行、审批与 **`CliToolRuntime`** 等与现有 REPL/`chat` 子命令共用；TUI 仅替换「渲染 + 输入 + 焦点」
+  层（与 Web 前端的职责划分对称）。
+2. **三端约定**：新能力优先落在共享层；若某能力明确仅适合某一界面，须在注释或 **`docs/待办清单.md`** 中写明。
+  参见仓库 **`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**。
 3. **非 TTY 降级**：管道、CI、`ssh -T` 等场景**不得**假设全屏 TUI；保留 **`repl`**（或 **`chat` 单次**）作为 fallback。
 4. **对齐 Web 的是「分区」而非「控件」**：左侧 ≈ 工作区/列表，中间 ≈ 消息流 + 输入，右侧或底栏 ≈ 任务/状态/快捷入口；不要求像素级一致。
 
@@ -28,7 +33,8 @@
 | 终端控制 | **`crossterm`** | 已在依赖中；注意 **`NO_COLOR`**、Windows Terminal、tmux、SSH 下按键差异。 |
 | 异步与 UI | **独立线程 + channel** 或 **`tokio`** 与 UI tick 分离 | `run_agent_turn` 多为 async；避免在渲染线程里阻塞；事先约定 **取消**（Ctrl+C / 组件 drop）与 **日志**（勿向 alt screen 混打 `println!`）。 |
 
-可选：**Cargo feature** `tui` 挂载 **`ratatouille`**，便于裁剪发行版（与现有 **`mcp` / `docker_sandbox` / `fastembed`** feature 策略一致则需更新 **`docs/开发文档.md`** 与 **`README.md`**）。
+可选：**Cargo feature** `tui` 挂载 **`ratatouille`**，
+  便于裁剪发行版（与现有 **`mcp` / `docker_sandbox` / `fastembed`** feature 策略一致则需更新 **`docs/开发文档.md`** 与 **`README.md`**）。
 
 ---
 
@@ -52,7 +58,8 @@
 **目标**：可启动、可退出、resize 不崩，不占死终端。
 
 - 新增子命令，例如 **`crabmate tui`**（或与 **`repl --tui`** 二选一，需在 **`docs/命令行与路由.md`** 与 **`README.md`** 写明）。
-- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；合并后按 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync** 更新 **`docs/开发文档.md`**「主要模块」）。
+- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；
+  合并后按 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync** 更新 **`docs/开发文档.md`**「主要模块」）。
 - 实现：**raw mode**、**alt screen**（若使用）、**Drop 时恢复终端**、**Ctrl+Q / Ctrl+C** 退出策略。
 - 验收：TTY 下进入全屏占位 UI；非 TTY 直接报错退出或提示使用 **`repl`** / **`chat`**。
 
@@ -65,18 +72,23 @@
 - 尊重 **`NO_COLOR`**；可选降级为无 truecolor 主题。
 - 验收：终端缩放后布局可用；无残留乱码光标。
 
-**进展（仓库）**：布局渲染在 **`runtime/tui/run_session.rs`**（**`render_*`**）：**顶栏一行（CrabMate · 工作目录）+ 三栏（约 23% / 54% / 23%，贴近 Web `nav-rail` 与主区）+ 底栏（模型 · 角色等 chips）**，区块标题对齐 Web「会话在左 / 工作区在右 / 聊天 / 撰写」语义（左「会话」、右「工作区」含快捷键）；尊重 **`NO_COLOR`**；缩放随 **`Terminal::draw`** 重算。
+**进展（仓库）**：布局渲染在 **`runtime/tui/run_session.rs`**（**`render_*`**）：**顶栏一行（CrabMate · 工作目录）+ 三栏（约 23% / 54% / 23%，
+  贴近 Web `nav-rail` 与主区）+ 底栏（模型 · 角色等 chips）**，区块标题对齐 Web「会话在左 / 工作区在右 / 聊天 / 撰写」语义（左「会话」、右「工作区」
+  含快捷键）；尊重 **`NO_COLOR`**；缩放随 **`Terminal::draw`** 重算。
 
 ### 阶段 C：对话闭环（最小可用）
 
 **目标**：TUI 内完成一问一答，走与 REPL **同一套**业务入口。
 
-- 从 **`runtime/cli/chat.rs`** / **`run_agent_turn_for_cli`** 等提取或复用「组装 **`Vec<Message>`** + 工作目录 + **`CliToolRuntime`**」的调用链，避免在 TUI 内复制一套编排。
+- 从 **`runtime/cli/chat.rs`** / **`run_agent_turn_for_cli`** 等提取或复用「组装 **`Vec<Message>`** + 工作目录 + **`CliToolRuntime`**」的调用链，
+  避免在 TUI 内复制一套编排。
 - **输入**：先单行提交即可；输出以 **增量追加** 为佳（若 CLI 已有流式回调，接到 **UI 线程安全队列** 再刷新列表）。
 - 验收：能调用模型与工具（工具输出可先纯文本块）；与 **`--no-stream`** 行为差异在文档中说明。
 
-**进展（仓库）**：**`runtime/tui/run_session.rs`** 的 **`run_tui_session`** 在 **`cli_run`** 与 **`repl`** 相同的配置/客户端/工具装载之后运行；ratatouille 在专用线程，异步侧调用 **`repl_prepare_messages_and_editor`** 与 **`repl_dispatch_chat_round`**；
-  **`CliTerminalChatBuildArgs::suppress_stdout_render`**（库根装配）关闭助手 stdout 渲染，**`--no-stream`** 仍控制上游是否 SSE；中区由 **`messages_to_transcript`** 刷新。**`/api-key`**（**`/apikey`**）经 **`try_dispatch_api_key_slash_for_tui`** 写入 transcript；
+**进展（仓库）**：**`runtime/tui/run_session.rs`** 的 **`run_tui_session`** 在 **`cli_run`** 与 **`repl`** 相同的配置/客户端/工具装载之后运行；
+  ratatouille 在专用线程，异步侧调用 **`repl_prepare_messages_and_editor`** 与 **`repl_dispatch_chat_round`**；
+  **`CliTerminalChatBuildArgs::suppress_stdout_render`**（库根装配）关闭助手 stdout 渲染，**`--no-stream`** 仍控制上游是否 SSE；
+    中区由 **`messages_to_transcript`** 刷新。**`/api-key`**（**`/apikey`**）经 **`try_dispatch_api_key_slash_for_tui`** 写入 transcript；
   其它 **`/`** 前缀提示使用 **`repl`**（**不**发往模型）。
 
 ### 阶段 D：左侧栏数据化（工作区 / 会话）
@@ -90,7 +102,8 @@
 
 **目标**：不在「只有 Web 能点同意」上倒退。
 
-- **`run_command` 等审批**：复用 **`tool_approval`** / **`CliApprovalInput`**；TUI 侧用 **Modal / 底栏菜单** 呈现选项（与 **`dialoguer`** 行式菜单相比，更贴近 Web「确认条」心智）。
+- **`run_command` 等审批**：复用 **`tool_approval`** / **`CliApprovalInput`**；
+  TUI 侧用 **Modal / 底栏菜单** 呈现选项（与 **`dialoguer`** 行式菜单相比，更贴近 Web「确认条」心智）。
 - **任务列表**：若 Web 有 **`GET /tasks`** 等价需求，CLI/TUI 应通过已有 **`fetch`** 能力或进程内状态（视架构而定）对齐，避免私自造第二套任务模型。
 - **设置**：终端不适合复制 Web 全表单；可先做 **只读摘要 + 打开编辑器 / `config reload` 说明**，与 **`/config`**、**`docs/配置说明.md`** 交叉引用。
 
@@ -99,7 +112,8 @@
 - **键盘**：焦点在侧栏 / 主区 / 输入之间切换（**Tab** / **hjkl** 等），**`?` / F1** 帮助。
 - **大会话**：虚拟滚动或截断显示 + 「展开全文」。
 - **默认入口**：是否将 **`crabmate`** 无子命令时导向 TUI，属于产品决策；建议长期保留 **`repl`** 作为脚本与 SSH 友好默认。
-- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（主要模块与架构图）；若有新配置键或 **`CM_*`**，同步 **`docs/配置说明.md`**（见 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync**）。
+- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（主要模块与架构图）；若有新配置键或 **`CM_*`**，
+  同步 **`docs/配置说明.md`**（见 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync**）。
 
 ---
 
@@ -120,6 +134,7 @@
 - **`src/tool_approval/`**：CLI 审批抽象。
 - **`docs/design/archive/Web界面美化设计.md`**：Web 分区与样式层级（TUI 对齐语义分区即可）。
 - **`docs/命令行与路由.md`**：子命令与用户可见行为。
-- **`docs/design/archive/tui_align_tauri_display.md`**：终端 TUI 与 Tauri/Web **展示序 / 工具文案** 对齐路线图（本轮投影已落地；历史 flush、终答、按行渲染等后续阶段）。
+- **`docs/design/archive/tui_align_tauri_display.md`**：终端 TUI 与 Tauri/Web **展示序 / 工具文案** 对齐路线图（本轮投影已落地；历史 flush、终答、
+  按行渲染等后续阶段）。
 
 本文仅作路线图；具体接口命名、crate 边界与 PR 拆分由实现阶段按需调整。

@@ -15,7 +15,8 @@
 
 ### 1.1 目标
 
-把当前的"长期记忆 + 经验沉淀"从**会话内的文本存储**升级为**可跨会话复用、可用效果数据驱动、可自我纠错**的闭环，使 agent 在持续使用中相对初始版本变得更好，且这一改善**可被量化验证**。
+把当前的"长期记忆 + 经验沉淀"从**会话内的文本存储**升级为**可跨会话复用、可用效果数据驱动、可自我纠错**的闭环，
+  使 agent 在持续使用中相对初始版本变得更好，且这一改善**可被量化验证**。
 
 ### 1.2 非目标
 
@@ -50,12 +51,14 @@
 
 ### 3.1 作用域锁死，经验出不了会话（结构性阻塞）
 
-[`config/memory.toml`](../../config/memory.toml#L7) 与 [`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs#L3) 均明确：作用域固定为 `conversation_id`。
+[`config/memory.toml`](../../config/memory.toml#L7) 与 [`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs#L3) 均明确：
+  作用域固定为 `conversation_id`。
 后果：**换一个会话，此前积累的经验不可见**。经验复用率趋近于零，长期使用不会让 agent 变好——这是当前"自进化"最本质的缺口。
 
 ### 3.2 无效果反馈，无法判断经验是否有用
 
-[`MemoryRow`](../../src/cm_memory/memory/long_term_memory_store.rs#L14-L22) 无 `hit_count` / `confidence` 等字段；召回权重是写死的常量（经验 `+0.25`、经验源 `+0.1`、标签命中 `+0.2`、关键词重叠 `×0.15`，见 [`long_term_memory_recall.rs`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40)）。
+[`MemoryRow`](../../src/cm_memory/memory/long_term_memory_store.rs#L14-L22) 无 `hit_count` / `confidence` 等字段；召回权重是写死的常量（经验 `+0.25`、
+  经验源 `+0.1`、标签命中 `+0.2`、关键词重叠 `×0.15`，见 [`long_term_memory_recall.rs`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40)）。
 后果：注入后是否被采纳、是否真的解决了问题，全无记录。**没有反馈信号就没有"进化"可言**，也无法淘汰噪音。
 
 ### 3.3 无质量护栏，可能越学越差
@@ -66,7 +69,8 @@
 
 ### 3.4 沉淀覆盖面窄
 
-[`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs#L45-L103) 仅覆盖 build/test/format 类工具的失败→恢复，且靠关键词表（`user_message_suggests_task`）触发。调试、性能、工具调用失败恢复等同样有沉淀价值的过程未被覆盖。
+[`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs#L45-L103) 仅覆盖 build/test/format 类工具的失败→恢复，
+  且靠关键词表（`user_message_suggests_task`）触发。调试、性能、工具调用失败恢复等同样有沉淀价值的过程未被覆盖。
 
 ### 3.5 行为不可自适应
 
@@ -87,13 +91,16 @@ conversation:{conversation_id}   ← 现有语义，保留
 workspace:{workspace_root_hash}  ← 项目级，跨会话共享
 ```
 
-- 检索：按 `conversation` → `workspace` 优先级合并候选，再走现有 [`pick_recall_chunks`](../../src/cm_memory/memory/long_term_memory_recall.rs#L65) 排序与预算裁剪。
+- 检索：按 `conversation` → `workspace` 优先级合并候选，再走现有 [`pick_recall_chunks`](../../src/cm_memory/memory/long_term_memory_recall.rs#L65)
+  排序与预算裁剪。
 - 写入：`summarize_experience` 增加作用域参数（会话级 / 项目级），默认会话级（向后兼容）。
 - 已有设计：`summarize_experience_todo.md` §3.3、`memory_todo.md` §5.1（`workspace_style_remember`）。
 
-**信任前提（必须写进实现与文档）**：`workspace` 作用域隐含「同一工作区 = 同一信任域」。多租户场景下**不得**让不同租户共用同一工作区作用域，须靠每租户独立实例 / 独立工作区隔离（见 [`../未来规划功能.md`](../未来规划功能.md#L9-L22)「模式 A」）。
+**信任前提（必须写进实现与文档）**：`workspace` 作用域隐含「同一工作区 = 同一信任域」。多租户场景下**不得**让不同租户共用同一工作区作用域，
+  须靠每租户独立实例 / 独立工作区隔离（见 [`../未来规划功能.md`](../未来规划功能.md#L9-L22)「模式 A」）。
 
-**落点**：`prepare_messages` 的 `scope_id` 入参（[`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs#L234-L245)）、store 的 scope 查询、`LongTermMemoryToolState.scope`。
+**落点**：`prepare_messages` 的 `scope_id` 入参（[`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs#L234-L245)）、
+  store 的 scope 查询、`LongTermMemoryToolState.scope`。
 
 **风险**：跨会话共享会放大噪音与隐私面。缓解：工作区级写入默认需显式意图（如 `workspace_style_remember`），并受 §4.3 护栏约束。
 
@@ -103,10 +110,14 @@ workspace:{workspace_root_hash}  ← 项目级，跨会话共享
 
 **设计**：
 
-1. **schema 扩展**：新增 `hit_count INTEGER DEFAULT 0`、`last_hit_unix INTEGER`、`confidence TEXT DEFAULT 'medium'`（走已有的 `ensure_column` 幂等迁移，见 [`long_term_memory_store.rs`](../../src/cm_memory/memory/long_term_memory_store.rs#L24-L39)）。
+1. **schema 扩展**：新增 `hit_count INTEGER DEFAULT 0`、`last_hit_unix INTEGER`、
+  `confidence TEXT DEFAULT 'medium'`（走已有的 `ensure_column` 幂等迁移，
+  见 [`long_term_memory_store.rs`](../../src/cm_memory/memory/long_term_memory_store.rs#L24-L39)）。
 2. **注入回写**：`prepare_messages` 注入后更新命中计数与时间戳。
-3. **有效性追踪**：回合内记录被注入经验与后续工具调用结果的关系——经验建议被印证（工具成功）则强化，被明显违背/失败则弱化。参考 `summarize_experience_todo.md` §3.5 与 `memory_todo.md` §9.3。
-4. **数据驱动权重**：把 [`experience_recall_boost`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40) 中的固定常量改为按 `hit_count × 有效率` 调权，低价值经验降权并在超预算时先被裁剪。
+3. **有效性追踪**：回合内记录被注入经验与后续工具调用结果的关系——经验建议被印证（工具成功）则强化，被明显违背/失败则弱化。
+  参考 `summarize_experience_todo.md` §3.5 与 `memory_todo.md` §9.3。
+4. **数据驱动权重**：把 [`experience_recall_boost`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40)
+  中的固定常量改为按 `hit_count × 有效率` 调权，低价值经验降权并在超预算时先被裁剪。
 
 **风险**：回写增加 SQLite 写放大；"是否印证"的判定可能误报。缓解：判定只在置信度足够的信号上做（工具退出码、build/test 结果），失败则保守不更新。
 
@@ -127,18 +138,22 @@ workspace:{workspace_root_hash}  ← 项目级，跨会话共享
 
 分两档，先做低风险档：
 
-- **软性档（优先）**：把"经验"作为行为调节通道——工作区风格记忆（`workspace_style_remember`，`memory_todo.md` §5.1）注入 system prompt 层，实现**不改代码即改变行为**。
-- **参数档（谨慎）**：仅允许 agent 在**白名单、低风险、可回滚**范围内调整少量参数（如沉淀触发引导的开关/阈值），需复用现有 `tool_approval` 审批与审计路径，且变更必须落盘可追溯。
+- **软性档（优先）**：把"经验"作为行为调节通道——工作区风格记忆（`workspace_style_remember`，`memory_todo.md` §5.1）注入 system prompt 层，
+  实现**不改代码即改变行为**。
+- **参数档（谨慎）**：仅允许 agent 在**白名单、低风险、可回滚**范围内调整少量参数（如沉淀触发引导的开关/阈值），
+  需复用现有 `tool_approval` 审批与审计路径，且变更必须落盘可追溯。
 
 **非目标**：不允许 agent 直接改写源码 / 结构配置 / prompt 文件正文。理由见 §8。
 
 ### 4.5 E 层：扩大沉淀面
 
-把 [`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs) 的启发式从单一 build-recovery 扩展到 debug / test / 性能 / 工具失败恢复等模式。
+把 [`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs)
+  的启发式从单一 build-recovery 扩展到 debug / test / 性能 / 工具失败恢复等模式。
 
 **准入判据（决议见 §7-5）**：以**是否存在机器可验证信号**划界，而非"是否需要模型调用"。
 
-- **允许自动沉淀**：工具退出码由非零转零、测试 `fail → pass`、benchmark 指标改善、重试后成功等确定性信号触发。这类是对**事实的结构化记录**，不是"提炼"；现有 build-recovery 即此先例。
+- **允许自动沉淀**：工具退出码由非零转零、测试 `fail → pass`、benchmark 指标改善、重试后成功等确定性信号触发。这类是对**事实的结构化记录**，不是"提炼"
+  ；现有 build-recovery 即此先例。
 - **仍拒绝**：无验证信号、仅靠语义归纳的自动提炼（`summarize_experience_todo.md` §8 原意）。
 - **硬性约束**：E 层每新增一种模式，**必须绑定一个确定信号**，否则不扩展。
 - **可选**：在此判据之外，也可改为回合末由模型判断是否沉淀（有模型调用，不属于 §8 拒绝项），但需另定预算与开关。
@@ -163,7 +178,8 @@ workspace:{workspace_root_hash}  ← 项目级，跨会话共享
 
 "自进化"必须可量化，否则无法判断增强是否有效：
 
-1. **回归对照**：用已有 benchmark 流程（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic）跑「关闭记忆」vs「开启记忆」两组，比较任务成功率。
+1. **回归对照**：用已有 benchmark 流程（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic）跑「关闭记忆」vs「开启记忆」两组，
+  比较任务成功率。
 2. **LLM-as-Judge**：复用 [`e2e_scenario.rs`](../../src/e2e_scenario.rs#L767) 的评分能力，做纵向对照（同一批任务，记忆池积累前后）。
 3. **记忆质量指标**：命中率分布、注入后任务成功率、被淘汰条目的占比——通过 B 层新增的统计接口观测。
 4. **防退化门禁**：C 层护栏上线后，回归对照不应出现下降；出现下降则视为护栏失效。
@@ -175,10 +191,14 @@ workspace:{workspace_root_hash}  ← 项目级，跨会话共享
 ### 7.1 已定决议
 
 **§7-1 作用域粒度（已定）**：只做 `conversation` + `workspace` 两级，**不引入 `user:`**。
-依据：[`../未来规划功能.md`](../未来规划功能.md#L9-L22) 已达成共识——不在进程内做账号体系、鉴权不区分自然人，身份交由前置网关/BFF。连"可选演进"也止步于「多枚服务级 API Key → 租户 id 映射」，故 `user:` 无落地载体。若将来真做租户，应新增服务级的 `tenant:{service_key_id}`，而非 `user:`。实现须同时落实 §4.1 的**信任前提**（同一工作区 = 同一信任域）。
+依据：[`../未来规划功能.md`](../未来规划功能.md#L9-L22) 已达成共识——不在进程内做账号体系、鉴权不区分自然人，身份交由前置网关/BFF。连"可选演进"
+  也止步于「多枚服务级 API Key → 租户 id 映射」，故 `user:` 无落地载体。若将来真做租户，应新增服务级的 `tenant:{service_key_id}`，而非 `user:`。
+  实现须同时落实 §4.1 的**信任前提**（同一工作区 = 同一信任域）。
 
 **§7-5 E 层原则边界（已定）**：以「是否存在机器可验证信号」划界。
-依据：[`summarize_experience_todo.md`](./summarize_experience_todo.md#L320-L328) §8 拒绝的是「对普通对话无信号做语义提炼（无需模型调用）」，而非"系统自动落盘"本身——[`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs) 的 build-recovery 已是先例。故：有确定信号 → 允许（结构化记录事实）；无信号 → 拒绝。E 层每新增模式必须绑定一个确定信号。详见 §4.5。
+依据：[`summarize_experience_todo.md`](./summarize_experience_todo.md#L320-L328) §8 拒绝的是「对普通对话无信号做语义提炼（无需模型调用）」，而非"
+  系统自动落盘"本身——[`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs) 的 build-recovery 已是先例。故：
+  有确定信号 → 允许（结构化记录事实）；无信号 → 拒绝。E 层每新增模式必须绑定一个确定信号。详见 §4.5。
 
 ### 7.2 待定开放决策
 

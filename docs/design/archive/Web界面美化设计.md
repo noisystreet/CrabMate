@@ -1,8 +1,12 @@
 # Web 界面美化设计（Leptos 前端）
 
-> **状态：已归档（已被取代）**。Web UI 源码已迁至 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓 `frontend/`，本仓 `serve` 不托管 UI，因此本文描述的组件与样式路径**均已不在本仓**。样式架构与美化思路仅作历史参考；现行权威为 Client 仓 `frontend/src/styles/` 与 **`docs/design/web_theme_presets.md`**（多预设契约；与本设计交叉时以该设计为准）。
+> **状态：已归档（已被取代）**。Web UI 源码已迁至 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓 `frontend/`，
+> 本仓 `serve` 不托管 UI，因此本文描述的组件与样式路径**均已不在本仓**。样式架构与美化思路仅作历史参考；
+> 现行权威为 Client 仓 `frontend/src/styles/` 与 **`docs/design/web_theme_presets.md`**（多预设契约；与本设计交叉时以该设计为准）。
 
-本文面向**维护与迭代 CrabMate Web UI** 的同事，说明当前前端的样式架构、美化切入点，以及「Material 主题」与 Leptos 的关系。实现细节以 [crabmate-client](https://github.com/noisystreet/crabmate-client) 的 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 为准（本仓无 UI 源码）。
+本文面向**维护与迭代 CrabMate Web UI** 的同事，说明当前前端的样式架构、美化切入点，以及「Material 主题」与 Leptos 的关系。
+  实现细节以 [crabmate-client](https://github.com/noisystreet/crabmate-client)
+  的 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 为准（本仓无 UI 源码）。
 
 ---
 
@@ -31,7 +35,8 @@
 **Leptos 是否有「官方 Material 主题」？**
 
 - **没有。** Leptos 提供响应式 UI 与 DOM 渲染，**不附带** Material Design 成套皮肤或组件库。
-- 若需要 **Material / MD3 观感**，需在工程侧自行引入：**Material Web（Web Components）**、**MDC 样式 + 自建结构**、或仅采用 **Material Symbols** 等图标资源；与 Leptos 通过普通 DOM/CSS 协作，无框架级「一键主题」。
+- 若需要 **Material / MD3 观感**，需在工程侧自行引入：**Material Web（Web Components）**、**MDC 样式 + 自建结构**、
+  或仅采用 **Material Symbols** 等图标资源；与 Leptos 通过普通 DOM/CSS 协作，无框架级「一键主题」。
 
 ---
 
@@ -106,7 +111,8 @@ Trunk 要求 **`index.html`** 中 **`data-trunk` 的 `link rel="css"`** 与磁�
 
 ## 6. 实施与自检清单
 
-改动样式或 `index.html` 后建议至少执行其一（与 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** 一致；均在 [crabmate-client](https://github.com/noisystreet/crabmate-client)，本机命令假定同级克隆）：
+改动样式或 `index.html` 后建议至少执行其一（与 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** 一致；
+  均在 [crabmate-client](https://github.com/noisystreet/crabmate-client)，本机命令假定同级克隆）：
 
 ```bash
 cd ../crabmate-client && make frontend-check
@@ -116,7 +122,8 @@ cd ../crabmate-client && make frontend
 
 **提交前自检（样式相关）**
 
-- [ ] 新增/重命名 CSS 文件已写入 Client [`frontend/index.html`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/index.html) 的 `data-trunk` 链。
+- [ ] 新增/重命名 CSS 文件已写入 Client [`frontend/index.html`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/index.html)
+  的 `data-trunk` 链。
 - [ ] 未在源码中引入可误认的真实密钥或 token（见 **`AGENTS.md` → Repository engineering rules → Secrets & logging**）。
 - [ ] 若变更 **用户可见** 行为或显著外观，按 **`docs/待办清单.md`** / **`README.md`** 约定评估是否同步文档。
 
@@ -126,7 +133,8 @@ cd ../crabmate-client && make frontend
 
 - **架构与前端位置**：**`docs/开发文档.md`**（总览中的 Web 前端一节）。
 - **开发与构建**：**`AGENTS.md`**、**`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**。
-- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/api/chat_stream/parser_v2.rs`**；若同时改协议消费路径，遵守 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**。
+- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/api/chat_stream/parser_v2.rs`**；若同时改协议消费路径，
+  遵守 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**。
 
 ---
 

@@ -12,7 +12,8 @@
 
 ## 第 2 轮：根包 `lib.rs` 再导出
 
-- 原 `pub use crabmate_internal::{…}` 改为 **`pub(crate) use`**；切仓后无整模块再导出的实现为 **`pub(crate) mod`**，`cm_internal` 等因 `tool_sandbox` 等模块再导出而 `#[doc(hidden)] pub`。
+- 原 `pub use crabmate_internal::{…}` 改为 **`pub(crate) use`**；切仓后无整模块再导出的实现为 **`pub(crate) mod`**，
+  `cm_internal` 等因 `tool_sandbox` 等模块再导出而 `#[doc(hidden)] pub`。
 - 去掉根上未再经 `crate::` 引用的再导出（如 `cargo_metadata`、`dynamic_tools`、`health_dep_compat`）；需用时直接依赖 **`crabmate-internal`** 或走已有工具路径。
 - 显式保留 **`pub use crabmate_internal::tool_sandbox`**（`main` 的 `tool-runner-internal`）。
 - 稳定对外面仍为显式 `pub use`：`run_agent_turn`、`load_config`、`build_tools*`、`ProcessHandles`、`ChatCompletionsBackend`、CLI 解析符号等。
@@ -31,15 +32,18 @@
 
 ## 回合执行面（P4）
 
-默认 **`TurnRunner` 实现留在根包 composition root**；**暂不**新增 `crabmate-turn-runtime`。决策与重开条件见 **[`turn_runtime_placement.md`](./turn_runtime_placement.md)**。
+默认 **`TurnRunner` 实现留在根包 composition root**；**暂不**新增 `crabmate-turn-runtime`。
+  决策与重开条件见 **[`turn_runtime_placement.md`](./turn_runtime_placement.md)**。
 
 ## Web 宿主与 queue（P5）
 
-**`chat_job_queue` / 带状态 chat handler 暂不迁入 `crabmate-web-host`**（循环依赖、禁边、`FromRef` 孤儿规则）。评估见 **[`web_host_p5_placement.md`](./web_host_p5_placement.md)**。
+**`chat_job_queue` / 带状态 chat handler 暂不迁入 `crabmate-web-host`**（循环依赖、禁边、`FromRef` 孤儿规则）。
+  评估见 **[`web_host_p5_placement.md`](./web_host_p5_placement.md)**。
 
 ## 禁止边（门禁）
 
-见 **`scripts/check-crate-deps.sh`**（**pre-commit** 钩子 **`check-crate-deps`** 与 **CI** **`.github/workflows/ci.yml`** 均会执行）。单包切仓后（[`crates_io_single_package.md`](./crates_io_single_package.md) S2）按**模块**扫描 `crate::cm_internal` 引用：
+见 **`scripts/check-crate-deps.sh`**（**pre-commit** 钩子 **`check-crate-deps`** 与 **CI** **`.github/workflows/ci.yml`** 均会执行）。
+  单包切仓后（[`crates_io_single_package.md`](./crates_io_single_package.md) S2）按**模块**扫描 `crate::cm_internal` 引用：
 
 | 模块 | 不得引用 |
 |------|----------|
@@ -51,7 +55,9 @@
 
 ## 后续（未做）
 
-- handler 侧剩余宽入口逐步 facet 化（P3b/P3c 已切窄面；**E2E 夹具**已用 [`E2eConversationFixtureFacet`](../../src/web/app_state_facets.rs)；新路由优先窄 facet）——见 **`web_host_extract.md`**
-- **P4 / P5 评估已落地**：执行面留根包（[`turn_runtime_placement.md`](./turn_runtime_placement.md)）；**暂不**整包迁 queue/带状态 handler 入 web-host（[`web_host_p5_placement.md`](./web_host_p5_placement.md)）
+- handler 侧剩余宽入口逐步 facet 化（P3b/P3c 已切窄面；**E2E 夹具**已用 [`E2eConversationFixtureFacet`](../../src/web/app_state_facets.rs)；
+  新路由优先窄 facet）——见 **`web_host_extract.md`**
+- **P4 / P5 评估已落地**：执行面留根包（[`turn_runtime_placement.md`](./turn_runtime_placement.md)）；
+  **暂不**整包迁 queue/带状态 handler 入 web-host（[`web_host_p5_placement.md`](./web_host_p5_placement.md)）
 - 可选：构造 `WebToolRuntime` 时减少对 internal `tool_registry` 门面的字面依赖（见 P5 ADR §4）；**`tools` 拆子包**不在本 P5 结论内，另开规划
 - 可选：构造 `WebToolRuntime` 时减少对 internal `tool_registry` 门面的字面依赖（见 P5 ADR §4）；**`tools` 拆子包**不在本 P5 结论内，另开规划

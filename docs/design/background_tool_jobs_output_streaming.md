@@ -1,35 +1,49 @@
 # ADR: 后台工具任务的实时输出流（background tool jobs output streaming）
 
-> **状态**：Proposed（待评审）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_output_streaming_contract.md`](./background_tool_jobs_output_streaming_contract.md)。**实施计划**：[`background_tool_jobs_output_streaming_todo.md`](./background_tool_jobs_output_streaming_todo.md)。
-> **父决策**：[`background_tool_jobs.md`](./background_tool_jobs.md)（后台工具任务已合入：#873/#874）。**人读协议**：[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
+> **状态**：Proposed（待评审）。**接口规格**（字段级，实现照此编码）：
+> [`background_tool_jobs_output_streaming_contract.md`](./background_tool_jobs_output_streaming_contract.md)。**实施计划**：
+> [`background_tool_jobs_output_streaming_todo.md`](./background_tool_jobs_output_streaming_todo.md)。
+> **父决策**：[`background_tool_jobs.md`](./background_tool_jobs.md)（后台工具任务已合入：#873/#874）。**人读协议**：
+> [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
 
 ## Context
 
-- 后台工具任务（`run_command` 的 `async=true`）已脱离 turn 执行，状态轮询（`GET /tools/jobs/{id}`）与取消（`POST …/cancel`）已落地。**但执行中的输出不可见**：轮询只返回**终态、前缀截断**的 stdout/stderr；长构建（`cargo test` / `cmake --build` 数分钟）发起后只能看到"排队/运行中"状态卡，看不到输出滚动。
+- 后台工具任务（`run_command` 的 `async=true`）已脱离 turn 执行，状态轮询（`GET /tools/jobs/{id}`）与取消（`POST …/cancel`）已落地。
+  **但执行中的输出不可见**：轮询只返回**终态、前缀截断**的 stdout/stderr；长构建（`cargo test` / `cmake --build` 数分钟）发起后只能看到"排队/运行中"
+  状态卡，看不到输出滚动。
 - 用户期望：发起长构建后能像 `tail -f` 一样**实时看到输出**（含结尾的编译错误），且不依赖任何 SSE 连接——job 本就与连接生命周期解耦。
 - 已确认的实现事实（决定改动面）：
-  - [`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 有增量回调 `chunk_sink`，但 [`append_captured`](../../src/cm_tools/subprocess_session.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，增量回调再也收不到字节。后台 worker 现传 `chunk_sink: None`。
+  - [`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 有增量回调 `chunk_sink`，
+    但 [`append_captured`](../../src/cm_tools/subprocess_session.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，
+    增量回调再也收不到字节。后台 worker 现传 `chunk_sink: None`。
   - sink 由 wait 循环在**调用方线程**同步 flush（单流内保序；双流按管道排空时序近似交错）。
   - 现有 `JobRecord` / `JobOutcome` 只存终态截断正文，不存执行过程；`registry` 为单 Mutex 临界区。
 - 目标：新增 **job 级有界环形输出缓冲** + **增量轮询端点**，让调用方/用户轮询拉取运行中的输出；数据面设计为 seq 单调，预留 SSE（Phase 2）升级不改数据面。
-- 约束：保持父 ADR「**轮询为主**」架构主线，不引入对 SSE 连接的依赖；工具契约、SSE 协议**零变化**（不 bump `SSE_PROTOCOL_VERSION`）；内存有界（受配置上限约束）；纯新端点/新配置/新可选字段，旧客户端零行为变化。
+- 约束：保持父 ADR「**轮询为主**」架构主线，不引入对 SSE 连接的依赖；工具契约、SSE 协议**零变化**（不 bump `SSE_PROTOCOL_VERSION`）；
+  内存有界（受配置上限约束）；纯新端点/新配置/新可选字段，旧客户端零行为变化。
 
 ## Decision
 
 ### 1. 数据底座：job 级有界环形输出缓冲
 
-- worker（`tokio::spawn` 任务内 `wait_child_session_async`）设置 `chunk_sink` → 把增量写入**注册表侧表**（`outputs: HashMap<tool_job_id, JobOutputLog>`，随 job 注册/清理同生命周期），**不放**进 `JobRecord`——避免状态端点克隆记录时把缓冲一并拷贝。
+- worker（`tokio::spawn` 任务内 `wait_child_session_async`）
+  设置 `chunk_sink` → 把增量写入**注册表侧表**（`outputs: HashMap<tool_job_id, JobOutputLog>`，随 job 注册/清理同生命周期），
+  **不放**进 `JobRecord`——避免状态端点克隆记录时把缓冲一并拷贝。
 - 缓冲元素 = `{ seq, stream, text }`：
   - `seq`：**全局单调**（自 1 起，只在 append 处自增；裁剪只丢头部 → 保留段始终是连续区间）。
   - `stream`：`stdout` | `stderr`（与 `SessionStream::as_sse_label` 同值）。
   - `text`：按 `take_utf8_text` lossy 转 String（非法字节 U+FFFD，与同步 `tool_output_chunk` 一致）。
-- **上界双保险**：字节上限 `background_job_output_buffer_bytes`（默认 256 KiB）+ 元素条数上限（硬编码 `8192`，防海量微块 → 每条元素平均开销上限约 32 B）；超限**丢最旧**。`chunk_sink` 恒返回 `true`（缓冲在环形层有界，无需背压）。
-- **终态裁剪**：`registry.complete()` 时把缓冲按**合并时序**裁剪，尽力使 stdout、stderr 各留尾部 ≤ `command_max_output_len`（内存优先：末尾单条不拆、无法双达时可能丢尽他流，至少保留 1 条兜底）——内存界收敛为「并发 × 缓冲上限 + 终态条目 × ≤2×max_output_len（+单条）」；晚到的查看者仍能拉到**最终尾部**（恰是状态端点前缀截断给不到的部分，两者互补）。
+- **上界双保险**：字节上限 `background_job_output_buffer_bytes`（默认 256 KiB）+ 元素条数上限（硬编码 `8192`，
+  防海量微块 → 每条元素平均开销上限约 32 B）；超限**丢最旧**。`chunk_sink` 恒返回 `true`（缓冲在环形层有界，无需背压）。
+- **终态裁剪**：`registry.complete()` 时把缓冲按**合并时序**裁剪，尽力使 stdout、stderr 各留尾部 ≤ `command_max_output_len`（内存优先：末尾单条不拆、
+  无法双达时可能丢尽他流，至少保留 1 条兜底）——内存界收敛为「并发 × 缓冲上限 + 终态条目 × ≤2×max_output_len（+单条）」；
+  晚到的查看者仍能拉到**最终尾部**（恰是状态端点前缀截断给不到的部分，两者互补）。
 - 记忆语义：缓冲是**环形尾部**而非全文；serve 重启即失（与父 ADR「崩溃不恢复」一致）。
 
 ### 2. 子进程层小改造：`uncapped_live`（opt-in，不改同步路径）
 
-- `SubprocessWaitCtl` 增字段 **`uncapped_live: bool`**（默认 `false`）。为 `true` 时 `append_captured` **无论 kept 捕获缓冲是否已满**都把读到的字节入 live 队列；`max_capture_bytes` 仍只约束终态快照，**不再截断实时流**。
+- `SubprocessWaitCtl` 增字段 **`uncapped_live: bool`**（默认 `false`）。
+  为 `true` 时 `append_captured` **无论 kept 捕获缓冲是否已满**都把读到的字节入 live 队列；`max_capture_bytes` 仍只约束终态快照，**不再截断实时流**。
 - 后台 worker（`run_job_async`）置 `true`；同步 `run_command` 等既有路径保持 `false` → **行为零变化**（现同步路径的输出超限即停发 chunk 的语义保留）。
 - 这是共享会话层的扩展点：未来同步工具要"全量流"可直接复用。
 
@@ -45,7 +59,8 @@
 
 ### 4. SSE 事件端点（Phase 2，本稿不做）
 
-同一缓冲数据面可支撑 `GET /tools/jobs/{id}/events`（EventSource：先重放缓冲 `?cursor`/Last-Event-ID，再经 per-job broadcast 订阅 live）——`seq` 单调天然支持断线续拉。仅当产品要求**毫秒级**推送才立项，届时另开 ADR；本稿不承诺接口。
+同一缓冲数据面可支撑 `GET /tools/jobs/{id}/events`（EventSource：先重放缓冲 `?cursor`/Last-Event-ID，再经 per-job broadcast 订阅 live）
+  ——`seq` 单调天然支持断线续拉。仅当产品要求**毫秒级**推送才立项，届时另开 ADR；本稿不承诺接口。
 
 ### 5. 配置与默认
 
@@ -88,7 +103,8 @@
 
 ## Alternatives Considered
 
-- **SSE/EventSource 作为唯一主通道**：否决。与父 ADR「轮询为主」相悖；需订阅生命周期、Bearer 认证、Last-Event-ID 重连状态机；"看进度"场景 500 ms 轮询已足够，SSE 留作 Phase 2 增量。
+- **SSE/EventSource 作为唯一主通道**：否决。与父 ADR「轮询为主」相悖；需订阅生命周期、Bearer 认证、Last-Event-ID 重连状态机；"看进度"
+  场景 500 ms 轮询已足够，SSE 留作 Phase 2 增量。
 - **服务端记录全文、TTL 内完整可回放**：否决。内存不可控，chatty job（`cargo build -v`）分钟级可达数十 MB；环形尾部 + truncated 语义是正确取舍。
 - **复用 `GET /tools/jobs/{id}` 返回"增量快照"**：否决。快照语义与增量游标混在一个响应里职责不清，且两者截断界不同（前缀 vs 尾部）；独立端点更清晰。
 - **输出落盘 + 静态文件端点**：否决。污染工作区、鉴权/过期清理复杂，偏离内存注册表单副本模型。

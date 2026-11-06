@@ -74,8 +74,12 @@ crabmate-internal / crabmate-tools
 `RunLoopParams` 已拆 `Core` / `Io` / `Attach` / `Obs`（见 `host/params.rs`）。  
 **P3a（已完成）**：`DispatchToolParams` 顶层改为 `call` / `workspace` / `policy` / `obs` / `memory` 嵌套（字段不删）。  
 **P3b（已完成）**：`WebChatAppFacet`（`cfg` + `conversation` + `approval_sessions`）+ 窄控制面路由。  
-**P3c（已完成）**：`WebChatTurnAppFacet`（`cfg` / `api_key: Arc<str>` / `client` / workspace / `conversation` / `chat` queue / approval / `process_handles` / SSE hub / `async_chat_jobs`；**不含** `tools`/uploads）；`POST /chat`、`/chat/stream`、`/chat/async`；job status 用更窄的 `AsyncChatJobsFacet`；enqueue/turn_build/cron 经 Turn 面。  
-**P3d（已完成）**：`RunAgentTurnParams` 顶层嵌套 `session` / `attach` / `obs`（与既有 `shared` / `transport` / `llm`）；HTTP/SSE 契约不变。密封「仅经 builder 构造」留后续 PR。
+**P3c（已完成）**：
+  `WebChatTurnAppFacet`（`cfg` / `api_key: Arc<str>` / `client` / workspace / `conversation` / `chat` queue / approval / `process_handles` / SSE hub /
+  `async_chat_jobs`；**不含** `tools`/uploads）；`POST /chat`、`/chat/stream`、`/chat/async`；job status 用更窄的 `AsyncChatJobsFacet`；
+  enqueue/turn_build/cron 经 Turn 面。
+**P3d（已完成）**：`RunAgentTurnParams` 顶层嵌套 `session` / `attach` / `obs`（与既有 `shared` / `transport` / `llm`）；HTTP/SSE 契约不变。
+  密封「仅经 builder 构造」留后续 PR。
 
 ## 建议 PR 切片
 

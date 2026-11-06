@@ -1,6 +1,7 @@
 # Web API 第三方集成：架构备忘与增强方向
 
-**状态**：设计备忘 / 路线图（**未**承诺实现顺序与版本日期）。**受众**：实现飞书、企业微信、钉钉等 **IM 桥接**、自动化流水线、或「OpenCode 式」多入口共用后端的维护者。  
+**状态**：设计备忘 / 路线图（**未**承诺实现顺序与版本日期）。**受众**：实现飞书、企业微信、钉钉等 **IM 桥接**、自动化流水线、或「OpenCode 式」
+  多入口共用后端的维护者。
 **语言**：中文。  
 **关联**：
 
@@ -24,7 +25,8 @@
 ### 1.2 本文不讨论什么
 
 - **前端 Leptos** 的交互与 `localStorage`（见 **`frontend/src/api/client_llm_storage.rs`**）。
-- **MCP stdio** 客户端/服务端细节见 **`docs/配置说明.md`**（MCP 相关节）与源码 `mcp`；MCP 可作为「工具扩展」与 HTTP 集成**并行**存在，但不替代 IM 回调 → CrabMate 的主路径。
+- **MCP stdio** 客户端/服务端细节见 **`docs/配置说明.md`**（MCP 相关节）与源码 `mcp`；MCP 可作为「工具扩展」与 HTTP 集成**并行**存在，
+  但不替代 IM 回调 → CrabMate 的主路径。
 - 各 IM 厂商的具体签名算法与事件字段（由**桥接服务**实现）。
 
 ---
@@ -42,7 +44,9 @@
 **原则**：
 
 1. **验签、幂等、限流、卡片渲染** 放在桥接层；CrabMate 保持「对话引擎 + 工具 + 工作区策略」。
-2. CrabMate 进程应部署在**可信网络**；对外建议 **`web_api_require_bearer=true`** 并配置 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`**（嵌入默认 **`web_api_require_bearer=false`**，见 **`README.md`**、**`docs/配置说明.md`**）。
+2. CrabMate 进程应部署在**可信网络**；
+  对外建议 **`web_api_require_bearer=true`** 并配置 **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`**（嵌入默认
+  **`web_api_require_bearer=false`**，见 **`README.md`**、**`docs/配置说明.md`**）。
 3. 使用 **`conversation_id`**（及可选 SQLite 会话存储）将同一 IM 线程映射到稳定会话；**`GET /conversation/messages`** 可用于桥接侧恢复或对账。
 
 ---
@@ -64,10 +68,13 @@
 
 ## 4. 已知约束（集成设计必须消化）
 
-1. **SSE 断线重连缓冲为单进程内存**：进程重启或任务结束后重连可能收到 **410**（**`STREAM_JOB_GONE`**）。多副本负载均衡时，若无会话粘性，集成方须自行接受「重连仅同实例有效」或只用单实例承接流式任务。
+1. **SSE 断线重连缓冲为单进程内存**：进程重启或任务结束后重连可能收到 **410**（**`STREAM_JOB_GONE`**）。多副本负载均衡时，若无会话粘性，
+  集成方须自行接受「重连仅同实例有效」或只用单实例承接流式任务。
 2. **单一共享 Bearer 密钥**为常见部署形态：多租户、多 IM 机器人共用同一 CrabMate 时，**租户隔离**宜放在桥接或 API 网关（见第 5 节）。
-3. **`client_llm` 请求体覆盖**：自动化场景可用 **`client_llm.api_key` / `api_base` / `model`** 做按次覆盖；须遵守日志与响应脱敏规则（**`AGENTS.md` → Repository engineering rules → Secrets & logging**）。
-4. **工具审批无原生 IM UI**：桥接层须将审批映射为卡片交互、或预先收紧 **`allowed_commands`** / **`http_fetch_allowed_prefixes`** / 禁用工具，避免无人值守时卡死。
+3. **`client_llm` 请求体覆盖**：自动化场景可用 **`client_llm.api_key` / `api_base` / `model`** 做按次覆盖；
+  须遵守日志与响应脱敏规则（**`AGENTS.md` → Repository engineering rules → Secrets & logging**）。
+4. **工具审批无原生 IM UI**：桥接层须将审批映射为卡片交互、或预先收紧 **`allowed_commands`** / **`http_fetch_allowed_prefixes`** / 禁用工具，
+  避免无人值守时卡死。
 
 ---
 
@@ -75,8 +82,11 @@
 
 ### 5.1 协议与「非浏览器」客户端体验
 
-- ~~**异步任务 + 回调或轮询**~~ **部分已实现**：**`POST /chat/async`** 返回 **`job_id`**，**`GET /chat/jobs/{job_id}`** 轮询；可选 **`webhook_url`** 在完成/失败时 **POST** JSON（见 **`docs/命令行与路由.md`**）。状态为**进程内内存**（重启丢失）；多副本须会话粘性或外部队列仍为后续方向。
-- **稳定「仅正文」响应**：为 **`POST /chat`** 提供可选 **`response_shape`**（例如仅返回 **`assistant_text`** + **`usage`**），减少集成方对内部 JSON 嵌套路径的耦合。
+- ~~**异步任务 + 回调或轮询**~~ **部分已实现**：**`POST /chat/async`** 返回 **`job_id`**，**`GET /chat/jobs/{job_id}`** 轮询；
+  可选 **`webhook_url`** 在完成/失败时 **POST** JSON（见 **`docs/命令行与路由.md`**）。状态为**进程内内存**（重启丢失）；
+  多副本须会话粘性或外部队列仍为后续方向。
+- **稳定「仅正文」响应**：为 **`POST /chat`** 提供可选 **`response_shape`**（例如仅返回 **`assistant_text`** + **`usage`**），
+  减少集成方对内部 JSON 嵌套路径的耦合。
 - **官方最小示例**：在仓库 **`examples/`** 或文档中提供 **curl / Python** 消费 SSE 的片段（拼接同块多行 `data:`、识别控制面 **`code`**、**`stream_ended`**）。
 
 ### 5.2 安全与多租户
@@ -97,7 +107,8 @@
 
 ### 5.5 用量与计费
 
-- 若响应中尚未稳定暴露 **token 用量**，集成方难以做配额与账单；可对齐 OpenAI 兼容 **`usage`** 字段或单独扩展 JSON（变更时同步 **OpenAPI** 与 **`docs/SSE协议.md`** 若涉及流上字段）。
+- 若响应中尚未稳定暴露 **token 用量**，集成方难以做配额与账单；
+  可对齐 OpenAI 兼容 **`usage`** 字段或单独扩展 JSON（变更时同步 **OpenAPI** 与 **`docs/SSE协议.md`** 若涉及流上字段）。
 
 ---
 

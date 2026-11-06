@@ -1,17 +1,27 @@
 # 设计：工具管理 API 补齐
 
-> **状态**：已确认（2026-10-10）。**作用域已拍板为进程级**（见 §7.2 Q1）。**P0 + P1 已实现**：`GET /tools`、`GET /tools/{tool_name}`、`PUT /tools/{tool_name}/enabled`、`GET /tools/plugins`（只读）——HTTP 面（[`http_types::tools`](../../src/cm_web_host/http_types/tools.rs)
-> / [`tools_handlers`](../../src/web/tools_handlers.rs) / [路由](../../src/web/routes/tools/mod.rs) / OpenAPI 与快照）与文档已同步。**前置层**：配置层（`[tool_registry] disabled_tools` / `disabled_tool_prefixes`）、user_data 落点（`tool_overrides.json` + `apply_user_data_tool_overrides`）
+> **状态**：已确认（2026-10-10）。**作用域已拍板为进程级**（见 §7.2 Q1）。**P0 + P1 已实现**：`GET /tools`、`GET /tools/{tool_name}`、
+> `PUT /tools/{tool_name}/enabled`、`GET /tools/plugins`（只读）——HTTP 面（[`http_types::tools`](../../src/cm_web_host/http_types/tools.rs)
+> / [`tools_handlers`](../../src/web/tools_handlers.rs) / [路由](../../src/web/routes/tools/mod.rs) / OpenAPI 与快照）与文档已同步。**前置层**：
+> 配置层（`[tool_registry] disabled_tools` / `disabled_tool_prefixes`）、user_data 落点（`tool_overrides.json` + `apply_user_data_tool_overrides`）
 > 与生效落点（`prepare_tools_for_turn` 第 6 步）。§7.1 取值已冻结；§7.2 除 Q1 外为遗留。P2（`plugins` 写盘/删除）未实现。
-> **关联**：[`memory_management_api.md`](./memory_management_api.md)（同一批「资源补口」的姊妹设计，禁用态/幂等口径对齐它）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（工具面演进总清单）、[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)、[`server_api_completeness.md`](./server_api_completeness.md)、[`user_data_dir.md`](./user_data_dir.md)
-> **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`docs/openapi.json`](../openapi.json) 快照、[`docs/命令行契约.md`](../命令行契约.md)（错误码表）、[`docs/配置说明.md`](../配置说明.md)（配置项）、[`src/cm_api_contract/error_codes.rs`](../../src/cm_api_contract/error_codes.rs)
-> **非目标**：MCP 服务器管理（`/user-data/mcp-servers*` 12 端点已完备）；工具**执行**通道（`POST /tools/{name}/invoke` 之类，见 §3.6）；审批策略与 `tool_approval` 语义变更；`ToolSpec` 静态表结构改造；子代理工具放行策略变更；前端工具面板（官方 UI 在 [`crabmate-client`](https://github.com/noisystreet/crabmate-client)，本仓只负责契约）。
+> **关联**：[`memory_management_api.md`](./memory_management_api.md)（同一批「资源补口」的姊妹设计，禁用态/幂等口径对齐它）、
+> [`tool_calling_evolution.md`](./tool_calling_evolution.md)（工具面演进总清单）、
+> [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)、[`server_api_completeness.md`](./server_api_completeness.md)、
+> [`user_data_dir.md`](./user_data_dir.md)
+> **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`docs/openapi.json`](../openapi.json) 快照、
+> [`docs/命令行契约.md`](../命令行契约.md)（错误码表）、[`docs/配置说明.md`](../配置说明.md)（配置项）、
+> [`src/cm_api_contract/error_codes.rs`](../../src/cm_api_contract/error_codes.rs)
+> **非目标**：MCP 服务器管理（`/user-data/mcp-servers*` 12 端点已完备）；工具**执行**通道（`POST /tools/{name}/invoke` 之类，见 §3.6）；
+> 审批策略与 `tool_approval` 语义变更；`ToolSpec` 静态表结构改造；子代理工具放行策略变更；
+> 前端工具面板（官方 UI 在 [`crabmate-client`](https://github.com/noisystreet/crabmate-client)，本仓只负责契约）。
 
 ---
 
 ## 1. 背景（现状事实）
 
-工具面**没有统一的 HTTP 观测与管理入口**：模型侧能用的工具集合由「编译期静态表 + 每回合运行期拼接 + 若干零散特判」决定，人类侧却只能靠间接迹象推断。本节逐项列举既有事实（以代码为准）。
+工具面**没有统一的 HTTP 观测与管理入口**：模型侧能用的工具集合由「编译期静态表 + 每回合运行期拼接 + 若干零散特判」决定，人类侧却只能靠间接迹象推断。
+  本节逐项列举既有事实（以代码为准）。
 
 ### 1.1 工具面的四类来源
 
@@ -26,14 +36,20 @@
 
 ### 1.2 工具清单是编译期固化的
 
-- [`ToolSpec`](../../src/cm_tools/tools/runners.rs#L32-L39) 字段为 `name` / `description` / `category` / `parameters` / `runner` / `summary`，**没有 `enabled`，也没有任何策略字段**；`parameters` 是 `fn() -> Value` 构建器，`runner` 是函数指针。
-- 注册表由 27 个 `include!("specs/*.inc.rs")` **静态数组**经 `OnceLock` 拼接为 `&'static [ToolSpec]`（[tool_specs_registry/mod.rs](../../src/cm_tools/tools/tool_specs_registry/mod.rs#L13-L46)），另有 `find_spec` 的 O(1) 名字索引（[cm_tools/tools/mod.rs](../../src/cm_tools/tools/mod.rs)）。
+- [`ToolSpec`](../../src/cm_tools/tools/runners.rs#L32-L39) 字段为 `name` / `description` / `category` / `parameters` / `runner` / `summary`，
+  **没有 `enabled`，也没有任何策略字段**；`parameters` 是 `fn() -> Value` 构建器，`runner` 是函数指针。
+- 注册表由 27 个 `include!("specs/*.inc.rs")` **静态数组**经 `OnceLock` 拼接为
+  `&'static [ToolSpec]`（[tool_specs_registry/mod.rs](../../src/cm_tools/tools/tool_specs_registry/mod.rs#L13-L46)），另有 `find_spec` 的 O(1)
+  名字索引（[cm_tools/tools/mod.rs](../../src/cm_tools/tools/mod.rs)）。
 - 结论：`&'static` 表**无法承载运行期启停状态**，任何启停只能落在「构建/回合拼接」阶段。
 
 ### 1.3 运行期过滤链（两段，且都缺配置来源）
 
-**构建期**（[cm_tools/tools/mod.rs](../../src/cm_tools/tools/mod.rs)）：`ToolsBuildOptions { categories, dev_tags }` → `tool_passes_filters`，外加 `codebase_semantic_search` 的 `fastembed` 特性门（[runners.rs](../../src/cm_tools/tools/runners.rs#L42-L44)）。
-  但全仓检索显示 `ToolsBuildOptions` 的**唯一生产侧引用是 `lib_server.rs` 的 re-export**，其余是测试；`src/cm_config` 内检索 `dev_tags` / `tool_categories` **无任何匹配**——即 `categories` / `dev_tags` 两个过滤维度**根本没有配置入口**，当前恒为「不过滤」。
+**构建期**（[cm_tools/tools/mod.rs](../../src/cm_tools/tools/mod.rs)）：`ToolsBuildOptions { categories, dev_tags }` → `tool_passes_filters`，
+  外加 `codebase_semantic_search` 的 `fastembed` 特性门（[runners.rs](../../src/cm_tools/tools/runners.rs#L42-L44)）。
+  但全仓检索显示 `ToolsBuildOptions` 的**唯一生产侧引用是 `lib_server.rs` 的 re-export**，其余是测试；
+    `src/cm_config` 内检索 `dev_tags` / `tool_categories` **无任何匹配**——即 `categories` / `dev_tags` 两个过滤维度**根本没有配置入口**，
+    当前恒为「不过滤」。
 
 **回合期**（[prepare_tools_for_turn](../../src/cm_internal/agent_turn_prep.rs#L57-L101)，其唯一调用点在 [run_agent_turn.rs](../../src/run_agent_turn.rs)）：
 
@@ -43,11 +59,13 @@
 4. 若 `long_term_memory_enabled=false`，按名剔除 `long_term_remember` / `long_term_forget` / `long_term_memory_list`（L80-87）；
 5. 若本回合带工具白名单，按其收窄（L88-95）。
 
-第 3/4 步是**两个彼此独立的硬编码特判**：新增一个「某工具可由配置关闭」的需求，就要再插一段 `retain`。这既是可维护性问题，也是「工具面不可观测」的根因——除了读源码，没人能说出当前有哪些工具在场、为什么某项不在场。
+第 3/4 步是**两个彼此独立的硬编码特判**：新增一个「某工具可由配置关闭」的需求，就要再插一段 `retain`。这既是可维护性问题，也是「工具面不可观测」
+  的根因——除了读源码，没人能说出当前有哪些工具在场、为什么某项不在场。
 
 ### 1.4 `[tool_registry]`：已有完整的「行为策略」面，启停语义由本设计补入
 
-[`ToolRegistryPolicyConfig`](../../src/cm_config/types/agent_config_sections.rs#L270-L314) 共 25 个字段：其中 23 项是「怎么写 / 怎么并发 / 怎么重试」的**行为策略**，另 2 项（`disabled_tools` / `disabled_tool_prefixes`）是本设计新增的**启停**字段（§3.3）：
+[`ToolRegistryPolicyConfig`](../../src/cm_config/types/agent_config_sections.rs#L270-L314) 共 25 个字段：其中 23 项是「怎么写 / 怎么并发 / 怎么重试」
+  的**行为策略**，另 2 项（`disabled_tools` / `disabled_tool_prefixes`）是本设计新增的**启停**字段（§3.3）：
 
 | 分组 | 字段（节选） | 语义 |
 |------|--------------|------|
@@ -60,25 +78,41 @@
 | 子代理放行 | `sub_agent_*_extra_tools` / `_deny_tools` | 分阶段子代理的额外放行/拒绝 |
 | **启停**（本设计新增） | `disabled_tools` / `disabled_tool_prefixes` | 禁止在场的工具名（精确）/ 前缀（通配）（§3.3） |
 
-有利条件：该段**已在热重载白名单内**（[hot_reload.rs](../../src/cm_config/hot_reload.rs) 整体 `clone_from`），且在 [validate.rs](../../src/cm_config/validate.rs) 有范围校验先例（如 `1..=86400`），用户在 [config/tools.toml](../../config/tools.toml#L195-L242) 已见惯 `[tool_registry]` 段。**因此新增启停字段的改造成本极低；两个字段已按 §3.3 补入。**
+有利条件：该段**已在热重载白名单内**（[hot_reload.rs](../../src/cm_config/hot_reload.rs) 整体 `clone_from`），
+  且在 [validate.rs](../../src/cm_config/validate.rs) 有范围校验先例（如 `1..=86400`），用户在 [config/tools.toml](../../config/tools.toml#L195-L242)
+  已见惯 `[tool_registry]` 段。**因此新增启停字段的改造成本极低；两个字段已按 §3.3 补入。**
 
 ### 1.5 已完备的部分（本设计不重复造）
 
-- **后台工具任务**：`GET /tools/jobs/{id}`、`GET /tools/jobs/{id}/output?cursor=`、`POST /tools/jobs/{id}/cancel`（[routes/tools/mod.rs](../../src/web/routes/tools/mod.rs#L12-L26)），含 `X-Workspace-Root` 归属校验、`JOB_NOT_FOUND`(404) / `JOB_EXPIRED`(410) / `JOB_OWNERSHIP_MISMATCH`(403) 与 cancel 的 409 语义（[命令行契约.md](../命令行契约.md#L67-L77)）。
-- **MCP 服务器管理**：12 条 `/user-data/mcp-servers*` 路由（[routes/user_data/mod.rs](../../src/web/routes/user_data/mod.rs#L20-L64)），覆盖读写、导入、状态、批量探测、远端鉴权与单点探测。
+- **后台工具任务**：`GET /tools/jobs/{id}`、`GET /tools/jobs/{id}/output?cursor=`、
+  `POST /tools/jobs/{id}/cancel`（[routes/tools/mod.rs](../../src/web/routes/tools/mod.rs#L12-L26)），含 `X-Workspace-Root` 归属校验、
+  `JOB_NOT_FOUND`(404) / `JOB_EXPIRED`(410) / `JOB_OWNERSHIP_MISMATCH`(403) 与 cancel 的 409 语义（[命令行契约.md](../命令行契约.md#L67-L77)）。
+- **MCP 服务器管理**：12 条 `/user-data/mcp-servers*` 路由（[routes/user_data/mod.rs](../../src/web/routes/user_data/mod.rs#L20-L64)），覆盖读写、
+  导入、状态、批量探测、远端鉴权与单点探测。
 - **skills 只读**：`GET /skills`（[skills_handlers.rs](../../src/web/skills_handlers.rs#L10-L68)），
-  响应 `enabled` / `skills_dir` / `skills_user_dir` / `skills_system_dir` / `skills: [{id,name,description,path}]` / `error`（[cm_web_host/http_types/skills.rs](../../src/cm_web_host/http_types/skills.rs#L15-L25)）；`enabled=false` 时回 **200 + `enabled:false`** 而非 503；
+  响应 `enabled` / `skills_dir` / `skills_user_dir` / `skills_system_dir` / `skills: [{id,name,description,path}]` /
+    `error`（[cm_web_host/http_types/skills.rs](../../src/cm_web_host/http_types/skills.rs#L15-L25)）；
+    `enabled=false` 时回 **200 + `enabled:false`** 而非 503；
   错误经 `sanitize_skills_list_error` 脱敏（引号内以 `/` 或 `\` 开头的串替换为 `(path)`，[L70-L95](../../src/web/skills_handlers.rs#L70-L95)）。
 - **skills 写入**：模型侧元工具 `skill_manage` 已能 install/list/remove（三层 system → user → workspace）。
 - **动态工具**：仅 CLI 三命令 `crabmate plugin init | list | validate`（[runtime/cli/commands.rs](../../src/runtime/cli/commands.rs)），**无任何 HTTP 通道**。
 
 ### 1.6 观测面与文档/契约漂移
 
-- **观测面缺口**：模型可读的 `self_config_info` 中，`tool_registry_section` **只输出 2 个字段**（`background_jobs_enabled`、`parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/self_config_info.rs#L266-L273)），25 字段里的策略集合与超时表全部不可见。
-- **文档漂移（双缺口）**：[`docs/命令行与路由.md`](../命令行与路由.md) 自称路由真源，但其受保护 API 鉴权矩阵与路由表**均无 `/tools/jobs/*`**；该端点契约目前只存在于 `docs/openapi.json` 快照、[openapi_paths_tool_jobs.rs](../../src/web/openapi/openapi_paths_tool_jobs.rs) 与 `docs/命令行契约.md`。
-- **错误码缺口**：[error_codes.rs](../../src/cm_api_contract/error_codes.rs) 共 23 条常量，**无任何 `TOOL_*` / `PLUGIN_*` / `SKILLS_*`**；`SKILL_INVOKE_FAILED` 只以字面量出现在 handler 与 `命令行契约.md` 表中，未登记为常量。
-- **OpenAPI tag 缺口**：顶层 `tags` 数组为 chat / workspace / system / tasks / tool_jobs / config / user_data / uploads（[openapi/mod.rs](../../src/web/openapi/mod.rs#L34-L43)），**没有 `skills`**，但 `/skills` 片段自带 `"tags": ["skills"]`（[openapi_paths_workspace.rs](../../src/web/openapi/openapi_paths_workspace.rs#L151-L171)）。
-- **待办缺口**：[`待办清单.md`](../待办清单.md) 的 `tools/` 章（L99-L107）只列了长耗时执行、审批分级、新栈扩展与 MCP 扩展，**没有「工具清单 / 启停 / 统一收口」条目**。
+- **观测面缺口**：模型可读的 `self_config_info` 中，`tool_registry_section` **只输出 2 个字段**（`background_jobs_enabled`、
+  `parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/self_config_info.rs#L266-L273)），
+  25 字段里的策略集合与超时表全部不可见。
+- **文档漂移（双缺口）**：[`docs/命令行与路由.md`](../命令行与路由.md) 自称路由真源，但其受保护 API 鉴权矩阵与路由表**均无 `/tools/jobs/*`**；
+  该端点契约目前只存在于 `docs/openapi.json` 快照、[openapi_paths_tool_jobs.rs](../../src/web/openapi/openapi_paths_tool_jobs.rs)
+  与 `docs/命令行契约.md`。
+- **错误码缺口**：[error_codes.rs](../../src/cm_api_contract/error_codes.rs) 共 23 条常量，**无任何 `TOOL_*` / `PLUGIN_*` / `SKILLS_*`**；
+  `SKILL_INVOKE_FAILED` 只以字面量出现在 handler 与 `命令行契约.md` 表中，未登记为常量。
+- **OpenAPI tag 缺口**：
+  顶层 `tags` 数组为 chat / workspace / system / tasks / tool_jobs / config / user_data /
+  uploads（[openapi/mod.rs](../../src/web/openapi/mod.rs#L34-L43)），**没有 `skills`**，
+  但 `/skills` 片段自带 `"tags": ["skills"]`（[openapi_paths_workspace.rs](../../src/web/openapi/openapi_paths_workspace.rs#L151-L171)）。
+- **待办缺口**：[`待办清单.md`](../待办清单.md) 的 `tools/` 章（L99-L107）只列了长耗时执行、审批分级、新栈扩展与 MCP 扩展，
+  **没有「工具清单 / 启停 / 统一收口」条目**。
 
 ---
 
@@ -105,10 +139,15 @@
 统一约定：
 
 - 全部为**受保护 API**（Web Bearer / `X-API-Key`），归类与 `/tools/jobs/*` 一致，同步更新[鉴权矩阵](../命令行与路由.md)。
-- **命名空间**：`/tools` 与 `/tools/{tool_name}` 与既有 `/tools/jobs/{tool_job_id}` **段数不同**（2 段 vs 3 段），axum 不会冲突。注意 `GET /tools/jobs` 会落到「名为 `jobs` 的工具」→ **404 `TOOL_NOT_FOUND`**（现状该路径同样 404），此边界需在文档显式记录。
-- **工具名定位参数统一为路径段 `{tool_name}`**：校验长度 ≤ 128 且字符集为 `[A-Za-z0-9_.:-]`（可覆盖 `dyn__` 与 `mcp__{slug}__{remote}`），非法 → **400 `INVALID_TOOL_NAME`**；未注册 → **404 `TOOL_NOT_FOUND`**。
-- **投影不回显敏感/可注入字段**：列表接口不回显动态工具的 `command` / `args`（`args` 由用户填写，可能含路径或凭据）；`parameters`（JSON Schema）本就是给模型的公开内容，**仅在单工具详情**回显，避免清单响应体积失控。
-- **不引入进程级工具总开关**，因此本设计**没有 503 禁用态**。这与 [`memory_management_api.md`](./memory_management_api.md) 的 `503 LONG_TERM_MEMORY_DISABLED` 口径不同，是刻意的：记忆有独立的 `long_term_memory_enabled` 总开关，工具面没有（也不该有）。skills 相关端点沿用既有 `200 + enabled:false`（§1.5）。
+- **命名空间**：`/tools` 与 `/tools/{tool_name}` 与既有 `/tools/jobs/{tool_job_id}` **段数不同**（2 段 vs 3 段），axum 不会冲突。
+  注意 `GET /tools/jobs` 会落到「名为 `jobs` 的工具」→ **404 `TOOL_NOT_FOUND`**（现状该路径同样 404），此边界需在文档显式记录。
+- **工具名定位参数统一为路径段 `{tool_name}`**：校验长度 ≤ 128 且字符集为 `[A-Za-z0-9_.:-]`（可覆盖 `dyn__` 与 `mcp__{slug}__{remote}`），
+  非法 → **400 `INVALID_TOOL_NAME`**；未注册 → **404 `TOOL_NOT_FOUND`**。
+- **投影不回显敏感/可注入字段**：列表接口不回显动态工具的 `command` / `args`（`args` 由用户填写，可能含路径或凭据）；`parameters`（JSON Schema）
+  本就是给模型的公开内容，**仅在单工具详情**回显，避免清单响应体积失控。
+- **不引入进程级工具总开关**，因此本设计**没有 503 禁用态**。这与 [`memory_management_api.md`](./memory_management_api.md)
+  的 `503 LONG_TERM_MEMORY_DISABLED` 口径不同，是刻意的：记忆有独立的 `long_term_memory_enabled` 总开关，工具面没有（也不该有）。
+  skills 相关端点沿用既有 `200 + enabled:false`（§1.5）。
 - 工具名一律按**精确匹配**处理（区分大小写），与 `registry_policy` 的 `HashSet<String>` 语义一致；前缀通配仅在配置字段 `disabled_tool_prefixes` 中提供。
 - 日志只记 `tool_name` / `source` / 变更结果，不记 `description` 全文。
 
@@ -125,15 +164,23 @@
 | `limit` | 否 | `50` | clamp 到 `1..=200` |
 | `offset` | 否 | `0` | 与 `limit` 组成切片 |
 
-响应 `ToolsListResponse`：`tools: [ToolListItem]` / `total` / `limit` / `offset` / `has_more` / `counts: {builtin, dynamic, mcp, present}` / `permission_level: string` / `workspace_root: string?`。
+响应 `ToolsListResponse`：
+  `tools: [ToolListItem]` / `total` / `limit` / `offset` / `has_more` / `counts: {builtin, dynamic, mcp, present}` / `permission_level: string` /
+  `workspace_root: string?`。
 
-`ToolListItem`：`name` / `description` / `category`（`basic` \| `development`；动态与 MCP 工具按 `development` 归入或在 §7.2 另定）/ `source`（`builtin` \| `dynamic` \| `mcp`）/ `dev_tags: [string]` / `present: bool` / `absent_reason: string?` / `available_at_level: bool`。
+`ToolListItem`：`name` / `description` / `category`（`basic` \| `development`；动态与 MCP 工具按 `development` 归入或在 §7.2 另定）
+  / `source`（`builtin` \| `dynamic` \| `mcp`）/ `dev_tags: [string]` / `present: bool` / `absent_reason: string?` / `available_at_level: bool`。
 
-`available_at_level`（S5c，见 [`permission_levels.md`](permission_levels.md) §16.4）：该工具是否在**当前权限等级**下可用，判据是 `cm_agent::permission::tool_allowed_by_caps`（与回合内可见性 / early-deny 同一条，不留第二套）。与 `present` 是两条**独立**的轴——`present` 说「本回合能不能被注册」
-  （feature / 配置开关 / `disabled_tools`），它说「注册了能不能调」（等级投影），两者都为 `true` 才真的调得动。基准取**进程默认档**：无会话也无请求体，故 min 链退化为 `min(permission_level, ceiling)`，`ask` / `plan` 那条会话模式轴不参与。本端点**不**按等级过滤（Q7 已结案），
+`available_at_level`（S5c，见 [`permission_levels.md`](permission_levels.md) §16.4）：该工具是否在**当前权限等级**下可用，
+  判据是 `cm_agent::permission::tool_allowed_by_caps`（与回合内可见性 / early-deny 同一条，不留第二套）。
+  与 `present` 是两条**独立**的轴——`present` 说「本回合能不能被注册」
+  （feature / 配置开关 / `disabled_tools`），它说「注册了能不能调」（等级投影），两者都为 `true` 才真的调得动。基准取**进程默认档**：
+    无会话也无请求体，故 min 链退化为 `min(permission_level, ceiling)`，`ask` / `plan` 那条会话模式轴不参与。本端点**不**按等级过滤（Q7 已结案），
   等级选择器用 `GET /permission`。
 
-**基准档必须回传**：响应顶层带 `permission_level`（本次清单按哪一档算出来的，即进程默认档经 `permission_level_max` 钳制后的值）。只给 bool 不给基准，客户端看到 `false` 无从解释；而会话可以持久化自己的等级（S5b），与进程默认档常常不同。`GET /tools/{tool_name}` 的 `ToolDetailView` 也带同一字段、同一条判据、同一档基准，避免清单与详情页互相矛盾。
+**基准档必须回传**：响应顶层带 `permission_level`（本次清单按哪一档算出来的，即进程默认档经 `permission_level_max` 钳制后的值）。只给 bool 不给基准，
+  客户端看到 `false` 无从解释；而会话可以持久化自己的等级（S5b），与进程默认档常常不同。`GET /tools/{tool_name}` 的 `ToolDetailView` 也带同一字段、
+  同一条判据、同一档基准，避免清单与详情页互相矛盾。
 
 `absent_reason` 取值（**只反映既有事实**）：
 
@@ -145,8 +192,11 @@
 
 **实现要点（两条硬约束）**：
 
-1. **只读、无副作用**。回合期的 `try_open_session_and_tools` 会**打开或复用 MCP 会话**——`GET /tools` 绝不能调用它。MCP 部分只允许读**已缓存的会话快照**与**已配置的 server 列表**（与 `GET /user-data/mcp-servers/status` 同源）；未建立会话时该源返回空并置 `counts.mcp = 0`。
-2. **工作区未设置不是错误**。内置工具不依赖工作区，因此缺工作区时仍回 200：`dynamic` 源为空、`workspace_root: null`。**不**返回 `WORKSPACE_NOT_SET`（与 `/workspace*` 的既有口径不同，此处刻意区分）。
+1. **只读、无副作用**。回合期的 `try_open_session_and_tools` 会**打开或复用 MCP 会话**——`GET /tools` 绝不能调用它。
+  MCP 部分只允许读**已缓存的会话快照**与**已配置的 server 列表**（与 `GET /user-data/mcp-servers/status` 同源）；
+  未建立会话时该源返回空并置 `counts.mcp = 0`。
+2. **工作区未设置不是错误**。内置工具不依赖工作区，因此缺工作区时仍回 200：`dynamic` 源为空、`workspace_root: null`。
+  **不**返回 `WORKSPACE_NOT_SET`（与 `/workspace*` 的既有口径不同，此处刻意区分）。
 
 ### 3.2 D2（P1）`GET /tools/{tool_name}`
 
@@ -181,12 +231,15 @@
 | `{tool_name}` 字符集/长度非法 | **400** `INVALID_TOOL_NAME` |
 | 未注册的工具名 | **404** `TOOL_NOT_FOUND` |
 
-> **前缀禁用不可经此接口解除**：`tool_overrides.json` 只改写精确集 `disabled_tools`；若该名仍被 `disabled_tool_prefixes` 命中，接口**如实回报** `present:false` + `absent_reason:"disabled_by_policy"`（不谎报生效），解除需改配置。
+> **前缀禁用不可经此接口解除**：`tool_overrides.json` 只改写精确集 `disabled_tools`；若该名仍被 `disabled_tool_prefixes` 命中，
+> 接口**如实回报** `present:false` + `absent_reason:"disabled_by_policy"`（不谎报生效），解除需改配置。
 
 **持久化落点：本机用户数据**，而非 TOML 写回。理由与既有先例一致：
 
-- 新增 `cm_internal/user_data/store.rs` 同目录文件 `tool_overrides.json`（`CM_CRABMATE_USER_DATA_DIR`），与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级（[store.rs](../../src/cm_internal/user_data/store.rs)）；
-- 复用 `apply_user_data_llm_overrides` 的既有管线形态：在 [config_reload.rs](../../src/runtime/config_reload.rs) 与 [cli_run.rs](../../src/cli_run.rs) 两处调用点追加一个 `apply_user_data_tool_overrides(&mut cfg)`，即**同时覆盖启动与 `POST /config/reload` 热路径**；
+- 新增 `cm_internal/user_data/store.rs` 同目录文件 `tool_overrides.json`（`CM_CRABMATE_USER_DATA_DIR`），
+  与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级（[store.rs](../../src/cm_internal/user_data/store.rs)）；
+- 复用 `apply_user_data_llm_overrides` 的既有管线形态：在 [config_reload.rs](../../src/runtime/config_reload.rs) 与 [cli_run.rs](../../src/cli_run.rs)
+  两处调用点追加一个 `apply_user_data_tool_overrides(&mut cfg)`，即**同时覆盖启动与 `POST /config/reload` 热路径**；
 - 不引入 TOML 程序化写回（避免破坏用户手写注释与格式），TOML 侧仍可由用户静态声明同一个字段。
 
 **配置层新增字段**（`[tool_registry]`）：
@@ -198,29 +251,37 @@ pub tool_registry_disabled_tool_prefixes: Option<Arc<[String]>>,       // 前缀
 
 合并顺序（后者覆盖前者）：TOML/环境变量 → `tool_overrides.json` 本机覆写。
 
-**生效落点：`prepare_tools_for_turn`**。它是三个 HTTP 入口（`/chat`、`/chat/async`、`/chat/stream`）的**唯一**汇合点（[run_agent_turn.rs](../../src/run_agent_turn.rs)），在现有 5 步之后追加第 6 步：
+**生效落点：`prepare_tools_for_turn`**。它是三个 HTTP 入口（`/chat`、`/chat/async`、`/chat/stream`）
+  的**唯一**汇合点（[run_agent_turn.rs](../../src/run_agent_turn.rs)），在现有 5 步之后追加第 6 步：
 
 ```
 if let Some(disabled) = cfg.tool_registry_policy.tool_registry_disabled_tools { … retain … }
 else if !prefixes.is_empty() { … retain … }
 ```
 
-**不合并既有特判**：`codebase_semantic_search` 与 `long_term_memory_*` 两处 `retain` 保持原样（行为等价性优先，避免把「配置开关」与「本机策略」混成一条链）；D1/D2 的 `absent_reason` 对两者分别识别即可。
+**不合并既有特判**：`codebase_semantic_search` 与 `long_term_memory_*` 两处 `retain` 保持原样（行为等价性优先，避免把「配置开关」与「本机策略」
+  混成一条链）；D1/D2 的 `absent_reason` 对两者分别识别即可。
 
-**语义边界**：禁用只影响**本会话后续回合的工具在场性**，不追溯已产生的历史工具调用；被禁用工具的既有 `tool_job` 轮询/取消端点仍可正常访问（`/tools/jobs/*` 与在场性无关）。
+**语义边界**：禁用只影响**本会话后续回合的工具在场性**，不追溯已产生的历史工具调用；
+  被禁用工具的既有 `tool_job` 轮询/取消端点仍可正常访问（`/tools/jobs/*` 与在场性无关）。
 
 ### 3.4 D4（只读部分 P1 已实现；写/删 P2 暂缓）工作区动态工具（`plugins/*.json`）HTTP 读写
 
-- `GET /tools/plugins`（**只读列表，属 P1 已实现**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。直接暴露 §2 表格中「加载失败静默跳过」的问题。
-- `GET /tools/plugins/{file}`（**只读单文件详情，属 P1 已实现**）：含 `parameters` / `args` / `pass_args_json`（未设置工作区或文件不存在 **404 `PLUGIN_NOT_FOUND`**）。
+- `GET /tools/plugins`（**只读列表，属 P1 已实现**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。
+  直接暴露 §2 表格中「加载失败静默跳过」的问题。
+- `GET /tools/plugins/{file}`（**只读单文件详情，属 P1 已实现**）：
+  含 `parameters` / `args` / `pass_args_json`（未设置工作区或文件不存在 **404 `PLUGIN_NOT_FOUND`**）。
 - `PUT /tools/plugins/{file}`（创建/覆盖）与 `DELETE /tools/plugins/{file}`（**204 幂等**）。
-- 服务端复用同一套校验：`validate_file` 的 4 条（`dyn__` 前缀 / `description` 非空 / `parameters` 须 JSON 对象 / `command` 非空，[dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；失败 **400 `INVALID_PLUGIN_DEFINITION`**。
+- 服务端复用同一套校验：`validate_file` 的 4 条（`dyn__` 前缀 / `description` 非空 / `parameters` 须 JSON 对象 / `command` 非空，
+  [dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；
+  失败 **400 `INVALID_PLUGIN_DEFINITION`**。
 - **路径守卫**：`{file}` 仅允许 `[A-Za-z0-9_-]+\.json`，显式拒绝分隔符与 `..`（对齐 `/workspace/file` 的既有风格）。
 - 暂缓理由：写盘 + 命令白名单双重安全面，且需先定「同名文件覆盖是否需要 `confirm`」与 changelist 归属口径。
 
 ### 3.5 D5（不采纳，本轮）skills 单条启停
 
-`GET /skills` 已只读完备（§1.5）；`skill_manage` 已能 install/list/remove。补 `PUT /skills/{id}/enabled` 需要先回答「三层同名 skill 禁用哪一层」，且禁用与删除的差别（留给模型的斜杠是否仍出现）不明。触发条件：出现明确的「保留但不启用」工单后再立项。
+`GET /skills` 已只读完备（§1.5）；`skill_manage` 已能 install/list/remove。补 `PUT /skills/{id}/enabled` 需要先回答「三层同名 skill 禁用哪一层」，
+  且禁用与删除的差别（留给模型的斜杠是否仍出现）不明。触发条件：出现明确的「保留但不启用」工单后再立项。
 
 ### 3.6 不采纳项
 
@@ -235,29 +296,45 @@ else if !prefixes.is_empty() { … retain … }
 
 ## 4. 兼容性与约束
 
-- **路由对齐是硬约束**：[route_table.rs](../../src/web/openapi/route_table.rs) 递归扫描 `src/web/routes/**`（跳过 `e2e_fixtures`）**外加** `src/web/server.rs` 与 `cm_web_host/routes/web_ui.rs`，与 OpenAPI `paths` 双向比对（`openapi_ops_match_axum_route_source`）。
-  新增 `/tools*` 条目**必须**同步 OpenAPI，否则该测试直接失败。建议新增 `src/web/openapi/openapi_paths_tools.rs`（现仅有 `openapi_paths_tool_jobs.rs`，两者可共用前缀）并挂到 `openapi_paths_value()`（[openapi_paths.rs](../../src/web/openapi/openapi_paths.rs)
+- **路由对齐是硬约束**：[route_table.rs](../../src/web/openapi/route_table.rs) 递归扫描 `src/web/routes/**`（跳过 `e2e_fixtures`）
+  **外加** `src/web/server.rs` 与 `cm_web_host/routes/web_ui.rs`，与 OpenAPI `paths` 双向比对（`openapi_ops_match_axum_route_source`）。
+  新增 `/tools*` 条目**必须**同步 OpenAPI，否则该测试直接失败。
+    建议新增 `src/web/openapi/openapi_paths_tools.rs`（现仅有 `openapi_paths_tool_jobs.rs`，两者可共用前缀）
+    并挂到 `openapi_paths_value()`（[openapi_paths.rs](../../src/web/openapi/openapi_paths.rs)
   的 `merge_path_fragments` **遇重复 path key 会 panic**，勿重复注册 `/tools/jobs/*`），随后重生成快照：
   `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`
 - **同步清单**：
   - [routes/mod.rs](../../src/web/routes/mod.rs) 更新 `tools` 子模块的表行说明（现为「`/tools/jobs/*` 后台工具任务轮询与取消」，需扩展到清单/启停）；
   - [server.rs](../../src/web/server.rs#L16-L24) `protected_api` **已 merge `routes::tools`**，若沿用同一子模块则**无需改动**；
   - [`docs/命令行与路由.md`](../命令行与路由.md) 补鉴权矩阵类别与路由表行，**并顺带补齐缺失的 `/tools/jobs/*` 三行**（§1.6 既有漂移，同一 PR 内修正）；
-  - 错误码写入 [error_codes.rs](../../src/cm_api_contract/error_codes.rs) 并对齐 [`docs/命令行契约.md`](../命令行契约.md)：需要 `INVALID_TOOL_NAME`(400)、`TOOL_NOT_FOUND`(404)、`INVALID_PLUGIN_DEFINITION`(400，D4)；**顺带**把已在契约表中但不存在的 `SKILL_INVOKE_FAILED` 补为常量（§1.6）；
+  - 错误码写入 [error_codes.rs](../../src/cm_api_contract/error_codes.rs) 并对齐 [`docs/命令行契约.md`](../命令行契约.md)：
+    需要 `INVALID_TOOL_NAME`(400)、`TOOL_NOT_FOUND`(404)、`INVALID_PLUGIN_DEFINITION`(400，D4)；
+    **顺带**把已在契约表中但不存在的 `SKILL_INVOKE_FAILED` 补为常量（§1.6）；
   - OpenAPI 顶层 `tags` 补 `skills`（§1.6）。
-- **配置与热重载**：`[tool_registry]` 已在 [hot_reload.rs](../../src/cm_config/hot_reload.rs) 的 `clone_from` 白名单内，新增字段**无需改热重载代码**；在 [validate.rs](../../src/cm_config/validate.rs) 追加「工具名格式」校验（对齐既有 `1..=86400` 一类范围校验的写法）；[`docs/配置说明.md`](../配置说明.md) 与 [config/tools.toml](../../config/tools.toml#L195-L242) 同步补注释样例。
-- **不改变既有行为**：`prepare_tools_for_turn` 前 5 步的顺序与语义不变；`ToolSpec` 与 `tool_specs_registry` 不动；`/tools/jobs/*` 三端点行为与字段不变；`GET /skills` 响应不变；`self_config_info` 输出不变（观测改由 D2 提供，不扩写该工具）。
-- **安全**：列表接口不回显 `command` / `args`；`{file}` 走白名单字符集守卫；启停写的是**本机** `~/.local/share/crabmate`（与工作区策略无关，多用户共享工作区时是「各自生效」——见 §7.2）；日志不记 `description` 全文。
+- **配置与热重载**：`[tool_registry]` 已在 [hot_reload.rs](../../src/cm_config/hot_reload.rs) 的 `clone_from` 白名单内，新增字段**无需改热重载代码**；
+  在 [validate.rs](../../src/cm_config/validate.rs) 追加「工具名格式」校验（对齐既有 `1..=86400` 一类范围校验的写法）；
+  [`docs/配置说明.md`](../配置说明.md) 与 [config/tools.toml](../../config/tools.toml#L195-L242) 同步补注释样例。
+- **不改变既有行为**：`prepare_tools_for_turn` 前 5 步的顺序与语义不变；`ToolSpec` 与 `tool_specs_registry` 不动；
+  `/tools/jobs/*` 三端点行为与字段不变；`GET /skills` 响应不变；`self_config_info` 输出不变（观测改由 D2 提供，不扩写该工具）。
+- **安全**：列表接口不回显 `command` / `args`；`{file}` 走白名单字符集守卫；启停写的是**本机** `~/.local/share/crabmate`（与工作区策略无关，
+  多用户共享工作区时是「各自生效」——见 §7.2）；日志不记 `description` 全文。
 
 ---
 
 ## 5. 测试计划
 
-- **handler（D1）**：三源合并计数与 `counts` 自洽；`source` / `category` / `dev_tag` / `q` 过滤各自命中与叠加；分页切片（`limit` / `offset` / `has_more` / `total`）；超 `limit` 被 clamp；**`absent_reason` 三值各自命中**（`feature_not_built` 需在未启用 `fastembed` 的构建下断言）；
-  **无工作区 → 200 且 `dynamic` 为空**（反向断言：不得返回 `WORKSPACE_NOT_SET`）；**`GET /tools` 不建立 MCP 会话**（断言无副作用，可用 mock/计数桩）；Bearer 开启未带密钥 → 401。
-- **handler（D2）**：`run_command` 的 `policy` 全字段与 `registry_policy` 判定一致（写类/可并行/内联/后台/重试各一条断言）；`sync_default_inline` 命中配置项 `json_format`；未知名 → 404；非法名 → 400。
-- **handler（D3）**：写入后立即读 D1 该工具 `present:false` / `absent_reason:"disabled_by_policy"`；重复写入同值 → 200 且文件内容不变（幂等）；前缀通配命中多个工具；`POST /config/reload` 后仍生效；`tool_overrides.json` 重启后仍生效；非法名 → 400、未注册名 → 404；被禁用工具的 `/tools/jobs/*` 访问不受影响（反向断言）。
-- **handler（D4，P2）**：只读列表能报出「`parameters` 非对象」这类校验失败（对应现状静默跳过）；`{file}` 含 `..` / `/` / 非 `.json` → 400；`command` 不在白名单 → 400；`DELETE` 幂等 204。
+- **handler（D1）**：三源合并计数与 `counts` 自洽；`source` / `category` / `dev_tag` / `q` 过滤各自命中与叠加；
+  分页切片（`limit` / `offset` / `has_more` / `total`）；超 `limit` 被 clamp；
+  **`absent_reason` 三值各自命中**（`feature_not_built` 需在未启用 `fastembed` 的构建下断言）；
+  **无工作区 → 200 且 `dynamic` 为空**（反向断言：不得返回 `WORKSPACE_NOT_SET`）；**`GET /tools` 不建立 MCP 会话**（断言无副作用，可用 mock/计数桩）；
+    Bearer 开启未带密钥 → 401。
+- **handler（D2）**：`run_command` 的 `policy` 全字段与 `registry_policy` 判定一致（写类/可并行/内联/后台/重试各一条断言）；
+  `sync_default_inline` 命中配置项 `json_format`；未知名 → 404；非法名 → 400。
+- **handler（D3）**：写入后立即读 D1 该工具 `present:false` / `absent_reason:"disabled_by_policy"`；重复写入同值 → 200 且文件内容不变（幂等）；
+  前缀通配命中多个工具；`POST /config/reload` 后仍生效；`tool_overrides.json` 重启后仍生效；非法名 → 400、未注册名 → 404；
+  被禁用工具的 `/tools/jobs/*` 访问不受影响（反向断言）。
+- **handler（D4，P2）**：只读列表能报出「`parameters` 非对象」这类校验失败（对应现状静默跳过）；`{file}` 含 `..` / `/` / 非 `.json` → 400；
+  `command` 不在白名单 → 400；`DELETE` 幂等 204。
 - **配置层**：`apply_user_data_tool_overrides` 的合并优先级单测（TOML 被本机覆写覆盖）；`validate.rs` 对新字段的格式校验。
 - **契约**：`openapi_ops_match_axum_route_source` + `openapi_docs_snapshot_matches_spec` 两个既有测试转绿。
 - **不新增跨仓 e2e**：Playwright 用例归 `crabmate-client`。
@@ -289,8 +366,12 @@ else if !prefixes.is_empty() { … retain … }
 
 ### 7.2 评审结论与遗留问题
 
-1. **启停的作用域（已确认：进程级）**：`tool_overrides.json` 落 `$XDG_DATA_HOME/crabmate/`（与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级，`CM_CRABMATE_USER_DATA_DIR` 可覆盖），复用 `apply_user_data_tool_overrides` 管线，
-  在 `cli_run.rs` 与 `runtime/config_reload.rs` 两处调用点接入。**不带工作区分区键**——`serve` 是单进程全局 `SharedAgentConfig` + 单全局工作区覆写，进程级与既有 cfg 单一真源一致；多人共享同一 `serve` 实例时启停「各自进程生效」，工作区级无法解决隔离诉求（同一进程仍共享同一 `cfg`）。
+1. **启停的作用域（已确认：进程级）**：
+  `tool_overrides.json` 落 `$XDG_DATA_HOME/crabmate/`（与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级，
+  `CM_CRABMATE_USER_DATA_DIR` 可覆盖），复用 `apply_user_data_tool_overrides` 管线，
+  在 `cli_run.rs` 与 `runtime/config_reload.rs` 两处调用点接入。**不带工作区分区键**——`serve` 是单进程全局 `SharedAgentConfig` + 单全局工作区覆写，
+    进程级与既有 cfg 单一真源一致；多人共享同一 `serve` 实例时启停「各自进程生效」，工作区级无法解决隔离诉求（同一进程仍共享同一 `cfg`）。
 2. **`dynamic` / `mcp` 工具的 `category` 归类**：动态与 MCP 工具没有 `ToolCategory`，D1 统一按 `development` 归入。
-3. **`codebase_semantic_search_enabled` / `long_term_memory_enabled` 是否迁入新名单**：本轮**不迁**（保持既有配置等价性与文档口径，§3.3）；D1/D2 的 `absent_reason` 对两者分别识别为 `config_disabled`。
+3. **`codebase_semantic_search_enabled` / `long_term_memory_enabled` 是否迁入新名单**：本轮**不迁**（保持既有配置等价性与文档口径，§3.3）；
+  D1/D2 的 `absent_reason` 对两者分别识别为 `config_disabled`。
 4. **禁用名的前缀通配是否够用**：`disabled_tool_prefixes` 可一次关掉整栈（如 `cargo_*`），但也会误伤；本轮先提供前缀通配，按真实工单再评估 `re` 或显式列举约束。

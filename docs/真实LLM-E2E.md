@@ -91,7 +91,9 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 
 ## Layer 3：Tauri/WebView 级（Victauri）
 
-**仅 Client 仓** [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests)（本机同级 `../crabmate-client/desktop-tauri/src-tauri/tests/`）。**`REAL_LLM_E2E=1`** 时才会执行；用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
+**仅 Client 仓** [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests)
+  （本机同级 `../crabmate-client/desktop-tauri/src-tauri/tests/`）。**`REAL_LLM_E2E=1`** 时才会执行；
+  用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
 
 | 文件 | 场景 | 超时（约） | 断言要点 |
 |------|------|------------|----------|
@@ -101,7 +103,8 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 前置条件
 
 1. **Rust 工具链**与仓库依赖可正常 `cargo build`。
-2. **前端静态包**：Client `frontend/dist/index.html`（`cd ../crabmate-client && make frontend`）；UI 由 Client 仓自行托管，经 **CORS** 接入 `serve`（永远纯 API，不托管 SPA）。
+2. **前端静态包**：Client `frontend/dist/index.html`（`cd ../crabmate-client && make frontend`）；UI 由 Client 仓自行托管，
+  经 **CORS** 接入 `serve`（永远纯 API，不托管 SPA）。
 3. **Tauri CLI**：`cargo install tauri-cli --version "^2"`。
 4. **模型密钥**：设置 `API_KEY` 环境变量（Tauri WebView 无 localStorage，密钥需由后端进程继承）。
 5. **`NO_COLOR`**：执行前 `unset NO_COLOR`。

@@ -4,13 +4,15 @@
 
 ### 1.1 问题
 
-当前 agent 在解决问题后，经验仅存在于对话历史中，无法跨会话复用。随着对话增多，有价值的模式、踩坑记录和解决方案会逐渐被遗忘，导致模型在相似场景下重复犯错或无法复用已有的正确解法。
+当前 agent 在解决问题后，经验仅存在于对话历史中，无法跨会话复用。随着对话增多，有价值的模式、踩坑记录和解决方案会逐渐被遗忘，
+  导致模型在相似场景下重复犯错或无法复用已有的正确解法。
 
 现有 `long_term_remember` 工具面向**用户主动**调用，要求用户判断并手工输入内容，使用门槛高、频率低。
 
 ### 1.2 目标
 
-新增 **`summarize_experience`** 工具，允许**模型自主判断**当前回复是否包含值得保存的经验，并调用工具将经过提炼的经验文本写入长期记忆（SQLite），供后续会话在相关场景下自动检索。
+新增 **`summarize_experience`** 工具，允许**模型自主判断**当前回复是否包含值得保存的经验，并调用工具将经过提炼的经验文本写入长期记忆（SQLite），
+  供后续会话在相关场景下自动检索。
 
 核心原则：
 
@@ -67,7 +69,8 @@
 
 **描述**（给模型的提示）:
 
-> 将本轮对话中提炼出的核心经验写入长期记忆。适用于：解决了一个有价值的问题、发现了一个通用模式、记录了一个重要踩坑。模型应自主判断何时调用，避免滥用。须启用 `long_term_memory_enabled`。
+> 将本轮对话中提炼出的核心经验写入长期记忆。适用于：解决了一个有价值的问题、发现了一个通用模式、记录了一个重要踩坑。模型应自主判断何时调用，避免滥用。
+> 须启用 `long_term_memory_enabled`。
 
 **参数 schema**:
 
@@ -167,7 +170,8 @@ VALUES
 
 **文件**: `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
-定义派生 `schemars::JsonSchema` 的 `SummarizeExperienceArgs`；`ToolSpec.parameters` 由 `schema_of::<args::SummarizeExperienceArgs>` 直接生成，不再维护手写的 `ParamBuilder` 构建器（该层已删除）。
+定义派生 `schemars::JsonSchema` 的 `SummarizeExperienceArgs`；`ToolSpec.parameters` 由 `schema_of::<args::SummarizeExperienceArgs>` 直接生成，
+  不再维护手写的 `ParamBuilder` 构建器（该层已删除）。
 
 ### Step 3: 注册工具规格
 
@@ -208,7 +212,9 @@ fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
 - 流式输出场景下，回复尚未完成时，模型无法判断最终内容是否有价值
 - 如果模型在回复中途调用，可能只记录了部分内容
 
-**当前设计**：模型在 tool_calls 中调用 `summarize_experience`，其触发时机由模型自行判断（依赖 system prompt 引导）。这意味着模型需要在回复结束后才能发起工具调用——在 `assistant` 消息带有 `tool_calls` 时，`summarize_experience` 本身是另一轮工具调用，需确保该轮次不产生新的经验（避免嵌套循环）。
+**当前设计**：模型在 tool_calls 中调用 `summarize_experience`，其触发时机由模型自行判断（依赖 system prompt 引导）。
+  这意味着模型需要在回复结束后才能发起工具调用——在 `assistant` 消息带有 `tool_calls` 时，`summarize_experience` 本身是另一轮工具调用，
+  需确保该轮次不产生新的经验（避免嵌套循环）。
 
 **隐患**：如果模型在同一轮回复中既输出了最终答案又调用了 `summarize_experience`，工具调用本身可能打断回复的完整性；且该调用发生在当前回复最终确定之前。
 
@@ -289,7 +295,8 @@ fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
 | 来源 | 系统自动 | 模型自主判断 |
 | 粒度 | 整轮问答 | 单个有价值 insight |
 
-**结论**：两者互为补充。自动索引保留完整上下文，经验提炼提取精华。若模型每次都调用 `summarize_experience`，自动索引的价值相对下降，但两者不会冲突（可同时存在）。
+**结论**：两者互为补充。自动索引保留完整上下文，经验提炼提取精华。若模型每次都调用 `summarize_experience`，自动索引的价值相对下降，
+  但两者不会冲突（可同时存在）。
 
 ### 7.8 多用户 / 多会话的数据隔离
 

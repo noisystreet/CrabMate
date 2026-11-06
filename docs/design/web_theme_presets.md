@@ -34,7 +34,8 @@
 
 ## 2. 设计目标
 
-1. **多套预设**：用户可选 **N 套**离散主题（每套有稳定 **slug**，如 `dark`、`light`、`dark-ocean`），仍用 **单一 `data-theme`**，不引入第二套并行主题系统（除非未来刻意拆分「明暗 + 强调色」维度，见 §6）。
+1. **多套预设**：用户可选 **N 套**离散主题（每套有稳定 **slug**，如 `dark`、`light`、`dark-ocean`），仍用 **单一 `data-theme`**，
+  不引入第二套并行主题系统（除非未来刻意拆分「明暗 + 强调色」维度，见 §6）。
 2. **实现成本可控**：优先 **扩展 CSS 变量表**；Rust 侧以 **字符串 slug + 白名单校验** 为主，避免大改 `App` 状态结构。
 3. **与现有偏好正交**：**`data-bg-decor` / `crabmate-bg-decor`**、**`prefers-reduced-motion`**（`motion.css`）保持不变。
 4. **可维护**：合法 slug 列表在 **一处权威**（建议 Rust 常量 + 文档同步），防止 UI 选项与 CSS 块不同步。
@@ -66,12 +67,16 @@
 
 ### 3.3 浅色相关「组件分叉」→ token 覆层（已完成收敛）
 
-历史上以下文件含 **`:root[data-theme="light"]`** 的额外规则；现已 **迁入 `tokens.css` 的覆层变量**（见 §3.2 注释与 `:root` / `:root[data-theme="light"]` 内 `--selection-bg`、`--page-bg-decor-*`、`--nav-rail-bg`、`--btn-primary-*`、`--modal-backdrop-bg`、`--status-agent-select-bg-image`、
-  `--composer-bar-box-shadow`、`--composer-ws-ref-*`），**`base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`** 仅引用 `var(--*)`，**不再**按 `light` 写死选择器。
+历史上以下文件含 **`:root[data-theme="light"]`** 的额外规则；
+  现已 **迁入 `tokens.css` 的覆层变量**（见 §3.2 注释与 `:root` / `:root[data-theme="light"]` 内 `--selection-bg`、`--page-bg-decor-*`、
+  `--nav-rail-bg`、`--btn-primary-*`、`--modal-backdrop-bg`、`--status-agent-select-bg-image`、
+  `--composer-bar-box-shadow`、`--composer-ws-ref-*`），**`base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、
+    `status.css`** 仅引用 `var(--*)`，**不再**按 `light` 写死选择器。
 
 **推荐路径（优先）**：
 
-- **A. 变量化**（现状）：新增浅色预设时 **复制 `:root[data-theme="light"]` 整块** 为新 slug（如 `light-warm`），覆写 **色板变量 + 上列覆层变量** 即可；多预设时可将浅色共用覆层提取为 **`@layer` + 共用选择器列表** 或 **`themes/*.css`**，见 §3.4。
+- **A. 变量化**（现状）：新增浅色预设时 **复制 `:root[data-theme="light"]` 整块** 为新 slug（如 `light-warm`），
+  覆写 **色板变量 + 上列覆层变量** 即可；多预设时可将浅色共用覆层提取为 **`@layer` + 共用选择器列表** 或 **`themes/*.css`**，见 §3.4。
 
 **备选路径**：
 
@@ -82,7 +87,10 @@
 
 ### 3.4 文件组织（可选）
 
-- 预设较多时，可将各主题块拆到 **`frontend/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `styles/tokens.css` 之后**（当前仓库已采用：`light.css`、`material.css`；深色默认见 `tokens.css` 的 `:root`）；须在 Client 仓 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 的样式说明中同步样式链路径。
+- 预设较多时，可将各主题块拆到 **`frontend/themes/*.css`**，
+  在 **`index.html`** 的 `data-trunk` 链中 **置于 `styles/tokens.css` 之后**（当前仓库已采用：`light.css`、`material.css`；
+  深色默认见 `tokens.css` 的 `:root`）；须在 Client 仓 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)
+  的样式说明中同步样式链路径。
 
 ---
 
@@ -103,7 +111,9 @@
 
 ## 5. 无障碍与产品可选能力
 
-- **高对比预设**：建议单独 slug（如 `high-contrast` 或 `light-high-contrast` + `dark-high-contrast`），满足「不仅是换色相」的合规叙事；与 **`a11y.rs`** 关注点可交叉引用，但 **不替代** 系统 **`prefers-contrast`** 媒体查询（若未来支持自动跟系统，另文约定优先级：用户显式选主题 > 系统偏好）。
+- **高对比预设**：建议单独 slug（如 `high-contrast` 或 `light-high-contrast` + `dark-high-contrast`），满足「不仅是换色相」的合规叙事；
+  与 **`a11y.rs`** 关注点可交叉引用，但 **不替代** 系统 **`prefers-contrast`** 媒体查询（若未来支持自动跟系统，另文约定优先级：
+  用户显式选主题 > 系统偏好）。
 - **焦点环**：每套预设检查 **`--focus-ring-*`**（若已用变量）在 `surface` / `bg` 上的可见性。
 - **语义色**：`--error` / `--success` / `--warn` 在每套预设上保持可读；避免仅调 `--accent` 导致状态色与环境糊成一团。
 

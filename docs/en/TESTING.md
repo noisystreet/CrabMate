@@ -2,21 +2,32 @@
 
 # Testing and quality checks
 
-This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy,
-  see [`基准测试规划.md`](../基准测试规划.md) (kept separate from this general checklist). For **how to design and operate task suites** (coverage, reproducibility, cost, CI tiers), see [`BENCHMARK_TASK_SUITE_DESIGN.md`](BENCHMARK_TASK_SUITE_DESIGN.md). **HumanEval scoring script smoke** (no LLM):
-  `python3 scripts/humaneval_score_benchmark_results.py --tasks fixtures/benchmark/humaneval_tiny_tasks.jsonl --results fixtures/benchmark/humaneval_tiny_results.jsonl --output /tmp/tiny_scores.jsonl` (executes the tiny completion; see `基准测试规划.md` §5.3).
+This page lists **automated tests and common checks** for the CrabMate repo (run from the repository root unless noted). For module layout and
+  protocols, see [`DEVELOPMENT.md`](DEVELOPMENT.md). For **`crabmate bench`** roadmap and benchmark-specific testing strategy,
+  see [`基准测试规划.md`](../基准测试规划.md) (kept separate from this general checklist). For **how to design and operate task suites** (coverage,
+    reproducibility, cost, CI tiers), see [`BENCHMARK_TASK_SUITE_DESIGN.md`](BENCHMARK_TASK_SUITE_DESIGN.md).
+
+    **HumanEval scoring script smoke** (no LLM; executes the tiny completion, see `基准测试规划.md` §5.3):
+
+    ```
+    python3 scripts/humaneval_score_benchmark_results.py --tasks fixtures/benchmark/humaneval_tiny_tasks.jsonl --results fixtures/benchmark/humaneval_tiny_results.jsonl --output /tmp/tiny_scores.jsonl
+    ```
 
 ## Prerequisites
 
 - **Rust**: 1.88+ (edition 2024); see [`README.md`](../../README.md).
-- **E2E**: **Playwright** and **Victauri** live in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; `./scripts/e2e-playwright.sh` honors **`CRABMATE_CLIENT_DIR`**). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
-- **Web assets**: E2E builds the UI in the Client repo (**`make frontend`**) and hosts it there; it connects to this repo's `serve` over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**; always API-only, no SPA).
+- **E2E**:
+  **Playwright** and **Victauri** live in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`;
+  `./scripts/e2e-playwright.sh` honors **`CRABMATE_CLIENT_DIR`**). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
+- **Web assets**: E2E builds the UI in the Client repo (**`make frontend`**) and hosts it there;
+  it connects to this repo's `serve` over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**; always API-only, no SPA).
 
 ## GitHub Actions (main CI)
 
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
-- **`workspace`** (check · clippy · test): **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`** (this repo has **no** Tauri/GTK desktop job; shell CI lives in the Client repo)
+- **`workspace`** (check · clippy · test): **`cargo check`**, **`cargo clippy`** (**`-D warnings`**),
+  **`cargo test --workspace --all-features`** (this repo has **no** Tauri/GTK desktop job; shell CI lives in the Client repo)
 - **`client-contract`**: contract / SSE golden / OpenAPI gate (**`scripts/check-client-contract.sh`**)
 - **`build-release`** (package): **`make package`** (server-only **`tar.gz` + `.deb`**, no frontend; needs **`cargo-deb`**)
 
@@ -24,8 +35,11 @@ Complexity, dependency security, and coverage use separate workflows (**`code-co
 
 ### GitHub Release (tags only)
 
-[`.github/workflows/release.yml`](../../.github/workflows/release.yml) does **not** run on PR/`main` pushes. It runs when you push tag **`vX.Y.Z`** (or **`workflow_dispatch`** with an existing tag): **`make package`**, create/update a GitHub Release,
-  attach artifacts. Body comes from **`CHANGELOG.md`** for the tag’s core **`X.Y.Z`** (so **`v0.1.0-rc.1`** still uses the **`[0.1.0]`** section while **`Cargo.toml`** may stay **`0.1.0`**). Re-running for the same tag updates that Release.
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml)
+  does **not** run on PR/`main` pushes. It runs when you push tag **`vX.Y.Z`** (or **`workflow_dispatch`** with an existing tag): **`make package`**,
+  create/update a GitHub Release,
+  attach artifacts. Body comes from **`CHANGELOG.md`** for the tag’s core **`X.Y.Z`** (so **`v0.1.0-rc.1`** still uses the **`[0.1.0]`** section
+    while **`Cargo.toml`** may stay **`0.1.0`**). Re-running for the same tag updates that Release.
 
 ## Pre-commit
 
@@ -39,11 +53,19 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
-- **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: every function under **`src/`** must have **CCN ≤ 10**). Optional **`--list-above N`** lists functions above that warning threshold
-- **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**; hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
-- **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python);
-  function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
-- **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
+- **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**;
+  **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**:
+  every function under **`src/`** must have **CCN ≤ 10**). Optional **`--list-above N`** lists functions above that warning threshold
+- **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**;
+  hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
+- **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard)
+  plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**;
+  baseline paths and write-back policy are fixed in Python);
+  function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**;
+    file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**;
+    runs in **`.github/workflows/code-complexity.yml`**
+- **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`);
+  locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
 - **`./scripts/check-sse-protocol.sh`** (when changing SSE / `fixtures/sse_ag_ui_golden.jsonl` / **`fixtures/http_sse_failure_path_golden.jsonl`**)
 
 Without pre-commit installed, run at least:
@@ -56,7 +78,8 @@ bash scripts/fn-param-ratchet.sh
 bash scripts/fn-nloc-ratchet.sh
 ```
 
-Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see `AGENTS.md` → Repository engineering rules → Commit & push).
+Note: `pre-commit run --all-files` does **not** run `commit-msg`;
+  message format is checked on **`git commit`** (see `AGENTS.md` → Repository engineering rules → Commit & push).
 
 ## Rust: unit and integration tests
 
@@ -80,7 +103,8 @@ cargo test
 Prefer **`#[tokio::test]` next to handlers** (`cargo test --lib`) for route + workspace security + status codes. Do not default to `tests/` real-LLM e2e.
 
 1. **`start_test_serve(None)`**: random port, default config, `build_tools()`, **no Bearer middleware**, no LLM.
-2. **`tempfile` workspace** + `POST /workspace` `{"path": …}` to set the root. Empty `workspace_allowed_roots` allows any path except sensitive prefixes (`/etc`, `/root`, …).
+2. **`tempfile` workspace** + `POST /workspace` `{"path": …}` to set the root. Empty `workspace_allowed_roots` allows any path except sensitive
+  prefixes (`/etc`, `/root`, …).
 3. **`reqwest::Client::builder().no_proxy()`**: otherwise `HTTP_PROXY` (e.g. Privoxy) hijacks loopback. Same idea as `no_proxy=127.0.0.1,localhost` in e2e.
 4. **One serve, several asserts** (e.g. GET raw 200 / 415 / 400, PUT 204 / 409) so you do not pay `load_config` per case.
 5. **lizard** counts test functions in `src/`; keep CCN ≤ 10 and file-line ratchets; split HTTP tests into `*_http_tests.rs` if needed.
@@ -94,7 +118,9 @@ Example: `src/web/workspace/handlers_file_raw_http_tests.rs`.
 cargo test tool_result_envelope_golden
 ```
 
-If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see `AGENTS.md` → Repository engineering rules → Commit & push (test scope)).
+If you change AG-UI control-plane dispatch,
+  update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public
+  API changes before merge/release, prefer full **`cargo test`** (see `AGENTS.md` → Repository engineering rules → Commit & push (test scope)).
 
 ### Optional: nightly
 
@@ -104,7 +130,8 @@ cargo +nightly test
 
 ## Frontend (Leptos / Client `frontend`)
 
-Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client). Run the following from sibling **`../crabmate-client`** (or set **`CRABMATE_CLIENT_DIR`**).
+Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client). Run the following from sibling **`../crabmate-client`** (or
+  set **`CRABMATE_CLIENT_DIR`**).
 
 ### Host target unit tests (default)
 
@@ -122,7 +149,8 @@ Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no bro
 
 ### WASM target tests (optional)
 
-`wasm-bindgen-test` needs **`wasm-bindgen-cli`** matching **`wasm-bindgen`** in the **Client** `frontend/Cargo.lock`, plus the wasm32 test runner. Example (pin to the lockfile version):
+`wasm-bindgen-test` needs **`wasm-bindgen-cli`** matching **`wasm-bindgen`** in the **Client** `frontend/Cargo.lock`,
+  plus the wasm32 test runner. Example (pin to the lockfile version):
 
 ```bash
 cargo install wasm-bindgen-cli --version 0.2.114 --locked
@@ -150,12 +178,16 @@ cd ../crabmate-client && make frontend
 
 ## Desktop E2E (Victauri)
 
-> **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md) there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
+> **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling
+> `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md)
+> there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
 
 Directory:
-  Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri)
+  Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling
+    `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri)
   (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes;
-  stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
+  stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`**
+    suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
 
 | Phase | Examples | Notes |
 | --- | --- | --- |
@@ -166,7 +198,8 @@ Directory:
 
 ### Local run
 
-**One-shot (recommended)** — from the Client repo root (**`exec xvfb-run`** relaunches the script so the window never lands on your Wayland/X desktop; default **`VICTAURI_USE_XVFB=1`**):
+**One-shot (recommended)** — from the Client repo root (**`exec xvfb-run`** relaunches the script so the window never lands on your Wayland/X desktop;
+  default **`VICTAURI_USE_XVFB=1`**):
 
 ```bash
 cd ../crabmate-client
@@ -212,7 +245,8 @@ VICTAURI_USE_XVFB=1 ./scripts/victauri-e2e.sh victauri_scroll_send
 
 Without **`VICTAURI_E2E=1`**, Victauri tests **skip**. Full suites: Client repo **`./scripts/victauri-e2e.sh all`** (not this repo's CI).
 
-**Real-model E2E** (e.g. DeepSeek) is manual opt-in (**`REAL_LLM_E2E=1`**, not default CI). Full steps: [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md) · summary [`REAL_LLM_E2E.md`](REAL_LLM_E2E.md).
+**Real-model E2E** (e.g. DeepSeek) is manual opt-in (**`REAL_LLM_E2E=1`**, not default CI). Full steps: [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)
+  · summary [`REAL_LLM_E2E.md`](REAL_LLM_E2E.md).
 
 Quick smoke (Client repo):
 
@@ -237,10 +271,14 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## Not automated
 
-- **Visual / layout smoke list**: maintained with the UI source in Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (no screenshot diff pipeline in-repo).
+- **Visual / layout smoke list**:
+  maintained with the UI source in Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (no screenshot diff pipeline
+  in-repo).
 
 ## See also
 
-- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (not in this repo). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
+- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source:
+  Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (not in this repo). Playwright:
+  Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
 - SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
 - Debugging: [`DEBUG.md`](../调试指南.md)

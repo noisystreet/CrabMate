@@ -2,39 +2,85 @@
 
 # Configuration
 
-Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**, **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**, **`memory.toml`** (each fragment is mostly flattened under **`[agent]`**; **`config/tools.toml`** may also define optional **`[tool_registry]`**—see “`tool_registry` policy” below)
-  . **`session`** is the session shard (historical path `.crabmate/tui_session.json`; in-process TUI/REPL session UI keys removed); **`context_inject`** covers first-turn **`living_docs_*`**, **`agent_memory_file_*`**, **`project_dependency_brief_inject_*`** (**`project_profile_inject_*`** is **not** a first-turn key any more—it only gates the Web sidebar **`GET /workspace/profile`**);
-  **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**, **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**, **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.;
-  **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration; **`memory`** is **`long_term_memory_*`**. A separate embedded catalog **`config/llm_vendors.toml`** (not merged into **`[agent]`**)
+Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**,
+  **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**,
+  **`memory.toml`** (each fragment is mostly flattened under **`[agent]`**;
+  **`config/tools.toml`** may also define optional **`[tool_registry]`**—see “`tool_registry` policy” below)
+  . **`session`** is the session shard (historical path `.crabmate/tui_session.json`; in-process TUI/REPL session UI keys removed);
+    **`context_inject`** covers first-turn **`living_docs_*`**, **`agent_memory_file_*`**,
+    **`project_dependency_brief_inject_*`** (**`project_profile_inject_*`** is **not** a first-turn key any more—it only gates the Web sidebar
+    **`GET /workspace/profile`**);
+  **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**,
+    **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**,
+    **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.;
+  **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration;
+    **`memory`** is **`long_term_memory_*`**. A separate embedded catalog **`config/llm_vendors.toml`** (not merged into **`[agent]`**)
     lists OpenAI-compatible vendor matchers, common **`models`**, and outbound capabilities (`fold_system_into_user`, `image_url_content_parts`,
-  …); changing it requires a **rebuild** (not **`POST /config/reload`**). `load_config` merges in order **defaults → session → context_inject → tools → sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables.
+  …);
+    changing it requires a **rebuild** (not **`POST /config/reload`**). `load_config` merges in order **defaults → session → context_inject → tools →
+    sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables.
 
 ## Hot reload (without restarting `serve`)
 
 - **CLI (historical)**: In-process **`repl` `/config reload`** entry is removed (D2.1).
-- **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—**`Authorization: Bearer <token>`** or **`X-API-Key: <token>`** when the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
-- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`thinking_avoid_echo_system_prompt`**, **`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`** (resolved appendix text), **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist,
-  **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`web_audit_log_write_tools`**, **`web_audit_trust_x_forwarded_for`** (write-tool audit and optional **`X-Forwarded-For`** trust), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists),
-  **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not an `AgentConfig` field).
-- **Not hot-reloaded**: **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt; **`api_timeout_secs`** may lag on pooled idle connections.
-- **`API_KEY`**: Optional process fallback for **`serve`** / ops. Dialogue keys: request body **`client_llm.api_key`** (official Client). Server no longer stores/backfills model keys in keyring (`client_llm` / `executor_llm` / `saved_model_*`);
-  **`PUT /user-data/secrets/client-llm`** removed. In-process **`repl` / `chat` / `tui` and `/api-key` entries are removed** (D2.1). Hot reload does **not** re-read env **`API_KEY`**.
-- **Web API auth layer**: Embedded default **`web_api_require_bearer=false`**: **`serve`** may start without **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`**. Resolution order for the server secret: **env / TOML** → **system keyring** (`crabmate web-bearer set` or Web **`/user-data`**). After a successful start, if the token is non-empty,
-  the auth middleware is mounted for the process lifetime; clients send **`Authorization: Bearer <same secret>`** or **`X-API-Key: <same secret>`** (either). Set **`web_api_require_bearer=true`** (or **`CM_WEB_API_REQUIRE_BEARER=1`**) to **refuse startup** until a non-empty shared secret is configured. Hot reload **does not** add/remove the layer—switching between “no token” and “token”
-  requires **`serve` restart**. Hot reload still updates the secret string used inside handlers when the layer exists. **Browser**: env/keyring only configure the server; open Web **Settings → “Web API shared secret (this server)”** (top of Appearance; visually distinct from Model), enter the **same** string, and save (in-page memory + **`localStorage`** key **`crabmate-api-bearer-token`**)
-  . This is **not** the LLM **`API_KEY`**. Setting only the server secret without saving in the browser yields **401**; the status bar offers **“Set Web Bearer”**. After a successful save the UI retries **`/status`**, clears auth-style errors, and re-hydrates. XDG **`config.toml` / `llm_overrides.json` do not** auto-attach Web Bearer in the browser. If errors persist,
+- **Web**: **`POST /config/reload`** (JSON body may be `{}`;
+  same auth as **`/chat`** and other protected APIs—**`Authorization: Bearer <token>`** or **`X-API-Key: <token>`** when the layer is enabled). Success:
+  **`{ "ok": true, "message": "…" }`**.
+- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**,
+  **`llm_kimi_thinking_disabled`**, **`thinking_avoid_echo_system_prompt`**,
+  **`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`** (resolved appendix text), **`temperature` / `llm_seed`**, timeouts/retries,
+  **`run_command`** allowlist,
+  **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below),
+    **`web_audit_log_write_tools`**, **`web_audit_trust_x_forwarded_for`** (write-tool audit and optional **`X-Forwarded-For`** trust), **`mcp_*`**,
+    **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists),
+  **`system_prompt_file` re-read**, context/planning keys (implementation:
+    **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not
+    an `AgentConfig` field).
+- **Not hot-reloaded**:
+  **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt;
+  **`api_timeout_secs`** may lag on pooled idle connections.
+- **`API_KEY`**: Optional process fallback for **`serve`** / ops. Dialogue keys:
+  request body **`client_llm.api_key`** (official Client). Server no longer stores/backfills model keys in keyring (`client_llm` / `executor_llm` /
+  `saved_model_*`);
+  **`PUT /user-data/secrets/client-llm`** removed. In-process **`repl` / `chat` / `tui` and `/api-key` entries are removed** (D2.1). Hot reload does
+    **not** re-read env **`API_KEY`**.
+- **Web API auth layer**: Embedded default **`web_api_require_bearer=false`**:
+  **`serve`** may start without **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`**. Resolution order for the server secret:
+  **env / TOML** → **system keyring** (`crabmate web-bearer set` or Web **`/user-data`**). After a successful start, if the token is non-empty,
+  the auth middleware is mounted for the process lifetime;
+    clients send **`Authorization: Bearer <same secret>`** or **`X-API-Key: <same secret>`** (either). Set **`web_api_require_bearer=true`** (or
+    **`CM_WEB_API_REQUIRE_BEARER=1`**)
+    to **refuse startup** until a non-empty shared secret is configured. Hot reload **does not** add/remove the layer—switching between “no token”
+    and “token”
+  requires **`serve` restart**. Hot reload still updates the secret string used inside handlers when the layer exists. **Browser**:
+    env/keyring only configure the server; open Web **Settings → “Web API shared secret (this server)”** (top of Appearance;
+    visually distinct from Model), enter the **same** string, and save (in-page memory + **`localStorage`** key **`crabmate-api-bearer-token`**)
+  . This is **not** the LLM **`API_KEY`**. Setting only the server secret without saving in the browser yields **401**;
+    the status bar offers **“Set Web Bearer”**. After a successful save the UI retries **`/status`**, clears auth-style errors,
+    and re-hydrates. XDG **`config.toml` / `llm_overrides.json` do not** auto-attach Web Bearer in the browser. If errors persist,
   use status-bar **Retry**. For a **personal VPS + TLS reverse proxy** walkthrough (Chinese), see **`docs/个人VPS部署指南.md`**.
-- **Temporarily skip Web Bearer while testing**: Middleware checks only when the **server** secret is non-empty. For local debug: `unset CM_WEB_API_BEARER_TOKEN` (and clear TOML / XDG **`web_api_bearer_token`**, and if needed **`crabmate web-bearer clear`**),
-  then `cargo run -- serve --host 127.0.0.1` and open the loopback URL—protected APIs accept anonymous clients. If you still need **`0.0.0.0`**: clear the secret first, set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** (or TOML **`allow_insecure_no_auth_for_non_loopback = true`**),
+- **Temporarily skip Web Bearer while testing**: Middleware checks only when the **server** secret is non-empty. For local debug:
+  `unset CM_WEB_API_BEARER_TOKEN` (and clear TOML / XDG **`web_api_bearer_token`**, and if needed **`crabmate web-bearer clear`**),
+  then `cargo run -- serve --host 127.0.0.1` and open the loopback URL—protected APIs accept anonymous clients. If you still need **`0.0.0.0`**:
+    clear the secret first, set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** (or TOML **`allow_insecure_no_auth_for_non_loopback = true`**),
   then start—**trusted LAN only**. A non-empty secret still causes **401** even with that flag. Do not leave auth disabled on public or untrusted networks.
-- **Write-tool audit (structured logs)**: When **`web_audit_log_write_tools`** defaults **on**, each successful **non-readonly** built-in tool emits one **`info`** line with **`target=crabmate::audit_write_tool`** (timestamp ms, `job_id`, scope id, **`http`** vs **`scheduled`**,
-  `client_ip` / `peer_ip`, **`bearer_fp`** as the first 12 hex chars of SHA-256 of the shared secret when the request’s **`Authorization` / `X-API-Key`** matches, otherwise **`-`**, tool name, redacted **`args_preview`**). **No** raw secrets in log text. Non-Web entrypoints (CLI, bench)
-  do not emit these lines. **`web_audit_trust_x_forwarded_for`** (default **off**): when **on**, `client_ip` prefers the first hop in **`X-Forwarded-For`**; enable only behind a **trusted** reverse proxy.
-- **Secrets in memory**: **`web_api_bearer_token`** and **`web_search_api_key`** are **secrecy `SecretString`** in [`AgentConfig`](DEVELOPMENT.md); **`Debug` / structured logs** avoid plaintext; use **`ExposeSecret::expose_secret()`** (re-exported from `config`). **`API_KEY`** is not part of `AgentConfig`.
+- **Write-tool audit (structured logs)**: When **`web_audit_log_write_tools`** defaults **on**,
+  each successful **non-readonly** built-in tool emits one **`info`** line with **`target=crabmate::audit_write_tool`** (timestamp ms, `job_id`,
+  scope id, **`http`** vs **`scheduled`**,
+  `client_ip` / `peer_ip`,
+    **`bearer_fp`** as the first 12 hex chars of SHA-256 of the shared secret when the request’s **`Authorization` / `X-API-Key`** matches,
+    otherwise **`-`**, tool name, redacted **`args_preview`**). **No** raw secrets in log text. Non-Web entrypoints (CLI, bench)
+  do not emit these lines. **`web_audit_trust_x_forwarded_for`** (default **off**): when **on**,
+    `client_ip` prefers the first hop in **`X-Forwarded-For`**; enable only behind a **trusted** reverse proxy.
+- **Secrets in memory**: **`web_api_bearer_token`** and **`web_search_api_key`** are **secrecy `SecretString`** in [`AgentConfig`](DEVELOPMENT.md);
+  **`Debug` / structured logs** avoid plaintext;
+  use **`ExposeSecret::expose_secret()`** (re-exported from `config`). **`API_KEY`** is not part of `AgentConfig`.
 
 ## Environment variables (`CM_*`)
 
-Common keys below; **full names and defaults** live in **`config/default_config.toml`**, **`config/session.toml`**, **`config/context_inject.toml`**, **`config/tools.toml`**, **`config/sandbox.toml`**, **`config/planning.toml`**, **`config/memory.toml`**. See “Model & API” and “Hot reload” for keyring behavior.
+Common keys below; **full names and defaults** live in **`config/default_config.toml`**, **`config/session.toml`**, **`config/context_inject.toml`**,
+  **`config/tools.toml`**, **`config/sandbox.toml`**, **`config/planning.toml`**, **`config/memory.toml`**. See “Model & API” and “Hot reload”
+  for keyring behavior.
 
 ### Model & API
 
@@ -79,7 +125,9 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 ### Desktop Tauri (thin client)
 
 The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (local or remote),
-  then connect via the connect page (see Client [`desktop-tauri/README.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/README.md)). Packaging is done in the **Client** repo (e.g. **`make desktop-release`** / **`desktop-tauri/scripts/prepare-sidecar.sh`** to sync
+  then connect via the connect page (see Client
+    [`desktop-tauri/README.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/README.md)). Packaging is done in the **Client**
+    repo (e.g. **`make desktop-release`** / **`desktop-tauri/scripts/prepare-sidecar.sh`** to sync
   connect/splash and optional **`frontend/dist`**; **no** sidecar binary).
 
 ### Workspace & Cursor-style rules
@@ -98,17 +146,26 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_SKILLS_MAX_CHARS` | Max injected skills chars (Top-K and `/id` force). |
 | `CM_SKILLS_TOP_K` | Max skills selected per turn from the user message (default `4`). **`/<id> [task]`** skips Top-K and forces that skill. |
 
-**Web workspace**: After **`serve`** starts, until the sidebar sets a root via **`POST /workspace`**, the server does **not** treat **`run_command_working_dir`** (often `"."`) as a selected workspace: workspace-root first-turn context is not injected, **`@path`** refs return **`WORKSPACE_NOT_SET`**,
-  and SyncDefault built-ins stay unavailable; enqueue still normalizes the process cwd to **`run_command_working_dir`**, and **`GET /health`** probes that directory. Explicitly setting the workspace to a path equivalent to **`run_command_working_dir`** restores the older “default cwd is workspace”
+**Web workspace**: After **`serve`** starts, until the sidebar sets a root via **`POST /workspace`**,
+  the server does **not** treat **`run_command_working_dir`** (often `"."`) as a selected workspace: workspace-root first-turn context is not injected,
+  **`@path`** refs return **`WORKSPACE_NOT_SET`**,
+  and SyncDefault built-ins stay unavailable; enqueue still normalizes the process cwd to **`run_command_working_dir`**,
+    and **`GET /health`** probes that directory. Explicitly setting the workspace to a path equivalent to **`run_command_working_dir`** restores the
+    older “default cwd is workspace”
   behavior.
 
 **Web project pool (`web_workspace_pool` / `CM_WEB_WORKSPACE_POOL`)**: For VPS / remote browsers. Point a fixed directory (e.g. **`/workspace`**) at the pool;
   users open or create child dirs by **project name** via **`GET/POST /workspace/projects`** or the Web **Project → Open workspace** modal (names:
-  alphanumeric plus `._-`). When the pool is configured you **must** also set a non-empty **`workspace_allowed_roots`** (or **`CM_WORKSPACE_ALLOWED_ROOTS`**), with the pool under that allowlist;
+  alphanumeric plus `._-`). When the pool is configured you **must** also set a non-empty **`workspace_allowed_roots`** (or
+    **`CM_WORKSPACE_ALLOWED_ROOTS`**), with the pool under that allowlist;
   sensitive system prefixes are rejected at finalize. Prefer **Web Bearer** auth. If the pool path is missing, finalize tries **`mkdir -p`**.
 
-**Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace/fs.rs`**: on Linux,
-  **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`; symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**: checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone;
+**Path safety (matches implementation)**:
+  `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On
+  **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace/fs.rs`**: on Linux,
+  **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`;
+    symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**:
+    checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone;
   **`create_dir_all`** + opens are not fully atomic. This is **not** a kernel sandbox; use **Web auth** on open networks. See **`src/workspace/path.rs`**.
 
 ### Planning
@@ -128,8 +185,11 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | **Act utterance keyword heuristics** | First in ReAct dispatch; **always on for Act** (may set `execution_constraint_hint` / `ReviewReadonly`); skipped for Ask/Plan (mode applies readonly); **does not** end the turn early | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of utterance heuristics; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
-**Act utterance tool narrowing (L2 retirement R4)**: Under **Act**, **`ReviewReadonly`** + a short hint apply when the user utterance matches both “don’t modify / don’t run”
-  -style markers **and** analysis/explain-style markers (no extra chat). Intent-gate keys / L2 / Clarify early-exit are **removed**. Prefer **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel
+**Act utterance tool narrowing (L2 retirement R4)**: Under **Act**,
+  **`ReviewReadonly`** + a short hint apply when the user utterance matches both “don’t modify / don’t run”
+  -style markers **and** analysis/explain-style markers (no extra chat). Intent-gate keys / L2 / Clarify early-exit are **removed**. Prefer
+    **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from
+    parallel
   read-only batches).
 
 ### Queue, parallelism, cache
@@ -214,12 +274,17 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_LONG_TERM_MEMORY_MAX_ENTRIES` | Max entries. |
 | `CM_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | Max chars injected into model context. |
 
-Injected lines are prefixed with **`[memory #id]`** where **`id`** is the SQLite **`crabmate_long_term_memory`** primary key—align with **`long_term_memory_list`** or debugging.
+Injected lines are prefixed with **`[memory #id]`** where **`id`** is the SQLite **`crabmate_long_term_memory`** primary key—align with
+  **`long_term_memory_list`** or debugging.
 
-Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**, **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
+Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**,
+  **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
 
-Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conversations.db`**, so **Web `serve`** persists transcripts and can resume a **`conversation_id`** after restart; clear the path to revert to in-memory sessions. Session and memory **may** share one SQLite;
-  long-term memory still defaults to **`run_command_working_dir/.crabmate/long_term_memory.db`**. If long-term memory is enabled but the DB cannot open: one **stderr** warning, process continues without injection.
+Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conversations.db`**,
+  so **Web `serve`** persists transcripts and can resume a **`conversation_id`** after restart;
+  clear the path to revert to in-memory sessions. Session and memory **may** share one SQLite;
+  long-term memory still defaults to **`run_command_working_dir/.crabmate/long_term_memory.db`**. If long-term memory is enabled but the DB cannot
+    open: one **stderr** warning, process continues without injection.
 
 ### Conversation retention
 
@@ -232,9 +297,13 @@ Transcript persistence is controlled by **`conversation_store_sqlite_path`** (ab
 | `context_archive_max_rows_per_conversation` | `CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION` | Per-conversation **archived-prefix row cap**; oldest archived rows are reclaimed beyond it (a reclaimed prefix makes branch points older than the retained window fail to re-expand; the branch API returns an explicit error). **`0` = unlimited**. Default **`256`**. See design doc [`context_window_compaction.md`](../design/context_window_compaction.md) §3.8 / §4.2. |
 | `context_archive_codec_min_bytes` | `CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES` | Archive-body **codec threshold** (bytes): below it `identity`, otherwise `gzip`. Default **`4096`**. See design doc §3.8. |
 
-- Pruning: the in-memory backend prunes on every save/truncate using current config; the SQLite backend prunes after a successful save and in an **hourly** background task (also run once at `serve` startup), so idle processes still reclaim space.
-- The **retention / archive** keys (`conversation_store_ttl_secs`, `conversation_store_max_entries`, `context_archive_max_rows_per_conversation`, `context_archive_codec_min_bytes`) are **hot-reloadable** (`POST /config/reload`);
-  lowering a limit does not delete sessions/archives immediately—it applies on the next save / background prune. **`conversation_store_sqlite_path` is not hot-reloaded**; changing it requires a `serve` restart.
+- Pruning: the in-memory backend prunes on every save/truncate using current config;
+  the SQLite backend prunes after a successful save and in an **hourly** background task (also run once at `serve` startup),
+  so idle processes still reclaim space.
+- The **retention / archive** keys (`conversation_store_ttl_secs`, `conversation_store_max_entries`, `context_archive_max_rows_per_conversation`,
+  `context_archive_codec_min_bytes`) are **hot-reloadable** (`POST /config/reload`);
+  lowering a limit does not delete sessions/archives immediately—it applies on the next save / background prune. **`conversation_store_sqlite_path`
+    is not hot-reloaded**; changing it requires a `serve` restart.
 - **`0` disables that dimension of eviction** (consistent with `--llm-context-tokens 0`), not "clear now".
 - Delete a single conversation explicitly with **`DELETE /conversation/{conversation_id}`** (idempotent; see `docs/en/CLI.md`).
 
@@ -252,30 +321,47 @@ Transcript persistence is controlled by **`conversation_store_sqlite_path`** (ab
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
 | `CM_HTTP_FETCH_USER_AGENT` | `User-Agent` for `http_fetch` / `http_request` (default **`crabmate/<version>`**). |
 
-**`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.2.0** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**; engine chain **`bing,duckduckgo`** (fallback on captcha/low-quality yield); results include unwrapped landing URLs, `domain`,
-  and quality signals (`result_kind` / `is_ad` / `published_at`, …). The crate also exposes page fetch **`fetch`/`fetch_page`** (CrabMate still uses its own **`http_fetch`**). Without a browser,
+**`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.2.0** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**;
+  engine chain **`bing,duckduckgo`** (fallback on captcha/low-quality yield); results include unwrapped landing URLs, `domain`,
+  and quality signals (`result_kind` / `is_ad` / `published_at`,
+    …). The crate also exposes page fetch **`fetch`/`fetch_page`** (CrabMate still uses its own **`http_fetch`**). Without a browser,
   switch to `brave`/`tavily` or install one. Docker SyncDefault sandboxes usually lack a host browser—use an API provider or avoid web search in-sandbox.
 
-**`web_search` proxy**: the `worbrow` provider can reach search engines through a proxy. Precedence: **tool arg `proxy` (non-empty) > config `web_search_proxy` / `CM_WEB_SEARCH_PROXY`**; both empty = direct/system proxy. Only `http://host:port` / `https://host:port` are accepted;
-  **`socks5://` and credentials are rejected**. `worbrow` only (`brave`/`tavily` use `reqwest` and honor `HTTP_PROXY` etc.); passing `proxy` with a non-`worbrow` provider prepends an ignored-arg notice to the result.
+**`web_search` proxy**: the `worbrow` provider can reach search engines through a proxy. Precedence:
+  **tool arg `proxy` (non-empty) > config `web_search_proxy` / `CM_WEB_SEARCH_PROXY`**;
+  both empty = direct/system proxy. Only `http://host:port` / `https://host:port` are accepted;
+  **`socks5://` and credentials are rejected**. `worbrow` only (`brave`/`tavily` use `reqwest` and honor `HTTP_PROXY` etc.);
+    passing `proxy` with a non-`worbrow` provider prepends an ignored-arg notice to the result.
 
-**`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**, brave/tavily **+2s**) so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
+**`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**,
+  brave/tavily **+2s**)
+  so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via
+  **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
 
 **Outer `tokio::time::timeout` around `spawn_blocking`** (HTTP tools): besides **`http_fetch_timeout_secs`** (client read timeout),
-  the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of
+  the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML
+    **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of
   **`config/tools.toml`**).
 
-**`http_fetch` / `http_request` URL gate**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL runs without prefix approval. **Risk**: the model can fetch loopback, RFC1918, and cloud-metadata URLs (SSRF);
-  **`http_request` can POST/PUT/PATCH/DELETE** to the same range. For multi-tenant or non-loopback `serve`, set concrete prefixes, or **TOML `http_fetch_allowed_prefixes = []` / `CM_HTTP_FETCH_ALLOWED_PREFIXES=` (empty)
+**`http_fetch` / `http_request` URL gate**:
+  embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL runs without prefix approval. **Risk**:
+  the model can fetch loopback, RFC1918, and cloud-metadata URLs (SSRF);
+  **`http_request` can POST/PUT/PATCH/DELETE** to the same range. For multi-tenant or non-loopback `serve`, set concrete prefixes,
+    or **TOML `http_fetch_allowed_prefixes = []` / `CM_HTTP_FETCH_ALLOWED_PREFIXES=` (empty)
   ** to override the embed and require approval again. Omitting the key does not clear the list. Schemes remain **http/https** only.
 
-**`http_fetch` / `http_request` request behavior (curl-aligned)**: automatically sends **`Accept: */*`** and **`Accept-Encoding`** (gzip/brotli/deflate; response bodies are decompressed automatically,
-  so uncompressed payloads no longer hit the truncation cap as often). **`User-Agent`** defaults to **`crabmate/<version>`** and can be overridden via TOML **`http_fetch_user_agent`** or **`CM_HTTP_FETCH_USER_AGENT`** (e.g. a browser or curl UA for anti-bot sites).
-**Environment proxies**: **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** are honored (HTTP(S) proxies work). Note **reqwest 0.13 does not support SOCKS** — with a `socks5://` proxy (common with Clash/v2ray), `http_fetch` fails and hints at it; `unset ALL_PROXY HTTPS_PROXY HTTP_PROXY` or use the same port as `http://` (e.g. Clash mixed port) to retry.
+**`http_fetch` / `http_request` request behavior (curl-aligned)**:
+  automatically sends **`Accept: */*`** and **`Accept-Encoding`** (gzip/brotli/deflate; response bodies are decompressed automatically,
+  so uncompressed payloads no longer hit the truncation cap as often). **`User-Agent`** defaults to **`crabmate/<version>`** and can be overridden
+    via TOML **`http_fetch_user_agent`** or **`CM_HTTP_FETCH_USER_AGENT`** (e.g. a browser or curl UA for anti-bot sites).
+**Environment proxies**: **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** are honored (HTTP(S)
+  proxies work). Note **reqwest 0.13 does not support SOCKS** — with a `socks5://` proxy (common with Clash/v2ray), `http_fetch` fails and hints at it;
+  `unset ALL_PROXY HTTPS_PROXY HTTP_PROXY` or use the same port as `http://` (e.g. Clash mixed port) to retry.
 
 ### `tool_registry` policy (`tools.toml` / main config)
 
-Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`config.toml`** (merged like other fragments) maps into **`AgentConfig`** and is updated on hot reload. **No `CM_*` aliases**—use TOML.
+Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`config.toml`** (merged like other fragments)
+  maps into **`AgentConfig`** and is updated on hot reload. **No `CM_*` aliases**—use TOML.
 
 | Key | Purpose |
 | --- | --- |
@@ -292,9 +378,14 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | **`tool_retry_error_codes`** | Error codes eligible for retry (default `timeout`/`http_timeout`/`rate_limited`/`http_network_error`); empty = disabled. |
 | **`tool_retry_denied_tools`** | Extra tool names excluded from retry (exact match; readonly/approval gate already excludes write & interactive tools). |
 
-**Background tool jobs**: the same **`[tool_registry]`** table also carries 8 background-job keys (TOML only, no **`CM_*`**): **`background_jobs_enabled`** (default `false`), **`background_job_async_tools`** (allowlist of tool names that may pass **`async=true`**, default `["run_command"]`;
-  empty array = all disabled), plus concurrency / queue / TTL / grace / entry-cap / output-buffer limits — see **`docs/配置说明.md`** and **`docs/design/background_tool_jobs_contract.md`** §6. Assembly-table tools (**`cargo_test`** / **`pytest_run`**)
-  reuse the exact same argv and working directory as the foreground path; background runs do **not** participate in **`test_result_cache`** and never set **`workspace_changed`** (matching their foreground behaviour).
+**Background tool jobs**: the same **`[tool_registry]`** table also carries 8 background-job keys (TOML only, no **`CM_*`**):
+  **`background_jobs_enabled`** (default `false`), **`background_job_async_tools`** (allowlist of tool names that may pass **`async=true`**,
+  default `["run_command"]`;
+  empty array = all disabled),
+    plus concurrency / queue / TTL / grace / entry-cap / output-buffer limits — see **`docs/配置说明.md`** and
+    **`docs/design/background_tool_jobs_contract.md`** §6. Assembly-table tools (**`cargo_test`** / **`pytest_run`**)
+  reuse the exact same argv and working directory as the foreground path;
+    background runs do **not** participate in **`test_result_cache`** and never set **`workspace_changed`** (matching their foreground behaviour).
 
 ### Context & tool messages
 
@@ -324,17 +415,34 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | Summary transcript max chars. |
 | `CM_CONTEXT_BTW_SUMMARY_ENABLED` | Whether the `/btw` side-channel may trigger an LLM summary; default **false** (btw only sync-trims and applies Token-budget compaction, no extra model call). |
 
-**`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`);
-  **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). In-process **`chat` / `repl` / TUI** entries and **`workspace_session::initial_workspace_messages`** are removed (Client shell / D2.2).
+**`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`,
+  `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`);
+  **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). In-process **`chat` / `repl` /
+    TUI** entries and **`workspace_session::initial_workspace_messages`** are removed (Client shell / D2.2).
 
-**Workspace + user-query dynamic selection**: With **`skills_enabled`** and **`skills_top_k`** (**`CM_SKILLS_TOP_K`**), Web (and Client **`crabmate-tui`**) can merge Top-K snippets from the **merged three-layer skills catalog** into the first **`system`** each turn: workspace **`skills_dir`** (default **`.crabmate/skills`**),
-  user **`skills_user_dir`** (default **`$XDG_CONFIG_HOME/crabmate/skills`**), system **`skills_system_dir`** (default **`/etc/crabmate/skills`**); same callable id prefers **workspace > user > system** (cross-layer override; same-layer duplicates may still be ambiguous). Host skills paths are **independent** of whether XDG `config.toml` is auto-loaded in the source tree (missing dirs are skipped)
-  . Use **`CM_SKILLS_DISABLE_HOST_LAYERS=1`** in tests/CI for isolation. First-time seed from **`/etc/crabmate`** also copies **`skills/`** into XDG when present (no overwrite); the system layer still reads **`/etc`**,
-  so deleting only the user copy does not disable a packaged skill. Skills may be flat **`*.md`** files or Cursor-style **`<id>/SKILL.md`**. Users can also **force** a skill with Cursor-style **`/<skill-id> [optional task]`** (id = frontmatter `name`, or flat file stem / parent directory name): that skill is injected for the turn (skipping Top-K),
-  and the remainder becomes the real `user` text (default: “请按该技能执行。” when empty). Built-in slash commands (`/help`, `/skills`, `/clear`, …) still take priority. Unknown `/id` returns a clear error (Web: **`SKILL_INVOKE_FAILED`**). **Web** composer shows a **`/`** popup of **built-in commands** (`/skills`, `/skills list`)
-  plus skill **id + description** via **`GET /skills`** (frontmatter **`description:`**, else first body line — YAML block scalars are honoured, `>-` folding to spaces and `|` keeping newlines; response includes **`skills_dir` / `skills_user_dir` / `skills_system_dir`**)
-  . IME composition does not intercept arrow keys/Enter or send. **`/skills list`** shows callable `/id` values. First-turn living docs and dependency brief use **`living_docs_*` / `project_dependency_brief_*`** and land in a **dedicated `user`**, separate from **`system`**; the **project profile** (`project_profile_*`)
-  is **not** injected on the first turn and is only served by **`GET /workspace/profile`** / **`repo_overview_sweep`** on demand. This can improve relevance but trades off retrieval error, latency, and **`CM_CONTEXT_*`** / **`CM_TOOL_MESSAGE_MAX_CHARS`** budgets; treat the workspace as a **trust boundary** (see **`AGENTS.md` → Repository engineering rules → Security-sensitive surfaces**).
+**Workspace + user-query dynamic selection**: With **`skills_enabled`** and **`skills_top_k`** (**`CM_SKILLS_TOP_K`**),
+  Web (and Client **`crabmate-tui`**) can merge Top-K snippets from the **merged three-layer skills catalog** into the first **`system`** each turn:
+  workspace **`skills_dir`** (default **`.crabmate/skills`**),
+  user **`skills_user_dir`** (default **`$XDG_CONFIG_HOME/crabmate/skills`**), system **`skills_system_dir`** (default **`/etc/crabmate/skills`**);
+    same callable id prefers **workspace > user > system** (cross-layer override;
+    same-layer duplicates may still be ambiguous). Host skills paths are **independent** of whether XDG `config.toml` is auto-loaded in the source tree
+    (missing dirs are skipped)
+  . Use **`CM_SKILLS_DISABLE_HOST_LAYERS=1`** in tests/CI for isolation. First-time seed from **`/etc/crabmate`** also copies **`skills/`** into XDG
+    when present (no overwrite); the system layer still reads **`/etc`**,
+  so deleting only the user copy does not disable a packaged skill. Skills may be flat **`*.md`** files or Cursor-style **`<id>/SKILL.md`**. Users
+    can also **force** a skill with Cursor-style **`/<skill-id> [optional task]`** (id = frontmatter `name`, or flat file stem / parent directory name):
+    that skill is injected for the turn (skipping Top-K),
+  and the remainder becomes the real `user` text (default: “请按该技能执行。” when empty). Built-in slash commands (`/help`, `/skills`, `/clear`, …)
+    still take priority. Unknown `/id` returns a clear error (Web:
+    **`SKILL_INVOKE_FAILED`**). **Web** composer shows a **`/`** popup of **built-in commands** (`/skills`, `/skills list`)
+  plus skill **id + description** via **`GET /skills`** (frontmatter **`description:`**, else first body line — YAML block scalars are honoured,
+    `>-` folding to spaces and `|` keeping newlines; response includes **`skills_dir` / `skills_user_dir` / `skills_system_dir`**)
+  . IME composition does not intercept arrow keys/Enter or send. **`/skills list`** shows callable `/id` values. First-turn living docs and
+    dependency brief use **`living_docs_*` / `project_dependency_brief_*`** and land in a **dedicated `user`**, separate from **`system`**;
+    the **project profile** (`project_profile_*`)
+  is **not** injected on the first turn and is only served by **`GET /workspace/profile`** / **`repo_overview_sweep`** on demand. This can improve
+    relevance but trades off retrieval error, latency, and **`CM_CONTEXT_*`** / **`CM_TOOL_MESSAGE_MAX_CHARS`** budgets;
+    treat the workspace as a **trust boundary** (see **`AGENTS.md` → Repository engineering rules → Security-sensitive surfaces**).
 
 ### Docker tool sandbox
 
@@ -365,11 +473,14 @@ llm_http_auth_mode = "none"
 ```
 
 Then **`API_KEY`** is not required for `serve`. Prefer request body **`client_llm.api_key`** (official Client);
-  process env **`API_KEY`** remains an optional fallback. Server model keyring slots are retired. In-process **`repl` / `chat` / `tui` entries are removed**. Function-calling quality depends on model/Ollama; try **`--no-tools`** to validate chat. `crabmate config` does **not** need **`API_KEY`**.
+  process env **`API_KEY`** remains an optional fallback. Server model keyring slots are retired. In-process **`repl` / `chat` / `tui` entries are
+    removed**. Function-calling quality depends on model/Ollama; try **`--no-tools`** to validate chat. `crabmate config` does **not** need **`API_KEY`**.
 
 ## MiniMax (OpenAI-compatible)
 
-MiniMax **`https://api.minimaxi.com/v1`** (aliases like **`https://api.minimax.io/v1`** may exist—use console). Docs show **`role: "system"`** but live API often returns **`invalid message role: system`**. CrabMate **auto-merges** **`system`** into **`user`** when **`model` / `api_base`** identify MiniMax (no TOML key). Other gateways keep a standalone **`system`** message.
+MiniMax **`https://api.minimaxi.com/v1`** (aliases like **`https://api.minimax.io/v1`** may exist—use console). Docs show **`role: "system"`** but
+  live API often returns **`invalid message role: system`**. CrabMate **auto-merges** **`system`** into **`user`** when **`model` / `api_base`**
+  identify MiniMax (no TOML key). Other gateways keep a standalone **`system`** message.
 
 Tested model IDs in this repo: **`MiniMax-M2.7`**, **`MiniMax-M2.7-highspeed`**, **`MiniMax-M2.5`**.
 
@@ -381,33 +492,48 @@ llm_http_auth_mode = "bearer"
 # llm_reasoning_split: omit → defaults to true on MiniMax; set false to disable
 ```
 
-**`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted), the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
+**`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted),
+  the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
 
 ### Less system-prompt echo in thinking/reasoning
 
-Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded default in **`config/default_config.toml`**, same section as **`system_prompt_file`**). Appendix text defaults from **`thinking_avoid_echo_appendix_file`** (shipped **`config/prompts/thinking_avoid_echo_appendix.md`** — edit on disk without rebuilding);
-  optional **`thinking_avoid_echo_appendix`** inline string. **Precedence**: non-empty **`thinking_avoid_echo_appendix_file`** is read from disk **before** inline; if neither is set,
-  a compile-time embedded default is used. **`tool_stats::augment_system_prompt`** appends the resolved body to the **first `system`** of **new** Web/CLI chats. **Soft** hint only. Disable with **`thinking_avoid_echo_system_prompt = false`** or **`CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**.
+Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded default in **`config/default_config.toml`**,
+  same section as **`system_prompt_file`**). Appendix text defaults from **`thinking_avoid_echo_appendix_file`** (shipped
+  **`config/prompts/thinking_avoid_echo_appendix.md`** — edit on disk without rebuilding);
+  optional **`thinking_avoid_echo_appendix`** inline string. **Precedence**:
+    non-empty **`thinking_avoid_echo_appendix_file`** is read from disk **before** inline; if neither is set,
+  a compile-time embedded default is used. **`tool_stats::augment_system_prompt`** appends the resolved body to the **first `system`** of **new**
+    Web/CLI chats. **Soft** hint only. Disable with **`thinking_avoid_echo_system_prompt = false`** or **`CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**.
 
 ## Zhipu GLM (OpenAI-compatible)
 
 **`api_base`**: **`https://open.bigmodel.cn/api/paas/v4`** (do not append `/chat/completions`). **`model`**: e.g. **`glm-5`**. **`API_KEY`** as Bearer.
 
-Minimal vendor-style request: **`model`**, **`messages`**, **`stream: true`** without **`thinking`**. CrabMate with **`llm_bigmodel_thinking = false`** omits **`thinking`**; Web/CLI streaming uses **`stream: true`**.
+Minimal vendor-style request: **`model`**, **`messages`**,
+  **`stream: true`** without **`thinking`**. CrabMate with **`llm_bigmodel_thinking = false`** omits **`thinking`**;
+  Web/CLI streaming uses **`stream: true`**.
 
-Optional deep thinking: **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**) → **`thinking: { "type": "enabled" }`** per [GLM-5 docs](https://docs.bigmodel.cn/cn/guide/models/text/glm-5).
+Optional deep thinking: **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**)
+  → **`thinking: { "type": "enabled" }`** per [GLM-5 docs](https://docs.bigmodel.cn/cn/guide/models/text/glm-5).
 
 ## Moonshot Kimi (OpenAI-compatible)
 
-**`POST https://api.moonshot.cn/v1/chat/completions`**. In CrabMate: **`api_base` = `https://api.moonshot.cn/v1`**. Models: **`kimi-k2.5`**, **`kimi-k2-thinking`**, **`moonshot-v1-8k`**, etc.—see [Kimi docs](https://platform.moonshot.cn/docs/api/chat).
+**`POST https://api.moonshot.cn/v1/chat/completions`**. In CrabMate: **`api_base` = `https://api.moonshot.cn/v1`**. Models: **`kimi-k2.5`**,
+  **`kimi-k2-thinking`**, **`moonshot-v1-8k`**, etc.—see [Kimi docs](https://platform.moonshot.cn/docs/api/chat).
 
-**`max_tokens` vs `max_completion_tokens`**: Kimi deprecates **`max_tokens`** in favor of **`max_completion_tokens`**; CrabMate still sends **`max_tokens`** from **`[agent]`** for compatibility—if you hit length-related 400s, lower **`max_tokens`** or watch for future **`max_completion_tokens`** support.
+**`max_tokens` vs `max_completion_tokens`**: Kimi deprecates **`max_tokens`** in favor of **`max_completion_tokens`**;
+  CrabMate still sends **`max_tokens`** from **`[agent]`** for compatibility—if you hit length-related 400s,
+  lower **`max_tokens`** or watch for future **`max_completion_tokens`** support.
 
-**`thinking` (kimi-k2.5 only)**: Optional **`enabled`/`disabled`**; server default near enabled. **`llm_kimi_thinking_disabled = true`** sends **`thinking: { "type": "disabled" }`** only when **`model`** matches **`kimi-k2.5*`**. If both **`llm_bigmodel_thinking`** and Kimi apply, **Kimi disabled wins**.
+**`thinking` (kimi-k2.5 only)**: Optional **`enabled`/`disabled`**;
+  server default near enabled. **`llm_kimi_thinking_disabled = true`** sends **`thinking: { "type": "disabled" }`** only when **`model`** matches
+  **`kimi-k2.5*`**. If both **`llm_bigmodel_thinking`** and Kimi apply, **Kimi disabled wins**.
 
-**Multi-turn + tools**: With k2.5 default thinking, assistants with **`tool_calls`** may need **`reasoning_content`**; CrabMate preserves or pads empty **`reasoning_content`** on those messages when required.
+**Multi-turn + tools**: With k2.5 default thinking, assistants with **`tool_calls`** may need **`reasoning_content`**;
+  CrabMate preserves or pads empty **`reasoning_content`** on those messages when required.
 
-**`temperature`**: Auto-clamped: **`kimi-k2.5*`** and **`kimi-k2-thinking*`** → **1.0**; other **`kimi-k2*`** (e.g. **`kimi-k2-0905-preview`**) → **0.6**; **`moonshot-v1-*`** uses configured **`temperature`**.
+**`temperature`**: Auto-clamped: **`kimi-k2.5*`** and **`kimi-k2-thinking*`** → **1.0**; other **`kimi-k2*`** (e.g. **`kimi-k2-0905-preview`**)
+  → **0.6**; **`moonshot-v1-*`** uses configured **`temperature`**.
 
 ```toml
 [agent]
@@ -419,19 +545,33 @@ llm_http_auth_mode = "bearer"
 
 ## Volcano Engine Ark (OpenAI-compatible, incl. Coding Plan)
 
-If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.cn-beijing.volces.com/api/coding/v3`**), CrabMate **does not apply Moonshot-hosted Kimi request shaping**,
+If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.cn-beijing.volces.com/api/coding/v3`**),
+  CrabMate **does not apply Moonshot-hosted Kimi request shaping**,
   so it **does not emit Moonshot-only fields** like **`thinking`** that Ark rejects with HTTP **400 InvalidParameter**,
-  and it **omits MiniMax-only `reasoning_split`** even if **`CM_LLM_REASONING_SPLIT`** / **`llm_reasoning_split`** were enabled elsewhere. Set **`model`** exactly as the console shows (e.g. **`Kimi-K2.6`**). Use your Ark **`API_KEY`** with **`llm_http_auth_mode = bearer`**.
+  and it **omits MiniMax-only `reasoning_split`** even if **`CM_LLM_REASONING_SPLIT`** / **`llm_reasoning_split`** were enabled elsewhere. Set
+    **`model`** exactly as the console shows (e.g. **`Kimi-K2.6`**). Use your Ark **`API_KEY`** with **`llm_http_auth_mode = bearer`**.
 
 ## DeepSeek (OpenAI-compatible)
 
-**`api_base`** containing **`deepseek`** (e.g. **`https://api.deepseek.com/v1`**) or a model ID starting with **`deepseek-`** selects the DeepSeek vendor adapter (after Kimi/MiniMax/Zhipu routing in **`config/llm_vendors.toml`**). Per [DeepSeek thinking mode](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode), CrabMate may send **`thinking: {"type":"enabled"|"disabled"}`** and,
-  when explicitly enabling, **`reasoning_effort: "high"`** on **`chat/completions`** requests. The catalog **`models`** list includes **`deepseek-v4-flash`**, **`deepseek-v4-pro`**, and **`deepseek-v4-flash-vision-exp`** (the latter sets **`image_url_content_parts`**). Chat attachments stay as **`/uploads/<file>`** in the session (files on disk in **`chat_uploads/`** beside the session SQLite,
-  not the current workspace root; **`GET /uploads/{filename}`** uses the same auth as other APIs). Workspace **`@image.png` / `file:///image.png`** are not expanded as source text. On the wire, text models drop image parts (avoids HTTP 400),
-  while vision models inline `/uploads/` and workspace raster files as **`data:`** URLs per [Vision](https://api-docs.deepseek.com/guides/vision). Set **`model`** to **`deepseek-v4-flash-vision-exp`** to actually see images.
+**`api_base`** containing **`deepseek`** (e.g. **`https://api.deepseek.com/v1`**)
+  or a model ID starting with **`deepseek-`** selects the DeepSeek vendor adapter (after Kimi/MiniMax/Zhipu routing in **`config/llm_vendors.toml`**).
+  Per [DeepSeek thinking mode](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode),
+  CrabMate may send **`thinking: {"type":"enabled"|"disabled"}`** and,
+  when explicitly enabling,
+    **`reasoning_effort: "high"`** on **`chat/completions`** requests. The catalog **`models`** list includes **`deepseek-v4-flash`**,
+    **`deepseek-v4-pro`**,
+    and **`deepseek-v4-flash-vision-exp`** (the latter sets **`image_url_content_parts`**). Chat attachments stay as **`/uploads/<file>`** in the session
+    (files on disk in **`chat_uploads/`** beside the session SQLite,
+  not the current workspace root;
+    **`GET /uploads/{filename}`** uses the same auth as other APIs). Workspace **`@image.png` / `file:///image.png`** are not expanded as source text. On
+    the wire, text models drop image parts (avoids HTTP 400),
+  while vision models inline `/uploads/` and workspace raster files as **`data:`** URLs per [Vision](https://api-docs.deepseek.com/guides/vision).
+    Set **`model`** to **`deepseek-v4-flash-vision-exp`** to actually see images.
 
-- **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**, or Web **`client_llm.llm_thinking_mode: on`**) → **`thinking` enabled** + **`reasoning_effort: high`**.
-- **`llm_kimi_thinking_disabled = true`** (Web **`llm_thinking_mode: off`** sets this) → **`thinking` disabled**; **`reasoning_effort`** omitted. If both flags apply, **disabled wins** (same precedence as Kimi).
+- **`llm_bigmodel_thinking = true`** (**`CM_LLM_BIGMODEL_THINKING=1`**, or Web **`client_llm.llm_thinking_mode: on`**)
+  → **`thinking` enabled** + **`reasoning_effort: high`**.
+- **`llm_kimi_thinking_disabled = true`** (Web **`llm_thinking_mode: off`** sets this) → **`thinking` disabled**;
+  **`reasoning_effort`** omitted. If both flags apply, **disabled wins** (same precedence as Kimi).
 - Neither flag → omit both fields; gateway defaults apply (docs: thinking **enabled** by default).
 
 Structured no-tools JSON paths (if any) still strip **`thinking`**, **`reasoning_split`**, and **`reasoning_effort`**.
@@ -450,24 +590,40 @@ model = "deepseek-reasoner"
 
 ## Final answer plan (`final_plan_requirement`)
 
-When the model ends a turn **without** `tool_calls`, whether an embeddable **`agent_reply_plan`** JSON is required (details: **[DEVELOPMENT.md](DEVELOPMENT.md)**).
+When the model ends a turn **without** `tool_calls`, whether an embeddable **`agent_reply_plan`** JSON is required (details:
+  **[DEVELOPMENT.md](DEVELOPMENT.md)**).
 
 - **`workflow_reflection`** (default): require plan only after workflow reflection path.
 - **`never`**: no enforcement.
 - **`always`** (experimental): every final answer—**higher cost**.
 
-With `workflow_validate_only` results, **`spec.layer_count`** constrains step count. Optional **`workflow_node_id`** must be a subset of **`nodes[].id`** from the latest **`workflow_execute`** result.
+With `workflow_validate_only` results,
+  **`spec.layer_count`** constrains step count. Optional **`workflow_node_id`** must be a subset of **`nodes[].id`** from the latest
+  **`workflow_execute`** result.
 
-**Strict node coverage (`final_plan_require_strict_workflow_node_coverage`, default `false`, `CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`)**: when `true`, if **any** step sets `workflow_node_id`, the plan must reference **every** `nodes[].id` from the latest workflow tool result at least once. If no step sets `workflow_node_id`, this rule does not apply.
+**Strict node coverage (`final_plan_require_strict_workflow_node_coverage`, default `false`, `CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`)**:
+  when `true`, if **any** step sets `workflow_node_id`,
+  the plan must reference **every** `nodes[].id` from the latest workflow tool result at least once. If no step sets `workflow_node_id`,
+  this rule does not apply.
 
-**Optional semantic side-check LLM (default off)**: **`final_plan_semantic_check_enabled`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`, default `false`) with **`final_plan_requirement = workflow_reflection`**: after static checks pass, if a tool digest can be built from history,
-  one extra no-tools `chat/completions` asks whether the plan contradicts recent tool output. The side model replies with JSON only: `{"consistent":true}` or `{"consistent":false,"violation_codes":["…"],"rationale":"…"}`; unparsable plain text fails open as consistent. On inconsistent,
-  the rewrite user message includes a fenced JSON block **`crabmate_plan_semantic_feedback` v1** with **`violation_codes`** (and optional **`rationale`**) before the usual plan-rewrite instructions; this counts against **`plan_rewrite_max_attempts`**. **`final_plan_semantic_check_max_non_readonly_tools`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`, default `0`, range 0–32)
-  caps extra non-readonly tool lines in the digest; at `0`, high-risk builtin names (e.g. `run_command`, `workflow_execute`) and readonly tools may still appear. **`final_plan_semantic_check_max_tokens`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`, default `256`, clamp 32–1024) sets side-call `max_tokens`. Parse/API failures **fail open** (treat as consistent).
+**Optional semantic side-check LLM (default off)**: **`final_plan_semantic_check_enabled`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`, default `false`)
+  with **`final_plan_requirement = workflow_reflection`**: after static checks pass, if a tool digest can be built from history,
+  one extra no-tools `chat/completions` asks whether the plan contradicts recent tool output. The side model replies with JSON only:
+    `{"consistent":true}` or `{"consistent":false,"violation_codes":["…"],"rationale":"…"}`;
+    unparsable plain text fails open as consistent. On inconsistent,
+  the rewrite user message includes a fenced JSON block **`crabmate_plan_semantic_feedback` v1** with **`violation_codes`** (and optional
+    **`rationale`**) before the usual plan-rewrite instructions;
+    this counts against **`plan_rewrite_max_attempts`**. **`final_plan_semantic_check_max_non_readonly_tools`**
+    (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`, default `0`, range 0–32)
+  caps extra non-readonly tool lines in the digest; at `0`, high-risk builtin names (e.g. `run_command`, `workflow_execute`)
+    and readonly tools may still appear. **`final_plan_semantic_check_max_tokens`** (`CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`, default `256`,
+    clamp 32–1024) sets side-call `max_tokens`. Parse/API failures **fail open** (treat as consistent).
 
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
-Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**, see **`docs/en/SSE_PROTOCOL.md`**). The rewrite user carries a **short** required-field brief plus a minimal JSON example;
+Max “please rewrite” user injections when the plan is invalid; when exhausted,
+  stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**,
+  see **`docs/en/SSE_PROTOCOL.md`**). The rewrite user carries a **short** required-field brief plus a minimal JSON example;
   full schema rules stay on the validator side, with failure **feedback codes** (and workflow “supplement” lines) injected instead of the long rule dump.
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
@@ -475,11 +631,15 @@ Max “please rewrite” user injections when the plan is invalid; when exhauste
 ### Modes
 
 - **`none` (default)**: **`SyncDefault`** and **`run_command`** run on host **`spawn_blocking`**.
-- **`docker`**: After allowlist/approval on host, **SyncDefault**, **`run_command`**, **`run_executable`**, **`get_weather`**, **`web_search`**, **`http_fetch`**, **`http_request`** run in ephemeral containers via **bollard** (like `docker run --rm -i`): workspace at **`/workspace`**,
+- **`docker`**: After allowlist/approval on host, **SyncDefault**, **`run_command`**, **`run_executable`**, **`get_weather`**, **`web_search`**,
+  **`http_fetch`**, **`http_request`** run in ephemeral containers via **bollard** (like `docker run --rm -i`): workspace at **`/workspace`**,
   read-only host **`crabmate`** at **`/crabmate`**, internal **`crabmate tool-runner-internal`**. **`workflow_execute`** and **`mcp__*`** stay on host.
 
-**bollard crate features (maintainers)**: Root **`Cargo.toml`** sets **`default-features = false`** on **bollard** and enables only **`http`** + **`pipe`** (local **`unix://`**, Windows named pipes,
-  plain **`tcp://`** / **`http://`** **`DOCKER_HOST`**—smaller deps/binary). For **`https://`** **`DOCKER_HOST`** or **`DOCKER_TLS_VERIFY`**, add **`ssl`** to **bollard**’s **`features`** and rebuild (pulls **rustls**, etc.).
+**bollard crate features (maintainers)**:
+  Root **`Cargo.toml`** sets **`default-features = false`** on **bollard** and enables only **`http`** + **`pipe`** (local **`unix://`**,
+  Windows named pipes,
+  plain **`tcp://`** / **`http://`** **`DOCKER_HOST`**—smaller deps/binary). For **`https://`** **`DOCKER_HOST`** or **`DOCKER_TLS_VERIFY`**,
+    add **`ssl`** to **bollard**’s **`features`** and rebuild (pulls **rustls**, etc.).
 
 ### Prerequisites
 
@@ -517,7 +677,8 @@ Env: `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_I
 ### Timeout & user
 
 - **`sync_default_tool_sandbox_docker_timeout_secs`**: Container wait cap (default 600s), then force remove.
-- **`sync_default_tool_sandbox_docker_user`**: Docker **`user`**. Default **`current`/`host`**: Unix **euid:egid**; **`image`/`default`**: image **`USER`**; other values passed through.
+- **`sync_default_tool_sandbox_docker_user`**: Docker **`user`**. Default **`current`/`host`**: Unix **euid:egid**; **`image`/`default`**:
+  image **`USER`**; other values passed through.
 
 ### Security & ops
 
@@ -527,14 +688,26 @@ Env: `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_I
 
 ## System prompt
 
-- **Default**: **`system_prompt_file = "config/prompts/base_system_prompt.md"`** (domain-neutral L0; read at runtime; edit without rebuild). When **`coding_workbench_enabled = true`** (default),
-  **`finalize`** also appends **`coding_workbench_increment_file`** (default **`config/prompts/coding_workbench_increment.md`**). Disable or replace L0b via **`[agent] coding_workbench_enabled`** / **`coding_workbench_increment_file`**,
-  or **`CM_CODING_WORKBENCH_ENABLED`** / **`CM_CODING_WORKBENCH_INCREMENT_FILE`** (falls back to embedded body on read failure). Per-role **`prepend_coding_workbench`** (default true; still gated by the global flag) skips L0b when false — companion / philosopher / literary ship with false.
-- **Relative path resolution**: process **cwd** → each overlay **config file directory** (later wins, e.g. `.agent_demo.toml` before `config.toml`) → **`run_command_working_dir`**. **Absolute** paths tried as-is.
-- **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env: **`CM_SYSTEM_PROMPT`** clears merged file; **`CM_SYSTEM_PROMPT_FILE`** wins if both set.
+- **Default**: **`system_prompt_file = "config/prompts/base_system_prompt.md"`** (domain-neutral L0; read at runtime;
+  edit without rebuild). When **`coding_workbench_enabled = true`** (default),
+  **`finalize`** also appends **`coding_workbench_increment_file`** (default **`config/prompts/coding_workbench_increment.md`**). Disable or replace
+    L0b via **`[agent] coding_workbench_enabled`** / **`coding_workbench_increment_file`**,
+  or **`CM_CODING_WORKBENCH_ENABLED`** / **`CM_CODING_WORKBENCH_INCREMENT_FILE`** (falls back to embedded body on read failure). Per-role
+    **`prepend_coding_workbench`** (default true; still gated by the global flag)
+    skips L0b when false — companion / philosopher / literary ship with false.
+- **Relative path resolution**: process **cwd** → each overlay **config file directory** (later wins, e.g. `.agent_demo.toml` before `config.toml`)
+  → **`run_command_working_dir`**. **Absolute** paths tried as-is.
+- **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env:
+  **`CM_SYSTEM_PROMPT`** clears merged file; **`CM_SYSTEM_PROMPT_FILE`** wins if both set.
 - **finalize**: Read file if **`system_prompt_file`** set; else non-empty inline; else error.
-- **Shipped default body**: **`config/prompts/base_system_prompt.md`** (L0) plus **`coding_workbench_increment.md`** (L0b for dev workflows). Instruction precedence, tool discipline, and communication norms are split across these files and the workspace-root `AGENTS.md`. Fully custom: replace those files or set `system_prompt_file`.
-- **Embedded defaults** (`config/default_config.toml`): **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`** (override via inline **`thinking_avoid_echo_appendix`** or **`CM_THINKING_AVOID_ECHO_APPENDIX*`**); see § *Reduce system-prompt echo in thinking chains* above.
+- **Shipped default body**: **`config/prompts/base_system_prompt.md`** (L0)
+  plus **`coding_workbench_increment.md`** (L0b for dev workflows). Instruction precedence, tool discipline,
+  and communication norms are split across these files and the workspace-root `AGENTS.md`. Fully custom:
+  replace those files or set `system_prompt_file`.
+- **Embedded defaults** (`config/default_config.toml`):
+  **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`**
+  (override via inline **`thinking_avoid_echo_appendix`** or **`CM_THINKING_AVOID_ECHO_APPENDIX*`**);
+  see § *Reduce system-prompt echo in thinking chains* above.
 
 ## Session mode (Ask / Plan / Act)
 
@@ -547,14 +720,21 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 | **act** | full ∩ role `allowed_tools` | Default |
 
 - **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
-- **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
-- **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly in `run_dispatch`. Successful turns save/keep **`active_session_mode`**.
-- **vs intent classification**: L2 and intent-gate config keys removed (retirement **R4**); capability bounds come from Ask/Plan/Act; Act also runs utterance keyword readonly heuristics.
+- **Precedence**:
+  request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary →
+  **`ask`**) → global config default.
+- **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**;
+  **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**;
+  **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly in `run_dispatch`. Successful turns save/keep
+  **`active_session_mode`**.
+- **vs intent classification**: L2 and intent-gate config keys removed (retirement **R4**); capability bounds come from Ask/Plan/Act;
+  Act also runs utterance keyword readonly heuristics.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 
 ## Permission levels (`permission_level`: L0–L4)
 
-One knob projects onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and per-axis equivalence notes: [`../design/permission_levels.md`](../design/permission_levels.md). Chinese source of truth: `docs/配置说明.md` § 权限等级.
+One knob projects onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and per-axis equivalence
+  notes: [`../design/permission_levels.md`](../design/permission_levels.md). Chinese source of truth: `docs/配置说明.md` § 权限等级.
 
 | Level | Meaning |
 |---|---|
@@ -564,66 +744,118 @@ One knob projects onto six axes (tool visibility / external tools / path / comma
 | **`approved`** (L3, **default**) | Same baseline as L2, but out-of-bounds actions go through human approval (AllowOnce / AllowAlways) |
 | **`unrestricted`** (L4) | Not limited by workspace paths or the command allowlist; no prompts, audit-only |
 
-- **Default**: **`[agent] permission_level = "approved"`**; env **`CM_PERMISSION_LEVEL`**. Behavior under the default config is unchanged from before this feature.
-- **Precedence (narrow-only)**: request `permission_level` → persisted `active_permission_level` → `min(permission_level, permission_level_max, role max_permission_level)`; `ask` / `plan` additionally clamp the result to ≤ `read`. No step can widen.
+- **Default**: **`[agent] permission_level = "approved"`**;
+  env **`CM_PERMISSION_LEVEL`**. Behavior under the default config is unchanged from before this feature.
+- **Precedence (narrow-only)**:
+  request `permission_level` → persisted `active_permission_level` → `min(permission_level, permission_level_max, role max_permission_level)`;
+  `ask` / `plan` additionally clamp the result to ≤ `read`. No step can widen.
 - **Ceiling `permission_level_max`**: omitted ⇒ derived from the bind address (`127.0.0.1` → `unrestricted`, non-loopback → `approved`) and frozen at startup;
-  env **`CM_PERMISSION_LEVEL_MAX`**. Non-loopback L4 additionally requires **`allow_unrestricted_permission_for_non_loopback = true`** (**`CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`**), otherwise **`serve` refuses to start**. `POST /config/reload` can only **lower** it.
+  env **`CM_PERMISSION_LEVEL_MAX`**. Non-loopback L4 additionally requires **`allow_unrestricted_permission_for_non_loopback = true`**
+    (**`CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`**), otherwise **`serve` refuses to start**. `POST /config/reload` can only **lower** it.
 - **Per-role cap**: optional **`max_permission_level`** on `agent_roles.toml` rows (TOML only), combined with `min`.
-- **Web**: optional `permission_level` on **`POST /chat*`** (unknown value → **400** `INVALID_PERMISSION_LEVEL`), persisted as **intent** in `active_permission_level` and re-clamped every turn. **`GET /conversation/messages`** returns `active_permission_level` (intent)
-  **and** `effective_permission_level` (after clamps). **`GET /permission`** is the read-only selector projection (`level` / `level_source` / `ceiling` / `ceiling_source` / `available` / `clamped_by` / `caps`; optional `?agent_role=` / `?conversation_id=`). **`POST /conversation/state`** updates the idle-time intents (`permission_level` / `session_mode` / `agent_role`)
-  without touching messages or bumping `revision`. **`GET /tools`** reports `available_at_level` per tool plus the baseline `permission_level`. **`GET /status?view=shell`** exposes `permission_level_default` and `permission_level_max` only.
+- **Web**: optional `permission_level` on **`POST /chat*`** (unknown value → **400** `INVALID_PERMISSION_LEVEL`),
+  persisted as **intent** in `active_permission_level` and re-clamped every turn. **`GET /conversation/messages`** returns `active_permission_level`
+  (intent)
+  **and** `effective_permission_level` (after clamps). **`GET /permission`** is the read-only selector projection (`level` / `level_source` /
+    `ceiling` / `ceiling_source` / `available` / `clamped_by` / `caps`;
+    optional `?agent_role=` / `?conversation_id=`). **`POST /conversation/state`** updates the idle-time intents (`permission_level` / `session_mode` /
+    `agent_role`)
+  without touching messages or bumping `revision`. **`GET /tools`** reports `available_at_level` per tool plus the baseline `permission_level`.
+    **`GET /status?view=shell`** exposes `permission_level_default` and `permission_level_max` only.
 - **No ceiling-writing endpoint, by design**: an HTTP endpoint able to raise `permission_level_max` would defeat the startup gate (design doc §16.3).
 - **Audit**: `unrestricted` records every level-based allow under `target: "permission_audit"`; denials (L0–L2) and human approvals are always recorded.
-- **Not implemented yet**: `PathScope::AllowedRoots` (`workspace_allowed_roots` does not widen `workspace` / `approved` paths), the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`), and the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
+- **Not implemented yet**: `PathScope::AllowedRoots` (`workspace_allowed_roots` does not widen `workspace` / `approved` paths),
+  the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`),
+  and the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
 
 ## Multi-role (agent_roles)
 
-Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with a lightweight skills index at finalize; full skills bodies are injected per-turn by L5). Project rules **`AGENTS.md`** are **not** part of role systems: they are appended at runtime to the first `system` from the session workspace root (see below).
+Besides the global `system_prompt`,
+  you can define **named ids** with their own first-turn `system` text (each merged with a lightweight skills index at finalize;
+  full skills bodies are injected per-turn by L5). Project rules **`AGENTS.md`** are **not** part of role systems:
+  they are appended at runtime to the first `system` from the session workspace root (see below).
 
 - **Sources** (later overlays win for the same id):  
-  1. **`[[agent_roles]]`** rows in the main config: **`id`**, plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system. Optional **`prepend_coding_workbench`** (default true): when false, that role skips L0b (still gated by global **`coding_workbench_enabled`**).  
-  2. **`config/agent_roles.toml`** when not using **`--config`**; with **`--config path/to/foo.toml`**, read **`path/to/agent_roles.toml`** next to it. Shape: **`[agent_roles]`**, optional **`default_role`**, **`[agent_roles.roles.<id>]`** (see `config/agent_roles.toml`).
-- **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**, or **`CM_DEFAULT_CM_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
-- **Optional `allowed_tools` (multi-role workbench)**: On **`[[agent_roles]]`** rows or **`[agent_roles.roles.<id>]`**, you may set a string array **`allowed_tools`**. When non-empty, that role may call **only** those built-in tool names;
+  1. **`[[agent_roles]]`** rows in the main config: **`id`**,
+    plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system. Optional
+    **`prepend_coding_workbench`** (default true): when false, that role skips L0b (still gated by global **`coding_workbench_enabled`**).
+  2. **`config/agent_roles.toml`** when not using **`--config`**; with **`--config path/to/foo.toml`**,
+    read **`path/to/agent_roles.toml`** next to it. Shape: **`[agent_roles]`**, optional **`default_role`**,
+    **`[agent_roles.roles.<id>]`** (see `config/agent_roles.toml`).
+- **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**,
+  or **`CM_DEFAULT_CM_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
+- **Optional `allowed_tools` (multi-role workbench)**: On **`[[agent_roles]]`** rows or **`[agent_roles.roles.<id>]`**,
+  you may set a string array **`allowed_tools`**. When non-empty, that role may call **only** those built-in tool names;
   include the literal **`mcp`** to allow all **`mcp__*`** MCP proxy tools,
-  or list a full **`mcp__{slug}__{remote}`** name for precise allow. Omit or use an empty list for **no restriction** (legacy behavior). The effective named id for tool policy follows **`agent_role` request → persisted `active_agent_role` → `default_agent_role_id`**,
+  or list a full **`mcp__{slug}__{remote}`** name for precise allow. Omit or use an empty list for **no restriction** (legacy behavior). The
+    effective named id for tool policy follows **`agent_role` request → persisted `active_agent_role` → `default_agent_role_id`**,
   aligned with the first `system` message role.
-- **Web**: optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. **New session** (no stored history for **`conversation_id`**): same as before, seeds first-turn `system`. **Existing session**: if **`agent_role`** differs from persisted **`active_agent_role`**,
-  the server **refreshes only the first `system`** and updates the stored role, **keeping** the rest of the transcript; omitting **`agent_role`** keeps the last persisted role. With **`allowed_tools`**, each turn filters tools sent to the model and rejects disallowed execution.
-- **CLI**: Global **`--agent-role`** was removed with in-process **`chat`/`repl`** (D2.1). Use Web / API **`agent_role`**, or Client **`crabmate-tui`**; **`allowed_tools`** still follow the request/session role id (and configured default).
+- **Web**:
+  optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. **New session** (no stored history for **`conversation_id`**):
+  same as before, seeds first-turn `system`. **Existing session**: if **`agent_role`** differs from persisted **`active_agent_role`**,
+  the server **refreshes only the first `system`** and updates the stored role, **keeping** the rest of the transcript;
+    omitting **`agent_role`** keeps the last persisted role. With **`allowed_tools`**,
+    each turn filters tools sent to the model and rejects disallowed execution.
+- **CLI**: Global **`--agent-role`** was removed with in-process **`chat`/`repl`** (D2.1). Use Web / API **`agent_role`**,
+  or Client **`crabmate-tui`**; **`allowed_tools`** still follow the request/session role id (and configured default).
 - **Web composer**: built-in control slashes such as **`/agent`** (list / `set <id>`) (see the Client repo).
 - **Hot reload**: role table reloads with **`POST /config/reload`**.
 - **`GET /status`**: **`agent_role_ids`**, **`default_agent_role_id`**.
 
 ## Project rules (AGENTS.md)
 
-When **`agents_md_enabled`** (**default `true`**), the server reads `AGENTS.md` from the **session workspace root** while composing the first `system`, renders it as a "Project rules (AGENTS.md)" section right after the L3 base (before L4/L5),
-  and caps it by **`agents_md_max_chars`** (truncation adds a notice; the total block never exceeds the cap). If the file is missing or empty, nothing is appended (same effect as disabled).
+When **`agents_md_enabled`** (**default `true`**),
+  the server reads `AGENTS.md` from the **session workspace root** while composing the first `system`, renders it as a "Project rules (AGENTS.md)"
+  section right after the L3 base (before L4/L5),
+  and caps it by **`agents_md_max_chars`** (truncation adds a notice; the total block never exceeds the cap). If the file is missing or empty,
+    nothing is appended (same effect as disabled).
 
-- **`agents_md_max_chars` must be within 1024–1000000**: out-of-range values **fail startup validation** (a `0` does **not** disable it). To disable, set `agents_md_enabled = false` / `CM_AGENTS_MD_ENABLED=0`.
-- **Layer**: `system`, not the first `user` turn — rules must stay authoritative on every turn and must not be lost to long-session context folding. Note it is **not** composed only once:
-  for existing Web conversations the first `system` is recomputed on **every** turn (`refresh_existing_turn_system`), so edits to `AGENTS.md` take effect on the next turn and invalidate that session's `system` prefix cache (current trade-off: rule freshness over prefix-cache hit rate).
-- **Removed**: the old `.cursor/rules/*.mdc` compatibility plus `cursor_rules_*` / `CM_CURSOR_RULES_*` keys (**BREAKING**). Move any `.cursor/rules` content into the workspace root `AGENTS.md`; old keys now fail as unknown keys.
+- **`agents_md_max_chars` must be within 1024–1000000**: out-of-range values **fail startup validation** (a `0` does **not** disable it). To disable,
+  set `agents_md_enabled = false` / `CM_AGENTS_MD_ENABLED=0`.
+- **Layer**: `system`,
+  not the first `user` turn — rules must stay authoritative on every turn and must not be lost to long-session context folding. Note it is **not**
+  composed only once:
+  for existing Web conversations the first `system` is recomputed on **every** turn (`refresh_existing_turn_system`),
+    so edits to `AGENTS.md` take effect on the next turn and invalidate that session's `system` prefix cache (current trade-off:
+    rule freshness over prefix-cache hit rate).
+- **Removed**:
+  the old `.cursor/rules/*.mdc` compatibility plus `cursor_rules_*` / `CM_CURSOR_RULES_*` keys (**BREAKING**). Move any `.cursor/rules` content into
+  the workspace root `AGENTS.md`; old keys now fail as unknown keys.
 - **Process cwd is no longer used**: the path is always the session workspace root, so switching workspaces on Web switches the rules too.
-- **Symlinks**: if `AGENTS.md` is a symlink pointing **outside** the workspace, the server resolves the real path and **ignores** the file — its content goes into `system` and out to the model, so a workspace must not be able to read arbitrary local files that way. Symlinks pointing **inside** the workspace still work. This check is Unix-only.
+- **Symlinks**: if `AGENTS.md` is a symlink pointing **outside** the workspace,
+  the server resolves the real path and **ignores** the file — its content goes into `system` and out to the model,
+  so a workspace must not be able to read arbitrary local files that way. Symlinks pointing **inside** the workspace still work. This check is
+  Unix-only.
 
 ## Context window
 
-Before each model call, Server estimates the final-request input from vendor-shaped system/messages, the actual tools JSON, a conservative fixed image allowance, and request overhead. It subtracts `max_tokens` and the safety margin from `llm_context_tokens`, triggers at **85%**,
-  and targets **70%** by default. History is removed only as complete `user + assistant/tool chain` groups, preserving at least the two newest groups; `max_message_history` is a high-count fallback. With `llm_context_tokens = 0`,
-  **`context_char_budget`** remains the fallback. **`tool_message_max_chars`** compresses long **`role: tool`** content first; with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
+Before each model call, Server estimates the final-request input from vendor-shaped system/messages, the actual tools JSON,
+  a conservative fixed image allowance, and request overhead. It subtracts `max_tokens` and the safety margin from `llm_context_tokens`,
+  triggers at **85%**,
+  and targets **70%** by default. History is removed only as complete `user + assistant/tool chain` groups, preserving at least the two newest groups;
+    `max_message_history` is a high-count fallback. With `llm_context_tokens = 0`,
+  **`context_char_budget`** remains the fallback. **`tool_message_max_chars`** compresses long **`role: tool`** content first;
+    with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
 
 Trimming, summarization,
-  and tool-output compression now modify only a per-turn **`ModelContextView`**. A successful turn appends its new messages to the complete canonical history instead of overwriting SQLite with the compacted view. Hidden `ModelContextArtifact` sidecars retain summary text and canonical ranges;
-  **`GET /conversation/messages.context_artifacts`** exposes their optional replay recipes. Its **`tiktoken_prompt_tokens`** may also include `used_input_tokens`, `max_input_tokens`, reserved output, message/tools/attachment components, `counting_source`,
-  and `provider_input_tokens`. Provider usage wins when present; otherwise tokenizer/conservative estimates remain. All additions are optional for backward compatibility.
+  and tool-output compression now modify only a per-turn **`ModelContextView`**. A successful turn appends its new messages to the complete canonical
+    history instead of overwriting SQLite with the compacted view. Hidden `ModelContextArtifact` sidecars retain summary text and canonical ranges;
+  **`GET /conversation/messages.context_artifacts`** exposes their optional replay recipes. Its **`tiktoken_prompt_tokens`** may also include
+    `used_input_tokens`, `max_input_tokens`, reserved output, message/tools/attachment components, `counting_source`,
+  and `provider_input_tokens`. Provider usage wins when present;
+    otherwise tokenizer/conservative estimates remain. All additions are optional for backward compatibility.
 
 Crossing the Token trigger can force an LLM-summary attempt;
-  an explicit **`context_summary_trigger_chars > 0`** may still trigger earlier by characters. Summary tails align to complete turn-group boundaries. Prompts default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**,
-  **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**, both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env:
+  an explicit **`context_summary_trigger_chars > 0`** may still trigger earlier by characters. Summary tails align to complete turn-group boundaries.
+    Prompts default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**,
+  **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**,
+    both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env:
   **`CM_CONTEXT_SUMMARY_SYSTEM_FILE`**, **`CM_CONTEXT_SUMMARY_USER_FILE`**.
 
-The `/btw` side-channel reuses the same readonly compaction path (`prepare_readonly_model_messages`) and **never** writes canonical / archive / artifact. By default it only sync-trims and applies Token-budget compaction; an LLM summary is attempted only when **`context_btw_summary_enabled = true`** (**`CM_CONTEXT_BTW_SUMMARY_ENABLED`**), still subject to the same trigger rules.
+The `/btw` side-channel reuses the same readonly compaction path (`prepare_readonly_model_messages`)
+  and **never** writes canonical / archive / artifact. By default it only sync-trims and applies Token-budget compaction;
+  an LLM summary is attempted only when **`context_btw_summary_enabled = true`** (**`CM_CONTEXT_BTW_SUMMARY_ENABLED`**),
+  still subject to the same trigger rules.
 
 ## Web chat queue (`chat_queue_*`)
 
@@ -631,7 +863,8 @@ The `/btw` side-channel reuses the same readonly compaction path (`prepare_reado
 
 ## Readonly tool parallelism (`parallel_readonly_tools_max`)
 
-Caps concurrent readonly tools: eligible batch includes **`SyncDefault`**, **`http_fetch`** (GET/HEAD), **`get_weather`**, **`web_search`** (not **`http_request`**, **`run_command`**, MCP). Build-lock tools (**`cargo_*`**, **`npm_*`**) force serial batch.
+Caps concurrent readonly tools: eligible batch includes **`SyncDefault`**, **`http_fetch`** (GET/HEAD), **`get_weather`**,
+  **`web_search`** (not **`http_request`**, **`run_command`**, MCP). Build-lock tools (**`cargo_*`**, **`npm_*`**) force serial batch.
 
 ## HTTP client
 

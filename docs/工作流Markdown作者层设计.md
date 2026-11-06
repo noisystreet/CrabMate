@@ -23,7 +23,8 @@
 
 用户希望用**接近自然语言**的方式描述流程（含分支、循环叙事），同时仍走现有 **DAG 执行器**（审批、补偿、trace、`workflow_node_id` 对齐）。
 
-本文定义 **「作者层（Author Layer）」**：把 Markdown（或对话中的 MD 片段）变成 **`WorkflowSpec` 可消费的中间表示**，再交给既有 **`workflow_execute`**。作者层 **不** 替代调度器，也 **不** 在单轮 DAG 内引入无界环（与 **`工作流编排架构.md` §4.3** 一致）。
+本文定义 **「作者层（Author Layer）」**：把 Markdown（或对话中的 MD 片段）变成 **`WorkflowSpec` 可消费的中间表示**，
+  再交给既有 **`workflow_execute`**。作者层 **不** 替代调度器，也 **不** 在单轮 DAG 内引入无界环（与 **`工作流编排架构.md` §4.3** 一致）。
 
 ---
 
@@ -61,7 +62,8 @@ flowchart TB
 | **编译层**（建议新增） | `workflow_spec` → `workflow.nodes`；`when` / `for_each` 展开 | 必须 100% 可复现 |
 | **运行时** | 拓扑、并行、审批、补偿、trace | 已实现 |
 
-**原则**：无论路径 A 还是 B，**执行前**必须经过 **`parse_workflow_spec` + `workflow_tool_args_satisfy_required`**（及未来的 spec schema）；**禁止**「模型直接输出可执行 DAG 且跳过校验」作为唯一路径。
+**原则**：无论路径 A 还是 B，**执行前**必须经过 **`parse_workflow_spec` + `workflow_tool_args_satisfy_required`**（及未来的 spec schema）；
+  **禁止**「模型直接输出可执行 DAG 且跳过校验」作为唯一路径。
 
 ---
 
@@ -95,7 +97,8 @@ workflow:
 
 **围栏标识**：`crabmate-workflow`（info string 精确匹配；大小写敏感，与 CommonMark 惯例一致）。
 
-**块内语法**：首版推荐 **YAML**（人类友好）；可选接受 **JSON**（`version` 字段区分）。块内根对象对齐 **`workflow_execute` 的 `workflow` 键** 或独立的 **`workflow_spec`** 包装（见 §6）。
+**块内语法**：首版推荐 **YAML**（人类友好）；可选接受 **JSON**（`version` 字段区分）。
+  块内根对象对齐 **`workflow_execute` 的 `workflow` 键** 或独立的 **`workflow_spec`** 包装（见 §6）。
 
 ### 3.2 处理流水线
 
@@ -221,7 +224,8 @@ workflow:
 | **显式（推荐）** | 新工具 `workflow_from_markdown` 或编排提示词要求先出 `workflow_spec` 再执行 | 可测、可 validate |
 | **外环循环** | 「直到测试通过」用 **多轮 `agent_turn`** + 每轮小 DAG，而非单次解析无限循环 | 与 P-E-V 一致 |
 
-**`final_plan_semantic_check`** 类侧向 LLM 仅用于**规划一致性**，不替代 workflow 编译；若对「解析结果 vs 用户 MD」做语义检查，应单独开关并 **fail-open/fail-closed** 在配置中写明（默认建议 **fail-closed 仅阻止执行、不静默改 DAG**）。
+**`final_plan_semantic_check`** 类侧向 LLM 仅用于**规划一致性**，不替代 workflow 编译；若对「解析结果 vs 用户 MD」做语义检查，
+  应单独开关并 **fail-open/fail-closed** 在配置中写明（默认建议 **fail-closed 仅阻止执行、不静默改 DAG**）。
 
 ---
 
@@ -257,7 +261,8 @@ flowchart TD
 
 ## 6. 中间表示：`workflow_spec` v2（编译契约）
 
-**语法与字段的权威说明（使用者视角）** 见 **`docs/工作流编写教程.md`**：`steps` 常用能力见其 §5、`nodes` 模式见 §6、字段速查见 §7。本节只保留 **作者层 → 编译层** 的契约与设计约束，不重复 YAML 示例。
+**语法与字段的权威说明（使用者视角）** 见 **`docs/工作流编写教程.md`**：`steps` 常用能力见其 §5、`nodes` 模式见 §6、字段速查见 §7。
+  本节只保留 **作者层 → 编译层** 的契约与设计约束，不重复 YAML 示例。
 
 - **编译后仅保留 `nodes`**，与现有 **`workflow.nodes`（对象/数组）** 同形，交 **`parse_workflow_spec`** 消费。
 - **必需保证**：`for_each.max_items` / `repeat.count` 硬上限；块内**禁止** shell、任意表达式语言与无界 `while`。
@@ -273,7 +278,8 @@ flowchart TD
 | `repeat.count` | `id_1 … id_{count}` 链式 `deps` |
 | 无界 `while` | **拒绝编译** |
 
-**示例夹具**：`fixtures/workflows/`（`01_serial_after` … `09_fenced_in_markdown`，各配 `*.expected.json` 或为 `.md`）；`compile_spec` 落地后对照同名 `*.expected.json` 跑金样测试（见 §11）。无界 `for_each` 的**建议**错误码为 **`WORKFLOW_COMPILE_FOR_EACH_UNBOUND`**。
+**示例夹具**：`fixtures/workflows/`（`01_serial_after` … `09_fenced_in_markdown`，各配 `*.expected.json` 或为 `.md`）；
+  `compile_spec` 落地后对照同名 `*.expected.json` 跑金样测试（见 §11）。无界 `for_each` 的**建议**错误码为 **`WORKFLOW_COMPILE_FOR_EACH_UNBOUND`**。
 
 ## 7. 两种路径对比总表
 
@@ -293,7 +299,8 @@ flowchart TD
 
 ## 8. 分支、循环与「直到通过」（摘要）
 
-YAML 写法详见 **`docs/工作流编写教程.md` §5**（`steps`：`after` / `when` / `for_each` / `repeat` / `kind: choice`）与 **`fixtures/workflows/`**。两种作者路径**共享** **`docs/工作流编排架构.md`** 的边界：
+YAML 写法详见 **`docs/工作流编写教程.md` §5**（`steps`：`after` / `when` / `for_each` / `repeat` / `kind: choice`）与 **`fixtures/workflows/`**。
+  两种作者路径**共享** **`docs/工作流编排架构.md`** 的边界：
 
 | 用户叙事 | 作者层表达 | 执行层 |
 |----------|------------|--------|

@@ -2,9 +2,12 @@
 
 # CLI contract (exit codes, JSON, ops subcommands)
 
-For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/cm_config` clap, and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
+For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/cm_config` clap,
+  and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
 
-> **D2.1**: in-process **`crabmate chat`** entry is removed. Sections below about `chat` exit codes / `--output json` are **historical** (old scripts/logs). Prefer Client **`crabmate-tui`**, HTTP APIs, or this repo’s **`tool-replay`** / **`bench`**.
+> **D2.1**:
+> in-process **`crabmate chat`** entry is removed. Sections below about `chat` exit codes / `--output json` are **historical** (old scripts/logs).
+> Prefer Client **`crabmate-tui`**, HTTP APIs, or this repo’s **`tool-replay`** / **`bench`**.
 
 ## Process exit codes (historical: `chat`; current: `tool-replay`, etc.)
 
@@ -18,11 +21,14 @@ For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/cm_config` clap
 | 5 | Quota / rate limit | HTTP 429, 402, some 503 (heuristic) |
 | 6 | Tool replay mismatch | `tool-replay run --compare-recorded` string mismatch vs `recorded_output` |
 
-Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED` (**historical**, not emitted in production after D2.2), `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs` / `src/cm_runtime`. Tests: `tests/cli_contract.rs` (still asserts placeholder value 4).
+Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED` (**historical**,
+  not emitted in production after D2.2), `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs` / `src/cm_runtime`. Tests:
+  `tests/cli_contract.rs` (still asserts placeholder value 4).
 
 ## SSE / stream error codes (Web `POST /chat/stream`)
 
-Control-plane JSON with **`error` + non-empty `code`** signals stream-level failure (distinct from model text containing `{"error":"…"}`). Common **`code`** values: [SSE_PROTOCOL.md](SSE_PROTOCOL.md). Examples:
+Control-plane JSON with **`error` + non-empty `code`** signals stream-level failure (distinct from model text containing `{"error":"…"}`). Common
+  **`code`** values: [SSE_PROTOCOL.md](SSE_PROTOCOL.md). Examples:
 
 | `code` | Summary |
 |--------|---------|
@@ -32,15 +38,20 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 | `plan_rewrite_exhausted` | Final plan rewrite budget exhausted (optional `reason_code`; see `docs/en/SSE_PROTOCOL.md`) |
 | `SSE_ENCODE` | Control JSON serialization failure (fallback) |
 
-**`INTERNAL_ERROR`** and related codes may appear on **SSE** and on **`POST /chat` JSON** from the same `RunAgentTurnError` mapping; `chat` subprocesses still use `classify_model_error_message` on error strings.
+**`INTERNAL_ERROR`** and related codes may appear on **SSE** and on **`POST /chat` JSON** from the same `RunAgentTurnError` mapping;
+  `chat` subprocesses still use `classify_model_error_message` on error strings.
 
-**HTTP JSON (not SSE `data:`)**: failed responses use **`ApiError`** with **`code`**, **`message`** (user-facing); optional **`reason_code`** (often a truncated internal summary for **`INTERNAL_ERROR`**); optional **`request_id`** (same value as response header **`x-request-id`**;
+**HTTP JSON (not SSE `data:`)**: failed responses use **`ApiError`** with **`code`**, **`message`** (user-facing);
+  optional **`reason_code`** (often a truncated internal summary for **`INTERNAL_ERROR`**);
+  optional **`request_id`** (same value as response header **`x-request-id`**;
   filled by middleware for **4xx/5xx** `application/json` **`ApiError`** bodies when missing); optional **`details[]`** (field-level subcodes;
-  old clients may ignore). **SSE** may still attach **`reason_code`** under multiple stream `code` values (see **`docs/en/SSE_PROTOCOL.md`**). Handshake-stage codes: **`web/chat_handlers`** and OpenAPI.
+  old clients may ignore). **SSE** may still attach **`reason_code`** under multiple stream `code` values (see **`docs/en/SSE_PROTOCOL.md`**).
+    Handshake-stage codes: **`web/chat_handlers`** and OpenAPI.
 
 ### HTTP `ApiError.code` table (non-SSE)
 
-Prefer response header **`x-request-id`** for correlation. Common stable codes (not exhaustive). **Retryable** means automatic client backoff is reasonable (changing credentials is not “auto-retry”).
+Prefer response header **`x-request-id`** for correlation. Common stable codes (not exhaustive). **Retryable** means automatic client backoff is
+  reasonable (changing credentials is not “auto-retry”).
 
 | `code` | Typical HTTP | Retryable | Summary |
 |--------|--------------|-----------|---------|
@@ -67,7 +78,8 @@ Constants: **`src/cm_api_contract/error_codes.rs`**. Full streaming error table:
 ### HTTP / OpenAPI contract semver and external pins
 
 - DTOs and schemars live in **`src/cm_api_contract`**; machine-readable **`GET /openapi.json`**.
-- Crate semver vs SSE wire protocol, compatibility window, and git tag **`client-contract-vX.Y.Z`**: **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**.
+- Crate semver vs SSE wire protocol, compatibility window, and git tag **`client-contract-vX.Y.Z`**:
+  **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**.
 - Gate: `bash scripts/check-client-contract.sh` (OpenAPI smoke + external-style path consumer).
 
 ## `chat --output json` one JSON line per turn (historical; entry removed)

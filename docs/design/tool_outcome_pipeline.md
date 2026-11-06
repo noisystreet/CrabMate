@@ -28,11 +28,13 @@ parsed.error_code = None;
 if parsed.exit_code.is_some_and(|code| code != 0) { parsed.exit_code = None; }
 ```
 
-它真正需要的是 `exit_code` / `stdout` / `stderr` 三个**抽取**字段，却复用了「推断成败」的完整逻辑，然后作废结论。这行 `parsed.ok = true` 就是对「解析结果不可信」的自认。
+它真正需要的是 `exit_code` / `stdout` / `stderr` 三个**抽取**字段，却复用了「推断成败」的完整逻辑，然后作废结论。
+  这行 `parsed.ok = true` 就是对「解析结果不可信」的自认。
 
 ### 症状 2：用线格式承载进程内状态
 
-`typed_outcome_output`（`mod.rs:486`）在「正文启发式与真实成败不一致」时，往正文插 `crabmate_tool_output` 头。这个头本来是 Client 可见的**线格式**，现在兼作进程内的 out-of-band 通道。
+`typed_outcome_output`（`mod.rs:486`）在「正文启发式与真实成败不一致」时，往正文插 `crabmate_tool_output` 头。这个头本来是 Client 可见的**线格式**，
+  现在兼作进程内的 out-of-band 通道。
 
 ### 症状 3：同一个结果，各处可能得出不同的 `ok`
 
@@ -50,7 +52,8 @@ if parsed.exit_code.is_some_and(|code| code != 0) { parsed.exit_code = None; }
 
 ### 后果
 
-1. **成败双重解释**。靠「头与正文一致时不改写」维持兼容：任何一条路径漏注入头，就会出现「模型看到成功、验收认为失败」这类**难查的编排缺陷**——它不报错，只是行为悄悄错。
+1. **成败双重解释**。靠「头与正文一致时不改写」维持兼容：任何一条路径漏注入头，就会出现「模型看到成功、验收认为失败」
+  这类**难查的编排缺陷**——它不报错，只是行为悄悄错。
 2. **`ToolError` 臃肿**。它内嵌整个 `ParsedToolOutput`（`tool_error.rs:62`），是 `#[allow(clippy::result_large_err)]` 遍布全仓（约 40 处）的根因。
 3. **语义分散**。每次消费都重跑关键词表（`looks_like_failure` 六条 + exit-code 回退），规则虽在一处实现，但「谁在什么时机用它」散落各处。
 
@@ -102,7 +105,8 @@ flowchart TD
 | **A `run_tool*`** | workflow 节点（`cm_workflow/execute/node.rs:90,118`）、MCP `tools/call`、`tool-replay`、容器 sandbox | `run_tool_dispatch` | 有 | 症状 1、2 |
 | **B `tool_registry`** | **chat 的 `run_command`**（`HandlerId::RunCommand`）与 `terminal_session` | 注册表内各自渲染 | **无** | 各自解正文决定重试 |
 
-这条事实直接改变 S1 的范围：只给 `run_tool_dispatch` 加 `ToolOutcome`，**生产环境里最主要的 `run_command` 消费点仍靠解文本**，而它正是「读正文 → 决定重不重跑」的高风险点。所以 S1 必须让 B 路径也产出 `ToolOutcome`（在 `dispatch` 拿到 `out` 处构造），§5 第 2 条才有东西可读。
+这条事实直接改变 S1 的范围：只给 `run_tool_dispatch` 加 `ToolOutcome`，**生产环境里最主要的 `run_command` 消费点仍靠解文本**，
+  而它正是「读正文 → 决定重不重跑」的高风险点。所以 S1 必须让 B 路径也产出 `ToolOutcome`（在 `dispatch` 拿到 `out` 处构造），§5 第 2 条才有东西可读。
 
 ---
 
@@ -176,10 +180,12 @@ pub struct Streams {
 ### 4.2 头里的 `ok` 与 Typed 结论冲突时谁赢
 
 事实：`ok` 头有**两个出口** —— 收尾注入（`typed_outcome_output`，`tools/mod.rs:498`）与**工具自己写**
-（`prepend_crabmate_tool_output_with_ok`，`write_sse_preview.rs:95`；`read_tool.rs:70` / `tree_glob.rs:75` / `directory.rs:27` / `grep_try.rs:248` 各自 `prepend_crabmate_tool_output`）。因此必须把规则写死：
+（`prepend_crabmate_tool_output_with_ok`，`write_sse_preview.rs:95`；
+  `read_tool.rs:70` / `tree_glob.rs:75` / `directory.rs:27` / `grep_try.rs:248` 各自 `prepend_crabmate_tool_output`）。因此必须把规则写死：
 
 1. **Typed 结论优先**：进程内真相由 `Result<String, ToolError>` 决定，工具自写的 `ok` 只是线格式元数据。
-2. **冲突时改写首行，不叠加**：现 `typed_outcome_output` 在冲突时 **prepend 第二行头**，而 `parse_tool_output` 只读首行，「后来者赢」；正文同时存在两行头这件事没有任何测试钉住，属隐患。S3 改为**整行替换**首行头。
+2. **冲突时改写首行，不叠加**：现 `typed_outcome_output` 在冲突时 **prepend 第二行头**，而 `parse_tool_output` 只读首行，「后来者赢」；
+  正文同时存在两行头这件事没有任何测试钉住，属隐患。S3 改为**整行替换**首行头。
 3. **必须有一条测试**覆盖这个组合：工具自写 `ok=false` + Typed `Ok` ⇒ 最终正文只有一行头且 `ok=true`；
    反向（自写 `ok=true` + Typed `Err`）⇒ 只有一行头且 `ok=false`、`code` 取 `ToolError::code`。
 
@@ -209,7 +215,8 @@ S2 逐条切换，每行 = 一个 commit：
 | 7 | `.../serial/emit.rs:119` | `parse` 后写 TTL 缓存 | 读 `outcome.ok` |
 | 8 | `.../tools/emit.rs:127,225` + `emit_common.rs:42` | 两次 `parse`（timeline / 信封 / 观测） | 一次 `outcome` 复用 |
 
-不在 S2 范围：`cm_tools/tools/file/write_ops.rs:538,548`（写工具自身预览判定）、`tool_error.rs` 的三个构造器（属 S3/S4）、`tool_result/normalize.rs:109`（反序列化回放兜底，S3 保留）、`tools/mod.rs:668`（编译成功判定，签名只吃 `&str`，需先扩参数）。
+不在 S2 范围：`cm_tools/tools/file/write_ops.rs:538,548`（写工具自身预览判定）、`tool_error.rs` 的三个构造器（属 S3/S4）、
+  `tool_result/normalize.rs:109`（反序列化回放兜底，S3 保留）、`tools/mod.rs:668`（编译成功判定，签名只吃 `&str`，需先扩参数）。
 
 另一类「读正文」**明确不在本方案范围**：`structured_payload_for_tool`（`tool_result/mod.rs:221`，被 `emit_common.rs:43`、`tool_stats.rs:108` 调用）。
 它抽的是**机器可读载荷**（`run_command_exit_v1` / http / cargo 的 JSON），与成败无关，也不参与任何编排判定；
@@ -234,14 +241,16 @@ S2 逐条切换，每行 = 一个 commit：
 按 §5 表顺序（风险由低到高：纯观测 → 决策 → 编排）。每处：先读 `outcome`，再删自己那行 `parse_tool_output`。
 验收：每步独立 commit；金样不变。
 
-**例外**：§5 第 5 条（`run_command_dedupe` 的成功定义）是全方案唯一会改变**运行时行为**的切换，不混在机械切换里：先定口径（§10 第 1 条），单独一个 PR，并只在该 PR 内做对照验证。
+**例外**：§5 第 5 条（`run_command_dedupe` 的成功定义）是全方案唯一会改变**运行时行为**的切换，不混在机械切换里：先定口径（§10 第 1 条），
+  单独一个 PR，并只在该 PR 内做对照验证。
 
 ### S3 — 收窄解码面
 
 - `parse_tool_output` 只保留两个合法用途：**AsyncOnly 收尾**、**反序列化回放**（`NormalizedToolEnvelope` 缺 `ok` 时）；
 - 删除 `finish_dispatch_typed_ok` 的 parse→override，改为 `ToolOutcome::from_ok_body(...)`（只抽 `exit_code`/流）；
 - `typed_outcome_output` 的头注入**保留**（还服务线格式），但不再是进程内状态的载体；按 §4.2 改为**改写首行**而非前置第二行；
-- **用可见性收窄代替 grep 门禁**：`parse_tool_output` 收窄为 `pub(crate)`，且只在 `tool_result` 内暴露两个窄入口（`async 收尾` / `历史回放`），其它模块拿不到 —— 越界调用是**编译错误**，不是测试失败。
+- **用可见性收窄代替 grep 门禁**：`parse_tool_output` 收窄为 `pub(crate)`，且只在 `tool_result` 内暴露两个窄入口（`async 收尾` / `历史回放`），
+  其它模块拿不到 —— 越界调用是**编译错误**，不是测试失败。
   （不用「grep 源码」当门禁：重命名与换行都会误报，且 Rust 测试读源码不是常规手段。）
 
 ### S4（可选，独立评估）— `ToolError` 瘦身
@@ -289,7 +298,8 @@ S2 逐条切换，每行 = 一个 commit：
 
 ## 10. 开放问题（未决，落地前需定）
 
-1. **`run_command_dedupe` 的成功定义**：现为 `parsed.ok || exit_code == Some(0)`，与其它处的 `ok` 不一致。统一成哪个？需要先确认 Client 与模型侧对「`run_command` 成功」的口径。**这是全方案唯一会改变运行时行为的切换**，按 §6 S2 附注单独成 PR。
+1. **`run_command_dedupe` 的成功定义**：现为 `parsed.ok || exit_code == Some(0)`，与其它处的 `ok` 不一致。统一成哪个？
+  需要先确认 Client 与模型侧对「`run_command` 成功」的口径。**这是全方案唯一会改变运行时行为的切换**，按 §6 S2 附注单独成 PR。
 2. **`ToolOutcome` 与 `ToolError` 是否最终合并**为 `Result<ToolOutcome, ToolViolation>`？若合并，S4 自然落地，但会触碰所有 `*_try` 签名。
 3. **工具自写头的长期收束**：§4.2 先定「Typed 赢 + 改写首行」；长期看写工具是否该彻底停止自写 `ok`，需先确认 Client 侧无人依赖工具自带头的具体值。
 

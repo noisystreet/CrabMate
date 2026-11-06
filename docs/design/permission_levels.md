@@ -1,11 +1,17 @@
 # 工具权限等级（Permission Levels）：设计草案
 
-**状态**：**S1–S5c 已落地**（等级解析 / 六轴投影 / 路径、命令、网络、外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级），**S6**（空闲态写入口 `POST /conversation/state`，§16.1.1）亦已落地。**仍未做**（逐条对应 §12 切片，勿把本节当“全绿”）：
+**状态**：**S1–S5c 已落地**（等级解析 / 六轴投影 / 路径、命令、网络、
+  外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级），
+  **S6**（空闲态写入口 `POST /conversation/state`，§16.1.1）亦已落地。**仍未做**（逐条对应 §12 切片，勿把本节当“全绿”）：
 
-1. **S7 `PathScope::AllowedRoots`（§15 Q4）**：`cm_types::PathScope::AllowedRoots` 变体与 `as_str` 已在，但 `cm_agent::permission::project_caps` 只产出 `SessionRoot` / `Any`，`PathAccess` 也没有该分支——**投影与判定均未接线**，配置 `workspace_allowed_roots` 的多根放行因此仍不生效；
-2. **沙盒两轴（§6.4 / MB-6）**：`project_caps` 不读 `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，`PermissionClamp` 只有 `ceiling` / `role` / `session_mode`，**没有 `sandbox`**；`unrestricted` × Docker 的启动期「拒绝组合」亦未实现；
+1. **S7 `PathScope::AllowedRoots`（§15 Q4）**：`cm_types::PathScope::AllowedRoots` 变体与 `as_str` 已在，
+  但 `cm_agent::permission::project_caps` 只产出 `SessionRoot` / `Any`，`PathAccess` 也没有该分支——**投影与判定均未接线**，
+  配置 `workspace_allowed_roots` 的多根放行因此仍不生效；
+2. **沙盒两轴（§6.4 / MB-6）**：`project_caps` 不读 `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，
+  `PermissionClamp` 只有 `ceiling` / `role` / `session_mode`，**没有 `sandbox`**；`unrestricted` × Docker 的启动期「拒绝组合」亦未实现；
 3. **R5 工具可见性三处判定合一**（§17.5，原计划另开 PR）；
-4. **S5d 的 Client 部分**（另仓 `crabmate-client`）：等级选择器、`clamped_by` 文案、L4 二次确认，以及本仓已出站的 `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel` 的**渲染**。
+4. **S5d 的 Client 部分**（另仓 `crabmate-client`）：等级选择器、`clamped_by` 文案、L4 二次确认，
+  以及本仓已出站的 `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel` 的**渲染**。
 
 默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
 **受众**：维护者、安全评审、Client（Web / `crabmate-tui`）维护者。
@@ -14,7 +20,9 @@
 
 **关联文档**
 
-- [`docs/配置说明.md`](../配置说明.md)：`allowed_commands` / `http_fetch_allowed_prefixes` / `workspace_allowed_roots` / `sync_default_tool_sandbox_mode` / `session_mode` 的现行逐项语义（本文是它们的**上位统一视图**，不替代各键说明）。
+- [`docs/配置说明.md`](../配置说明.md)：
+  `allowed_commands` / `http_fetch_allowed_prefixes` / `workspace_allowed_roots` / `sync_default_tool_sandbox_mode` / `session_mode`
+  的现行逐项语义（本文是它们的**上位统一视图**，不替代各键说明）。
 - [`docs/工具说明.md`](../工具说明.md)：受影响工具（`run_command` / `terminal_session` / `read_file` / `write` / `read_dir` / `http_fetch` / `http_request`）。
 - [`docs/SSE协议.md`](../SSE协议.md) 与 Client `frontend/src/api/chat_stream/parser_v2.rs`：若新增控制面事件（§11）须两端同步。
 - [`AGENTS.md`](../../AGENTS.md) → **Security-sensitive surfaces** / **Secrets & logging**：本文 §9 是其延伸，不得弱化。
@@ -36,7 +44,8 @@
 
 1. **请求只能降级，不能提权**：`permission_level` 由客户端传入时须 ≤ 服务端上限，越界即钳制并记审计。
 2. **上限不由客户端控制**：`permission_level_max` 只来自服务端（显式 TOML / `CM_*`，或**按部署形态推导**，见 §5.1），不经 `client_llm` 等客户端可控字段。
-3. **L4 只免除「路径与命令白名单」，不免除工具自身的确认参数**：`delete_files` / `delete_dir` 的 `confirm=true` 与等级无关（§9 MB-4）。反过来也要说清：**命令轴没有 argv 门**，L4 下 `run_command` 执行 `git reset --hard` 与 `echo` 同路；该门已按 #1259 结案为「不实现」（理由见 MB-4）。
+3. **L4 只免除「路径与命令白名单」，不免除工具自身的确认参数**：`delete_files` / `delete_dir` 的 `confirm=true` 与等级无关（§9 MB-4）。
+  反过来也要说清：**命令轴没有 argv 门**，L4 下 `run_command` 执行 `git reset --hard` 与 `echo` 同路；该门已按 #1259 结案为「不实现」（理由见 MB-4）。
 
 ---
 
@@ -59,15 +68,19 @@
 
 这套分级不是"新加一个开关"，而是顺手修掉现状里的三处不一致：
 
-1. **同一概念三种待遇**：「工作区外路径」在 `run_command` / `terminal_session` 可走审批放行（`execute/mod.rs:134`、`approve_external_run_command_paths_if_needed`），在 `read_file` / `write` 却是**永久硬拒**。用户无法表达"我就是要让 Agent 读隔壁仓"。
-2. **无人值守场景没有"硬边界"档**：`bench`、`[[scheduled_agent_task]]`、运维 CLI 没有 SSE 审批通道，白名单未命中只能失败（`request_unknown_cmd_approval` 的 `ApprovalUnavailable` 分支）。这是**偶然行为**，不是**明确语义**。
-3. **两条轴默认松紧相反**：命令走"长白名单 + 未命中审批"，出站网络却是 `http_fetch_allowed_prefixes = ["*"]`。运维无法用一句话回答"这台机器上 Agent 到底能干什么"。
+1. **同一概念三种待遇**：「工作区外路径」在 `run_command` / `terminal_session` 可走审批放行（`execute/mod.rs:134`、
+  `approve_external_run_command_paths_if_needed`），在 `read_file` / `write` 却是**永久硬拒**。用户无法表达"我就是要让 Agent 读隔壁仓"。
+2. **无人值守场景没有"硬边界"档**：`bench`、`[[scheduled_agent_task]]`、运维 CLI 没有 SSE 审批通道，
+  白名单未命中只能失败（`request_unknown_cmd_approval` 的 `ApprovalUnavailable` 分支）。这是**偶然行为**，不是**明确语义**。
+3. **两条轴默认松紧相反**：命令走"长白名单 + 未命中审批"，出站网络却是 `http_fetch_allowed_prefixes = ["*"]`。运维无法用一句话回答"
+  这台机器上 Agent 到底能干什么"。
 
 ### 1.3 关键事实：审批等于"人授予 host 能力"
 
 这一点决定了 L3 与 L4 的边界怎么画，必须先说清：
 
-- 未知命令 → `AllowAlways` 会把该命令名写入会话级 `persistent_allowlist_shared`（`run_command/approval.rs`），或直接扩展本轮 `allowed_commands`（`resolve_unknown_cmd_allowlist` 的扩展分支）；
+- 未知命令 → `AllowAlways` 会把该命令名写入会话级 `persistent_allowlist_shared`（`run_command/approval.rs`），
+  或直接扩展本轮 `allowed_commands`（`resolve_unknown_cmd_allowlist` 的扩展分支）；
 - 工作区外路径 → 审批通过后 `skip_arg_safety = true`（`evaluate_policy` 里的 `ExternalPathGate::Approved` 分支），本轮直接跳过 `..` / 绝对路径拒绝。
 
 也就是说：**现状下"审批通过"= 该次调用拿到 host 级能力**。所以"最高等级"不是"比现状更强的能力"，而是"**同样的能力，但不问人**"。这直接决定了：
@@ -127,14 +140,19 @@
 
 ### 4.2 每级的用户可见承诺
 
-- **L0 `chat`**：模型只能说话。`tools` 数组不下发或为空；**默认**连“澄清问卷”工具也不下发，符合“最低等级只允许对话”。若确实需要多轮澄清，可显式配置 `permission_chat_control_tools = ["present_clarification_questionnaire"]`（§10）。
+- **L0 `chat`**：模型只能说话。`tools` 数组不下发或为空；**默认**连“澄清问卷”工具也不下发，符合“最低等级只允许对话”。若确实需要多轮澄清，
+  可显式配置 `permission_chat_control_tools = ["present_clarification_questionnaire"]`（§10）。
   - 长期记忆**召回**（`ltm.prepare_messages` 的只读注入）保留；写入类工具（`long_term_remember` / `long_term_forget`）随“无工具”一并消失。
 - **L1 `read`**：能看不能动。无写盘、无子进程、无 PTY；`http_fetch` 仍可用（属只读），`http_request` 被排除。
-  - 判据是**独立正列表** `permission_read_tools`，**不用** `is_readonly_tool`：后者是并行只读批的**性能判据**，且其写集合可被 `tool_registry_write_effect_tools` **整体替换**（`registry_policy::is_readonly_tool`）——拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
+  - 判据是**独立正列表** `permission_read_tools`，**不用** `is_readonly_tool`：后者是并行只读批的**性能判据**，
+    且其写集合可被 `tool_registry_write_effect_tools` **整体替换**（`registry_policy::is_readonly_tool`）——拿它当安全边界，
+    运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
 - **L2 `workspace`**：能干活的**硬边界**档。越界不是“弹个窗”，而是明确报错并说明原因（文案须点出 `permission_level = workspace`），供无人值守场景安全使用。
-  - **同时禁用 MCP 与动态工具**（`external_tools = Denied`）：`mcp__*` 与 `plugins/*.json` 的实际能力由**外部进程**决定，宿主侧的路径 / 命令 / 网络三轴**管不到**它们——放进来就等于没有硬边界。要 MCP 就用 L3（审批）或 L4（放行 + 审计），并接受它们不受 caps 约束。
+  - **同时禁用 MCP 与动态工具**（`external_tools = Denied`）：`mcp__*` 与 `plugins/*.json` 的实际能力由**外部进程**决定，
+    宿主侧的路径 / 命令 / 网络三轴**管不到**它们——放进来就等于没有硬边界。要 MCP 就用 L3（审批）或 L4（放行 + 审计），并接受它们不受 caps 约束。
 - **L3 `approved`**：**默认档**，与今天完全一致。越界弹审批，`AllowAlways` 在会话内持续有效。
-- **L4 `unrestricted`**：不受工作区路径与命令白名单限制，并写审计。**命令轴全放行**——没有 argv 门，`git reset --hard` 与 `echo` 同路（MB-4，按 #1259 结案）；工具自身的 `confirm` 参数（`delete_files` / `delete_dir`）不因等级取消。
+- **L4 `unrestricted`**：不受工作区路径与命令白名单限制，并写审计。**命令轴全放行**——没有 argv 门，`git reset --hard` 与 `echo` 同路（MB-4，
+  按 #1259 结案）；工具自身的 `confirm` 参数（`delete_files` / `delete_dir`）不因等级取消。
 
 ### 4.3 与既有四套机制的组合（只收紧）
 
@@ -147,7 +165,8 @@
 | `sync_default_tool_sandbox_mode = docker` | 执行隔离 | **只钳路径与网络两轴**（`path_scope` → `SessionRoot`，`net_scope` 按容器网络），**不动** `level` 与 `approval`（§6.4） |
 | `workspace_allowed_roots` / `web_workspace_pool` | 工作区**选址**白名单 | 与等级链**独立**：等级管“能读工作区外吗”，它们管“工作区根能选在哪”。L4 不放宽选址约束 |
 
-> 为什么不把 `session_mode` 折进等级：它两个职责都还在用（提示词附录 + 编排），合并会让“功能姿态”与“安全天花板”两个语义都不清楚；用 `min()` 组合是一行规则，比合并 enum 更便宜。
+> 为什么不把 `session_mode` 折进等级：它两个职责都还在用（提示词附录 + 编排），合并会让“功能姿态”与“安全天花板”两个语义都不清楚；
+> 用 `min()` 组合是一行规则，比合并 enum 更便宜。
 
 ---
 
@@ -162,7 +181,8 @@ permission_level = "approved"        # CM_PERMISSION_LEVEL
 # permission_level_max = "approved"  # CM_PERMISSION_LEVEL_MAX
 ```
 
-`permission_level_max` **默认不配置**，启动时按绑定地址推导——`serve` 已在同一处做过 loopback 判断（`cli_run.rs:534 validate_bind_auth`，非 loopback 无 token 直接拒启）：
+`permission_level_max` **默认不配置**，启动时按绑定地址推导——`serve` 已在同一处做过 loopback 判断（`cli_run.rs:534 validate_bind_auth`，
+  非 loopback 无 token 直接拒启）：
 
 | 部署形态 | 推导出的 ceiling | `ceiling_source` | 理由 |
 |---|---|---|---|
@@ -172,7 +192,8 @@ permission_level = "approved"        # CM_PERMISSION_LEVEL
 
 即：**默认等级 = `approved`（L3）= 现状**；**默认上限**在本机为 `unrestricted`、在远端为 `approved`。
 
-> 为什么本机给 `unrestricted`：主流 agent 都允许客户端随时切到「不再询问」的模式，因为它们默认就是**本机单用户**运行、以当前 uid 操作当前用户的文件。CrabMate 在本机部署下是同一模型，不该因“也可能有远端客户端”而把本机一起锁死。**推导而非写死**，正是为了把这两种形态分开对待。
+> 为什么本机给 `unrestricted`：主流 agent 都允许客户端随时切到「不再询问」的模式，因为它们默认就是**本机单用户**运行、以当前 uid 操作当前用户的文件。
+> CrabMate 在本机部署下是同一模型，不该因“也可能有远端客户端”而把本机一起锁死。**推导而非写死**，正是为了把这两种形态分开对待。
 
 ### 5.2 逐轴等价性核对（默认 `permission_level = approved`）
 
@@ -186,7 +207,8 @@ permission_level = "approved"        # CM_PERMISSION_LEVEL
 | 沙盒 | 独立开关，Docker 下挂 `/workspace:rw` | 不参与（`none` 时无钳制） | ✅ |
 | MCP / 动态工具 | 一律放行（`step_executor_policy.rs:98` 对 MCP 直接 `return true`） | `external_tools = Allowed`（L3 与现状一致） | ✅ |
 
-**结论**：不设任何新键时，**回合内的行为**与 `main`/当前分支一致（新追加的只有“可在请求中显式申请更高等级”这一项，不请求就不会发生）；S1–S3 切片可全程保持默认配置跑通全部现有测试。ceiling 的推导值**不改变任何单回合行为**，只决定“客户端能否申请到 L4”。
+**结论**：不设任何新键时，**回合内的行为**与 `main`/当前分支一致（新追加的只有“可在请求中显式申请更高等级”这一项，不请求就不会发生）；
+  S1–S3 切片可全程保持默认配置跑通全部现有测试。ceiling 的推导值**不改变任何单回合行为**，只决定“客户端能否申请到 L4”。
 
 ### 5.3 什么时候必须显式配置上限
 
@@ -201,7 +223,8 @@ permission_level = "approved"        # CM_PERMISSION_LEVEL
 
 ### 5.4 各入口的默认等级（无人值守必须显式）
 
-审批通道不是处处都有。没有 SSE 通道的入口若沿用 L3，越界只会变成“审批通道不可用”的失败——所以这些入口的默认等级必须**显式定档**，而不是撞到 `ApprovalUnavailable` 才发现：
+审批通道不是处处都有。没有 SSE 通道的入口若沿用 L3，越界只会变成“审批通道不可用”的失败——所以这些入口的默认等级必须**显式定档**，
+  而不是撞到 `ApprovalUnavailable` 才发现：
 
 | 入口 | 审批通道 | 默认等级 | 说明 |
 |---|---|---|---|
@@ -235,19 +258,25 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 ### 6.2 持久化必须重算（fail-safe）
 
-`active_permission_level` 像 `active_session_mode` 一样落库（`src/cm_internal/session_mode_turn.rs:86` 的同一模式），但**恢复时必须重新过一遍 §6.1**。理由：运维把 `permission_level_max` 调低后，旧会话若按库里的 `unrestricted` 续跑，等于降级失效。规则写死：
+`active_permission_level` 像 `active_session_mode` 一样落库（`src/cm_internal/session_mode_turn.rs:86` 的同一模式），但**恢复时必须重新过一遍 §6.1**。
+  理由：运维把 `permission_level_max` 调低后，旧会话若按库里的 `unrestricted` 续跑，等于降级失效。规则写死：
 
 > **持久化只存“请求意图”，不存“生效结果”；生效结果每回合重算。**
 
-热重载的**方向性**（降即时生效、升需重启）及其实现形态见 §9.1：`POST /config/reload` 调低 `permission_level_max` 须**立即**收紧进行中的会话（下一回合即生效）；调高则不追溯、且**不认**（ceiling 在启动时冻结）。
+热重载的**方向性**（降即时生效、升需重启）及其实现形态见 §9.1：
+  `POST /config/reload` 调低 `permission_level_max` 须**立即**收紧进行中的会话（下一回合即生效）；调高则不追溯、且**不认**（ceiling 在启动时冻结）。
 
-**落库形态**：会话库需加一列 `active_permission_level`。复用既有幂等加列助手 `ensure_text_column`（`src/conversation_store.rs:92`：`PRAGMA table_info` 检查 + `ALTER TABLE … ADD COLUMN … TEXT NOT NULL DEFAULT ''`），**不引入迁移框架**。因此“空串 = 未指定”——读回 `''` 时必须走 §6.1 的 `fallback`，不得当成 `approved` 落死，也不得拒绝加载旧会话。
+**落库形态**：会话库需加一列 `active_permission_level`。复用既有幂等加列助手 `ensure_text_column`（`src/conversation_store.rs:92`：
+  `PRAGMA table_info` 检查 + `ALTER TABLE … ADD COLUMN … TEXT NOT NULL DEFAULT ''`），**不引入迁移框架**。因此“空串 = 未指定”
+  ——读回 `''` 时必须走 §6.1 的 `fallback`，不得当成 `approved` 落死，也不得拒绝加载旧会话。
 
 ### 6.3 审批结果的作用域：前缀键（已定）
 
-现状的会话级 persistent allowlist 是**平铺命名空间**：`http_fetch:<url>`、`http_request:<METHOD>:<url>` 带前缀，但 `run_command` 的 `AllowAlways` 存的是**裸命令名**（`run_command/approval.rs`）。引入等级后必须防止“高等级批过的键在低等级继续放行”。
+现状的会话级 persistent allowlist 是**平铺命名空间**：`http_fetch:<url>`、`http_request:<METHOD>:<url>` 带前缀，
+  但 `run_command` 的 `AllowAlways` 存的是**裸命令名**（`run_command/approval.rs`）。引入等级后必须防止“高等级批过的键在低等级继续放行”。
 
-**决定：给键加等级前缀，存储类型不变**（仍是 `Arc<Mutex<HashSet<String>>>`）。这是第一优先级方案——不新增结构体、不改序列化、不动调用方签名；该集合是**内存态**（`stream_job_setup.rs:162` 以空集初始化），无磁盘 schema，故**零迁移成本**。
+**决定：给键加等级前缀，存储类型不变**（仍是 `Arc<Mutex<HashSet<String>>>`）。这是第一优先级方案——不新增结构体、不改序列化、不动调用方签名；
+  该集合是**内存态**（`stream_job_setup.rs:162` 以空集初始化），无磁盘 schema，故**零迁移成本**。
 
 | 来源 | 现有键 | 加前缀后 |
 |---|---|---|
@@ -258,36 +287,64 @@ effective = min(chosen, ceiling, role.max_permission_level)
 规则：
 
 1. **写入用 `effective` 等级**：键 = `format!("l{}|{}", effective as u8, key)`。
-2. **命中要求等级严格相等**（不是 `>=`）：`stored_level == effective_level`。降级即失效、无需主动清理；用 `>=` 会让 L3 批过的键在 L2 继续命中，而 L2 的整个意义就是“人工例外通道关闭”（`http_tool_url_allowed` 在 L2 下也会查这个集合，正是泄漏点）。
+2. **命中要求等级严格相等**（不是 `>=`）：`stored_level == effective_level`。降级即失效、无需主动清理；用 `>=` 会让 L3 批过的键在 L2 继续命中，
+  而 L2 的整个意义就是“人工例外通道关闭”（`http_tool_url_allowed` 在 L2 下也会查这个集合，正是泄漏点）。
 3. **只有 `approval = Gate` 的等级才查这个集合**：`Deny`（L0–L2）直接拒、`AuditOnly`（L4）不需要（`command_scope = Any`）。
-4. **写入前缀恒为 `effective`，与 ceiling 无关**：ceiling 只决定 `effective` 的上界（§6.1），所以不存在“批一个更高等级的键”这种操作——`AllowAlways` 最多写下当前 `effective` 的前缀（配合 MB-1）。
+4. **写入前缀恒为 `effective`，与 ceiling 无关**：ceiling 只决定 `effective` 的上界（§6.1），所以不存在“批一个更高等级的键”
+  这种操作——`AllowAlways` 最多写下当前 `effective` 的前缀（配合 MB-1）。
 
 **落地结果（S4 的一部分，S3 之后单独合入）**：
 
 - **载体**：`cm_types::scoped_allowlist_key(level, key)` 是唯一生成点（`None` → 裸键，未接线路径逐字等价）；`PermissionLevel::index()` 是唯一序号来源。
-- **写入**：`cm_approval::persist_allowlist_key` 统一加前缀，等级由 `SharedAllowlistHandles.level` 带入（`shared_allowlist_handles_web(web_ctx, level)`）；workflow 节点走 `WorkflowApprovalMode::Interactive.permission_level`，与主链路同一把尺子。SSE 载荷里的 `allowlist_key` **保持裸键**（客户端可读性 + 既有 golden 不变）。
-- **命中**：`http/gate.rs` 的 URL 集合查询、`run_command/approval.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
-- **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
-- **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
-- **已收敛（原「仍未做」项已结案）**：曾经承诺的「不可逆操作确认清单」配置键因无消费点已按 #1260 移除（含同名环境变量）；MB-4 的确认由工具自身 `confirm` 参数承担。
+- **写入**：`cm_approval::persist_allowlist_key` 统一加前缀，
+  等级由 `SharedAllowlistHandles.level` 带入（`shared_allowlist_handles_web(web_ctx, level)`）；
+  workflow 节点走 `WorkflowApprovalMode::Interactive.permission_level`，与主链路同一把尺子。
+  SSE 载荷里的 `allowlist_key` **保持裸键**（客户端可读性 + 既有 golden 不变）。
+- **命中**：`http/gate.rs` 的 URL 集合查询、`run_command/approval.rs` 的未知命令白名单、`node.rs` 的命令节点与通用节点键（`workflow_node:<id>`）
+  全部改成「用当前等级现算键再比对」，因此 `>=` 式的跨级命中在四处都不再可能。
+- **附带收口（MB-8）**：`http_tool_url_allowed` 的前缀判定改读 `caps.net_scope` 里的那份 `Arc<Vec<String>>`，
+  不再回读 `cfg.http_fetch_allowed_prefixes`；只有 `permission = None`（未接线）才回落 `cfg`。
+- **测试**：`execute_allowlist_scope_tests.rs`（L3 写入后集合里**只有** `l3|cmd`；同一集合在 L2 不命中并落到硬拒；
+  无 `caps` 时仍写裸键）+ `http_net_gate_tests::url_allowed_ignores_lower_level_allowlist_keys`（含「已接线不得回读另一份 `cfg` 前缀」）。
+- **已收敛（原「仍未做」项已结案）**：曾经承诺的「不可逆操作确认清单」配置键因无消费点已按 #1260 移除（含同名环境变量）；
+  MB-4 的确认由工具自身 `confirm` 参数承担。
 
 **落地结果（S4 的审计事件部分）**：
 
-- **载体**：`src/cm_types/permission_audit.rs`——`PermissionAxis`（`tool` / `path` / `command` / `net` / `external`）、`PermissionDecision`（`allowed` / `denied` / `approved`）、`PermissionAuditEvent`，以及唯一判据 `should_emit(approval, decision)`。`src/cm_agent/permission_audit.rs` 只保留「从 `PermissionCaps` 取 `level` / `approval`」的薄包装。
-- **为什么在 `cm_types`（叶子层）而不在 `cm_agent`**：路径轴要在 `cm_tools` 的 `PathAccess` 记录，而依赖方向是 `cm_types` → `cm_config` → `cm_tools` → `cm_agent`；放 `cm_agent` 会让叶子层反向依赖。`ApprovalPolicy` 随之从 `cm_agent::permission` 下沉到 `cm_types`（后者 `pub use` 重导出，调用点不变）。
-- **为什么 `Allowed` 只记 `AuditOnly`**：L0–L3 下「命中白名单」是每一步的常态，记进来会把「L4 到底放行了什么」这批真需要审计的记录淹没。`Denied` / `Approved` 一律记——它们是边界真的动了。
-- **接线点**：工具可见性 / early-deny（`Tool`，外部工具归 `External`，L0/L1 的命令类工具归 `Command`）、`http_net_gate` 的 `Any` 与两处 `Deny`（`Net`）、`run_command` 的 `external_path_gate_by_caps`（`Path`）、未知命令白名单命中与 L2 硬拒（`Command`）、`read_dir` 工作区外路径（`Path`）、
-  **`PathAccess::for_read` / `for_read_open` / `for_write` 的 `PathScope::Any` 分支（`Path`；路径面的唯一收口，`read_file` / `write` / `copy_file` / `delete_*` 等全部经此）**、workflow 节点的等级结论（`approval_disposition` 的两个消费点：`run_command` 归 `Command`、通用审批阀门归 `Tool`）。
-- **`approved` 落在审批门**：`cm_internal::tool_approval::interactive_gate_after_whitelist_miss` 是全部交互审批的唯一收口，`AllowOnce` / `AllowAlways` 在此记一条；轴由 `SensitiveCapability` 映射（`HostShell` → 命令、两个 `OutboundHttp*` → 网络、`WorkspaceExternalPath` → 路径、`WorkflowGate` → 工具）。只带 `sse_command`，不带 `sse_args`（后者可能含路径与 query）。
-- **不设 `clamped`**：等级钳制发生在 `resolve_permission_level_for_turn`，它不属于五轴中任何一轴；`GET /permission` 的 `clamped_by` 已是该信息的对外答案。原先预留的 `PermissionDecision::Clamped` 从未有 emit 点，本次随下沉一并删除，避免留下永远为空的枚举值。
-- **为什么先用 tracing 而非 SSE 审计事件**：§11.3 的 control-plane 方案需要双端同步（`cm_sse_protocol` + Client 解析器 + 协议 golden），留给 Client 那一波；tracing 零协议变更、可独立合并。
-- **字段名**：§11.2 写的 `permission.level` 落地为 `permission_level`——tracing 的字段名必须是 Rust 标识符，点号无法出现。检索统一用 `target: "permission_audit"`。
+- **载体**：`src/cm_types/permission_audit.rs`——`PermissionAxis`（`tool` / `path` / `command` / `net` / `external`）、
+  `PermissionDecision`（`allowed` / `denied` / `approved`）、`PermissionAuditEvent`，以及唯一判据 `should_emit(approval, decision)`。
+  `src/cm_agent/permission_audit.rs` 只保留「从 `PermissionCaps` 取 `level` / `approval`」的薄包装。
+- **为什么在 `cm_types`（叶子层）而不在 `cm_agent`**：路径轴要在 `cm_tools` 的 `PathAccess` 记录，
+  而依赖方向是 `cm_types` → `cm_config` → `cm_tools` → `cm_agent`；放 `cm_agent` 会让叶子层反向依赖。
+  `ApprovalPolicy` 随之从 `cm_agent::permission` 下沉到 `cm_types`（后者 `pub use` 重导出，调用点不变）。
+- **为什么 `Allowed` 只记 `AuditOnly`**：L0–L3 下「命中白名单」是每一步的常态，记进来会把「L4 到底放行了什么」这批真需要审计的记录淹没。
+  `Denied` / `Approved` 一律记——它们是边界真的动了。
+- **接线点**：工具可见性 / early-deny（`Tool`，外部工具归 `External`，L0/L1 的命令类工具归 `Command`）、
+  `http_net_gate` 的 `Any` 与两处 `Deny`（`Net`）、`run_command` 的 `external_path_gate_by_caps`（`Path`）、未知命令白名单命中与 L2 硬拒（`Command`）、
+  `read_dir` 工作区外路径（`Path`）、
+  **`PathAccess::for_read` / `for_read_open` / `for_write` 的 `PathScope::Any` 分支（`Path`；路径面的唯一收口，
+    `read_file` / `write` / `copy_file` / `delete_*` 等全部经此）**、workflow 节点的等级结论（`approval_disposition` 的两个消费点：
+    `run_command` 归 `Command`、通用审批阀门归 `Tool`）。
+- **`approved` 落在审批门**：`cm_internal::tool_approval::interactive_gate_after_whitelist_miss` 是全部交互审批的唯一收口，
+  `AllowOnce` / `AllowAlways` 在此记一条；轴由 `SensitiveCapability` 映射（`HostShell` → 命令、两个 `OutboundHttp*` → 网络、
+  `WorkspaceExternalPath` → 路径、`WorkflowGate` → 工具）。只带 `sse_command`，不带 `sse_args`（后者可能含路径与 query）。
+- **不设 `clamped`**：等级钳制发生在 `resolve_permission_level_for_turn`，它不属于五轴中任何一轴；
+  `GET /permission` 的 `clamped_by` 已是该信息的对外答案。原先预留的 `PermissionDecision::Clamped` 从未有 emit 点，本次随下沉一并删除，
+  避免留下永远为空的枚举值。
+- **为什么先用 tracing 而非 SSE 审计事件**：§11.3 的 control-plane 方案需要双端同步（`cm_sse_protocol` + Client 解析器 + 协议 golden），
+  留给 Client 那一波；tracing 零协议变更、可独立合并。
+- **字段名**：§11.2 写的 `permission.level` 落地为 `permission_level`——tracing 的字段名必须是 Rust 标识符，点号无法出现。
+  检索统一用 `target: "permission_audit"`。
 - **审计正文的脱敏**：网络轴只记 `origin`（无 path / query）；路径轴只记末两段（完整绝对路径会把宿主机目录结构写进日志，可能被远端采集）。
-- **测试**：`cm_types/permission_audit_tests.rs`——`should_emit` 9 组矩阵、字段串防漂移、`path_scope = any` 只在 L4（`PathAccess` 回填等级的依据）、以及用最小 subscriber 捕获真实 tracing 输出。**接线回归**：`http_net_gate_tests::net_gate_emits_audit_only_on_l4_direct_allow` 与 `file::path::tests::unrestricted_scope_emits_path_audit` 断言的是事件本身而非返回值——删掉对应 `record_*` 调用会红。
+- **测试**：`cm_types/permission_audit_tests.rs`——`should_emit` 9 组矩阵、字段串防漂移、`path_scope = any` 只在 L4（`PathAccess` 回填等级的依据）、
+  以及用最小 subscriber 捕获真实 tracing 输出。**接线回归**：
+  `http_net_gate_tests::net_gate_emits_audit_only_on_l4_direct_allow` 与 `file::path::tests::unrestricted_scope_emits_path_audit`
+  断言的是事件本身而非返回值——删掉对应 `record_*` 调用会红。
 
 ### 6.4 沙盒：只钳路径与网络，不降等级
 
-`sync_default_tool_sandbox_mode = docker` 时**不**把等级钳到 L2——那样会把 L3 的「越界 → 审批」变成 L2 的「越界 → 直接拒」，即**为了更安全打开沙盒，结果白名单外命令从“弹审批”变成“报错”**（隔离机制误伤成权限降级）。
+`sync_default_tool_sandbox_mode = docker` 时**不**把等级钳到 L2——那样会把 L3 的「越界 → 审批」变成 L2 的「越界 → 直接拒」，即**为了更安全打开沙盒，
+  结果白名单外命令从“弹审批”变成“报错”**（隔离机制误伤成权限降级）。
 
 沙盒的问题不在“能不能多干”，而在**路径语义**：容器里只有 `/workspace`（`tool_sandbox/mod.rs:82`）。因此只钳两轴：
 
@@ -297,11 +354,13 @@ effective = min(chosen, ceiling, role.max_permission_level)
 | `path_scope` | **无需钳**（L0–L3 本就是 `SessionRoot`） | 只有 L4 是 `Any`，而 L4 × 沙盒已在启动期**拒绝组合**；因此不存在“路径被钳”的情形 |
 | `net_scope` | 按 `sync_default_tool_sandbox_docker_network` 收窄 | 这是沙盒**唯一**真正生效的钳制：未配网络名（默认）→ 容器无出网 → `None`；配了则沿用 `Prefixes` |
 
-L4 + 沙盒说不通（要宿主级就别进容器），处理方式是**拒绝组合**（启动期直接报错，二选一），而不是偷偷把 L4 降成 L2。因此 `clamped_by` 里的 `sandbox` **只在 `net_scope` 被收窄时出现**（典型：L3 + Docker + 未配网络名），不静默。
+L4 + 沙盒说不通（要宿主级就别进容器），处理方式是**拒绝组合**（启动期直接报错，二选一），而不是偷偷把 L4 降成 L2。
+  因此 `clamped_by` 里的 `sandbox` **只在 `net_scope` 被收窄时出现**（典型：L3 + Docker + 未配网络名），不静默。
 
 **落地状态（未做）**：本节三件事在代码里都还找不到落点，登记在 [`docs/待办清单.md`](../待办清单.md) 的权限等级章：
 
-1. `cm_agent::permission::project_caps` **不读** `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，因此「未配网络名 → `net_scope = None`」当前不发生（投影出来的 `net_scope` 只由 `http_fetch_allowed_prefixes` 决定）；
+1. `cm_agent::permission::project_caps` **不读** `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，
+  因此「未配网络名 → `net_scope = None`」当前不发生（投影出来的 `net_scope` 只由 `http_fetch_allowed_prefixes` 决定）；
 2. `PermissionClamp` 只有 `ceiling` / `role` / `session_mode` 三个取值，**没有 `sandbox`**，`clamped_by` 因此报不出沙盒钳制（MB-6 要求的可见性缺失）；
 3. `unrestricted` × Docker 的「启动期拒绝组合」未实现——即当前可以让 L4 配 Docker 沙盒启动，与本节「二选一」的设计不一致。
 
@@ -400,11 +459,14 @@ pub struct PermissionCaps {
 - `path_scope = Any` → 等价于 `skip_arg_safety = true` + 文件工具走 `resolve_any`（§8.3）；
 - `net_scope = Any` → 等价于 `http_fetch_allowed_prefixes = ["*"]`（默认已是此值）。
 
-> `ToolVisibility::Readonly` 的判据是**独立正列表** `permission_read_tools`（默认 = `builtin_write_effect_tools()` 的补集，见 `cm_config::tool_write_effect`），**不受** `tool_registry_write_effect_tools` 覆盖影响。那个键是性能开关（整体替换式）；拿它当安全边界，运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
+> `ToolVisibility::Readonly` 的判据是**独立正列表** `permission_read_tools`（默认 = `builtin_write_effect_tools()` 的补集，
+> 见 `cm_config::tool_write_effect`），**不受** `tool_registry_write_effect_tools` 覆盖影响。那个键是性能开关（整体替换式）；拿它当安全边界，
+> 运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
 
 ### 7.3 为什么不写 `if level >= Approved`
 
-仓库有硬门禁：**函数 CCN ≤ 10**（`scripts/lizard-rust.sh`）、**形参 ≤ 9**（`scripts/fn-param-ratchet.sh`）。若每个执行点都写 `match level { … }`，`evaluate_policy` 这类已有多分支函数会立刻顶破 CCN。
+仓库有硬门禁：**函数 CCN ≤ 10**（`scripts/lizard-rust.sh`）、**形参 ≤ 9**（`scripts/fn-param-ratchet.sh`）。若每个执行点都写 `match level { … }`，
+  `evaluate_policy` 这类已有多分支函数会立刻顶破 CCN。
 
 因此规定：
 
@@ -437,7 +499,8 @@ struct PolicyDecision<'a> {
 }
 ```
 
-这条同时消掉 `registry_policy.rs` / `step_executor_policy.rs` 里“再算一遍”的冲动：**任何能力判断都以 `caps` 为准**，`is_readonly_tool` 退回它原本的职责（并行批与只读 TTL 缓存）。
+这条同时消掉 `registry_policy.rs` / `step_executor_policy.rs` 里“再算一遍”的冲动：**任何能力判断都以 `caps` 为准**，
+  `is_readonly_tool` 退回它原本的职责（并行批与只读 TTL 缓存）。
 
 ---
 
@@ -494,14 +557,20 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 2. `run_agent_turn.rs` 在本回合 `cfg` 快照上把 `per_plan_policy.final_plan_requirement` 收敛到 `Never`（只降不升），使验收 / 终答门槛不再等「工具证据」；
 3. `per_plan_semantic_check` 保留。
 
-另外补了一条本设计未预见的约束：**`session_mode` 造成的只读不回灌到投影**（`ResolvedPermission::projection_level`）。`ask` / `plan` 的只读本就由 `ReviewReadonly` 执行，若同时按 L1 投影，默认档的 Plan 会话会连带丢掉 `mcp__*`（`step_executor_policy` 明确放行外部工具），等于让会话模式悄悄改变默认行为。
+另外补了一条本设计未预见的约束：**`session_mode` 造成的只读不回灌到投影**（`ResolvedPermission::projection_level`）。
+  `ask` / `plan` 的只读本就由 `ReviewReadonly` 执行，若同时按 L1 投影，默认档的 Plan 会话会连带丢掉 `mcp__*`（`step_executor_policy` 明确放行外部工具）
+  ，等于让会话模式悄悄改变默认行为。
 
 ### 8.3 L4 的路径放行细节
 
 `PathScope::Any` 不等于“无校验”。规则：
 
-1. 新增 `resolve_any_path(base, sub)`：不做根内 `starts_with` 校验，但仍走 `canonicalize`（拒绝不存在的祖先链、解析 symlink 真实位置），并在日志中记录 `canonical` 结果。
-2. **默认不设敏感前缀黑名单**（`permission_deny_system_paths = []`）：L4 的承诺是“不受工作区路径限制”，带默认黑名单的 `unrestricted` 名实不符。需要加固的人**显式**填写（推荐 `["/proc", "/sys", "/dev"]`）。`cm_types::path_utils::SENSITIVE_WORKSPACE_PREFIXES`（由 `cm_config::workspace_roots` 与 `cm_tools::workspace::path` 共用，`#1247` 上移）的同款黑名单服务于工作区**选址**，语义不同，不要顺带复用。
+1. 新增 `resolve_any_path(base, sub)`：不做根内 `starts_with` 校验，但仍走 `canonicalize`（拒绝不存在的祖先链、解析 symlink 真实位置），
+  并在日志中记录 `canonical` 结果。
+2. **默认不设敏感前缀黑名单**（`permission_deny_system_paths = []`）：L4 的承诺是“不受工作区路径限制”，带默认黑名单的 `unrestricted` 名实不符。
+  需要加固的人**显式**填写（推荐 `["/proc", "/sys", "/dev"]`）。
+  `cm_types::path_utils::SENSITIVE_WORKSPACE_PREFIXES`（由 `cm_config::workspace_roots` 与 `cm_tools::workspace::path` 共用，`#1247` 上移）
+  的同款黑名单服务于工作区**选址**，语义不同，不要顺带复用。
 3. 输出仍按“相对工作区路径优先”展示（`path_for_tool_display`），工作区外才回退绝对路径——避免把宿主绝对路径大量灌进模型上下文（也顺带减 token）。
 
 ---
@@ -510,9 +579,13 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 §8.1 表最后一行（`self_config_info` / `GET /status` 的 `permission` 小节）已随 S3 落地，落点与 §16.1 / §16.2 的分工一致：
 
-1. **`self_config_info` 新增 `permission` 小节**：`permission_level_default`、`permission_level_max_effective`、`permission_level_max_source`、`allow_unrestricted_permission_for_non_loopback`，外加六轴轴名 `caps.*`。轴名来自 `cm_types::PermissionLevel::caps_view()`——它**不是**第二套投影，
-  只做「等级 → 轴名」映射；与 `project_caps(...).view()` 的一致性由 `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住（`cm_tools` 是叶子层，不能反向依赖 `cm_agent`，故 `PermissionCapsView` 随之下沉到 `cm_types`）。
-2. **`GET /status?view=shell` 只加两个标量**：`permission_level_default` 与 `permission_level_max`（§16.1 的「壳层稳定子集」口径），golden fixture 与 `docs/openapi.json` 同步；六轴投影仍留给 S5a 的 `GET /permission`。
+1. **`self_config_info` 新增 `permission` 小节**：`permission_level_default`、`permission_level_max_effective`、`permission_level_max_source`、
+  `allow_unrestricted_permission_for_non_loopback`，外加六轴轴名 `caps.*`。轴名来自 `cm_types::PermissionLevel::caps_view()`——它**不是**第二套投影，
+  只做「等级 → 轴名」映射；
+    与 `project_caps(...).view()` 的一致性由 `cm_agent::permission::tests::level_caps_view_matches_projection` 逐等级钉住（`cm_tools` 是叶子层，
+    不能反向依赖 `cm_agent`，故 `PermissionCapsView` 随之下沉到 `cm_types`）。
+2. **`GET /status?view=shell` 只加两个标量**：`permission_level_default` 与 `permission_level_max`（§16.1 的「壳层稳定子集」口径），
+  golden fixture 与 `docs/openapi.json` 同步；六轴投影仍留给 S5a 的 `GET /permission`。
 3. **白名单 / 前缀不进任何对外视图**：长度不可控，且属内部数据（AGENTS.md → Secrets & logging 的口径）。
 
 ---
@@ -532,7 +605,8 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 
 ### 9.1 ceiling 的可变更性（实现形态）
 
-`permission_level_max` 的生命周期被刻意绑在“**进程物理在场**”上：调 HTTP 只要共享 Bearer（与普通聊天同一把钥匙），重启要 shell / systemd / 部署权限——**两者不是同一个能力**。如果 `/config/reload` 能抬上限，远端就等于能自我提权，MB-1/MB-3 全部失效。
+`permission_level_max` 的生命周期被刻意绑在“**进程物理在场**”上：调 HTTP 只要共享 Bearer（与普通聊天同一把钥匙），
+  重启要 shell / systemd / 部署权限——**两者不是同一个能力**。如果 `/config/reload` 能抬上限，远端就等于能自我提权，MB-1/MB-3 全部失效。
 
 实现形态照抄 `src/cm_config/hot_reload.rs:21` 已有的「全放行哨兵」先例——那里已用同样手法冻结 `serve --yes` 写入的 `allowed_commands = ["*"]`：
 
@@ -547,11 +621,13 @@ dst.permission.permission_level_max =
 
 要点：
 
-1. **`permission` 必须显式登记进 `apply_hot_reload_config_subset`**。该函数是**逐字段白名单**（不是整体替换），不登记则连“降级”都不会热更——与“默认热更”的直觉相反，容易踩。
+1. **`permission` 必须显式登记进 `apply_hot_reload_config_subset`**。该函数是**逐字段白名单**（不是整体替换），不登记则连“降级”
+  都不会热更——与“默认热更”的直觉相反，容易踩。
 2. **`CM_PERMISSION_LEVEL_MAX` 与 `API_KEY` 同规**：重载**不从环境变量重读**（`hot_reload.rs:8` 已确立），所以走环境变量抬上限天然是启动期生效。
 3. **降级即时生效**：`POST /config/reload` 把上限降到 `workspace` 后，下一回合所有会话立即被 §6.1 的 `min()` 收紧——这是唯一允许的“运行时收紧”方向（fail-safe）。
 4. **`permission_level`（默认等级）可自由热更**，不必冻结：它只是 fallback，且始终再受 ceiling 钳制。
-5. **推导值同样在启动期冻结**：`ceiling_source = derived_*` 时，热重载不得把推导结果抬得更高；重载后若磁盘新增了显式 `permission_level_max`，仍须过上面同一个 `min()` 比较。
+5. **推导值同样在启动期冻结**：`ceiling_source = derived_*` 时，热重载不得把推导结果抬得更高；重载后若磁盘新增了显式 `permission_level_max`，
+  仍须过上面同一个 `min()` 比较。
 
 ---
 
@@ -577,14 +653,25 @@ dst.permission.permission_level_max =
 
 ## 11. 观测与对外契约
 
-1. **`GET /permission` / `GET /status` / `self_config_info`**：等级与投影的统一出口。`GET /permission` 的响应形状见 §16.2；`self_config_info` 的 `permission` 小节与其**同源序列化**（同一个 `PermissionCaps`），避免两处漂移。密钥类字段一律不出现（沿用现有“只报是否设置”的规矩）。
-2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、`permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，
-  `cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
-3. **SSE（可选，需 Client 同步）**：若采纳审计事件，建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、
+1. **`GET /permission` / `GET /status` / `self_config_info`**：等级与投影的统一出口。`GET /permission` 的响应形状见 §16.2；
+  `self_config_info` 的 `permission` 小节与其**同源序列化**（同一个 `PermissionCaps`），避免两处漂移。密钥类字段一律不出现（沿用现有“只报是否设置”
+  的规矩）。
+2. **`tracing` 结构化字段**：每条被等级拦截或放行的关键调用记 `permission.level`、
+  `permission.axis`（`path` / `command` / `net` / `external` / `tool`）、`permission.decision`（`allowed` / `denied` / `approved`；**不设 `clamped`**，
+  见 §6.3）。**已落地**（`src/cm_types/permission_audit.rs`，
+  `cm_agent::permission_audit` 只是薄包装）：字段名因为 tracing 的标识符约束写作 `permission_level` / `permission_axis` / `permission_decision`，
+    另带 `tool` 与 `detail`，`target` 为 `permission_audit`；`allowed` 只在 L4（`AuditOnly`）记，细节见 §6.3 末尾的落地结果。
+3. **SSE（可选，需 Client 同步）**：若采纳审计事件，
+  建议复用现有 control-plane 而不是新增顶层键 —— 在 `tool_call` 时间线条目上附 `permissionLevel` 字段即可，**不改 SSE_PROTOCOL_VERSION**。
+  若确需独立事件，须按 AGENTS.md 的 checklist 同步 `src/cm_sse_protocol/control_classify.rs`、
   `fixtures/sse_ag_ui_golden.jsonl`、`docs/SSE协议.md` 与 Client `parser_v2.rs` / `sse_dispatch/types.rs`，并跑双端 golden 测试。
-   **已落地（采纳「复用 control-plane」方案，未新增顶层键、未提升 `SSE_PROTOCOL_VERSION`）**：v1 面 `ToolCallSummary` 新增 `permission_level: Option<String>`（缺省省略），AG-UI 面 `ToolCallStart` 新增 `permissionLevel`（CrabMate 扩展字段，与 `summary` / `argsPreview` / `arguments` 同类）。
-     取值是**本回合生效档**，由 `emit_tool_call_summary_sse` 的 `permission` 参数带入（串行路径经 `SerialToolIterationSsePreface.permission`，并行只读批次直接透传）。`None` 时不出站，旧客户端忽略即可。
-4. **Client（另仓）**：`crabmate-client` 侧在 `session_mode` 选择器旁加等级选择（只列 ≤ ceiling 的项），L4 需二次确认文案。**本次不涉及本仓 `frontend/`（本仓没有前端源码）。**
+   **已落地（采纳「复用 control-plane」方案，未新增顶层键、未提升 `SSE_PROTOCOL_VERSION`）**：
+     v1 面 `ToolCallSummary` 新增 `permission_level: Option<String>`（缺省省略），AG-UI 面 `ToolCallStart` 新增 `permissionLevel`（CrabMate 扩展字段，
+     与 `summary` / `argsPreview` / `arguments` 同类）。
+     取值是**本回合生效档**，由 `emit_tool_call_summary_sse` 的 `permission` 参数带入（串行路径经 `SerialToolIterationSsePreface.permission`，
+       并行只读批次直接透传）。`None` 时不出站，旧客户端忽略即可。
+4. **Client（另仓）**：`crabmate-client` 侧在 `session_mode` 选择器旁加等级选择（只列 ≤ ceiling 的项），L4 需二次确认文案。
+  **本次不涉及本仓 `frontend/`（本仓没有前端源码）。**
 
 ---
 
@@ -603,8 +690,11 @@ dst.permission.permission_level_max =
 | **S6** | 空闲态写入口 `POST /conversation/state`（§16.1.1；编号原与 S5d 并行，规划期未列在本表，落地时占用 S6） | 空闲态切档立即生效，不必等下一轮 `/chat` 顺带 | ✅ |
 | **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ❌ **未落地**：`cm_types::PathScope::AllowedRoots` 变体已在，但 `project_caps` 不产出它、`PathAccess` 无该分支（见 §17.5 停止条件） |
 
-排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；S3 是唯一“可能悄悄改变现有行为”
-  的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
+排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，
+  外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；
+  S3 是唯一“可能悄悄改变现有行为”
+  的切片（因为它改 `evaluate_policy` 入参），必须放在 S1/S2 之后并附 L3 逐字等价回归。S5a 先于 S5b：只读投影能让客户端在“会话级写入”
+    上线前就渲染出选择器（选项集来自 `available`），不必等写路径。
 
 ---
 
@@ -683,15 +773,21 @@ dst.permission.permission_level_max =
 | 读 | `GET /conversation/messages` | 加 **两个**字段：`active_permission_level`（意图）+ `effective_permission_level`（min 后生效值）；同时改 `src/cm_api_contract/chat.rs:194`（OpenAPI 形状）与 `:350`（实现体） |
 | 默认 | `GET /status?view=shell` | 加 `permission_level_default` + `permission_level_max`（两个**标量**属壳层稳定子集，加且更新 golden；六轴投影不进，见 §16.2） |
 
-**为什么必须回两个字段**：`session_mode` 没有 min 链，而等级会被 ceiling / role cap / `ask`·`plan` / 沙盒四重钳制。只回显一个值，就会出现“我明明切了 L4，怎么还是只读”，且无从排查。
+**为什么必须回两个字段**：`session_mode` 没有 min 链，而等级会被 ceiling / role cap / `ask`·`plan` / 沙盒四重钳制。只回显一个值，
+  就会出现“我明明切了 L4，怎么还是只读”，且无从排查。
 
-**为什么不加 `POST /conversation/{id}/permission_level`**（原始判断，已被 §16.1.1 修订）：`POST /workspace` 之所以是独立端点，是因为它切的是**执行上下文**（工作区根），与请求内容无关；而等级回答的是“这一轮允许什么”，与请求同生共死。且服务端已持久化 `active_*`，客户端不传即沿用上次——UI 的“顶部开关持续生效”在客户端即可实现（Client 现在正是这样处理 `session_mode` 的）。
+**为什么不加 `POST /conversation/{id}/permission_level`**（原始判断，已被 §16.1.1 修订）：`POST /workspace` 之所以是独立端点，
+  是因为它切的是**执行上下文**（工作区根），与请求内容无关；而等级回答的是“这一轮允许什么”，与请求同生共死。且服务端已持久化 `active_*`，
+  客户端不传即沿用上次——UI 的“顶部开关持续生效”在客户端即可实现（Client 现在正是这样处理 `session_mode` 的）。
 
 ### 16.1.1 空闲态写入口：`POST /conversation/state`
 
-> §16.1 的“客户端不传即沿用上次”只在**有话可发**时成立。实测缺口：用户在空闲态切档时服务端完全不知情，刷新页面 / 换标签页 / 直接看 `GET /permission` 又回到旧档（`level_source=config`），要等下一轮 `/chat` 才顺带改正。本节补上写入口，并**收回** §16.1 末段“不新增端点”的结论。
+> §16.1 的“客户端不传即沿用上次”只在**有话可发**时成立。实测缺口：用户在空闲态切档时服务端完全不知情，
+> 刷新页面 / 换标签页 / 直接看 `GET /permission` 又回到旧档（`level_source=config`），要等下一轮 `/chat` 才顺带改正。本节补上写入口，
+> 并**收回** §16.1 末段“不新增端点”的结论。
 
-端点覆盖三个字段而不只是等级——三者存储形态相同（`active_agent_role` / `active_session_mode` / `active_permission_level`），只补一个会造出“切模式不生效、切等级生效”的不对称。
+端点覆盖三个字段而不只是等级——三者存储形态相同（`active_agent_role` / `active_session_mode` / `active_permission_level`），
+  只补一个会造出“切模式不生效、切等级生效”的不对称。
 
 | 项 | 规格 |
 |---|---|
@@ -702,17 +798,25 @@ dst.permission.permission_level_max =
 
 四条硬约束（缺一条就退化成 bug 或提权面）：
 
-1. **只改 `active_*` 列，不碰 `messages_json`、不 bump `revision`、不动 `updated_at_unix`**（`conversation_store::set_active_state`）。原因：回合结束的落盘是“整行覆盖 + CAS”（`save_if_revision`），用的是回合开始时读到的 `revision`。这里一 bump，进行中那一轮的落盘就判成 `Conflict`——用户只是切了个开关，流式路径这轮不落盘、JSON 路径直接回 `CONVERSATION_CONFLICT`。
-2. **回合结束的回写改为“只写本请求显式申请的字段”**：`request_permission_level` / `request_session_mode` / `request_agent_role` 为 `None` 时该列不进 `SET`（`None` = 保持原值，不再是“写空串”）。否则回合开始时读到的旧快照会把期间新写入的值改回去。这是第 1 条的镜像要求，缺任一条都会丢用户的切换。
-3. **不做 upsert**：会话不存在返回 404。造一个空 `messages_json` 行会污染会话列表、`GET /conversation/messages` 与 TTL 淘汰。Client 在新会话首条消息前切档只需更新本地 state——首轮 `/chat` 请求体本来就会带上该值。
-4. **越界不拒绝、也不提权**：写入的是**意图**，`permission_level` 允许高于 ceiling，生效值仍由回合内 min 链算出，`PermissionView::clamped_by` 负责解释——与 `POST /chat` 对同一个值给出一致结论（不能一处 400、一处接受）。
+1. **只改 `active_*` 列，不碰 `messages_json`、不 bump `revision`、不动 `updated_at_unix`**（`conversation_store::set_active_state`）。原因：
+  回合结束的落盘是“整行覆盖 + CAS”（`save_if_revision`），用的是回合开始时读到的 `revision`。这里一 bump，
+  进行中那一轮的落盘就判成 `Conflict`——用户只是切了个开关，流式路径这轮不落盘、JSON 路径直接回 `CONVERSATION_CONFLICT`。
+2. **回合结束的回写改为“只写本请求显式申请的字段”**：
+  `request_permission_level` / `request_session_mode` / `request_agent_role` 为 `None` 时该列不进 `SET`（`None` = 保持原值，不再是“写空串”）。
+  否则回合开始时读到的旧快照会把期间新写入的值改回去。这是第 1 条的镜像要求，缺任一条都会丢用户的切换。
+3. **不做 upsert**：会话不存在返回 404。造一个空 `messages_json` 行会污染会话列表、`GET /conversation/messages` 与 TTL 淘汰。
+  Client 在新会话首条消息前切档只需更新本地 state——首轮 `/chat` 请求体本来就会带上该值。
+4. **越界不拒绝、也不提权**：写入的是**意图**，`permission_level` 允许高于 ceiling，生效值仍由回合内 min 链算出，
+  `PermissionView::clamped_by` 负责解释——与 `POST /chat` 对同一个值给出一致结论（不能一处 400、一处接受）。
 
 已知边界（刻意保留）：
 
 - **回合内切档不影响当前回合**：`PermissionCaps` 在 `prepare_turn_cfg_and_permission` 一次算好，新档从下一回合开始。
 - **`/chat/async` 排队中的任务仍用自己的入队快照**：它已在队列里，改意图不该改变已排定的工作。
 - **不提供清空**（空串等同没传）；要“回到配置默认”，写一个与配置默认相同的值即可。
-- 回归：`conversation_store::tests::save_load_active_*_roundtrip`（`None` = 保持原列）、`web::session_state::http_tests::*`（含 `conversation_state_does_not_bump_revision_nor_get_clobbered_by_turn_save`：切档不改 `revision`，且回合结束的落盘不回退刚切的档）。
+- 回归：`conversation_store::tests::save_load_active_*_roundtrip`（`None` = 保持原列）、
+  `web::session_state::http_tests::*`（含 `conversation_state_does_not_bump_revision_nor_get_clobbered_by_turn_save`：切档不改 `revision`，
+  且回合结束的落盘不回退刚切的档）。
 
 ### 16.2 只读投影：`GET /permission`（新增）
 
@@ -740,31 +844,61 @@ dst.permission.permission_level_max =
 - `available` 直接是选择器选项集（`≤ ceiling`，并已扣除 role cap 与 `session_mode` 钳制）。
 - `clamped_by` 取值 `ceiling` / `role` / `session_mode` / `sandbox`，空数组表示未被钳制；它是“为什么不能选 L4”的唯一答案。
 - `ceiling_source` 取值：`config`（显式配置）/ `derived_loopback` / `derived_non_loopback`（§5.1）；客户端据此向用户解释“为什么本机能选 L4、远端不能”。
-- **`?agent_role=` 参数（必须）**：`available` 依赖 role cap，而 `agent_role` 是 `/chat` 请求体字段。缺省时用 `cfg.roles_prompts.default_agent_role_id`；客户端在首轮之前必须带上即将使用的 `agent_role`，否则会拿到偏松的 `available` 再被服务端钳制——“先选错再纠正”是错的体验，也是客户端无法像主流 agent 那样一次性列出全部模式的根因。
-- **`?conversation_id=` 参数（必须，除非只要静态投影）**：不带它就拿不到 `active_permission_level`，`level_source = persisted` 无法成立。带上时按 §6.1 的 min 链算出该会话的 `effective` 与真实 `caps`。
-- `caps` 与 `self_config_info` 的 `permission` 小节**同源序列化**（同一个 `PermissionCaps`），避免两处漂移；但**两者语义上都是“静态投影”**：不含回合内 `AllowAlways` 已批准的键、不含 `run_command` 的 `skip_arg_safety` 等派生项（那些只在 `PolicyDecision` 内部）。
-- **落点**：`src/web/routes/system/mod.rs:13` 已有 `/status`，毗邻新增（或独立 `src/web/routes/permission/mod.rs`），并登记到 `src/web/openapi/openapi_paths.rs:54` 一带。
-- **不塞进 `StatusShellView`**（`src/cm_api_contract/status.rs:10`）的理由：它的定位是“Web 壳层稳定子集”，塞六轴投影会让它名不副实（加两个标量默认值仍可接受，见 §16.1，golden 相应更新）。
+- **`?agent_role=` 参数（必须）**：`available` 依赖 role cap，而 `agent_role` 是 `/chat` 请求体字段。
+  缺省时用 `cfg.roles_prompts.default_agent_role_id`；客户端在首轮之前必须带上即将使用的 `agent_role`，
+  否则会拿到偏松的 `available` 再被服务端钳制——“先选错再纠正”是错的体验，也是客户端无法像主流 agent 那样一次性列出全部模式的根因。
+- **`?conversation_id=` 参数（必须，除非只要静态投影）**：不带它就拿不到 `active_permission_level`，`level_source = persisted` 无法成立。
+  带上时按 §6.1 的 min 链算出该会话的 `effective` 与真实 `caps`。
+- `caps` 与 `self_config_info` 的 `permission` 小节**同源序列化**（同一个 `PermissionCaps`），避免两处漂移；但**两者语义上都是“静态投影”**：
+  不含回合内 `AllowAlways` 已批准的键、不含 `run_command` 的 `skip_arg_safety` 等派生项（那些只在 `PolicyDecision` 内部）。
+- **落点**：`src/web/routes/system/mod.rs:13` 已有 `/status`，毗邻新增（或独立 `src/web/routes/permission/mod.rs`），
+  并登记到 `src/web/openapi/openapi_paths.rs:54` 一带。
+- **不塞进 `StatusShellView`**（`src/cm_api_contract/status.rs:10`）的理由：它的定位是“Web 壳层稳定子集”，
+  塞六轴投影会让它名不副实（加两个标量默认值仍可接受，见 §16.1，golden 相应更新）。
 
 **落地结果（S5a）**：
 
-- **落点**：路由 `src/web/routes/permission/mod.rs`，handler 与视图组装 `src/web/permission/mod.rs`（纯函数 `build_permission_view` + `PermissionViewInput`，IO 只在 handler 里），契约 `src/cm_api_contract/permission.rs`（`PermissionView` / `PermissionLevelSource`；`caps` 直接复用 `cm_types::PermissionCapsView`，与 `self_config_info` 同一份序列化）。
-- **鉴权**：挂在**受保护** API 面（`src/web/server.rs` 的 `protected_api`），**不**并到 `/status` 所在的公开面——它暴露上限来源与角色上限，属于授权信息；非 loopback 部署本来就能读 `/status`，但不应因此能读到 `ceiling_source`。
-- **`available` 上界**：`cm_agent::permission::selectable_max_level` = `min(ceiling, role_max, session_mode)`，与 `resolve_permission_level_for_turn` 用**同一组三轴**（差别只在没看 `chosen`）。防漂移由 `permission_tests::selectable_cap_matches_resolve_chain`（申请上界 → 正好落在上界；申请 L4 → 也只到上界）与 `each_axis_narrows_selectable_levels` 钉住。
-- **`clamped_by` 的语义边界**：它记录的是**本回合请求被钳制**的轴，而不是「配置默认值被上限折进去」。启动期 `reconcile_default_level_with_ceiling` 会先把默认等级降到上限，因此那种情况下三个轴都为空才是正确结果（`web::permission::tests::ceiling_clamps_available_set_and_config_level_follows_it`）。
-- **`level_source`**：`persisted` 来自会话列 `active_permission_level`（`POST /chat` 的 `permission_level` 写入）。S5a 阶段恒为 `config`；S5b 落地后 handler 读 `seed.persisted_active_permission_level` 解析成 `persisted_level`（坏串按「未指定」处理并留 warn，只读端点不因脏数据整页 500）。
-- **参数校验取严**：未知 `agent_role` → **400 `INVALID_AGENT_ROLE`**（静默回落默认角色会给出一份偏松的 `available`，正是本节要避免的体验）；`conversation_id` 不存在或过期 → **404 `CONVERSATION_NOT_FOUND`**（不悄悄退回静态投影，否则客户端会把按默认配出来的等级当成该会话的等级）。
-- **OpenAPI**：`docs/openapi.json` 已再生成；`GET /permission` 的 path 与 `PermissionView` schema 由 `openapi_ops_match_axum_route_source` / `openapi_docs_snapshot_matches_spec` 两个测试锁住。
+- **落点**：路由 `src/web/routes/permission/mod.rs`，
+  handler 与视图组装 `src/web/permission/mod.rs`（纯函数 `build_permission_view` + `PermissionViewInput`，IO 只在 handler 里），
+  契约 `src/cm_api_contract/permission.rs`（`PermissionView` / `PermissionLevelSource`；`caps` 直接复用 `cm_types::PermissionCapsView`，
+  与 `self_config_info` 同一份序列化）。
+- **鉴权**：挂在**受保护** API 面（`src/web/server.rs` 的 `protected_api`），**不**并到 `/status` 所在的公开面——它暴露上限来源与角色上限，
+  属于授权信息；非 loopback 部署本来就能读 `/status`，但不应因此能读到 `ceiling_source`。
+- **`available` 上界**：`cm_agent::permission::selectable_max_level` = `min(ceiling, role_max, session_mode)`，
+  与 `resolve_permission_level_for_turn` 用**同一组三轴**（差别只在没看 `chosen`）。
+  防漂移由 `permission_tests::selectable_cap_matches_resolve_chain`（申请上界 → 正好落在上界；申请 L4 → 也只到上界）
+  与 `each_axis_narrows_selectable_levels` 钉住。
+- **`clamped_by` 的语义边界**：它记录的是**本回合请求被钳制**的轴，而不是「配置默认值被上限折进去」。
+  启动期 `reconcile_default_level_with_ceiling` 会先把默认等级降到上限，
+  因此那种情况下三个轴都为空才是正确结果（`web::permission::tests::ceiling_clamps_available_set_and_config_level_follows_it`）。
+- **`level_source`**：`persisted` 来自会话列 `active_permission_level`（`POST /chat` 的 `permission_level` 写入）。S5a 阶段恒为 `config`；
+  S5b 落地后 handler 读 `seed.persisted_active_permission_level` 解析成 `persisted_level`（坏串按「未指定」处理并留 warn，只读端点不因脏数据整页 500）。
+- **参数校验取严**：未知 `agent_role` → **400 `INVALID_AGENT_ROLE`**（静默回落默认角色会给出一份偏松的 `available`，正是本节要避免的体验）；
+  `conversation_id` 不存在或过期 → **404 `CONVERSATION_NOT_FOUND`**（不悄悄退回静态投影，否则客户端会把按默认配出来的等级当成该会话的等级）。
+- **OpenAPI**：`docs/openapi.json` 已再生成；
+  `GET /permission` 的 path 与 `PermissionView` schema 由 `openapi_ops_match_axum_route_source` / `openapi_docs_snapshot_matches_spec` 两个测试锁住。
 
 **落地结果（S5b）**——三段式按 `session_mode` 的现成链路逐段对齐，没有新造管理层：
 
-- **写 / 校验**：`ChatRequestBody` + `ChatRequestBodyWire` 加 `permission_level`，`chat_keys` 白名单字母序插在 `"message"` 与 `"readonly_tool_ttl_cache_secs"` 之间（该表 `binary_search`，位置错会静默失效）。解析在 `turn_build::parse_chat_mode_and_permission_level`（与 `session_mode` 合并成一个 helper：`parse_chat_*_request_tail` 的 CCN 已贴上限），未知值 → **400 `INVALID_PERMISSION_LEVEL`**。
-- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。回合结束的写入**只写本请求显式申请的字段**：
-  `None` / 空白时该列不进 `SET`（见 §16.1.1 第 2 条）。原先「请求值优先，否则回写回合开始时的快照」的 `persisted_permission_level_after_turn` / `persisted_session_mode_after_turn` / `persisted_agent_role_after_turn` 三个助手已在 S6 删除——那份快照会把期间 `POST /conversation/state` 写入的值改回去，
+- **写 / 校验**：`ChatRequestBody` + `ChatRequestBodyWire` 加 `permission_level`，
+  `chat_keys` 白名单字母序插在 `"message"` 与 `"readonly_tool_ttl_cache_secs"` 之间（该表 `binary_search`，位置错会静默失效）。
+  解析在 `turn_build::parse_chat_mode_and_permission_level`（与 `session_mode` 合并成一个 helper：`parse_chat_*_request_tail` 的 CCN 已贴上限），
+  未知值 → **400 `INVALID_PERMISSION_LEVEL`**。
+- **持久化**：store 新增列 `active_permission_level`（`ensure_text_column` 迁移，旧库自动补列；
+  单测 `migrate_adds_active_permission_level_column_to_legacy_table`）。空串 = 从未指定，**不**落成某个具体档，否则运维调低上限后旧会话会按旧值续跑。
+  回合结束的写入**只写本请求显式申请的字段**：
+  `None` / 空白时该列不进 `SET`（见 §16.1.1 第 2 条）。原先「请求值优先，否则回写回合开始时的快照」
+    的 `persisted_permission_level_after_turn` / `persisted_session_mode_after_turn` / `persisted_agent_role_after_turn` 三个助手已在 S6
+    删除——那份快照会把期间 `POST /conversation/state` 写入的值改回去，
   正是 §16.1.1 要堵的缺口。
-- **回合内生效**：`RunAgentTurnAttach.permission_persisted` → `prepare_turn_cfg_and_permission(..., persisted)` → `PermissionTurnInput.persisted`。worker 侧 `worker::resolve_job_permission_persisted` 做「请求优先 → 会话持久 → 无」的选档，坏串回落配置默认并留 warn（与 `session_mode` 解析失败回落 `act` 同取向）。
-- **读**：`GET /conversation/messages` 回 `active_permission_level`（意图）+ `effective_permission_level`（生效），由 `web::permission::permission_levels_for_snapshot` 复用 `resolve_permission_level_for_turn` 算出——**不**另写一套比较，避免第二套判据。`GET /permission` 的 `level_source` 随之能真的报 `persisted`。
-- **兼容性**：客户端不传 `permission_level` 时 `persisted` 档为 `None`，`chosen` 仍落 `fallback`，与 S5b 之前逐字等价；`cron` / `/btw` 等无该字段的入口显式传 `None`。
+- **回合内生效**：`RunAgentTurnAttach.permission_persisted` → `prepare_turn_cfg_and_permission(..., persisted)` → `PermissionTurnInput.persisted`。
+  worker 侧 `worker::resolve_job_permission_persisted` 做「请求优先 → 会话持久 → 无」的选档，
+  坏串回落配置默认并留 warn（与 `session_mode` 解析失败回落 `act` 同取向）。
+- **读**：`GET /conversation/messages` 回 `active_permission_level`（意图）+ `effective_permission_level`（生效），
+  由 `web::permission::permission_levels_for_snapshot` 复用 `resolve_permission_level_for_turn` 算出——**不**另写一套比较，避免第二套判据。
+  `GET /permission` 的 `level_source` 随之能真的报 `persisted`。
+- **兼容性**：客户端不传 `permission_level` 时 `persisted` 档为 `None`，`chosen` 仍落 `fallback`，与 S5b 之前逐字等价；
+  `cron` / `/btw` 等无该字段的入口显式传 `None`。
 
 ### 16.3 严禁：写 `ceiling` 的接口
 
@@ -772,28 +906,48 @@ dst.permission.permission_level_max =
 
 > 只要存在能写 `permission_level_max` 的 HTTP 接口，§9 MB-3 的启动期门禁就形同虚设——远端先能把上限改到 `unrestricted`，再请求 L4，整套分级归零。
 
-且 **API 层拦不住**这件事：Web 鉴权是共享 Bearer（`web_api_bearer_token`），没有“谁是谁”的语义。所以“谁能用 L4”当前**只能**由**启动期的 ceiling**（显式配置或 §5.1 的 `derived_*` 推导）+ 非 loopback 开关（MB-3）决定；等有了按用户身份的鉴权体系（`docs/未来规划功能.md`）才谈得上“给管理员开提权接口”。
+且 **API 层拦不住**这件事：Web 鉴权是共享 Bearer（`web_api_bearer_token`），没有“谁是谁”的语义。所以“谁能用 L4”
+  当前**只能**由**启动期的 ceiling**（显式配置或 §5.1 的 `derived_*` 推导）+ 非 loopback 开关（MB-3）决定；
+  等有了按用户身份的鉴权体系（`docs/未来规划功能.md`）才谈得上“给管理员开提权接口”。
 
 同理，`POST /config/reload` 对 `permission_level_max` 只允许**降**（fail-safe），升需重启（MB-2）。
 
 ### 16.4 一致性：`GET /tools` 与等级
 
-`GET /tools`（见 [`tool_management_api.md`](tool_management_api.md)）现在枚举三源全部工具。等级会改变可见性，若它仍列全部，客户端会展示一批实际调不动的工具，形成“命令行能看到、UI 能看到、实际被拒”的排查黑洞。
+`GET /tools`（见 [`tool_management_api.md`](tool_management_api.md)）现在枚举三源全部工具。等级会改变可见性，若它仍列全部，
+  客户端会展示一批实际调不动的工具，形成“命令行能看到、UI 能看到、实际被拒”的排查黑洞。
 
-**已定（Q7）**：每项附 `available_at_level: bool`，保留全量枚举，**不**引入 `?permission_level=` 过滤——`GET /tools` 的定位是“枚举 + 策略投影”，不是“当前回合可用集”。
+**已定（Q7）**：每项附 `available_at_level: bool`，保留全量枚举，**不**引入 `?permission_level=` 过滤——`GET /tools` 的定位是“枚举 + 策略投影”，
+  不是“当前回合可用集”。
 
-**落地（S5c）**：`ToolListItem` 新增 `available_at_level`，判据直接复用 [`tool_allowed_by_caps`](../../src/cm_agent/permission.rs)——与回合内可见性过滤、early-deny 同一条，不留第二套比较规则。基准等级的取法：该端点无会话、无请求体，`requested` / `persisted` / `role_max` 全为 `None`，故 min 链退化成 `min(permission_level, ceiling)`（`web::tools_handlers::default_projection_caps`）；
-  `ask` / `plan` 那条轴属于**会话**，不参与进程级枚举（函数内刻意传 `SessionMode::Act` 并注明原因：它只读 `projection_level`，换成 `effective` 就会随默认会话模式悄悄变只读）。与 `present` 是两条独立的轴：`present` 说“本回合能不能被注册”（feature / 配置开关 / `disabled_tools`），`available_at_level` 说“注册了能不能调”，两者都为 `true` 才真的调得动——把这两个语义分开，客户端才能区分“这个工具没构建”
-  和“这个工具在你的等级下调不动”。**基准档回传**：响应顶层带 `permission_level`，因为会话可以持久化自己的等级（§16.1），与进程默认档常常不同——只给 bool 不给基准，`false` 无从解释；`GET /tools/{tool_name}` 的 `ToolDetailView` 带同一字段，避免清单与详情页互相矛盾。回归由 `web::tools_handlers::tests` 钉住：`tool_list_item_reports_availability_per_level`（五档 × 三类工具，
-  **经 handler 真正调用的 `tool_list_item`**，而非在测试里重抄一遍判据）、`present_and_available_at_level_are_independent_axes`（`present=true` + `available_at_level=false` 且两者都真的序列化出去）、`ceiling_clamps_default_projection_caps`（调低上限后基准档与清单同时变窄）。
+**落地（S5c）**：`ToolListItem` 新增 `available_at_level`，判据直接复用 [`tool_allowed_by_caps`](../../src/cm_agent/permission.rs)
+  ——与回合内可见性过滤、early-deny 同一条，不留第二套比较规则。基准等级的取法：该端点无会话、无请求体，
+  `requested` / `persisted` / `role_max` 全为 `None`，故 min 链退化成 `min(permission_level, ceiling)`（`web::tools_handlers::default_projection_caps`）；
+  `ask` / `plan` 那条轴属于**会话**，不参与进程级枚举（函数内刻意传 `SessionMode::Act` 并注明原因：它只读 `projection_level`，
+    换成 `effective` 就会随默认会话模式悄悄变只读）。与 `present` 是两条独立的轴：`present` 说“本回合能不能被注册”
+    （feature / 配置开关 / `disabled_tools`），`available_at_level` 说“注册了能不能调”，两者都为 `true` 才真的调得动——把这两个语义分开，
+    客户端才能区分“这个工具没构建”
+  和“这个工具在你的等级下调不动”。**基准档回传**：响应顶层带 `permission_level`，因为会话可以持久化自己的等级（§16.1），
+    与进程默认档常常不同——只给 bool 不给基准，`false` 无从解释；`GET /tools/{tool_name}` 的 `ToolDetailView` 带同一字段，避免清单与详情页互相矛盾。
+    回归由 `web::tools_handlers::tests` 钉住：`tool_list_item_reports_availability_per_level`（五档 × 三类工具，
+  **经 handler 真正调用的 `tool_list_item`**，而非在测试里重抄一遍判据）、
+    `present_and_available_at_level_are_independent_axes`（`present=true` + `available_at_level=false` 且两者都真的序列化出去）、
+    `ceiling_clamps_default_projection_caps`（调低上限后基准档与清单同时变窄）。
 
 ### 16.5 审批弹窗也要带等级
 
-`command_approval_request` 的载荷（`src/cm_internal/tool_approval/approval_specs.rs`）应附当前 `level`，让用户在点 `AllowAlways` 前看到“这是 L3 会话在请求越界”，而不是只看到命令本身。实现上与 §11 第 3 条一致：**复用现有 control-plane 字段，不改 `SSE_PROTOCOL_VERSION`**。
+`command_approval_request` 的载荷（`src/cm_internal/tool_approval/approval_specs.rs`）应附当前 `level`，
+  让用户在点 `AllowAlways` 前看到“这是 L3 会话在请求越界”，而不是只看到命令本身。实现上与 §11 第 3 条一致：**复用现有 control-plane 字段，
+  不改 `SSE_PROTOCOL_VERSION`**。
 
-**已落地**：`CommandApprovalBody` 新增 `permission_level: Option<String>`（v1 snake 面，缺省省略），AG-UI 的 `CommandApprovalData` 对应 `permissionLevel`（**带** `skip_serializing_if`——该键是新加的，缺省不出站才与历史逐字节一致，与既有的 `allowlistKey: null` 契约不同）。等级从审批路径上已有的那一份取值，不新增第三套来源：
-  `interactive_gate_after_whitelist_miss` 用 `SharedAllowlistHandles.level`（与 `AllowAlways` 将要写入的作用域档一致）、`run_command` 未知命令用 `allow_handles.level`、工作流节点用 `WorkflowApprovalMode::Interactive.permission_level`。该字段**只用于展示**，不参与任何放行判断——判据仍只在 `cm_agent::permission`。
-  回归由 `cm_sse_protocol::sse::ag_ui_convert::tests::command_approval_data_carries_permission_level_only_when_set` 钉住（有值时出站、无值时不出现该键）。Client 侧渲染在另仓。
+**已落地**：`CommandApprovalBody` 新增 `permission_level: Option<String>`（v1 snake 面，缺省省略），
+  AG-UI 的 `CommandApprovalData` 对应 `permissionLevel`（**带** `skip_serializing_if`——该键是新加的，缺省不出站才与历史逐字节一致，
+  与既有的 `allowlistKey: null` 契约不同）。等级从审批路径上已有的那一份取值，不新增第三套来源：
+  `interactive_gate_after_whitelist_miss` 用 `SharedAllowlistHandles.level`（与 `AllowAlways` 将要写入的作用域档一致）、
+    `run_command` 未知命令用 `allow_handles.level`、工作流节点用 `WorkflowApprovalMode::Interactive.permission_level`。该字段**只用于展示**，
+    不参与任何放行判断——判据仍只在 `cm_agent::permission`。
+  回归由 `cm_sse_protocol::sse::ag_ui_convert::tests::command_approval_data_carries_permission_level_only_when_set` 钉住（有值时出站、
+    无值时不出现该键）。Client 侧渲染在另仓。
 
 ---
 
@@ -806,12 +960,17 @@ dst.permission.permission_level_max =
 **落地结果**（与本节原估算的差异以实测为准）：
 
 - 载体：`file::PathAccess`，仅持 `root`；`for_read` / `for_read_open` / `for_write` 委托现有自由函数，**零行为变化**。
-- **14 个**文件类工具全部接入：`read_file` `read_dir` `glob_files` `list_tree` `read_binary_meta` `delete_dir` `create_dir` `delete_files` `append_file` `search_replace` `create_file` `copy_file` `move_file` `modify_file`。
+- **14 个**文件类工具全部接入：
+  `read_file` `read_dir` `glob_files` `list_tree` `read_binary_meta` `delete_dir` `create_dir` `delete_files` `append_file` `search_replace`
+  `create_file` `copy_file` `move_file` `modify_file`。
 - 构造点收在 `runners.rs` 两个宏：`define_runners_paths_try!` / `define_runners_paths_ctx_try!`（后者带 `ctx`）。
 - 展示类 helper（`*_display` / `*_body`）仍收 `&Path`，由调用方传 `access.root()`——它们不解析路径，换成载体只增遮蔽风险。
-- 实测踩到的两个点：`mutate.rs` 已有 `paths: &[String]` 形参（访问器必须叫 `access`，否则静默遮蔽）；`read_file` 起初漏转（`read_tool.rs` 直调 `resolve_for_read_open`），第二轮补上。
+- 实测踩到的两个点：`mutate.rs` 已有 `paths: &[String]` 形参（访问器必须叫 `access`，否则静默遮蔽）；
+  `read_file` 起初漏转（`read_tool.rs` 直调 `resolve_for_read_open`），第二轮补上。
 
-**问题**（历史记录）：`resolve_for_read` / `resolve_for_write` 原有 **18+ 个调用点**（`file/mutate.rs` ×6、`file/write_ops.rs` ×6、`structured_data.rs` ×4、`tree_glob.rs` ×2、`file/directory.rs` / `file/inspect.rs` / `file/perm.rs` / `text_diff.rs` 各 1）。S3 加 `PathScope` 形参要改 20 处，S6 加 `AllowedRoots` 时**再改一遍**。
+**问题**（历史记录）：`resolve_for_read` / `resolve_for_write` 原有 **18+ 个调用点**（`file/mutate.rs` ×6、`file/write_ops.rs` ×6、
+  `structured_data.rs` ×4、`tree_glob.rs` ×2、`file/directory.rs` / `file/inspect.rs` / `file/perm.rs` / `text_diff.rs` 各 1）。
+  S3 加 `PathScope` 形参要改 20 处，S6 加 `AllowedRoots` 时**再改一遍**。
 
 **改法**：
 
@@ -833,19 +992,27 @@ impl PathAccess<'_> {
 - 18 个调用点只换调用形态，**不引入任何新的路径判定分支**（diff 里不应出现 `if scope == …`）；
 - 全量 `cargo test` 绿。
 
-**收益**：S3 的 `Any`、S6 的 `AllowedRoots` 都只改 `path.rs` 一处；`openat2` 的 TOCTOU 语义集中在一处，不散到 18 个调用点（AGENTS.md → **Security-sensitive surfaces** 明确不得弱化）。
+**收益**：S3 的 `Any`、S6 的 `AllowedRoots` 都只改 `path.rs` 一处；`openat2` 的 TOCTOU 语义集中在一处，
+  不散到 18 个调用点（AGENTS.md → **Security-sensitive surfaces** 明确不得弱化）。
 
 ### 17.2 R2 外部工具来源收口（✅ 已完成）
 
 **落地结果**（实测 10 个判定点，与下方原估算基本一致）：
 
 - 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
-- 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`dispatch.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
-- **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；写成 `tool_origin != Dynamic` 只会更难读。
-- 附带发现（已随 R2 后续清理）：转换后 `mcp/stub.rs` / `mcp/mcp_impl.rs` / `src/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，**三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
-- 清理时的额外发现（**未处理**，属更大范围的死分支）：`mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
+- 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、
+  `dispatch.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
+- **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；
+  写成 `tool_origin != Dynamic` 只会更难读。
+- 附带发现（已随 R2 后续清理）：转换后 `mcp/stub.rs` / `mcp/mcp_impl.rs` / `src/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，
+  **三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
+- 清理时的额外发现（**未处理**，属更大范围的死分支）：`mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），
+  而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。
+  删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
 
-**问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`dispatch.rs`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
+**问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、
+  `registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`dispatch.rs`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。
+  `external_tools = Denied` 若逐点判断，必漏。
 
 **改法**：
 
@@ -860,7 +1027,8 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 - ✅ `tool_origin` 的单测覆盖三类输入（`MCP_PROXY_PREFIX` / `DYNAMIC_TOOL_PREFIX` / 两者都不匹配），含「只在开头匹配」与空串边界；
 - ✅ 原 10 个调用点的布尔结果**逐点不变**：`tool_origin_matches_legacy_predicates` 用同一批工具名对三条谓词做表驱动断言；
-- **已知分歧只记录、不在 R2 修**：`tool_call_explain.rs:28` 把 MCP 与只读工具并列处理，与 L1「只读 = 独立正列表」冲突——R2 只统一**来源判定**，这条策略留到 S2 由 `caps.tool_visibility` 收口。
+- **已知分歧只记录、不在 R2 修**：`tool_call_explain.rs:28` 把 MCP 与只读工具并列处理，与 L1「只读 = 独立正列表」冲突——R2 只统一**来源判定**，
+  这条策略留到 S2 由 `caps.tool_visibility` 收口。
 
 **收益**：S3 的 `external_tools` 变成一个谓词（`tool_origin(n) != Builtin && caps.external_tools == Denied`），MB-8 才可验证。
 
@@ -868,15 +1036,27 @@ pub fn tool_origin(name: &str) -> ToolOrigin;
 
 **落地结果**（比原估算多一层约束：借用生命周期绑不住返回值）：
 
-- 载体：`run_command/approval.rs` 新增 `RunCommandCaps { allowed_commands: Arc<[String]> }`，由 `PolicyContext::command_caps()` 以 `cfg.command_exec.allowed_commands` 构造。它是**白名单的唯一持有者**，注释里标明 S3 后并入 `PermissionCaps.command_scope`。
-- `PolicyDecision<'a> { caps: &'a RunCommandCaps, skip_arg_safety, capabilities, approvals }`——不再含 `Arc<[String]>` 字段；`skip_arg_safety`（派生）与 `capabilities`（`ExecMode` 是**执行形态**不是权限面）按 §7.4 留在 decision。
-- **出参而非返回值**：`evaluate_policy` 不能「内部建快照、返回借用它的 decision」，故签名改为 `caps: &'a mut RunCommandCaps`。评估过程仍在局部变量里做扩展，**末尾一次性**写回 `caps.allowed_commands`，decision 只 reborrow；中途 Err 返回时快照保持调用前状态。
-- 白名单的**两处读取点**都改走快照：`resolve_unknown_cmd_allowlist` 的**判定基**与 `apply_unknown_cmd_decision` 的**扩展基**现在是同一个 `base: &Arc<[String]>`（从 `caps` 透传）。原实现后者仍以 `cfg.command_exec.allowed_commands` 为基——当前 `caps ≡ cfg` 所以等价，但 S3 让等级收窄白名单后，那条路会把配置全量白名单带进生效集、绕过等级边界，因此本轮一并收口。
-- 快照**不可 clone、不可跨评估复用**：`RunCommandCaps` 不派生 `Clone`，`evaluate_policy` 的 doc 写明「必须每次评估新建」——它以自身列表为基做扩展，复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单（静默放宽）。写回只在**成功路径末尾**发生，`Err` 时快照保持调用前状态。
-- 调用点：`run_command/host.rs` 与 `terminal_session.rs` 各持一份快照；`RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
-- 测试：`execute_tests.rs` 新增 `evaluate_for_test`（内部持快照、对外回 owned `EvaluatedPolicy`），20 处矩阵断言形态不变，避免逐用例声明快照；`execute_run_command_gate_tests.rs::facade_rejects_pty_mode` 就地构造快照。
+- 载体：`run_command/approval.rs` 新增 `RunCommandCaps { allowed_commands: Arc<[String]> }`，
+  由 `PolicyContext::command_caps()` 以 `cfg.command_exec.allowed_commands` 构造。它是**白名单的唯一持有者**，
+  注释里标明 S3 后并入 `PermissionCaps.command_scope`。
+- `PolicyDecision<'a> { caps: &'a RunCommandCaps, skip_arg_safety, capabilities, approvals }`——不再含 `Arc<[String]>` 字段；`skip_arg_safety`（派生）
+  与 `capabilities`（`ExecMode` 是**执行形态**不是权限面）按 §7.4 留在 decision。
+- **出参而非返回值**：`evaluate_policy` 不能「内部建快照、返回借用它的 decision」，故签名改为 `caps: &'a mut RunCommandCaps`。
+  评估过程仍在局部变量里做扩展，**末尾一次性**写回 `caps.allowed_commands`，decision 只 reborrow；中途 Err 返回时快照保持调用前状态。
+- 白名单的**两处读取点**都改走快照：
+  `resolve_unknown_cmd_allowlist` 的**判定基**与 `apply_unknown_cmd_decision` 的**扩展基**现在是同一个 `base: &Arc<[String]>`（从 `caps` 透传）。
+  原实现后者仍以 `cfg.command_exec.allowed_commands` 为基——当前 `caps ≡ cfg` 所以等价，但 S3 让等级收窄白名单后，那条路会把配置全量白名单带进生效集、
+  绕过等级边界，因此本轮一并收口。
+- 快照**不可 clone、不可跨评估复用**：`RunCommandCaps` 不派生 `Clone`，`evaluate_policy` 的 doc 写明「必须每次评估新建」——它以自身列表为基做扩展，
+  复用会让上一轮 `AllowOnce` 的临时批准成为下一轮的基白名单（静默放宽）。写回只在**成功路径末尾**发生，`Err` 时快照保持调用前状态。
+- 调用点：`run_command/host.rs` 与 `terminal_session.rs` 各持一份快照；
+  `RunCommandFacadeInvoke` / `RunCommandSyncHostInvoke` / `RunCommandAsyncInvoke` 的 `decision` 字段改 `PolicyDecision<'a>`（三个 struct 本就带 `'a`，
+  未新增生命周期参数）；执行侧以 `Arc::clone(&decision.caps.allowed_commands)` 取代原来的 move（浅拷贝，语义不变）。
+- 测试：`execute_tests.rs` 新增 `evaluate_for_test`（内部持快照、对外回 owned `EvaluatedPolicy`），20 处矩阵断言形态不变，避免逐用例声明快照；
+  `execute_run_command_gate_tests.rs::facade_rejects_pty_mode` 就地构造快照。
 
-**问题**（历史记录）：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。先实现权限再改，等于在同一文件里改两遍。
+**问题**（历史记录）：`PolicyDecision` 里的 `allowed_commands: Arc<[String]>` 是从 `cfg` **复制**进来的，与未来的 `caps.command_scope` 重复。
+  先实现权限再改，等于在同一文件里改两遍。
 
 **改法**（原计划）：`allowed_commands` / `skip_arg_safety` 改为从**借用的快照**读取，结构与 §7.4 的最终形态一致；快照暂时仍由 `cfg` 构造，语义不变。
 
@@ -910,8 +1090,10 @@ S3 的必需改动点：
 | 命令执行 | `run_command/approval.rs` | `cwd` 越界判定 |
 | HTTP | `http/gate.rs` | 出站前缀判定 |
 
-不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、`structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`cm_llm/outbound_workspace_images.rs`×1。
-  （原先还有 `tools/mod.rs::resolve_workspace_path_for_read`×1，那是对 `file::resolve_for_read` 的一行转发、无调用方，且与「`PathAccess` 是唯一判定点」冲突，已在 #1227 删除。）
+不属 file 模块、但同样直调 `resolve_for_*` 的调用点（S3 需决定「换 `PathAccess`」还是「显式传 `None` scope + 注释说明」）：`text_diff.rs`×1、
+  `structured_data.rs`×4、`table_text.rs`×1、`structured_data_patch/execute.rs`×1、`cm_llm/outbound_workspace_images.rs`×1。
+  （原先还有 `tools/mod.rs::resolve_workspace_path_for_read`×1，那是对 `file::resolve_for_read` 的一行转发、无调用方，
+    且与「`PathAccess` 是唯一判定点」冲突，已在 #1227 删除。）
 
 **可验证的停止条件**（比「改了几个文件」可靠）：
 
@@ -919,9 +1101,11 @@ S3 的必需改动点：
 grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | grep -v "path.rs"
 ```
 
-预期只剩 `tests.rs` 里直接测自由函数的两行；若出现**非测试**文件命中，说明该工具尚未接入载体，先补 R1 再往下写。file 模块之外的上表调用点则逐个确认意图已写入 `PathScope`。
+预期只剩 `tests.rs` 里直接测自由函数的两行；若出现**非测试**文件命中，说明该工具尚未接入载体，先补 R1 再往下写。
+  file 模块之外的上表调用点则逐个确认意图已写入 `PathScope`。
 
-**R4**（allowlist 键构造收口，为 §6.3 的 `l{n}|` 前缀准备）**已随 S4 落地**：生成点收口到 `cm_types::scoped_allowlist_key`，四处命中点改为「用当前等级现算键」。**R5**（工具可见性三处判定合一）**不前置**：S3 已按 `caps` 收口，剩余若要做另开 PR。
+**R4**（allowlist 键构造收口，为 §6.3 的 `l{n}|` 前缀准备）**已随 S4 落地**：生成点收口到 `cm_types::scoped_allowlist_key`，
+  四处命中点改为「用当前等级现算键」。**R5**（工具可见性三处判定合一）**不前置**：S3 已按 `caps` 收口，剩余若要做另开 PR。
 
 ---
 

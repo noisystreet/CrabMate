@@ -1,10 +1,17 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；
-  **已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；**E2 persist（会话 `layout` 落盘）已落地**；**E3 hydration 双读已落地**（消费 `layout` 记差分；GET 历史保持 legacy 行 id，不 stamp 流式活键；same-revision 守卫保留至 E4）。本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；
+  **Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）
+  ** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；
+  **已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；**E2 persist（会话 `layout` 落盘）已落地**；
+    **E3 hydration 双读已落地**（消费 `layout` 记差分；GET 历史保持 legacy 行 id，不 stamp 流式活键；same-revision 守卫保留至 E4）。
+    本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。
   运维 CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。
-**目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、
-  **`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
+**目标读者**：维护者；变更 **`turn_segment_*`**、
+  Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream)
+  或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、
+  **`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
+    下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
 
 ---
 
@@ -36,7 +43,8 @@ Web 单轮流式会话中，用户可见的 **`ChatSession.messages`** 目标顺
 [终局 assistant 答*]
 ```
 
-**v2 不可变布局**（§13）为每个已有旁注的 `tool_call_id` 发布独立 assistant 行；发布后正文、ID 与相对顺序不可再改变。旧 `turn-batch-narration` 仅作为普通历史 assistant 行读取，不再参与流式布局判断。
+**v2 不可变布局**（§13）为每个已有旁注的 `tool_call_id` 发布独立 assistant 行；发布后正文、ID 与相对顺序不可再改变。
+  旧 `turn-batch-narration` 仅作为普通历史 assistant 行读取，不再参与流式布局判断。
 
 **`TurnLayout`**（前端 imperative 状态机）负责 **尾泡 peel/restore、loading 插入位置、时间线插入**；  
 **`crabmate-turn-layout`**（共享 crate）负责 **与到达顺序无关** 的 canonical 归约；  
@@ -114,7 +122,9 @@ flowchart TB
 | `src/agent/agent_turn/host/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `src/cm_llm` SSE 解析） |
 | 同目录 `mod.rs` | 工具批结束发送 **`turn_tool_phase_end: true`**（在 `tool_running: false` 之前） |
 
-**控制面附录**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录；附录**仅**保留错误，避免生成过程中刷出该标题。（该约定源自**已移除**的同进程 TUI `sse_mirror`；终端展示现由 Client `crabmate-tui` 负责，见 [`client_shell_split.md`](design/client_shell_split.md)。）
+**控制面附录**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录；
+  附录**仅**保留错误，避免生成过程中刷出该标题。（该约定源自**已移除**的同进程 TUI `sse_mirror`；终端展示现由 Client `crabmate-tui` 负责，
+  见 [`client_shell_split.md`](design/client_shell_split.md)。）
 
 ### 4.3 前端 Web
 
@@ -153,13 +163,15 @@ flowchart TB
 
 ### 6.1 问题
 
-`turn_segment_start` 在 **`tool_call` 之前**下发，但 plain delta **不带 `segment_id`**。工具 SSE 到达后 segment 常已 **关闭**，若只写入「仍 open 的段」，晚到 delta 会落入 **post-tool loading 尾泡**（位于工具 **之后**）。
+`turn_segment_start` 在 **`tool_call` 之前**下发，但 plain delta **不带 `segment_id`**。工具 SSE 到达后 segment 常已 **关闭**，
+  若只写入「仍 open 的段」，晚到 delta 会落入 **post-tool loading 尾泡**（位于工具 **之后**）。
 
 ### 6.2 策略
 
 1. **`try_apply_commentary_delta`**（前端）  
    - 若有 **open** commentary 段 → `SegmentDelta` 写入该段。  
-   - 否则取 **最近** `turn_segment` 的 `before_tool_call_id`，或 **首个仍缺** `before_commentary` 的 `ToolStep` → 以 `seg-before-{tool_call_id}` 调用 reducer（`reduce.rs` 支持该 id 直接 attach 到 step）。
+   - 否则取 **最近** `turn_segment` 的 `before_tool_call_id`，
+     或 **首个仍缺** `before_commentary` 的 `ToolStep` → 以 `seg-before-{tool_call_id}` 调用 reducer（`reduce.rs` 支持该 id 直接 attach 到 step）。
 
 2. **`commentary_before_tool`**（读路径）  
    合并 **`step.before_commentary`** 与 **segments 中同锚点未 flush 文本**，供 sync 即时反映流式增量。
@@ -168,7 +180,8 @@ flowchart TB
    在对应 `tool_call_id` 的工具行 **之前** upsert assistant 行（`tool_call_id` 锚点；**普通** assistant，非 `CommentaryBeforeTools` 隐藏态，以便导出可见）。
 
 4. **`delta_apply`**  
-   当 `post_tool_stream_tail_active` 或 lane 为 `Reasoning` / `AnsweringCommentaryBeforeTools` 时，**优先**尝试 canonical 路由并 `sync_all_turn_commentary`，成功则 **不再** `append_assistant_chunk` 到尾泡。
+   当 `post_tool_stream_tail_active` 或 lane 为 `Reasoning` / `AnsweringCommentaryBeforeTools` 时，
+     **优先**尝试 canonical 路由并 `sync_all_turn_commentary`，成功则 **不再** `append_assistant_chunk` 到尾泡。
 
 ### 6.3 Reducer 金样场景
 
@@ -211,9 +224,12 @@ flowchart TB
 
 ## 9. 非目标与已知边界
 
-- **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；**CLI** 尚未将 `Turn` 投影到 stdout transcript。金样：`cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`）。
+- **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；
+  **CLI** 尚未将 `Turn` 投影到 stdout transcript。金样：
+  `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`）。
 - **服务端 `Message` 列表**顺序仍按 OpenAI 工具协议；本设计主要修正 **Web `StoredMessage` 展示/导出** 与终端 TUI 本轮投影。
-- **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**；读侧经 `is_ephemeral_timeline_assistant_for_chat_ui` 对主列与导出一并跳过。
+- **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**；
+  读侧经 `is_ephemeral_timeline_assistant_for_chat_ui` 对主列与导出一并跳过。
 - **多 create 工具共享一段旁注**时， reducer 默认挂到 **首个仍空** `before_commentary` 的 step；更细粒度需模型或后端显式多段 `turn_segment_start`。
 - **Phase 0 未覆盖的错位形态**（导出样例、`chat_export_*` 手测）见 **§12**；勿将「仅 reducer 金样通过」等同于「多工具长回合 UI/导出已正确」。
 
@@ -221,8 +237,11 @@ flowchart TB
 
 ## 10. 变更检查清单
 
-- [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、`parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
-- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` + `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` + `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
+- [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、
+  `parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
+- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` +
+  `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` +
+  `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测
 - [ ] 实现 §12 某 Phase → 同步本节金样 + 手测导出场景
@@ -234,14 +253,16 @@ flowchart TB
 - **`docs/SSE协议.md`** — 控制面字段与前端处理列  
 - Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) — `composer_stream` 分层与 `wire_*`（UI 源码不在本仓）  
 - **`docs/开发文档.md`** — Web 流式概要  
-- **`docs/design/archive/tui_align_tauri_display.md`**（**已归档**，仅供考古）— 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）；终端实现现属 Client `crabmate-tui`  
+- **`docs/design/archive/tui_align_tauri_display.md`**（**已归档**，仅供考古）— 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）；
+  终端实现现属 Client `crabmate-tui`
 - **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** — 协议双端同步规则
 
 ---
 
 ## 12. 已知缺口与细化方案（Phase 0–3）
 
-§6 主要解决 **「旁注 delta 晚于 `tool_call` SSE」**（错位在工具 **之后**）。§12 记录三类错位形态及分阶段收口；**Phase 1–3 已实现**（2026-07 手测仍建议跑 C++/HPCG 导出回归）。
+§6 主要解决 **「旁注 delta 晚于 `tool_call` SSE」**（错位在工具 **之后**）。§12 记录三类错位形态及分阶段收口；
+  **Phase 1–3 已实现**（2026-07 手测仍建议跑 C++/HPCG 导出回归）。
 
 ### 12.1 三种错位形态
 
@@ -251,7 +272,8 @@ flowchart TB
 | **B. 整段聚合** | 多步旁注 + 部分总结挤在 **第一个工具之前一条** 气泡里；工具块整段在后 | LLM **先**流式整段 narration **再**出 `tool_calls`；`parsing_tool_calls` demote 后第一次 `tool_call` **peel 被跳过**（`post_tool_stream_tail_active == false`）；`turn_segment_start` 仅在 **execute** 发出，晚于全部 delta | **未覆盖** |
 | **C. 终答重复** | 聚合块末尾与流结束后的终答 **同文两段** | post-tool 尾泡 finalize 未与已 peel/sync 的总结去重 | **未覆盖** |
 
-形态 B 不是 Markdown 导出「合并章节」，而是 **`messages` 里本就只有一条超长 assistant**（例：`chat_export_*` 中「编译 hpcg」一轮：L55 巨块 → L75 起连续工具 → L298 重复总结）。
+形态 B 不是 Markdown 导出「合并章节」，而是 **`messages` 里本就只有一条超长 assistant**（例：`chat_export_*` 中「编译 hpcg」一轮：
+  L55 巨块 → L75 起连续工具 → L298 重复总结）。
 
 ### 12.2 事件时间线：设计假设 vs 现状
 
@@ -272,9 +294,12 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 单轮含工具时，维护者验收应满足：
 
-1. **I1 旁注锚定工具前**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定 id `turn-commentary-{tool_call_id}`，位于对应工具之前；同 key **允许 upsert 正文与纠错序搬回工具前**；**禁止**第二行与跨 key 合并（§13、Phase D `TurnProjection`）。
-2. **I2 尾泡职责单一**：post-tool loading 尾泡 **仅**承接 `tool_phase` 结束后的终答增量；工具相旁注 **不得**在 `try_apply` 失败时静默 `append` 到尾泡（见 §12.4 P1）。
-3. **I3 首次工具边界**：第一次 `tool_call` 与后续工具 **同一套** peel/切段规则（不得因 `post_tool_stream_tail_active == false` 跳过 peel，导致 demote 整泡留在工具区之前）。
+1. **I1 旁注锚定工具前**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定 id `turn-commentary-{tool_call_id}`，位于对应工具之前；
+  同 key **允许 upsert 正文与纠错序搬回工具前**；**禁止**第二行与跨 key 合并（§13、Phase D `TurnProjection`）。
+2. **I2 尾泡职责单一**：post-tool loading 尾泡 **仅**承接 `tool_phase` 结束后的终答增量；
+  工具相旁注 **不得**在 `try_apply` 失败时静默 `append` 到尾泡（见 §12.4 P1）。
+3. **I3 首次工具边界**：第一次 `tool_call` 与后续工具 **同一套** peel/切段规则（不得因 `post_tool_stream_tail_active == false` 跳过 peel，
+  导致 demote 整泡留在工具区之前）。
 4. **I4 终答唯一**：finalize 时若尾泡正文与已存在的终局 assistant **前缀/哈希**重复，去重或删空尾泡（形态 C）。
 5. **I5 段唯一 open**：同一时刻 reducer 至多一个 open commentary segment；新 `segment_start` 须 **先** `segment_end` 上一段（后端 emit 或 reducer 自动 close）。
 
@@ -296,7 +321,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 12.7 收敛写入（Phase 4）
 
-**目标**：`StoredMessage` 助手正文 **仅** 由 `TurnReducer` + `project_turn` + `sync_turn_projection` 写入；`TurnLayout` **只改形状**（工具行/loading 位置/peel/pin）；`StreamTextOverlay` **不**与投影并行持有同段正文。
+**目标**：`StoredMessage` 助手正文 **仅** 由 `TurnReducer` + `project_turn` + `sync_turn_projection` 写入；
+  `TurnLayout` **只改形状**（工具行/loading 位置/peel/pin）；`StreamTextOverlay` **不**与投影并行持有同段正文。
 
 | Invariant | 规则 |
 |-----------|------|
@@ -304,7 +330,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **I7 final_response 不增行** | `timeline_log` `kind=final_response` → `try_ingest_final_response_text` + sync + finalize loading；**不** `push_assistant_timeline_bubble` / `final_response_snapshot` 新行 |
 | **I8 overlay 从属** | 每次 `sync_turn_projection` 后对该 loading id 执行 `stream_overlay_clear_answer_for_message`；`on_done` merge 幂等 |
 
-**多工具 `tool_call` 追加写入**：`demote_answer_before_tools` **仅**在首个 `tool_call` 前（`!post_tool_stream_tail_active`）把尾泡迁入 pending 旁注；post-tool 阶段勿再把终答正文 `ingest_pre_tool_commentary`。同次 `on_tool_call_declared` 不再二次 ingest（`demote` 已做）。
+**多工具 `tool_call` 追加写入**：`demote_answer_before_tools` **仅**在首个 `tool_call` 前（`!post_tool_stream_tail_active`）把尾泡迁入 pending 旁注；
+  post-tool 阶段勿再把终答正文 `ingest_pre_tool_commentary`。同次 `on_tool_call_declared` 不再二次 ingest（`demote` 已做）。
 
 **仍走 overlay（非 assistant 正文真源）**：纯 reasoning 车道（非 commentary canonical 路径）的思维链增量。
 
@@ -312,7 +339,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 12.8 单一读路径（Phase 5）
 
-**目标**：主列 TUI 与 JSON/Markdown 导出 **不再** 各自维护 skip + fuzzy dedupe；读侧统一经 `frontend/src/visible_messages.rs`（与 `timeline_scan` 的 ephemeral 谓词）。
+**目标**：主列 TUI 与 JSON/Markdown 导出 **不再** 各自维护 skip + fuzzy dedupe；
+  读侧统一经 `frontend/src/visible_messages.rs`（与 `timeline_scan` 的 ephemeral 谓词）。
 
 | API | 说明 |
 |-----|------|
@@ -326,11 +354,13 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 - `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `visible_message_indices_for_export`
 - `tui_transcript_sync::{build_tui_transcript_html,plan_tui_sync}` — 经 `tui_should_render_message` 跳过主列噪声 / 空壳；首 token / overlay 有文后再 append
 
-**E2E（Victauri）**：`victauri_visible_messages.rs`（snapshot / ephemeral 隐藏）；`victauri_turn_layout.rs`（块布局：说明块在工具组前、segment_end 早于 tool_call）。
+**E2E（Victauri）**：`victauri_visible_messages.rs`（snapshot / ephemeral 隐藏）；`victauri_turn_layout.rs`（块布局：说明块在工具组前、
+  segment_end 早于 tool_call）。
 
 ### 12.9 消息块 → 气泡（Phase 6）
 
-**目标**：多工具轮次中，每段工具前旁注与终答各占 **一块** assistant 行；UI 按 `messages` 顺序渲染，loading 尾泡 **仅** 承载当前 open commentary 段流式增量，不再把 post-tool narration 累积进单一终答泡。
+**目标**：多工具轮次中，每段工具前旁注与终答各占 **一块** assistant 行；UI 按 `messages` 顺序渲染，
+  loading 尾泡 **仅** 承载当前 open commentary 段流式增量，不再把 post-tool narration 累积进单一终答泡。
 
 | 机制 | 说明 |
 |------|------|
@@ -366,7 +396,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 12.10.1 旁注所有权：设计张力与 I14 原子移交
 
-**问题本质**不是「缺一次 fuzzy dedupe」，而是 **展示所有者**（loading / overlay）与 **持久化所有者**（`turn-commentary-*` / `turn-final-answer`）若分帧双持有，会落入双写或零写。
+**问题本质**不是「缺一次 fuzzy dedupe」，而是 **展示所有者**（loading / overlay）与 **持久化所有者**（`turn-commentary-*` / `turn-final-answer`）
+  若分帧双持有，会落入双写或零写。
 
 | 约束 | 来源 | 要求 |
 |------|------|------|
@@ -382,16 +413,21 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 **落地（I14 + 终答门收紧）**：
 
 1. `demote_answer_before_tools`：`drain(..., clear_loading_ui=false)`，**仅**在工具行尚未插入、commentary 尚未 flush 的窗口内 keep-ui。
-2. `sync_turn_projection` 的 **同一次** `update_bound_session` 内：`sync_web_projection` → `loading_handoff::clear_loading_tail_text_if_persisted_owns`（同文定稿行）→ 若已移交则清 overlay。
+2. `sync_turn_projection` 的 **同一次** `update_bound_session` 内：
+  `sync_web_projection` → `loading_handoff::clear_loading_tail_text_if_persisted_owns`（同文定稿行）→ 若已移交则清 overlay。
 3. `should_allow_final_answer_flush`：仅 `post_tool_final_answer_open` 或 `projecting_stream_end`（`on_done` 窗口）；中间多步旁白不得进 `turn-final-answer`。
 4. `release_loading_after_tool_projection`：幂等补清 overlay。
 5. `finalize_loading_row_at`：同文已在定稿助手行则删空壳，禁止升格。
 
-不变量：`LiveOwnsPreview` →（同帧 flush 成功且同文）→ `PersistedOwnsText`（loading 不得再持有该段持久化正文）。**勿**恢复读侧 assistant fuzzy dedupe（Phase 7 P1）。
+不变量：`LiveOwnsPreview` →（同帧 flush 成功且同文）→ `PersistedOwnsText`（loading 不得再持有该段持久化正文）。
+  **勿**恢复读侧 assistant fuzzy dedupe（Phase 7 P1）。
 
-**复现**：真实 LLM 多工具回合（如 C++/CMake）；流式结束后、重载前导出 Markdown，中间旁白成对。重载后再导出应变正常（服务端无双写）。e2e：`mock-mid-process-commentary-duplicate.spec.ts`（防回归）；单测：`allow_final_answer_flush_requires_gate_or_stream_end`、`finalize_loading_drops_text_already_on_final_answer_row`。
+**复现**：真实 LLM 多工具回合（如 C++/CMake）；流式结束后、重载前导出 Markdown，中间旁白成对。重载后再导出应变正常（服务端无双写）。e2e：
+  `mock-mid-process-commentary-duplicate.spec.ts`（防回归）；单测：`allow_final_answer_flush_requires_gate_or_stream_end`、
+  `finalize_loading_drops_text_already_on_final_answer_row`。
 
-**回归**：`e2e/specs/mock-commentary-no-duplicate.spec.ts`；`mock-mid-process-commentary-duplicate.spec.ts`；`loading_handoff` 单测；`finalize_loading_drops_text_already_on_commentary_row`。
+**回归**：`e2e/specs/mock-commentary-no-duplicate.spec.ts`；`mock-mid-process-commentary-duplicate.spec.ts`；`loading_handoff` 单测；
+  `finalize_loading_drops_text_already_on_commentary_row`。
 
 ### 12.11 补丁层退役（Phase 7 P1）
 
@@ -408,7 +444,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 12.12 工具边界即时投影（Phase 7 P2，已退役）
 
-> **退役原因**：per-tool flush（`commentary-before-{tool_call_id}` + `pin_commentary_rows_before_anchored_tools`）导致列表重排闪烁，且与 Cursor/OpenAI 默认「一条说明 + 工具组」形态不一致。由 **§13 块布局** 取代。
+> **退役原因**：per-tool flush（`commentary-before-{tool_call_id}` + `pin_commentary_rows_before_anchored_tools`）导致列表重排闪烁，
+> 且与 Cursor/OpenAI 默认「一条说明 + 工具组」形态不一致。由 **§13 块布局** 取代。
 
 | 原机制 | 说明 |
 |------|------|
@@ -439,7 +476,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ## 13. 不可变逐旁注布局（v2）
 
-**目标**：active/loading 行可流式增长；旁注以稳定 `turn-commentary-{tool_call_id}` 落在锚定工具**之前**。晚到 open 旁注可 upsert 正文；若误落在工具后须搬回工具前（不得长期挂在 loading 尾泡）。
+**目标**：active/loading 行可流式增长；旁注以稳定 `turn-commentary-{tool_call_id}` 落在锚定工具**之前**。晚到 open 旁注可 upsert 正文；
+  若误落在工具后须搬回工具前（不得长期挂在 loading 尾泡）。
 
 | 机制 | 说明 |
 |------|------|
@@ -452,7 +490,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
-**生产投影**：[`project_turn_web_v2`](../src/cm_turn_layout/project.rs)。Web 已移除 v1 batch 特判；模块级 [`project_turn_web`](../src/cm_turn_layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
+**生产投影**：[`project_turn_web_v2`](../src/cm_turn_layout/project.rs)。Web 已移除 v1 batch 特判；
+  模块级 [`project_turn_web`](../src/cm_turn_layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
 
 Web `sync_turn_projection` / `sync_stream_preview` 以 `tool_call_id` 稳定消息 ID upsert 到对应工具之前；同 ID 可更新正文，错序时重排到工具前。
 
@@ -463,21 +502,26 @@ project_turn_web_v2: [tool: archive] → [commentary @ unpack] → [tool: unpack
 messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 ```
 
-**仍保留**：`demote_answer_before_tools`、post-tool loading peel/pin、`TurnReducer` 金样（`fixtures/turn_project_golden.jsonl` 仍可按 step 锚点断言 canonical，与 UI 投影可分叉）。
+**仍保留**：`demote_answer_before_tools`、post-tool loading peel/pin、
+  `TurnReducer` 金样（`fixtures/turn_project_golden.jsonl` 仍可按 step 锚点断言 canonical，与 UI 投影可分叉）。
 
 ### 13.2 Hydration 与缓存版本
 
 - `ChatSession.layout_schema_version`：旧缓存缺字段按 v1 读取；新建会话及流式投影写 v2。
 - 加载缓存时，`turn-commentary-*` / `turn-final-answer` 稳定 key 可将未带版本字段的早期 v2 缓存识别为 v2。
 - 流结束边界立即发起 best-effort `keepalive` 会话快照 PUT，覆盖常规大小会话“状态就绪后马上刷新”；常规 400ms 防抖写盘继续作为兜底。
-- 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或仅覆盖已有回合时不进入 assistant/tool pool 启发式重排。若较新 revision 含更多 user 回合，则保留本地 v2 行不变，并从首个服务端独有 user 起追加 canonical 后缀，避免另一浏览器新增的回合被本地快照遮蔽。
-- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 在响应**无** `layout`（或缺 segment 键）时继续走 v1 legacy adapter；旧会话无需迁移。新回合保存会写入会话级 **`layout`**（B2 persist）。官方 Web **B3** 双读该字段记差分，但 GET 历史行仍用 legacy id（不 stamp 流式活键），以免空缓存被当成可保留的 v2 投影。
+- 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或仅覆盖已有回合时不进入 assistant/tool pool 启发式重排。
+  若较新 revision 含更多 user 回合，则保留本地 v2 行不变，并从首个服务端独有 user 起追加 canonical 后缀，避免另一浏览器新增的回合被本地快照遮蔽。
+- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 在响应**无** `layout`（或缺 segment 键）时继续走 v1 legacy adapter；旧会话无需迁移。
+  新回合保存会写入会话级 **`layout`**（B2 persist）。官方 Web **B3** 双读该字段记差分，但 GET 历史行仍用 legacy id（不 stamp 流式活键），
+  以免空缓存被当成可保留的 v2 投影。
 
 ---
 
 ## 14. 写入收敛（Phase 9）
 
-**目标**：finalized commentary / 终答 / 工具占位经 `TurnReducer` → `project_turn_projection` → [`projection_reconciler`] 落盘；`TurnLayout` 只维护 scratch、overlay 与 active/loading 句柄。
+**目标**：finalized commentary / 终答 / 工具占位经 `TurnReducer` → `project_turn_projection` → [`projection_reconciler`] 落盘；
+  `TurnLayout` 只维护 scratch、overlay 与 active/loading 句柄。
 
 | Invariant | 规则 |
 |-----------|------|
@@ -490,20 +534,30 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 | **I15 旁注可见性不等工具** | 旁注一旦离开 overlay 进入 canonical，须**当帧**有可见落点：`project_turn_web_v2` 只从 `ToolStep` 出行，故 **pending 段必须尽早取得锚点**——`turn_segment_start{beforeToolCallId}` 吸收 pending（`reduce_segment_start`），`tool_result` 无 START 时补登记工具步（`on_tool_result_inserted`），且 `try_upsert_open_anchored_commentary` **不**以 `tool_phase_open` 为前提 |
 | **I16 旁注键仅本回合唯一** | `turn-commentary-{tool_call_id}` 的 upsert 与工具行查找一律限定在**最后一条 user 行之后**；模型跨回合复用同一 `tool_call_id` 时，上一回合的同键行改名为 `…#prev{n}` 让出规范键（仿 `detach_final_answer_projection`，仍保留 `turn-commentary-` 前缀，故 `is_commentary_row_id` 与 v2 缓存识别不变）。见 `turn_row_queue::archive_stale_commentary_rows`、`mock-v2-multi-turn-boundaries.spec.ts` |
 
-**顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
+**顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）
+  → `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
 
-**I15 的两条真实回归**（`real-llm-tool-bubble-vanish` 派生，见 `e2e/specs/mock-real-tool-bubble-vanish.spec.ts`）：真实 SSE 在 `parsing_tool_calls` 后**先**发 `turn_segment_start{beforeToolCallId}`、数百毫秒后才发 `TOOL_CALL_START`；而 `reset_loading_tail_streaming_text` 在段开始时已清 overlay。
-  若 pending 段此刻仍无锚点，助手气泡会整段消失直到工具到达。`TOOL_CALL_RESULT` 未经 START 到达时同理（`drain(clear=true)` 已掏空 overlay，canonical 却无该工具步）。
+**I15 的两条真实回归**（`real-llm-tool-bubble-vanish` 派生，见 `e2e/specs/mock-real-tool-bubble-vanish.spec.ts`）：
+  真实 SSE 在 `parsing_tool_calls` 后**先**发 `turn_segment_start{beforeToolCallId}`、数百毫秒后才发 `TOOL_CALL_START`；
+  而 `reset_loading_tail_streaming_text` 在段开始时已清 overlay。
+  若 pending 段此刻仍无锚点，助手气泡会整段消失直到工具到达。`TOOL_CALL_RESULT` 未经 START 到达时同理（`drain(clear=true)` 已掏空 overlay，
+    canonical 却无该工具步）。
 
 **`on_done`**：关 open 段 → `sync_turn_projection` → `drain_stream_tail_into_canonical_for_done`（补终答 + 清 loading 句柄）→ tail 决策。
 
-**测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts` · `mock-commentary-no-duplicate.spec.ts` · `finalize_loading_drops_text_already_on_commentary_row`。
+**测试**：
+  `project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` ·
+  `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts` · `mock-commentary-no-duplicate.spec.ts` ·
+  `finalize_loading_drops_text_already_on_commentary_row`。
 
 ---
 
 ## 15. 已知过渡债（收敛中）
 
-v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文所有权收口 / `TurnProjection` 金样已合入主线（PR [#723](https://github.com/noisystreet/CrabMate/pull/723)、[#724](https://github.com/noisystreet/CrabMate/pull/724)）。主路径：`TurnReducer` → `project_turn_projection` → `projection_reconciler` → `StoredMessage`；`TurnLayout` 管 scratch / overlay / loading 句柄。
+v2 逐旁注与 `layout_schema_version=2` 已落地；
+  **Phase A–D** 与正文所有权收口 / `TurnProjection` 金样已合入主线（PR [#723](https://github.com/noisystreet/CrabMate/pull/723)、
+  [#724](https://github.com/noisystreet/CrabMate/pull/724)）。主路径：
+  `TurnReducer` → `project_turn_projection` → `projection_reconciler` → `StoredMessage`；`TurnLayout` 管 scratch / overlay / loading 句柄。
 
 | 债 | 表现 | 状态 |
 |----|------|------|
@@ -541,10 +595,16 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 ### 16.1 现状
 
-- **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。软能力 `sse_capabilities.terminal_order=saved_before_finished`。
-- **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；`stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
-- hydration：same-revision 守卫仍保留（E4 前不删）。回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web **双读**：响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）；无 `layout` 走纯 legacy。旧库行若 `layout_meta_json` 为空则 GET 省略该键。
-- Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`；hydration / 冷启动双读 `layout` 但历史行仍是 legacy id，完整同键投影尚未成为权威。
+- **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；
+  冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。软能力 `sse_capabilities.terminal_order=saved_before_finished`。
+- **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；
+  `stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、
+  不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
+- hydration：same-revision 守卫仍保留（E4 前不删）。回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web **双读**：
+  响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）；无 `layout` 走纯 legacy。
+  旧库行若 `layout_meta_json` 为空则 GET 省略该键。
+- Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；
+  流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`；hydration / 冷启动双读 `layout` 但历史行仍是 legacy id，完整同键投影尚未成为权威。
 
 长期方向：**不再堆 merge / dedupe / sleep**，而是统一终态顺序、canonical 事实来源与确定性投影。
 
@@ -590,9 +650,12 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 ### 16.4 Canonical + 投影键
 
-1. 服务端持久化 canonical messages，并逐步补充可选布局元数据（示例字段，落地时以 serde/OpenAPI 为准）：`turn_id`、`segment_id`、`segment_kind`、`before_tool_call_id`、`sequence`、与现有 **`layout_schema_version`**（Web 侧已用 **2**）对齐的服务端字段。
-2. **`crabmate-turn-layout`** 为 canonical → Web 行的唯一投影；流式与 hydration **同一**规则与同一组 golden（含 `turn_project_*` / `turn_project_projection_*`）。
-3. 浏览器 `/user-data` 只缓存投影；缓存身份至少含：`conversation_id`、`server_revision`、`layout_schema_version`、`projection_hash`。本地缓存可加速首屏，**不得**成为第二事实来源。
+1. 服务端持久化 canonical messages，并逐步补充可选布局元数据（示例字段，落地时以 serde/OpenAPI 为准）：`turn_id`、`segment_id`、`segment_kind`、
+  `before_tool_call_id`、`sequence`、与现有 **`layout_schema_version`**（Web 侧已用 **2**）对齐的服务端字段。
+2. **`crabmate-turn-layout`** 为 canonical → Web 行的唯一投影；
+  流式与 hydration **同一**规则与同一组 golden（含 `turn_project_*` / `turn_project_projection_*`）。
+3. 浏览器 `/user-data` 只缓存投影；缓存身份至少含：`conversation_id`、`server_revision`、`layout_schema_version`、`projection_hash`。
+  本地缓存可加速首屏，**不得**成为第二事实来源。
 
 **目标 hydration 决策**
 
@@ -621,7 +684,9 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 - **单元**：生命周期 Running → Draining → Persisted → Finished；`on_done` ≤ 1；投影幂等；hash 对 revision/version 敏感。
 - **协议金样**：`conversation_saved` 在终态前；终态后业务事件 → 违规；`golden_sse_control` / AG-UI 金样三方一致。
 - **E2E**：流结束立即重载；冷启动；第二浏览器；保存延迟/失败；resume；cancel / `RUN_ERROR`；多工具无空壳/无重复终答（现有 mock 基线见 §15）。
-- **指标（脱敏）**：`stream_draining_to_saved_ms`、`conversation_saved_to_finished_ms`、`event_after_terminal_count`、`hydration_projection_source`、`projection_hash_changed` 等；**禁止**记密钥与完整正文。告警：终态后事件、revision 久不到达、同 revision hash 抖动、hydration 后空壳增加、`on_done` 重复。
+- **指标（脱敏）**：`stream_draining_to_saved_ms`、`conversation_saved_to_finished_ms`、`event_after_terminal_count`、`hydration_projection_source`、
+  `projection_hash_changed` 等；**禁止**记密钥与完整正文。告警：终态后事件、revision 久不到达、同 revision hash 抖动、hydration 后空壳增加、
+  `on_done` 重复。
 
 ### 16.7 验收
 

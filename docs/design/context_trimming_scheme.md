@@ -2,8 +2,10 @@
 
 **状态**：与当前实现同步的设计说明（会话同步管道以源码为准；分层 ReAct 专用裁剪另见下文关联文档）。  
 **受众**：维护 `agent::message_pipeline`、`agent::context_window` 与 Agent 主循环的开发者。  
-**权威实现**：`src/cm_agent/message_pipeline/`（**`sync_pipeline.rs`**：`apply_session_sync_pipeline` 顺序契约；**`transforms.rs`**）、`src/agent/context_window.rs`（**`prepare_messages_for_model`**、**`maybe_summarize_with_llm`**）。  
-**单轮预算**（墙钟 / LLM 次数 / Token 粗估；与 messages 体积裁剪正交）：**`src/cm_agent/turn_budget.rs`**（**`agent_turn` Operator** 共用 **`TurnBudgetCounter`**）。  
+**权威实现**：`src/cm_agent/message_pipeline/`（**`sync_pipeline.rs`**：`apply_session_sync_pipeline` 顺序契约；**`transforms.rs`**）、
+  `src/agent/context_window.rs`（**`prepare_messages_for_model`**、**`maybe_summarize_with_llm`**）。
+**单轮预算**（墙钟 / LLM 次数 / Token 粗估；与 messages 体积裁剪正交）：
+  **`src/cm_agent/turn_budget.rs`**（**`agent_turn` Operator** 共用 **`TurnBudgetCounter`**）。
 **配置与环境变量**：键名与默认值以 **`docs/配置说明.md`**、`config/default_config.toml` 为准。
 
 ---
@@ -43,13 +45,17 @@
 
 ### 3.1 会话同步（Session sync）
 
-- **入口**：**`message_pipeline::apply_session_sync_pipeline`**（由 **`context_window::prepare_messages_before_model_call_sync`** / **`prepare_messages_for_model`** 调用）。  
+- **入口**：
+  **`message_pipeline::apply_session_sync_pipeline`**（由 **`context_window::prepare_messages_before_model_call_sync`** /
+  **`prepare_messages_for_model`** 调用）。
 - **作用对象**：进程内会话 **`Vec<Message>`**（就地修改）。  
 - **目标**：控制长度、压缩工具噪声、维护对话结构合法性（孤立 tool、相邻 assistant 等）。
 
 ### 3.2 供应商出站（Vendor body）
 
-- **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`crabmate_llm::vendor_messages`**；根包经 **`message_pipeline`** 再导出）。  
+- **入口**：
+  **`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`crabmate_llm::vendor_messages`**；
+  根包经 **`message_pipeline`** 再导出）。
 - **作用对象**：从会话切片构造 **`ChatRequest.messages`**，**不写回**会话 `Vec`。  
 - **典型处理**：跳过 UI 分隔线 / 长期记忆注入展示条、按网关处理 **`reasoning_content`**、OpenAI 兼容 **normalize**、可选 **system→user** 折叠。
 
@@ -71,7 +77,8 @@
 1. 暂存 **`crabmate_timeline`**（不计入条数/字符预算），记录起点快照（观测）  
 2. **`compress_tool_message_contents`**（**`tool_message_max_chars`**）  
 3. **`trim_messages_by_count`**（**`max_message_history`**）  
-4. 若 **`context_char_budget > 0` 或按 `llm_context_tokens` 推导的预算 `> 0`**（**`AgentConfig::effective_context_char_budget_for_pipeline`** 取显式与推导的**更小非零**）：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**  
+4. 若 **`context_char_budget > 0` 或按 `llm_context_tokens` 推导的预算 `> 0`**（**`AgentConfig::effective_context_char_budget_for_pipeline`**
+  取显式与推导的**更小非零**）：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**
 5. **`drop_orphan_tool_messages`**，再接回暂存的时间线旁注
 
 **设计意图简述**：
@@ -84,18 +91,22 @@
 
 ## 5. 可选 LLM 摘要（中间段压缩）
 
-当 **`context_summary_trigger_chars > 0`** 且非 system 文本总字符超过阈值时，**`maybe_summarize_with_llm`** 可发起**无 tools** 的 `chat/completions`，将「中间段」折叠为一条 **`user.name=crabmate_context_summary`** 摘要（正文前缀 **`[较早对话已摘要，以下为压缩要点]`**），
-  尾部保留 **`context_summary_tail_messages`** 条（细节见 **`context_window.rs`**）。该条**落盘并送模型**，**不**计入分叉用户序号，也**不**出现在 **`GET /conversation/messages`** 快照（与首轮工作区画像同类）。窗口裁剪/摘要命中时另发 `timeline_log`（`kind=context_trim`）
+当 **`context_summary_trigger_chars > 0`** 且非 system 文本总字符超过阈值时，**`maybe_summarize_with_llm`** 可发起**无 tools** 的 `chat/completions`，
+  将「中间段」折叠为一条 **`user.name=crabmate_context_summary`** 摘要（正文前缀 **`[较早对话已摘要，以下为压缩要点]`**），
+  尾部保留 **`context_summary_tail_messages`** 条（细节见 **`context_window.rs`**）。该条**落盘并送模型**，**不**计入分叉用户序号，
+    也**不**出现在 **`GET /conversation/messages`** 快照（与首轮工作区画像同类）。窗口裁剪/摘要命中时另发 `timeline_log`（`kind=context_trim`）
   并在回合结束写入 `crabmate_timeline`。
 
-提示词：**`context_summary_system_file`** / **`context_summary_user_file`**（默认 **`config/prompts/context_summary_*.md`**；读盘优先，失败回退 **`include_str!` 嵌入**）。user 模板须含 **`{transcript}`**（缺失则运行时追加）；长度占位符 **`{max_tokens}`**（别名 **`{max_chars}`**）。
+提示词：**`context_summary_system_file`** / **`context_summary_user_file`**（默认 **`config/prompts/context_summary_*.md`**；读盘优先，
+  失败回退 **`include_str!` 嵌入**）。user 模板须含 **`{transcript}`**（缺失则运行时追加）；长度占位符 **`{max_tokens}`**（别名 **`{max_chars}`**）。
   默认骨架为「目标 / 已完成 / 未决 / 关键路径与错误」。桌面/deb 模板路径为 **`/etc/crabmate/config/prompts/`**（与配置键相对路径一致）。
 
 **设计要点**：
 
 - **额外成本与失败语义**：摘要是一次独立 LLM 调用，失败策略需在实现中保持可预期（勿静默丢历史）。  
 - **幻觉风险**：摘要可能遗漏或歪曲约束；通过尾部保留条数、触发阈值与提示词约束缓解。  
-- **与同步管道的关系**：摘要通常在同步裁剪**之后**执行（见 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`** 调用链），具体顺序以源码为准。
+- **与同步管道的关系**：摘要通常在同步裁剪**之后**执行（见 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`** 调用链），
+  具体顺序以源码为准。
 
 ### 5.1 与单轮预算（`TurnBudgetCounter`）联动
 
@@ -129,16 +140,20 @@
 
 ### 6.4 工具正文 vs 自然语言
 
-- 优先压缩 **`crabmate_tool`** 信封内 **`output`**（首尾采样 + **`output_truncated`** 等元数据），非信封路径按前缀截断；便于模型知晓「保留比例」而非误以为全文可用。
+- 优先压缩 **`crabmate_tool`** 信封内 **`output`**（首尾采样 + **`output_truncated`** 等元数据），非信封路径按前缀截断；便于模型知晓「保留比例」
+  而非误以为全文可用。
 
 ### 6.5 多入口一致性
 
 - Web / CLI / 分阶段路径统一经 **`prepare_messages_for_model`**（会话同步 + 可选摘要等）。
-- **分层（已移除）**：原 Manager/Operator 曾走独立 `prepare_messages_for_hierarchical_*`；现行仅 **ReAct 外循环** 经 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`**。
+- **分层（已移除）**：原 Manager/Operator 曾走独立 `prepare_messages_for_hierarchical_*`；
+  现行仅 **ReAct 外循环** 经 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`**。
 
 ### 6.6 可观测性
 
-- **`MESSAGE_PIPELINE_COUNTERS`**：**`trim_count_hits`**、**`trim_char_budget_hits`**、**`tool_compress_hits`**、**`orphan_tool_drops`**；**`GET /status`** 暴露累计值（进程级，非单会话）；**分层 Manager / JSON 修复 / 动态分解 / SmartRouter LLM 路由** 等路径在命中同步管道时同样递增这些计数器。  
+- **`MESSAGE_PIPELINE_COUNTERS`**：**`trim_count_hits`**、**`trim_char_budget_hits`**、**`tool_compress_hits`**、**`orphan_tool_drops`**；
+  **`GET /status`** 暴露累计值（进程级，非单会话）；
+  **分层 Manager / JSON 修复 / 动态分解 / SmartRouter LLM 路由** 等路径在命中同步管道时同样递增这些计数器。
 - **日志**：**`crabmate::message_pipeline=trace`** 输出逐步 **`session_sync_step`**。
 
 ### 6.7 安全与脱敏

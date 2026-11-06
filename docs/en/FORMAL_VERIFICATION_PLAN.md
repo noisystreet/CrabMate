@@ -2,7 +2,8 @@
 
 # Formal verification plan (design draft)
 
-This document describes a practical formal-verification layer for CrabMate on top of existing unit/golden/E2E/pre-commit checks. The near-term focus is **SSE protocol, state transitions, and key invariants**, then expansion to other high-risk paths.
+This document describes a practical formal-verification layer for CrabMate on top of existing unit/golden/E2E/pre-commit checks. The near-term focus
+  is **SSE protocol, state transitions, and key invariants**, then expansion to other high-risk paths.
 
 ## 1. Background
 

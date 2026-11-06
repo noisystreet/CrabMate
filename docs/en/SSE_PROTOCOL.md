@@ -2,28 +2,50 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in **`src/cm_sse_protocol`** (`sse/protocol.rs`, `sse/line.rs`). Clients pin **`crabmate::cm_sse_protocol`** (`features = ["protocol"]`);
-  the `sse` alias exists only on the `server` composition surface — **do not** use it from Client. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs) (AG-UI;
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines,
+  distinct from **plain-text model deltas**. **Payload shapes** and line classification live in **`src/cm_sse_protocol`** (`sse/protocol.rs`,
+  `sse/line.rs`). Clients pin **`crabmate::cm_sse_protocol`** (`features = ["protocol"]`);
+  the `sse` alias exists only on the `server` composition surface — **do not** use it from Client. The **numeric protocol version** is
+    **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client
+    [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)
+    (AG-UI;
   sink shapes in [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)).
 
 ## Protocol version `v` and negotiation
 
-- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`**.
+- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**,
+  aligned with **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
-- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**,
-  `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
-- **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading;
-  the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
-- **Evolution**: Bump **`src/cm_sse_protocol`**, this doc and the Chinese twin, and run **`cargo test --lib --no-default-features --features protocol cm_sse_protocol`** (doc marker self-check).
-- **Semver / publishing / external pins**: Wire `SSE_PROTOCOL_VERSION` and Cargo crate semver are separate axes; breaking vs soft fields, **no N−1 wire decoder window today**, and git tag `client-contract-vX.Y.Z` pinning are in **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**. Gate: `bash scripts/check-client-contract.sh`.
+- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**,
+  the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**,
+  `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**;
+    if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
+- **First frame**: After a new stream is attached,
+  the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to
+  its compile-time constant; on mismatch it calls `onError` and stops reading;
+  the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older;
+    usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
+- **Evolution**: Bump **`src/cm_sse_protocol`**, this doc and the Chinese twin,
+  and run **`cargo test --lib --no-default-features --features protocol cm_sse_protocol`** (doc marker self-check).
+- **Semver / publishing / external pins**: Wire `SSE_PROTOCOL_VERSION` and Cargo crate semver are separate axes; breaking vs soft fields,
+  **no N−1 wire decoder window today**,
+  and git tag `client-contract-vX.Y.Z` pinning are in **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**. Gate:
+  `bash scripts/check-client-contract.sh`.
 
 ## Transport and framing
 
 - **Route**: **`POST /chat/stream`**; response **`text/event-stream`**. (Ops **`POST /config/reload`** is JSON, not SSE—see **CONFIGURATION.md** § hot reload.)
-- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**,
-  replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` = **`x-stream-job-id`**);
-  **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
-- **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n` and preserves leading spaces/newlines for dispatch (only `[DONE]` sentinel checks use `trim`), so whitespace-only deltas are not dropped (see `sendChatStream` and `join_sse_data_lines`).
+- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`,
+  in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**:
+  `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**,
+  replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts,
+    reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` =
+    **`x-stream-job-id`**);
+  **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose
+    **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
+- **Event blocks**: Separated by **blank line `\n\n`**;
+  each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n` and preserves leading spaces/newlines
+  for dispatch (only `[DONE]` sentinel checks use `trim`), so whitespace-only deltas are not dropped (see `sendChatStream` and `join_sse_data_lines`).
 - **Text delta**: If the joined string is **not** valid control JSON, or parses as **`plain`**, it is treated as assistant content for `onDelta`.
 - **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content. See also **`stream_ended`**.
 
@@ -35,11 +57,13 @@ Control payloads are **single-line JSON** with logical structure:
 { "v": 1, …payload… }
 ```
 
-`SsePayload` uses **`serde(untagged)`**, so there is **no** outer `"SsePayload"` wrapper key; variants are distinguished by field shape (same as `SseControlPayload` in `api.ts`).
+`SsePayload` uses **`serde(untagged)`**, so there is **no** outer `"SsePayload"` wrapper key;
+  variants are distinguished by field shape (same as `SseControlPayload` in `api.ts`).
 
 ## Distinguishing from model text (`error` pitfall)
 
-- If JSON has only **`error`** string and **`code` is missing or empty**, **do not** treat as protocol failure: model reasoning may contain example objects like `{"error":"…"}`.
+- If JSON has only **`error`** string and **`code` is missing or empty**, **do not** treat as protocol failure:
+  model reasoning may contain example objects like `{"error":"…"}`.
 - **Protocol stream errors** (stop stream, `onError`): require **non-empty `code`** (`tryDispatchSseControlPayload` / `classify_agent_sse_line`).
 - Server **`encode_message` for `SsePayload::Error`** should always set non-empty `code`; serialization failure fallback uses `code: "SSE_ENCODE"`.
 
@@ -71,12 +95,22 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`); optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`). **`truncated`**: upstream `finish_reason == "length"` (token cap) or the stream was cut off before `[DONE]` (no clean finish); layer-1 truncation detection, which takes precedence over `fallback` / `completed` / `no_output` | Web: extract first and swallow (independent of other control-plane branches); update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
-Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`, `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`, `max_input_tokens`, `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`,
-  `counting_source`, `token_triggered`, `removed_turn_groups`, `removed_messages`, and `compaction_reason` fields. Counting sources are `matched_tokenizer`, `fallback_tokenizer`, or `conservative_bytes`; current reasons are `token_budget_summary`, `token_budget_turn_groups`, `token_budget_warning`, or `none`. When only `compress_hits > 0`,
-  the wire title is **`已压缩工具输出`** (“Tool output compressed”); count/character/whole-group trimming or summarization uses **`已裁剪历史`** (“History trimmed”). All additions remain soft fields under the existing `timeline_log` shape.
+Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`,
+  `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`,
+  `max_input_tokens`, `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`,
+  `counting_source`, `token_triggered`, `removed_turn_groups`, `removed_messages`,
+    and `compaction_reason` fields. Counting sources are `matched_tokenizer`, `fallback_tokenizer`, or `conservative_bytes`;
+    current reasons are `token_budget_summary`, `token_budget_turn_groups`, `token_budget_warning`, or `none`. When only `compress_hits > 0`,
+  the wire title is **`已压缩工具输出`** (“Tool output compressed”);
+    count/character/whole-group trimming or summarization uses **`已裁剪历史`** (“History trimmed”). All additions remain soft fields under the existing
+    `timeline_log` shape.
 
-Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, `max_input_tokens` (context window after output reservation and safety margin), `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`, `counting_source`,
-  and optional `provider_input_tokens`. The source is `matched_tokenizer`, `fallback_tokenizer`, `conservative_bytes`, or response-calibrated `provider_usage`. Older peers may continue exchanging only `prompt_tokens` and `tiktoken_model`; `SSE_PROTOCOL_VERSION` is unchanged.
+Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`,
+  `max_input_tokens` (context window after output reservation and safety margin), `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`,
+  `attachment_tokens`, `counting_source`,
+  and optional `provider_input_tokens`. The source is `matched_tokenizer`, `fallback_tokenizer`, `conservative_bytes`,
+    or response-calibrated `provider_usage`. Older peers may continue exchanging only `prompt_tokens` and `tiktoken_model`;
+    `SSE_PROTOCOL_VERSION` is unchanged.
 
 ### `tool_result` common fields
 
@@ -134,13 +168,17 @@ Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, 
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 
-**Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code`; **`plan_rewrite_exhausted`** uses the semantic table below; **`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`**, etc. use a **truncated internal summary** for triage (older clients may ignore it).
+**Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code`;
+  **`plan_rewrite_exhausted`** uses the semantic table below; **`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`**,
+  etc. use a **truncated internal summary** for triage (older clients may ignore it).
 
 **Optional `turn_id`**: matches **`x-stream-job-id`** and **`sse_capabilities.job_id`** (`u64`); omitted on non-Web paths or legacy frames.
 
 **Optional `sub_phase`**: orchestration sub-phase at failure, aligned with PER: `planner` \| `executor` \| `reflect`; older clients may ignore it.
 
-**Optional `request_id`**: same value as HTTP **`x-request-id`** / JSON **`ApiError.request_id`** for the turn; Web stream jobs carry it via **`TracingChatTurn`** / the queue envelope (including in-turn `plan_rewrite_exhausted` and terminal failure frames) for support triage;
+**Optional `request_id`**: same value as HTTP **`x-request-id`** / JSON **`ApiError.request_id`** for the turn;
+  Web stream jobs carry it via **`TracingChatTurn`** / the queue envelope (including in-turn `plan_rewrite_exhausted` and terminal failure frames)
+  for support triage;
   does **not** bump `SSE_PROTOCOL_VERSION` (soft field). On AG-UI `RUN_ERROR.error` it is serialized as **`requestId`** (camelCase).
 
 #### `reason_code` for `plan_rewrite_exhausted`
@@ -177,12 +215,19 @@ Approximate category of the **last** failed final answer when the rewrite budget
 
 ### Persistence semantics for cancelled / interrupted turns
 
-When the user stops generation (`POST /chat/stream/{job_id}/cancel`) or the SSE receiver drops while a cooperative cancel is pending, the content already produced in that turn (assistant text / `tool_calls` / completed `tool` results) is **best-effort persisted** to the conversation store, so the **next** turn's model context includes "what I already produced before the interruption". Notes:
+When the user stops generation (`POST /chat/stream/{job_id}/cancel`) or the SSE receiver drops while a cooperative cancel is pending,
+  the content already produced in that turn (assistant text / `tool_calls` / completed `tool` results)
+  is **best-effort persisted** to the conversation store, so the **next** turn's model context includes "
+  what I already produced before the interruption". Notes:
 
 - Persistence goes through `save_conversation_messages_if_revision` (CAS); a `Conflict` is logged only and is not treated as a cancel failure.
-- The interrupted path writes back **append-only** (no compaction, no archive); if the turn stopped mid tool batch (`assistant(tool_calls=[A, B]) + tool(A)`), placeholder `tool` messages are synthesized for the missing responses so the persisted sequence stays legal (otherwise the next request would be rejected with an upstream **400**).
+- The interrupted path writes back **append-only** (no compaction, no archive);
+  if the turn stopped mid tool batch (`assistant(tool_calls=[A, B]) + tool(A)`),
+  placeholder `tool` messages are synthesized for the missing responses so the persisted sequence stays legal (otherwise the next request would be
+  rejected with an upstream **400**).
 - No persistence when the turn produced no visible assistant output.
-- **SSE semantics are unchanged**: only `STREAM_CANCELLED` is still emitted; the cancel path does **not** emit `conversation_saved` / state snapshot / `stream_draining` and does no long-term-memory async indexing.
+- **SSE semantics are unchanged**: only `STREAM_CANCELLED` is still emitted;
+  the cancel path does **not** emit `conversation_saved` / state snapshot / `stream_draining` and does no long-term-memory async indexing.
 
 ## `tool_result.error_code` (tools / workflow)
 
@@ -207,7 +252,9 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `workflow_tool_join_error` | Workflow tool task join failed |
 | `{tool_name}_failed` | Generic tool failure (e.g. `run_command_failed`) |
 
-Full heuristics: `src/cm_tools/tool_result/mod.rs` (`classify_error_code`); **`error_code` → `failure_category`**: `src/cm_tools/tool_result/tool_error.rs` (**`failure_category_for_error_code`**, matches **`ToolFailureCategory`**). Workflow-specific: `src/cm_workflow/execute/`.
+Full heuristics: `src/cm_tools/tool_result/mod.rs` (`classify_error_code`); **`error_code` → `failure_category`**:
+  `src/cm_tools/tool_result/tool_error.rs` (**`failure_category_for_error_code`**, matches **`ToolFailureCategory`**). Workflow-specific:
+  `src/cm_workflow/execute/`.
 
 ### `tool_result.failure_category` (and `crabmate_tool.failure_category`)
 
@@ -223,36 +270,50 @@ Same strings as Rust **`tool_result::ToolFailureCategory::as_str()`** so clients
 | `internal` | Rare internal invariant |
 | `unknown` | Unclassified or unknown tool |
 
-New **`error_code`** values may map to **`unknown`** or fall through the `_failed` suffix rule to **`external`** until **`failure_category_for_error_code`** is extended.
+New **`error_code`** values may map to **`unknown`** or fall through the `_failed` suffix rule to **`external`** until
+  **`failure_category_for_error_code`** is extended.
 
 ## vs `POST /chat` HTTP errors
 
-Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`), **not** SSE `data:` lines. The full **`ApiError.code`** table lives in **`docs/命令行契约.md`**; **this doc** focuses on SSE control-plane and **`client_sse_protocol`**-related HTTP codes, complementing the stream error table above.
+Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`),
+  **not** SSE `data:` lines. The full **`ApiError.code`** table lives in **`docs/命令行契约.md`**;
+  **this doc** focuses on SSE control-plane and **`client_sse_protocol`**-related HTTP codes, complementing the stream error table above.
 
 ## Dual-end checklist
 
 When changing any of:
 
-1. **`src/cm_sse_protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
-2. **`src/cm_sse_protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
-3. Client `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
-4. `src/cm_sse_protocol/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI). **Reserved anchor**: `pub` inside the `protocol` promise surface but with no production consumer today — a deliberately kept same-semantics reference; do **not** sweep it as dead code
+1. **`src/cm_sse_protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`,
+  `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
+2. **`src/cm_sse_protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`)
+  and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
+3. Client `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.):
+  classification order and **`client_sse_protocol`** in the request body
+4. `src/cm_sse_protocol/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI). **Reserved anchor**:
+  `pub` inside the `protocol` promise surface but with no production consumer today — a deliberately kept same-semantics reference;
+  do **not** sweep it as dead code
 5. New `encode_message(SsePayload::…)` call sites
 
 …keep Rust, Leptos, and this doc aligned.
 
 ## Contract tests (control-plane classification)
 
-Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for non-Web consumers uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
+Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`);
+  golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for non-Web consumers uses **`classify_sse_control_outcome`**
+  (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
 
-- **SSE golden**: `./scripts/check-sse-protocol.sh` (server-side classify + **HTTP/SSE failure-path** golden `fixtures/http_sse_failure_path_golden.jsonl`). Client AG-UI parser tests live in the Client repo.
-When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key, also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
+- **SSE golden**:
+  `./scripts/check-sse-protocol.sh` (server-side classify + **HTTP/SSE failure-path** golden `fixtures/http_sse_failure_path_golden.jsonl`). Client
+  AG-UI parser tests live in the Client repo.
+When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key,
+  also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
 
 ---
 
 ## Appendix: AG-UI protocol (v2, in development)
 
-CrabMate is incrementally migrating from its custom SSE control-plane protocol (v1, the main body of this doc) to the [AG-UI protocol](https://docs.ag-ui.com/concepts/events) (v2). The two formats coexist during migration.
+CrabMate is incrementally migrating from its custom SSE control-plane protocol (v1, the main body of this doc)
+  to the [AG-UI protocol](https://docs.ag-ui.com/concepts/events) (v2). The two formats coexist during migration.
 
 ### Wire format
 
@@ -272,12 +333,17 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 | `RUN_FINISHED` | Turn completed → frontend drains then `on_done` + `saw_stream_ended` (see terminal order below). Optional CrabMate field **`tiktokenPromptTokens`** (same shape as v1 `stream_ended.tiktoken_prompt_tokens`; usually already sent via `conversation_saved`, kept as fallback) |
 | `RUN_ERROR` | Turn failed → frontend `on_error` + `saw_stream_ended` |
 
-**CUSTOM `stream_draining`**: model/tools finished; persistence in progress; **not** terminal. Official Web may enter Draining UI early without setting `saw_stream_ended`; body must still be fully read.
+**CUSTOM `stream_draining`**: model/tools finished; persistence in progress;
+  **not** terminal. Official Web may enter Draining UI early without setting `saw_stream_ended`; body must still be fully read.
 
 **Terminal event order (Phase E1, current server)**
 
-- **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`) → **last** `RUN_FINISHED` / `RUN_ERROR`. First-frame `sse_capabilities.terminal_order = saved_before_finished` (soft field; does **not** bump `SSE_PROTOCOL_VERSION`).
-- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`; also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`, driven by body completion (Client `frontend/src/api/chat_stream/sse_frame.rs`).
+- **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`)
+  → **last** `RUN_FINISHED` / `RUN_ERROR`. First-frame `sse_capabilities.terminal_order = saved_before_finished` (soft field;
+  does **not** bump `SSE_PROTOCOL_VERSION`).
+- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`;
+  also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`,
+  driven by body completion (Client `frontend/src/api/chat_stream/sse_frame.rs`).
 - **Later contract (E4)**: drop post-terminal business-frame compat; see **`docs/Turn布局设计.md` §16**.
 
 ### Tool calls
@@ -291,7 +357,9 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 
 ### Text messages (reserved)
 
-`TEXT_MESSAGE_START` / `CONTENT` / `END`, `REASONING_MESSAGE_START` / `CONTENT` / `END` are standard AG-UI events recognised by the frontend parser but **not currently emitted by the backend**.
+`TEXT_MESSAGE_START` / `CONTENT` / `END`,
+  `REASONING_MESSAGE_START` / `CONTENT` / `END` are standard AG-UI events recognised by the frontend parser but **not currently emitted by the
+  backend**.
 
 ### CUSTOM extension events
 
@@ -314,7 +382,9 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 | `chat_ui_separator` | `chat_ui_separator` | Ignored |
 | `sse_capabilities` | `sse_capabilities` | Ignored |
 
-**`data` fields of `command_approval`** (camelCase keys; semantics identical to v1 `command_approval_request`. Public parse type **`cm_sse_protocol::CommandApprovalData`** — converted from the snake-face `CommandApprovalBody` via `From`; absent keys serialize as `null`, **not omitted**):
+**`data` fields of `command_approval`** (camelCase keys;
+  semantics identical to v1 `command_approval_request`. Public parse type **`cm_sse_protocol::CommandApprovalData`** — converted from the snake-face
+  `CommandApprovalBody` via `From`; absent keys serialize as `null`, **not omitted**):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -337,13 +407,16 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 
 ### Golden test
 
-AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golden.jsonl`, driven by the `golden_ag_ui_v2_parser_matches_expected` test in Client `frontend/src/api/chat_stream/parser_v2.rs`.
+AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golden.jsonl`,
+  driven by the `golden_ag_ui_v2_parser_matches_expected` test in Client `frontend/src/api/chat_stream/parser_v2.rs`.
 
 ## Contract tests (`crabmate_tool` history envelope)
 
-- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
+- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments);
+  round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
 - **Rust**: `cargo test tool_result_envelope_golden`.
 
 ---
 
-Maintainers: tables should match code; if they drift, treat **`protocol.rs` + Client `frontend/src/api/chat_stream/parser_v2.rs`** as authoritative and fix this doc.
+Maintainers: tables should match code; if they drift,
+  treat **`protocol.rs` + Client `frontend/src/api/chat_stream/parser_v2.rs`** as authoritative and fix this doc.

@@ -1,10 +1,12 @@
 # `ToolRunner` Legacy → Typed 迁移：现状与清单
 
-**状态**：现状盘点 + 迁移清单（**未**承诺时间表；清单按 2026-10-27 代码快照生成）。**受众**：维护 `src/cm_tools/tools/runners.rs`、`tool_specs_registry` 及各工具实现的开发者。**语言**：中文。
+**状态**：现状盘点 + 迁移清单（**未**承诺时间表；清单按 2026-10-27 代码快照生成）。**受众**：维护 `src/cm_tools/tools/runners.rs`、
+  `tool_specs_registry` 及各工具实现的开发者。**语言**：中文。
 
 **关联**：
 
-- 工具**收敛方向**（薄封装 → `run_command`）是另一条线，不要与本文件混淆：[tool_calling_evolution.md](tool_calling_evolution.md) §8.5、[tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md)
+- 工具**收敛方向**（薄封装 → `run_command`）是另一条线，不要与本文件混淆：[tool_calling_evolution.md](tool_calling_evolution.md) §8.5、
+  [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md)
 - 内置工具契约：[工具说明](../工具说明.md)
 - 架构与模块边界：[开发文档](../开发文档.md)
 
@@ -12,7 +14,8 @@
 
 ## 1. 三个变体与语义差异
 
-`ToolRunner`（`src/cm_tools/tools/runners.rs`）原为三变体并存，是 strangler 迁移期的中间态；**`Legacy` 变体已于 2026-10-28 删除，现只剩 `Typed` / `AsyncOnly`**：
+`ToolRunner`（`src/cm_tools/tools/runners.rs`）原为三变体并存，是 strangler 迁移期的中间态；**`Legacy` 变体已于 2026-10-28 删除，
+  现只剩 `Typed` / `AsyncOnly`**：
 
 | 变体 | 签名 | 成败判定 | 当前数量 |
 |---|---|---|---|
@@ -20,9 +23,11 @@
 | ~~`Legacy`~~（**已删除**） | ~~`fn(&str, &ToolContext<'_>) -> String`~~ | ~~失败由 `parse_legacy_output` 从**正文关键词**推断~~ | **0**（变体已移除，见 §7 末条） |
 | `AsyncOnly` | 无执行体 | 仅 spec 占位（工具名 / schema / 摘要仍可用），须由异步调度执行 | **2**（`run_command`、`terminal_session`） |
 
-**为什么要迁**：`Legacy` 的失败判定是启发式的——实现只返回一段文本，编排层靠关键词猜「这次算不算失败」。同一段输出换个措辞就可能翻车（"错误：xxx" 被写进正常结果、或 `exit 1` 的说明文字被当成成功）。`Typed` 把失败变成类型，`error_code` 可直接派生（如 `cargo_check_failed`），不再猜。
+**为什么要迁**：`Legacy` 的失败判定是启发式的——实现只返回一段文本，编排层靠关键词猜「这次算不算失败」。同一段输出换个措辞就可能翻车（"错误：xxx"
+  被写进正常结果、或 `exit 1` 的说明文字被当成成功）。`Typed` 把失败变成类型，`error_code` 可直接派生（如 `cargo_check_failed`），不再猜。
 
-> 枚举注释原写明「**strangler 迁移期并存；全部工具迁完后删除 `ToolRunner::Legacy`**」以及「**PR3+ 按族迁移**」。后一条的收尾已执行：`Legacy` 变体在最后一个工具迁完后即删除（见 §7 末条）。本文件最初是为了给这条「只存在于枚举注释里的迁移计划」补正文。
+> 枚举注释原写明「**strangler 迁移期并存；全部工具迁完后删除 `ToolRunner::Legacy`**」以及「**PR3+ 按族迁移**」。后一条的收尾已执行：
+> `Legacy` 变体在最后一个工具迁完后即删除（见 §7 末条）。本文件最初是为了给这条「只存在于枚举注释里的迁移计划」补正文。
 
 ---
 
@@ -69,19 +74,26 @@
 
 ### 2.2 规律：已迁的是什么，没迁的是什么
 
-- **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、`structured`（原 `structured_*` 四个已合并为单工具 + `action`）、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），实现里本来就有清晰的错误分支。
-- **未迁 32 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、`pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，历史上直接把这段文本往上一抛。
+- **已迁 44 个**几乎全是「**纯计算 / 文件 / 结构化**」：文本变换、JSON/YAML、正则、日期、表格、diff、文件读写、路径操作、
+  `structured`（原 `structured_*` 四个已合并为单工具 + `action`）、`cargo_*`。它们的失败天然是结构化的（参数不合法、路径越权、解析失败），
+  实现里本来就有清晰的错误分支。
+- **未迁 32 个**几乎全是「**网络 / 子进程 / 外部状态 / 编排**」：`gh_*`、`git`、`http_*`、`web_search`、`workflow_execute`、`background_job*`、
+  `pytest_run`、`long_term_*`、`self_config_info`、`skill_manage`、`codebase_semantic_search`。它们的失败天然是「一段命令/HTTP 输出」，
+  历史上直接把这段文本往上一抛。
 
 **结论**：迁移进度不是按重要性排的，而是按「实现层是否容易表达 `Result`」自然筛出来的。剩下 32 个都要先改实现层，这是它长期停在半数以下的原因。
 
-**2026-10-28 收尾**：上段列的 32 个已全部迁完，Legacy 清零。规律仍成立——它们确实是最后一批，代价也确实集中在「先改实现层」：`code_nav` 要先把四个子实现的 `Result<_, String>` 换成 `ToolError`（顺带清掉三处静默成功），`codebase_semantic_search` 要把 host trait 契约连同 `rebuild_index` / `search_index` 一起换类型。
+**2026-10-28 收尾**：上段列的 32 个已全部迁完，Legacy 清零。规律仍成立——它们确实是最后一批，代价也确实集中在「先改实现层」：
+  `code_nav` 要先把四个子实现的 `Result<_, String>` 换成 `ToolError`（顺带清掉三处静默成功），
+  `codebase_semantic_search` 要把 host trait 契约连同 `rebuild_index` / `search_index` 一起换类型。
 
 ---
 
 ## 3. 迁移一个工具要动三处
 
 1. **实现层**：新增 `*_try` 版本，返回 `Result<String, ToolError>`，把原先「拼一段错误字符串 `return`」的分支改成 `Err(ToolError::…)`；`Ok` 路径正文保持不变。
-2. **`runners.rs`**：把条目从 Legacy 宏表挪到对应的 `_try` 孪生宏表（各形态一一对应，见 §3.1）；手写 runner 则改为返回 `Result` 并加 `#[allow(clippy::result_large_err)]`。
+2. **`runners.rs`**：把条目从 Legacy 宏表挪到对应的 `_try` 孪生宏表（各形态一一对应，见 §3.1）；
+  手写 runner 则改为返回 `Result` 并加 `#[allow(clippy::result_large_err)]`。
 3. **spec**：`runner: ToolRunner::Legacy(x)` → `runner: ToolRunner::Typed(x_try)`。
 
 ### 3.1 孪生宏对照
@@ -99,8 +111,10 @@
 
 ### 3.2 编译期 smoke
 
-`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）、
-  git 族的 `define_git_runners_try!`（`git::dispatch`），以及 args-only 形态的 `define_runners_args_only_try!`（`present_clarification_questionnaire`，2026-10-28 补）。
+`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。
+  目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）、
+  git 族的 `define_git_runners_try!`（`git::dispatch`），
+    以及 args-only 形态的 `define_runners_args_only_try!`（`present_clarification_questionnaire`，2026-10-28 补）。
 
 新增孪生宏时**应同时在 smoke 里挂一个真实实现**，否则宏本身没有任何类型校验。
 
@@ -179,7 +193,9 @@
 | ~~`long_term_remember`~~ / ~~`long_term_forget`~~ / ~~`long_term_memory_list`~~ / ~~`summarize_experience`~~（**已迁 2026-10-27**） | 手写 | `dispatch_long_term_tool(...)` | 四个共用入口，一次改造覆盖；`LongTermMemoryToolHost::dispatch` 契约改为 `Result<String, ToolError>`；缺 `cfg` / host → `tool_context_incomplete`，记忆库 IO → `long_term_memory_io_failed` |
 | ~~`present_clarification_questionnaire`~~（**已迁 2026-10-28**） | `args_only_try` | `clarification_questionnaire::run_present_clarification_questionnaire` | 控制面，非普通工具；失败改显式 `invalid_args`，成功正文首行 `退出码：0` 不可动（见 §4.20） |
 
-> `long_term_*` 四个共用 `dispatch_long_term_tool`，一次改造覆盖四个（已落地，见上）。**顺带修掉一个真缺陷**：旧实现里 JSON 解析失败返回 `参数 JSON 无效: …`，**没有「错误：」前缀**，会被 `parse_legacy_output` 启发式判成**成功**——即模型传错参数时拿到的是「成功」结果。迁 Typed 后该路径稳定为 `invalid_args`。
+> `long_term_*` 四个共用 `dispatch_long_term_tool`，一次改造覆盖四个（已落地，见上）。**顺带修掉一个真缺陷**：
+> 旧实现里 JSON 解析失败返回 `参数 JSON 无效: …`，**没有「错误：」前缀**，
+> 会被 `parse_legacy_output` 启发式判成**成功**——即模型传错参数时拿到的是「成功」结果。迁 Typed 后该路径稳定为 `invalid_args`。
 
 ### 4.5 `basic_network.inc.rs`（4）— **已全迁 2026-10-28**
 
@@ -224,7 +240,9 @@
 | ~~`self_config_info`~~（**已迁 2026-10-27**） | `self_config_info::self_config_info(cfg, sections)` | 已改 `runner_self_config_info_try`：缺 `cfg` → `tool_context_incomplete`（归 `Workspace`），`sections` 未匹配 → `invalid_args`；正文文案与旧实现逐字一致 |
 | ~~`skill_manage`~~（**已迁 2026-10-27**） | `skill_manage::skill_manage(parsed, &cfg.skills, cwd)` | 内部 8 个 `Result<_, String>` helper 全部换成 `Result<_, ToolError>`：参数/目标类 → `invalid_args`，目录与文件 IO → 新增 `skill_manage_io_failed`。**测试断言一行未改**：helper 统一取 `e.message`，文案逐字不变 |
 
-> **修正（2026-10-27，实测）**：原先估计「两个都几乎零成本」只对 `self_config_info` 成立——它只有 runner 层两个分支。`skill_manage` 内部虽已大量使用 `Result<T, String>`（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `scan_entries` / `resolve_remove_target`），
+> **修正（2026-10-27，实测）**：原先估计「两个都几乎零成本」只对 `self_config_info` 成立——它只有 runner 层两个分支。
+> `skill_manage` 内部虽已大量使用 `Result<T, String>`（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `scan_entries` /
+> `resolve_remove_target`），
 > 但错误类型是 `String`，**换类型要触及约 20 个错误点 + 3 处测试断言**，工作量与本档其余项不是一个量级，故单独切片。
 
 ### 4.9 `file_core.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`，见 §4.22）
@@ -374,7 +392,8 @@
 **为什么这一批要「先钉测试、再改类型」**：三个工具各自唯一的真失败点是 `parse_args_json`，其余全是**有意容忍**
 （审计表原按 `Legal` 钉住）。容忍清单：
 
-- `diagnostic_summary`：`sections` / `extra_env_vars` 类型不对 ⇒ 忽略（`sections` 退化为「输出全部小节」）；工作区根无法解析 ⇒ 正文写一行 `无法解析工作区根: …`，工具链 / env 小节照常输出。
+- `diagnostic_summary`：`sections` / `extra_env_vars` 类型不对 ⇒ 忽略（`sections` 退化为「输出全部小节」）；
+  工作区根无法解析 ⇒ 正文写一行 `无法解析工作区根: …`，工具链 / env 小节照常输出。
 - `repo_overview_sweep`：`doc_paths` / `source_roots` 等字段类型不对 ⇒ 退回默认值；文档 / 源码根不存在 ⇒ 正文标「不存在」。
 - `crate_contract_map`：`head_lines_per_file` / `keyword_hits_per_file` 越界 ⇒ clamp（`5..=120` / `5..=200`）；非法 / 越界 / 不存在的 `extra_paths` ⇒ 跳过。
 
@@ -591,9 +610,11 @@ Web SSE 控制面事件静默失效。由 `present_runner_keeps_exit_zero_header
 
 ## 6. 已知坑
 
-1. **错误码变化**：`Legacy` → `Typed` 后，`error_code` 从正文推断变为显式，可能**改变**已有错误码取值（如从 `tool_failed` 变成 `xxx_invalid_args`）。凡是按 `error_code` 分支的逻辑（重试策略、经验提炼）都要复查。
+1. **错误码变化**：`Legacy` → `Typed` 后，`error_code` 从正文推断变为显式，可能**改变**已有错误码取值（如从 `tool_failed` 变成 `xxx_invalid_args`）。
+  凡是按 `error_code` 分支的逻辑（重试策略、经验提炼）都要复查。
 2. **`Ok` 路径必须逐字不变**：迁移只改失败路径；正文一旦变化，`fixtures/` 与 SSE 金样可能失配。
-3. **手写 runner 里的隐式失败**：`self_config_info` / `skill_manage` / `codebase_semantic_search` 都存在「缺 `ctx.xxx` → 返回错误字符串」的分支，这些是 `Typed` 化的**首选目标**（改造成本最低、语义最正确）。三者均已迁完（`codebase_semantic_search` 见 §4.22）。
+3. **手写 runner 里的隐式失败**：`self_config_info` / `skill_manage` / `codebase_semantic_search` 都存在「缺 `ctx.xxx` → 返回错误字符串」的分支，
+  这些是 `Typed` 化的**首选目标**（改造成本最低、语义最正确）。三者均已迁完（`codebase_semantic_search` 见 §4.22）。
 4. **`#[allow(clippy::result_large_err)]`**：所有 `Typed` runner 都要加（`ToolError` 含 legacy 解析快照），漏加会被 `-D warnings` 拦下。
 5. **`AsyncOnly` 不是本文件的迁移目标**：`run_command` / `terminal_session` 跳过同步面，与 Legacy 无关。
 

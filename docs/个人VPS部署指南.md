@@ -1,6 +1,7 @@
 # 个人 VPS 部署指南（本机 HTTP + 反向代理 TLS + Bearer）
 
-本文描述一种适合**个人自用**的部署方式：**CrabMate 只监听本机回环地址**（默认行为），由前面的 **Caddy（或 Nginx）终止 TLS** 并反向代理到本机端口；同时启用 **Web API 共享密钥（Bearer / `X-API-Key`）**，避免进程在公网暴露面上裸奔。
+本文描述一种适合**个人自用**的部署方式：**CrabMate 只监听本机回环地址**（默认行为），由前面的 **Caddy（或 Nginx）终止 TLS** 并反向代理到本机端口；
+  同时启用 **Web API 共享密钥（Bearer / `X-API-Key`）**，避免进程在公网暴露面上裸奔。
 
 > **适用范围**：单用户、单实例、你完全信任 VPS 与工作区内容。多租户、水平扩展、按用户审计等不在本文范围；参见 **`docs/未来规划功能.md`**。
 
@@ -13,7 +14,10 @@
 ```
 
 - **TLS**：由反向代理处理；CrabMate 进程内**不提供**内置 HTTPS（见 **`README.md` → 部署与安全**）。
-- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。浏览器须在 Web **设置 →「Web API 共享密钥（Bearer）」** 填入与 **`CM_WEB_API_BEARER_TOKEN` 相同** 的值并保存（本页内存 + **`localStorage`** 键 **`crabmate-api-bearer-token`**）。**不要**与模型 **`API_KEY`** 混淆。
+- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。
+  浏览器须在 Web **设置 →「Web API 共享密钥（Bearer）」
+  ** 填入与 **`CM_WEB_API_BEARER_TOKEN` 相同** 的值并保存（本页内存 + **`localStorage`** 键 **`crabmate-api-bearer-token`**）。
+  **不要**与模型 **`API_KEY`** 混淆。
 - **上游大模型**：调用厂商仍使用环境变量 **`API_KEY`**（或 Web 侧栏 `client_llm`，经 **`/user-data`** 落本机）；**勿**把真实密钥写入仓库或本文示例。
 
 ---
@@ -107,7 +111,8 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-浏览器访问 **`https://crab.example.com`** 即可打开 Web UI；首次须在 **设置 →「Web API 共享密钥（Bearer）」** 填写 **与 `CM_WEB_API_BEARER_TOKEN` 相同** 的共享密钥并保存（写入 **`localStorage`** 键 **`crabmate-api-bearer-token`**）。这不是模型 API 密钥。
+浏览器访问 **`https://crab.example.com`** 即可打开 Web UI；首次须在 **设置 →「Web API 共享密钥（Bearer）」
+  ** 填写 **与 `CM_WEB_API_BEARER_TOKEN` 相同** 的共享密钥并保存（写入 **`localStorage`** 键 **`crabmate-api-bearer-token`**）。这不是模型 API 密钥。
 
 ### 4.3 可选：Nginx 要点
 
@@ -134,9 +139,11 @@ client_max_body_size 256m;
 
 若通过 **`make package`** / **`dpkg -i`** 安装：
 
-- 单元：**`/usr/lib/systemd/system/crabmate.service`**（默认 **`127.0.0.1:8080`**、**`--config /etc/crabmate/config.toml`**；**默认纯 API**；**不会**在安装时自动 enable/start）
+- 单元：**`/usr/lib/systemd/system/crabmate.service`**（默认 **`127.0.0.1:8080`**、**`--config /etc/crabmate/config.toml`**；**默认纯 API**；
+  **不会**在安装时自动 enable/start）
 - 提示词与锚定配置：**`/etc/crabmate/config.toml`** + **`/etc/crabmate/config/prompts/`**
-- 环境文件：**`/etc/crabmate/crabmate.env`** 仅 **`KEY=value`**（**不要** `export`）；可设 **`API_KEY`**、**`CM_WEB_API_BEARER_TOKEN`**、**`CM_WEB_CORS_ALLOWED_ORIGINS`**、扩展 **`PATH`**（serve 永远纯 API，不托管 SPA；浏览器 UI 经 CORS 接入）
+- 环境文件：**`/etc/crabmate/crabmate.env`** 仅 **`KEY=value`**（**不要** `export`）；可设 **`API_KEY`**、**`CM_WEB_API_BEARER_TOKEN`**、
+  **`CM_WEB_CORS_ALLOWED_ORIGINS`**、扩展 **`PATH`**（serve 永远纯 API，不托管 SPA；浏览器 UI 经 CORS 接入）
 - `postinst` 会创建系统用户 **`crabmate`** 与家目录 **`/var/lib/crabmate`**
 
 ```bash
@@ -193,7 +200,9 @@ sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service
 ```
 
-> **不要把 `CM_WEB_API_BEARER_TOKEN` 写进世界可读的文件**若无法接受：改用 **`systemd` 的 `EnvironmentFile=`** 指向 **`chmod 600`** 的文件，或发行版提供的 **secrets** 机制。交互式登录用户亦可 **`crabmate web-bearer set <token>`** 写入系统钥匙串（须与 **`serve`** 同用户、且钥匙串可用）；无头 systemd 用户（无 Secret Service 会话）仍优先 EnvironmentFile / TOML。
+> **不要把 `CM_WEB_API_BEARER_TOKEN` 写进世界可读的文件**若无法接受：改用 **`systemd` 的 `EnvironmentFile=`** 指向 **`chmod 600`** 的文件，
+> 或发行版提供的 **secrets** 机制。交互式登录用户亦可 **`crabmate web-bearer set <token>`** 写入系统钥匙串（须与 **`serve`** 同用户、且钥匙串可用）；
+> 无头 systemd 用户（无 Secret Service 会话）仍优先 EnvironmentFile / TOML。
 
 ---
 
@@ -202,7 +211,9 @@ sudo systemctl status crabmate.service
 - **云安全组 / 本机 `ufw`**：仅允许 **22**（SSH，若需要）、**443**（HTTPS）。**禁止**从公网访问 **8080**。
 - **SSH**：优先密钥登录，关闭密码登录（按发行版文档配置）。
 - **信任模型**：Bearer 为**共享密钥**，泄露即等同他人可调用你的 API；与 **`docs/待办清单.md`** 中「HTTP 身份模型」说明一致。
-- **工作区**：仅挂载你愿意让 Agent 读写的目录；工具链仍可能执行 **`run_command`** 等能力，参见 **`README.md`**、**`docs/工具说明.md`**。远程 Web **须**同时设置 **`CM_WEB_WORKSPACE_POOL=/workspace`** 与 **`CM_WORKSPACE_ALLOWED_ROOTS=/workspace`**：用户在浏览器按项目名新建/打开子目录，无需手输服务器路径。
+- **工作区**：仅挂载你愿意让 Agent 读写的目录；工具链仍可能执行 **`run_command`** 等能力，参见 **`README.md`**、**`docs/工具说明.md`**。
+  远程 Web **须**同时设置 **`CM_WEB_WORKSPACE_POOL=/workspace`** 与 **`CM_WORKSPACE_ALLOWED_ROOTS=/workspace`**：用户在浏览器按项目名新建/打开子目录，
+  无需手输服务器路径。
 
 ---
 
@@ -229,7 +240,8 @@ curl -fsS https://crab.example.com/health
 ## 8. 备份与升级
 
 - **会话库**：默认在工作区 **`.crabmate/conversations.db`**（见 **`README.md`**）；定期备份该文件或整个工作区目录。
-- **升级**：替换 **`crabmate` 二进制**后重启 **`systemd`**；若前端有变更，重新 **`trunk build --release`** 并部署 **`frontend/dist`**（与 **`scripts/package-release.sh`** 发行包流程一致时可一并打包）。
+- **升级**：替换 **`crabmate` 二进制**后重启 **`systemd`**；若前端有变更，
+  重新 **`trunk build --release`** 并部署 **`frontend/dist`**（与 **`scripts/package-release.sh`** 发行包流程一致时可一并打包）。
 
 ---
 

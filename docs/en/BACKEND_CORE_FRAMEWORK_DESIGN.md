@@ -2,18 +2,22 @@
 
 # Backend core frameworkization and cross-language embedding: current state and gaps
 
-This document captures a **design analysis** (not an implementation commitment) for evolving CrabMate’s backend core into a reusable framework, and for enabling future hosting from **Python or other languages**. For current module responsibilities and layering, see **`docs/en/DEVELOPMENT.md`** (architecture overview).
+This document captures a **design analysis** (not an implementation commitment) for evolving CrabMate’s backend core into a reusable framework,
+  and for enabling future hosting from **Python or other languages**. For current module responsibilities and layering,
+  see **`docs/en/DEVELOPMENT.md`** (architecture overview).
 
 ## 1. Background and goals
 
-- **Goal**: decouple core logic (agent turns, LLM calls, tool orchestration, config/types) from product shells (built-in Web/CLI/TUI and full dependency set), so it can:
+- **Goal**: decouple core logic (agent turns, LLM calls, tool orchestration, config/types)
+  from product shells (built-in Web/CLI/TUI and full dependency set), so it can:
   - be consumed as a **Rust library** by other projects;
   - be called by **Python/other runtimes** via FFI, subprocess RPC, or HTTP.
 - **Non-goals in this doc**: final choice of PyO3/maturin, concrete gRPC schemas, or final crate naming.
 
 ## 2. Current structure (brief)
 
-- The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **ops CLI** (`clap`), optional memory embeddings (`fastembed`), MCP, and Docker sandbox (`bollard`). Official terminal / Web UI live in the Client repo (in-process `chat|repl|tui` removed in D2.2).
+- The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **ops CLI** (`clap`), optional memory embeddings (`fastembed`),
+  MCP, and Docker sandbox (`bollard`). Official terminal / Web UI live in the Client repo (in-process `chat|repl|tui` removed in D2.2).
 - Module-level layering already exists inside the single `crabmate` package (`src/cm_*/`):
   - official Web UI / terminal UI live in the Client repo
   - `src/cm_sse_protocol/` (SSE control-plane contract)
@@ -32,13 +36,26 @@ This document captures a **design analysis** (not an implementation commitment) 
 | Missing capability-focused boundaries (crate split or deeper feature partition) | Product mode and library mode remain coupled |
 
 **Already landed (dependency trimming):**
-- Root features: **`mcp`** (`rmcp`), **`archive-tools`** (tar/zip, …), **`docker_sandbox`** (`bollard`), **`fastembed`** (local ONNX embeddings), **`project_metrics`** (`tokei`)
-- Default: `default = ["server"]`, and **`server`** hard-enables **`protocol` / `web` / `mcp` / `web-fetch-tools`**. **`archive-tools`** is no longer one of them: the archive *model tools* are not compiled by default,
-  while `GET /workspace/dir/archive` only needs the `zip` crate via **`web`**. Not in `server`: `fastembed` / `docker_sandbox` / `project_metrics` / `archive-tools` (in-process `repl`/`tui` features removed in D2.2; enable extras with `--features fastembed`, or `--all-features`)
-- The only trimming path in use today is **protocol-only**: `cargo build --no-default-features --features protocol` (see `scripts/check-client-contract.sh` / `check-sse-protocol.sh`). That combination skips `src/lib_server.rs` entirely, so the `server`-side modules (Web / MCP / archive / CLI) **do not exist**. Consequently the negative branches for **`mcp`** (`src/mcp/stub.rs`,
-  `runtime/cli_mcp.rs`, `src/mcp/mod.rs`), **`archive-tools`** (`cm_tools/tools/mod.rs`, `cm_tools/tools/tool_specs_registry/mod.rs`; `web/workspace/handlers_dir_archive.rs` now only needs `zip` and carries no such gate) and **`web`** (`cli_run.rs`, `cli_run_session.rs`, `cm_config/scheduled_agent_task.rs`) are **unreachable under every current feature combination**;
+- Root features: **`mcp`** (`rmcp`), **`archive-tools`** (tar/zip, …), **`docker_sandbox`** (`bollard`), **`fastembed`** (local ONNX embeddings),
+  **`project_metrics`** (`tokei`)
+- Default: `default = ["server"]`,
+  and **`server`** hard-enables **`protocol` / `web` / `mcp` / `web-fetch-tools`**. **`archive-tools`** is no longer one of them:
+  the archive *model tools* are not compiled by default,
+  while `GET /workspace/dir/archive` only needs the `zip` crate via **`web`**. Not in `server`:
+    `fastembed` / `docker_sandbox` / `project_metrics` / `archive-tools` (in-process `repl`/`tui` features removed in D2.2;
+    enable extras with `--features fastembed`, or `--all-features`)
+- The only trimming path in use today is **protocol-only**:
+  `cargo build --no-default-features --features protocol` (see `scripts/check-client-contract.sh` / `check-sse-protocol.sh`). That combination skips
+  `src/lib_server.rs` entirely, so the `server`-side modules (Web / MCP / archive / CLI)
+  **do not exist**. Consequently the negative branches for **`mcp`** (`src/mcp/stub.rs`,
+  `runtime/cli_mcp.rs`, `src/mcp/mod.rs`), **`archive-tools`** (`cm_tools/tools/mod.rs`, `cm_tools/tools/tool_specs_registry/mod.rs`;
+    `web/workspace/handlers_dir_archive.rs` now only needs `zip` and carries no such gate) and **`web`** (`cli_run.rs`, `cli_run_session.rs`,
+    `cm_config/scheduled_agent_task.rs`) are **unreachable under every current feature combination**;
   they are **intentionally reserved placeholders** for future trimming and **must not be deleted as dead code**.
-- The negative branches that do take effect are **`fastembed`** (finalize coerces `long_term_memory_vector_backend=fastembed` to `disabled` while SQLite long-term memory still works; `codebase_semantic_search` is dropped from the tool list and `codebase_semantic_search_enabled` is forced to `false`; `hybrid` retrieval degrades to FTS-only) plus **`docker_sandbox`** / **`project_metrics`**.
+- The negative branches that do take effect are **`fastembed`** (finalize coerces `long_term_memory_vector_backend=fastembed` to `disabled` while
+  SQLite long-term memory still works;
+  `codebase_semantic_search` is dropped from the tool list and `codebase_semantic_search_enabled` is forced to `false`;
+  `hybrid` retrieval degrades to FTS-only) plus **`docker_sandbox`** / **`project_metrics`**.
 
 **Conclusion**: for a real framework surface, Web/TUI still need to be optionalized (by crate split and/or additional features).
 
@@ -49,7 +66,9 @@ This document captures a **design analysis** (not an implementation commitment) 
 | `RunAgentTurnParams` carries many concerns (streaming, runtime hooks, tracing, memory scopes) | Hard to offer a narrow stable interface for non-Rust hosts |
 | No dedicated semver stability policy for an API subset | Refactors can accidentally break consumers |
 
-**Conclusion**: converge to a narrow engine/session-style interface with typed errors and explicit injection points (approval/log/cancel/tool runtime), instead of growing a mega-params struct.
+**Conclusion**:
+  converge to a narrow engine/session-style interface with typed errors and explicit injection points (approval/log/cancel/tool runtime),
+  instead of growing a mega-params struct.
 
 ### 3.3 Python / cross-language integration
 
@@ -75,7 +94,9 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 ## 4. Suggested evolution order
 
-1. **Dependency layering**: make no-Axum/no-TUI build paths first-class. (**Progress**: only **`fastembed`** / **`docker_sandbox`** / **`project_metrics`** / **`archive-tools`** are genuinely optional; **`mcp`** / **`web`** are currently hard-bound by **`server`** — see §3.1. Web/TUI still need layering.)
+1. **Dependency layering**: make no-Axum/no-TUI build paths first-class. (**Progress**:
+  only **`fastembed`** / **`docker_sandbox`** / **`project_metrics`** / **`archive-tools`** are genuinely optional;
+  **`mcp`** / **`web`** are currently hard-bound by **`server`** — see §3.1. Web/TUI still need layering.)
 2. **Stable surface**: narrow exported types/functions; document error/cancel semantics.
 3. **Cross-language boundary**: choose subprocess RPC/HTTP and/or PyO3/FFI with clear trade-offs.
 4. **Explicit context injection**: minimize hidden globals; inject config/workspace/http/tool backends via constructors.
@@ -88,4 +109,5 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 ---
 
-If crate split or new FFI/RPC layers are implemented, update this document and keep the architecture sections in **`docs/开发文档.md`** / **`docs/en/DEVELOPMENT.md`** in sync.
+If crate split or new FFI/RPC layers are implemented,
+  update this document and keep the architecture sections in **`docs/开发文档.md`** / **`docs/en/DEVELOPMENT.md`** in sync.

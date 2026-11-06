@@ -1,6 +1,8 @@
 # 后台工具任务实时输出流：字段级接口规格（Contract）
 
-> **状态**：Proposed（随 [ADR：后台工具任务的实时输出流](./background_tool_jobs_output_streaming.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**父契约**：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（状态/取消端点与状态机）。**人读协议**：
+> **状态**：Proposed（随 [ADR：后台工具任务的实时输出流](./background_tool_jobs_output_streaming.md) 一起评审）。本文件是**可执行契约**：
+> 实现切片照此编码，双端对齐照此检查。**父契约**：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（状态/取消端点与状态机）。
+> **人读协议**：
 > [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
 
 ---
@@ -26,8 +28,11 @@
 | 终态裁剪 | 各流尾部 ≤ `command_max_output_len`（**内存优先、尽力**） | `complete()` 时执行：合并时序下把 stdout、stderr 各自尾部压到 ≤ 该值（不拆元素）。末尾单条超大元素允许该流单独越界；无法同时达标时可能把另一流一并丢弃，**至少保留 1 条**兜底 |
 
 - 裁剪语义 = 只影响「可重放的历史」；`seq` 编号不回填，保留段仍连续。
-- 写入路径：worker `wait_child_session_async` 的 `chunk_sink` 回调（调用方线程同步 flush，单流内保序；双流按管道排空时序**近似**交错）。回调恒返回 `true`（无背压）。
-- **前置改造**：`SubprocessWaitCtl` 增 `uncapped_live: bool`（默认 `false`）。后台 worker 置 `true`：`append_captured` 无论 kept 捕获缓冲是否已满都把读到的字节入 live 队列（详见 [ADR §2](./background_tool_jobs_output_streaming.md)）。同步路径保持 `false` → 行为零变化。
+- 写入路径：worker `wait_child_session_async` 的 `chunk_sink` 回调（调用方线程同步 flush，单流内保序；双流按管道排空时序**近似**交错）。
+  回调恒返回 `true`（无背压）。
+- **前置改造**：`SubprocessWaitCtl` 增 `uncapped_live: bool`（默认 `false`）。后台 worker 置 `true`：
+  `append_captured` 无论 kept 捕获缓冲是否已满都把读到的字节入 live 队列（详见 [ADR §2](./background_tool_jobs_output_streaming.md)）。
+  同步路径保持 `false` → 行为零变化。
 
 ---
 
@@ -124,7 +129,8 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 |----|------|------|------|------|
 | `background_job_output_buffer_bytes` | int | `262144` | 4096–16777216 | 每 job 环形输出缓冲字节上限；超限丢最旧；终态裁剪为各流尾部 ≤ `command_max_output_len` |
 
-- Rust 字段：`ToolRegistryPolicyConfig.tool_registry_background_job_output_buffer_bytes`（`cm_config` finalize 默认值 + 范围钳制，测试对齐 `finalize_tests.rs` 风格）。
+- Rust 字段：`ToolRegistryPolicyConfig.tool_registry_background_job_output_buffer_bytes`（`cm_config` finalize 默认值 + 范围钳制，
+  测试对齐 `finalize_tests.rs` 风格）。
 - 热重载：读取时机 = **创建 job 时**；已运行 job 不受后续变更影响（与既有 6 键同款消费语义）。
 - 无独立开关：`background_jobs_enabled=false` 时不会创建 job，缓冲不产生。
 
@@ -134,7 +140,8 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 
 - **工具契约零变化**：`run_command` 的 `async` / `timeout_secs` schema 不动；无新工具参数。
 - **SSE 协议零变化**：不新增顶层键，**不 bump `SSE_PROTOCOL_VERSION`**。
-- 新增仅：1 个 HTTP 端点（`/tools/jobs/{tool_job_id}/output`）+ 1 个可选查询参数 + 1 个配置键 + `SubprocessWaitCtl.uncapped_live`（默认 `false`）。旧服务端/旧客户端同版本互操作全部照旧。
+- 新增仅：1 个 HTTP 端点（`/tools/jobs/{tool_job_id}/output`）+ 1 个可选查询参数 + 1 个配置键 + `SubprocessWaitCtl.uncapped_live`（默认 `false`）。
+  旧服务端/旧客户端同版本互操作全部照旧。
 - 文档同步：
   - [ ] `docs/命令行契约.md`：新端点（请求/响应/错误码表）。
   - [ ] OpenAPI：`openapi_paths_tool_jobs.rs`（`crabmate-api-contract`）增路径与 schema。
@@ -154,4 +161,6 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 | 观测 | `JobRegistryStats` 增 `output_retained_bytes` / `output_events_dropped`；日志带 `tool_job_id` | — |
 | UI | — | 后台任务气泡：`running` 时短轮询（~300–500 ms）拉 `/output` 增量渲染 + `truncated` 提示 + `eof` 后停止；取消/终态仍走既有端点 |
 
-测试：游标增量不重不漏；环形裁剪 + 落后游标 → `truncated` 重放；终态裁剪后仍可取尾部且 `eof` 正确；超长输出（> `command_max_output_len`）经 `uncapped_live` 全量可达缓冲；`uncapped_live=false` 同步路径回归零变化；401/403/404/410；缓冲与记录同生命周期清理；并发读写（worker push + 轮询 read）无丢失/乱序；配置钳制（4096–16777216）。
+测试：游标增量不重不漏；环形裁剪 + 落后游标 → `truncated` 重放；终态裁剪后仍可取尾部且 `eof` 正确；超长输出（> `command_max_output_len`）
+  经 `uncapped_live` 全量可达缓冲；`uncapped_live=false` 同步路径回归零变化；401/403/404/410；缓冲与记录同生命周期清理；
+  并发读写（worker push + 轮询 read）无丢失/乱序；配置钳制（4096–16777216）。

@@ -1,7 +1,8 @@
 # 三端真实回合冒烟（B3 Runbook）
 
 > **状态**：清单已入库（2026-08-08）；**执行靠人工勾选**，默认不进 CI。  
-> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；官方 Client 拆分见 [`client_shell_split.md`](./client_shell_split.md) / [`client_shell_split_todo.md`](./client_shell_split_todo.md)；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。  
+> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；官方 Client 拆分见 [`client_shell_split.md`](./client_shell_split.md)
+> / [`client_shell_split_todo.md`](./client_shell_split_todo.md)；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。
 > **非目标**：改 SSE/HTTP 字段；把本清单做成强制 CI 门禁；拆 Desktop/Mobile 仓库。
 
 ---
@@ -51,7 +52,8 @@
 
 ### 4.1 宿主：远程终端（Client `crabmate-tui`）
 
-同进程 `chat` / `repl` / `tui` 已按 **D2.2 硬删**；官方终端为 Client 仓 **`crabmate-tui`**（HTTP/SSE → 本仓 `serve`），权威用法见 Client 仓 [`docs/design/remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)。
+同进程 `chat` / `repl` / `tui` 已按 **D2.2 硬删**；官方终端为 Client 仓 **`crabmate-tui`**（HTTP/SSE → 本仓 `serve`），
+  权威用法见 Client 仓 [`docs/design/remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)。
 
 先按 §4.2 启动本仓 `serve`，再在 Client 仓运行终端客户端并发 §2 提示词。
 
@@ -112,7 +114,8 @@ cargo tauri dev
 
 任选其一：
 
-**A. Android APK**（Client [`mobile-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/mobile-tauri)）：连接页填 `http://<LAN-IP>:8080/` + 与服务器相同的 Web Bearer → 一轮对话。
+**A. Android APK**（Client [`mobile-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/mobile-tauri)）：
+  连接页填 `http://<LAN-IP>:8080/` + 与服务器相同的 Web Bearer → 一轮对话。
 
 **B. 无真机时**：用 Desktop 连接页指向**另一**已启动的 `serve`（或本机第二端口），等同验证「薄壳 + 远程权威」。
 
@@ -236,7 +239,8 @@ python3 -m http.server 8081 --directory frontend/dist
 3. 保存后发送 §2 提示词  
 
 - [ ] 一轮对话流式完成  
-- [ ] **同会话第二轮**：再发一句短消息，确认仍落在同一 `conversation_id`（DevTools → Network → `/chat/stream` 响应头，JS 可读 `x-conversation-id` / `x-stream-job-id`）  
+- [ ] **同会话第二轮**：再发一句短消息，确认仍落在同一 `conversation_id`（DevTools → Network → `/chat/stream` 响应头，
+  JS 可读 `x-conversation-id` / `x-stream-job-id`）
 - [ ] 故意错位 API 基址或 Bearer 时失败可预期（非模糊 500）  
 
 **对照**：§4.2 同 Origin（`serve` 托管 dist、API 基址留空）行为不变。

@@ -1,6 +1,7 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**。下文路径与实现**不再存在**；展示对齐请改跟 Client 远程 TUI / Web UI。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。
+> 官方终端为 Client **`crabmate-tui`**。下文路径与实现**不再存在**；展示对齐请改跟 Client 远程 TUI / Web UI。
 
 **状态**：~~路线图~~ **已归档**（曾落地 P1–P4 与 Phase 1–6 等；D2.2 后同进程 TUI 代码移除）。  
 **受众**：考古时查阅；现行维护请看 Client **`remote_cli_tui.md`** 与 **`docs/Turn布局设计.md`**（Web）。  
@@ -102,7 +103,9 @@
 
 **问题**：回合结束后只靠 `messages_to_transcript(Message[])` 刷新，本轮投影块清空后，历史旁白/工具序可能退回 OpenAI 落盘序。
 
-**落地**：`transcript::CommittedTurns`；`submit_ev` 在 `finalize_for_display` 后 `flush_completed_turn` 再 `reset`；有可定稿布局时为 user 前缀 → 投影块 → **投影未覆盖**的 plain assistant 后缀（跳过 `tool` / 含 `tool_calls` 的 assistant；`covers_plain_assistant_body` 防双显）。仅 timeline 时回退 Message[]。会话切换 `msg_len` 不一致时 reseed Message[]。
+**落地**：`transcript::CommittedTurns`；`submit_ev` 在 `finalize_for_display` 后 `flush_completed_turn` 再 `reset`；
+  有可定稿布局时为 user 前缀 → 投影块 → **投影未覆盖**的 plain assistant 后缀（跳过 `tool` / 含 `tool_calls` 的 assistant；
+  `covers_plain_assistant_body` 防双显）。仅 timeline 时回退 Message[]。会话切换 `msg_len` 不一致时 reseed Message[]。
 
 **主要触点**：`submit_ev.rs`、`transcript.rs`、`mod.rs`（`TuiModel::committed_turns`）。  
 **验收**：`flush_keeps_commentary_before_tool_after_projection_reset`；同一多工具回合结束后旁白仍在工具前。
@@ -111,7 +114,8 @@
 
 **问题**：post-tool 终答仍挂在 scratch「生成中」；与 Web `turn-final-answer` 不对齐。
 
-**落地**：`TurnToolPhaseEnd` 后 `tool_phase_ended`；`format_projection_block(scratch)` 追加终答；`owns_streaming_content_lane` 使流式尾不再挂终答副本；`finalize_for_display` 固化 `final_answer_text`；flush 时跳过 Message[] 尾部 assistant 双显。
+**落地**：`TurnToolPhaseEnd` 后 `tool_phase_ended`；`format_projection_block(scratch)` 追加终答；
+  `owns_streaming_content_lane` 使流式尾不再挂终答副本；`finalize_for_display` 固化 `final_answer_text`；flush 时跳过 Message[] 尾部 assistant 双显。
 
 **验收**：`post_tool_final_answer_lands_in_projection_not_streaming_tail`；工具批结束后终答在投影区工具之后。
 
@@ -133,13 +137,15 @@
 
 ### Phase 5 — 导出与对照（已落地）
 
-**落地**：`save-session --projection raw|display`（默认 raw）；`/export` `/save-session` 可选 `display`；`write_json_export_with_projection` + `messages_to_display_export`。display **不可**直接 `tool-replay`。
+**落地**：`save-session --projection raw|display`（默认 raw）；`/export` `/save-session` 可选 `display`；
+  `write_json_export_with_projection` + `messages_to_display_export`。display **不可**直接 `tool-replay`。
 
 **验收**：`display_export_sets_projection_and_skips_system`；CLI `--help` 含 projection。
 
 ### Phase 6 — 自动化回归（已落地）
 
-**落地**：`sse_sequence_projects_commentary_tool_final_in_order`（SSE 时序 → 投影行序）；既有 `golden_web_v2_row_order_preserved_in_tui_projection_block` / flush / 终答测例继续守门。
+**落地**：`sse_sequence_projects_commentary_tool_final_in_order`（SSE 时序 → 投影行序）；
+  既有 `golden_web_v2_row_order_preserved_in_tui_projection_block` / flush / 终答测例继续守门。
 
 **验收**：`cargo test --lib sse_sequence_projects_commentary_tool_final_in_order`。
 

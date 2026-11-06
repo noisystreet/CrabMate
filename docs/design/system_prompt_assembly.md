@@ -28,7 +28,9 @@
 | **L7** | Act 句启发式 hint（`system_execution_constraint_hint`；形如「【执行约束】本轮：…。勿越过。」） | 外循环 P 步前 |
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |
 
-运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令；其后由 `prompt_compose` 按**会话工作区根**追加 **`AGENTS.md`**（L1'，受 `agents_md_*` 约束），再叠 L4（及 Web/CLI 的 L5）。
+运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，
+  由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令；其后由 `prompt_compose` 按**会话工作区根**追加 **`AGENTS.md`**（L1'，
+  受 `agents_md_*` 约束），再叠 L4（及 Web/CLI 的 L5）。
 
 ## 会话生命周期（摘要）
 

@@ -1,6 +1,7 @@
 # 后台工具任务：字段级接口规格（Contract）
 
-> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：
+> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。
+> **人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：
 > [`client_contract_versioning.md`](./client_contract_versioning.md)。**金样**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
 
 ---
@@ -20,9 +21,11 @@
 
 - Rust 侧 `async` 是关键字：结构体字段用 `#[serde(rename = "async")] pub async_: bool`（或等价 raw identifier），JSON Schema 输出名为 `async`。
 - 备选命名 `run_async` / `background`：否决，保持与语义、文档一致的 `async`。
-- **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` / `timeout_secs` 会被旧服务端拒绝（unknown field）——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §8）。
+- **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` / `timeout_secs` 会被旧服务端拒绝（unknown field）
+  ——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §8）。
 
-**同名字段亦加入「装配表」内工具**（§1.3）：`CargoTestArgs`（`cargo_test`）与 `PytestRunArgs`（`pytest_run`）各增 `#[serde(rename = "async")] pub async_: Option<bool>`，默认 `false`，语义与 `RunCommandArgs.async` 一致。
+**同名字段亦加入「装配表」内工具**（§1.3）：`CargoTestArgs`（`cargo_test`）与 `PytestRunArgs`（`pytest_run`）
+  各增 `#[serde(rename = "async")] pub async_: Option<bool>`，默认 `false`，语义与 `RunCommandArgs.async` 一致。
 
 ### 1.2 语义
 
@@ -44,24 +47,31 @@
   | 否 | 是 | 错误：该工具暂不支持后台执行（`async`） |
   | 否 | 否 | **不拦截**：维持既有「未知参数被忽略」语义，走前台同步路径 |
 
-  判定顺序：先 `async` 请求 + `name != run_command` + 落在「装配表 ∪ 白名单」内（否则 `Skip`，零影响）；再检查总开关 `background_jobs_enabled`；最后按「白名单 → 装配表」依次 Deny；两者皆满足才 `Launch`。故总开关关闭时，只要工具落在「装配表 ∪ 白名单」内就会得到「未启用」提示（而非被静默忽略）。`Launch` 要求 `supported == true`——白名单只能**收敛**（把装配表内工具排除在外），不能**扩权**。 |
+  判定顺序：先 `async` 请求 + `name != run_command` + 落在「装配表 ∪ 白名单」内（否则 `Skip`，零影响）；再检查总开关 `background_jobs_enabled`；
+    最后按「白名单 → 装配表」依次 Deny；两者皆满足才 `Launch`。故总开关关闭时，只要工具落在「装配表 ∪ 白名单」内就会得到「未启用」提示（而非被静默忽略）。
+    `Launch` 要求 `supported == true`——白名单只能**收敛**（把装配表内工具排除在外），不能**扩权**。 |
 
 - **`run_command` 不走此门闩**，仍由既有 `execute_run_command_async` 路径处理（含白名单/路径校验/审批）。
 - 不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
 
 ### 1.3 装配表（进程载荷）
 
-引擎**不为**普通工具引入独立载荷类型：装配表内工具在发起时把参数**装配成 argv**，复用与前台完全相同的 `(program, args)`，再交给既有 `JobSpawn` 链路——取消/超时/输出环形缓冲/`tool_job_finished` 补发全部复用，`tool_jobs` 模块无需改动。
+引擎**不为**普通工具引入独立载荷类型：装配表内工具在发起时把参数**装配成 argv**，复用与前台完全相同的 `(program, args)`，
+  再交给既有 `JobSpawn` 链路——取消/超时/输出环形缓冲/`tool_job_finished` 补发全部复用，`tool_jobs` 模块无需改动。
 
 | 工具 | 装配来源 | 与前台一致性 |
 |------|----------|--------------|
 | `cargo_test` | `cargo_subcommand_background_argv("test", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
 | `pytest_run` | `pytest_run_background_argv(…)` | 与同步路径共用 `build_pytest_command`，argv 逐项相同 |
 
-- 装配方式：前台先构造 `std::process::Command`，再用 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取 `(program, args, cwd)` 快照（`tools::command_program_and_args` → `AssembledCommand`）——**同一套参数校验与 CLI 拼装**，避免两处漂移。`cwd` 原样沿用装配时的 `Command::current_dir`（`pytest_run` 会在装配阶段 canonicalize），故后台与前台的工作目录逐字相同。
+- 装配方式：前台先构造 `std::process::Command`，
+  再用 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取 `(program, args, cwd)` 快照（`tools::command_program_and_args` →
+  `AssembledCommand`）——**同一套参数校验与 CLI 拼装**，避免两处漂移。
+  `cwd` 原样沿用装配时的 `Command::current_dir`（`pytest_run` 会在装配阶段 canonicalize），故后台与前台的工作目录逐字相同。
 - 门闩的「支持」判定与装配共用同一张**装配表**（`background_async_argv_assembler(name)`），即「支持清单」只有一处事实来源；新增工具只登记一行。
 - 墙钟取 `command_exec.command_timeout_secs`（与前台同源）；输出上限取 `command_exec.command_max_output_len`。
-- **不参与 `test_result_cache`**：该缓存仅由 `cargo_test` 的前台同步路径（`maybe_cache_cargo_test_try`）读写；后台路径（`cargo_subcommand_background_argv`）既不读缓存也不写缓存——命中/写入语义完全落在前台。
+- **不参与 `test_result_cache`**：该缓存仅由 `cargo_test` 的前台同步路径（`maybe_cache_cargo_test_try`）读写；
+  后台路径（`cargo_subcommand_background_argv`）既不读缓存也不写缓存——命中/写入语义完全落在前台。
 - **Docker 同步工具沙盒模式**（`sync_default_tool_sandbox_mode = "docker"`）下拒绝：沙盒包装需走宿主 `run_command` 路径，返回 `invalid_args` 提示改用宿主模式。
 - 新增支持工具 = 在装配表登记一个 `(program, args)` 装配函数 + 参数类型加 `async` 字段；白名单仍是独立的运行时闸门。
 
@@ -145,14 +155,17 @@
 
 `POST /chat/stream/{job_id}/cancel`（用户停止流式回合）在取消回合的同时，**级联取消本回合发起的、尚未终态的后台任务**：
 
-- 发起时（`launch_background_job`）把当前回合的流任务 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）经 `WebToolRuntime.turn_job_id` 写入 `JobRecord.source_turn_job_id`；无同进程 SSE（运维 CLI 等）时为 `None`。
-- 取消时调 `ToolJobRegistry::cancel_non_terminal_for_source_turn(job_id)`，按 `source_turn_job_id == Some(job_id) && !status.is_terminal()` 命中，返回命中数（响应字段 `background_tools_cancelled`）。
+- 发起时（`launch_background_job`）把当前回合的流任务 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）
+  经 `WebToolRuntime.turn_job_id` 写入 `JobRecord.source_turn_job_id`；无同进程 SSE（运维 CLI 等）时为 `None`。
+- 取消时调 `ToolJobRegistry::cancel_non_terminal_for_source_turn(job_id)`，按 `source_turn_job_id == Some(job_id) && !status.is_terminal()` 命中，
+  返回命中数（响应字段 `background_tools_cancelled`）。
 - 仅影响**本回合**发起的任务；其它回合/无来源的任务不受影响。
 
 ### 3.3 归属校验
 
 - **主防护**：`tool_job_id` 为随机不透明值（32 hex，`getrandom`/`rand` 生成），不可枚举 → 知晓 id 即能力凭证（capability URL）。
-- **增强（可选实现）**：job 记录保存创建时的 `workspace`；请求带 `X-Workspace-Root` 头时按规范化路径比对，不符返回 **403**。不带头则仅凭 id（单用户默认部署等价）。
+- **增强（可选实现）**：job 记录保存创建时的 `workspace`；请求带 `X-Workspace-Root` 头时按规范化路径比对，不符返回 **403**。
+  不带头则仅凭 id（单用户默认部署等价）。
 
 ---
 
@@ -197,7 +210,8 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | | `summary`（string?） | 终态摘要 |
 | | `error_code`（string?） | 失败词汇（§8） |
 
-实现此键时按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs` + 金样 + Client `parser_v2.rs`，本仓跑 `golden_ag_ui_classify_matches_expected`。
+实现此键时按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs` + 金样 + Client `parser_v2.rs`，
+  本仓跑 `golden_ag_ui_classify_matches_expected`。
 
 ---
 
@@ -215,20 +229,25 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 
-`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。默认不含它们是为保持既有部署行为不变（总开关默认 `true`，但模型仍须显式传 `async=true` 才走后台）。
+`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，
+  须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。
+  默认不含它们是为保持既有部署行为不变（总开关默认 `true`，但模型仍须显式传 `async=true` 才走后台）。
 
 ---
 
 ## 7. 错误码词汇
 
-- 轮询响应 `error_code`：复用 `tool_result.error_code` 表（`docs/SSE协议.md` §「tool_result.error_code」），新增取值 **`internal`**（worker panic/异常，`retryable=false`）；`timeout` / `cancelled` 语义与现有启发式一致。
-- HTTP `ApiError.code`（§3）：`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 为**新增**；写入 `src/cm_api_contract/error_codes.rs` 与 `docs/命令行契约.md`。
+- 轮询响应 `error_code`：复用 `tool_result.error_code` 表（`docs/SSE协议.md` §「tool_result.error_code」），
+  新增取值 **`internal`**（worker panic/异常，`retryable=false`）；`timeout` / `cancelled` 语义与现有启发式一致。
+- HTTP `ApiError.code`（§3）：`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 为**新增**；
+  写入 `src/cm_api_contract/error_codes.rs` 与 `docs/命令行契约.md`。
 
 ---
 
 ## 8. 兼容窗口与双端对齐清单
 
-- **不 bump `SSE_PROTOCOL_VERSION`**：新增均为软字段（`tool_result.tool_job_*`）、新端点、默认 false 参数、默认关配置。旧客户端：忽略软字段；不认识 `async` 的模型不会发起。
+- **不 bump `SSE_PROTOCOL_VERSION`**：新增均为软字段（`tool_result.tool_job_*`）、新端点、默认 false 参数、默认关配置。旧客户端：忽略软字段；
+  不认识 `async` 的模型不会发起。
 - 旧服务端 + 新客户端：`run_command` 的 `async` 参数被 `deny_unknown_fields` 拒绝——**不在**兼容窗口，文档明示。
 - 改动控制面分发（`tool_job_finished`）时按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 执行：
   - [ ] `src/cm_sse_protocol/control_classify.rs`（若动分类）
@@ -269,9 +288,12 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | 同轮 `(name, args)` 去重缓存 | 同 id 连续两次等待会被缓存吃掉，第二次永远拿到第一次的结果 |
 | 只读三动作整体豁免两套缓存的理由 | 不再成立（见 §9 末行） |
 
-因此新增工具名 **`background_job_wait`**，并同时做三件事：`builtin_parallel_sync_denied_exact`（移出并行读批）、`builtin_dedup_cache_exempt_tools`（豁免同轮去重）、**不**进 `write_effect_tools`（`TimedOut` 不改任务状态，Q2 取纯只读语义）。
+因此新增工具名 **`background_job_wait`**，并同时做三件事：`builtin_parallel_sync_denied_exact`（移出并行读批）、
+  `builtin_dedup_cache_exempt_tools`（豁免同轮去重）、**不**进 `write_effect_tools`（`TimedOut` 不改任务状态，Q2 取纯只读语义）。
 
-> **只读 TTL 缓存不需要改**：`serial_try_ttl_run_command_cache_hit` 在入口就要求 `p.name == RUN_COMMAND`（`agent/agent_turn/host/execute/tools/serial/emit.rs`），该缓存对任何非 `run_command` 工具天然不适用。这是 Issue 里「豁免两层缓存」的实际落点差异，实施时按此核对。
+> **只读 TTL 缓存不需要改**：
+> `serial_try_ttl_run_command_cache_hit` 在入口就要求 `p.name == RUN_COMMAND`（`agent/agent_turn/host/execute/tools/serial/emit.rs`），
+> 该缓存对任何非 `run_command` 工具天然不适用。这是 Issue 里「豁免两层缓存」的实际落点差异，实施时按此核对。
 
 ### 10.2 参数与语义
 
@@ -284,14 +306,17 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 - 命中范围仅限**环形缓冲保留窗口**（`MAX_OUTPUT_ITEMS`），窗口外的历史文本不可见；命不中一律落超时，不谎报。
 - 跨块子串用 `len(pattern)-1` 字节重叠兜住：`scan_output_locked` 每次只扫 `scan_cursor` 之后的新块，代价与新增输出量成正比，不与缓冲大小成正比。
-- 接缝扫描**不在持锁期间**拼整块临时串：先 `chunk.contains`，再只看至多 `len-1` 字节的桥接前缀（多字节按字符边界收敛）。等待期间的每次唤醒都持有 registry 全局锁，而 worker 的 `push_output` 要的正是同一把锁。
-- 返回体把「等待结果」与「任务状态」**分开**写：`JobStatus::TimedOut`（任务自己超时结束）与 `WaitOutcome::DeadlineReached`（本次没等到）是两个概念，正文里分别表述。枚举变体**刻意不叫** `TimedOut`，就是为了不让两个概念在代码里再次混用。
+- 接缝扫描**不在持锁期间**拼整块临时串：先 `chunk.contains`，再只看至多 `len-1` 字节的桥接前缀（多字节按字符边界收敛）。
+  等待期间的每次唤醒都持有 registry 全局锁，而 worker 的 `push_output` 要的正是同一把锁。
+- 返回体把「等待结果」与「任务状态」**分开**写：`JobStatus::TimedOut`（任务自己超时结束）与 `WaitOutcome::DeadlineReached`（本次没等到）是两个概念，
+  正文里分别表述。枚举变体**刻意不叫** `TimedOut`，就是为了不让两个概念在代码里再次混用。
 
 #### 退出条件与优先级
 
 1. **终态** → `Hit { matched: false }`；
 2. **`output_matches` 命中** → `Hit { matched: true }`（任务可能仍在跑）；
-3. **已请求取消**（`cancel_requested` 置位但尚未落地终态）→ `CancelRequested`，**立即**结束等待，不空等 worker 收尾（否则 blocking 线程最多白占一个 `timeout_secs`）；
+3. **已请求取消**（`cancel_requested` 置位但尚未落地终态）→ `CancelRequested`，**立即**结束等待，
+  不空等 worker 收尾（否则 blocking 线程最多白占一个 `timeout_secs`）；
 4. **墙钟到期** → `DeadlineReached`；记录消失 → `Expired` / `NotFound`。
 
 顺序是「已满足的条件优先于正在被取消」：否则会出现「日志里明明有目标子串，却被告知已请求取消」的自相矛盾（`pattern_hit_wins_over_pending_cancel`）。
@@ -300,32 +325,43 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 ### 10.3 等待原语：`Condvar` 事件唤醒，不是轮询
 
-`ToolJobRegistry` 的 `inner: Mutex<Inner>` 是 **std 同步锁**，且工具执行在 `spawn_blocking` 内（`wait` 必然是同步语义），因此 `Condvar::wait_timeout` 是正确原语，不需要改 async 运行时、也不需要新线程模型：
+`ToolJobRegistry` 的 `inner: Mutex<Inner>` 是 **std 同步锁**，且工具执行在 `spawn_blocking` 内（`wait` 必然是同步语义），
+  因此 `Condvar::wait_timeout` 是正确原语，不需要改 async 运行时、也不需要新线程模型：
 
 ```
 持锁 → 检查条件（终态 / 缓冲出现 match）→ 不满足则 wait_timeout(截止时间)
 ```
 
-条件检查与 `wait_timeout` 在**同一把锁内**完成，故不存在「先查后等」的丢失唤醒窗口（`registry_wait_tests::repeated_races_between_complete_and_wait_never_hang` 覆盖）。
+条件检查与 `wait_timeout` 在**同一把锁内**完成，故不存在「先查后等」
+  的丢失唤醒窗口（`registry_wait_tests::repeated_races_between_complete_and_wait_never_hang` 覆盖）。
 
-`notify_all` 的四个点：**每次** `push_output`（不是终态——否则 `output_matches` 永远唤不醒）、`complete`、`cancel`（两分支）、`try_start`，以及 `cleanup` 删除条目时（否则被清理的任务仍有等待者时会白等到墙钟上限）。
+`notify_all` 的四个点：**每次** `push_output`（不是终态——否则 `output_matches` 永远唤不醒）、`complete`、`cancel`（两分支）、`try_start`，
+  以及 `cleanup` 删除条目时（否则被清理的任务仍有等待者时会白等到墙钟上限）。
 
-`cancel` 的 `running` 分支只置 `cancel_requested`，**不会**把记录改成终态（终态由 worker 收尾落定）。等待者因此不能只等终态：条件里包含 `cancel_requested`，否则用户停止回合后 blocking 线程会白等到 worker 结束或墙钟到期。
+`cancel` 的 `running` 分支只置 `cancel_requested`，**不会**把记录改成终态（终态由 worker 收尾落定）。等待者因此不能只等终态：
+  条件里包含 `cancel_requested`，否则用户停止回合后 blocking 线程会白等到 worker 结束或墙钟到期。
 
 **不复用 `JobFinishedSink`**：它是 per-job、`complete` 时 `take` 一次消费的 SSE 终态补发槽位，加第二个消费者会让补发丢事件。
 
 ### 10.4 外圈墙钟留白（必须保留）
 
-`SyncDefault` 工具被 `spawn_blocking` + 外层 `tokio::time::timeout(parallel_tool_wall_timeout_secs)` 包住，`BlockingSync` 类取 `command_exec.command_timeout_secs`（默认 600）——与 `timeout_secs` 的硬顶**同值**。内层若不在墙钟前返回，外层先开火，模型拿到的是通用「工具执行超时」而非结构化等待结果。故 runner 把外圈值传进工具，内层取 `min(600, wall - OUTER_WALL_RESERVE_SECS)`（留白 1 秒）。
+`SyncDefault` 工具被 `spawn_blocking` + 外层 `tokio::time::timeout(parallel_tool_wall_timeout_secs)` 包住，
+  `BlockingSync` 类取 `command_exec.command_timeout_secs`（默认 600）——与 `timeout_secs` 的硬顶**同值**。内层若不在墙钟前返回，外层先开火，
+  模型拿到的是通用「工具执行超时」而非结构化等待结果。故 runner 把外圈值传进工具，内层取 `min(600, wall - OUTER_WALL_RESERVE_SECS)`（留白 1 秒）。
 
-同一理由，本工具已加入 `tool_retry_policy::builtin_retry_denied`：等待时长本身就是这次调用的预算，透明重试会把墙钟翻倍、吃掉上面那 1 秒留白（当前 `should_retry` 尚无调用点，属预防性排除）。
+同一理由，本工具已加入 `tool_retry_policy::builtin_retry_denied`：等待时长本身就是这次调用的预算，透明重试会把墙钟翻倍、
+  吃掉上面那 1 秒留白（当前 `should_retry` 尚无调用点，属预防性排除）。
 
 ### 10.5 配置与保留期
 
-**不新增配置键**（`timeout_secs` 是调用参数，不是 `[tool_registry]` 项）。代价是：两次 `wait` 之间受 `background_job_result_grace_secs`（默认 300s）与 TTL 约束——终态记录宽限后即删，再等会得到与 `background_job` 同源的「已过保留时长」文案。
+**不新增配置键**（`timeout_secs` 是调用参数，不是 `[tool_registry]` 项）。代价是：两次 `wait` 之间受 `background_job_result_grace_secs`（默认 300s）
+  与 TTL 约束——终态记录宽限后即删，再等会得到与 `background_job` 同源的「已过保留时长」文案。
 
 ### 10.6 验证
 
-`registry_wait_tests`：终态零等待、`output_matches` 唤醒（断言耗时远小于上限，防止退回定长轮询）、跨块重叠命中（ASCII 与多字节各一条）、超时不改状态、`queued`→`running`→终态唤醒、`cancel` 唤醒（`queued` 与 `running` 两条路径；`running` 断言**立即**返回 `CancelRequested`）、命中优先于「正在取消」、同 id 连续两次等待都拿到新进展、`NotFound`/`Expired`、完成/等待竞态 ×20。
+`registry_wait_tests`：终态零等待、`output_matches` 唤醒（断言耗时远小于上限，防止退回定长轮询）、跨块重叠命中（ASCII 与多字节各一条）、超时不改状态、
+  `queued`→`running`→终态唤醒、`cancel` 唤醒（`queued` 与 `running` 两条路径；`running` 断言**立即**返回 `CancelRequested`）、命中优先于「正在取消」、
+  同 id 连续两次等待都拿到新进展、`NotFound`/`Expired`、完成/等待竞态 ×20。
 host 层：等待正文与「未被取消 / 可能仍在运行 / 已请求取消」措辞、`NotFound`/`Expired` 与 `background_job` 同文案。
-工具层：`until` 默认值、`output_matches` 缺省推断（及空白 pattern 仍落 `exit`）、pattern 必填/过长、参数口径与外圈留白两重钳制、`deny_unknown_fields`、无宿主降级。
+工具层：`until` 默认值、`output_matches` 缺省推断（及空白 pattern 仍落 `exit`）、pattern 必填/过长、参数口径与外圈留白两重钳制、
+  `deny_unknown_fields`、无宿主降级。
