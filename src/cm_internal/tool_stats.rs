@@ -10,7 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::cm_internal::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
+use crate::cm_tools::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
 use crate::cm_config::AgentConfig;
 
 #[derive(Debug)]
@@ -75,7 +75,7 @@ impl ToolOutcomeRecorder {
         wall_ms: u64,
     ) {
         let seq = self.execution_seq.fetch_add(1, Ordering::Relaxed);
-        let args_preview = crate::cm_internal::redact::preview_chars(args, 800);
+        let args_preview = crate::cm_tools::redact::preview_chars(args, 800);
         let mut q = self.execution_log.lock().unwrap_or_else(|e| e.into_inner());
         q.push_back(ToolExecutionLogEntry {
             seq,
@@ -105,7 +105,7 @@ impl ToolOutcomeRecorder {
         let parsed = parse_tool_output(tool_name, result_raw);
         let summary = tool_summary.unwrap_or_else(|| format!("tool: {tool_name}"));
         let structured_payload =
-            crate::cm_internal::tool_result::structured_payload_for_tool(tool_name, result_raw);
+            crate::cm_tools::tool_result::structured_payload_for_tool(tool_name, result_raw);
         let norm = NormalizedToolEnvelope::from_tool_run(
             tool_name,
             summary,

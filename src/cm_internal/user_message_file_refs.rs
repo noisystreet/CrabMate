@@ -7,14 +7,14 @@
 //! - 同一文件多次引用只展开一次；展开块按首次出现顺序追加在全文末尾。
 //! - **png/jpg/jpeg/webp/gif** **不**按源码展开（避免把二进制塞进会话）；出站由视觉网关打成 **`image_url`**。
 //! - 总展开字符上限约 **512 KiB**，超出部分跳过并附说明。
-//! - **安全**：路径经 `crate::cm_internal::tools::file::read_file_try` / `resolve_for_read_open`，与工具一致，不扩大工作区外读取。
+//! - **安全**：路径经 `crate::cm_tools::tools::file::read_file_try` / `resolve_for_read_open`，与工具一致，不扩大工作区外读取。
 
 use std::collections::HashSet;
 use std::path::Path;
 
 use regex::Regex;
 
-use crate::cm_internal::tools::{self, ToolContext};
+use crate::cm_tools::tools::{self, ToolContext};
 use crate::cm_config::AgentConfig;
 
 /// 与单次 `read_file` 默认一致，避免用户消息爆炸。
@@ -79,7 +79,7 @@ fn expand_one_path(rel: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> Resu
         "max_lines": EXPAND_MAX_LINES,
     })
     .to_string();
-    match crate::cm_internal::tools::read_file_try_at_paths(&args, working_dir, ctx) {
+    match crate::cm_tools::tools::read_file_try_at_paths(&args, working_dir, ctx) {
         Ok(s) => {
             let body = strip_read_file_output_header(&s);
             Ok(fenced_block("text", body))

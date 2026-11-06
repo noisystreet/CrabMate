@@ -9,7 +9,7 @@ use std::process::Command;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::cm_internal::tools::split_command_prefix_if_embedded;
+use crate::cm_tools::tools::split_command_prefix_if_embedded;
 use crate::cm_types::{FunctionDef, Tool};
 
 pub use crate::cm_tools::tool_naming::{DYNAMIC_TOOL_PREFIX, is_dynamic_tool_name};

@@ -214,7 +214,7 @@ fn install_file_pipe_tracing(
 /// Web 单条 `/chat*` 任务根 span：**`job_id`** 与 HTTP **`x-stream-job-id`** / SSE **`job_id`** 一致；**`conversation_id`** 为截断预览（完整 id 仍由业务层与会话存储持有）。
 /// **`request_id`** 字段预留；有值时由 [`TracingChatTurn::new`] 写入（与 HTTP **`x-request-id`** 同值）。
 pub fn chat_turn_span(job_id: u64, conversation_id: &str) -> Span {
-    let conversation_id_field = crate::cm_internal::redact::preview_chars(
+    let conversation_id_field = crate::cm_tools::redact::preview_chars(
         conversation_id.trim(),
         CHAT_TURN_CONVERSATION_ID_FIELD_MAX_CHARS,
     );

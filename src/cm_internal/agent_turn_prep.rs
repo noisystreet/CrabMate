@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::cm_names as tool_names;
 use crate::cm_internal::process_handles::TurnProcessHandles;
-use crate::cm_internal::read_file_turn_cache::ReadFileTurnCache;
-use crate::cm_internal::workspace::changelist::WorkspaceChangelist;
+use crate::cm_tools::read_file_turn_cache::ReadFileTurnCache;
+use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Tool;
 
@@ -25,7 +25,7 @@ pub fn resolve_read_file_turn_cache_for_turn(
     match read_file_turn_cache {
         Some(a) => Some(a),
         // 始终提供句柄：`max_entries=0` 只关闭正文缓存，仍需保留 revision 自动绑定。
-        None => Some(crate::cm_internal::read_file_turn_cache::new_turn_cache_handle(
+        None => Some(crate::cm_tools::read_file_turn_cache::new_turn_cache_handle(
             cfg.chat_queues_cache.read_file_turn_cache_max_entries,
         )),
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::cm_config::AgentConfig;
 use serde::Deserialize;
 
-use crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::cm_tools::tool_result::ToolError;
 
 pub struct LongTermMemoryToolState<'a> {

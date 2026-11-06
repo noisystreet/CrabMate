@@ -250,7 +250,7 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
             _ => continue,
         };
         checks.insert(key.to_string(), {
-            let raw = crate::cm_internal::health_dep_compat::health_item_from_cmd_result(k, v);
+            let raw = crate::cm_tools::health_dep_compat::health_item_from_cmd_result(k, v);
             HealthCheckItem {
                 ok: raw.ok,
                 detail: raw.detail,

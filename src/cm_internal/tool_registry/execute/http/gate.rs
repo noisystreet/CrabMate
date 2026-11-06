@@ -10,7 +10,7 @@ use log::error;
 
 use crate::cm_internal::tool_approval;
 use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 
 use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::super::ToolExecEnv;

@@ -53,7 +53,7 @@ pub struct DispatchToolWorkspace<'a> {
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
     pub workspace_changelist:
-        Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
+        Option<std::sync::Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
 }
 
 impl<'a> DispatchToolWorkspace<'a> {
@@ -104,8 +104,8 @@ pub struct DispatchToolObs<'a> {
 /// 只读缓存、LTM、MCP 等附属宿主（字段不删，仅分组）。
 pub struct DispatchToolMemory<'a> {
     pub read_file_turn_cache:
-        Option<std::sync::Arc<crate::cm_internal::read_file_turn_cache::ReadFileTurnCache>>,
-    pub long_term_memory: Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
+        Option<std::sync::Arc<crate::cm_tools::read_file_turn_cache::ReadFileTurnCache>>,
+    pub long_term_memory: Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub mcp_turn: Option<&'a crate::cm_internal::mcp::McpTurnHandle>,
 }

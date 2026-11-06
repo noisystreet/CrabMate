@@ -8,13 +8,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime;
+use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::cm_internal::readonly_tool_ttl_cache::ReadonlyToolTtlCache;
 use crate::cm_internal::tool_registry::HandlerLookupTable;
 use crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::cm_internal::tool_stats::ToolOutcomeRecorder;
-use crate::cm_internal::workspace::changelist::WorkspaceChangelistRegistry;
-use crate::cm_internal::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
+use crate::cm_tools::workspace::changelist::WorkspaceChangelistRegistry;
+use crate::cm_tools::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
 
 /// `run_agent_turn` / 工具执行所需的进程句柄面（不含侧栏任务表与 CLI LTM）。
 #[derive(Clone)]

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::cm_config::SyncDefaultToolSandboxMode;
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 
 use super::super::policy::terminal_session_outer_wall_secs;
 use super::super::runtime::WebToolRuntime;

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::cm_internal::cargo_metadata::cargo_metadata_command;
+use crate::cm_tools::cargo_metadata::cargo_metadata_command;
 use serde_json::json;
 
 const BRIEF_VERSION: u32 = 1;

@@ -30,13 +30,19 @@ pub mod agent;
 /// Docker 沙盒内 `tool-runner-internal` 入口；二进制与 `main` 经此路径调用。
 pub use crate::cm_internal::tool_sandbox;
 /// `cm_internal` 门面：`#[doc(hidden)]`。稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
+// `cm_internal` 只导出**自身实现**。`tools` / `workspace` / `redact` / `tool_result` /
+// `read_file_turn_cache` 等本体在 `cm_tools`，`memory` 在 `cm_memory` —— 经 `cm_internal`
+// 转发只会让内部桶看起来比实际更中心（S4-P1a，见 #1300），故按本体直连。
 pub(crate) use crate::cm_internal::{
-    agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire,
-    clarification_questionnaire_body_if_tool_ok, context_bootstrap, github_token, health, mcp,
-    memory, memory_tool_hosts, observability, process_handles, read_file_turn_cache,
-    readonly_tool_ttl_cache, redact, request_chrome_trace, session_mode_turn, text_encoding,
-    text_util, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
-    user_message_file_refs, workspace,
+    agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire_body_if_tool_ok,
+    context_bootstrap, health, mcp, memory_tool_hosts, observability, process_handles,
+    readonly_tool_ttl_cache, request_chrome_trace, session_mode_turn, text_util, tool_call_explain,
+    tool_registry, tool_stats, user_message_file_refs,
+};
+pub(crate) use crate::cm_memory::memory;
+pub(crate) use crate::cm_tools::{
+    clarification_questionnaire, github_token, read_file_turn_cache, redact, text_encoding,
+    tool_result, tools, workspace,
 };
 /// SSE 控制面协议与运行时（原 `crate::cm_internal::sse`，已迁至 [`crate::cm_sse_protocol`]）。
 #[cfg(feature = "web")]

@@ -16,7 +16,7 @@ use log::error;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_types::ToolCall;
 
@@ -38,11 +38,11 @@ struct SyncDefaultToolDispatchArgs<'a> {
     args: &'a str,
     tc: &'a ToolCall,
     read_file_turn_cache:
-        Option<std::sync::Arc<crate::cm_internal::read_file_turn_cache::ReadFileTurnCache>>,
+        Option<std::sync::Arc<crate::cm_tools::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist:
-        Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
+        Option<std::sync::Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
     long_term_memory:
-        Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
+        Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     /// 后台任务注册表：供 `background_job_status` / `background_job_list` 只读查询。
     tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,

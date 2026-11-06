@@ -11,7 +11,7 @@ use nix::pty::{ForkptyResult, Winsize, forkpty};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::{Pid, chdir, execvp};
 
-use crate::cm_internal::tools::PreparedRunCommand;
+use crate::cm_tools::tools::PreparedRunCommand;
 
 pub(super) fn exec_strings_for_prepared(
     p: &PreparedRunCommand,

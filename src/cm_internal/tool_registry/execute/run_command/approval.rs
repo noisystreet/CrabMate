@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 use crate::cm_names as tool_names;
 use crate::cm_types::{CommandApprovalDecision, ToolCall};
 
@@ -408,7 +408,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn resolve_unknown_cmd_
         }
         return Ok((Arc::clone(base), None));
     }
-    if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
+    if crate::cm_tools::tools::run_command_invocation_targets_workspace_script_or_executable(
         ctx.workspace,
         &parsed.spec.command,
     ) {
