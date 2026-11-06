@@ -39,9 +39,20 @@ fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
 [ -f "$INTERNAL_MOD" ] || fail "找不到 $INTERNAL_MOD"
 [ -f "$LIB_SERVER" ] || fail "找不到 $LIB_SERVER"
 
-# C1 名单：cm_internal 的真子项（`pub mod X;`）。转发项（`pub use crate::cm_tools::…`）不在其中。
-SUB=$(grep -oE '^pub mod [a-z_0-9]+;' "$INTERNAL_MOD" 2>/dev/null \
-        | sed -E 's/^pub mod ([a-z_0-9]+);/\1/' | tr '\n' ' ' || true)
+# C1 名单 = cm_internal 的真子项（`pub mod X;`）**加上**它对外转发的名字（`pub use`）。
+# 后者必须在内：P1a 保留了一批 `pub use crate::cm_tools::{…}` 只为维持 doc(hidden) 可达性，
+# 若不计入，`crate::cm_internal::tools` 这类引用就能绕过门禁（实测曾 exit 0）。
+# 只取 snake_case 末段，与下面 grep 的模式（`crate::cm_internal::[a-z_0-9]+`）保持一致；
+# `pub use process_handles::{ProcessHandles, …}` 这类 CamelCase 类型不在口径内。
+SUB=$( {
+  grep -oE '^pub mod [a-z_0-9]+;' "$INTERNAL_MOD" 2>/dev/null \
+    | sed -E 's/^pub mod ([a-z_0-9]+);/\1/'
+  # 单行 `pub use path::name;`
+  sed -nE 's/^pub use [A-Za-z_:]+::([a-z_0-9]+);$/\1/p' "$INTERNAL_MOD" 2>/dev/null
+  # 块级 `pub use path::{\n  a, b,\n};`（要求行尾就是 `{`，避免误吞单行 `{A, B};`）
+  sed -nE '/^pub use [A-Za-z_:]+::\{$/,/^\};/p' "$INTERNAL_MOD" 2>/dev/null \
+    | sed '1d;$d' | tr ',' '\n' | tr -d ' ' | grep -E '^[a-z_0-9]+$'
+} | sort -u | tr '\n' ' ' || true)
 
 # C2 名单：根上从 cm_internal 再导出的短名。
 SHORT=$(sed -n '/^pub(crate) use crate::cm_internal::{/,/^};/p' "$LIB_SERVER" 2>/dev/null \

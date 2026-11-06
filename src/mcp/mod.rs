@@ -13,8 +13,6 @@ use crate::cm_config::AgentConfig;
 pub mod resolve;
 pub mod schema_sanitize;
 pub use schema_sanitize::sanitize_mcp_json_schema;
-/// 原经 `cm_internal::mcp` 转出；并入本模块后仍从根暴露（`runtime/cli_mcp.rs` 用该路径）。
-pub use resolve::classify_mcp_connect_error;
 
 mod resolve_config;
 pub use resolve_config::resolve_mcp_config;
