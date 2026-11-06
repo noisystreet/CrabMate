@@ -36,7 +36,7 @@
 | clap 的 `Commands` 有 **14** 个变体（`Serve`/`Bench`/`Config`/`Doctor`/`WebBearer`/`Models`/`Probe`/`SaveSession`/`ToolReplay`/`SseReplay`/`Mcp`/`Plugin`/`Workflow`/`E2e`），解析后摊平成 `ParsedCliArgs` 的 **24** 个平铺字段 | `src/cm_config/cli/definitions.rs:422` / `:493` | ✅ |
 | `cli_run.rs` 用 **13** 字段的 `EarlyCliDispatch` + **11** 个 `try_early_*` + 一处 `ExtraCliCommand` match 重新分派 | `src/cli_run.rs:100`、`:822` | ✅ |
 | `cli_run.rs` 曾达 **912** 行（file 棘轮上限 **920**），只剩 **8 行**余量；S5-a 后 **493** 行（余量 **427**） | `wc -l src/cli_run.rs` | ✅ 当时不是「逼近」，是**随时会撞线**；见 §12 |
-| **拆分已有先例但没拆完**：`cli_run.rs` 用 `#[path]` 挂了 `cli_run_serve.rs`（拆分前 **730** 行；S5-a 后 **410** 行，见 §12.2）与 `cli_run_session.rs`（**135** 行），但 serve 装配（`build_serve_runtime_state`、`spawn_uploads_cleanup`、`build_serve_shutdown_signal`、两个 feature 变体的 `run_serve_branch`）**已由 S5-a（#1274）搬进 `cli_run_serve_branch.rs`**，主文件 912 → **493** 行 | `grep -n '#\[path' src/cli_run.rs`；`wc -l src/cli_run_serve.rs` | ✅ S5-a 已完成——当初不能直接搬进 `cli_run_serve.rs`（会到 950+ 行），故另开模块，见 §12.2 |
+| **拆分已有先例但没拆完**：`cli_run.rs` 用 `#[path]` 挂了 `cli_run_serve.rs`（拆分前 **730** 行；S5-a 后 **410** 行，见 §12.2）与 `cli_run_session.rs`（**135** 行），但 serve 装配（`build_serve_runtime_state`、`spawn_uploads_cleanup`、`build_serve_shutdown_signal`、两个 feature 变体的 `run_serve_branch`）**已由 S5-a（#1274）搬进 `cli_run_serve_branch.rs`**，主文件 912 → **493** 行（**S6/#1295 起 `cli_run*.rs` 已全部并入 `src/cm_cli/`，本节文件名与行号按 S5 当时保留，仅供追溯**） | `grep -n '#\[path' src/cli_run.rs`；`wc -l src/cli_run_serve.rs` | ✅ S5-a 已完成——当初不能直接搬进 `cli_run_serve.rs`（会到 950+ 行），故另开模块，见 §12.2 |
 | `server` 面承诺的是「模块**存在**」，不是签名 | `docs/design/crates_io_single_package.md:103` | ⚠️ 该行号未复核 |
 | 协议层有分类器但**无生产消费者**——文件头自述「刻意保留的语义对齐锚点」并带 `#![allow(dead_code)]` | `src/cm_sse_protocol/sse/line.rs:1-8` | ✅ |
 | 禁边门禁只覆盖 5 个模块，且只针对 `cm_internal` | `docs/design/crate_dep_policy.md:42-51` | ⚠️ 该行号未复核 |
@@ -428,7 +428,7 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 |---|---|---|
 | `cli_run_serve.rs`（原 730） | 拆出 instance lock 一族 | **已完成（#1275）：730 → 391**；#1274 又接收唯一调用方同族的 `validate_bind_auth`，现 **410**（见 §12.2.2） |
 | **新** `cli_run_serve_lock.rs` | 常量 ×3、`parse_instance_id` 166-191、`serve_instance_id` 194-205、`env_flag_enabled` 207-214、`serve_instance_lock_targets` 267-287、`serve_acquire_instance_lock_at` 301-352、`serve_acquire_instance_locks` 372-403，+ 7 个单测 | **已建：369 行**（业务 151 + 测试 135 + 头/常量） |
-| **新** `cli_run_serve_branch.rs` | `build_serve_runtime_state` 432-520、`spawn_uploads_cleanup` 586-609、`build_serve_shutdown_signal` 714-734、`run_serve_branch` 两变体 624-712 / 737-745，**外加 `ServeBranchArgs` 的两个 cfg 变体（404 web / 748 非 web）**；审查跟进又把同族的 `parse_bind_ip` / `serve_log_bind_warnings` / `print_desktop_ready_json` / `spawn_conversation_prune` 一并归入 | **已完成（#1274）：382 物理行 / 341 非注释非空行**（`ServeRuntimeBuildInput` 随 `build_serve_runtime_state` 一并搬入） |
+| **新** `cli_run_serve_branch.rs`（S6 起并入 `cm_cli/serve/`，`ServeBranchArgs` → `cm_cli::serve::run(session, &global, &serve)`） | `build_serve_runtime_state` 432-520、`spawn_uploads_cleanup` 586-609、`build_serve_shutdown_signal` 714-734、`run_serve_branch` 两变体 624-712 / 737-745，**外加 `ServeBranchArgs` 的两个 cfg 变体（404 web / 748 非 web）**；审查跟进又把同族的 `parse_bind_ip` / `serve_log_bind_warnings` / `print_desktop_ready_json` / `spawn_conversation_prune` 一并归入 | **已完成（#1274）：382 物理行 / 341 非注释非空行**（`ServeRuntimeBuildInput` 随 `build_serve_runtime_state` 一并搬入） |
 | **新** `cli_run_bench.rs` | `run_benchmark_batch_if_requested` 764-814（**无 `cfg` 门**） | **已完成（#1274）：60 物理行 / 50 非注释非空行** |
 | `cli_run.rs` | 只剩 `EarlyCliDispatch`、`run_cli_from_parsed` 的一次分派、各 `try_early_*` | **已完成（#1274）：912 → 493**（余量 8 → **427**）——serve 相关 helper 全部归位后，主文件不再有任何 `web` 装配痕迹 |
 
@@ -448,7 +448,7 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 顺序（每步一次提交、每步跑一次 `cargo test`）：
 
 1. 拆 `cli_run_serve_lock.rs` —— 只动 `cli_run_serve.rs`，风险最低，先做；
-2. 拆 `cli_run_serve_branch.rs` —— 从 `cli_run.rs` 搬约 232 行（含 `build_serve_shutdown_signal`）进去，同时改 `use` 指向；
+2. 拆 `cli_run_serve_branch.rs` —— 从 `cli_run.rs` 搬约 232 行（含 `build_serve_shutdown_signal`）进去，同时改 `use` 指向（该文件 S6/#1295 已再并入 `cm_cli/serve/`）；
 3. 拆 `cli_run_bench.rs`；
 4. 收尾：检查 `cli_run.rs` 里剩下的 `try_early_*` 是否还值得继续拆（那时已不紧急）。
 
@@ -465,8 +465,8 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 | 第一步后 `cli_run_serve.rs`「≈580 行」 | **391 行**：原估只算业务代码，漏算随代码搬走的 135 行单测 | 该文件已无行数压力；第二步的目标回到 `cli_run.rs` 本身 |
 | — | **新增规律：搬移会改变可见性需求** | `ServeInstanceLocks` 必须 `pub(in crate::cli_run)`（出现在 `ServePrecheck` 公开字段类型里）；`ENV_DISABLE_INSTANCE_LOCK` 必须 `pub(super)`（自检日志要打印它）。照抄原可见性会在 `-D warnings` 下失败 |
 | — | **新增（#1274）：`server` feature 无条件包含 `web`** | `#[cfg(not(feature = "web"))]` 的 `run_serve_branch` / `ServeBranchArgs` 变体，在现有 feature 图下**任何组合都不编译**；`cargo check --no-default-features` 也不覆盖它（那组 feature 下 `cli_run` 整个不进编译图） | 搬移保持原样、未新增缺口；下文验收里「`--no-default-features` 覆盖两条 cfg 路径」这句**不成立**，不要再当已验证据引用 |
-| 「每个新文件 ≤ 200 行 nloc」（§12.3） | 与本表「`cli_run_serve_branch.rs` ≈232 + 类型定义」**自相矛盾**；最终 **382** 物理行 / **341** 非注释非空 | 按本表的三文件分配执行（审查跟进又并入 4 个同族 helper），未为凑 200 再切第四个文件：生效门禁是 fn nloc ≤ 200（最大 **89**）与 file ≤ 920（**382**，余量 538） |
-| `cli_run_serve.rs`「**只减不增**」（§12.3） | **391 → 410**（+19）：审查发现 `validate_bind_auth` 的唯一调用方是 `cli_run_serve::serve_validate_bind_gates`，原先留在 `cli_run.rs` 是错位 | 接受这 +19：410 / 920 余量 510，不构成「把地雷转移到下一处」；为守字面「不上升」而把它塞进 `cli_run_serve_branch.rs`，反而会造出 `cli_run_serve → cli_run_serve_branch` 的反向依赖 |
+| 「每个新文件 ≤ 200 行 nloc」（§12.3） | 与本表「`cli_run_serve_branch.rs` ≈232 + 类型定义」**自相矛盾**（S6/#1295 起该文件已并入 `cm_cli/serve/`，此处保留原复盘文字）；最终 **382** 物理行 / **341** 非注释非空 | 按本表的三文件分配执行（审查跟进又并入 4 个同族 helper），未为凑 200 再切第四个文件：生效门禁是 fn nloc ≤ 200（最大 **89**）与 file ≤ 920（**382**，余量 538） |
+| `cli_run_serve.rs`「**只减不增**」（§12.3） | **391 → 410**（+19）：审查发现 `validate_bind_auth` 的唯一调用方是 `cli_run_serve::serve_validate_bind_gates`，原先留在 `cli_run.rs` 是错位 | 接受这 +19：410 / 920 余量 510，不构成「把地雷转移到下一处」；为守字面「不上升」而把它塞进 `cli_run_serve_branch.rs`（S6 已并入 `cm_cli/serve/`），反而会造出 `cli_run_serve → cli_run_serve_branch` 的反向依赖 |
 
 ### 12.3 验收
 

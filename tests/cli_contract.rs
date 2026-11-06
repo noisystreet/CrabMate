@@ -13,30 +13,18 @@ use crabmate::{
 };
 use std::sync::Mutex;
 
-/// `parse_args` 会读 `CM_HTTP_HOST`；契约用例假定默认 `127.0.0.1`，故串行并临时清理。
+/// 解析层**不再读** `CM_HTTP_HOST`（该 env 只在 `cm_cli::serve` 真正起服务时读取），
+/// 所以这里不需要清理环境变量；保留串行锁，让断言失败时的输出不互相交错。
 static CLI_CONTRACT_LOCK: Mutex<()> = Mutex::new(());
 
-fn with_isolated_agent_http_host<F, R>(f: F) -> R
+fn with_serialized_cli_contract<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
     let _g = CLI_CONTRACT_LOCK
         .lock()
         .expect("cli_contract tests must run serialized");
-    let prev = std::env::var("CM_HTTP_HOST").ok();
-    // SAFETY: `set_var`/`remove_var` are unsafe in Rust 2024; we hold `CLI_CONTRACT_LOCK` so no
-    // concurrent tests in this crate read `CM_HTTP_HOST` during `f()`.
-    unsafe {
-        std::env::remove_var("CM_HTTP_HOST");
-    }
-    let out = f();
-    unsafe {
-        match prev {
-            Some(v) => std::env::set_var("CM_HTTP_HOST", v),
-            None => std::env::remove_var("CM_HTTP_HOST"),
-        }
-    }
-    out
+    f()
 }
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -107,7 +95,7 @@ fn fixture_help_normalize_matches_normalize_help_argv() {
 
 #[test]
 fn removed_flat_flags_are_rejected() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         for argv in [
             vec!["crabmate", "--serve"],
             vec!["crabmate", "--dry-run"],
@@ -122,7 +110,7 @@ fn removed_flat_flags_are_rejected() {
 
 #[test]
 fn config_subcommand_rejects_options() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         // `config` 已无 `--dry-run` 选项（改前为 no-op 旗标）：须由 clap 报未知参数。
         let err = parse_args_from_argv(vec![
             "crabmate".to_string(),
@@ -136,7 +124,7 @@ fn config_subcommand_rejects_options() {
 
 #[test]
 fn serve_workspace_unset_flag_is_parsed() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         let p = parse_args_from_argv(vec![
             "crabmate".to_string(),
             "serve".to_string(),
@@ -153,7 +141,7 @@ fn serve_workspace_unset_flag_is_parsed() {
 
 #[test]
 fn serve_workspace_unset_defaults_off() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()])
             .expect("serve 无其它参数应可解析");
         assert!(
@@ -165,7 +153,7 @@ fn serve_workspace_unset_defaults_off() {
 
 #[test]
 fn serve_workspace_unset_conflicts_with_workspace() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         let err = parse_args_from_argv(vec![
             "crabmate".to_string(),
             "--workspace".to_string(),
@@ -180,7 +168,7 @@ fn serve_workspace_unset_conflicts_with_workspace() {
 
 #[test]
 fn fixture_parse_args_from_argv_contract() {
-    with_isolated_agent_http_host(|| {
+    with_serialized_cli_contract(|| {
         let path = fixture_dir().join("parse_contract.json");
         let raw = std::fs::read_to_string(&path).unwrap();
         let cases: serde_json::Value = serde_json::from_str(&raw).unwrap();

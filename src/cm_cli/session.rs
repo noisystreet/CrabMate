@@ -77,6 +77,7 @@ pub(super) async fn run(
     }
     let session = init_cli_session_start(cfg, global.no_tools).await?;
 
+    let name = command.name();
     match command {
         #[cfg(feature = "web")]
         Commands::Serve(serve) => super::serve::run(session, &global, &serve).await,
@@ -87,7 +88,9 @@ pub(super) async fn run(
         )
         .into()),
         Commands::Bench(bench) => super::bench::run(session, &bench).await,
-        // `super::dispatch` 只把 `serve` / `bench` 送到这里。
-        _ => Err(super::unspecified_subcommand_error()),
+        // 通配臂在这里无法避免：`Serve` 的臂被 `cfg` 劈成两半，穷尽列举会在两种 feature
+        // 组合下各缺一半。`super::dispatch` 只把 `serve` / `bench` 送到这里，所以走到
+        // 这个分支只可能是分派表被改坏——按「程序缺陷」报，别报成用法错误。
+        _ => Err(super::dispatch_table_gap(name)),
     }
 }

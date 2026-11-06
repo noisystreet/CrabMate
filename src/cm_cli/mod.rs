@@ -53,45 +53,47 @@ pub(crate) async fn dispatch(mut ctx: CliContext) -> Result<(), Box<dyn std::err
     }
 }
 
-/// 不初始化会话句柄的运维子命令（诊断 / 离线产物）。
+/// 不进 `serve` / `bench` 主循环的子命令：诊断、离线产物、需要配置与 HTTP 客户端的运维动作。
+///
+/// **一个穷尽的 `match`**：新增 `Commands` 变体时这里编译失败，而不是静默滑进某个兜底。
+/// `serve` / `bench` 已在 [`dispatch`] 分走，落到本函数只可能是分派表被改坏。
 async fn dispatch_offline(
     global: CliGlobals,
     command: Commands,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let name = command.name();
     match command {
+        // 不读配置也能跑（配置损坏时依然可用）。
+        Commands::WebBearer(cmd) => offline::run_web_bearer(cmd),
+        Commands::SseReplay(cmd) => offline::run_sse_replay(cmd),
+        // 自己按需加载配置。
         Commands::Doctor => diagnostics::run_doctor(&global),
         Commands::Config => diagnostics::run_dry_run(&global).await,
         Commands::Models => diagnostics::run_models_or_probe(&global, false).await,
         Commands::Probe => diagnostics::run_models_or_probe(&global, true).await,
-        Commands::WebBearer(cmd) => offline::run_web_bearer(cmd),
         Commands::SaveSession(cmd) => offline::run_save_session(&global, cmd),
-        Commands::SseReplay(cmd) => offline::run_sse_replay(cmd),
-        other => dispatch_toolish(global, other).await,
-    }
-}
-
-/// 需要配置与 HTTP 客户端，但不进 `serve` / `bench` 主循环的子命令。
-async fn dispatch_toolish(
-    global: CliGlobals,
-    command: Commands,
-) -> Result<(), Box<dyn std::error::Error>> {
-    match command {
+        // 需要配置 + HTTP 客户端（仍不建工具表 / 进程句柄）。
         Commands::ToolReplay(cmd) => tooling::run_tool_replay(&global, cmd).await,
         Commands::Plugin(cmd) => tooling::run_plugin(&global, cmd),
         Commands::Workflow(cmd) => tooling_net::run_workflow(&global, cmd).await,
         Commands::Mcp(cmd) => tooling_net::run_mcp(&global, cmd).await,
         Commands::E2e(cmd) => tooling_net::run_e2e(&global, cmd).await,
-        // `serve` / `bench` 已在 `dispatch` 分走，其余在 `dispatch_offline` 分走。
-        // 兜底返回用户可读的用法错误（而不是 `unreachable!()`）：真走到这里说明分派表
-        // 漏了一层，报错比 panic 更容易定位。
-        _ => Err(unspecified_subcommand_error()),
+        // **不写通配臂**：上面已把 12 个变体逐一接上，只剩这两个被 `dispatch` 提前分走。
+        // 新增变体会让这条穷尽匹配编译失败——那才是「编译器强制你处理」。
+        Commands::Serve(_) | Commands::Bench(_) => Err(dispatch_table_gap(name)),
     }
 }
 
-fn unspecified_subcommand_error() -> Box<dyn std::error::Error> {
+/// `Commands` 有变体却没接上执行体：**分派表缺口**（程序缺陷），不是用户用法错误。
+///
+/// 别退回「未指定可执行的子命令」那类文案：`Commands` 是 clap 必选子命令、没有空变体，
+/// 用户根本没有「不给子命令」这条路，那样写只会把维护者引向错误方向。
+pub(super) fn dispatch_table_gap(name: &'static str) -> Box<dyn std::error::Error> {
     std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        "未指定可执行的子命令。请使用 `crabmate serve`（API）或运维子命令（如 `doctor`）；官方终端为 Client 仓 `crabmate-tui`。同进程 `chat|repl|tui` 入口已移除。",
+        std::io::ErrorKind::Unsupported,
+        format!(
+            "子命令 `{name}` 没有接入 CLI 分派表（src/cm_cli/mod.rs），这是程序缺陷而非用法问题；请提 issue 或就地补上执行体。"
+        ),
     )
     .into()
 }

@@ -461,6 +461,30 @@ pub enum Commands {
     E2e(E2eCmd),
 }
 
+impl Commands {
+    /// 子命令的对外名字（与 clap `#[command(name = ...)]` 一致），供分派层拼错误信息。
+    ///
+    /// 穷尽 `match` 是刻意的：新增 `Commands` 变体时编译器会强制在这里补一行。
+    pub fn name(&self) -> &'static str {
+        match self {
+            Commands::Serve(_) => "serve",
+            Commands::Bench(_) => "bench",
+            Commands::Config => "config",
+            Commands::Doctor => "doctor",
+            Commands::WebBearer(_) => "web-bearer",
+            Commands::Models => "models",
+            Commands::Probe => "probe",
+            Commands::SaveSession(_) => "save-session",
+            Commands::ToolReplay(_) => "tool-replay",
+            Commands::SseReplay(_) => "sse-replay",
+            Commands::Mcp(_) => "mcp",
+            Commands::Plugin(_) => "plugin",
+            Commands::Workflow(_) => "workflow",
+            Commands::E2e(_) => "e2e",
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "crabmate",
