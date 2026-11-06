@@ -54,19 +54,44 @@ SUB=$( {
     | sed '1d;$d' | tr ',' '\n' | tr -d ' ' | grep -E '^[a-z_0-9]+$'
 } | sort -u | tr '\n' ' ' || true)
 
-# C2 名单：根上从 cm_internal 再导出的短名。
-SHORT=$(sed -n '/^pub(crate) use crate::cm_internal::{/,/^};/p' "$LIB_SERVER" 2>/dev/null \
-          | sed '1d;$d' | tr ',' '\n' | tr -d ' ' | grep -E '^[a-z_0-9]+$' | tr '\n' ' ' || true)
+# C2 名单：根上从 cm_internal（**或其桶门面**）再导出的短名。
+#
+# 来源集合必须包含 4 个桶名：S4-P1c 把短名的**定义点**分发到桶之后，`lib_server.rs` 里
+# `crate::cm_internal::{…}` 只剩 `process_handles` / `text_util` 两项。若仍只认 cm_internal，
+# C2 会从 134 凭空跌到 36 —— 虚假改善，比虚假恶化更容易让人误判「提前达标」。
+# 桶成员的本体此刻仍在 cm_internal（P2 才搬走），所以它们的引用确实还算耦合。
+SHORT=$(awk '
+  /^pub\(crate\) use crate::(cm_internal|tool_host|context|obs|jobs)::/ {
+    stmt = $0; collecting = 1
+    if ($0 ~ /};[[:space:]]*$/) { print stmt; collecting = 0; stmt = "" }
+    next
+  }
+  collecting {
+    stmt = stmt " " $0
+    if ($0 ~ /^};/) { print stmt; collecting = 0; stmt = "" }
+  }
+' "$LIB_SERVER" 2>/dev/null \
+  | sed -E 's/^pub\(crate\) use crate::[a-z_0-9]+:://' \
+  | tr ',' '\n' | sed -E 's/[{ };]//g' | tr -d '\t' \
+  | grep -E '^[a-z_0-9]+$' | sort -u | tr '\n' ' ' || true)
 
 # 防静默退化：解析为空说明源文件结构变了，必须失败而不是给出 0（0 会被误读成「已达标」）。
 [ -n "${SUB// /}" ] || fail "未能从 cm_internal/mod.rs 解析出 pub mod 列表（文件结构变了？）"
 [ -n "${SHORT// /}" ] || fail "未能从 lib_server.rs 解析出短名列表（文件结构变了？）"
 
-# 一次扫描 → 剔除 cm_internal 自身与纯注释行 → 按名单归并计数。
+# 一次扫描 → 剔除 cm_internal 自身、四个桶门面的 mod.rs、纯注释行 → 按名单归并计数。
+#
+# 为什么要排除桶门面（`src/{tool_host,context,obs,jobs}/mod.rs`）：它们是 S4-P1c 建的**迁移
+# 容器**，当前内容就是 `pub(crate) use crate::cm_internal::…`，P2 搬文件时逐条改成 `pub mod`。
+# 把它们计入会让 C1 凭空 +22，而这不是「上层耦合回流」；P2 完成后这些引用自然归零。
+# 只排除 4 个 mod.rs，桶内 P2 搬进来的其他文件仍照常计入。
+# 匹配锚定 `/src/`：`context` / `obs` / `jobs` 都是常见目录名，不锚定的话
+# `src/web/context/mod.rs` 这类同级目录也会被一并排除，那里的引用就静默漏计了。
 measure() {
   local prefix=$1 names=$2
   grep -rnE "${prefix}[a-z_0-9]+" "$ROOT/src" --include='*.rs' 2>/dev/null \
     | grep -v '/src/cm_internal/' \
+    | grep -vE '/src/(tool_host|context|obs|jobs)/mod\.rs:' \
     | grep -vE ':[0-9]+:[[:space:]]*//' \
     | grep -oE "${prefix}[a-z_0-9]+" \
     | sed -E 's/.*:://' \
