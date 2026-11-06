@@ -3,7 +3,11 @@
 //!
 //! # 公开 API（semver）
 //!
-//! 白名单见仓库 `docs/design/crates_io_single_package.md` §2.4。
+//! **承诺面是显式清单，不是「根上所有 `pub` 项」**：根级每个公开名字必须在
+//! `fixtures/public_api_golden.txt` 里归入 `promised` 或 `excluded`，由
+//! `scripts/check-public-api.py` 在 pre-commit 校验——新增公开项不改清单即失败（这是
+//! 刻意的摩擦，见 #1297 与 `docs/design/sdk_facade.md` §11 Q2）。当前根面 **96** 项：
+//! `promised` 50 / `excluded` 46。设计依据见 `docs/design/crates_io_single_package.md` §2.4。
 //!
 //! - **承诺 `protocol`**（Client / WASM）：六个模块 [`cm_types`]、[`cm_display_rules`]、
 //!   [`cm_api_contract`]、[`cm_chat_export`]、[`cm_turn_layout`]、[`cm_sse_protocol`]。
@@ -11,11 +15,15 @@
 //!   `HealthReportView`、sessions 行瘦投影 `SessionListRow` 与 `/workspace*` 契约
 //!   模块 `workspace` 挂 [`cm_api_contract`]；AG-UI `command_approval` data 面
 //!   `CommandApprovalData` 挂 [`cm_sse_protocol`]）见 §2.4「`0.5.x` / `0.6.x` / `0.7.x` 增量公开面」。
-//! - **承诺 `server`**（默认，含 `protocol`）：组合面模块名 `agent` / `config` / `llm` / `sse` /
-//!   `types` 的**存在**；以及 `run`、`run_agent_turn`、`build_tools*`、`ProcessHandles`、
-//!   `tool_sandbox` 等根上显式 `pub use`。
-//! - **不承诺**：`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` /
-//!   `cm_internal`、`e2e_scenario`、`test_serve`；`agent::agent_turn` 等组合面内部路径。
+//! - **承诺 `server`**（默认，含 `protocol`）：组合面模块名 `agent` / `llm` / `config` / `sse` /
+//!   `types` 的**存在**，以及回合面（`run`、`run_agent_turn`、`TurnRequest` 与其公开字段类型、
+//!   `TurnOutcome` / `TurnStats`）、工具面（`build_tools*`、`ToolsBuildOptions`、
+//!   `ProcessHandles` / `TurnProcessHandles`、`tool_sandbox`）、LLM 与配置面
+//!   （`ChatCompletionsBackend` 及配套、`AgentConfig` / `load_config`）。完整名单以清单为准。
+//! - **不承诺**：清单里 `excluded` 的 46 项——`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` /
+//!   `cm_config` / `cm_workflow` / `cm_internal` / `cm_ctl`、`e2e_scenario`、`test_serve`；
+//!   CLI 内部入口 `run_cli_from_parsed`、CLI 解析助手与 `EXIT_*` 退出码常量；工具注册表
+//!   内部元数据；S2 遗留参数袋 `WebChat*BuildArgs`；`agent::agent_turn` 等组合面内部路径。
 //!   `cm_tools` / `cmd_mate` 等为实现模块，`pub(crate)`。
 //!
 //! 本 crate 默认 feature 是带库的 **`serve` 服务器**，不是通用嵌入式 Agent SDK。

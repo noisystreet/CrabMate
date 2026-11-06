@@ -195,7 +195,13 @@ pub struct TurnRequest<'a> {
 pub type RunAgentTurnParams<'a> = TurnRequest<'a>;
 
 /// 构造 [`TurnRequest::web_chat_stream`] 所需的参数包（避免长形参列表）。
+///
+/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297 与 `fixtures/public_api_golden.txt`）：
+/// 这是 S2 遗留的 25 字段参数袋，SDK 化要消灭的正是它。刻意**不**标 `#[deprecated]`——
+/// 本仓 `chat_job_queue` 与 [`TurnRequest::web_chat_stream`] 自身仍在构造它，
+/// `-D warnings` 下会把内部调用点变成编译错误。
 #[cfg(feature = "web")]
+#[doc(hidden)]
 pub struct WebChatStreamBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
@@ -228,7 +234,11 @@ pub struct WebChatStreamBuildArgs<'a> {
 }
 
 /// 构造 [`TurnRequest::web_chat_json`] 所需的参数包。
+///
+/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297）：理由同
+/// [`WebChatStreamBuildArgs`]，同样刻意不标 `#[deprecated]`（内部仍有构造点）。
 #[cfg(feature = "web")]
+#[doc(hidden)]
 pub struct WebChatJsonBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
     pub messages: &'a mut Vec<types::Message>,
@@ -545,6 +555,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// 已解析 CLI 参数后的入口；`main` 在 `block_on` 时优先调用本函数以减小 future 嵌套深度。
+///
+/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297）：`pub` 是 crate 根 `include!` 布局的
+/// 副作用——`src/main.rs` 是独立 crate target，必须经根上路径调用。它不构成 SDK 面。
+#[doc(hidden)]
 pub async fn run_cli_from_parsed(
     args: config::cli::ParsedCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
