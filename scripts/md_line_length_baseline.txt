@@ -2,9 +2,11 @@
 #
 # 由 `python3 scripts/md_line_length_ratchet.py --print-baseline` 生成。
 #
-# 生成参数：limit=160 count-mode=width（脚本读这行判断你是否换了口径）。
+# 生成参数：limit=160 hard-limit=4883 count-mode=width
+# （脚本读这行判断你是否换了口径、以及当前生效的单行硬上限）。
 #
 # 只许降不许升：把长行折开之后，请同步下调对应计数；归零的条目直接删除。
+# 硬上限 hard-limit 也只许下调——折行到新上限之下后再改小这里。
 # 新增的超长行会被门禁拦下——请折行，而不是重跑本命令抬高基线。
 #
 # 格式：相对路径<TAB>超长行数
