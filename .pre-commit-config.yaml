@@ -164,6 +164,17 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # md 行长棘轮：单行超长行只许降不许升（默认 160 显示列，中文约 80 字；东亚宽字符
+      # 按 2 列计）。表格行与围栏代码块豁免——它们折行也修不掉，统计只会逼人删内容。
+      # 口径与基线生成见 `scripts/md_line_length_ratchet.py`；基线
+      # `scripts/md_line_length_baseline.txt`。纯代码提交不涉及 md，故用 files 过滤。
+      - id: md-line-length-ratchet
+        name: markdown line length ratchet (≤ 160 display cols, never increase)
+        entry: bash scripts/md-line-length-ratchet.sh
+        language: system
+        pass_filenames: false
+        files: (\.md$|scripts/md_line_length_baseline\.txt$)
+        stages: [pre-commit]
 
 
   - repo: https://github.com/crate-ci/typos
