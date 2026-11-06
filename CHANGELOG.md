@@ -12,6 +12,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **The `context_compaction` debug line now names its caller and survives the no-budget case.**
+  `ContextCompactionReport` gained `format_for_log()`, and both callers now go through one
+  `log_compaction_report(phase, report)` helper. Before this only `prepare_messages_for_model` emitted the line — the
+  read-only `/btw` entry (`prepare_readonly_model_messages`) compacted with no log at all — and it was gated on
+  `budget.is_some()`, so with `llm_context_tokens = 0` (the char-budget fallback path) nothing was printed. That is
+  exactly the path where "how much did trimming actually remove" had no answer in the logs. The line also reports
+  `context_window_tokens`, `vendor_overhead_tokens`, `compressed_old_tool_messages`, `token_triggered`,
+  `summarized_for_token_budget` and `provider_input_tokens`; budget fields print `-` when no budget is configured, and the
+  prefix is `phase=session` or `phase=readonly`.
+
 - **Markdown line length is now a ratchet gate (`md-line-length-ratchet`); no hook looked at prose width before.**
   Measured over the 135 markdown files here, the p90 prose line is already **177** display columns — the "one paragraph per line" shape Chinese
   docs drift into — so making 160 columns a hard limit would have turned the whole tree red on day one. The gate therefore follows `unwrap-ratchet` /
@@ -35,6 +45,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   asserts the four agree and names the drifted file. Refs #1269.
 
 ### Changed
+- **`turn-replay-events.jsonl` writes `context_inject` / `context_trim` details as JSON objects, not double-encoded text.**
+  Both events already produced a JSON string for `detail`, which replay then wrapped again as
+  `{"text": "<json string>", "phase": …}` — reading `before_tokens` offline meant `jq '.detail.text | fromjson'`. They now
+  go through `append_turn_replay_event_json_if_configured`, so `jq '.detail.before_tokens'` works directly. Details that
+  are not JSON containers (plain text, JSON scalars) keep the old wrapper, so every other event is unchanged, and
+  `crabmate sse-replay` still behaves the same — it only maps `llm_response_done`. Scripts pinned to the old
+  double-encoding for these two events must drop the `fromjson`.
 - **The semver promise is now an explicit, gate-checked list instead of "whatever is `pub` at the root" (S6).**
   The docs described the `server` promise as "the explicit `pub use` at the root", which is not a list but the automatic set of root `pub` items:
   any new `pub` joined the semver promise with zero friction,
