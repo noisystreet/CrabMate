@@ -14,7 +14,7 @@ use crate::cm_internal::long_term_memory_tools::{
     LongTermMemoryHostInner, LongTermMemoryToolState, long_term_forget, long_term_memory_list,
     long_term_remember, summarize_experience,
 };
-use crate::cm_internal::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
+use crate::cm_memory::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
 use crate::cm_internal::tool_jobs::GetOutcome;
 use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
 use crate::cm_internal::tool_jobs::types::{JobRecord, JobStatus};
@@ -56,7 +56,7 @@ pub struct LongTermMemoryHost {
 
 impl LongTermMemoryHost {
     pub fn new(
-        rt: Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>,
+        rt: Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>,
         scope_id: String,
     ) -> Self {
         Self {
@@ -98,12 +98,12 @@ pub struct DispatchMemoryHosts {
 impl DispatchMemoryHosts {
     pub fn from_dispatch_inputs(
         cfg: &AgentConfig,
-        ltm: Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
+        ltm: Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
         scope_id: Option<&str>,
     ) -> Self {
         let codebase = CodebaseSemanticHost::from_config(cfg);
         let (mem_rt, mem_scope) =
-            crate::cm_internal::memory::long_term_memory::tool_context_memory_extras(cfg, ltm, scope_id);
+            crate::cm_memory::memory::long_term_memory::tool_context_memory_extras(cfg, ltm, scope_id);
         let long_term = mem_rt
             .zip(mem_scope)
             .map(|(rt, scope)| LongTermMemoryHost::new(rt, scope));

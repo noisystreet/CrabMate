@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::cm_config::AgentConfig;
 
 use super::project_dependency_brief;
-use crate::cm_internal::memory::agent_memory;
+use crate::cm_memory::memory::agent_memory;
 
 fn inject_flag_with_budget(enabled: bool, max_chars: usize) -> bool {
     enabled && max_chars > 0

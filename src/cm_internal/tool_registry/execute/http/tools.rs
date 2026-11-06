@@ -13,7 +13,7 @@ use crate::cm_internal::tool_registry::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, web_search_outer_wall_secs,
 };
 use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 
 use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::super::ToolExecEnv;

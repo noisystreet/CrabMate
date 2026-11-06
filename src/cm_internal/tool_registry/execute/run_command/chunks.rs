@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
-use crate::cm_internal::tools;
+use crate::cm_tools::tools;
 use crate::cm_types::{CommandApprovalDecision, ToolCall};
 
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
