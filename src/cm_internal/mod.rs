@@ -31,7 +31,6 @@ pub mod tool_jobs;
 pub mod tool_registry;
 pub mod tool_sandbox;
 pub mod tool_stats;
-pub mod user_data;
 pub mod user_message_file_refs;
 
 pub use clarification_sse_bridge::clarification_questionnaire_body_if_tool_ok;

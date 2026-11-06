@@ -556,8 +556,8 @@ mod tests {
     #[test]
     fn normalize_assigns_slug_from_name() {
         let _root = test_root();
-        use crate::cm_internal::user_data::SCHEMA_VERSION;
-        use crate::cm_internal::user_data::types::{McpServerEntry, McpServersFile};
+        use crate::user_data::SCHEMA_VERSION;
+        use crate::user_data::types::{McpServerEntry, McpServersFile};
         let file = normalize_mcp_servers_file(McpServersFile {
             schema_version: SCHEMA_VERSION,
             global_enabled: true,
@@ -585,8 +585,8 @@ mod tests {
     fn merge_preserves_structured_launch_fields() {
         let _root = test_root();
         let _mcp_lock = lock_mcp_servers_tests();
-        use crate::cm_internal::user_data::SCHEMA_VERSION;
-        use crate::cm_internal::user_data::types::{McpServerEntry, McpServersFile};
+        use crate::user_data::SCHEMA_VERSION;
+        use crate::user_data::types::{McpServerEntry, McpServersFile};
         use std::collections::BTreeMap;
         let mut env = BTreeMap::new();
         env.insert("RUST_LOG".into(), "warn".into());
