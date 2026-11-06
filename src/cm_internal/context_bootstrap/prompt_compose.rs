@@ -32,7 +32,7 @@ fn resolve_role_system_base(cfg: &AgentConfig, agent_role: Option<&str>) -> Resu
         .system_prompt_for_new_conversation(agent_role)
         .map(|s| s.to_string())
         .map_err(|e| e.to_string())?;
-    let locale = crate::cm_internal::user_data::load_prefs().locale;
+    let locale = crate::user_data::load_prefs().locale;
     Ok(append_locale_output_directive(base, locale.as_deref()))
 }
 

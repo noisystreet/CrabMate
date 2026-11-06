@@ -53,9 +53,16 @@ pub fn normalize_workspace_partition_path(path: &str) -> String {
 }
 
 /// `prefs.recent_workspace_roots` 上限（与前端菜单一致）。
+///
+/// **未接线**（S4-P1b，见 #1300）：`recent_workspace_roots` 目前只在 `load_prefs` 的测试里
+/// 出现，生产路径没有维护点。合并前它靠 `cm_internal::user_data` 的 `#[doc(hidden)]`
+/// 可达性免于 `dead_code`；并入顶层模块后暴露出来。**保留待接线** —— 接线或删除应另立
+/// Issue，不在搬迁里顺手改语义。
+#[allow(dead_code)]
 pub const RECENT_WORKSPACE_ROOTS_MAX: usize = 10;
 
 /// 将规范路径推到最近列表最前（去重、截断）；空路径忽略。
+#[allow(dead_code)]
 pub fn push_recent_workspace_root(list: &mut Vec<String>, path: &str) {
     let norm = normalize_workspace_partition_path(path);
     if norm.is_empty() {
