@@ -21,6 +21,11 @@ pub(crate) mod cm_approval;
 #[cfg(feature = "web")]
 pub(crate) mod cm_web_host;
 pub(crate) mod mcp;
+// S4-P1c 桶门面（见 #1300 §1.4）：当前只做转发，P2 才把成员文件搬进来。
+pub(crate) mod context;
+pub(crate) mod jobs;
+pub(crate) mod obs;
+pub(crate) mod tool_host;
 pub(crate) mod cm_benchmark;
 #[doc(hidden)]
 #[allow(unused_imports)]
@@ -33,11 +38,19 @@ pub use crate::cm_internal::tool_sandbox;
 // `cm_internal` 只导出**自身实现**。`tools` / `workspace` / `redact` / `tool_result` /
 // `read_file_turn_cache` 等本体在 `cm_tools`，`memory` 在 `cm_memory` —— 经 `cm_internal`
 // 转发只会让内部桶看起来比实际更中心（S4-P1a，见 #1300），故按本体直连。
-pub(crate) use crate::cm_internal::{
+// 不属任何桶的两个顶层模块（§1.4 修正点 2 / 4）：`process_handles` 是进程级句柄集合，
+// 被 tool_host / CLI / run_agent_turn 同时持有，塞进任一个桶都会制造反向依赖；
+// `text_util` 只有 22 行，凑进 obs 只是假结构。
+pub(crate) use crate::cm_internal::{process_handles, text_util};
+// 其余短名改由四个桶门面接管（S4-P1c）。上层写 `crate::tool_registry` 等不变；
+// 变的是这些名字的**定义点**，P2 把文件搬进桶时调用点不再受影响。
+pub(crate) use crate::context::{
     agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire_body_if_tool_ok,
-    context_bootstrap, health, memory_tool_hosts, observability, process_handles,
-    readonly_tool_ttl_cache, request_chrome_trace, session_mode_turn, text_util, tool_call_explain,
-    tool_registry, tool_stats, user_message_file_refs,
+    context_bootstrap, session_mode_turn, user_message_file_refs,
+};
+pub(crate) use crate::obs::{health, observability, request_chrome_trace};
+pub(crate) use crate::tool_host::{
+    memory_tool_hosts, readonly_tool_ttl_cache, tool_call_explain, tool_registry, tool_stats,
 };
 pub(crate) use crate::cm_memory::memory;
 pub(crate) use crate::cm_tools::{
