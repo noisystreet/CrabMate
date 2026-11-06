@@ -1,6 +1,6 @@
 # SDK 面与命令薄封装（设计草案）
 
-**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S5 已实施（#1295）；S4 / S6 未开工。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
+**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S5 已实施（#1295）；**S6-a / S6-b / S6-c 已实施（#1297）**——承诺面已从散文改为 `fixtures/public_api_golden.txt` 显式清单（96 项：promised 50 / excluded 46）+ `scripts/check-public-api.py` pre-commit 门禁；S6-d（端口 trait 上根与 `prelude`）另立 #1298，待 S4 之后；S4 未开工。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
 **受众**：维护者、Client（Web / `crabmate-tui`）维护者、贡献者。
 **语言**：中文。
 **维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：[#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
@@ -85,7 +85,7 @@ crabmate::{  TurnEngine / TurnRequest / TurnEvent / TurnOutcome   ← 回合执�
 | 根上已有扁平 re-export 惯例：`pub use llm::{ChatCompletionsBackend, StreamChatParams, …}`、`pub use crate::cm_config as config`、`pub use crate::cm_types as types` | `src/lib_server.rs:48-50`、`:532` | 「公开模块 + 根上扁平导出」**已经在跑**；`sdk::` 会在 `crabmate::llm::X` 之外再造 `crabmate::sdk::llm::X` |
 | `tools` 亦近名占用（`pub use tools::{build_tools, …}`） | `src/lib_server.rs:543-544` | 同上 |
 
-理由：**Rust 的命名空间惯例是标记「要藏的」，不是「要露的」**——公开面天然是默认，需要提醒的只有内部。所以 `internal::` 保留（标记内部），根上不加伞；承诺面由 §11 Q2 的显式清单（rustdoc 白名单 / `cargo public-api`）兜住，而不是靠名字。
+理由：**Rust 的命名空间惯例是标记「要藏的」，不是「要露的」**——公开面天然是默认，需要提醒的只有内部。所以 `internal::` 保留（标记内部），根上不加伞；承诺面由 §11 Q2 的显式清单兜住（`fixtures/public_api_golden.txt` + `scripts/check-public-api.py`，S6 已落地，见 #1297），而不是靠名字。
 
 **反证**：只有未来要并行维护 `v1` / `v2` 契约时才需要版本化模块（`v2::`）。当前没有这个需求——`client-contract-v*` 是仓外 tag，[`crates_io_single_package.md`](crates_io_single_package.md) 也已声明单包承诺。
 
@@ -290,7 +290,8 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b ✅**（#1282/S3-b）：`PolicyEngine` 端口已落地（`cm_agent::permission::PolicyEngine`，执行面签名由 `Option<&PermissionCaps>` 改为 `Option<&dyn PolicyEngine>`，并加「端口 ≡ 自由函数」等价性测试）；**`ToolSandbox` 早已是端口**（`Arc<dyn SyncDefaultSandboxBackend>`，`cm_internal::tool_sandbox`），**`ToolHost` 本体也已存在**（`ToolExecutionHost` + `ToolDispatch`）。**端口收窄已完成**：`ApprovalBroker` 从 5 个方法收到 **4**（`cancel()` 全仓 0 调用点，能力已由 `approval_sink().cancel` 送达，详见 §7.2）；`ports` 命名收口**主动不做**（收益在 S4 的禁边表，单独落只是无消费者的间接层，见 §8）。全程只包现有代码，**不新增审批语义** |
 | **S4** | `cm_internal` 拆桶；禁边表改为「上层只准引用 `ports`」（P1） | `scripts/check-crate-deps.sh` 白名单式规则；外部引用数 **20 → 0** | **前置**：先跑 `code_nav call_graph_sketch` 复核分桶假设（§10.2）；回退成本最高，务必最后做 |
 | **S5** | CLI 分派表 + `cm_cli/` 禁边 + serve builder（P4） | `crabmate --help` 与 `man/crabmate.1` **无 diff** | **已完成（#1295）**：`ParsedCliArgs` 收为 `{ global, command }`、`cm_cli/` 按命令分模块、`cli_run.rs` 493 → 34 行，两条禁边进 `check-crate-deps.sh` 与 `PER_DIR_FILE_LINES_CAPS`。**serve builder 未按字面做**（builder 在宿主模块、装配以闭包注入是独立的一步），见 §6 约束 3 |
-| **S6** | 承诺面从「模块存在」升级为「类型 + trait 清单」（P6、P7） | rustdoc 白名单 + semver 检查脚本 | ⚠️ 承诺面所在章节未复核（早期稿引「§2.4」但未定位）；改承诺面即关联 Client 的 `client-contract-v*` 钉版本 |
+| **S6-a/b/c** | 承诺面从「模块存在」升级为显式清单（P6、P7） | `fixtures/public_api_golden.txt` + `scripts/check-public-api.py`（pre-commit） | ✅ **已完成（#1297）**：根面 96 项（promised 50 / excluded 46），未归类即失败；§2.4 的「以 `src/lib.rs` 为准」已撤下；新增 `#[doc(hidden)]` 三处（`run_cli_from_parsed`、`WebChat*BuildArgs`） |
+| **S6-d** | 端口 trait 上根 + `prelude` 取舍 | 可换实现测试 | ⏳ **#1298**，排在 #1297 与 S4 之后；设计稿点名的 15 个名字里 **8 个在代码中不存在** |
 
 **S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：`net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；**S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；`ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。`ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
 
@@ -328,7 +329,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 **`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
 
-**当前推荐顺序（2026-11-05 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含本次端口收窄）**全部已完成**，S1 / S2 / S3 三条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）与 **S6**（改承诺面须同步判断 Client `client-contract-v*`）；S5 的其余部分视 CLI 需求插入。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
+**当前推荐顺序（2026-11-06 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、**S6-a/b/c（#1297）** 全部已完成，S1 / S2 / S3 / S5 四条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）与 **S6-d**（#1298，端口 trait 上根，排在 S4 之后）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
 

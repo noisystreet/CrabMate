@@ -144,6 +144,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      - id: check-public-api
+        name: root public API list (S6 promise surface, #1297)
+        entry: python3 scripts/check-public-api.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
 
 
   - repo: https://github.com/crate-ci/typos

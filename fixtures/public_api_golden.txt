@@ -1,0 +1,109 @@
+# crabmate 根级公开面清单（S6，见 #1297）
+#
+# 每行：<分类>\t<种类> <名字>；分类仅 promised / excluded / unclassified。
+# - promised：进 semver 承诺，改动即 breaking，须同步 CHANGELOG 与设计文档。
+# - excluded：根上可见但明确不承诺（多为 #[doc(hidden)]、CLI 内部或过渡期遗留）。
+# - unclassified：待人工归类；**存在即失败**，BLESS 只会把人没归类的项放这里。
+#
+# 由 scripts/check-public-api.py 校验；新增根级 pub 项必须在此显式归类。
+# 重生成：CRABMATE_PUBLIC_API_BLESS=1 python3 scripts/check-public-api.py
+
+# --- promised ---
+promised	fn run
+promised	mod agent
+promised	mod cm_api_contract
+promised	mod cm_chat_export
+promised	mod cm_display_rules
+promised	mod cm_sse_protocol
+promised	mod cm_turn_layout
+promised	mod cm_types
+promised	mod llm
+promised	struct AgentTurnLlmOverrides
+promised	struct AgentTurnTransport
+promised	struct RunAgentTurnAttach
+promised	struct RunAgentTurnObs
+promised	struct RunAgentTurnSession
+promised	struct RunAgentTurnSharedInputs
+promised	struct TurnRequest
+promised	use AgentConfig
+promised	use ChatCompletionsBackend
+promised	use ChatRequest
+promised	use CompleteChatRetryingParams
+promised	use FunctionCall
+promised	use LlmHttpAuthMode
+promised	use LlmSeedOverride
+promised	use Message
+promised	use OPENAI_COMPAT_BACKEND
+promised	use OpenAiCompatBackend
+promised	use PerTurnFlight
+promised	use ProcessHandles
+promised	use SharedAgentConfig
+promised	use StreamChatParams
+promised	use ToolCall
+promised	use ToolsBuildOptions
+promised	use TraceEvent
+promised	use TraceSink
+promised	use TurnOutcome
+promised	use TurnProcessHandles
+promised	use TurnStats
+promised	use build_tools
+promised	use build_tools_filtered
+promised	use build_tools_with_options
+promised	use config
+promised	use default_chat_completions_backend
+promised	use http_client
+promised	use load_config
+promised	use message_content_as_str
+promised	use run_agent_turn
+promised	use shared_static_chat_backend
+promised	use sse
+promised	use tool_sandbox
+promised	use types
+
+# --- excluded ---
+excluded	fn run_cli_from_parsed
+excluded	mod cm_agent
+excluded	mod cm_config
+excluded	mod cm_ctl
+excluded	mod cm_internal
+excluded	mod cm_llm
+excluded	mod cm_workflow
+excluded	mod e2e_scenario
+excluded	mod test_serve
+excluded	struct WebChatJsonBuildArgs
+excluded	struct WebChatStreamBuildArgs
+excluded	type RunAgentTurnParams
+excluded	use CliExitError
+excluded	use E2eMode
+excluded	use EXIT_GENERAL
+excluded	use EXIT_MODEL_ERROR
+excluded	use EXIT_QUOTA_OR_RATE_LIMIT
+excluded	use EXIT_TOOLS_ALL_RUN_COMMAND_DENIED
+excluded	use EXIT_TOOL_REPLAY_MISMATCH
+excluded	use EXIT_USAGE
+excluded	use ExposeSecret
+excluded	use LongTermMemoryRuntime
+excluded	use ParsedCliArgs
+excluded	use ReadFileTurnCache
+excluded	use ReadFileTurnCacheHandle
+excluded	use SaveSessionFormat
+excluded	use ToolDispatchMeta
+excluded	use ToolExecutionClass
+excluded	use ToolReplayCli
+excluded	use TracingChatTurn
+excluded	use WebBearerCli
+excluded	use WebRequestAudit
+excluded	use WebToolRuntime
+excluded	use all_dispatch_metadata
+excluded	use classify_model_error_message
+excluded	use dev_tag
+excluded	use execution_class_for_tool
+excluded	use is_readonly_tool
+excluded	use load_config_for_cli
+excluded	use new_turn_cache_handle
+excluded	use normalize_help_argv
+excluded	use parse_args
+excluded	use parse_args_from_argv
+excluded	use root_clap_command_for_man_page
+excluded	use text_sanitize
+excluded	use try_dispatch_meta
