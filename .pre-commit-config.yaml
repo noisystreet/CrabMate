@@ -61,6 +61,19 @@ repos:
         pass_filenames: false
         files: \.rs$
         stages: [pre-commit]
+      # S4 验收口径（#1300）：上层对 `cm_internal` 的引用面只许降不许升。
+      # 两个名单都从源码**派生**（`cm_internal/mod.rs` 的 `pub mod`、`lib_server.rs`
+      # 的 re-export），不手工维护 —— 手工名单在 P1b 上把已迁出的 `mcp` 仍算作
+      # 耦合，C2 为此虚涨 15，差点被当成回归去「修」。
+      # 基线见 `scripts/cm_internal_refs_baseline.txt`；搬家使数字下降后，用
+      # `bash scripts/check-cm-internal-refs.sh --print-baseline` 下调锁住收益。
+      - id: cm-internal-refs
+        name: cm_internal reference surface (S4 口径, #1300)
+        entry: bash scripts/check-cm-internal-refs.sh --check
+        language: system
+        pass_filenames: false
+        files: \.rs$
+        stages: [pre-commit]
       # rustdoc 断链（`crate::…` 路径写错、链接到私有项）不会让 `cargo doc` 非 0 退出，
       # 所以必须 `-D warnings` 才拦得住；`--no-deps` 只检查本 crate。
       # `files: \.rs$` 而非 `always_run`：rustdoc 是 crate 级检查，只在 Rust 源码变动时才值得跑
