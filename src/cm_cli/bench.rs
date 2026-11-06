@@ -31,7 +31,12 @@ pub(super) async fn run(
     {
         return Ok(());
     }
-    Err(super::unspecified_subcommand_error())
+    // 用法错误，不是「未指定子命令」：用户可以只跑 `crabmate bench`，缺的是评测参数。
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "`crabmate bench` 需要 `--benchmark <TYPE>` 与 `--batch <INPUT.jsonl>`（可另加 `--batch-output <FILE>`）；只跑 `bench` 本身不会执行任何评测。",
+    )
+    .into())
 }
 
 /// `--benchmark` / `--batch`：跑批量评测后返回 `true`（调用方应结束进程）。
