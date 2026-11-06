@@ -71,7 +71,9 @@ flowchart TB
 
 - Call **`llm::complete_chat_retrying`** from business code (do not bypass via `api::stream_chat` from `agent`).
 - **P / R / E**: plan → reflect / final-answer gate → tool execute.
-- Message transforms: `message_pipeline` / `context_window`. At the `run_agent_turn` boundary, **`agent/model_context_view`** derives an independent buffer from canonical history; **`agent/context_compaction`** budgets actual tools plus vendor-shaped messages and compacts only complete `ConversationTurnGroup` units. Success appends only the current turn’s new messages back to canonical history and persists a hidden `ModelContextArtifact` (summary, removed ranges, report), so SQLite/memory store, branch, and export remain complete-history consumers. Count/character fallbacks preserve tool chains. Timeline/artifact sidecars are parked before the **256-message** fallback. Provider usage is captured through `StreamChatParams.provider_usage_sink`; HTTP/SSE `tiktoken_prompt_tokens` exposes the same safe input budget used by Client.
+- Message transforms: `message_pipeline` / `context_window`. At the `run_agent_turn` boundary, **`agent/model_context_view`** derives an independent buffer from canonical history;
+  **`agent/context_compaction`** budgets actual tools plus vendor-shaped messages and compacts only complete `ConversationTurnGroup` units. Success appends only the current turn’s new messages back to canonical history and persists a hidden `ModelContextArtifact` (summary, removed ranges, report), so SQLite/memory store, branch,
+  and export remain complete-history consumers. Count/character fallbacks preserve tool chains. Timeline/artifact sidecars are parked before the **256-message** fallback. Provider usage is captured through `StreamChatParams.provider_usage_sink`; HTTP/SSE `tiktoken_prompt_tokens` exposes the same safe input budget used by Client.
 - Runtime path: **session_mode → (Act utterance keyword heuristics) → `assess_turn_routing` → ReAct outer loop**; phase vocabulary in **`phase_vocabulary`**; design: **`docs/design/per_state_machine_consolidation.md`**.
 
 ### Web streaming (summary)

@@ -774,13 +774,18 @@ dst.permission.permission_level_max =
 
 **已定（Q7）**：每项附 `available_at_level: bool`，保留全量枚举，**不**引入 `?permission_level=` 过滤——`GET /tools` 的定位是“枚举 + 策略投影”，不是“当前回合可用集”。
 
-**落地（S5c）**：`ToolListItem` 新增 `available_at_level`，判据直接复用 [`tool_allowed_by_caps`](../../src/cm_agent/permission.rs)——与回合内可见性过滤、early-deny 同一条，不留第二套比较规则。基准等级的取法：该端点无会话、无请求体，`requested` / `persisted` / `role_max` 全为 `None`，故 min 链退化成 `min(permission_level, ceiling)`（`web::tools_handlers::default_projection_caps`）；`ask` / `plan` 那条轴属于**会话**，不参与进程级枚举（函数内刻意传 `SessionMode::Act` 并注明原因：它只读 `projection_level`，换成 `effective` 就会随默认会话模式悄悄变只读）。与 `present` 是两条独立的轴：`present` 说“本回合能不能被注册”（feature / 配置开关 / `disabled_tools`），`available_at_level` 说“注册了能不能调”，两者都为 `true` 才真的调得动——把这两个语义分开，客户端才能区分“这个工具没构建”和“这个工具在你的等级下调不动”。**基准档回传**：响应顶层带 `permission_level`，因为会话可以持久化自己的等级（§16.1），与进程默认档常常不同——只给 bool 不给基准，`false` 无从解释；`GET /tools/{tool_name}` 的 `ToolDetailView` 带同一字段，避免清单与详情页互相矛盾。回归由 `web::tools_handlers::tests` 钉住：`tool_list_item_reports_availability_per_level`（五档 × 三类工具，**经 handler 真正调用的 `tool_list_item`**，而非在测试里重抄一遍判据）、`present_and_available_at_level_are_independent_axes`（`present=true` + `available_at_level=false` 且两者都真的序列化出去）、`ceiling_clamps_default_projection_caps`（调低上限后基准档与清单同时变窄）。
+**落地（S5c）**：`ToolListItem` 新增 `available_at_level`，判据直接复用 [`tool_allowed_by_caps`](../../src/cm_agent/permission.rs)——与回合内可见性过滤、early-deny 同一条，不留第二套比较规则。基准等级的取法：该端点无会话、无请求体，`requested` / `persisted` / `role_max` 全为 `None`，故 min 链退化成 `min(permission_level, ceiling)`（`web::tools_handlers::default_projection_caps`）；
+  `ask` / `plan` 那条轴属于**会话**，不参与进程级枚举（函数内刻意传 `SessionMode::Act` 并注明原因：它只读 `projection_level`，换成 `effective` 就会随默认会话模式悄悄变只读）。与 `present` 是两条独立的轴：`present` 说“本回合能不能被注册”（feature / 配置开关 / `disabled_tools`），`available_at_level` 说“注册了能不能调”，两者都为 `true` 才真的调得动——把这两个语义分开，客户端才能区分“这个工具没构建”
+  和“这个工具在你的等级下调不动”。**基准档回传**：响应顶层带 `permission_level`，因为会话可以持久化自己的等级（§16.1），与进程默认档常常不同——只给 bool 不给基准，`false` 无从解释；`GET /tools/{tool_name}` 的 `ToolDetailView` 带同一字段，避免清单与详情页互相矛盾。回归由 `web::tools_handlers::tests` 钉住：`tool_list_item_reports_availability_per_level`（五档 × 三类工具，
+  **经 handler 真正调用的 `tool_list_item`**，而非在测试里重抄一遍判据）、`present_and_available_at_level_are_independent_axes`（`present=true` + `available_at_level=false` 且两者都真的序列化出去）、`ceiling_clamps_default_projection_caps`（调低上限后基准档与清单同时变窄）。
 
 ### 16.5 审批弹窗也要带等级
 
 `command_approval_request` 的载荷（`src/cm_internal/tool_approval/approval_specs.rs`）应附当前 `level`，让用户在点 `AllowAlways` 前看到“这是 L3 会话在请求越界”，而不是只看到命令本身。实现上与 §11 第 3 条一致：**复用现有 control-plane 字段，不改 `SSE_PROTOCOL_VERSION`**。
 
-**已落地**：`CommandApprovalBody` 新增 `permission_level: Option<String>`（v1 snake 面，缺省省略），AG-UI 的 `CommandApprovalData` 对应 `permissionLevel`（**带** `skip_serializing_if`——该键是新加的，缺省不出站才与历史逐字节一致，与既有的 `allowlistKey: null` 契约不同）。等级从审批路径上已有的那一份取值，不新增第三套来源：`interactive_gate_after_whitelist_miss` 用 `SharedAllowlistHandles.level`（与 `AllowAlways` 将要写入的作用域档一致）、`run_command` 未知命令用 `allow_handles.level`、工作流节点用 `WorkflowApprovalMode::Interactive.permission_level`。该字段**只用于展示**，不参与任何放行判断——判据仍只在 `cm_agent::permission`。回归由 `cm_sse_protocol::sse::ag_ui_convert::tests::command_approval_data_carries_permission_level_only_when_set` 钉住（有值时出站、无值时不出现该键）。Client 侧渲染在另仓。
+**已落地**：`CommandApprovalBody` 新增 `permission_level: Option<String>`（v1 snake 面，缺省省略），AG-UI 的 `CommandApprovalData` 对应 `permissionLevel`（**带** `skip_serializing_if`——该键是新加的，缺省不出站才与历史逐字节一致，与既有的 `allowlistKey: null` 契约不同）。等级从审批路径上已有的那一份取值，不新增第三套来源：
+  `interactive_gate_after_whitelist_miss` 用 `SharedAllowlistHandles.level`（与 `AllowAlways` 将要写入的作用域档一致）、`run_command` 未知命令用 `allow_handles.level`、工作流节点用 `WorkflowApprovalMode::Interactive.permission_level`。该字段**只用于展示**，不参与任何放行判断——判据仍只在 `cm_agent::permission`。
+  回归由 `cm_sse_protocol::sse::ag_ui_convert::tests::command_approval_data_carries_permission_level_only_when_set` 钉住（有值时出站、无值时不出现该键）。Client 侧渲染在另仓。
 
 ---
 
