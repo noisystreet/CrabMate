@@ -5,8 +5,8 @@
 //!
 //! **S4-P1b（#1300）**：本模块即唯一本体。原 `cm_internal::mcp` 的 user-data 解析层
 //! （`resolve_mcp_config`）已并入 [`resolve_config`]，那层按 feature 分两支的 27 个
-//! re-export 随之删除；模块名同时去掉 `cm_` 前缀（`cm_mcp` → `mcp`），于是
-//! `crate::mcp` / `crate::cm_mcp` / `crate::cm_internal::mcp` 三条旧路径收敛为一条。
+//! re-export 随之删除；模块名同时去掉 `cm_` 前缀，于是三条旧路径（根上的 `mcp` 短名、
+//! 旧的 `cm_mcp` 模块、旧的 `cm_internal` 下同名子模块）收敛为一条。
 
 use crate::cm_config::AgentConfig;
 
