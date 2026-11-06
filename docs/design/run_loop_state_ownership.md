@@ -14,7 +14,8 @@
 | **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环纠偏：build-idle streak / 注入次数、终答缺失注入次数、截断纠偏注入次数（R 轨 3；stop-turn **与**工具执行后共用同一预算） | 终答 Gate 相位、`plan_rewrite` |
 | **`PerTurnFlight`** | `src/per_turn_flight.rs` | 只读镜像（如 `plan_rewrite_attempts`、`require_plan`）供 `/status` | 权威可变源（权威在 PerCoord） |
 
-**消息写入约定**：会话正文以 **`RunLoopTurnState`** 为权威缓冲；`append_tool_result_and_reflection` 仍接 `&mut Vec<Message>`（历史接合），调用方须随后经 `prepare_turn_messages_for_model`（或等价路径）递增 **`messages_revision`** 并失效 workflow 层缓存。
+**消息写入约定**：会话正文以 **`RunLoopTurnState`** 为权威缓冲；`append_tool_result_and_reflection` 仍接 `&mut Vec<Message>`（历史接合），
+  调用方须随后经 `prepare_turn_messages_for_model`（或等价路径）递增 **`messages_revision`** 并失效 workflow 层缓存。
 
 ---
 

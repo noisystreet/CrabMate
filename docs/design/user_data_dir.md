@@ -2,12 +2,17 @@
 
 ## 1. 背景与问题
 
-**历史问题**（已解决）：早期 Web / Tauri 曾把用户级状态写在浏览器 **`localStorage`**（Tauri WebKit 按 `http://127.0.0.1:<port>` 分叉），导致跨端口不一致、难备份，且 CLI/TUI 无法读取。
+**历史问题**（已解决）：早期 Web / Tauri 曾把用户级状态写在浏览器 **`localStorage`**（Tauri WebKit 按 `http://127.0.0.1:<port>` 分叉），
+  导致跨端口不一致、难备份，且 CLI/TUI 无法读取。
 
-**工作区内**数据（`conversations.db`、导出、历史路径名 **`tui_session.json`** 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。旧同进程 REPL 曾写 **`repl_history.txt`**（D2.2 后不再写入）。
+**工作区内**数据（`conversations.db`、导出、历史路径名 **`tui_session.json`** 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
+  旧同进程 REPL 曾写 **`repl_history.txt`**（D2.2 后不再写入）。
 
-**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；
-  日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
+**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；
+  桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；
+  日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。
+    用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；
+    与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
 
 **可清理缓存**：默认 **`$XDG_CACHE_HOME/crabmate/`**（**`CM_CRABMATE_CACHE_DIR`**）；含 **`fastembed/`** ONNX 模型。**不要**把会话/密钥放进 cache。
 
@@ -68,7 +73,8 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 机密（Web API Bearer / MCP Bearer）不入本目录，见 §4.6。
 
-**`ws_sha256` 算法**：与 `frontend/src/storage.rs` 中 `normalize_workspace_partition_path` + SHA256 相同，便于从 `agent-demo-sessions-v1::ws::<hex>` 键名一对一迁移。
+**`ws_sha256` 算法**：与 `frontend/src/storage.rs` 中 `normalize_workspace_partition_path` + SHA256 相同，
+  便于从 `agent-demo-sessions-v1::ws::<hex>` 键名一对一迁移。
 
 ---
 
@@ -114,7 +120,8 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 }
 ```
 
-每条 `ChatSession` 可含 `server_conversation_id`、`workspace_root`、草稿、`messages` 本地展示缓存等（字段保持与前端 serde 一致）。`layout_schema_version` 标识消息行投影版本：旧缓存缺省为 `1`，新建会话及 v2 流式投影写 `2`；v1 reader 可忽略该扩展字段。
+每条 `ChatSession` 可含 `server_conversation_id`、`workspace_root`、草稿、`messages` 本地展示缓存等（字段保持与前端 serde 一致）。
+  `layout_schema_version` 标识消息行投影版本：旧缓存缺省为 `1`，新建会话及 v2 流式投影写 `2`；v1 reader 可忽略该扩展字段。
 
 ### 4.4 `llm_overrides.json`（非机密 LLM 覆盖）
 
@@ -141,7 +148,8 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 ### 4.5 `mcp_servers.json`（MCP stdio 多服务器）
 
-仅存本机 user-data（**不**写 TOML / 工作区）。`slug` 由 **`name` 自动生成**（小写字母数字与下划线；冲突时追加 `_2` 等），OpenAI 工具名为 `mcp__{slug}__{remote}`。
+仅存本机 user-data（**不**写 TOML / 工作区）。`slug` 由 **`name` 自动生成**（小写字母数字与下划线；冲突时追加 `_2` 等），
+  OpenAI 工具名为 `mcp__{slug}__{remote}`。
 
 ```json
 {
@@ -168,11 +176,15 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-本文件是 MCP 配置的**唯一来源**：不再从 TOML / `CM_MCP_COMMAND` 一次性导入（旧 **`toml_legacy_imported`** 字段已移除，磁盘上残留该键将被忽略）。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，
-  仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、
+本文件是 MCP 配置的**唯一来源**：不再从 TOML / `CM_MCP_COMMAND` 一次性导入（旧 **`toml_legacy_imported`** 字段已移除，磁盘上残留该键将被忽略）。HTTP：
+  `GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，
+  仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、
+    `PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、
   `POST …/{id}/probe`。
 
-Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
+Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；
+  `command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。
+  含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 
 ### 4.6 系统钥匙串
 
@@ -183,7 +195,8 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 | `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets` 或 CLI **`crabmate web-bearer set`**；**`serve`** 在 TOML/`CM_WEB_API_BEARER_TOKEN` 皆空时从此处回退加载） |
 | `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串条目） |
 
-**已退役（模型密钥）**：`client_llm` / `executor_llm` / `saved_model_*` 不再读写。官方 Client 本机持钥并经请求体 **`client_llm.api_key`** 发送；`llm_overrides.json` 的 `saved_models` 仅保留端点元数据，剥离明文 `api_key` 且 **`has_api_key=false`**。
+**已退役（模型密钥）**：`client_llm` / `executor_llm` / `saved_model_*` 不再读写。官方 Client 本机持钥并经请求体 **`client_llm.api_key`** 发送；
+  `llm_overrides.json` 的 `saved_models` 仅保留端点元数据，剥离明文 `api_key` 且 **`has_api_key=false`**。
 
 钥匙串是**唯一来源**：不再读写 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件（该子目录也不再创建）；磁盘上若仍残留旧文件，既不会被读入，也不提供回退。
 
@@ -305,16 +318,22 @@ flowchart TB
 
 实现位置：
 
-- `src/user_data/`、`src/web/user_data/`、Client [`frontend/src/api/user_data.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/user_data.rs)、[`frontend/src/user_prefs_sync.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/user_prefs_sync.rs)
+- `src/user_data/`、`src/web/user_data/`、
+  Client [`frontend/src/api/user_data.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/user_data.rs)、
+  [`frontend/src/user_prefs_sync.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/user_prefs_sync.rs)
 
 ---
 
 ## 12. 与 Tauri 的关系（补充）
 
-当前 Client 仓桌面壳（[`desktop-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri)）**不**再 spawn `serve`。请自行启动 **`crabmate serve`**（开发时 cwd 多为仓库根；`serve` **永不**托管 SPA，UI 由 Client 仓自行构建与托管）。壳通过连接页或 **`CM_DESKTOP_SERVE_URL`** 加载 WebView（**勿**假设固定端口如 3000，除非你自己用该端口启动）。  
+当前 Client 仓桌面壳（[`desktop-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri)）**不**再 spawn `serve`。
+  请自行启动 **`crabmate serve`**（开发时 cwd 多为仓库根；`serve` **永不**托管 SPA，UI 由 Client 仓自行构建与托管）。
+  壳通过连接页或 **`CM_DESKTOP_SERVE_URL`** 加载 WebView（**勿**假设固定端口如 3000，除非你自己用该端口启动）。
 WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
 
-详见 Client [tauri_gui_mvp_design.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/tauri_gui_mvp_design.md)（进程壳层；主仓本路径为指针）与 [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)（开发与故障排查）；本文件负责**数据落盘**。
+详见 Client [tauri_gui_mvp_design.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/tauri_gui_mvp_design.md)（进程壳层；
+  主仓本路径为指针）与 [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)
+  （开发与故障排查）；本文件负责**数据落盘**。
 
 ---
 

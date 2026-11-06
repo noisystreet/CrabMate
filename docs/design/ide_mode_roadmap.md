@@ -7,13 +7,15 @@
 **关联**：
 
 - 用户可见说明：**`README.md`**（主区「对话 / 编辑器」切换、保存、`@相对路径`、磁盘同步）
-- 前端模块：**`frontend/src/app/ide_layout.rs`**、**`ide_layout_switch.rs`**、**`ide_codemirror.rs`**、**`ide_tabs.rs`**、**`ide_disk_sync.rs`**、**`ide_find.rs`**、**`app/ide_menu_bar/`**
+- 前端模块：**`frontend/src/app/ide_layout.rs`**、**`ide_layout_switch.rs`**、**`ide_codemirror.rs`**、**`ide_tabs.rs`**、**`ide_disk_sync.rs`**、
+  **`ide_find.rs`**、**`app/ide_menu_bar/`**
 - SSE：**`docs/SSE协议.md`**（**`workspace_changed`**）；前端 **`on_workspace_changed`** → **`ide_sync_disk_nonce`**
 - 工作区文件 API：**`GET`/`POST /workspace/file`**（见 **`docs/命令行与路由.md`**）
-- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`cargo_check`** 人类可读诊断、**`rust_analyzer`**）；实现 **`src/cm_tools/tools/rust_ide.rs`**（`rust_compiler_json` 已于 2026-10-27 整工具删除）
+- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`cargo_check`** 人类可读诊断、**`rust_analyzer`**）；
+  实现 **`src/cm_tools/tools/rust_ide.rs`**（`rust_compiler_json` 已于 2026-10-27 整工具删除）
 - 并行产品路线（外部编辑器壳）：**`docs/design/vscode_extension.md`**
 - 用户数据偏好：**`docs/design/user_data_dir.md`**（**`editor_layout_mode`**、**`ide_editor_*`**）
-- E2E：Client [`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs)
+- E2E：Client [`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`][ide-layout-e2e]
 - CLI / TUI / Web 复用原则：**`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**（IDE UI 不必三端复刻；路径/事件契约宜共享）
 
 ---
@@ -75,7 +77,8 @@
 ## 3. 原则
 
 1. **Agent 优先**：任何编辑器增强应服务「看懂 / 审阅 / 轻改工具结果」，避免与对话主路径脱节。
-2. **协议复用**：打开路径、跳行、变更列表、诊断请求尽量走已有 HTTP/SSE；扩展字段须同步 **`docs/SSE协议.md`**、前端 **`sse_dispatch`** / **`api/chat_stream`**、金测（若动控制面）。
+2. **协议复用**：打开路径、跳行、变更列表、诊断请求尽量走已有 HTTP/SSE；扩展字段须同步 **`docs/SSE协议.md`**、
+  前端 **`sse_dispatch`** / **`api/chat_stream`**、金测（若动控制面）。
 3. **后端一份能力**：LSP / 编译诊断以工具与可选薄 HTTP 封装服务 **Agent + UI**，禁止前端私有协议分叉。
 4. **安全不削弱**：文件读写仍受工作区根与 **`resolve_for_read` / `resolve_for_write`** 约束；勿为「IDE 便利」绕过路径沙箱。
 5. **与外部 IDE 分工**：内置模式做到「够用」；完整 IDE 体验走扩展或用户自有编辑器。
@@ -251,3 +254,5 @@ flowchart LR
 | 日期 | 说明 |
 |------|------|
 | 2026-07-31 | 初稿：基线、原则、Phase 0–5、与 VS Code 扩展分工 |
+
+[ide-layout-e2e]: https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs

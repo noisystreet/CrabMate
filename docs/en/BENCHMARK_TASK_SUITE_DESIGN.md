@@ -73,7 +73,8 @@ Example **tags**: `readonly`, `patch`, `test_runner`, `workflow`, `staged_plan`,
 | **`GET /status`** | Queue, pipeline counters, `per_active_jobs` | Runtime mirrors; **`plan_rewrite`** counters |
 | **Optional `thinking_trace`** | Phase/thinking events | Deep tuning (watch size & redaction) |
 
-Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_plan_feedback_mode`)—success rate, mean rounds, rewrite exhaustion rate, patch-budget exhaustion rate, top `error_code`s.
+Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_plan_feedback_mode`)—success rate, mean rounds, rewrite exhaustion rate,
+  patch-budget exhaustion rate, top `error_code`s.
 
 ---
 
@@ -87,7 +88,8 @@ Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_pla
 
 Never commit real API keys; truncate bodies in published reports.
 
-> This table is the authority for **task-suite evaluation run** CI tiers; **unit / contract tests and hook conventions of the benchmark subsystem itself** live in **`docs/基准测试规划.md` §4**.
+> This table is the authority for **task-suite evaluation run** CI tiers;
+> **unit / contract tests and hook conventions of the benchmark subsystem itself** live in **`docs/基准测试规划.md` §4**.
 
 ---
 

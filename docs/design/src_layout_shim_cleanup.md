@@ -2,7 +2,8 @@
 
 > **状态**：P0 **已实施**（`cargo test --all-features` 1976 项全通过、`pre-commit run --all-files` 全绿）；P1–P3 待办。
 > **范围**：仅 `src/` 内部模块布局与模块可见性；**不改** HTTP 路由、JSON 字段、SSE 帧、配置键、CLI 参数。
-> **关联**：[`crates_io_single_package.md`](./crates_io_single_package.md)（单包化决策）、[`agent_turn_split.md`](./agent_turn_split.md)（P1 对象）、[`web_host_p5_placement.md`](./web_host_p5_placement.md)（`cm_web_host` 边界）。
+> **关联**：[`crates_io_single_package.md`](./crates_io_single_package.md)（单包化决策）、[`agent_turn_split.md`](./agent_turn_split.md)（P1 对象）、
+> [`web_host_p5_placement.md`](./web_host_p5_placement.md)（`cm_web_host` 边界）。
 > **非目标**：回退 `cm_` 前缀；删除 `agent` / `config` / `llm` / `sse` / `types` 五个组合面模块名。
 
 ---
@@ -10,12 +11,15 @@
 ## 1. 背景与根因
 
 仓库曾是 Cargo workspace（根包 + 约 19 个 `crates/*`）。按 [`crates_io_single_package.md`](./crates_io_single_package.md) 合并为单包 `crabmate` 后，
-  原 crate 名以 **`cm_` 前缀模块**形式保留（`cm_types` / `cm_sse_protocol` / `cm_api_contract` / `cm_web_host` / `cm_tools` / `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` / `cm_memory` / `mcp`（原 `cm_mcp`，S4-P1b 已去掉 `cm_` 前缀）
+  原 crate 名以 **`cm_` 前缀模块**形式保留（`cm_types` / `cm_sse_protocol` / `cm_api_contract` / `cm_web_host` / `cm_tools` / `cm_agent` / `cm_llm` /
+    `cm_config` / `cm_workflow` / `cm_memory` / `mcp`（原 `cm_mcp`，S4-P1b 已去掉 `cm_` 前缀）
   / `cm_internal` / `cm_runtime` / `cm_benchmark` / `cm_approval` / `cm_display_rules` / `cm_turn_layout` / `cm_chat_export`）。
 
-同时，为兑现 `src/lib.rs` 文档承诺的「`server` feature 下**组合面**模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**」，旧名目录被保留为**兼容门面**。
+同时，为兑现 `src/lib.rs` 文档承诺的「`server` feature 下**组合面**模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**」，
+  旧名目录被保留为**兼容门面**。
 
-结果：**同一职责存在三套物理位置** —— 真源在 `cm_*`，旧名门面在根层，而迁移过程中部分文件又在中途留了第二层转发壳。这是当前布局可读性问题的唯一主因，**不是**目录层级过深。
+结果：**同一职责存在三套物理位置** —— 真源在 `cm_*`，旧名门面在根层，而迁移过程中部分文件又在中途留了第二层转发壳。这是当前布局可读性问题的唯一主因，
+  **不是**目录层级过深。
 
 ### 1.1 层级不是主要矛盾（P0 前基线）
 
@@ -28,7 +32,8 @@
 | 4 | 1 |
 | 5 | 1 |
 
-合计 115 个目录、728 个 `.rs`。89% 的目录在 ≤2 层；最深仅 5 层（`agent/agent_turn/host/execute/tools/serial`）。因此「减少目录层级」的收益有限，**合并重复职责**才是主线。
+合计 115 个目录、728 个 `.rs`。89% 的目录在 ≤2 层；最深仅 5 层（`agent/agent_turn/host/execute/tools/serial`）。因此「减少目录层级」的收益有限，
+  **合并重复职责**才是主线。
 
 ### 1.2 真正的问题：转发链与同名双份
 
@@ -88,15 +93,20 @@ P0 之所以可以做到「无行为变化」，是因为它只删除**转发层
 
 > 实施中发现：`limits.rs` 用的是 `super::chat` / `super::workspace` **相对**路径，仅按绝对路径 grep 会漏。删除转发壳时必须同时检查 `super::` 引用。
 
-3. `web/http_types/` 的 4 个壳（`skills` / `tasks` / `tool_jobs` / `workspace`）**保留**，但改为 1 跳直连真源 —— handler 侧约 40 处 `use crate::web::http_types::…` 不动。
+3. `web/http_types/` 的 4 个壳（`skills` / `tasks` / `tool_jobs` / `workspace`）**保留**，
+  但改为 1 跳直连真源 —— handler 侧约 40 处 `use crate::web::http_types::…` 不动。
 
-**为什么没一步删完 `web/http_types` 的壳**：那会波及 ~40 处 handler import，P0 要保持「删除转发层」的单一语义与可审阅规模。这一层已从 2 跳降到 1 跳，收益已兑现；彻底删除留待 P1。
+**为什么没一步删完 `web/http_types` 的壳**：那会波及 ~40 处 handler import，P0 要保持「删除转发层」的单一语义与可审阅规模。这一层已从 2 跳降到 1 跳，
+  收益已兑现；彻底删除留待 P1。
 
 ### 3.2 `cli_exit` 双份合并
 
-**事实**：`runtime/cli_exit.rs`（39 行）= `pub use crate::cm_runtime::cli_exit::*;` + `classify_model_error_message`；`cm_runtime/cli_exit.rs`（39 行）= `EXIT_*` 常量 + `CliExitError` 真定义。
+**事实**：`runtime/cli_exit.rs`（39 行）= `pub use crate::cm_runtime::cli_exit::*;` + `classify_model_error_message`；
+  `cm_runtime/cli_exit.rs`（39 行）= `EXIT_*` 常量 + `CliExitError` 真定义。
 
-**落位决策与初稿不同，按依赖方向修正**：`cm_runtime/mod.rs` 明文约束「各模块无 `crabmate` 根包依赖，可独立编译」。把依赖 `crate::agent_errors` 的 `classify_model_error_message` 塞进 `cm_runtime` 会破坏这条叶子性质，故改置 `cm_internal::agent_errors`（它本就持有 `is_quota_or_rate_limit_llm_message`），依赖方向 `cm_internal → cm_runtime` 正确。
+**落位决策与初稿不同，按依赖方向修正**：`cm_runtime/mod.rs` 明文约束「各模块无 `crabmate` 根包依赖，可独立编译」。
+  把依赖 `crate::agent_errors` 的 `classify_model_error_message` 塞进 `cm_runtime` 会破坏这条叶子性质，
+  故改置 `cm_internal::agent_errors`（它本就持有 `is_quota_or_rate_limit_llm_message`），依赖方向 `cm_internal → cm_runtime` 正确。
 
 **已做**：
 
@@ -111,7 +121,8 @@ P0 之所以可以做到「无行为变化」，是因为它只删除**转发层
 
 ### 3.3 `chat_export` 命名消歧
 
-**事实**：`cm_chat_export/`（435 行）= 契约 schema + Markdown 分段，**无 I/O**，属 `protocol` feature；`cm_runtime/chat_export.rs`（362 行）= 再导出上述全部符号 + 写 `<workspace>/.crabmate/exports/`。
+**事实**：`cm_chat_export/`（435 行）= 契约 schema + Markdown 分段，**无 I/O**，属 `protocol` feature；`cm_runtime/chat_export.rs`（362 行）
+  = 再导出上述全部符号 + 写 `<workspace>/.crabmate/exports/`。
 
 两者是**契约**与**落盘**两层，分层本身正确；问题是文件同名，读代码无法判断该看哪个。
 
@@ -162,6 +173,10 @@ pre-commit run --all-files                   # 全绿（含 lizard / fn-param / 
 
 ## 7. 后续阶段要点（未实施）
 
-- **P1b** ✅：已删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳（实际 18 处引用，非预估 40 处），DTO 直连真源。`crate::web::http_types` 现只剩 `chat` / `github` / `memory` / `tools` / `validation`。
-- **P2**：`cm_internal`（18 文件）既是别名表、又转发 12 个 `cm_tools` 模块、又有自身职责（`tool_registry` / `tool_jobs` / `tool_sandbox` / `terminal_session` / `user_data` / `context_bootstrap` / `observability` / `health`）。按职责拆分为工具基建 / 上下文装配 / 可观测三块，并把 `crate::tools` 收敛为一级别名。需同步 `docs/开发文档.md`。
-- **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、语义自洽）保留，其余转真子模块。
+- **P1b** ✅：已删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳（实际 18 处引用，非预估 40 处），DTO 直连真源。
+  `crate::web::http_types` 现只剩 `chat` / `github` / `memory` / `tools` / `validation`。
+- **P2**：`cm_internal`（18 文件）既是别名表、又转发 12 个 `cm_tools` 模块、
+  又有自身职责（`tool_registry` / `tool_jobs` / `tool_sandbox` / `terminal_session` / `user_data` / `context_bootstrap` / `observability` / `health`）。
+  按职责拆分为工具基建 / 上下文装配 / 可观测三块，并把 `crate::tools` 收敛为一级别名。需同步 `docs/开发文档.md`。
+- **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、
+  语义自洽）保留，其余转真子模块。

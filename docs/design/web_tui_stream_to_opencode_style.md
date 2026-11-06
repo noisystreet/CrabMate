@@ -152,8 +152,10 @@ SSE / overlay / sessions（不变）
 
 **状态（部分落地）**：
 
-1. **操作菜单**（每回合右键 / 长按，对齐会话/工作区 `session-ctx-menu`）：复制本条、失败助手重试、自该用户消息再生/分支（复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
-2. **工具过程**（已落地）：工具回合折叠态为**固定单行高度**；live 输出用 `TuiBodyPatch::ToolRow` 只改 status/one-line（结构变化才 ReplaceAll）；详情默认折叠，展开后才增高。
+1. **操作菜单**（每回合右键 / 长按，对齐会话/工作区 `session-ctx-menu`）：复制本条、失败助手重试、
+  自该用户消息再生/分支（复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
+2. **工具过程**（已落地）：工具回合折叠态为**固定单行高度**；live 输出用 `TuiBodyPatch::ToolRow` 只改 status/one-line（结构变化才 ReplaceAll）；
+  详情默认折叠，展开后才增高。
 3. **不做**：流式期完整工具卡网格、多级折叠组（除非用户显式打开调试台）。
 
 **验收**：E2E 覆盖复制/重试与工具过程行；跟底仍稳。
@@ -165,7 +167,8 @@ SSE / overlay / sessions（不变）
 **状态（已落地，选项 B 轻量版）**：
 
 - **闭合块冻结**：`plan_tui_body_patch` 在 closed 前缀不变时只 `Incremental` append；已挂载 closed DOM 不重渲。
-- **活跃块略增强**：未闭合末行（非围栏）经 **`stream_inline_safe_html`** 渲染成对的 `**` / `` ` `` / `~~`；半截标记保持字面量；DOM 类 **`chat-tui-line--active`**，用 `innerHTML` 更新。
+- **活跃块略增强**：未闭合末行（非围栏）
+  经 **`stream_inline_safe_html`** 渲染成对的 `**` / `` ` `` / `~~`；半截标记保持字面量；DOM 类 **`chat-tui-line--active`**，用 `innerHTML` 更新。
 - **围栏缓冲**：未闭合 \`\`\` 仍 **`chat-tui-line--plain`** + `textContent`（禁止半截围栏当 code 块）。
 - **未做**：完整块级状态机（标题/列表跨行重组）、JS Markdown 库（选项 C）。
 
@@ -183,7 +186,8 @@ SSE / overlay / sessions（不变）
 
 ### Phase 5 — 清理与双路径决策
 
-1. **已完成**：删除未挂载气泡簇（`messages_list` / `message_row/` / `assistant_body/` 等）与仅服务气泡的信号/i18n；「加载更早」迁入 `ChatTuiStreamView`；查找滚动改为 `data-tui-msg-id`。  
+1. **已完成**：删除未挂载气泡簇（`messages_list` / `message_row/` / `assistant_body/` 等）与仅服务气泡的信号/i18n；「加载更早」
+  迁入 `ChatTuiStreamView`；查找滚动改为 `data-tui-msg-id`。
 2. 保留 `message_format` / overlay / `message_row_actions` 等共享层。  
 3. 更新 Client 仓 `frontend/` 的数据流图（模块表已同步）。
 

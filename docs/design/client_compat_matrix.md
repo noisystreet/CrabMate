@@ -1,7 +1,9 @@
 # Client ↔ Server 兼容矩阵（路径 A）
 
 > **状态**：Phase 4.4 初稿（2026-08-08）  
-> **关联**：[`client_contract_versioning.md`](./client_contract_versioning.md)、[`client_shell_split.md`](./client_shell_split.md)、Client 仓 [contract_pin.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)（本机同级亦可 `../crabmate-client/docs/design/contract_pin.md`）
+> **关联**：[`client_contract_versioning.md`](./client_contract_versioning.md)、[`client_shell_split.md`](./client_shell_split.md)、
+> Client 仓 [contract_pin.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)
+> （本机同级亦可 `../crabmate-client/docs/design/contract_pin.md`）
 
 本表描述 **本仓 `serve` / 契约 crate** 与 **官方 Client（`crabmate-client`）** 的最低对齐要求。破坏性变更须 bump 线协议或契约 semver，并更新本表。
 

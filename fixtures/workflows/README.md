@@ -1,6 +1,7 @@
 # workflow_spec v2 示例夹具
 
-**文档**：用户向教程（语法权威）见 **`docs/工作流编写教程.md`**；设计稿（编译契约）见 **`docs/工作流Markdown作者层设计.md`** §6。用户向示例见 **`examples/workflows/`**。
+**文档**：用户向教程（语法权威）见 **`docs/工作流编写教程.md`**；设计稿（编译契约）见 **`docs/工作流Markdown作者层设计.md`** §6。
+  用户向示例见 **`examples/workflows/`**。
 
 | 文件 | 说明 |
 |------|------|
@@ -35,6 +36,7 @@ cargo run -- workflow validate fixtures/workflows/09_fenced_in_markdown.md
 cargo run -- doctor
 ```
 
-**已支持**：`when`（`run_if` + choice 剪枝）、`for_each`（`static_items` 编译期展开；`json_path` 写入 `for_each_pending`）、`kind: choice`、`repeat`（`count` + `stop_on: success|never`）。**不支持**：无界 `while`。
+**已支持**：`when`（`run_if` + choice 剪枝）、`for_each`（`static_items` 编译期展开；`json_path` 写入 `for_each_pending`）、`kind: choice`、
+  `repeat`（`count` + `stop_on: success|never`）。**不支持**：无界 `while`。
 
 **契约**：根级 **`version: 2`**；steps / nodes 二选一。Schema 见 **`schema/`** 子目录；`workflow validate --json` 返回 `author_spec_version` 与 `author_mode`。

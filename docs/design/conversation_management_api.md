@@ -1,9 +1,12 @@
 # 设计草案：会话（conversation）管理 API 补齐
 
 > **状态**：草案 / Proposed（2026-09-19，待评审）
-> **关联**：[`server_api_completeness.md`](./server_api_completeness.md)（§2.2「运维生命周期」、§2.3 门槛 6「资源生命周期」）、[`web_api_integration.md`](./web_api_integration.md)、[`client_contract_versioning.md`](./client_contract_versioning.md)
-> **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`GET /openapi.json`](../openapi.json) 快照、[`docs/配置说明.md`](../配置说明.md)（配置项）
-> **非目标**：多租户账号体系与会话级配额（仍按 [`server_api_completeness.md`](./server_api_completeness.md) §2.1 边界由网关/BFF 承担）；用服务端会话索引取代 Client 侧栏；审计日志与会话内容检索；把 async job / SSE resume 状态外置。
+> **关联**：[`server_api_completeness.md`](./server_api_completeness.md)（§2.2「运维生命周期」、§2.3 门槛 6「资源生命周期」）、
+> [`web_api_integration.md`](./web_api_integration.md)、[`client_contract_versioning.md`](./client_contract_versioning.md)
+> **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`GET /openapi.json`](../openapi.json) 快照、
+> [`docs/配置说明.md`](../配置说明.md)（配置项）
+> **非目标**：多租户账号体系与会话级配额（仍按 [`server_api_completeness.md`](./server_api_completeness.md) §2.1 边界由网关/BFF 承担）；
+> 用服务端会话索引取代 Client 侧栏；审计日志与会话内容检索；把 async job / SSE resume 状态外置。
 
 ---
 
@@ -22,14 +25,26 @@
 
 **存储与生命周期**
 
-- 表结构 `crabmate_conversations`：`id` / `messages_json` / `revision` / `updated_at_unix` / `active_agent_role` / `active_session_mode` / `layout_meta_json` —— **无** `title`、**无** workspace 维度、**无** `created_at`、**无**消息条数（[migrate](../../src/conversation_store.rs#L33-L49)）。
-- 保留策略是**编译期常量**：TTL 24h、最多 512 条（[conversation_store.rs](../../src/conversation_store.rs#L21-L23)），仅在**每次保存的尾部**顺带 prune（[L294](../../src/conversation_store.rs#L294)、[L421](../../src/conversation_store.rs#L421)）；内存后端同规则（[app_state.rs](../../src/web/app_state.rs#L25)、[L314-L331](../../src/web/app_state.rs#L314-L331)）。SQLite 路径**没有**后台清理任务。
-- 删除能力已落地但**未暴露 HTTP**：`delete_by_id`（[conversation_store.rs](../../src/conversation_store.rs#L303-L306)）、`delete_conversation_record`（内存 / SQLite 双后端，[app_state.rs](../../src/web/app_state.rs#L528-L546)），当前唯一调用方是 e2e 夹具（[routes/e2e_fixtures/mod.rs](../../src/web/routes/e2e_fixtures/mod.rs#L96)）。
-- **存储作用域是进程级、不是工作区级**：SQLite 连接在启动时按 `conversation_store_sqlite_path` 打开一次（[cli_run.rs](../../src/cli_run.rs#L442-L467)，默认相对路径 [default_config.toml](../../config/default_config.toml#L101)），**不随 `POST /workspace` 重解析**；因此 `conversation_id` 是进程内全局命名空间，同一张表混存多个工作区的会话。
-- 冲突语义已有：`CONVERSATION_CONFLICT`（[conflict.rs](../../src/web/chat_handlers/conflict.rs#L9)），SSE 行见 [#L24](../../src/web/chat_handlers/conflict.rs#L24)。
-- 附图回收会扫描会话正文里仍被引用的 `/uploads/<filename>`（[referenced_upload_filenames](../../src/web/app_state.rs#L472-L506)），删除会话会让其附图进入既有清理范围。
+- 表结构 `crabmate_conversations`：
+  `id` / `messages_json` / `revision` / `updated_at_unix` / `active_agent_role` / `active_session_mode` / `layout_meta_json` —— **无** `title`、
+  **无** workspace 维度、**无** `created_at`、**无**消息条数（[migrate](../../src/conversation_store.rs#L33-L49)）。
+- 保留策略是**编译期常量**：TTL 24h、最多 512 条（[conversation_store.rs](../../src/conversation_store.rs#L21-L23)），
+  仅在**每次保存的尾部**顺带 prune（[L294](../../src/conversation_store.rs#L294)、[L421](../../src/conversation_store.rs#L421)）；
+  内存后端同规则（[app_state.rs](../../src/web/app_state.rs#L25)、[L314-L331](../../src/web/app_state.rs#L314-L331)）。SQLite 路径**没有**后台清理任务。
+- 删除能力已落地但**未暴露 HTTP**：`delete_by_id`（[conversation_store.rs](../../src/conversation_store.rs#L303-L306)）、
+  `delete_conversation_record`（内存 / SQLite 双后端，[app_state.rs](../../src/web/app_state.rs#L528-L546)），
+  当前唯一调用方是 e2e 夹具（[routes/e2e_fixtures/mod.rs](../../src/web/routes/e2e_fixtures/mod.rs#L96)）。
+- **存储作用域是进程级、不是工作区级**：SQLite 连接在启动时按 `conversation_store_sqlite_path` 打开一次（[cli_run.rs](../../src/cli_run.rs#L442-L467)
+  ，默认相对路径 [default_config.toml](../../config/default_config.toml#L101)），**不随 `POST /workspace` 重解析**；
+  因此 `conversation_id` 是进程内全局命名空间，同一张表混存多个工作区的会话。
+- 冲突语义已有：`CONVERSATION_CONFLICT`（[conflict.rs](../../src/web/chat_handlers/conflict.rs#L9)），
+  SSE 行见 [#L24](../../src/web/chat_handlers/conflict.rs#L24)。
+- 附图回收会扫描会话正文里仍被引用的 `/uploads/<filename>`（[referenced_upload_filenames](../../src/web/app_state.rs#L472-L506)），
+  删除会话会让其附图进入既有清理范围。
 
-**Client 侧已有独立会话索引**（重要前提）：侧栏行由 Client 全量落盘、服务端透传存储，公开投影含 `id` / `title` / `updated_at` / `pinned` / `starred` / `server_conversation_id` / `server_revision` / `workspace_root`（[cm_api_contract/sessions.rs](../../src/cm_api_contract/sessions.rs#L3-L39)）。
+**Client 侧已有独立会话索引**（重要前提）：侧栏行由 Client 全量落盘、服务端透传存储，
+  公开投影含 `id` / `title` / `updated_at` / `pinned` / `starred` / `server_conversation_id` / `server_revision` /
+  `workspace_root`（[cm_api_contract/sessions.rs](../../src/cm_api_contract/sessions.rs#L3-L39)）。
 
 ---
 
@@ -57,7 +72,9 @@
 | 会话不存在或已过期 | **204**（幂等；与 `delete_by_id`「不存在时静默成功」一致） |
 | `conversation_id` 非法（空 / 超 `CONVERSATION_ID_MAX_LEN`） | **400** `ApiError` |
 
-**并发（回合进行中被删除）**：删除优先，不引入 409 或会话锁。进行中的回合结束时走 `UPDATE … WHERE id = ? AND revision = ?`，影响 0 行 → 既有 `SaveConversationOutcome::Conflict` 路径 → 客户端收到 `CONVERSATION_CONFLICT`。这样避免把会话删除与 `chat_queue` / SSE hub 耦合；代价是「被删会话正在生成的那一轮结果落不回去」，符合删除语义。
+**并发（回合进行中被删除）**：删除优先，不引入 409 或会话锁。进行中的回合结束时走 `UPDATE … WHERE id = ? AND revision = ?`，
+  影响 0 行 → 既有 `SaveConversationOutcome::Conflict` 路径 → 客户端收到 `CONVERSATION_CONFLICT`。这样避免把会话删除与 `chat_queue` / SSE hub 耦合；
+  代价是「被删会话正在生成的那一轮结果落不回去」，符合删除语义。
 
 **副作用**：被删会话的附图不再被 `referenced_upload_filenames` 收集，交既有上传清理回收；**不**级联删 Client 侧栏行（属另一存储，由 Client 决定）。
 
@@ -70,8 +87,11 @@
 | `conversation_store_ttl_secs` | `86400` | **0 = 不过期** |
 | `conversation_store_max_entries` | `512` | **0 = 不限条数** |
 
-- 同步补 `CM_CONVERSATION_STORE_TTL_SECS` / `CM_CONVERSATION_STORE_MAX_ENTRIES`，写入 [default_config.toml](../../config/default_config.toml) 与 [`docs/配置说明.md`](../配置说明.md)。
-- 两值在每次 save 时读取即可热更；内存后端目前用编译期常量（[app_state.rs](../../src/web/app_state.rs#L25)、[L314-L331](../../src/web/app_state.rs#L314-L331)）需改为读配置快照，并在 [hot_reload.rs](../../src/cm_config/hot_reload.rs) 注明「可热更，上限调小于下一次 save 生效」。
+- 同步补 `CM_CONVERSATION_STORE_TTL_SECS` / `CM_CONVERSATION_STORE_MAX_ENTRIES`，写入 [default_config.toml](../../config/default_config.toml)
+  与 [`docs/配置说明.md`](../配置说明.md)。
+- 两值在每次 save 时读取即可热更；内存后端目前用编译期常量（[app_state.rs](../../src/web/app_state.rs#L25)、
+  [L314-L331](../../src/web/app_state.rs#L314-L331)）需改为读配置快照，并在 [hot_reload.rs](../../src/cm_config/hot_reload.rs) 注明「可热更，
+  上限调小于下一次 save 生效」。
 - 补一次低频 prune（启动时 + 定时），解决 SQLite 空闲进程不清理的问题。
 - `0` 表示「不限」，与 `--llm-context-tokens 0`（不覆盖）语义不同，文档必须显式写明避免歧义。
 
@@ -82,7 +102,8 @@
 1. expand：新增可空 `workspace_root` 列 + 索引；
 2. 双写：save 时写入当前 `chat_workspace_root`；
 3. 历史行留 NULL，视为「未知作用域」，按 `workspace_root` 过滤时排除；
-4. 契约：`GET /conversations?workspace_root=…&limit&before_updated_at`，返回 `id` / `revision` / `updated_at_unix` / `active_agent_role` / 消息条数；**不**由服务端派生 `title`。
+4. 契约：`GET /conversations?workspace_root=…&limit&before_updated_at`，返回 `id` / `revision` / `updated_at_unix` / `active_agent_role` / 消息条数；
+  **不**由服务端派生 `title`。
 
 **触发条件**（满足其一再做）：出现不依赖官方 Client 的第二消费者；或出现「跨设备 / 跨浏览器会话列表」需求。当前 Client 侧栏索引已覆盖该场景。
 
@@ -94,9 +115,13 @@
 
 ## 4. 兼容性与约束
 
-- 新增路由不与既有 path/method 冲突。须同步：[openapi_paths.rs](../../src/web/openapi/openapi_paths.rs) 补条目、`docs/openapi.json` 快照再生成（`CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`）；路由与 OpenAPI 对齐已有自动测试。
-- Client 契约：删除属**可选**新增能力，服务端不假设所有客户端调用；若官方 Client 需要，按 [`client_contract_versioning.md`](./client_contract_versioning.md) 走 Client 侧钉版流程。
-- 与 [`server_api_completeness.md`](./server_api_completeness.md) 的关系：本设计只落地其 §2.3 门槛 6 中「会话数据的 TTL / 清理」一项，不改变 §2.1 产品边界；实现后回填 §2.2「运维生命周期」的结论。
+- 新增路由不与既有 path/method 冲突。须同步：[openapi_paths.rs](../../src/web/openapi/openapi_paths.rs) 补条目、
+  `docs/openapi.json` 快照再生成（`CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`）；
+  路由与 OpenAPI 对齐已有自动测试。
+- Client 契约：删除属**可选**新增能力，服务端不假设所有客户端调用；若官方 Client 需要，
+  按 [`client_contract_versioning.md`](./client_contract_versioning.md) 走 Client 侧钉版流程。
+- 与 [`server_api_completeness.md`](./server_api_completeness.md) 的关系：本设计只落地其 §2.3 门槛 6 中「会话数据的 TTL / 清理」一项，
+  不改变 §2.1 产品边界；实现后回填 §2.2「运维生命周期」的结论。
 - 安全：删除响应不得回显会话正文；日志沿用现状（`target: "crabmate"` 只记 `conversation_id`，无正文）。
 
 ---
@@ -106,7 +131,8 @@
 - handler：存在 → 204；不存在 → 204（幂等）；非法 id → 400；Bearer 开启时未带密钥 → 401。
 - 并发：回合进行中删除 → 回合落盘得 `CONVERSATION_CONFLICT`，且行保持删除态（不复活）。
 - 后端矩阵：内存与 SQLite 各跑一遍（沿用 [test_serve.rs](../../src/test_serve.rs) 与 e2e 夹具 facet 基建）。
-- 保留策略：`ttl=0` 不淘汰；TTL 调小后下一次 save 触发 prune；`max_entries` 淘汰最旧（扩展 [conversation_store.rs](../../src/conversation_store.rs) 现有 prune 单测）。
+- 保留策略：`ttl=0` 不淘汰；TTL 调小后下一次 save 触发 prune；`max_entries` 淘汰最旧（扩展 [conversation_store.rs](../../src/conversation_store.rs)
+  现有 prune 单测）。
 - 契约：OpenAPI 快照 + 路由对齐测试。
 
 ---

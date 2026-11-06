@@ -4,8 +4,11 @@
 **受众**：维护者、产品与协议设计者。  
 **语言**：中文。  
 **维护**：实现或废弃某能力时，同步修订本文，并更新 **`docs/未来规划功能.md`** / **`docs/en/FUTURE_PLANS.md`** 中的索引段落。  
-**本次修订（2026-10）**：依据一轮架构评审（通用性 / 拓展性 / 任务粒度），强化「契约不承载内部表示」「粒度先于委托」「验收必须可判定」「权限裁决链唯一」四处约束，并把评审结论前置到 §0。  
-**本次修订（2026-10-31）**：补齐 L2→L4 的三处落地缺口——新增 **§8.1 传输选型**（跨进程走本仓 HTTP 任务面，**不**把 MCP 服务端加固当前置）、新增 **§8.2 跨进程预算 / 撤销 / 取消**（`Arc` 不能跨进程，记账权必须显式化为租约）、收紧 **§5 `input_required` 在单进程内的落地限制**，并同步 §0 风险表、§4 的 L4 前置条件、§9 硬约束（12 / 13 条）与 §10 分期验收。
+**本次修订（2026-10）**：依据一轮架构评审（通用性 / 拓展性 / 任务粒度），强化「契约不承载内部表示」「粒度先于委托」「验收必须可判定」
+  「权限裁决链唯一」四处约束，并把评审结论前置到 §0。
+**本次修订（2026-10-31）**：补齐 L2→L4 的三处落地缺口——新增 **§8.1 传输选型**（跨进程走本仓 HTTP 任务面，**不**把 MCP 服务端加固当前置）、
+  新增 **§8.2 跨进程预算 / 撤销 / 取消**（`Arc` 不能跨进程，记账权必须显式化为租约）、收紧 **§5 `input_required` 在单进程内的落地限制**，
+  并同步 §0 风险表、§4 的 L4 前置条件、§9 硬约束（12 / 13 条）与 §10 分期验收。
 
 **关联文档**：
 
@@ -13,10 +16,12 @@
 - **`docs/design/audience_critic_role.md`**：侧向点评（本路线 **L1** 的既有设计，锚点 C / D）。
 - **`docs/design/run_loop_state_ownership.md`**：回合可变状态归属；委托**不**新开并行阶段机。
 - **`docs/design/per_state_machine_consolidation.md`**：P/R/E 状态机与反射控制器的职责边界。
-- **`docs/工作流编排架构.md`**、**`src/cm_workflow/model.rs`**：轮内 DAG（`deps` 拓扑分层 / 并行 / `fail_fast` / 补偿 / `max_retries` / `for_each` / `run_if`）。
+- **`docs/工作流编排架构.md`**、**`src/cm_workflow/model.rs`**：
+  轮内 DAG（`deps` 拓扑分层 / 并行 / `fail_fast` / 补偿 / `max_retries` / `for_each` / `run_if`）。
 - **`docs/SSE协议.md`**：新增控制面事件须与 **`src/cm_sse_protocol`**、golden fixtures、**`scripts/check-sse-protocol.sh`** 同步。
 - **`docs/配置说明.md`**：新增配置键的落点与热重载语义。
-- **`src/agent/agent_turn/host/params.rs`**：既有 `planner_model` / `executor_model` + `use_executor_model` 的按阶段换模型机制（§5 的 `model_hint` 与 §0-6 的基础）。
+- **`src/agent/agent_turn/host/params.rs`**：
+  既有 `planner_model` / `executor_model` + `use_executor_model` 的按阶段换模型机制（§5 的 `model_hint` 与 §0-6 的基础）。
 
 ---
 
@@ -35,11 +40,15 @@
 
 **已知风险（接受并显式记录，不以「以后再说」掩盖）**：
 
-- 预算**不含工具调用次数**（[turn_budget.rs](file:///home/gzz/crabmate/server/src/cm_agent/turn_budget.rs#L95-L142) 仅 `llm_calls` / `estimated_tokens` / 墙钟），首版**以墙钟兜底**。
+- 预算**不含工具调用次数**（[turn_budget.rs](file:///home/gzz/crabmate/server/src/cm_agent/turn_budget.rs#L95-L142)
+  仅 `llm_calls` / `estimated_tokens` / 墙钟），首版**以墙钟兜底**。
 - 与 A2A 的映射**有损**：首版不支持 `auth-required`、推送通知、流式状态事件（§8）。
 - 长任务**不能**转后台：与既有 `background_tool_jobs` 的关系尚未定，首版不做（§8）。
-- **委托预算与撤销在 L2 依赖进程内共享**：`TurnBudgetCounter` 以 `Arc` 共享、取消是单进程内存态；L4 跨进程后「谁记账 / 父超时如何中止子 / 如何取消」**全部失效**，必须有显式设计（§8.2），**不能**假设「换成网络后行为不变」。
-- **`input_required` 在单进程内无落地路径**：子 Agent 没有独立审批 / 澄清通道（`command_approval_request` 与 `clarification_questionnaire` 都绑在父的 SSE 流上），该状态**仅作 L4 预留**，L2/L3 一律不产生（§5）。
+- **委托预算与撤销在 L2 依赖进程内共享**：`TurnBudgetCounter` 以 `Arc` 共享、取消是单进程内存态；L4 跨进程后「谁记账 / 父超时如何中止子 / 如何取消」
+  **全部失效**，必须有显式设计（§8.2），**不能**假设「换成网络后行为不变」。
+- **`input_required` 在单进程内无落地路径**：
+  子 Agent 没有独立审批 / 澄清通道（`command_approval_request` 与 `clarification_questionnaire` 都绑在父的 SSE 流上），该状态**仅作 L4 预留**，
+  L2/L3 一律不产生（§5）。
 
 ---
 
@@ -47,9 +56,11 @@
 
 1. **A2A 不是多 Agent 协作的前置条件**。它属**跨进程互操作层**，排在本路线最后；先做单进程内的**有界委托**，再谈独立实例与跨进程协议。
 2. 建议路线为 **L0 逻辑角色 → L1 有界侧向调用 → L2 单轮内有界子 Agent 委托 → L3 workflow agent 节点 → L4 跨进程 → A2A**，每层独立可交付、可回退。
-3. **L2 是 MVP 起点**，也是唯一需要真正新增运行时的层：独立 `messages` + 工具子集 + **共享预算** + 结构化 Artifact + `trace_id` + **默认关闭** + 深度 / 并发硬上限 + 可整体降级回单 Agent。
+3. **L2 是 MVP 起点**，也是唯一需要真正新增运行时的层：
+  独立 `messages` + 工具子集 + **共享预算** + 结构化 Artifact + `trace_id` + **默认关闭** + 深度 / 并发硬上限 + 可整体降级回单 Agent。
 4. **第一步（A2A 与内部多 Agent 唯一共用物）**：定义 **Agent 调用契约**（§5 的 `Task` / `Result`）。内部委托与将来的 A2A `task` 共用同一份语义，避免两套模型。
-5. **契约必须先于实现定型且保持后端无关**：粒度门限（§6.6）、权限裁决链（§6.5）、验收判据（`acceptance`）三件事**写在契约里**，否则实现者会各自发明一套——这是 §0 强调的核心。
+5. **契约必须先于实现定型且保持后端无关**：粒度门限（§6.6）、权限裁决链（§6.5）、验收判据（`acceptance`）三件事**写在契约里**，
+  否则实现者会各自发明一套——这是 §0 强调的核心。
 
 ---
 
@@ -64,7 +75,8 @@
 | **MCP** | **已有**：客户端支持 stdio 与 Streamable HTTP；服务端 `crabmate mcp serve` 支持 stdio / TCP，**无传输层鉴权** | `src/mcp/` | 服务端缺鉴权；与 Agent↔Agent 正交 |
 | **历史分层多 Agent** | **已移除**：Manager / Operator / Router（`src/agent/hierarchy/`）整棵删除并归档 | `docs/design/archive/分层多智能体架构.md` | — |
 
-**教训**：上一版分层方案在**单进程内**引入了完整的 Manager/Operator 阶段机与专用状态，最终因复杂度与收益不匹配被整棵移除。新方案因此**不新开阶段机**、**不共享可变 `messages`**、**默认关闭**，把「一个主循环 + 有界委托」作为不可动摇的基线。
+**教训**：上一版分层方案在**单进程内**引入了完整的 Manager/Operator 阶段机与专用状态，最终因复杂度与收益不匹配被整棵移除。新方案因此**不新开阶段机**、
+  **不共享可变 `messages`**、**默认关闭**，把「一个主循环 + 有界委托」作为不可动摇的基线。
 
 ---
 
@@ -176,27 +188,36 @@
 | `multi_agent_child_timeout_seconds` | `120` | — | 单个子任务墙钟上限。 |
 | `multi_agent_child_max_llm_calls` | `6` | — | 单子任务 LLM 次数；且 `min(自身, 父剩余)`。 |
 
-**差异化只走两层，不再堆扁平键**：上表是**全局默认**；允许按角色覆盖（`multi_agent_role_limits[role_id] = { max_depth, max_concurrent_children, ... }`）。**不要**为每个角色新增一组扁平全局键——那会让组合数随角色数线性膨胀。
+**差异化只走两层，不再堆扁平键**：上表是**全局默认**；
+  允许按角色覆盖（`multi_agent_role_limits[role_id] = { max_depth, max_concurrent_children, ... }`）。
+  **不要**为每个角色新增一组扁平全局键——那会让组合数随角色数线性膨胀。
 
-**与 DAG 并行必须显式取组合，不能各算各的**：L3 的层内并行由 `WorkflowSpec.max_parallelism` 控制，与 `multi_agent_max_concurrent_children` **取 `min`**；此外另设一个**全局同时存活子 Agent 总上限**作为总闸（跨层、跨 DAG 生效），防止 `depth × 层数 × 层内并行` 相乘突破单键上限。
+**与 DAG 并行必须显式取组合，不能各算各的**：L3 的层内并行由 `WorkflowSpec.max_parallelism` 控制，
+  与 `multi_agent_max_concurrent_children` **取 `min`**；此外另设一个**全局同时存活子 Agent 总上限**作为总闸（跨层、跨 DAG 生效），
+  防止 `depth × 层数 × 层内并行` 相乘突破单键上限。
 
 ### 6.3 降级（fail-open，可整体回退）
 
 - 子任务失败 / 超时 / 预算拒绝：**不阻断**父回合，父收到 `status != ok` 的 `Result` 并自行决定是否重规划。
-- 触发 `TurnBudgetDeny`（`wall_clock` / `llm_calls` / `tokens`）：父进入**已有的** `degradation_active` 路径（`src/cm_agent/turn_budget.rs`），**不**新增退化分支。
+- 触发 `TurnBudgetDeny`（`wall_clock` / `llm_calls` / `tokens`）：父进入**已有的** `degradation_active` 路径（`src/cm_agent/turn_budget.rs`），
+  **不**新增退化分支。
 - 全局熔断：`multi_agent_enabled=false` 必须能在**不重启**的情况下把行为收敛回 L0/L1（配置热重载，见 `docs/配置说明.md`）。
 
 ### 6.4 状态与可观测性
 
-- **预算**：子 Agent **共用**父的 `TurnBudgetCounter`（`Arc` 共享；`llm_calls` / `estimated_tokens` 原子累加）。`Result.usage` 取委托**前后快照的差值**；计数器只有累加与读取，**没有** drain / 重置语义，**不要**按「各 drain 一次份额」实现。
-- **预算维度缺口**：现有计数仅 `llm_calls` / `estimated_tokens` / 墙钟，**不含工具调用次数**。而子 Agent 的主要扇出消耗恰恰是工具调用，首版**显式以墙钟兜底**，并把「新增工具调用计数维」列为后续项，而不是默认它已被覆盖。
+- **预算**：子 Agent **共用**父的 `TurnBudgetCounter`（`Arc` 共享；`llm_calls` / `estimated_tokens` 原子累加）。
+  `Result.usage` 取委托**前后快照的差值**；计数器只有累加与读取，**没有** drain / 重置语义，**不要**按「各 drain 一次份额」实现。
+- **预算维度缺口**：现有计数仅 `llm_calls` / `estimated_tokens` / 墙钟，**不含工具调用次数**。而子 Agent 的主要扇出消耗恰恰是工具调用，
+  首版**显式以墙钟兜底**，并把「新增工具调用计数维」列为后续项，而不是默认它已被覆盖。
 - **状态归属**：子 Agent 的 `messages` 为**独立会话对象**，生命周期不越过单次委托；父的可变 `messages` 由 `run_loop_state_ownership.md` 的既有规则拥有。
 - **可观测**：委托开始 / 结束 / 拒绝以 tracing span + 可选 SSE 事件暴露；若新增 SSE 事件，**必须**走 `docs/SSE协议.md` 契约与 golden fixtures。
-- **安全**：子 Agent 请求与日志遵守脱敏 / 截断（`AGENTS.md` → Repository engineering rules → Secrets & logging）；写类工具默认**不**下放给子 Agent，如需下放须经 `tool_approval` 并单独文档化风险。
+- **安全**：子 Agent 请求与日志遵守脱敏 / 截断（`AGENTS.md` → Repository engineering rules → Secrets & logging）；写类工具默认**不**下放给子 Agent，
+  如需下放须经 `tool_approval` 并单独文档化风险。
 
 ### 6.5 工具权限裁决链（唯一顺序，不可各自发明）
 
-系统里**已并存三套**工具约束机制（`allowed_tools` / `node_tool_role` / `tool_allowlist`），各管一段、粒度不同；下表把它展开成**四段裁决顺序**，实现时**必须**按此顺序取交，否则实现者会各自发明一套：
+系统里**已并存三套**工具约束机制（`allowed_tools` / `node_tool_role` / `tool_allowlist`），各管一段、粒度不同；下表把它展开成**四段裁决顺序**，
+  实现时**必须**按此顺序取交，否则实现者会各自发明一套：
 
 | 顺序 | 机制 | 形态 | 作用 |
 |---|---|---|---|
@@ -208,8 +229,10 @@
 **裁决规则**：有效工具集 = 上述四者的**交集**，再**固定剔除** `workflow_execute`（防递归）与委托工具本身（防重入）。
 
 **两条不可混用的性质**：
-- `allowed_tools`（**名字集合**）与 `node_tool_role`（**类别枚举**）**粒度不同，不可互相替代**；前者是**最终裁决**，后者只用于**粗粒度收窄**（L3 无 `node_tool_role` 时该项不参与）。
-- `Task.tool_allowlist` **只能是交集的下界约束**，**不是**「父白名单真子集」——把权限来源钉死在父角色会挡住「父受限、子角色更宽」的合法诉求，也会让 A2A 侧无法对齐。
+- `allowed_tools`（**名字集合**）与 `node_tool_role`（**类别枚举**）**粒度不同，不可互相替代**；前者是**最终裁决**，
+  后者只用于**粗粒度收窄**（L3 无 `node_tool_role` 时该项不参与）。
+- `Task.tool_allowlist` **只能是交集的下界约束**，**不是**「父白名单真子集」——把权限来源钉死在父角色会挡住「父受限、子角色更宽」的合法诉求，
+  也会让 A2A 侧无法对齐。
 
 ### 6.6 委托粒度门限（何时才**该**委托）
 
@@ -231,15 +254,22 @@
 
 ## 7. L3：workflow agent 节点
 
-**现状明确**：`WorkflowNodeSpec` 的节点是**工具节点**（`tool_name` + `tool_args` + `deps` / `requires_approval` / `timeout_secs` / `compensate_with` / `max_retries` / `node_tool_role` / `run_if`），**没有** agent 节点类型。因此 L3 是一个**新增节点类型**的设计决策，而非复用既有字段。
+**现状明确**：
+  `WorkflowNodeSpec` 的节点是**工具节点**（`tool_name` + `tool_args` + `deps` / `requires_approval` / `timeout_secs` / `compensate_with` /
+  `max_retries` / `node_tool_role` / `run_if`），**没有** agent 节点类型。因此 L3 是一个**新增节点类型**的设计决策，而非复用既有字段。
 
 **设计要点**：
 
-1. **只扩节点类型，不新开调度器**：agent 节点的执行体是一次 L2 委托，`deps` 分层、层内并行、`max_parallelism`、`fail_fast`、`compensate_with`、`max_retries` 全部沿用现有实现。
-2. **工具子集沿用现有词汇表**：`node_tool_role` 现有枚举 `WorkflowNodeToolRole::{ReviewReadonly, PatchWrite, TestRunner}`（与 `PlanStepExecutorKind` 共用策略表），可作为 agent 节点**粗粒度**工具约束；需要更细粒度时用 `Task.tool_allowlist`，且必须与 `AgentRoleSpec.allowed_tools` 取交。
+1. **只扩节点类型，不新开调度器**：agent 节点的执行体是一次 L2 委托，`deps` 分层、层内并行、`max_parallelism`、`fail_fast`、`compensate_with`、
+  `max_retries` 全部沿用现有实现。
+2. **工具子集沿用现有词汇表**：
+  `node_tool_role` 现有枚举 `WorkflowNodeToolRole::{ReviewReadonly, PatchWrite, TestRunner}`（与 `PlanStepExecutorKind` 共用策略表），
+  可作为 agent 节点**粗粒度**工具约束；需要更细粒度时用 `Task.tool_allowlist`，且必须与 `AgentRoleSpec.allowed_tools` 取交。
 3. **agent 节点不可再展开 workflow**：与 L2 同一条防递归规则（剔除 `workflow_execute`）。
 4. **补偿语义**：agent 节点失败走现有补偿链；补偿动作只允许**工具节点**或 `ReviewReadonly` 类 agent 节点。
-5. **节点上下文装配规则（此前缺失，必须补齐）**：agent 节点沿用工具节点的数据流——`goal` 来自节点**声明模板**；`context_slice` 由**上游节点输出 + 声明模板**装配，并遵守 `output_inject_max_chars` / `summary_preview_max_chars` 门限。**禁止** agent 节点绕过通道自取全局状态，否则「只读切片」的硬约束（§9-2）在 L3 失效。
+5. **节点上下文装配规则（此前缺失，必须补齐）**：agent 节点沿用工具节点的数据流——`goal` 来自节点**声明模板**；
+  `context_slice` 由**上游节点输出 + 声明模板**装配，并遵守 `output_inject_max_chars` / `summary_preview_max_chars` 门限。
+  **禁止** agent 节点绕过通道自取全局状态，否则「只读切片」的硬约束（§9-2）在 L3 失效。
 
 ---
 
@@ -254,13 +284,17 @@ A2A 解决的是**跨进程、跨组织的 Agent 互操作**，与本设计的 L
 | **Artifact** | `Result.artifacts` | 复用同一结构，避免两套工件模型。 |
 | **Transport** | L4 进程间传输 | 走**本仓 HTTP 任务面**（复用既有 Bearer 中间件 + CORS + `x-request-id`），**不**以 MCP 服务端加固为前置（§8.1）。 |
 
-**映射是有损的（显式声明，不假装等价）**：`Result.status` 已按 A2A 状态集补齐（§5 的八态含 `cancelled` / `input_required`），但 A2A 的 **`auth-required`**、**推送通知**、**流式 `TaskStatusUpdateEvent`** 首版**不支持**——它们依赖传输层与会话模型，属 L4 议题。首版只做**字段级映射**，遇到未支持的状态一律降级为 `failed` + `deny_reason`。
+**映射是有损的（显式声明，不假装等价）**：`Result.status` 已按 A2A 状态集补齐（§5 的八态含 `cancelled` / `input_required`），
+  但 A2A 的 **`auth-required`**、**推送通知**、**流式 `TaskStatusUpdateEvent`** 首版**不支持**——它们依赖传输层与会话模型，属 L4 议题。
+  首版只做**字段级映射**，遇到未支持的状态一律降级为 `failed` + `deny_reason`。
 
-**与 `background_tool_jobs` 的关系（显式表态）**：现有后台任务作业是**工具级**的长任务，**不**等价于子 Agent。首版**不**把长委托转后台，委托生命周期仍**严格限于单轮**（§9-1）；「长任务转后台」列入 L4 之后单独评估，避免把两个生命周期模型混为一谈。
+**与 `background_tool_jobs` 的关系（显式表态）**：现有后台任务作业是**工具级**的长任务，**不**等价于子 Agent。首版**不**把长委托转后台，
+  委托生命周期仍**严格限于单轮**（§9-1）；「长任务转后台」列入 L4 之后单独评估，避免把两个生命周期模型混为一谈。
 
 ### 8.1 L4 传输选型：复用本仓 HTTP 面，不把 MCP 当必经前置
 
-> 本节修订上一版的一处口径：§4 与 §10 曾把「先补 MCP 服务端鉴权」写成 L4 的**前置条件**，该顺序**被放弃**。理由不是 MCP 不重要，而是它解决的问题不同、且它恰是当前最薄的一环。
+> 本节修订上一版的一处口径：§4 与 §10 曾把「先补 MCP 服务端鉴权」写成 L4 的**前置条件**，该顺序**被放弃**。理由不是 MCP 不重要，而是它解决的问题不同、
+> 且它恰是当前最薄的一环。
 
 三条候选通道的边界（均已核实，含它们为什么不够）：
 
@@ -270,7 +304,8 @@ A2A 解决的是**跨进程、跨组织的 Agent 互操作**，与本设计的 L
 | **`crabmate mcp serve`** | stdio 已落地；**无传输层鉴权**；`tools/call` 是**无状态请求 / 响应** | **否（至少不能当前置）**。MCP 是 Agent↔**工具**协议，没有任务生命周期；在其上跑委托等于自造 `cancelled` / `input_required` / 长时任务状态机，而协议不背书、客户端也不会按此语义实现。它同时是**唯一缺传输鉴权**的出口——先补最薄一环再谈协作，是顺序倒置。 |
 | **`serve` HTTP 面** | `POST /chat`、`POST /chat/stream`；Bearer / `X-API-Key` 中间件、CORS、`x-request-id`、`x-stream-job-id` | **是（补齐任务语义后）**。鉴权与传输已是成品，缺的只是**任务的提交 / 查询 / 取消**语义：新增 `/agent/tasks` 端点即可，无须新传输层。 |
 
-**结论**：L4 在 `serve` 既有 HTTP 面开**任务端点**，复用现成鉴权与中间件；MCP 服务端加固属于「对外暴露工具」那条**独立线**（`docs/未来规划功能.md` P1 中本就单列），**不**作为多 Agent 协作的前置。
+**结论**：L4 在 `serve` 既有 HTTP 面开**任务端点**，复用现成鉴权与中间件；MCP 服务端加固属于「对外暴露工具」
+  那条**独立线**（`docs/未来规划功能.md` P1 中本就单列），**不**作为多 Agent 协作的前置。
 
 ### 8.2 跨进程预算、撤销与取消（L2 → L4 的真实鸿沟）
 
@@ -283,7 +318,8 @@ L2 的三项机制**全部建立在进程内共享之上**，跨进程后逐条�
 | **取消** | 复用 `POST /chat/stream/{job_id}/cancel`（单进程内存态） | `job_id` 标识的是**流**而不是**任务**；父中止不该连带改变流的重连语义 | **任务 id 与流 id 分离**：`POST /agent/tasks/{task_id}/cancel`，幂等、可重试；不复用 `stream_job` 语义。 |
 | **断线续读** | SSE `stream_resume` 的环形缓冲**仅单进程内存**，任务结束或进程重启后回 `410 STREAM_JOB_GONE` | 跨进程重连没有可用缓冲 | 重连必须**回源任务状态**（`GET /agent/tasks/{id}`），**不得**依赖流缓冲。 |
 
-**另有一条部署约束（容易在方案里漏掉）**：`serve` 默认以 flock 独占会话库（`<conversation_store_sqlite_path>.serve.lock`），多进程共享同一隔离域时**拒绝启动**，而 `CM_SERVE_DISABLE_INSTANCE_LOCK` 的文档明确写着「仅用于确需多进程共享同一隔离域的特殊部署或排障」。
+**另有一条部署约束（容易在方案里漏掉）**：`serve` 默认以 flock 独占会话库（`<conversation_store_sqlite_path>.serve.lock`），
+  多进程共享同一隔离域时**拒绝启动**，而 `CM_SERVE_DISABLE_INSTANCE_LOCK` 的文档明确写着「仅用于确需多进程共享同一隔离域的特殊部署或排障」。
   因此多 Agent 跨进程协作的默认形态必须是**一实例一隔离域**（正是 `crabmatectl` 每实例独立 cwd / 会话库的本意），**不能**把一个工作区同时交给多个写者。
 
 **分期**：L2 定型 → L3 验证 DAG 内委托 → L4 进程间（任务端点 + 租约记账，见 §8.1 / §8.2）→ A2A（仅做映射与对外端点，**不**回改内部契约）。

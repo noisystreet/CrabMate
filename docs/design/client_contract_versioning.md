@@ -2,10 +2,12 @@
 
 > **状态**：采纳（2026-08-08）— 支撑 [`client_shell_split.md`](./client_shell_split.md) 路径 A。  
 > **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 1。  
-> **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `tool-card` 已迁 Client（W2b）；`turn-layout` W3/W4 **缓做**。  
+> **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `tool-card` 已迁 Client（W2b）；
+> `turn-layout` W3/W4 **缓做**。
 > **crates.io 单包**：[`crates_io_single_package.md`](./crates_io_single_package.md)（`crabmate` `0.4.0` + `protocol` feature；不依赖 W3）。  
 > **人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)（HTTP `ApiError` / OpenAPI）。  
-> **门禁脚本**：`scripts/check-client-contract.sh`（SSE 金样 + OpenAPI 冒烟 + 外仓风格 path 消费；展示 crate 下沉后钉清单会收窄，见 [`client_display_crate_sink.md`](./client_display_crate_sink.md)）。
+> **门禁脚本**：`scripts/check-client-contract.sh`（SSE 金样 + OpenAPI 冒烟 + 外仓风格 path 消费；展示 crate 下沉后钉清单会收窄，
+> 见 [`client_display_crate_sink.md`](./client_display_crate_sink.md)）。
 
 ---
 
@@ -23,7 +25,8 @@
 | 会话导出 schema | `crabmate-chat-export` | 导出 JSON/Markdown 契约（无 I/O）；**本轮不迁** |
 | Tauri 连接页逻辑 | `crabmate-connect`（**仅** Client 仓） | 探测 `/health`、Bearer hash、钥匙串 |
 
-**默认发版渠道（至 `v0.3.x` / `client-contract-v0.2.0`）**：**本仓 git 注释标签**（见 §4）。**下一渠道**：单包 `crabmate` 上 crates.io（[`crates_io_single_package.md`](./crates_io_single_package.md)）；完成前外仓继续钉 git tag。
+**默认发版渠道（至 `v0.3.x` / `client-contract-v0.2.0`）**：**本仓 git 注释标签**（见 §4）。**下一渠道**：
+  单包 `crabmate` 上 crates.io（[`crates_io_single_package.md`](./crates_io_single_package.md)）；完成前外仓继续钉 git tag。
 
 **不必**先发完整 Server 产品版；打 `client-contract-v*`（或开发期 `rev`）即可供外仓消费。
 
@@ -61,7 +64,9 @@
 
 `crabmate-api-contract` 与 OpenAPI / `docs/命令行契约.md` 中的 HTTP 码表同发布节奏；破坏性 HTTP JSON 变更须在发版说明与 OpenAPI 中标明。
 
-展示契约（`turn-layout` / `chat-export` / `display-rules`）破坏性 Rust API 变更时：在单包落地前 bump 对应 crate 并打新的 `client-contract-v*`（或更新外仓 `rev`）；单包落地后随 `crabmate` semver（`protocol` 面）。`crabmate-tool-card` 已迁 Client（W2b），不再随本仓 tag 钉。
+展示契约（`turn-layout` / `chat-export` / `display-rules`）破坏性 Rust API 变更时：
+  在单包落地前 bump 对应 crate 并打新的 `client-contract-v*`（或更新外仓 `rev`）；单包落地后随 `crabmate` semver（`protocol` 面）。
+  `crabmate-tool-card` 已迁 Client（W2b），不再随本仓 tag 钉。
 
 ---
 
@@ -123,7 +128,8 @@ client-contract-vX.Y.Z
 
 发标签前本地/CI 须绿：`bash scripts/check-client-contract.sh`。
 
-**当前外仓钉点**：`client-contract-v0.2.0`（本 tag 起钉清单**不含** `crabmate-tool-card`；工具卡在 Client 仓 path）。前序：`client-contract-v0.1.1` / `v0.1.0`。产品 tag `v0.3.0` 仍含 Server 侧 `tool-card` 副本，旧 Client 可继续钉它。
+**当前外仓钉点**：`client-contract-v0.2.0`（本 tag 起钉清单**不含** `crabmate-tool-card`；工具卡在 Client 仓 path）。前序：
+  `client-contract-v0.1.1` / `v0.1.0`。产品 tag `v0.3.0` 仍含 Server 侧 `tool-card` 副本，旧 Client 可继续钉它。
 
 首枚标签建议在 **P4.1 + Phase A 文档/门禁合入 `main` 后** 打；在此之前外仓可用 **`rev = "<commit sha>"`** 钉同一形状。
 
@@ -155,8 +161,11 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 
 ### 4.3 与 crates.io
 
-权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md) — crates.io **只发根包 `crabmate` `0.8.0`**（[crates.io/crates/crabmate](https://crates.io/crates/crabmate)）。**默认渠道**：`crabmate = { version = "0.8.0", default-features = false, features = ["protocol"] }`。等价 git：
-  `tag = "v0.8.0"`。不发布 `crabmate-sse-protocol` 等旧成员。`v0.7.0` / `v0.6.0` / `v0.5.2` / `v0.5.1` / `v0.5.0` / `v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。
+权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md)
+  — crates.io **只发根包 `crabmate` `0.8.0`**（[crates.io/crates/crabmate](https://crates.io/crates/crabmate)）。**默认渠道**：
+  `crabmate = { version = "0.8.0", default-features = false, features = ["protocol"] }`。等价 git：
+  `tag = "v0.8.0"`。不发布 `crabmate-sse-protocol` 等旧成员。
+    `v0.7.0` / `v0.6.0` / `v0.5.2` / `v0.5.1` / `v0.5.0` / `v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。
 
 ---
 

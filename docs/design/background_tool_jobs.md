@@ -1,13 +1,20 @@
 # ADR: 后台工具任务（background tool jobs）
 
-> **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：[`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：
-> [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：
-> [`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
+> **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：
+> [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：
+> [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：
+> [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、
+> [`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、
+> [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：
+> [`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：
+> `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
 
 ## Context
 
-- 长构建（`cargo test` / `pytest_run` / `cmake --build` 数分钟）目前**绑死当前 LLM turn**：SSE 连接必须保持、`RunLoopIo.cancel` 一关 job 就丢。模型只能干等，页面关掉则执行中止。
-- 已落地底座：[`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、`tool_output_chunk`、观测统计）；`run_command` 已 emit chunk；P0/P1（#868/#869）已合并。
+- 长构建（`cargo test` / `pytest_run` / `cmake --build` 数分钟）目前**绑死当前 LLM turn**：SSE 连接必须保持、`RunLoopIo.cancel` 一关 job 就丢。
+  模型只能干等，页面关掉则执行中止。
+- 已落地底座：[`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、
+  `tool_output_chunk`、观测统计）；`run_command` 已 emit chunk；P0/P1（#868/#869）已合并。
 - 目标：工具可**脱离当前 turn** 继续执行，调用方在**连接关闭后**仍能查询/取消；结果不自动塞回模型上下文（避免污染）。
 - 约束：全部新增契约对旧客户端**可忽略**（软字段原则），不 bump `SSE_PROTOCOL_VERSION`；执行与回收都必须与 SSE 连接生命周期解耦。
 
@@ -17,27 +24,41 @@
 
 具名工具（先 `run_command`；其余在迁入共享会话后开放）增加可选参数 **`async: bool`**（默认 `false`，行为不变）。
 
-- `async=true` 时：白名单、`..`/绝对路径校验、交互审批**在发起时刻照常执行**；通过后创建 job，**立即**返回 `tool_result`（不阻塞、不执行），体内带 `tool_job_id` 与轮询地址。
+- `async=true` 时：白名单、`..`/绝对路径校验、交互审批**在发起时刻照常执行**；通过后创建 job，**立即**返回 `tool_result`（不阻塞、不执行），
+  体内带 `tool_job_id` 与轮询地址。
 - 不支持 async 的工具收到 `async=true`：`invalid_args`。
 - 需要**交互审批**（`AllowOnce` 语义）的命令拒绝 async（job 执行期无法再次弹审批）；`AllowAlways` / 已在白名单者可用。
 
 ### 2. job 标识与生命周期
 
-- **`tool_job_id`**（string，形如 `tooljob_<32hex>`，**随机不透明**，不可枚举）：**独立命名空间**，与 LLM turn 的 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）**明确区分**，避免日志/端点歧义。job 记录绑定**来源会话 + workspace**，轮询/取消端点校验归属，防越权读取。
+- **`tool_job_id`**（string，形如 `tooljob_<32hex>`，**随机不透明**，不可枚举）：**独立命名空间**，
+  与 LLM turn 的 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）**明确区分**，避免日志/端点歧义。job 记录绑定**来源会话 + workspace**，
+  轮询/取消端点校验归属，防越权读取。
 - 状态机：`queued → running → succeeded | failed | cancelled | timed_out`。**`expired` 不是持久状态**：TTL+宽限到期即删除记录（轮询得 `410 Gone`）。
-- 超时：默认 `command_timeout_secs`；工具参数 `timeout_secs` 显式覆盖（钳制同现有 1～600）。取消：复用 `subprocess_session` 的进程组 kill（`Cancelled` 路径已实现）。
-- 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；`run_command` 的成功结果**可**写入 `test_result_cache`（装配表工具 `cargo_test` / `pytest_run` 不参与该缓存，与其前台同步路径一致）；超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。`workspace_changed` 仅 `run_command` 编译命令族成功时才为 true，装配表工具恒为 false。
+- 超时：默认 `command_timeout_secs`；工具参数 `timeout_secs` 显式覆盖（钳制同现有 1～600）。取消：
+  复用 `subprocess_session` 的进程组 kill（`Cancelled` 路径已实现）。
+- 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；
+  `run_command` 的成功结果**可**写入 `test_result_cache`（装配表工具 `cargo_test` / `pytest_run` 不参与该缓存，与其前台同步路径一致）；
+  超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。`workspace_changed` 仅 `run_command` 编译命令族成功时才为 true，
+  装配表工具恒为 false。
 
 ### 3. 结果回收：轮询为主、事件为辅
 
 - **主通道 = HTTP 轮询**（不依赖连接生命周期）：
-  - `GET /tools/jobs/{tool_job_id}` → JSON：`{ status, exit_code?, stdout?, stderr?, summary?, error_code?, workspace_changed?, result_version? }`（`succeeded`/`failed` 含最终正文形状，与 `tool_result` 同源）。
-  - `POST /tools/jobs/{tool_job_id}/cancel` → `{ status }`。**仅对 `queued`/`running` 生效**（原子状态转移）；job 已完成时返回当前状态（`409` 或直接回显，实现时钉死一种）。
+  - `GET /tools/jobs/{tool_job_id}` → JSON：
+    `{ status, exit_code?, stdout?, stderr?, summary?, error_code?, workspace_changed?, result_version? }`（`succeeded`/`failed` 含最终正文形状，
+    与 `tool_result` 同源）。
+  - `POST /tools/jobs/{tool_job_id}/cancel` → `{ status }`。**仅对 `queued`/`running` 生效**（原子状态转移）；
+    job 已完成时返回当前状态（`409` 或直接回显，实现时钉死一种）。
   - 已过期被清理的 job：返回 **`410 Gone`**（`expired` 不保留条目，到期即删除）。
   - 鉴权复用现有 protected routes（Bearer）；**归属校验**：读取与取消均校验 `tool_job_id` 绑定的来源会话/workspace 与调用方一致。
-- **TTL 起算与宽限**：TTL 自**创建**算（对齐 `background_job_ttl_secs`），但结果完成后额外保留宽限 `background_job_result_grace_secs`（默认 300s），避免长 job"刚完成即被清"。
-- **结果消费者**：job 结果**不自动回填模型/对话**（ADR 否决项）；由**调用方/用户**把轮询结果带回后续回合（产品上 Client 提供"复制结果"或注入下一轮 user 消息；`workspace_changed` 同理由调用方转达）。模型若要**主动**取回，只能用下述 §9 的**只读查询工具**（模型显式发起 tool call，不属"自动回填"）。
-- **辅助 = 尽力而为 SSE 补发**（Phase 2，可选）：新顶层键 **`tool_job_finished`**（体含 `tool_job_id`、`status`、`exit_code`、`summary`）——**仅当原 SSE 连接仍存活**时投递，作为"顺路提醒"，不参与主流程；旧客户端忽略未知键。
+- **TTL 起算与宽限**：TTL 自**创建**算（对齐 `background_job_ttl_secs`），但结果完成后额外保留宽限 `background_job_result_grace_secs`（默认 300s），
+  避免长 job"刚完成即被清"。
+- **结果消费者**：job 结果**不自动回填模型/对话**（ADR 否决项）；由**调用方/用户**把轮询结果带回后续回合（产品上 Client 提供"复制结果"
+  或注入下一轮 user 消息；`workspace_changed` 同理由调用方转达）。模型若要**主动**取回，只能用下述 §9 的**只读查询工具**（模型显式发起 tool call，不属"
+  自动回填"）。
+- **辅助 = 尽力而为 SSE 补发**（Phase 2，可选）：新顶层键 **`tool_job_finished`**（体含 `tool_job_id`、`status`、`exit_code`、`summary`）
+  ——**仅当原 SSE 连接仍存活**时投递，作为"顺路提醒"，不参与主流程；旧客户端忽略未知键。
 
 ### 4. 启动帧（SSE `tool_result`）
 
@@ -52,19 +73,29 @@
 
 ### 5. 执行模型（脱离 turn）
 
-- job worker **不持有** `TurnControlSink` / `RunLoopIo.cancel` / SSE sender；取消改为显式 `POST …/cancel`（置 job 级 `AtomicBool`，`wait_child_session` 走既有 `Cancelled` 路径）。
-- **级联取消**：发起时把当前回合流任务 `job_id` 写入 `JobRecord.source_turn_job_id`（经 `WebToolRuntime.turn_job_id`）；用户 `POST /chat/stream/{job_id}/cancel` 停止回合时，一并取消本回合尚未终态的后台任务（响应 `background_tools_cancelled` 为命中数）。
-- 复用 `subprocess_session::wait_child_session_async`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；`tokio::spawn` 内直接 `await`（与迁 `tokio::process` 后的 chat / workflow 宿主一致）。
+- job worker **不持有** `TurnControlSink` / `RunLoopIo.cancel` / SSE sender；取消改为显式 `POST …/cancel`（置 job 级 `AtomicBool`，
+  `wait_child_session` 走既有 `Cancelled` 路径）。
+- **级联取消**：发起时把当前回合流任务 `job_id` 写入 `JobRecord.source_turn_job_id`（经 `WebToolRuntime.turn_job_id`）；
+  用户 `POST /chat/stream/{job_id}/cancel` 停止回合时，一并取消本回合尚未终态的后台任务（响应 `background_tools_cancelled` 为命中数）。
+- 复用 `subprocess_session::wait_child_session_async`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；
+  `tokio::spawn` 内直接 `await`（与迁 `tokio::process` 后的 chat / workflow 宿主一致）。
 - 注册表：进程内 `Mutex<HashMap<tool_job_id, JobState>>` + 过期清理（TTL 与条目上限）。**多副本**需外部代理/持久化（与 `chat_job_queue` 既有声明一致），另立项。
-- **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
-- **worker 异常兜底**：作业体在独立 `tokio::spawn` 任务内 `await`；该任务 panic → 外层 `JoinHandle` 返回 `JoinError` → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。子进程另由 `kill_on_drop` 兜底（任务被 abort / 提前 drop 时 SIGKILL）。
-- **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
-- **并发写约束**：async 开放工具 = **装配表**（`cargo_test` / `pytest_run`，参数可装配为单条 argv）∩ **`background_job_async_tools` 白名单**（默认仅含 `run_command`，故这两个工具须显式加入白名单才可用）；不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）。
-  **`run_command` 之外的装配表工具复用 `JobSpawn` 进程载荷**（前台 `Command` → `get_program()` / `get_args()`），因此取消/超时/输出流全部复用，`tool_jobs` 无改动。并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
+- **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；
+  `queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
+- **worker 异常兜底**：作业体在独立 `tokio::spawn` 任务内 `await`；该任务 panic → 外层 `JoinHandle` 返回 `JoinError` → **先 terminate 进程组**，
+  再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。子进程另由 `kill_on_drop` 兜底（任务被 abort / 提前 drop 时 SIGKILL）。
+- **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，
+  孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
+- **并发写约束**：async 开放工具 = **装配表**（`cargo_test` / `pytest_run`，参数可装配为单条 argv）
+  ∩ **`background_job_async_tools` 白名单**（默认仅含 `run_command`，故这两个工具须显式加入白名单才可用）；
+  不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）。
+  **`run_command` 之外的装配表工具复用 `JobSpawn` 进程载荷**（前台 `Command` → `get_program()` / `get_args()`），因此取消/超时/输出流全部复用，
+    `tool_jobs` 无改动。并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
 
 ### 6. 配置与默认
 
-`config/tools.toml`（`[tool_registry]`）新增，**总开关默认开启**（`background_jobs_enabled = true`；模型仍须显式传 `async=true` 才走后台，白名单默认仅 `run_command`，故既有部署行为不变）：
+`config/tools.toml`（`[tool_registry]`）新增，**总开关默认开启**（`background_jobs_enabled = true`；模型仍须显式传 `async=true` 才走后台，
+  白名单默认仅 `run_command`，故既有部署行为不变）：
 
 ```toml
 # 后台工具任务总开关（默认 true；开启后模型仍须显式传 async=true）
@@ -78,17 +109,21 @@
 # background_job_max_entries = 128
 ```
 
-**已支持的后台执行工具**（装配表，见 contract §1.3）：`run_command`、`cargo_test`、`pytest_run`。白名单默认值**不含**后两者，需显式写入，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。
+**已支持的后台执行工具**（装配表，见 contract §1.3）：`run_command`、`cargo_test`、`pytest_run`。白名单默认值**不含**后两者，需显式写入，
+  例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。
 
 ### 7. 兼容与版本
 
-- 全部新增为**软字段/新端点/默认 false 参数** → **不 bump `SSE_PROTOCOL_VERSION`**（对齐 `client_contract_versioning.md` §2.1/§3.1：新服务端 + 旧客户端同版本下忽略新键继续工作）。
-- `tool_job_finished` 新顶层键若实现：按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs`、金样、Client `parser_v2.rs`；本仓跑 `golden_ag_ui_classify_matches_expected`，Client 跑 `golden_ag_ui_v2_parser_matches_expected`。
+- 全部新增为**软字段/新端点/默认 false 参数** → **不 bump `SSE_PROTOCOL_VERSION`**（对齐 `client_contract_versioning.md` §2.1/§3.1：
+  新服务端 + 旧客户端同版本下忽略新键继续工作）。
+- `tool_job_finished` 新顶层键若实现：按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs`、
+  金样、Client `parser_v2.rs`；本仓跑 `golden_ag_ui_classify_matches_expected`，Client 跑 `golden_ag_ui_v2_parser_matches_expected`。
 - HTTP 新端点同步 `docs/命令行契约.md` / OpenAPI。
 
 ### 8. 观测
 
-- 复用 `session_stats_snapshot()` 与会话级日志；job 级新增：`started / succeeded / failed / cancelled / timed_out / expired` 计数与时长，日志带 `tool_job_id` 与来源 turn `job_id`（脱敏，不打 argv）。
+- 复用 `session_stats_snapshot()` 与会话级日志；job 级新增：`started / succeeded / failed / cancelled / timed_out / expired` 计数与时长，
+  日志带 `tool_job_id` 与来源 turn `job_id`（脱敏，不打 argv）。
 
 ### 9. 模型侧只读查询工具（P0，已落地）
 
@@ -99,11 +134,16 @@ HTTP 轮询对**模型**不可用（模型只能调工具）。因此新增两�
 | `background_job_status` | `tool_job_id: string`（`deny_unknown_fields`；trim 后非空） | 按 id 查状态；终态时附退出码 / 错误码 / 失败分类与 `stdout` / `stderr`（截断到 `max_output_len`）；`queued`/`running` 时提示「仍在运行，可稍后再查」；不存在 / 已过 TTL+宽限被清理各给明确文案 |
 | `background_job_list` | `limit?: u32`（默认 20，`clamp(1, 100)`） | 列出**当前 workspace** 的任务，最新创建在前，每行含 id / 状态 / 命令摘要 / 距今秒数 |
 
-- **只读 registry，不走 HTTP、不发起执行、不重复实现审批/白名单/路径校验**；`cm_tools` 侧经 trait [`ToolJobsToolHost`](../../src/cm_tools/memory_tool_host.rs) 注入注册表能力（`cm_tools` 禁引 `cm_internal`，见 [`crate_dep_policy.md`](./crate_dep_policy.md)），实现在 [`cm_internal/memory_tool_hosts.rs`](../../src/cm_internal/memory_tool_hosts.rs) 的 `ToolJobsHost`。
+- **只读 registry，不走 HTTP、不发起执行、不重复实现审批/白名单/路径校验**；
+  `cm_tools` 侧经 trait [`ToolJobsToolHost`](../../src/cm_tools/memory_tool_host.rs) 注入注册表能力（`cm_tools` 禁引 `cm_internal`，
+  见 [`crate_dep_policy.md`](./crate_dep_policy.md)），实现在 [`cm_internal/memory_tool_hosts.rs`](../../src/cm_internal/memory_tool_hosts.rs)
+  的 `ToolJobsHost`。
 - **与「不新增发起执行型工具组」不冲突**（见 Alternatives）：否决的是会重复实现审批/白名单的**发起型**工具，本项为**只读查询**。
 - `run_command` 的 ToolSpec description 同时宣传 `async` / `timeout_secs`（schema 早已就绪，属纯文案变更）。
-- **同轮只读去重缓存豁免**：两工具被自动判为只读，但结果随外部状态变化；`registry_policy::tool_output_dedup_cache_eligible` 将其排除在同轮 `(name, args)` 去重缓存外，避免同轮二次查询拿到旧快照。
-- **宿主缺失降级**：并行只读批 / 工作流节点等未注入 registry 的路径返回明确降级文案（不 panic）；**工作区门闩不放行**（未设工作区时 SyncDefault 照旧禁止，此时也不存在可查的 job）。
+- **同轮只读去重缓存豁免**：两工具被自动判为只读，但结果随外部状态变化；
+  `registry_policy::tool_output_dedup_cache_eligible` 将其排除在同轮 `(name, args)` 去重缓存外，避免同轮二次查询拿到旧快照。
+- **宿主缺失降级**：并行只读批 / 工作流节点等未注入 registry 的路径返回明确降级文案（不 panic）；
+  **工作区门闩不放行**（未设工作区时 SyncDefault 照旧禁止，此时也不存在可查的 job）。
 
 ## Consequences
 
@@ -115,13 +155,15 @@ HTTP 轮询对**模型**不可用（模型只能调工具）。因此新增两�
 - 单进程注册表有内存上限与 TTL，长保留需另做持久化；多副本不支持（另立项）。
 - **崩溃恢复不承诺**：serve 重启/宕机后 job 状态丢失，调用方得 `410`/`404`；仅启动 sweep 兜底孤儿进程，不能保证可靠回收。
 - **取消是尽力而为**：仅对 `queued`/`running` 生效；与完成竞态时以原子状态转移为准（不会把成功覆盖成取消）。
-- 行为变化需文档同步：`docs/工具说明.md` / `docs/en/TOOLS.md`（`run_command` 的 `async`、`background_job_status` / `background_job_list`）、`docs/SSE协议.md`（`tool_result` 软字段、可选 `tool_job_finished`）、`docs/命令行契约.md` / OpenAPI（新端点）、`README.md`（若用户可见配置）。
+- 行为变化需文档同步：`docs/工具说明.md` / `docs/en/TOOLS.md`（`run_command` 的 `async`、`background_job_status` / `background_job_list`）、
+  `docs/SSE协议.md`（`tool_result` 软字段、可选 `tool_job_finished`）、`docs/命令行契约.md` / OpenAPI（新端点）、`README.md`（若用户可见配置）。
 
 ## Alternatives Considered
 
 - **SSE 订阅作为唯一回收机制**：否决。job 与连接解耦是核心约束；连接关闭后订阅即失效。轮询为主、事件为辅。
 - **完成后回填对话（assistant 消息）**：否决。污染对话历史、需要模型参与，且 job 可能属于已结束会话。
-- **独立 `start_job` / `job_poll` / `job_cancel` 工具组**：否决。模型需学新工具名，且审批/白名单/路径校验要在新工具上重复实现。**注意范围**：本条否决的是**发起执行型**工具（`start_job` / `job_cancel` 会重复实现审批与白名单、`job_cancel` 还会绕过 `POST …/cancel` 的归属校验）；
+- **独立 `start_job` / `job_poll` / `job_cancel` 工具组**：否决。模型需学新工具名，且审批/白名单/路径校验要在新工具上重复实现。**注意范围**：
+  本条否决的是**发起执行型**工具（`start_job` / `job_cancel` 会重复实现审批与白名单、`job_cancel` 还会绕过 `POST …/cancel` 的归属校验）；
   **只读查询**（§9 的 `background_job_status` / `background_job_list`）不发起执行、不重复上述校验，**不在否决范围内**，且是模型取回结果的唯一可行通道。
 - **turn 保持打开直到 job 结束**：否决。正是要解决的问题本身。
 - **bump `SSE_PROTOCOL_VERSION`**：否决。无破坏性变更，软字段即可；bump 会强制 Client 同步发版。
@@ -129,9 +171,12 @@ HTTP 轮询对**模型**不可用（模型只能调工具）。因此新增两�
 ## 落地切片（评审后执行）
 
 1. 本文档评审 → 同步 `docs/SSE协议.md` / `docs/命令行契约.md` / `docs/工具说明.md` / `config/tools.toml` 注释（若动 `control_classify`：金样）。
-2. 后端：job 注册表 + worker + 两个端点 + `run_command` 的 `async` 参数 + 启动 `tool_result` 帧 + 配置；测试含生命周期/超时/取消（含完成竞态）/过期/认证/**归属越权**/并发与排队上限/**worker panic 兜底**。
+2. 后端：job 注册表 + worker + 两个端点 + `run_command` 的 `async` 参数 + 启动 `tool_result` 帧 + 配置；测试含生命周期/超时/取消（含完成竞态）
+  /过期/认证/**归属越权**/并发与排队上限/**worker panic 兜底**。
 3. Client：`tool_job_id` / `tool_job_poll_url` 软字段解析、后台任务气泡与轮询 UI、`tool_job_finished`（若实现）。
 4. 观测接入 + 可选 `tool_job_finished` 补发；多副本持久化另立项。
-5. **P0（§9，已落地）**：模型侧只读查询工具 `background_job_status` / `background_job_list`（**后续更新 2026-10-24**：与 `background_job_output` 一并合并为单个 **`background_job`** 的 `action` 选择器；`background_job_cancel` 因写副作用仍独立）
-  —— trait 注入（`ToolJobsToolHost` / `ToolJobsHost`）+ `ToolJobRegistry::list` + `ToolContext.tool_jobs_host` 透传 + 同轮去重缓存豁免 + `run_command` description 文案；测试含 host 单测（状态/截断/过期/list 排序与上限）
+5. **P0（§9，已落地）**：模型侧只读查询工具 `background_job_status` / `background_job_list`（**后续更新 2026-10-24**：
+  与 `background_job_output` 一并合并为单个 **`background_job`** 的 `action` 选择器；`background_job_cancel` 因写副作用仍独立）
+  —— trait 注入（`ToolJobsToolHost` / `ToolJobsHost`）+ `ToolJobRegistry::list` + `ToolContext.tool_jobs_host` 透传 + 同轮去重缓存豁免 +
+    `run_command` description 文案；测试含 host 单测（状态/截断/过期/list 排序与上限）
   与 async 端到端（`dispatch_tool` 发起 `run_command async` → `background_job_status` 取回终态输出）。**不新增发起执行型工具**（见 Alternatives）。

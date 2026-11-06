@@ -22,7 +22,8 @@
 | **C** | `final_plan_gate` 静态通过后 / `per_plan_semantic_check` 旁 | 与语义检查定义互斥或合并，避免双次侧向 |
 | **D** | `WorkflowReflectionController::decide` 之后 | 仅 `workflow_execute` 路径 |
 
-下文表中 **A/B/E**（分阶段步结束、补丁规划、分层验证失败）为**历史设想**；复活对应入口前勿实现。侧向须经 **`llm::complete_chat_retrying`**；默认**不**写入上送 `messages`；预算计入共享 **`TurnBudgetCounter`** 墙钟。
+下文表中 **A/B/E**（分阶段步结束、补丁规划、分层验证失败）为**历史设想**；复活对应入口前勿实现。侧向须经 **`llm::complete_chat_retrying`**；
+  默认**不**写入上送 `messages`；预算计入共享 **`TurnBudgetCounter`** 墙钟。
 
 ---
 
@@ -32,9 +33,11 @@
 
 - **确定性验证**：分阶段 **`steps[].acceptance`** + **`step_verifier`**；分层 **`GoalVerifier`** 等。  
 - **终答形态与重写**：**`final_plan_requirement`** + **`plan_rewrite_max_attempts`**（**`per_coord::after_final_assistant`** / **`final_plan_gate`**）。  
-- **可选侧向一致性**：**`final_plan_semantic_check_*`**（**`per_plan_semantic_check`**）：在特定条件下对「终答规划 vs 近期工具摘要」做一次**无工具**短调用，默认 **fail-open**。
+- **可选侧向一致性**：**`final_plan_semantic_check_*`**（**`per_plan_semantic_check`**）：在特定条件下对「终答规划 vs 近期工具摘要」
+  做一次**无工具**短调用，默认 **fail-open**。
 
-**观众角色**指在编排层增加的、**不直接调度工具**的**可选**侧向模型调用：对**已发生的**规划 / 执行 / 反思片段给出结构化分析与评价，用于**可观测性**、**可选**驱动重写或补丁、以及后续**离线**调参（不隐含「自动训练模型权重」）。
+**观众角色**指在编排层增加的、**不直接调度工具**的**可选**侧向模型调用：对**已发生的**规划 / 执行 / 反思片段给出结构化分析与评价，用于**可观测性**、
+  **可选**驱动重写或补丁、以及后续**离线**调参（不隐含「自动训练模型权重」）。
 
 ---
 
@@ -86,8 +89,10 @@
 ## 5. 输入构造原则
 
 1. **禁止**在侧向 `messages` 中放入完整 **`API_KEY`**、完整 **`Authorization`**、可复原的密钥片段或未脱敏的 tool 原始大段输出。  
-2. 摘要应复用或对齐 **`per_plan_semantic_check`** / **`summarize_messages_for_final_plan_semantic_check`** 的**信封化**思路：`summary`、`ok`、短预览、条数上限。  
-3. 与 **`message_pipeline` / `context_window`** 的关系：侧向请求的 token **不计入**主对话窗口的误解风险需在实现注释中说明；若共享同一 **`max_turn_duration_seconds`**，需明确是否单独子预算或并行（推荐：**串行**且占用墙钟，避免与取消语义冲突）。  
+2. 摘要应复用或对齐 **`per_plan_semantic_check`** / **`summarize_messages_for_final_plan_semantic_check`** 的**信封化**思路：`summary`、`ok`、短预览、
+  条数上限。
+3. 与 **`message_pipeline` / `context_window`** 的关系：侧向请求的 token **不计入**主对话窗口的误解风险需在实现注释中说明；
+  若共享同一 **`max_turn_duration_seconds`**，需明确是否单独子预算或并行（推荐：**串行**且占用墙钟，避免与取消语义冲突）。
 4. **唯一入口**：侧向 HTTP 仍须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「Agent 主循环」）。
 
 ---
@@ -113,7 +118,8 @@
 }
 ```
 
-- **`verdict: fail`** 是否自动触发 **`plan_rewrite`** 或分阶段补丁：**默认否**；若开启，必须占用**独立计数器**或与现有计数关系在 **`GET /status`** 镜像中写清。  
+- **`verdict: fail`** 是否自动触发 **`plan_rewrite`** 或分阶段补丁：**默认否**；若开启，
+  必须占用**独立计数器**或与现有计数关系在 **`GET /status`** 镜像中写清。
 - **解析失败**：视为 **`pass`** 或 **`warn`**（与 **`final_plan_semantic_check`** 的 fail-open 一致），并打 **`debug`** 级别结构化日志。
 
 ---
@@ -131,9 +137,12 @@
 
 ## 8. 可观测性与协议
 
-1. **Tracing**：统一 `target`（建议 `crabmate::audience` 或与 `crabmate::per` 并列的子 span），携带 `conversation_id` / `job_id` / `plan_id` / `step_id`（若可得）。  
-2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/api/chat_stream/parser_v2.rs`**、**`fixtures/sse_control_golden.jsonl`** 与 **`src/cm_sse_protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。  
-3. **会话消息**：默认建议**旁路**（仅日志 + SSE），**不**写入上送模型的 `messages`；若产品要求写入时间线，应使用与现有「分阶段旁注 system」一致的模式，并评估 token 膨胀。
+1. **Tracing**：统一 `target`（建议 `crabmate::audience` 或与 `crabmate::per` 并列的子 span），
+  携带 `conversation_id` / `job_id` / `plan_id` / `step_id`（若可得）。
+2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/api/chat_stream/parser_v2.rs`**、
+  **`fixtures/sse_control_golden.jsonl`** 与 **`src/cm_sse_protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。
+3. **会话消息**：默认建议**旁路**（仅日志 + SSE），**不**写入上送模型的 `messages`；若产品要求写入时间线，应使用与现有「分阶段旁注 system」
+  一致的模式，并评估 token 膨胀。
 
 ---
 

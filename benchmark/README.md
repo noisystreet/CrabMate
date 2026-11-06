@@ -2,7 +2,8 @@
 
 本目录用于集中放置 CrabMate benchmark 的执行说明与脚本，避免在 `docs/`、`scripts/` 和命令行参数之间来回查找。
 
-**任务集如何设计与运维**（覆盖矩阵、元数据、CI、证据采集）：见 **`docs/评测任务集设计.md`**（英文 **`docs/en/BENCHMARK_TASK_SUITE_DESIGN.md`**）；与 **`docs/基准测试规划.md`**（bench 子系统契约）配合阅读。
+**任务集如何设计与运维**（覆盖矩阵、元数据、CI、证据采集）：见 **`docs/评测任务集设计.md`**（英文 **`docs/en/BENCHMARK_TASK_SUITE_DESIGN.md`**）；
+  与 **`docs/基准测试规划.md`**（bench 子系统契约）配合阅读。
 
 ## 常见基准简介
 
@@ -101,7 +102,8 @@ cargo run -- --no-tools bench \
   --batch-output benchmark/humaneval_results.jsonl
 ```
 
-`--max-tool-rounds 0` 只表示**不限制**轮次，**不会**关闭工具。HumanEval 函数补全建议全局 **`--no-tools`**，以免默认编程工作台去追问或调工具。适配器会在用户消息中附带续写指令，并追加 system suffix。
+`--max-tool-rounds 0` 只表示**不限制**轮次，**不会**关闭工具。HumanEval 函数补全建议全局 **`--no-tools`**，以免默认编程工作台去追问或调工具。
+  适配器会在用户消息中附带续写指令，并追加 system suffix。
 
 ### 3) 执行外挂判分
 
@@ -140,13 +142,17 @@ cargo run -- bench \
 
 ## SWE-bench 流程（`swe_bench`）
 
-本节说明如何用 CrabMate **批量跑 SWE-bench 风格任务**：每条任务会 **克隆上游仓库、checkout 到基线提交、在工作区内调用 Agent 修改代码**，最后在结果 JSONL 中写入 **`model_patch`**（由工作区 **`git diff`** 抽取）。**不包含** SWE-bench 官方 Docker 环境与单元测试判分；若要与论文 / 排行榜指标对齐，须在 **`bench` 产出 patch 之后**，使用 **上游 SWE-bench 仓库提供的评测 harness**（自行对接）。
+本节说明如何用 CrabMate **批量跑 SWE-bench 风格任务**：每条任务会 **克隆上游仓库、checkout 到基线提交、在工作区内调用 Agent 修改代码**，
+  最后在结果 JSONL 中写入 **`model_patch`**（由工作区 **`git diff`** 抽取）。**不包含** SWE-bench 官方 Docker 环境与单元测试判分；
+  若要与论文 / 排行榜指标对齐，须在 **`bench` 产出 patch 之后**，使用 **上游 SWE-bench 仓库提供的评测 harness**（自行对接）。
 
 ### 0) 前置（在 HumanEval 共用前提之上）
 
 - **`git`** 已在 `PATH` 中，且本机可访问 GitHub（或你的 `repo` URL）。每条任务会执行 **`git clone`** / **`git checkout`**。
-- **磁盘空间**：每条实例会在配置的 **`run_command_working_dir`**（见 `docs/配置说明.md` / `run_command_working_dir`）下创建 **`<instance_id 安全化>/`** 目录并保留完整克隆；全量数据集体积很大，建议使用专用目录与大磁盘。
-- **工作区策略**：批量 runner 以配置中的 **`run_command_working_dir`** 为「父目录」存放各实例克隆（见 `src/runtime/benchmark/runner.rs`）。不要在同一目录手动删改正在跑的实例目录，除非你清楚 **`--resume`** 与缓存目录语义。
+- **磁盘空间**：每条实例会在配置的 **`run_command_working_dir`**（见 `docs/配置说明.md` / `run_command_working_dir`）
+  下创建 **`<instance_id 安全化>/`** 目录并保留完整克隆；全量数据集体积很大，建议使用专用目录与大磁盘。
+- **工作区策略**：批量 runner 以配置中的 **`run_command_working_dir`** 为「父目录」存放各实例克隆（见 `src/runtime/benchmark/runner.rs`）。
+  不要在同一目录手动删改正在跑的实例目录，除非你清楚 **`--resume`** 与缓存目录语义。
 - **模型与密钥**：与其它 benchmark 相同，需可用的 **`API_KEY`**（若使用 `bearer`）、`api_base`、`model` 等；可先 `cargo run -- probe` 验证联通。
 
 ### 1) 准备任务 JSONL（CrabMate `BenchmarkTask`）
@@ -171,7 +177,8 @@ cargo run -- bench \
 
 ### 2) 与官方 SWE-bench 数据集对齐（无内置转换脚本）
 
-本仓库 **未** 附带「官方 `instances.jsonl` → CrabMate JSONL」脚本（HumanEval 才有 `scripts/humaneval_official_to_crabmate_jsonl.py`）。若你手上的官方任务文件字段名 **已与上表一致**，可直接作为输入；否则请用 **`jq` / 自写 Python** 等生成上述列。
+本仓库 **未** 附带「官方 `instances.jsonl` → CrabMate JSONL」脚本（HumanEval 才有 `scripts/humaneval_official_to_crabmate_jsonl.py`）。
+  若你手上的官方任务文件字段名 **已与上表一致**，可直接作为输入；否则请用 **`jq` / 自写 Python** 等生成上述列。
 
 常见映射思路（以官方实例中含 `instance_id`、`repo`、`base_commit`、`problem_statement` 为例）：
 
@@ -210,9 +217,11 @@ cargo run -- bench \
 
 ### 4) 输出说明与官方判分
 
-- **`benchmark/swe_results.jsonl`**：每任务一行 **`BenchmarkResult`**；关注字段 **`model_patch`**（成功时多为 unified diff 文本）、**`status`**、**`error`**、**`raw_reply`**。
+- **`benchmark/swe_results.jsonl`**：每任务一行 **`BenchmarkResult`**；关注字段 **`model_patch`**（成功时多为 unified diff 文本）、**`status`**、
+  **`error`**、**`raw_reply`**。
 - 另会生成与 **`--batch-output`** 同目录、同主文件名的 **汇总文件**（runner 内由输出路径派生，终端结束时会打印路径）。
-- **官方分辨率 / pass@k**：请将本文件中的 patch 按 **SWE-bench 官方流程** 传入其验证器（Docker、测试命令等）；详见上游项目文档（如 [SWE-bench](https://github.com/princeton-nlp/SWE-bench)）及 **`docs/基准测试规划.md`** §6。
+- **官方分辨率 / pass@k**：请将本文件中的 patch 按 **SWE-bench 官方流程** 传入其验证器（Docker、测试命令等）；
+  详见上游项目文档（如 [SWE-bench](https://github.com/princeton-nlp/SWE-bench)）及 **`docs/基准测试规划.md`** §6。
 
 ### 5) SWE-bench 常见问题
 

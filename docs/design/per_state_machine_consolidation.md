@@ -1,11 +1,15 @@
 # PER 编排：用显式状态机收拢分支（设计）
 
-**状态（2026-08 对齐现实 + 词汇硬化；L2 退役 R4）**：运行时已收敛为 **session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、
-  分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除；意图早退 / `intent_at_turn_start_finished` 亦已拆除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
+**状态（2026-08 对齐现实 + 词汇硬化；L2 退役 R4）**：运行时已收敛为 **session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct 外循环**；
+  另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、
+  分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除；意图早退 / `intent_at_turn_start_finished` 亦已拆除。
+    下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
 
-**相位词汇真源**（对照表，非全局 FSM）：**`src/cm_agent/agent_turn/phase_vocabulary.rs`**。外循环相位变更只经 **`OuterLoopDriver::record_*`**；金样 **`fixtures/outer_loop_phase_golden.jsonl`**（`cargo test golden_outer_loop_phase`）。
+**相位词汇真源**（对照表，非全局 FSM）：**`src/cm_agent/agent_turn/phase_vocabulary.rs`**。外循环相位变更只经 **`OuterLoopDriver::record_*`**；
+  金样 **`fixtures/outer_loop_phase_golden.jsonl`**（`cargo test golden_outer_loop_phase`）。
 
-**可变状态归属**：**`docs/design/run_loop_state_ownership.md`**（TurnState / PerCoord / OuterLoopReflectMemo / Budget）。workflow↔Gate 衔接金样：**`fixtures/workflow_to_plan_requirement_golden.jsonl`**。
+**可变状态归属**：**`docs/design/run_loop_state_ownership.md`**（TurnState / PerCoord / OuterLoopReflectMemo / Budget）。workflow↔Gate 衔接金样：
+  **`fixtures/workflow_to_plan_requirement_golden.jsonl`**。
 
 **受众**：维护 `agent_turn`、`per_coord`、外循环与工作流反思的开发者。  
 **语言**：中文。  
@@ -14,7 +18,8 @@
 - **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、终答规划）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - **`docs/design/run_loop_state_ownership.md`**（回合可变状态四栏）
-- 源码：`src/agent/agent_turn/mod.rs`、`src/cm_agent/agent_turn/{phase_vocabulary,outer_loop_*,turn_route_decision}`、`src/cm_agent/per_coord/`（`final_plan_gate`）、`workflow_reflection_controller`
+- 源码：`src/agent/agent_turn/mod.rs`、`src/cm_agent/agent_turn/{phase_vocabulary,outer_loop_*,turn_route_decision}`、
+  `src/cm_agent/per_coord/`（`final_plan_gate`）、`workflow_reflection_controller`
 
 ---
 
@@ -39,9 +44,11 @@
 
 - **P（Plan）**：一次 `llm::complete_chat_retrying` 调用，产出 assistant 或 `tool_calls`（见 `agent_turn/mod.rs` 注释）。
 - **E（Execute）**：`execute_tools` / 工作流执行路径。
-- **R（Reflect）**：`per_reflect_after_assistant`；终答无 `tool_calls` 时由 **`PerCoordinator::after_final_assistant`** 决定是否结束、要求 **`agent_reply_plan` v1** 重写，或进入侧向 **`per_plan_semantic_check`**。
+- **R（Reflect）**：`per_reflect_after_assistant`；终答无 `tool_calls` 时由 **`PerCoordinator::after_final_assistant`** 决定是否结束、
+  要求 **`agent_reply_plan` v1** 重写，或进入侧向 **`per_plan_semantic_check`**。
 
-此外，**分阶段规划**（`staged/mod.rs`）在单轮内叠加：无工具规划轮 → 解析 `agent_reply_plan` → 按步多次进入 **`run_agent_outer_loop`**；其间还有优化轮、集成、patch planner、`no_task` 降级等分支。
+此外，**分阶段规划**（`staged/mod.rs`）在单轮内叠加：无工具规划轮 → 解析 `agent_reply_plan` → 按步多次进入 **`run_agent_outer_loop`**；
+  其间还有优化轮、集成、patch planner、`no_task` 降级等分支。
 
 **分层模式**（`hierarchy`）中，Manager 的 **`reflect_and_replan`** 对验证失败做 JSON 反思，与上路径**共享心智模型**但**不同代码路径**。
 
@@ -64,7 +71,8 @@
 1. **单处权威**：对「本步结束后下一步做什么」的决策，优先通过 **(状态, 事件) → (下一状态, 效果)** 表达。  
 2. **类型收紧**：用枚举缩小合法组合；非法组合在 `match` 中显式处理或拒绝。  
 3. **与现网行为可渐进对齐**：分阶段把 **`after_final_assistant` 子逻辑** 或 **分阶段单步** 收拢，避免大爆炸式重写。  
-4. **不改变**以下**已存在契约** unless 另开版本化工作：`AfterFinalAssistant`、`RunAgentTurnError` / **`sub_phase`**、SSE 控制面、**`plan_artifact` v1** 字段语义。
+4. **不改变**以下**已存在契约** unless 另开版本化工作：`AfterFinalAssistant`、`RunAgentTurnError` / **`sub_phase`**、SSE 控制面、
+  **`plan_artifact` v1** 字段语义。
 
 ---
 
@@ -86,7 +94,8 @@
 
 ### 3.1 终答规划门控 FSM（Final Plan Gate）
 
-**范围**：仅替代或包裹 **`PerCoordinator::after_final_assistant`** 内的决策树，不替代整个 `PerCoordinator`（工作流反思注入、**`PlanRequirementSource`** 置位仍由既有 API 完成）。
+**范围**：仅替代或包裹 **`PerCoordinator::after_final_assistant`** 内的决策树，不替代整个 `PerCoordinator`（工作流反思注入、
+  **`PlanRequirementSource`** 置位仍由既有 API 完成）。
 
 **状态（示例，可迭代）**：
 
@@ -118,17 +127,24 @@
 
 **`StepRunning.sub`（可选子状态机）**：
 
-- `BeforeStepLlm` / `InOuterLoop` / `AfterStepFailure` — 用于把「步失败是否 patch、是否继续」从深层 `if` 提升为显式转移，**需与** `staged_plan_feedback_mode`、`staged_plan_patch_max_attempts` **对齐**。
+- `BeforeStepLlm` / `InOuterLoop` / `AfterStepFailure` — 用于把「步失败是否 patch、是否继续」从深层 `if` 提升为显式转移，
+  **需与** `staged_plan_feedback_mode`、`staged_plan_patch_max_attempts` **对齐**。
 
-**实现侧对应**（代码演进，非一一命名的运行时状态变量）：`agent_turn/staged/step_iteration_fsm.rs` 中 **`StagedStepRunningSub`**（`AfterOuterLoop` 覆盖 transition、失败补丁、工具检查与成功收尾）；驱动函数见 **`staged/mod.rs`** 的 **`staged_step_run_outer_half`** / **`staged_step_run_after_outer_half`**。
+**实现侧对应**（代码演进，非一一命名的运行时状态变量）：
+  `agent_turn/staged/step_iteration_fsm.rs` 中 **`StagedStepRunningSub`**（`AfterOuterLoop` 覆盖 transition、失败补丁、工具检查与成功收尾）；
+  驱动函数见 **`staged/mod.rs`** 的 **`staged_step_run_outer_half`** / **`staged_step_run_after_outer_half`**。
 
 **注意**：Hierarchical 模式的 Manager **不**强行走 §3.2 分阶段 Staged Turn Orchestrator FSM；仅共享 **事件/效果** 的命名与日志规约，便于三模式对照。
 
 **分层观测（与分阶段 FSM 并列，勿混用）**：
 
-- **回合路由**：**`TurnRouteDecisionV1.orchestration_mode`**（及同字段的 **`turn_orchestration_mode`** `tracing`）描述整轮主执行面；话语型回落时可为 **`freeform`**。（历史配置键 **`planner_executor_mode`** 已移除，运行模式恒为单 agent ReAct。）
-- **分层入口子阶段**：**`agent_turn/hierarchy.rs`** 的 **`hierarchical_phase`**（`intent_gate` / `discourse_fallback_outer` / `router_manager_runner` / …）仅在 **`run_hierarchical_agent`** 内出现，与 **`staged_turn_orchestrator_phase`**、外循环 **`outer_loop_iteration_phase`** 正交。
-- **Manager 反思（历史）**：分层 **`hierarchy/`** 已移除；修订记录中的 **`ManagerReflectReplanReason`** / 「分层观测」仅作历史。现行 R 路径见终答 Gate 与外循环（**勿**再依赖已删的开发文档「分层观测」节）。
+- **回合路由**：**`TurnRouteDecisionV1.orchestration_mode`**（及同字段的 **`turn_orchestration_mode`** `tracing`）描述整轮主执行面；
+  话语型回落时可为 **`freeform`**。（历史配置键 **`planner_executor_mode`** 已移除，运行模式恒为单 agent ReAct。）
+- **分层入口子阶段**：
+  **`agent_turn/hierarchy.rs`** 的 **`hierarchical_phase`**（`intent_gate` / `discourse_fallback_outer` / `router_manager_runner` / …）
+  仅在 **`run_hierarchical_agent`** 内出现，与 **`staged_turn_orchestrator_phase`**、外循环 **`outer_loop_iteration_phase`** 正交。
+- **Manager 反思（历史）**：分层 **`hierarchy/`** 已移除；修订记录中的 **`ManagerReflectReplanReason`** / 「分层观测」仅作历史。
+  现行 R 路径见终答 Gate 与外循环（**勿**再依赖已删的开发文档「分层观测」节）。
 
 ---
 
@@ -147,7 +163,8 @@
 ## 5. 实现路线（建议顺序）
 
 1. **文档与日志**：为 Gate 的「决策原因」增加结构化枚举（内部或 `debug!`），不先改控制流，便于与重构后 diff 行为。  
-2. **终答 Gate 提取**：在 `per_coord` 子模块中新增 `final_plan_gate`（名可调整），**输入**与现 `after_final_assistant` 相同，**输出**仍为 `AfterFinalAssistant`；`after_final_assistant` 变为一行委托或薄包装。单测覆盖与当前行为矩阵一致。  
+2. **终答 Gate 提取**：在 `per_coord` 子模块中新增 `final_plan_gate`（名可调整），**输入**与现 `after_final_assistant` 相同，
+  **输出**仍为 `AfterFinalAssistant`；`after_final_assistant` 变为一行委托或薄包装。单测覆盖与当前行为矩阵一致。
 3. **分阶段 FSM（可选）**：在 `staged/mod.rs` 先抽取「从规划成功到 `send_staged_plan_started`」的转移，再步进 `for` 循环。  
 4. **Hierarchical**：仅在 Manager 与 `PerCoordinator` 的**日志与 reason 枚举**上对齐，避免两套名词。
 

@@ -2,27 +2,44 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 **`src/cm_sse_protocol`**（`sse/protocol.rs`、`sse/line.rs`）。Client 钉 **`crabmate::cm_sse_protocol`**（`features = ["protocol"]`）；
-  `server` 组合面另有 `sse` 别名，**不要**在 Client 使用。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。
+  **控制面载荷形状**与行分类的单一事实来源为 **`src/cm_sse_protocol`**（`sse/protocol.rs`、`sse/line.rs`）。
+  Client 钉 **`crabmate::cm_sse_protocol`**（`features = ["protocol"]`）；
+  `server` 组合面另有 `sse` 别名，**不要**在 Client 使用。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。
+    浏览器消费逻辑在 Client
+    [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)
   （AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
 
 ## 协议版本 `v` 与协商
 
 - 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`** 一致。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
-- **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
-- **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，
-  文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
-- **演进**：递增 `v` 时须同步：**`src/cm_sse_protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、**`cargo test --lib --no-default-features --features protocol cm_sse_protocol`**（文档内版本标记自检）。
-- **Semver / 发版 / 外仓钉版本**：线协议 `SSE_PROTOCOL_VERSION` 与 Cargo crate semver 是两套轴；破坏性变更、软字段、**当前无 N−1 线协议解码窗口**、git 标签 `client-contract-vX.Y.Z` 钉法见 **[`docs/design/client_contract_versioning.md`](design/client_contract_versioning.md)**。本地/CI 门禁：`bash scripts/check-client-contract.sh`。
+- **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。
+  **省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，
+  `ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；
+  若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
+- **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。
+  官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，
+  文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；
+    通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
+- **演进**：递增 `v` 时须同步：**`src/cm_sse_protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、
+  **`cargo test --lib --no-default-features --features protocol cm_sse_protocol`**（文档内版本标记自检）。
+- **Semver / 发版 / 外仓钉版本**：线协议 `SSE_PROTOCOL_VERSION` 与 Cargo crate semver 是两套轴；破坏性变更、软字段、**当前无 N−1 线协议解码窗口**、
+  git 标签 `client-contract-vX.Y.Z` 钉法见 **[`docs/design/client_contract_versioning.md`](design/client_contract_versioning.md)**。本地/CI 门禁：
+  `bash scripts/check-client-contract.sh`。
 
 ## 传输与分帧
 
 - 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/配置说明.md`**「配置热重载」。）
-- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；
-  服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；
+- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。
+  断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：
+  `{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；
+  服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，
+    `code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；
   **仅 abort SSE 连接不会停止**模型调用与工具（否则无法 `stream_resume`）。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
-- 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
+- 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，
+  并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”
+  吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
 - **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。另见控制面 **`stream_ended`**。
 
@@ -71,13 +88,23 @@
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`）。**`truncated`**：上游 `finish_reason == "length"`（token 上限）或流在 `[DONE]` 前被切断（无正常收尾）；层 1 截断识别，优先级高于 `fallback` / `completed` / `no_output` | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
-**`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；`approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
-  `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `tail_kept`，并可选携带 `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` / `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` / `compaction_reason`。
-  计数来源为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`；压缩原因当前为 `token_budget_summary` / `token_budget_turn_groups` / `token_budget_warning` / `none`。仅 `compress_hits > 0` 时标题为“已压缩工具输出”；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；同步裁剪**不计**这些旁注条数，
+**`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
+  `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
+  未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
+  `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `tail_kept`，
+    并可选携带 `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` / `tool_schema_tokens` /
+    `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` / `compaction_reason`。
+  计数来源为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`；
+    压缩原因当前为 `token_budget_summary` / `token_budget_turn_groups` / `token_budget_warning` / `none`。仅 `compress_hits > 0` 时标题为“已压缩工具输出”
+    ；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；
+    同步裁剪**不计**这些旁注条数，
   且同 `kind` 的 `context_inject`/`context_trim` **覆盖**旧行。
 
-**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、`max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、`attachment_tokens`、`counting_source`，
-  以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
+**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、
+  `max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、
+  `attachment_tokens`、`counting_source`，
+  以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，
+    或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
 
 ### `tool_result` 常用字段
 
@@ -101,8 +128,11 @@
 | `tool_job_poll_url` | string? | 同上，相对路径 `GET /tools/jobs/{tool_job_id}`（轮询端点） |
 | `tool_job_status` | string? | 同上，发起时恒为 **`queued`**（尚未运行） |
 
-**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取，
-  执行中输出可经 **`GET /tools/jobs/{id}/output`** 增量拉取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键已实现**（终态补发，尽力而为：仅当原 SSE 连接仍存活时投递，连接已关闭则静默丢弃；旧客户端可忽略未知顶层键）。
+**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），
+  本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。
+  任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取，
+  执行中输出可经 **`GET /tools/jobs/{id}/output`** 增量拉取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键已实现**（终态补发，
+    尽力而为：仅当原 SSE 连接仍存活时投递，连接已关闭则静默丢弃；旧客户端可忽略未知顶层键）。
 
 ### `tool_output_chunk` 体内字段
 
@@ -125,7 +155,8 @@
 
 ## 流错误 `code` 枚举（`error` + `code`）
 
-以下为 **当前代码路径**会经 SSE `data:` 下发的 **`SsePayload::Error`**（`error` + 非空 `code`）。与「仅有 `error` 字符串、无 `code`」的模型正文片段区分见上文「与模型正文的区分」。
+以下为 **当前代码路径**会经 SSE `data:` 下发的 **`SsePayload::Error`**（`error` + 非空 `code`）。与「仅有 `error` 字符串、无 `code`」
+  的模型正文片段区分见上文「与模型正文的区分」。
 
 | `code` | 来源（模块） | 含义 |
 |--------|----------------|------|
@@ -142,13 +173,17 @@
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` 序列化失败兜底 |
 
-**可选字段 `reason_code`**：与 `error` / `code` 同级的字符串子码，供客户端在**同一 `code`** 下做细粒度分支；**`plan_rewrite_exhausted`** 使用下表中的语义化子码；**`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`** 等编排失败时为**截断后的内部摘要**（便于排障，旧客户端可忽略）。
+**可选字段 `reason_code`**：与 `error` / `code` 同级的字符串子码，供客户端在**同一 `code`** 下做细粒度分支；
+  **`plan_rewrite_exhausted`** 使用下表中的语义化子码；**`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`** 等编排失败时为**截断后的内部摘要**（便于排障，
+  旧客户端可忽略）。
 
 **可选字段 `turn_id`**：与响应头 **`x-stream-job-id`**、首帧 **`sse_capabilities.job_id`** 一致（`u64`）；非 Web 路径或历史帧可省略。
 
 **可选字段 `sub_phase`**：失败时所处的编排子阶段，与 PER 心智模型对齐：`planner` \| `executor` \| `reflect`；旧客户端可忽略。
 
-**可选字段 `request_id`**：与当次 HTTP 响应头 **`x-request-id`** / JSON **`ApiError.request_id`** 同值；Web 流任务经 **`TracingChatTurn`** / 队列信封带回（含回合内 `plan_rewrite_exhausted` 与终态失败帧），便于排障复制；**不** bump `SSE_PROTOCOL_VERSION`（软字段）。AG-UI `RUN_ERROR.error` 中序列化为 **`requestId`**（camelCase）。
+**可选字段 `request_id`**：与当次 HTTP 响应头 **`x-request-id`** / JSON **`ApiError.request_id`** 同值；
+  Web 流任务经 **`TracingChatTurn`** / 队列信封带回（含回合内 `plan_rewrite_exhausted` 与终态失败帧），便于排障复制；
+  **不** bump `SSE_PROTOCOL_VERSION`（软字段）。AG-UI `RUN_ERROR.error` 中序列化为 **`requestId`**（camelCase）。
 
 #### `plan_rewrite_exhausted` 的 `reason_code`
 
@@ -180,14 +215,18 @@
 | `INTERNAL_ERROR` | 500 | 其它编排失败（**`message`** 为通用用户文案；**`reason_code`** 为截断内部摘要，**仅**此类码在 JSON 中带该字段） |
 | `STREAM_CANCELLED` | 499 | 用户/协作取消（非标准状态码，与 SSE 同源码；部分客户端可能按 4xx 处理） |
 
-**客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
+**客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，
+  `onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
 
 ### 取消 / 中断回合的落盘语义
 
-用户点「停止生成」（`POST /chat/stream/{job_id}/cancel`）或 SSE 接收端在协作取消待决时先断开，该回合**已产出**的内容（助手正文 / `tool_calls` / 已完成的 `tool` 结果）会**尽力落盘**到会话 store，使**下一轮**模型上下文包含「本轮已产出这些、被中断」。要点：
+用户点「停止生成」（`POST /chat/stream/{job_id}/cancel`）或 SSE 接收端在协作取消待决时先断开，
+  该回合**已产出**的内容（助手正文 / `tool_calls` / 已完成的 `tool` 结果）会**尽力落盘**到会话 store，使**下一轮**模型上下文包含「本轮已产出这些、
+  被中断」。要点：
 
 - 落盘经 `save_conversation_messages_if_revision`（CAS）；`Conflict` 仅记日志，不当成取消失败。
-- 中断路径**仅追加**写回 canonical（不压缩、不归档）；若该回合停在 `assistant(tool_calls=[A, B]) + tool(A)` 这类半途工具批，落盘前会为缺失的 `tool` 响应合成占位消息，避免下一轮请求因非法序列被上游 **400**。
+- 中断路径**仅追加**写回 canonical（不压缩、不归档）；若该回合停在 `assistant(tool_calls=[A, B]) + tool(A)` 这类半途工具批，
+  落盘前会为缺失的 `tool` 响应合成占位消息，避免下一轮请求因非法序列被上游 **400**。
 - 本轮**无可见助手输出**时不落盘。
 - **SSE 语义不变**：仍只补发 `STREAM_CANCELLED`；取消路径**不**发 `conversation_saved` / state snapshot / `stream_draining`，也不做长期记忆异步索引。
 
@@ -215,7 +254,9 @@
 | `{tool_name}_failed` | 通用：某工具失败（如 `run_command_failed`） |
 | `code_nav_*` / `codebase_semantic_*` | 代码导航与语义检索族（2026-10-28 迁 `Typed` 后新增，如 `code_nav_path_outside_workspace`（`policy_denied`）、`codebase_semantic_index_failed`（`external`））；完整清单见 `docs/design/tool_runner_typed_migration.md` §4.21 / §4.22 |
 
-完整启发式见 `src/cm_tools/tool_result/mod.rs`（`classify_error_code`）；**`error_code` → `failure_category`** 映射见 **`src/cm_tools/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/cm_workflow/execute/`。
+完整启发式见 `src/cm_tools/tool_result/mod.rs`（`classify_error_code`）；
+  **`error_code` → `failure_category`** 映射见 **`src/cm_tools/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，
+  与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/cm_workflow/execute/`。
 
 ### `tool_result.failure_category`（与 `crabmate_tool.failure_category`）
 
@@ -231,25 +272,35 @@
 | `internal` | 工具内部不变量（少见） |
 | `unknown` | 无法归类或未知工具 |
 
-**说明**：新出现的 **`error_code`** 可能暂时落入 **`unknown`** 或经 `_failed` 后缀规则归入 **`external`**；细化映射时在 **`failure_category_for_error_code`** 中扩展。
+**说明**：新出现的 **`error_code`** 可能暂时落入 **`unknown`** 或经 `_failed` 后缀规则归入 **`external`**；
+  细化映射时在 **`failure_category_for_error_code`** 中扩展。
 
 ## 与 `POST /chat` HTTP 错误的区别
 
-队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。完整 **`ApiError.code`** 表维护在 **`docs/命令行契约.md`**（HTTP 契约）；**本文件**以 SSE 控制面与 **`client_sse_protocol`** 相关 HTTP 码为主，并与上文流错误表互补。
+队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。
+  完整 **`ApiError.code`** 表维护在 **`docs/命令行契约.md`**（HTTP 契约）；**本文件**以 SSE 控制面与 **`client_sse_protocol`** 相关 HTTP 码为主，
+  并与上文流错误表互补。
 
 ## 双端对齐检查清单
 
 变更以下任一时，须同步另一方及本文档：
 
-1. **`src/cm_sse_protocol`**：`SSE_PROTOCOL_VERSION`；`sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（生产默认 **`V2Encoder`** / `default_encoder()`）
-2. **`src/cm_sse_protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
-3. Client `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
-4. `src/cm_sse_protocol/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）。**预留锚点**：`protocol` 承诺面内 `pub` 但暂无任何生产消费者，属刻意保留的同语义参照实现，**勿**按死代码清理
+1. **`src/cm_sse_protocol`**：`SSE_PROTOCOL_VERSION`；`sse/protocol.rs`：`SsePayload`、`SseErrorBody`、
+  `ToolResultBody`（生产默认 **`V2Encoder`** / `default_encoder()`）
+2. **`src/cm_sse_protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）
+  与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
+3. Client `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、
+  请求体中的 **`client_sse_protocol`**
+4. `src/cm_sse_protocol/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）。**预留锚点**：
+  `protocol` 承诺面内 `pub` 但暂无任何生产消费者，属刻意保留的同语义参照实现，**勿**按死代码清理
 5. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
 
-现行 Web（AG-UI）由 Client **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，金样 **`fixtures/sse_ag_ui_golden.jsonl`**。V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供非 Web 消费者使用，参考向量见 **`fixtures/sse_control_golden.jsonl`**。
+现行 Web（AG-UI）由 Client **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，
+  金样 **`fixtures/sse_ag_ui_golden.jsonl`**。
+  V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供非 Web 消费者使用，
+  参考向量见 **`fixtures/sse_control_golden.jsonl`**。
 
 ---
 
@@ -279,8 +330,10 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 
 **终态顺序（Phase E1，服务端现行）**
 
-- **服务端（新序）**：可选 **`stream_draining`** → 落盘 → **`conversation_saved`** →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED` / `RUN_ERROR`。首帧 `sse_capabilities.terminal_order = saved_before_finished`（软字段，**不** bump `SSE_PROTOCOL_VERSION`）。
-- **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
+- **服务端（新序）**：可选 **`stream_draining`** → 落盘 → **`conversation_saved`** →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED` / `RUN_ERROR`。
+  首帧 `sse_capabilities.terminal_order = saved_before_finished`（软字段，**不** bump `SSE_PROTOCOL_VERSION`）。
+- **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，
+  由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
 - **后续收缩（E4）**：待删除「终态后业务帧」兼容等；见 **`docs/Turn布局设计.md` §16**。
 
 ### 工具调用
@@ -317,7 +370,8 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 | `chat_ui_separator` | `chat_ui_separator` | 忽略 |
 | `sse_capabilities` | `sse_capabilities` | 忽略 |
 
-**`command_approval` 的 `data` 字段**（camelCase 键；语义与 v1 `command_approval_request` 一致。公开解析类型 **`cm_sse_protocol::CommandApprovalData`**——由 snake 面 `CommandApprovalBody` 经 `From` 转换生成；缺省键出站为 `null`，**不省略**）：
+**`command_approval` 的 `data` 字段**（camelCase 键；语义与 v1 `command_approval_request` 一致。
+  公开解析类型 **`cm_sse_protocol::CommandApprovalData`**——由 snake 面 `CommandApprovalBody` 经 `From` 转换生成；缺省键出站为 `null`，**不省略**）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -341,16 +395,22 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 
 ### 金样测试
 
-AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由 Client `frontend/src/api/chat_stream/parser_v2.rs` 的 `golden_ag_ui_v2_parser_matches_expected` 测试驱动。
+AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，
+  由 Client `frontend/src/api/chat_stream/parser_v2.rs` 的 `golden_ag_ui_v2_parser_matches_expected` 测试驱动。
 
-- **`fixtures/sse_control_golden.jsonl`**：V1 JSON 形状参考向量（每行 `描述<TAB>JSON<TAB>期望分类`；`#` 开头行为注释），与 **`classify_sse_control_outcome`** 对齐维护。
+- **`fixtures/sse_control_golden.jsonl`**：V1 JSON 形状参考向量（每行 `描述<TAB>JSON<TAB>期望分类`；`#` 开头行为注释），
+  与 **`classify_sse_control_outcome`** 对齐维护。
 - **Web AG-UI**：`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
-- **`fixtures/http_sse_failure_path_golden.jsonl`**：HTTP/SSE **失败路径**契约（`RunAgentTurnError` → `code` / HTTP 状态 / `ApiError`↔SSE `reason_code` 分流；`client_sse_protocol` 握手；`QUEUE_FULL` / `STREAM_JOB_GONE` 等码常量）。本仓：`golden_http_sse_failure_path_*`（亦由 **`./scripts/check-sse-protocol.sh`** 跑）。
-若新增控制面顶层键且 Web 应消费：在 **`parser_v2.rs`** 增加分支后，同步 **`fixtures/sse_ag_ui_golden.jsonl`**；若 IM/V1 仍需识别，再改 **`control_classify.rs`** 与 **`sse_control_golden.jsonl`**。
+- **`fixtures/http_sse_failure_path_golden.jsonl`**：
+  HTTP/SSE **失败路径**契约（`RunAgentTurnError` → `code` / HTTP 状态 / `ApiError`↔SSE `reason_code` 分流；`client_sse_protocol` 握手；
+  `QUEUE_FULL` / `STREAM_JOB_GONE` 等码常量）。本仓：`golden_http_sse_failure_path_*`（亦由 **`./scripts/check-sse-protocol.sh`** 跑）。
+若新增控制面顶层键且 Web 应消费：在 **`parser_v2.rs`** 增加分支后，同步 **`fixtures/sse_ag_ui_golden.jsonl`**；若 IM/V1 仍需识别，
+  再改 **`control_classify.rs`** 与 **`sse_control_golden.jsonl`**。
 
 ## 契约测试（`crabmate_tool` 历史信封）
 
-- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
+- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；
+  与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
 - **Rust**：`cargo test tool_result_envelope_golden`。
 
 ---

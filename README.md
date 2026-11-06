@@ -7,8 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https:
+    //github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https:
+    //github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust" alt="Rust 1.88+" /></a>
   <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
@@ -16,7 +18,8 @@
 
 **CrabMate** is a Rust AI agent that speaks **OpenAI-compatible** `chat/completions` to DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, or a local Ollama.
 
-This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI, Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)
+This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI,
+  Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)
   ** (local checkouts default to sibling `../crabmate-client`); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
@@ -33,10 +36,15 @@ This repo is the **Server**: HTTP **`serve`** (always API-only — it never host
 
 ## Overview
 
-- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace file tools, **`run_command`** (allowlist only), HTTP, **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily), and workspace **code search** (keyword + optional semantic). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
-- **Sessions**: **`serve`** persists conversations under **`<workspace>/.crabmate/conversations.db`** by default; retention, deletion, and export are configurable — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/CLI.md](docs/en/CLI.md).
-- **Client UI**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; browser UIs connect over CORS. Sessions, workspace picker / project pool, editor and PR views, terminal-style chat stream, Ask/Plan/Act, and settings.
-- **Advanced (opt-in)**: staged planning, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`** — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace file tools, **`run_command`** (allowlist only), HTTP,
+  **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily),
+  and workspace **code search** (keyword + optional semantic). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Sessions**: **`serve`** persists conversations under **`<workspace>/.crabmate/conversations.db`** by default; retention, deletion,
+  and export are configurable — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/CLI.md](docs/en/CLI.md).
+- **Client UI**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; browser UIs connect over CORS. Sessions,
+  workspace picker / project pool, editor and PR views, terminal-style chat stream, Ask/Plan/Act, and settings.
+- **Advanced (opt-in)**: staged planning, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**,
+  workspace **`plugins/*.json`** — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
 ## Quick start
 
@@ -55,7 +63,8 @@ Prefer the Makefile: **`make help`**, **`make backend`** (`cargo build -p crabma
 
 ## Common subcommands
 
-With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
+With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals:
+  **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
 | Subcommand | Summary |
 | --- | --- |
@@ -75,7 +84,9 @@ Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
 ## Backend models
 
-`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **16384**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
+`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**,
+  **`max_tokens`** (embedded default **16384**), **`llm_http_auth_mode`**; with **`bearer`**,
+  use env **`API_KEY`**—**never** commit real keys ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
 
 | Scenario | Notes |
 | --- | --- |
@@ -85,24 +96,47 @@ Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 | **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
 | **Local Ollama** | `llm_http_auth_mode = "none"`; `api_base` e.g. `http://127.0.0.1:11434/v1`; **`API_KEY`** optional. |
 
-Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Vendor knobs: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor behavior is defined by provider docs.**
+Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Vendor knobs:
+  [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor behavior is defined by provider docs.**
 
 ## Deployment and security
 
 - **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs a **`web_api_bearer_token`** or an explicit insecure switch.
 - **Web API auth**: embedded default **`web_api_require_bearer = false`** — **`serve`** may start without a shared secret; when a token is set,
-  send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Configure it via **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**)
+  send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Configure it via **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** /
+    **`crabmate web-bearer set`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage`
+    **`crabmate-api-bearer-token`**)
   — **not** the LLM **`API_KEY`**. Prefer **`web_api_require_bearer = true`** on exposed networks.
 - **CORS**: official shell Origins are allowed by default; add extra browser Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**.
-- **Permission levels**: **`permission_level`** ∈ `chat` / `read` / `workspace` / `approved` (**default**) / `unrestricted`. The ceiling **`permission_level_max`** is **derived from the bind address** when unset (loopback → `unrestricted`, non-loopback → `approved`) and frozen at startup;
-  **`POST /config/reload` can only lower it**. Non-loopback `unrestricted` additionally requires **`allow_unrestricted_permission_for_non_loopback = true`**, otherwise **`serve` refuses to start**. Types, config keys, the six-axis projection and the **tool-visibility / early-deny / command-deny** wiring for `chat` / `read` are in place (S1 + S2),
-  and the **path / network / command-allowlist** wiring plus the L2 hard-deny / L4 pass-through gates landed with **S3**, so every level now really narrows the executable surface. **`AllowAlways` approvals are level-scoped** (S4, keys look like `l3|git`): a key minted in an `approved` session no longer auto-approves anything in a `workspace` session. **S4 is complete**:
-  the `unrestricted` audit trail (`ApprovalPolicy::AuditOnly`) now emits structured `tracing` events under `target: "permission_audit"` (`permission_level` / `permission_axis` / `permission_decision` / `tool` / `detail`) — direct level-based allows are logged **only** at L4, while level denials and human approvals are always logged. The session-level **write** path also landed (**S5b**):
-  **`POST /chat` / `/chat/stream` / `/chat/async`** accept an optional **`permission_level`**, which is stored as the conversation's **intent** (`active_permission_level`) and re-clamped by the min chain every turn, and **`GET /conversation/messages`** returns both `active_permission_level` (intent) and `effective_permission_level` (after ceiling / role / `ask`·`plan` clamps)
-  . The read-only selector projection is live as **`GET /permission`** (Bearer-protected; optional **`?agent_role=`** and **`?conversation_id=`**), returning `level` / `level_source` / `ceiling` / `ceiling_source` / `available` / `clamped_by` / `caps`. **S6** adds the idle-time write path:
-  **`POST /conversation/state`** takes optional **`permission_level`** / **`session_mode`** / **`agent_role`** and updates only the conversation's `active_*` intent columns — it never touches messages and never bumps `revision`, so an in-flight turn's compare-and-swap save cannot degrade into `CONVERSATION_CONFLICT`; turn-end saves likewise rewrite only the fields that request asked for,
-  so they cannot clobber a level switched while idle. Values above the ceiling are accepted as intent and clamped by the same per-turn min chain (`clamped_by` explains it); a missing conversation returns **404** (no upsert). See [docs/design/permission_levels.md](docs/design/permission_levels.md) (§16.1.1).
-- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL skips prefix approval (still rejects `file:` etc.). On multi-tenant or non-loopback listen, set concrete prefixes or **`[]`**.
+- **Permission levels**: **`permission_level`** ∈ `chat` / `read` / `workspace` / `approved` (**default**)
+  / `unrestricted`. The ceiling **`permission_level_max`** is **derived from the bind address** when unset (loopback → `unrestricted`,
+  non-loopback → `approved`) and frozen at startup;
+  **`POST /config/reload` can only lower it**. Non-loopback `unrestricted` additionally requires
+    **`allow_unrestricted_permission_for_non_loopback = true`**, otherwise **`serve` refuses to start**. Types, config keys,
+    the six-axis projection and the **tool-visibility / early-deny / command-deny** wiring for `chat` / `read` are in place (S1 + S2),
+  and the **path / network / command-allowlist** wiring plus the L2 hard-deny / L4 pass-through gates landed with **S3**,
+    so every level now really narrows the executable surface. **`AllowAlways` approvals are level-scoped** (S4, keys look like `l3|git`):
+    a key minted in an `approved` session no longer auto-approves anything in a `workspace` session. **S4 is complete**:
+  the `unrestricted` audit trail (`ApprovalPolicy::AuditOnly`)
+    now emits structured `tracing` events under `target: "permission_audit"` (`permission_level` / `permission_axis` / `permission_decision` / `tool` /
+    `detail`) — direct level-based allows are logged **only** at L4,
+    while level denials and human approvals are always logged. The session-level **write** path also landed (**S5b**):
+  **`POST /chat` / `/chat/stream` / `/chat/async`** accept an optional **`permission_level`**,
+    which is stored as the conversation's **intent** (`active_permission_level`) and re-clamped by the min chain every turn,
+    and **`GET /conversation/messages`** returns both `active_permission_level` (intent)
+    and `effective_permission_level` (after ceiling / role / `ask`·`plan` clamps)
+  . The read-only selector projection is live as **`GET /permission`** (Bearer-protected; optional **`?agent_role=`** and **`?conversation_id=`**),
+    returning `level` / `level_source` / `ceiling` / `ceiling_source` / `available` / `clamped_by` / `caps`. **S6** adds the idle-time write path:
+  **`POST /conversation/state`** takes optional **`permission_level`** / **`session_mode`** / **`agent_role`** and updates only the conversation's
+    `active_*` intent columns — it never touches messages and never bumps `revision`,
+    so an in-flight turn's compare-and-swap save cannot degrade into `CONVERSATION_CONFLICT`;
+    turn-end saves likewise rewrite only the fields that request asked for,
+  so they cannot clobber a level switched while idle. Values above the ceiling are accepted as intent and clamped by the same per-turn min chain
+    (`clamped_by` explains it);
+    a missing conversation returns **404** (no upsert). See [docs/design/permission_levels.md](docs/design/permission_levels.md) (§16.1.1).
+- **`http_fetch` / `http_request`**:
+  embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL skips prefix approval (still rejects `file:` etc.). On
+  multi-tenant or non-loopback listen, set concrete prefixes or **`[]`**.
 - **LLM API Key**: the Client stores keys locally and sends **`client_llm.api_key`**; env **`API_KEY`** remains an optional **`serve`** / ops fallback.
 - **Personal VPS (TLS reverse proxy)**: [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (Chinese).
 
@@ -118,7 +152,8 @@ Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Debug / **`GET /w
 | **Bump version** | **`make set-version VERSION=X.Y.Z[-pre]`** — rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` and both `man/*.1`, then prints the `CHANGELOG.md` heading + link-reference skeleton (prose stays manual). Writes files only: no commit, no tag, no push. Guarded by `scripts/check-version-sync.sh` in pre-commit and CI. |
 | **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`** (version bumps go through `make set-version` instead). |
 
-Versioning / semver surface: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md). Compat matrix: [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md).
+Versioning / semver surface: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md). Compat matrix:
+  [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md).
 
 ## Documentation
 
@@ -135,4 +170,6 @@ Versioning / semver surface: [docs/design/crates_io_single_package.md](docs/desi
 
 Full bilingual map: [docs/中英文文档对照.md](docs/中英文文档对照.md). Design docs: [docs/design/README.md](docs/design/README.md).
 
-Development: default Cargo feature **`server`**; opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`** (see root **`Cargo.toml`** **`[features]`** and [AGENTS.md](AGENTS.md)). fmt / clippy / test / pre-commit / SSE / E2E: [docs/en/TESTING.md](docs/en/TESTING.md).
+Development: default Cargo feature **`server`**; opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**,
+  **`gen-man`** (see root **`Cargo.toml`** **`[features]`** and [AGENTS.md](AGENTS.md)). fmt / clippy / test / pre-commit / SSE / E2E:
+  [docs/en/TESTING.md](docs/en/TESTING.md).

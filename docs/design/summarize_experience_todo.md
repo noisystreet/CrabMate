@@ -1,6 +1,7 @@
 # `summarize_experience` 待实现功能
 
-本文档记录 `summarize_experience` 工具在当前实现基础上，**尚需进一步实现或扩展**的设计项，按优先级与依赖关系组织。已实现的功能见 [summarize_experience.md](./summarize_experience.md)。
+本文档记录 `summarize_experience` 工具在当前实现基础上，**尚需进一步实现或扩展**的设计项，按优先级与依赖关系组织。
+  已实现的功能见 [summarize_experience.md](./summarize_experience.md)。
 
 ---
 
@@ -46,7 +47,8 @@
 - 在 SQLite 存储层增加 `confidence TEXT` 列
 - 检索时可按置信度过滤或排序
 
-**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_internal/long_term_memory_tools.rs`、
+  `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
 ---
 
@@ -88,7 +90,8 @@
 - 单次工具调用批量写入多条经验，减少工具调用次数
 - 错误处理：部分成功时回滚全部或记录失败列表
 
-**关联文件**：`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、`src/cm_tools/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
+**关联文件**：`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、
+  `src/cm_tools/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
 
 ---
 
@@ -181,7 +184,8 @@
 **设计方向**：
 - 新增工具 `review_experiences`，在每个会话开始、`prepare_messages` 注入记忆后触发
 - 模型对比当前对话上下文，判断已注入的每条经验是否：**仍然有效 / 已过时 / 与当前方案冲突**
-- 对过时或冲突的经验，返回修改建议：`[{"id": 42, "action": "shorten_ttl", "reason": "serde v0.4 deprecated the API"}, {"id": 87, "action": "supersede", "supersedes_id": 91}]`
+- 对过时或冲突的经验，返回修改建议：
+  `[{"id": 42, "action": "shorten_ttl", "reason": "serde v0.4 deprecated the API"}, {"id": 87, "action": "supersede", "supersedes_id": 91}]`
 - 系统根据建议自动执行（缩短 TTL、写入替代关系）或交由用户确认
 - 可在 `AgentConfig` 中配置 `auto_review_on_session_start: bool`（默认开启）
 
@@ -200,7 +204,8 @@
 - `prepare_messages` 注入时按置信度排序：high 经验优先、full budget；low 经验只给一句话摘要或低于 budget 阈值时跳过
 - 低置信度经验默认设置短 TTL，自动淘汰
 
-**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、
+  `src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
 ---
 
@@ -208,7 +213,8 @@
 
 ### 5.1 工作区风格记忆（Workspace Style Memory）
 
-**问题**：当前经验以 `conversation_id` 为 scope，换一个会话经验就丢失。但一个项目特有的风格规范（如本仓库偏好 `cargo clippy -D warnings` 而非仅 `cargo check`）是跨会话通用的。
+**问题**：当前经验以 `conversation_id` 为 scope，换一个会话经验就丢失。
+  但一个项目特有的风格规范（如本仓库偏好 `cargo clippy -D warnings` 而非仅 `cargo check`）是跨会话通用的。
 
 **设计方向**：
 - 新增 `workspace_style_remember(experience, style_type)` 工具，写入 scope 为 `workspace:{workspace_root_hash}` 的经验池
@@ -311,7 +317,8 @@
 - 与 2.2 "经验消解与替代关系"合并设计：`supersedes_id` 字段实现经验版本链
 - 新增工具 `deprecate_experience(id, reason, new_experience_id?)`，将旧经验标记为废弃（设置 `deprecated_at_unix` 字段）
 - 废弃经验在检索时默认不展示，但可通过 `long_term_memory_list(include_deprecated: true)` 查看历史
-- 自动触发：当 `prepare_messages` 检索时发现已注入经验与当前工具结果矛盾（如执行 `cargo build` 失败，提示旧经验可能过时），主动提示模型调用 `deprecate_experience`
+- 自动触发：当 `prepare_messages` 检索时发现已注入经验与当前工具结果矛盾（如执行 `cargo build` 失败，提示旧经验可能过时），
+  主动提示模型调用 `deprecate_experience`
 
 **关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`
 

@@ -4,7 +4,8 @@
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **日期**：2026-08-08  
 > **约定**：完成某阶段后更新本文件勾选；**勿**把本地草稿目录当作本计划的引用源（见根目录 `AGENTS.md`）。  
-> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`client_compat_matrix.md`](./client_compat_matrix.md)、`docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟 / Victauri：**仅** **`../crabmate-client`**（Phase 4.1 起本仓已无壳目录）
+> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`client_compat_matrix.md`](./client_compat_matrix.md)、
+> `docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟 / Victauri：**仅** **`../crabmate-client`**（Phase 4.1 起本仓已无壳目录）
 
 ---
 
@@ -20,7 +21,8 @@
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 | Phase 6 | 展示 crate 下沉 Client | ⬜ 计划见 [`client_display_crate_sink.md`](./client_display_crate_sink.md) |
 
-**下一执行**：W3 `turn-layout` expand — [`client_display_crate_sink.md`](./client_display_crate_sink.md)（然后 W4 contract）。可选 P4.3 或 Phase 5 不阻塞该计划。
+**下一执行**：W3 `turn-layout` expand — [`client_display_crate_sink.md`](./client_display_crate_sink.md)（然后 W4 contract）。
+  可选 P4.3 或 Phase 5 不阻塞该计划。
 
 ---
 
@@ -35,7 +37,8 @@
 | K5 | E2E 假设 monorepo 同树 | ✅ Phase 3（外仓脚本 + 外部 `serve`；Victauri DOM 稳定性另跟） |
 | K6 | 桌面非回环无完整 IPC | 文档化即可（非硬阻塞） |
 
-**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；**`crabmate-connect` 仅在 Client 仓**（Phase 4.1）；Phase 1 契约发版；**Phase 2**：API 基址 + 保守 CORS + runbook §9。
+**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；**`crabmate-connect` 仅在 Client 仓**（Phase 4.1）；Phase 1 契约发版；
+  **Phase 2**：API 基址 + 保守 CORS + runbook §9。
 
 ---
 
@@ -108,12 +111,17 @@
 - [x] P3.1：本地外仓 **`../crabmate-client`**（相对本仓；2026-08-08）
 - [x] P3.2：壳 + connect + 业务 UI 均在 Client 仓；壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`
 - [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓壳设计文档曾留指针（后已删除，权威副本在 Client 仓）
-- [x] P3.3：壳对 connect 为 Client 仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
+- [x] P3.3：壳对 connect 为 Client 仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；
+  契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
 - [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
 - [x] P3.5：主仓 README / 壳 README 指向外仓；壳目录于 Phase 4.1 从主仓移除
 - [x] 验收（2026-08-08）：
-  - **干净克隆 release**：`git clone` → `/tmp/crabmate-client-p3-accept`（分支 `ci/makefile-and-deb-package`）→ `make desktop-release` → `crabmate_0.1.0_amd64.deb`；`dpkg-deb` 含 `usr/bin/crabmate-desktop`、**无** `usr/bin/crabmate` sidecar
-  - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist`，`:18080`）托管 UI；干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：`client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
+  - **干净克隆 release**：`git clone` → `/tmp/crabmate-client-p3-accept`（分支 `ci/makefile-and-deb-package`）
+    → `make desktop-release` → `crabmate_0.1.0_amd64.deb`；`dpkg-deb` 含 `usr/bin/crabmate-desktop`、**无** `usr/bin/crabmate` sidecar
+  - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist`，`:18080`）托管 UI；
+    干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；
+    同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：
+    `client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
   - **主仓可不强制 desktop GTK job**：路径 A 下 Server CI **不必**以 GTK/桌面为硬门禁（Phase 4.1 起本仓已无 desktop job）
 
 ---
@@ -155,7 +163,8 @@
 
 ## Phase 6 — 展示 crate 下沉 Client
 
-**权威**：[`client_display_crate_sink.md`](./client_display_crate_sink.md)。Client 勾选：[display_crate_sink.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)。
+**权威**：[`client_display_crate_sink.md`](./client_display_crate_sink.md)。Client 勾选：
+  [display_crate_sink.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)。
 
 线协议（`sse-protocol` / `api-contract` / `types`）**不**迁出。迁出的是 `tool-card`、`turn-layout`（可选拷贝 `display-rules`）。
 

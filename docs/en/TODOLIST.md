@@ -2,7 +2,9 @@
 
 # Backlog and improvement list
 
-This file lists **only open** work items. **Remove an item when it is done** (do not keep `[x]` long-term); delete empty section headings. Use Git history to see when something was completed. Maintenance rules: see [DEVELOPMENT.md](DEVELOPMENT.md) § TODOLIST conventions.
+This file lists **only open** work items. **Remove an item when it is done** (do not keep `[x]` long-term);
+  delete empty section headings. Use Git history to see when something was completed. Maintenance rules: see [DEVELOPMENT.md](DEVELOPMENT.md)
+  § TODOLIST conventions.
 
 **Structure**:
 
@@ -15,31 +17,42 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P0 — Security (before non-localhost deployment)
 
-(P0 security landed: `openat2`/`mkdirat` on write paths; `doctor` serve deployment checks; write-tool audit defaults on. Per-user auth remains at gateway/BFF — **`docs/en/FUTURE_PLANS.md`**.)
+(P0 security landed: `openat2`/`mkdirat` on write paths; `doctor` serve deployment checks;
+  write-tool audit defaults on. Per-user auth remains at gateway/BFF — **`docs/en/FUTURE_PLANS.md`**.)
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] **Client pin crates.io**: official Client uses `crabmate = { version = "0.8.0", default-features = false, features = ["protocol"] }` (git pin optional). Server published: [crates.io/crates/crabmate](https://crates.io/crates/crabmate) **0.7.0**; `0.8.0` ships with git **`v0.8.0`** once tagged. **W3/W4/W5 deferred**.
+- [ ] **Client pin crates.io**:
+  official Client uses `crabmate = { version = "0.8.0", default-features = false, features = ["protocol"] }` (git pin optional). Server published:
+  [crates.io/crates/crabmate](https://crates.io/crates/crabmate) **0.7.0**; `0.8.0` ships with git **`v0.8.0`** once tagged. **W3/W4/W5 deferred**.
 
 ### P4 — Testing and quality
 
 - [ ] **Unified error types (incremental)**: Reduce plain `String` / `format!` on hot paths; structured enums for `run_command`, path resolution, etc.
 - [ ] **Production `unwrap`/`expect` audit**: Replace with explicit propagation or documented `expect`.
-- [ ] **Integration / contract tests**: Extend beyond `lib_smoke` and `tests/cli_contract.rs` for `plan_artifact`, `classify_agent_sse_line`, workflow reflection state.
+- [ ] **Integration / contract tests**: Extend beyond `lib_smoke` and `tests/cli_contract.rs` for `plan_artifact`, `classify_agent_sse_line`,
+  workflow reflection state.
 - [ ] **`stream_chat` non-streaming tests**: Optional wiremock / static JSON fixtures for `ChatResponse`.
 - [ ] **Agent benchmarks**: Systematic runs on SWE-bench, HumanEval, GAIA, etc.; batch harness exists (`--benchmark` + `--batch`).
 
 ### P5 — Operations and UX
 
 - [ ] **Cross-process / multi-replica queue**: Today single-process `mpsc` + `Semaphore`; horizontal scale needs Redis/SQS etc.
-- [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often aligned with gateway-side identity and quotas; no per-user accounts in-process—see **`docs/en/FUTURE_PLANS.md`**).
-- [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands; per-user audit belongs in the gateway (**`docs/en/FUTURE_PLANS.md`**).
+- [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often aligned with gateway-side identity and quotas;
+  no per-user accounts in-process—see **`docs/en/FUTURE_PLANS.md`**).
+- [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands;
+  per-user audit belongs in the gateway (**`docs/en/FUTURE_PLANS.md`**).
 
 ### Compat-layer shrink (follow-ups)
 
 > Compat-layer shrink **todos in this section are authoritative** (local drafts are gitignored and must not be cited as docs).  
-> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`, persist/truncate from `messages`, projection goldens); **B3 / Turn §16 E3** (hydration dual-read:
-> consume `layout` for row-count/role-order/text-hash diffs; persisted GET history keeps legacy row ids, does not stamp live stream keys); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default) — the compatibility shells were later **removed outright**: the plaintext secret-file migration path, the MCP `toml_legacy_imported` one-shot import,
+> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web;
+> soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`,
+> persist/truncate from `messages`, projection goldens); **B3 / Turn §16 E3** (hydration dual-read:
+> consume `layout` for row-count/role-order/text-hash diffs; persisted GET history keeps legacy row ids, does not stamp live stream keys);
+> **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default)
+> — the compatibility shells were later **removed outright**: the plaintext secret-file migration path,
+> the MCP `toml_legacy_imported` one-shot import,
 > and the retired `client_llm`/`executor_llm` secret slots (see `CHANGELOG.md` **BREAKING** entries).
 > **Next**: **B4**. Items below need a compatibility window.
 
@@ -49,26 +62,38 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ## Roadmap reference (vs mainstream open-source agents)
 
-Directional backlog distilled from comparisons with ecosystems such as AutoGen, CrewAI, LangGraph, and Open Interpreter; may overlap other chapters—remove items when done per repo rules.
+Directional backlog distilled from comparisons with ecosystems such as AutoGen, CrewAI, LangGraph, and Open Interpreter;
+  may overlap other chapters—remove items when done per repo rules.
 
-- [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration; document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/开发文档.md`).
-- [ ] **Plan–execute–verify loop**: Explicit sub-task decomposition, result validation, reflection/retry, reducing reliance on one-shot model improvisation; align with `plan_artifact` / staged planning and clarify verification + auto-replan boundaries.
-- [ ] **Interactive code execution / controlled REPL**: Beyond `run_command` allowlists and sandbox policy, consider interpreted execution, session-scoped dependency install, and output checks (Open Interpreter–style); align security with `tool_approval` and Docker sandbox docs.
-- [ ] **Workflow productization**: On top of `workflow_execute` (DAG), add first-class UX—state-machine-friendly config, conditional/loop expressiveness, run visualization, troubleshooting—while documenting “chat turn (linear) vs workflow” in user-facing docs.
-- [ ] **Connectors ecosystem**: Beyond MCP and `dev_tag` stacks, curate high-frequency integrations (DBs, cloud APIs, office suites) or templates to reduce one-off wiring (see also MCP items under `tools/`).
-- [ ] **Short-horizon session & topic tracking**: Multi-turn topic coherence and per-turn summarization/injection (with `context_window` and long-term memory retrieval-quality work).
-- [ ] **Observability & run traces**: Above raw tracing, unified Web/CLI views for per-turn tool timelines, retries, and reasoning/thinking (with optional SSE debug events and request correlation IDs).
+- [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration;
+  document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/开发文档.md`).
+- [ ] **Plan–execute–verify loop**: Explicit sub-task decomposition, result validation, reflection/retry,
+  reducing reliance on one-shot model improvisation; align with `plan_artifact` / staged planning and clarify verification + auto-replan boundaries.
+- [ ] **Interactive code execution / controlled REPL**: Beyond `run_command` allowlists and sandbox policy, consider interpreted execution,
+  session-scoped dependency install, and output checks (Open Interpreter–style); align security with `tool_approval` and Docker sandbox docs.
+- [ ] **Workflow productization**: On top of `workflow_execute` (DAG), add first-class UX—state-machine-friendly config,
+  conditional/loop expressiveness, run visualization, troubleshooting—while documenting “chat turn (linear) vs workflow” in user-facing docs.
+- [ ] **Connectors ecosystem**: Beyond MCP and `dev_tag` stacks, curate high-frequency integrations (DBs, cloud APIs, office suites)
+  or templates to reduce one-off wiring (see also MCP items under `tools/`).
+- [ ] **Short-horizon session & topic tracking**:
+  Multi-turn topic coherence and per-turn summarization/injection (with `context_window` and long-term memory retrieval-quality work).
+- [ ] **Observability & run traces**: Above raw tracing, unified Web/CLI views for per-turn tool timelines, retries,
+  and reasoning/thinking (with optional SSE debug events and request correlation IDs).
 - [ ] **Docs, cookbooks, and contribution paths**: Scenario templates and MCP/third-party extension guides to narrow the gap vs large community projects.
 
 ---
 
 ## `agent/` (turn loop, context, PER, workflow)
 
-**Summary**: `agent_turn` main loop; `context_window` trim/summarize; `reflection/plan_rewrite` final-plan rewrite helpers; `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
+**Summary**: `agent_turn` main loop; `context_window` trim/summarize; `reflection/plan_rewrite` final-plan rewrite helpers;
+  `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
 
-- [ ] **Audience role (side-channel critic)**: optional bounded tool-less side calls per **`docs/design/audience_critic_role.md`**; align with **`plan_rewrite`**, staged patch counters, and **`final_plan_semantic_check`**; default fail-open; observability across CLI/TUI/Web per repo conventions. Indexed from **`docs/en/FUTURE_PLANS.md`**.
+- [ ] **Audience role (side-channel critic)**: optional bounded tool-less side calls per **`docs/design/audience_critic_role.md`**;
+  align with **`plan_rewrite`**, staged patch counters, and **`final_plan_semantic_check`**; default fail-open;
+  observability across CLI/TUI/Web per repo conventions. Indexed from **`docs/en/FUTURE_PLANS.md`**.
 
-(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md) (**archived** — the plan shipped;
+(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup,
+  compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md) (**archived** — the plan shipped;
   authoritative today is `codebase_semantic_search` in **`docs/en/TOOLS.md`**). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
 
 ---
@@ -86,15 +111,25 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## Permission levels (`permission_level`)
 
-**Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices: **`docs/design/permission_levels.md`**. S1–S6 are in; the items below are the wrap-up.
+**Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices:
+  **`docs/design/permission_levels.md`**. S1–S6 are in; the items below are the wrap-up.
 
-- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist, but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch,
-  so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
-- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping;
+- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist,
+  but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch,
+  so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still
+    needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
+- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "
+  no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping;
   the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.
-- [ ] **R5: fold the three tool-visibility decisions into one**: design §17.5 says "not a prerequisite, open a separate PR"; S3 already routes everything through `caps`, so this is deduplication.
-- [ ] **Client (separate repo `crabmate-client`) S5d**: level selector (fed by `GET /permission`'s `available` / `clamped_by` / `ceiling_source`), the L4 second confirmation, and rendering the already-emitted `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel`; switching while idle must call `POST /conversation/state`, otherwise a refresh falls back to the old level.
-- [ ] **Finer-grained approval for disk-write tools**: extend `tool_approval::SensitiveCapability` and config keys if per-tool / per-operation granularity is needed (`run_command` / `http_fetch` / `http_request` / workflow approvals already go through `tool_approval`). The former "sensitive-operation tiers (continued)" item is now covered by this level system, so it was folded in here.
+- [ ] **R5: fold the three tool-visibility decisions into one**: design §17.5 says "not a prerequisite, open a separate PR";
+  S3 already routes everything through `caps`, so this is deduplication.
+- [ ] **Client (separate repo `crabmate-client`) S5d**: level selector (fed by `GET /permission`'s `available` / `clamped_by` / `ceiling_source`),
+  the L4 second confirmation, and rendering the already-emitted `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel`;
+  switching while idle must call `POST /conversation/state`, otherwise a refresh falls back to the old level.
+- [ ] **Finer-grained approval for disk-write tools**:
+  extend `tool_approval::SensitiveCapability` and config keys if per-tool / per-operation granularity is needed (`run_command` / `http_fetch` /
+  `http_request` / workflow approvals already go through `tool_approval`). The former "sensitive-operation tiers (continued)"
+  item is now covered by this level system, so it was folded in here.
 
 ---
 
@@ -102,24 +137,34 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: Table-driven `ToolSpec`, `run_tool`; workflow / timeouts / search policies in `tool_registry`.
 
-- [ ] Long-running tool execution: shared child session (process-group SIGTERM→SIGKILL, concurrent pipe drain); P0 host `run_command` + matching workflow nodes must reap; partial output in timeout envelopes; then `tool_output_chunk`; wall clocks by **tool name** and `timeout_secs`, not `ToolExecutionClass`. Details: **`docs/design/long_running_tool_execution_todo.md`**.
+- [ ] Long-running tool execution: shared child session (process-group SIGTERM→SIGKILL, concurrent pipe drain);
+  P0 host `run_command` + matching workflow nodes must reap; partial output in timeout envelopes; then `tool_output_chunk`;
+  wall clocks by **tool name** and `timeout_secs`, not `ToolExecutionClass`. Details: **`docs/design/long_running_tool_execution_todo.md`**.
 - [ ] More stacks under `dev_tag` as needed (whitelist and path safety).
-- [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
+- [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server:
+  **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
 
-- [ ] **Tool-card placeholder summary and the `TOOL_CALL_ARGS` frame split (continued)**: both stem from "summary and arguments are handed over in full on the START frame", so decide them together rather than half-fixing either.
+- [ ] **Tool-card placeholder summary and the `TOOL_CALL_ARGS` frame split (continued)**: both stem from "
+  summary and arguments are handed over in full on the START frame", so decide them together rather than half-fixing either.
   1. **Keep or drop the placeholder**:
-    `tool_call_summary_from_args` still emits `tool: <name>` when no summary can be derived. The Client's `tool_display` already recognises that string and rebuilds a display line from the argument JSON (and the Server now summarises array-shaped `run_command` commands too),
-    so the placeholder's only remaining job is "keep the protocol field non-empty". It could become an empty string or an optional field, making "no summary" an explicit state — that is an SSE field-semantics change,
+    `tool_call_summary_from_args` still emits `tool: <name>` when no summary can be derived. The Client's `tool_display` already recognises that
+      string and rebuilds a display line from the argument JSON (and the Server now summarises array-shaped `run_command` commands too),
+    so the placeholder's only remaining job is "keep the protocol field non-empty". It could become an empty string or an optional field, making "
+      no summary" an explicit state — that is an SSE field-semantics change,
     so third-party consumer contracts and a compatibility window have to be settled at the same time.
-  2. **`TOOL_CALL_ARGS` duplicates `TOOL_CALL_START`**: START already carries the full `arguments` (or the 240-character `argsPreview` when absent), so the ARGS frame adds nothing,
-    and the Client's `on_tool_call_args` / `StreamSink::on_tool_args` hooks are empty wiring today. Making the second frame worthwhile (incremental or chunked delivery, or moving large arguments out of START so the first frame stays small)
+  2. **`TOOL_CALL_ARGS` duplicates `TOOL_CALL_START`**: START already carries the full `arguments` (or the 240-character `argsPreview` when absent),
+    so the ARGS frame adds nothing,
+    and the Client's `on_tool_call_args` / `StreamSink::on_tool_args` hooks are empty wiring today. Making the second frame worthwhile (incremental
+      or chunked delivery, or moving large arguments out of START so the first frame stays small)
     is a contract change with both shells and the golden fixtures to keep in step.
 
 ---
 
 ## `sse/`
 
-**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with Client [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch) / [`api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api)).
+**Summary**: `protocol` encodes control JSON;
+  `line` classifies lines (align with Client [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch)
+  / [`api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api)).
 
 - [ ] Optional debug payloads (dev-only).
 
@@ -129,7 +174,9 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: Axum router, `AppState`, chat queue, workspace/task APIs.
 
-- [ ] Auth and multi-tenant isolation (in-process): shared secret today; **no** per-user account system in CrabMate—deployment patterns in **`docs/en/FUTURE_PLANS.md`**. Optional future: trusted proxy headers or multiple service keys—must be designed with the security surface.
+- [ ] Auth and multi-tenant isolation (in-process): shared secret today;
+  **no** per-user account system in CrabMate—deployment patterns in **`docs/en/FUTURE_PLANS.md`**. Optional future:
+  trusted proxy headers or multiple service keys—must be designed with the security surface.
 - [ ] Messages / `conversation_id` API aligned with `run_agent_turn`.
 - [ ] Upload quotas and retention.
 
@@ -159,10 +206,15 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## Client `frontend/` (UI in `crabmate-client`)
 
-**Summary**: Official UI lives in Client [`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (path A). This repo keeps contracts / `serve` only. Build: Client `make frontend`.
+**Summary**:
+  Official UI lives in Client [`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (path A). This repo keeps contracts /
+  `serve` only. Build: Client `make frontend`.
 
-- [ ] **Official Client / server-only (path A)**: main path done (**`docs/design/client_shell_split_todo.md`**); optional **P4.3** / **Phase 5**. Ship against **`docs/design/client_compat_matrix.md`**.
-- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains Client **`frontend/src/session_sync.rs`** (`SessionSyncState`).
+- [ ] **Official Client / server-only (path A)**: main path done (**`docs/design/client_shell_split_todo.md`**);
+  optional **P4.3** / **Phase 5**. Ship against **`docs/design/client_compat_matrix.md`**.
+- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented:
+  `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves;
+  tab-local model remains Client **`frontend/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
 - [ ] Future voice (STT/TTS); align with gateway identity policy (**`docs/en/FUTURE_PLANS.md`**).
@@ -179,4 +231,5 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ---
 
-*Completed work does not belong in this file. When changing `src/` module layout, update [DEVELOPMENT.md](DEVELOPMENT.md). Security surface: `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces.*
+*Completed work does not belong in this file. When changing `src/` module layout, update [DEVELOPMENT.md](DEVELOPMENT.md). Security surface:
+  `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces.*

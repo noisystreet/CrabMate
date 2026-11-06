@@ -1,11 +1,17 @@
 # SDK 面与命令薄封装（设计草案）
 
-**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S5 已实施（#1295）；
-  **S6-a / S6-b / S6-c 已实施（#1297）**——承诺面已从散文改为 `fixtures/public_api_golden.txt` 显式清单（96 项：promised 50 / excluded 46）+ `scripts/check-public-api.py` pre-commit 门禁；S6-d（端口 trait 上根与 `prelude`）另立 #1298，待 S4 之后；S4 未开工。P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。
-  原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
+**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、
+  S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；
+  S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S5 已实施（#1295）；
+  **S6-a / S6-b / S6-c 已实施（#1297）**——承诺面已从散文改为 `fixtures/public_api_golden.txt` 显式清单（96 项：
+    promised 50 / excluded 46）+ `scripts/check-public-api.py` pre-commit 门禁；S6-d（端口 trait 上根与 `prelude`）另立 #1298，待 S4 之后；S4 未开工。
+    P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。
+  原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。
+    S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
 **受众**：维护者、Client（Web / `crabmate-tui`）维护者、贡献者。
 **语言**：中文。
-**维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：[#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
+**维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：
+  [#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
 
 ---
 
@@ -16,11 +22,14 @@
 1. 把几个模块整理成**清晰、稳定的 SDK 面与接口**；
 2. **命令只做薄封装**，不在 CLI 层承载业务编排。
 
-现状不是「没做解耦」——`protocol` / `server` feature 切分、`cm_*` 模块化、`scripts/check-crate-deps.sh` 禁边、`AppState` facet、`TurnRunner` 注入点都已落地。缺的是最后一层：**可复用的单位仍是「模块 + `pub(crate)` 再导出」，而不是「owned 的 SDK 类型 + trait」**。命令层因此只能自己拼装，越拼越厚。
+现状不是「没做解耦」——`protocol` / `server` feature 切分、`cm_*` 模块化、`scripts/check-crate-deps.sh` 禁边、`AppState` facet、
+  `TurnRunner` 注入点都已落地。缺的是最后一层：**可复用的单位仍是「模块 + `pub(crate)` 再导出」，而不是「owned 的 SDK 类型 + trait」**。
+  命令层因此只能自己拼装，越拼越厚。
 
 ## 2. 现状证据（可核对）
 
-度量基线：单包 `crabmate`，`src/` **773** 个 `.rs` / **189 534** 行（`find src -name '*.rs' | wc -l`；`… -print0 | xargs -0 cat | wc -l`），核对于 `main` `cb31eb2e`。
+度量基线：单包 `crabmate`，`src/` **773** 个 `.rs` / **189 534** 行（`find src -name '*.rs' | wc -l`；`… -print0 | xargs -0 cat | wc -l`），
+  核对于 `main` `cb31eb2e`。
 
 | 事实 | 位置（以符号为准） | 核对 |
 |---|---|---|
@@ -87,9 +96,11 @@ crabmate::{  TurnEngine / TurnRequest / TurnEvent / TurnOutcome   ← 回合执�
 | 根上已有扁平 re-export 惯例：`pub use llm::{ChatCompletionsBackend, StreamChatParams, …}`、`pub use crate::cm_config as config`、`pub use crate::cm_types as types` | `src/lib_server.rs:48-50`、`:532` | 「公开模块 + 根上扁平导出」**已经在跑**；`sdk::` 会在 `crabmate::llm::X` 之外再造 `crabmate::sdk::llm::X` |
 | `tools` 亦近名占用（`pub use tools::{build_tools, …}`） | `src/lib_server.rs:543-544` | 同上 |
 
-理由：**Rust 的命名空间惯例是标记「要藏的」，不是「要露的」**——公开面天然是默认，需要提醒的只有内部。所以 `internal::` 保留（标记内部），根上不加伞；承诺面由 §11 Q2 的显式清单兜住（`fixtures/public_api_golden.txt` + `scripts/check-public-api.py`，S6 已落地，见 #1297），而不是靠名字。
+理由：**Rust 的命名空间惯例是标记「要藏的」，不是「要露的」**——公开面天然是默认，需要提醒的只有内部。所以 `internal::` 保留（标记内部），根上不加伞；
+  承诺面由 §11 Q2 的显式清单兜住（`fixtures/public_api_golden.txt` + `scripts/check-public-api.py`，S6 已落地，见 #1297），而不是靠名字。
 
-**反证**：只有未来要并行维护 `v1` / `v2` 契约时才需要版本化模块（`v2::`）。当前没有这个需求——`client-contract-v*` 是仓外 tag，[`crates_io_single_package.md`](crates_io_single_package.md) 也已声明单包承诺。
+**反证**：只有未来要并行维护 `v1` / `v2` 契约时才需要版本化模块（`v2::`）。当前没有这个需求——`client-contract-v*` 是仓外 tag，
+  [`crates_io_single_package.md`](crates_io_single_package.md) 也已声明单包承诺。
 
 **顺带的好处**：根级导出让「违禁直出」更显眼。伞形前缀在「有人从内部直出到根」时毫无信号；`internal` 字样一旦出现在根的 `pub use` 上，就一眼可见。
 
@@ -129,8 +140,11 @@ pub enum TurnEvent {
 
 要点：
 
-- **可行性已有局部先例**：`RunAgentTurnParams` 的 6 组里，`RunAgentTurnLlmOverrides` / `RunAgentTurnAttach` / `RunAgentTurnObs` **本来就是 owned**（无生命周期），说明「把入参搬成 owned 结构」不需要先消灭全部借用，可以一组一组搬——这是 S2 能把风险拆碎的证据（见 §2）。
-- `AgentTurnTransport` / `RunAgentTurnSharedInputs` / `WebChatStreamBuildArgs` / `WebChatJsonBuildArgs` 退为**构造 `TurnRequest` 的内部细节**；旧名可保留 `#[deprecated]` 薄封装（与 `run_command` 的旧 6–7 参入口同一套路）。
+- **可行性已有局部先例**：`RunAgentTurnParams` 的 6 组里，
+  `RunAgentTurnLlmOverrides` / `RunAgentTurnAttach` / `RunAgentTurnObs` **本来就是 owned**（无生命周期），说明「把入参搬成 owned 结构」
+  不需要先消灭全部借用，可以一组一组搬——这是 S2 能把风险拆碎的证据（见 §2）。
+- `AgentTurnTransport` / `RunAgentTurnSharedInputs` / `WebChatStreamBuildArgs` / `WebChatJsonBuildArgs` 退为**构造 `TurnRequest` 的内部细节**；
+  旧名可保留 `#[deprecated]` 薄封装（与 `run_command` 的旧 6–7 参入口同一套路）。
 - `TurnRunner` 签名改为 `run(&self, req: TurnRequest)`，否则注入点仍在传递 6 组借用袋。
 - 收益可测：**25** 字段的 `WebChatStreamBuildArgs` 消失；`chat_job_queue`、`bench`、未来终端走同一条构造路径。
 
@@ -146,11 +160,17 @@ pub enum TurnEvent {
 | `CUSTOM` 载荷 | `SsePayload` | **22** | 作为 `AgUiEvent::Custom { custom_type, data }` 的 `data` 出现 |
 | reducer 输入 | `cm_turn_layout::event::TurnEvent` | **6** | 仅 `cm_turn_layout`（`project.rs` / `replay.rs`），根上无 re-export |
 
-**实测事实二：草案 §7 风险表里「`SsePayload` → `TurnEvent` 单向派生」的前提不成立。** 文本增量**不在** `SsePayload` 里——22 个变体中没有任何 `*Delta` 载荷，`AssistantAnswerPhase` 只是个 `bool` 标志位。真正的文本流是 `AgUiEvent::TextMessageContent { delta }`。所以正确的派生源是**线上帧 `AgUiEvent`**，`SsePayload` 只是它的 `Custom` 子载荷。
+**实测事实二：草案 §7 风险表里「`SsePayload` → `TurnEvent` 单向派生」的前提不成立。
+  ** 文本增量**不在** `SsePayload` 里——22 个变体中没有任何 `*Delta` 载荷，`AssistantAnswerPhase` 只是个 `bool` 标志位。
+  真正的文本流是 `AgUiEvent::TextMessageContent { delta }`。所以正确的派生源是**线上帧 `AgUiEvent`**，`SsePayload` 只是它的 `Custom` 子载荷。
 
-**实测事实三：`AgUiEvent` 只有 `Serialize`，没有 `Deserialize`。** 因此服务端侧的投影实现只能基于 `serde_json::Value` 读 `type` / `customType` 字段（这也是 `replay.rs` 现有做法），**不可能**用 `match event { AgUiEvent::.. }` 拿到编译期穷尽性。穷尽性改由「已知 `type` 常量表 + 测试遍历」保证，见下文。
+**实测事实三：`AgUiEvent` 只有 `Serialize`，没有 `Deserialize`。
+  ** 因此服务端侧的投影实现只能基于 `serde_json::Value` 读 `type` / `customType` 字段（这也是 `replay.rs` 现有做法），
+  **不可能**用 `match event { AgUiEvent::.. }` 拿到编译期穷尽性。穷尽性改由「已知 `type` 常量表 + 测试遍历」保证，见下文。
 
-> **决策（ADR）**：`TurnEvent` 的**唯一真源是线上 AG-UI 帧**；SDK 面 `TurnEvent` 是它的**有损投影**；`cm_turn_layout::TurnEvent` 保持独立（reducer 输入），**不合并**。三者关系单向：`AgUiEvent` → `SdkTurnEvent`，且 `cm_turn_layout` 不复用 SDK 面的枚举（两者投影目标不同：一个喂 reducer 算 UI 状态，一个给 SDK 消费方观察回合）。
+> **决策（ADR）**：`TurnEvent` 的**唯一真源是线上 AG-UI 帧**；SDK 面 `TurnEvent` 是它的**有损投影**；
+> `cm_turn_layout::TurnEvent` 保持独立（reducer 输入），**不合并**。三者关系单向：`AgUiEvent` → `SdkTurnEvent`，
+> 且 `cm_turn_layout` 不复用 SDK 面的枚举（两者投影目标不同：一个喂 reducer 算 UI 状态，一个给 SDK 消费方观察回合）。
 
 **映射表 A：AG-UI 帧（16）**
 
@@ -186,9 +206,12 @@ pub enum TurnEvent {
 | `ToolOutputChunk` | `TOOL_CALL_RESULT` + `metadata.partial = true` |
 | 其余 **17** 个 | `CUSTOM` |
 
-所以 `customType` 全集是 **18** 个（17 个来自 `SsePayload`，加 `orchestration_route`——后者由编码器内部/测试直接构造，不来自 `SsePayload`）。**它与 `SsePayload` 的 22 个不是同一个集合**，按 `SsePayload` 数变体是错的。
+所以 `customType` 全集是 **18** 个（17 个来自 `SsePayload`，加 `orchestration_route`——后者由编码器内部/测试直接构造，不来自 `SsePayload`）。
+  **它与 `SsePayload` 的 22 个不是同一个集合**，按 `SsePayload` 数变体是错的。
 
-**这里有一个必须点明的真实陷阱**：`tool_output_chunk`（长任务的流式输出片段）与 `tool_result`（最终结果）落在**同一个** `TOOL_CALL_RESULT` 上，只靠 `metadata.partial` 区分。若 SDK 的 `ToolResult` 不带 `partial`，消费方会把每一段流式片段都当成最终结果——这是**语义错误**，不是信息缺失。因此 `ToolResult` 变体**必须**携带 `partial: bool`，本片据此落地。
+**这里有一个必须点明的真实陷阱**：`tool_output_chunk`（长任务的流式输出片段）与 `tool_result`（最终结果）落在**同一个** `TOOL_CALL_RESULT` 上，
+  只靠 `metadata.partial` 区分。若 SDK 的 `ToolResult` 不带 `partial`，消费方会把每一段流式片段都当成最终结果——这是**语义错误**，不是信息缺失。
+  因此 `ToolResult` 变体**必须**携带 `partial: bool`，本片据此落地。
 
 **映射表 B：`customType`（18）**
 
@@ -202,14 +225,18 @@ pub enum TurnEvent {
 | `conversation_saved` / `sse_capabilities` | **丢弃** | 持久化 / 能力协商 |
 | `orchestration_route` | **丢弃** | 编排内部路由，不属回合事件 |
 
-**「不投影」的表达方式：三态，不是 `Option` 也不是 `Other` 变体。** 投影结果必须区分两件事——「映射表里**明确丢弃**」与「映射表**漏了**」。前者是决策，后者是缺陷。合成一个 `None` 就又回到 `replay.rs` 现有的静默兜底；留一个 `TurnEvent::Other(Value)` 则会让消费方的 `match` 永久有默认分支，穷尽性保护全部失效。两者都正是 S2-2 要消除的漂移，所以用 `Event(..)` / `Dropped` / `Unknown` 三态。
+**「不投影」的表达方式：三态，不是 `Option` 也不是 `Other` 变体。** 投影结果必须区分两件事——「映射表里**明确丢弃**」与「映射表**漏了**」。前者是决策，
+  后者是缺陷。合成一个 `None` 就又回到 `replay.rs` 现有的静默兜底；留一个 `TurnEvent::Other(Value)` 则会让消费方的 `match` 永久有默认分支，
+  穷尽性保护全部失效。两者都正是 S2-2 要消除的漂移，所以用 `Event(..)` / `Dropped` / `Unknown` 三态。
 
 **已知缺口（不擅自扩面，记录在案）**
 
-- **G1 `clarification_questionnaire`**：问卷是交互面。`Approval` 变体已承载「回合暂停等人」这一类，但把问卷塞进 `Approval` 会让两者的处理逻辑混淆。**本片不扩**——此阶段 SDK 消费方拿不到问卷。
+- **G1 `clarification_questionnaire`**：问卷是交互面。`Approval` 变体已承载「回合暂停等人」这一类，但把问卷塞进 `Approval` 会让两者的处理逻辑混淆。
+  **本片不扩**——此阶段 SDK 消费方拿不到问卷。
 - **G2 `REASONING_MESSAGE_*`（思维链）**：草案 5 变体无位置，且「思维链是否属回合可观察面」本身需要产品判断。**本片不扩**。
 
-> 原先以为的「`tool_output_chunk` 缺口」经核实**不成立**：它已被合流到 `TOOL_CALL_RESULT`，闭合方式是给 `ToolResult` 加 `partial`（见事实四），而非新增变体。这条留在这里，是因为「拍脑袋列缺口」很容易漏掉这种——真实情况往往比缺口清单更复杂。
+> 原先以为的「`tool_output_chunk` 缺口」经核实**不成立**：它已被合流到 `TOOL_CALL_RESULT`，闭合方式是给 `ToolResult` 加 `partial`（见事实四），
+> 而非新增变体。这条留在这里，是因为「拍脑袋列缺口」很容易漏掉这种——真实情况往往比缺口清单更复杂。
 
 **穷尽性怎么保证（`AgUiEvent` 没有 `Deserialize` 的前提下）**
 
@@ -230,7 +257,9 @@ impl ToolHost {
 }
 ```
 
-`WebToolRuntime` 降级为 `ApprovalBroker` 的一个**实现**（SSE 审批流），不再出现在 `tool_registry` 的公开签名里。这条同时消掉 P3 和 [`crate_dep_policy.md`](crate_dep_policy.md) 遗留的「减少对 internal `tool_registry` 门面字面依赖」。`ApprovalBroker` 只包现有审批语义，**不新增**任何审批门（与 [`permission_levels.md`](permission_levels.md) §9 MB-4 的结论无关）。
+`WebToolRuntime` 降级为 `ApprovalBroker` 的一个**实现**（SSE 审批流），不再出现在 `tool_registry` 的公开签名里。
+  这条同时消掉 P3 和 [`crate_dep_policy.md`](crate_dep_policy.md) 遗留的「减少对 internal `tool_registry` 门面字面依赖」。
+  `ApprovalBroker` 只包现有审批语义，**不新增**任何审批门（与 [`permission_levels.md`](permission_levels.md) §9 MB-4 的结论无关）。
 
 ### 5.3 会话存储面（`SessionStore`）
 
@@ -244,12 +273,17 @@ pub struct InMemoryStore;                          // 无 feature
 #[cfg(feature = "sqlite")] pub struct SqliteStore; // 现有 rusqlite 实现搬进来
 ```
 
-现有 **13** 个自由函数（`migrate` / `open_file` / `load` / `save_if_revision` / `set_active_state` / `save_with_archive_if_revision` / `delete_by_id` / `prune` / `count` / `list_all_messages_json` 等）成为 `SqliteStore` 的私有实现；`web` 侧的会话存储调用变成 handler 侧适配层。**关键收益：从 `web` feature 里解绑**。
+现有 **13** 个自由函数（`migrate` / `open_file` / `load` / `save_if_revision` / `set_active_state` / `save_with_archive_if_revision` / `delete_by_id`
+  / `prune` / `count` / `list_all_messages_json` 等）成为 `SqliteStore` 的私有实现；`web` 侧的会话存储调用变成 handler 侧适配层。**关键收益：
+  从 `web` feature 里解绑**。
 
 ### 5.4 LLM 面与 `protocol`
 
-- `llm` 已有 `ChatCompletionsBackend`，骨架不动；只需收口成 `LlmGateway::complete` / `stream`，并把 `api::stream_chat` 彻底私有化（现在「勿在 `agent` 直连」只靠文档纪律，改成靠可见性）。
-- `protocol` 六个模块**不动**。补两项：`protocol::prelude`，以及把 `classify_agent_sse_line` 提升为官方客户端 API `ChatStreamDecoder`——把 P7 从「故意保留的死代码」变成「有消费者的契约锚点」。注意 [`AGENTS.md`](../../AGENTS.md) 明确该分类器是**刻意保留**的锚点，改造时须同步两处说明（代码注释与 [`SSE协议.md`](../SSE协议.md)）。
+- `llm` 已有 `ChatCompletionsBackend`，骨架不动；只需收口成 `LlmGateway::complete` / `stream`，
+  并把 `api::stream_chat` 彻底私有化（现在「勿在 `agent` 直连」只靠文档纪律，改成靠可见性）。
+- `protocol` 六个模块**不动**。补两项：`protocol::prelude`，
+  以及把 `classify_agent_sse_line` 提升为官方客户端 API `ChatStreamDecoder`——把 P7 从「故意保留的死代码」变成「有消费者的契约锚点」。
+  注意 [`AGENTS.md`](../../AGENTS.md) 明确该分类器是**刻意保留**的锚点，改造时须同步两处说明（代码注释与 [`SSE协议.md`](../SSE协议.md)）。
 
 ## 6. 命令薄封装
 
@@ -274,14 +308,22 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 
 1. `cm_cli/*.rs` 单文件 ≤ 200 行，**每命令一个模块**；
 2. `cm_cli/` **禁止**出现 `crate::cm_internal::*` —— 加进 `scripts/check-crate-deps.sh` 禁边表（与既有 5 条同格式）；
-3. `serve.rs` 只允许 `Server::builder(cfg).workspace(..).cors(..).build()?.run(ctrlc).await` —— **S5 已落地（#1295），但没有按字面搬进 `cm_web_host`**：装配（`build_serve_runtime_state`、两个后台定时器、优雅关闭信号、`run_serve_branch`）
-  现在在 `cm_cli/serve/`（`mod` / `paths` / `lock` / `store` / `auth` / `runtime_state`），`cli_run.rs` 只剩「日志初始化 → 分派」。原计划「搬进 `cm_web_host::serve` 的 builder」走不通：该模块被禁边不许引用 `cm_internal`，而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。
-  可行形态是 **builder 在宿主模块、装配以闭包注入**（与 S3 的端口注入同手法），那是独立的一步、尚未做；现状的收益是「装配离开 `cli_run`」，不是「装配进入宿主」。
+3. `serve.rs` 只允许 `Server::builder(cfg).workspace(..).cors(..).build()?.run(ctrlc).await` —— **S5 已落地（#1295），
+  但没有按字面搬进 `cm_web_host`**：装配（`build_serve_runtime_state`、两个后台定时器、优雅关闭信号、`run_serve_branch`）
+  现在在 `cm_cli/serve/`（`mod` / `paths` / `lock` / `store` / `auth` / `runtime_state`），`cli_run.rs` 只剩「日志初始化 → 分派」。
+    原计划「搬进 `cm_web_host::serve` 的 builder」走不通：该模块被禁边不许引用 `cm_internal`，
+    而 `AppState` 的 handler 因 axum `FromRef` 孤儿规则必须在根包。
+  可行形态是 **builder 在宿主模块、装配以闭包注入**（与 S3 的端口注入同手法），那是独立的一步、尚未做；现状的收益是「装配离开 `cli_run`」，
+    不是「装配进入宿主」。
 
-另加一条显式二分：**`EarlyCommand`**（doctor / save-session / web-bearer / plugin / workflow-validate，不碰网络）与 **`ServerCommand`**（serve / bench）。这样 11 个 `try_early_*` 归并为一次 `match`，`run_cli_from_parsed` 只剩「建 `CliContext` → dispatch」。
+另加一条显式二分：**`EarlyCommand`**（doctor / save-session / web-bearer / plugin / workflow-validate，不碰网络）
+  与 **`ServerCommand`**（serve / bench）。这样 11 个 `try_early_*` 归并为一次 `match`，`run_cli_from_parsed` 只剩「建 `CliContext` → dispatch」。
 
-> **实施记录（#1295）**：二分落地为 `dispatch`（serve/bench，需会话句柄）/ `dispatch_offline`（诊断与离线产物）/ `dispatch_toolish`（要配置与 client、但不进主循环）三层 `match`——三层而非两者的原因是要压住 `lizard` 的 CCN ≤ 10：14 个变体挤进一个 `match` 必然超标。
-> `CliContext` 只装 `{ global, command }`，**不持有已加载配置**（否则 `web-bearer` / `sse-replay` 会在配置损坏时也跑不了）。`ExtraCliCommand` 已删除——它只是摊平的副产物。§6 约束 1 / 2 已分别由 `scripts/fn_nloc_rust_metrics.py` 的 `PER_DIR_FILE_LINES_CAPS` 与 `scripts/check-crate-deps.sh` 强制。
+> **实施记录（#1295）**：二分落地为 `dispatch`（serve/bench，需会话句柄）/ `dispatch_offline`（诊断与离线产物）/ `dispatch_toolish`（要配置与 client、
+> 但不进主循环）三层 `match`——三层而非两者的原因是要压住 `lizard` 的 CCN ≤ 10：14 个变体挤进一个 `match` 必然超标。
+> `CliContext` 只装 `{ global, command }`，**不持有已加载配置**（否则 `web-bearer` / `sse-replay` 会在配置损坏时也跑不了）。
+> `ExtraCliCommand` 已删除——它只是摊平的副产物。
+> §6 约束 1 / 2 已分别由 `scripts/fn_nloc_rust_metrics.py` 的 `PER_DIR_FILE_LINES_CAPS` 与 `scripts/check-crate-deps.sh` 强制。
 
 ## 7. 分阶段计划
 
@@ -298,14 +340,20 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S6-a/b/c** | 承诺面从「模块存在」升级为显式清单（P6、P7） | `fixtures/public_api_golden.txt` + `scripts/check-public-api.py`（pre-commit） | ✅ **已完成（#1297）**：根面 96 项（promised 50 / excluded 46），未归类即失败；§2.4 的「以 `src/lib.rs` 为准」已撤下；新增 `#[doc(hidden)]` 三处（`run_cli_from_parsed`、`WebChat*BuildArgs`） |
 | **S6-d** | 端口 trait 上根 + `prelude` 取舍 | 可换实现测试 | ⏳ **#1298**，排在 #1297 与 S4 之后；设计稿点名的 15 个名字里 **8 个在代码中不存在** |
 
-**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。端口面按 §7.2 逐个收窄：
-  `net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；**S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；
-  `ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。`ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
+**S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；
+  执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。
+  端口面按 §7.2 逐个收窄：
+  `net_scope()` 交枚举已改为 `outbound_denied()` / `outbound_allows_any()` / `outbound_prefixes()` 三方法 + 派生的 `outbound_uses_prefixes()`；
+    **S3-b ✅**（`ApprovalBroker` 收窄）：端口 5 → **4**，删掉 0 调用点的 `cancel()`（能力经 `approval_sink().cancel` 送达；详见 §7.2 的核实表）；
+  `ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。
+    `ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
 
 ### 7.1 S1-b 的 `SessionStore` trait 为什么没有跟着解绑一起做
 
-解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、`conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
-  `conversation_store` 现在**结构上**不依赖 Axum 与回合编排——`cargo check --no-default-features --features protocol,sqlite` 会**真的编译**它（59 条 `dead_code` 警告就是它进了编译图、而消费者都在 `server` 的证据），而 `--features protocol` 不会。
+解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、
+  `conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
+  `conversation_store` 现在**结构上**不依赖 Axum 与回合编排——`cargo check --no-default-features --features protocol,sqlite` 会**真的编译**它（59 条
+    `dead_code` 警告就是它进了编译图、而消费者都在 `server` 的证据），而 `--features protocol` 不会。
 
 trait 没实现，是因为它对应两个互斥目标，产物不同：
 
@@ -314,17 +362,24 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | **复用**：`save-session` / `bench` / 未来终端直接用同一存储 | 把 `ConversationBacking` 从 `web/` 提到顶层；它还依赖 `web::ConversationTurnSeed`，需要一起上移 | 动 `web/` 的类型归属，影响面大于 S1-a |
 | **承诺面**：为 S6 准备契约（§5.3 的 `SessionStore` / `LoadedConversation` / `Revision`） | 按 §5.3 定义 owned 请求 / 结果类型，`ConversationBacking` 只作为实现之一 | 需先定 §11 Q2 的「承诺清单」要列哪些项，否则又是「先写 trait 再找消费者」 |
 
-直接照 §5.3 草案签名抽一个 trait 会同时踩两条：它拿 `web` 的类型当参数（污染承诺面），而当前唯一消费者 `AppStateConversationRuntime` 也不需要一个 trait（它持有具体 enum 就够）。**等目标定下来再做，不为「把 S1 打勾」而抽。**
+直接照 §5.3 草案签名抽一个 trait 会同时踩两条：它拿 `web` 的类型当参数（污染承诺面），
+  而当前唯一消费者 `AppStateConversationRuntime` 也不需要一个 trait（它持有具体 enum 就够）。**等目标定下来再做，不为「把 S1 打勾」而抽。**
 
 ### 7.2 S3-a 的端口面为什么比 §5.2 草案宽
 
-§5.2 草案只写了一个 `async fn ask(&self, spec) -> ApprovalOutcome`。实际动手时，编译器把执行面**真正在用的全部能力**列了出来：审批 `sink`、`turn_job_id`、`out_tx`、`persistent_allowlist`、`cancel`——其中后三项原本是**直接读字段**（`workflow_tool_dispatch` 组装 `WorkflowApprovalMode::Interactive`、`background_job` 取 `out_tx` 的弱引用、`http/gate` 查白名单表）。
+§5.2 草案只写了一个 `async fn ask(&self, spec) -> ApprovalOutcome`。实际动手时，编译器把执行面**真正在用的全部能力**列了出来：审批 `sink`、
+  `turn_job_id`、`out_tx`、`persistent_allowlist`、
+  `cancel`——其中后三项原本是**直接读字段**（`workflow_tool_dispatch` 组装 `WorkflowApprovalMode::Interactive`、`background_job` 取 `out_tx` 的弱引用、
+  `http/gate` 查白名单表）。
 
-于是 `ApprovalBroker` 按**实际消费面**收口，而不是先定一个更窄的 trait、再在调用点 `downcast` 回 `WebToolRuntime`。后者会造出「端口存在但立刻被穿透」的假解耦，与 S1-b 那次「check 通过、目标模块根本没编译」是同一类错误。
+于是 `ApprovalBroker` 按**实际消费面**收口，而不是先定一个更窄的 trait、再在调用点 `downcast` 回 `WebToolRuntime`。后者会造出「端口存在但立刻被穿透」
+  的假解耦，与 S1-b 那次「check 通过、目标模块根本没编译」是同一类错误。
 
 代价是端口面偏宽（5 个方法）。这是诚实的：执行面确实需要这些能力。若 S3-b 引入 `ToolHost` 后某些能力只由宿主使用，再逐个从端口上收窄。
 
-**S3-b 核实结果（已收窄为 4）**：逐个点消费点后，`cancel()` 是唯一没有消费者的方法——全仓 **0 个调用点**。而它想提供的能力并没有丢：`approval_sink()` 返回的 `WebApprovalSink` 本来就带着 `cancel: Option<&'a Arc<AtomicBool>>`，审批等待靠它感知「停止」。也就是说**同一条能力开了两条路**，
+**S3-b 核实结果（已收窄为 4）**：逐个点消费点后，`cancel()` 是唯一没有消费者的方法——全仓 **0 个调用点**。而它想提供的能力并没有丢：
+  `approval_sink()` 返回的 `WebApprovalSink` 本来就带着 `cancel: Option<&'a Arc<AtomicBool>>`，审批等待靠它感知「停止」。
+  也就是说**同一条能力开了两条路**，
   端口因此看起来比实际需要的宽。删掉 `cancel()` 方法、保留 `WebToolRuntime::cancel` 字段（`approval_sink` 仍用它），端口从 5 收到 4。
 
 其余四个都留着，各有真实消费点且语义不重叠：
@@ -336,9 +391,11 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | `out_tx()` | 1 处（`background_job.rs`）| 后台任务只发 SSE、不审批；经 `approval_sink()` 取会语义失真 |
 | `persistent_allowlist()` | 4 处（审批写入 + `http/gate` 查询）| 「永久允许」是共享状态，不是通道 |
 
-**`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
+**`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」
+  冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
 
-**当前推荐顺序（2026-11-06 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、**S6-a/b/c（#1297）** 全部已完成，S1 / S2 / S3 / S5 四条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）
+**当前推荐顺序（2026-11-06 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、
+  **S6-a/b/c（#1297）** 全部已完成，S1 / S2 / S3 / S5 四条线闭环。剩余只有 **S4**（`cm_internal` 拆桶，仍放最后，开工前先跑 `call_graph_sketch`）
   与 **S6-d**（#1298，端口 trait 上根，排在 S4 之后）。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
@@ -351,8 +408,10 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 ## 8. 非目标
 
-- **不引入 `sdk::`（或任何伞形）命名空间**：公开面就是 crate 根上那组显式 `pub use`，理由见 §4.1。已公开的 `pub mod agent` / `pub mod llm` 保持原样，不再叠一层。
-- **不拆多 crate**：`cargo metadata` 显示 workspace 只有 `crabmate` 一个包；[`crate_dep_policy.md`](crate_dep_policy.md) 的 P4/P5 结论（执行面留根包、queue 不迁 web-host）仍成立。拆包换来的税（版本对齐、Client 钉版本、发布流程）大于收益。
+- **不引入 `sdk::`（或任何伞形）命名空间**：公开面就是 crate 根上那组显式 `pub use`，理由见 §4.1。已公开的 `pub mod agent` / `pub mod llm` 保持原样，
+  不再叠一层。
+- **不拆多 crate**：`cargo metadata` 显示 workspace 只有 `crabmate` 一个包；[`crate_dep_policy.md`](crate_dep_policy.md) 的 P4/P5 结论（执行面留根包、
+  queue 不迁 web-host）仍成立。拆包换来的税（版本对齐、Client 钉版本、发布流程）大于收益。
 - **不动 SSE 线协议**：`SSE_PROTOCOL_VERSION` 是另一条轴。S2/S3 只做 Rust 侧类型化，事件名与字段一个不改（见 [`SSE协议.md`](../SSE协议.md)）。
 - **不顺手全仓重命名**：`cm_*` 前缀是切仓锚点，改名留到 S6 之后单独一轮。
 - **不为了「看起来干净」做无行为变化的搬文件**（S5-a 例外：它有硬截止）。
@@ -390,7 +449,8 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 ### 10.2 仍未核对（实施前必查）
 
-- **未运行** `cargo build` / `cargo test` / `pre-commit`；本文所有行为性结论都来自只读阅读与 `grep`。**S5-a 完成后仍未在本文件补记实测**——它的真实验证记录在 §12.2.2 与 #1274 / #1275 的 PR 正文里。
+- **未运行** `cargo build` / `cargo test` / `pre-commit`；本文所有行为性结论都来自只读阅读与 `grep`。
+  **S5-a 完成后仍未在本文件补记实测**——它的真实验证记录在 §12.2.2 与 #1274 / #1275 的 PR 正文里。
 - **`cm_internal` 的分桶方案仍是建议值**：未按实际调用图验证。S4 开工前先跑一轮 `code_nav call_graph_sketch`（或 `cargo modules`）看真实扇出，别按直觉切。
 - 原列的「两处行号未复核」「`SessionStore` 与 `ConversationBacking` 是否重复抽象」「S2 与 S1 的耦合」三条**已于 2026-11-04 核销**，见 §10.3。
 
@@ -406,36 +466,45 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 ## 11. 决策记录（原「待决问题」，Q1–Q4 均已决）
 
-- **Q1：`TurnEvent` 与 `SsePayload` 谁是真源？** — **已决（2026-11-04）：`SsePayload` 是真源，`TurnEvent` 由它单向派生**（`impl From<SsePayload> for TurnEvent`，反向不提供）。
-  理由：`SsePayload` 已被 [`SSE协议.md`](../SSE协议.md) + Client `parser_v2.rs` + 金样三方钉死，让它当唯一真源不需要改任何既有测试；反过来让 `TurnEvent` 当真源，等于给线协议引入第二个定义点，§9 首条风险会从「可能」变成「必然」。
+- **Q1：`TurnEvent` 与 `SsePayload` 谁是真源？** — **已决（2026-11-04）：`SsePayload` 是真源，
+  `TurnEvent` 由它单向派生**（`impl From<SsePayload> for TurnEvent`，反向不提供）。
+  理由：`SsePayload` 已被 [`SSE协议.md`](../SSE协议.md) + Client `parser_v2.rs` + 金样三方钉死，让它当唯一真源不需要改任何既有测试；
+    反过来让 `TurnEvent` 当真源，等于给线协议引入第二个定义点，§9 首条风险会从「可能」变成「必然」。
   代价：`TurnEvent` 无法表达 `SsePayload` 之外的聚合语义（如「本轮共几次工具调用」）——这类信息放 `TurnOutcome`，不要塞进事件流。
   约束：S2 实施时**不得**新增 `SsePayload` 之外的事件变体；要新事件就先改线协议（含 `SSE_PROTOCOL_VERSION` 与 Client 解析器），再派生。
 
-- **Q2：根级导出是否进 `server` 承诺面？** — **已决（2026-11-04）：进，但用「承诺清单」显式列出**（rustdoc 白名单 + 一份 `pub use` 名单），而不是承诺「根上所有 `pub` 项」这个自动集合。
+- **Q2：根级导出是否进 `server` 承诺面？** — **已决（2026-11-04）：进，但用「承诺清单」显式列出**（rustdoc 白名单 + 一份 `pub use` 名单），
+  而不是承诺「根上所有 `pub` 项」这个自动集合。
   理由：不进承诺面则第三方无法依赖，SDK 化的收益基本归零（这正是本文要解决的问题）；但承诺整个自动集合会让 S6 之后每次调整都变成 semver 破坏。
   代价：每次新增公开项都要改那份清单——这是**刻意的**摩擦，防止公开面再次无意识膨胀；也正因如此，§4.1 才不需要前缀来「圈定」公开面。
   约束：清单外的项视为「可改」，但若已在清单内，删除 / 改签名即 breaking，须同步 CHANGELOG 与 Client `client-contract-v*` 判断。
 
 - **Q3：S1 的 `sqlite` feature 新建还是复用 `web`？** — **已决（2026-11-04）：新建 `sqlite` feature，`web` 依赖它**（`web = ["sqlite", ...]`）。
   理由：复用 `web` 等于把「会话存储需要 SQLite」和「进程要跑 HTTP 服务」绑成同一件事，S1 的目的正好是把两者拆开；用 `default = ["web"]` 保证现有构建行为不变。
-  代价：多一条 feature 组合要进 CI 矩阵（`--no-default-features --features protocol` 与 `--features sqlite` 两组）；`.pre-commit-config.yaml` 已有 feature-gating 检查，扩它即可。
+  代价：多一条 feature 组合要进 CI 矩阵（`--no-default-features --features protocol` 与 `--features sqlite` 两组）；
+    `.pre-commit-config.yaml` 已有 feature-gating 检查，扩它即可。
   顺序：该 feature 在 **S1-b** 落地，**不阻塞 S1-a**（S1-a 只合并存储门面、不动 feature 图）。
 
 - **Q4：Issue 怎么切？**（已决定，记录于此）
-  **按切片开 Issue，不做一个大 Issue**：S5-a 先行（见 §12），其余切片各自独立成 Issue；[#1272](https://github.com/noisystreet/CrabMate/issues/1272) 仅作索引与决策记录，本身不承载改动。
+  **按切片开 Issue，不做一个大 Issue**：S5-a 先行（见 §12），其余切片各自独立成 Issue；[#1272](https://github.com/noisystreet/CrabMate/issues/1272)
+    仅作索引与决策记录，本身不承载改动。
   理由：S1–S6 独立可合并，一个大 Issue 会让「完成」永远无法成立，也会诱使在一个 PR 里跨阶段改动，与 GitHub Flow 的小 PR 要求冲突。
 
 ## 12. 最小可行切片：S5-a
 
 ### 12.1 为什么是它，而不是管线和端口
 
-SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912** 行 / 上限 **920**）是**阻塞**：下一个想给 `crabmate` 加子命令或改 CLI 的 PR，只要在 `cli_run.rs` 里多写 8 行就会撞上 `fn nloc + rust file lines` 棘轮。届时只有两个选择——为通过门禁而临时放宽上限（把安全阀拆掉），
-  或在功能 PR 里顺手做一次大重构（把小 PR 变成大 PR）。两者都该避免，所以先把行数问题单独解掉。**已解**：S5-a 完成后 `cli_run.rs` **493** 行（余量 **427**），见 §12.2；本节保留为决策记录。
+SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912** 行 / 上限 **920**）是**阻塞**：下一个想给 `crabmate` 加子命令或改 CLI 的 PR，
+  只要在 `cli_run.rs` 里多写 8 行就会撞上 `fn nloc + rust file lines` 棘轮。届时只有两个选择——为通过门禁而临时放宽上限（把安全阀拆掉），
+  或在功能 PR 里顺手做一次大重构（把小 PR 变成大 PR）。两者都该避免，所以先把行数问题单独解掉。**已解**：
+    S5-a 完成后 `cli_run.rs` **493** 行（余量 **427**），见 §12.2；本节保留为决策记录。
 
 ### 12.2 做法：纯搬移，一分为三（**不能一步搬进 `cli_run_serve.rs`**）
 
-实测 `cli_run.rs` **912** 行、`cli_run_serve.rs` **730** 行。serve 装配在 `cli_run.rs` 里合计 **232** 行：`build_serve_runtime_state` 432-520（89）、`spawn_uploads_cleanup` 586-609（24）、`build_serve_shutdown_signal` 714-734（21，web-only）、`run_serve_branch` 的 web 变体 624-712（89）
-  与非 web 变体 737-745（9）。`run_benchmark_batch_if_requested`（764-814，51）**没有 `cfg` 门**，两套构建都在，单独一站。**直接搬进 `cli_run_serve.rs` → 约 950 行，立刻撞上限**。按下面的分配搬（行范围已实测，见 §12.2.1）：
+实测 `cli_run.rs` **912** 行、`cli_run_serve.rs` **730** 行。serve 装配在 `cli_run.rs` 里合计 **232** 行：`build_serve_runtime_state` 432-520（89）、
+  `spawn_uploads_cleanup` 586-609（24）、`build_serve_shutdown_signal` 714-734（21，web-only）、`run_serve_branch` 的 web 变体 624-712（89）
+  与非 web 变体 737-745（9）。`run_benchmark_batch_if_requested`（764-814，51）**没有 `cfg` 门**，两套构建都在，单独一站。
+    **直接搬进 `cli_run_serve.rs` → 约 950 行，立刻撞上限**。按下面的分配搬（行范围已实测，见 §12.2.1）：
 
 | 目标文件 | 收什么 | 状态 / 行数 |
 |---|---|---|
@@ -445,7 +514,9 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 | **新** `cli_run_bench.rs` | `run_benchmark_batch_if_requested` 764-814（**无 `cfg` 门**） | **已完成（#1274）：60 物理行 / 50 非注释非空行** |
 | `cli_run.rs` | 只剩 `EarlyCliDispatch`、`run_cli_from_parsed` 的一次分派、各 `try_early_*` | **已完成（#1274）：912 → 493**（余量 8 → **427**）——serve 相关 helper 全部归位后，主文件不再有任何 `web` 装配痕迹 |
 
-**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」更彻底——原估漏算了随代码搬走的 135 行单测。第二、三步同 PR 落地（#1274）：`cli_run.rs` 912 → **493**（比原估的「≈650」还低：`ServeRuntimeBuildInput` 与四个 serve helper 一并搬走，
+**每一步都是纯移动**，不改任何函数体。第一步已落地（#1275）：`cli_run_serve.rs` 730 → **391**，比本表原估的「≈580」
+  更彻底——原估漏算了随代码搬走的 135 行单测。第二、三步同 PR 落地（#1274）：`cli_run.rs` 912 → **493**（比原估的「≈650」还低：
+  `ServeRuntimeBuildInput` 与四个 serve helper 一并搬走，
   `HashMap` / `AtomicU64` / `chat_job_queue` / `web` / `runtime` 五处 `use` 随之失去消费点）。**S5-a 到此完成**，`cli_run.rs` 只剩早退子命令分派。
 
 #### 12.2.1 已实测的搬移约束（开工前核对，勿凭直觉改）
@@ -453,16 +524,26 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 > **本节已执行完毕**（#1275 第一步、#1274 第二/三步）。保留原文是因为它记录「为什么会踩坑」，
 > 不是待办清单——照着再做一遍只会重复搬移。
 
-1. **`ServeBranchArgs` 有两个 `cfg` 变体**：`cli_run.rs:404`（`#[cfg(feature = "web")]`）与 `:748`（`#[cfg(not(feature = "web"))]`）。字段集合相同，但 web 版字段**私有**、非 web 版是 `pub`（非 web 版由 `cli_run_session.rs` 构造）。它们必须与 `run_serve_branch` 一起搬进**同一个**新模块——只搬函数不搬类型，会在两个 feature 分支各留一个孤儿类型；搬类型时还要按新位置重定可见性，否则 web 版构造不出来。
-2. **`run_serve_branch` 的调用方在兄弟模块**：`cli_run_session.rs:92` 写的是 `super::run_serve_branch(super::ServeBranchArgs { … })`，搬后要改成指向新模块（或在新模块里 `pub(super) use` 后维持 `super::` 路径）。反过来，`build_serve_runtime_state` / `spawn_uploads_cleanup` **只在 `cli_run.rs` 内部调用**，搬走后给 `pub(super)` 即可。
-3. **`run_benchmark_batch_if_requested` 没有 `cfg` 门**（早期版本误判为「只在非 web 构建存在」，见 §12.2.2）：`cli_run.rs:747` 那条 `#[cfg(not(feature = "web"))]` 只作用于紧随其后的 `ServeBranchArgs`，762 行之后的函数不受它管辖。它被 `cli_run_session.rs:118` 无条件调用，两套构建都编译。
-4. **instance lock 一族只被 `cli_run_serve.rs` 内部调用**（`serve_precheck` / `serve_validate_bind_gates` 等），拆出去后本文件的调用点需加 `use super::cli_run_serve_lock::{…}`。不跨文件、不改外部路径，故风险最低，放第一步。
-5. **两条 feature 路径都要编译**：默认（web）与 `--no-default-features`（非 web）。`run_serve_branch` 与 `ServeBranchArgs` 各有 web / 非 web 两个变体，只跑默认构建会漏掉另一半。
+1. **`ServeBranchArgs` 有两个 `cfg` 变体**：`cli_run.rs:404`（`#[cfg(feature = "web")]`）与 `:748`（`#[cfg(not(feature = "web"))]`）。字段集合相同，
+  但 web 版字段**私有**、非 web 版是 `pub`（非 web 版由 `cli_run_session.rs` 构造）。
+  它们必须与 `run_serve_branch` 一起搬进**同一个**新模块——只搬函数不搬类型，会在两个 feature 分支各留一个孤儿类型；搬类型时还要按新位置重定可见性，
+  否则 web 版构造不出来。
+2. **`run_serve_branch` 的调用方在兄弟模块**：`cli_run_session.rs:92` 写的是 `super::run_serve_branch(super::ServeBranchArgs { … })`，
+  搬后要改成指向新模块（或在新模块里 `pub(super) use` 后维持 `super::` 路径）。反过来，
+  `build_serve_runtime_state` / `spawn_uploads_cleanup` **只在 `cli_run.rs` 内部调用**，搬走后给 `pub(super)` 即可。
+3. **`run_benchmark_batch_if_requested` 没有 `cfg` 门**（早期版本误判为「只在非 web 构建存在」，见 §12.2.2）：
+  `cli_run.rs:747` 那条 `#[cfg(not(feature = "web"))]` 只作用于紧随其后的 `ServeBranchArgs`，762 行之后的函数不受它管辖。
+  它被 `cli_run_session.rs:118` 无条件调用，两套构建都编译。
+4. **instance lock 一族只被 `cli_run_serve.rs` 内部调用**（`serve_precheck` / `serve_validate_bind_gates` 等），
+  拆出去后本文件的调用点需加 `use super::cli_run_serve_lock::{…}`。不跨文件、不改外部路径，故风险最低，放第一步。
+5. **两条 feature 路径都要编译**：默认（web）与 `--no-default-features`（非 web）。
+  `run_serve_branch` 与 `ServeBranchArgs` 各有 web / 非 web 两个变体，只跑默认构建会漏掉另一半。
 
 顺序（每步一次提交、每步跑一次 `cargo test`）：
 
 1. 拆 `cli_run_serve_lock.rs` —— 只动 `cli_run_serve.rs`，风险最低，先做；
-2. 拆 `cli_run_serve_branch.rs` —— 从 `cli_run.rs` 搬约 232 行（含 `build_serve_shutdown_signal`）进去，同时改 `use` 指向（该文件 S6/#1295 已再并入 `cm_cli/serve/`）；
+2. 拆 `cli_run_serve_branch.rs` —— 从 `cli_run.rs` 搬约 232 行（含 `build_serve_shutdown_signal`）进去，
+  同时改 `use` 指向（该文件 S6/#1295 已再并入 `cm_cli/serve/`）；
 3. 拆 `cli_run_bench.rs`；
 4. 收尾：检查 `cli_run.rs` 里剩下的 `try_early_*` 是否还值得继续拆（那时已不紧急）。
 
@@ -484,20 +565,25 @@ SDK 化整体（S1–S6）是**改善**，可以慢慢来；`cli_run.rs`（**912
 
 ### 12.3 验收
 
-- `crabmate --help`、`crabmate <每个子命令> --help` 输出与改前**逐字相同**；`man/crabmate.1` 无 diff（`cargo run --features gen-man --bin crabmate-gen-man` 后 `git diff` 空闲）。
+- `crabmate --help`、`crabmate <每个子命令> --help` 输出与改前**逐字相同**；
+  `man/crabmate.1` 无 diff（`cargo run --features gen-man --bin crabmate-gen-man` 后 `git diff` 空闲）。
 - `cargo test` 全绿（尤其是 CLI 解析与 `serve` 启动相关单测）。
-- **行数必须双向达标**：`cli_run.rs` 明显下降、`cli_run_serve.rs` **不得上升**、每个新文件 ≤ 200 行 nloc——只减一个文件而把压力转移到另一个文件，等于把地雷埋到下一处。
+- **行数必须双向达标**：`cli_run.rs` 明显下降、`cli_run_serve.rs` **不得上升**、每个新文件 ≤ 200 行 nloc——只减一个文件而把压力转移到另一个文件，
+  等于把地雷埋到下一处。
 - `pre-commit run --all-files` 全绿（crate-dep policy 与 fn-param/nloc 两个 ratchet 都会看新文件）。
 - 额外自检：`cargo clippy --all-targets --all-features -- -D warnings`——纯搬移最容易引入 `unused import` / 可见性过宽。
 
 ### 12.4 已知风险
 
 - **可见性**：`try_early_*` 现在被同一文件内的私有调用，搬走后会变成跨模块调用，需要 `pub(super)` 或 `pub(crate)`——按最小可见性给，别图省事全开 `pub`。
-- **挂载方式必须与既有两个子模块一致**：现有写法是 `src/cli_run.rs` 顶部 `#[path = "cli_run_serve.rs"] mod cli_run_serve;`——新文件同样放 `src/` 根、同样用 `#[path]`，不要顺手改成 `src/cli_run/` 子目录（那会让 `#[path]` 与目录两份约定并存）。
+- **挂载方式必须与既有两个子模块一致**：现有写法是 `src/cli_run.rs` 顶部 `#[path = "cli_run_serve.rs"] mod cli_run_serve;`——新文件同样放 `src/` 根、
+  同样用 `#[path]`，不要顺手改成 `src/cli_run/` 子目录（那会让 `#[path]` 与目录两份约定并存）。
 - **`#[allow(...)]` 与测试**：若有 `#[cfg(test)] mod tests` 依赖同文件私有项，搬移时要一起搬或改可见性。
-- **`run_serve_branch` 有两个 feature 变体**（`:624` 与 `:737`）：搬移时两个都要搬，并保留各自的 `#[cfg(...)]` 门——漏一个会在特定 feature 组合下编译失败，而那组 feature 恰恰可能不在本地默认构建里。
+- **`run_serve_branch` 有两个 feature 变体**（`:624` 与 `:737`）：搬移时两个都要搬，
+  并保留各自的 `#[cfg(...)]` 门——漏一个会在特定 feature 组合下编译失败，而那组 feature 恰恰可能不在本地默认构建里。
 - **别顺手做 S5 的其余部分**：`cm_cli/` 禁边 + serve builder 是独立的一步，混进来会让本切片失去「纯搬移、可盲合」的性质。
 
 ### 12.5 做完之后
 
-`cli_run.rs` 余量恢复后，S5 的其余部分（`cm_cli/` 分派表 + `EarlyCommand`/`ServerCommand` 二分 + serve builder）才值得做——那时它只是「变清晰」，不再是「解阻塞」。**顺序反过来会让一个紧急的机械搬移背上语义重构的风险。**
+`cli_run.rs` 余量恢复后，S5 的其余部分（`cm_cli/` 分派表 + `EarlyCommand`/`ServerCommand` 二分 + serve builder）才值得做——那时它只是「变清晰」，
+  不再是「解阻塞」。**顺序反过来会让一个紧急的机械搬移背上语义重构的风险。**

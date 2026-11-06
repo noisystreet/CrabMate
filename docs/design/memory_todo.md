@@ -1,11 +1,14 @@
 # 设计文档：长期记忆可视化面板
 
-> **状态**：未来扩展清单（**未排期**）。其中 §1-§8 涉及的**后端管理 API 最小闭环**（`GET /memory/list`、`DELETE /memory/{id}`、`GET /memory/stats`）已拆到 **[`memory_management_api.md`](./memory_management_api.md)** 评审与实现；本文件保留为**前端面板与后续扩展**（§9-§14）的草案。
-> **注意**：本文档 §4 称「现有 `list_recent_for_scope` 已返回所需字段，无需改表结构」**与实际不符**——该函数不返回 `created_at_unix` / `source_role`。以 [`memory_management_api.md`](./memory_management_api.md) 与代码为准。
+> **状态**：未来扩展清单（**未排期**）。其中 §1-§8 涉及的**后端管理 API 最小闭环**（`GET /memory/list`、`DELETE /memory/{id}`、`GET /memory/stats`）
+> 已拆到 **[`memory_management_api.md`](./memory_management_api.md)** 评审与实现；本文件保留为**前端面板与后续扩展**（§9-§14）的草案。
+> **注意**：本文档 §4 称「现有 `list_recent_for_scope` 已返回所需字段，无需改表结构」**与实际不符**——该函数不返回 `created_at_unix` / `source_role`。
+> 以 [`memory_management_api.md`](./memory_management_api.md) 与代码为准。
 
 ## 1. 背景与目标
 
-`summarize_experience` 工具已实现模型自主写入经验的功能，但**用户无法查看模型保存了哪些记忆**。当前只有通过 `long_term_memory_list` 工具在对话中查询，以原始文本形式返回，缺乏结构化展示。
+`summarize_experience` 工具已实现模型自主写入经验的功能，但**用户无法查看模型保存了哪些记忆**。当前只有通过 `long_term_memory_list` 工具在对话中查询，
+  以原始文本形式返回，缺乏结构化展示。
 
 本功能为长期记忆提供**独立可视化面板**，让用户能够：
 
@@ -624,7 +627,8 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 }
 ```
 
-> **关于 embedding**：Embedding 与 embedding 模型强绑定。`AllMiniLML6V2` 导出的 embedding 无法用于 `BAAI/bge-large`。`include_embedding: false` 时导出不包含 embedding，导入时由目标机器的 Fastembed 重新计算。`embedding_model` 字段记录来源，导入时可校验一致性。
+> **关于 embedding**：Embedding 与 embedding 模型强绑定。`AllMiniLML6V2` 导出的 embedding 无法用于 `BAAI/bge-large`。
+> `include_embedding: false` 时导出不包含 embedding，导入时由目标机器的 Fastembed 重新计算。`embedding_model` 字段记录来源，导入时可校验一致性。
 
 **Markdown 导出格式**：人类可读，每条记忆含元信息（来源、标签、TTL）和正文，不含 embedding。
 

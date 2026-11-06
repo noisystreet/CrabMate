@@ -2,20 +2,35 @@
 
 # CLI and subcommands
 
-Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`,
+Help: `crabmate --help`, `crabmate help`,
+  `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global
+  options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`,
   `--log`. An explicit subcommand is required (e.g. `serve`); bare `cargo run` no longer defaults into dialogue.
 
-**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` are hard-deleted** (D2.1 entry + D2.2 implementation—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
+**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**;
+  LLM keys on the client). In-process **`chat` / `repl` / `tui` are hard-deleted** (D2.1 entry + D2.2
+  implementation—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
 
 **Script contract** (exit codes, `tool-replay`; legacy `chat --output json` shape is historical only): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
 ## Man page (troff / `man`)
 
-- **Source tree**: Pre-generated **`man/crabmate.1`** and **`man/crabmatectl.1`** (troff), both aligned with the current `clap` definitions; the **Debian `.deb`** installs them to **`/usr/share/man/man1/`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
-- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1` **and** `man/crabmatectl.1` (one run writes both; the second page comes from the same clap definition as the `crabmatectl` binary).
-- **Version bumps**: do **not** edit the version strings by hand — `make set-version VERSION=X.Y.Z[-pre]` (`scripts/set-version.sh`) rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` and both man pages, and prints the `CHANGELOG.md` heading skeleton; `scripts/check-version-sync.sh` (pre-commit + `ci.yml`) asserts all four stay equal (#1269).
-- **Granularity (important)**: these are **single pages** — top-level options and subcommand names only (**not** each subcommand's own flags; use `crabmatectl up --help`, since `-h` is always newer than the man page). Changing a subcommand's flags therefore needs **no** regeneration and produces **no** diff; only top-level options or subcommand additions/removals change the output.
-- **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default **`server`**; git tag **`v0.8.0`** matches this package): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` and `man/crabmatectl.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
+- **Source tree**: Pre-generated **`man/crabmate.1`** and **`man/crabmatectl.1`** (troff), both aligned with the current `clap` definitions;
+  the **Debian `.deb`** installs them to **`/usr/share/man/man1/`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
+- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`,
+  then commit the updated `man/crabmate.1` **and** `man/crabmatectl.1` (one run writes both;
+  the second page comes from the same clap definition as the `crabmatectl` binary).
+- **Version bumps**: do **not** edit the version strings by hand — `make set-version VERSION=X.Y.Z[-pre]` (`scripts/set-version.sh`)
+  rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` and both man pages,
+  and prints the `CHANGELOG.md` heading skeleton; `scripts/check-version-sync.sh` (pre-commit + `ci.yml`) asserts all four stay equal (#1269).
+- **Granularity (important)**: these are **single pages** — top-level options and subcommand names only (**not** each subcommand's own flags;
+  use `crabmatectl up --help`,
+  since `-h` is always newer than the man page). Changing a subcommand's flags therefore needs **no** regeneration and produces **no** diff;
+  only top-level options or subcommand additions/removals change the output.
+- **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default **`server`**; git tag **`v0.8.0`** matches this package):
+  does **not** install man into `MANPATH` by default;
+  copy `man/crabmate.1` and `man/crabmatectl.1` to `.../share/man/man1/` and run `mandb` (distro-dependent),
+  or prefer **`cargo deb`** / distro packages.
 
 ## Subcommand overview
 
@@ -43,17 +58,23 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 ## Log levels
 
-Without `RUST_LOG`: `serve` defaults to **info**; `bench` / `config` / `mcp` / `web-bearer` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` / `workflow` / `doctor` and other subcommands default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
+Without `RUST_LOG`: `serve` defaults to **info**; `bench` / `config` / `mcp` / `web-bearer` / `save-session` (and alias `export-session`)
+  / `tool-replay` / `plugin` / `workflow` / `doctor` and other subcommands default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
 
 ## Message pipeline debug logs
 
-With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer: `RUST_LOG=crabmate::message_pipeline=trace`. Cumulative hits: **`GET /status`**; implementation: `src/agent/message_pipeline/`.
+With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline session_sync`** summary; finer:
+  `RUST_LOG=crabmate::message_pipeline=trace`. Cumulative hits: **`GET /status`**; implementation: `src/agent/message_pipeline/`.
 
 ## Legacy usage
 
-**Removed**: legacy flat flags without a subcommand (**`--serve`**, **`--dry-run`**, **`--benchmark` / `--batch` / `--resume`**, etc.) are **no longer** mapped to subcommands—write **`serve` / `config` / `bench`** explicitly, otherwise clap reports a missing subcommand. Bare argv / **`--query`** / **`--stdin`** are likewise **no longer** mapped to `chat` or default-inserted as `repl`.
+**Removed**: legacy flat flags without a subcommand (**`--serve`**, **`--dry-run`**, **`--benchmark` / `--batch` / `--resume`**, etc.)
+  are **no longer** mapped to subcommands—write **`serve` / `config` / `bench`** explicitly,
+  otherwise clap reports a missing subcommand. Bare argv / **`--query`** / **`--stdin`** are likewise **no longer** mapped to `chat` or
+  default-inserted as `repl`.
 
-The only remaining argv normalization is the **`help` subcommand**: `crabmate help` → root `--help`; `crabmate help <known-subcommand>` → that subcommand's `--help` (see `tests/fixtures/cli/help_normalize.json`).
+The only remaining argv normalization is the **`help` subcommand**: `crabmate help` → root `--help`;
+  `crabmate help <known-subcommand>` → that subcommand's `--help` (see `tests/fixtures/cli/help_normalize.json`).
 
 ## Common options
 
@@ -70,9 +91,12 @@ The only remaining argv normalization is the **`help` subcommand**: `crabmate he
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
 | `--log <FILE>` | Log file + stderr mirror |
 
-> **`config`**: takes no options — a config check then exit. The bare **`--dry-run`** was removed along with the flat flags, and `config --dry-run` is no longer accepted.
+> **`config`**: takes no options — a config check then exit. The bare **`--dry-run`** was removed along with the flat flags,
+> and `config --dry-run` is no longer accepted.
 
-> **Removed (D2.1)**: global **`--agent-role`**, and chat/repl-only **`--query` / `--stdin` / `--output` / `--no-stream`**. Use Client **`crabmate-tui`** or Web; roles via request body / Web **`agent_role`**.
+> **Removed (D2.1)**: global **`--agent-role`**,
+> and chat/repl-only **`--query` / `--stdin` / `--output` / `--no-stream`**. Use Client **`crabmate-tui`** or Web;
+> roles via request body / Web **`agent_role`**.
 
 ## Benchmark (`bench`)
 
@@ -88,7 +112,9 @@ Planning for benchmark features and testing: **`docs/基准测试规划.md`** (k
 | `--resume` | Skip existing `instance_id` |
 | `--bench-system-prompt <FILE>` | Override system |
 
-HumanEval adapter prepends a “complete the function body, do not ask” instruction and a system suffix. Convert the official JSONL, run `bench`, then score with Python 3 (**executes model-generated code** — sandbox if needed). Prefer global **`--no-tools`** (`--max-tool-rounds 0` is not enough):
+HumanEval adapter prepends a “complete the function body, do not ask” instruction and a system suffix. Convert the official JSONL, run `bench`,
+  then score with Python 3 (**executes model-generated code** — sandbox if needed). Prefer global **`--no-tools`** (`--max-tool-rounds 0` is not
+  enough):
 
 ```bash
 python3 scripts/humaneval_official_to_crabmate_jsonl.py --input HumanEval.jsonl --output tasks.jsonl
@@ -117,17 +143,27 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 ## `save-session`
 
-Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (schema / Markdown titles shared via **`src/cm_chat_export`**). JSON envelope (**required** fields): `schema` (`crabmate.chat_session`),
-  `schema_version` (currently **`2.0.0`**), **`projection`** (**`raw`**: full OpenAI-shaped `Message` from CLI/`save-session`/session files; **`display`**: ops display projection — **not** valid **`tool-replay`** input), `version`,
-  `messages`. Markdown / `display` **tool sections** use envelope summaries or truncated raw text and are **not** guaranteed to match Web tool cards character-for-character (pixel tool cards live in Client `crabmate-tool-card`). Legacy JSON missing envelope keys is **rejected**. See `src/cm_chat_export`, `src/cm_runtime/chat_export.rs`,
+Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand),
+  writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (schema / Markdown titles shared via
+  **`src/cm_chat_export`**). JSON envelope (**required** fields): `schema` (`crabmate.chat_session`),
+  `schema_version` (currently **`2.0.0`**), **`projection`** (**`raw`**: full OpenAI-shaped `Message` from CLI/`save-session`/session files;
+    **`display`**: ops display projection — **not** valid **`tool-replay`** input), `version`,
+  `messages`. Markdown / `display` **tool sections** use envelope summaries or truncated raw text and are **not** guaranteed to match Web tool cards
+    character-for-character (pixel tool cards live in Client `crabmate-tool-card`). Legacy JSON missing envelope keys is **rejected**. See
+    `src/cm_chat_export`, `src/cm_runtime/chat_export.rs`,
   Client `frontend/src/session_export.rs`. Each stdout line is the absolute path of a written file for scripts.
 
 ## `tool-replay` (tool timeline fixture)
 
 Reproduce **tool call order and arguments** from a chat, or **regression-compare** outputs vs recorded `tool` messages.
 
-- **`export`**: Scan **`ChatSessionFile`** (same shape as `save-session` / Web export) for `assistant.tool_calls` and following `role=tool` messages; write **`tool_replay_YYYYMMDD_HHMMSS.json`** to **`.crabmate/exports/`** (or `--output`). Top-level: `version`, `source: "crabmate-tool-replay"`, optional `note`, **`steps`** (`name`, `arguments`, `tool_call_id`, optional **`recorded_output`**).
-- **`run`**: For each `step`, call **`tools::run_tool`** on the current workspace (**real** execution: `run_command` / `http_fetch` still obey config and allowlist; **no** terminal approval UI—non-whitelist `run_command` fails). With `--compare-recorded`, string equality vs `recorded_output`; mismatch → exit code **6**.
+- **`export`**: Scan **`ChatSessionFile`** (same shape as `save-session` / Web export) for `assistant.tool_calls` and following `role=tool` messages;
+  write **`tool_replay_YYYYMMDD_HHMMSS.json`** to **`.crabmate/exports/`** (or `--output`). Top-level: `version`, `source: "crabmate-tool-replay"`,
+  optional `note`, **`steps`** (`name`, `arguments`, `tool_call_id`, optional **`recorded_output`**).
+- **`run`**: For each `step`, call **`tools::run_tool`** on the current workspace (**real** execution:
+  `run_command` / `http_fetch` still obey config and allowlist;
+  **no** terminal approval UI—non-whitelist `run_command` fails). With `--compare-recorded`, string equality vs `recorded_output`;
+  mismatch → exit code **6**.
 
 ```bash
 crabmate save-session --format json --workspace /path/to/proj   # get chat_export_*.json
@@ -140,7 +176,8 @@ crabmate tool-replay run --fixture ./fixture.json --compare-recorded   # CI regr
 
 ## In-process dialogue entry (removed)
 
-**D2.1**: **`crabmate chat` / `repl` / `tui`** and legacy maps (`--query`, default `repl`, etc.) are **removed from clap**. Official terminal: Client **`crabmate-tui`** (HTTP/SSE → **`serve`**); Web / Desktop still use **`POST /chat`** / **`/chat/stream`**.
+**D2.1**: **`crabmate chat` / `repl` / `tui`** and legacy maps (`--query`, default `repl`, etc.) are **removed from clap**. Official terminal:
+  Client **`crabmate-tui`** (HTTP/SSE → **`serve`**); Web / Desktop still use **`POST /chat`** / **`/chat/stream`**.
 
 Still available in this repo:
 
@@ -149,7 +186,8 @@ Still available in this repo:
 - **`bench`**: batch evaluation.
 - Web session persistence, approval (SSE + **`POST /chat/approval`**), export: see HTTP routes and Client UI below.
 
-Exit-code constants remain in **`src/runtime/cli_exit.rs`** / [`CLI_CONTRACT.md`](CLI_CONTRACT.md) (mainly **`tool-replay`** today). In-process **`runtime/cli/{chat,repl}`** and **`runtime/tui`** were removed in **D2.2**; use Client **`crabmate-tui`**.
+Exit-code constants remain in **`src/runtime/cli_exit.rs`** / [`CLI_CONTRACT.md`](CLI_CONTRACT.md) (mainly **`tool-replay`** today). In-process
+  **`runtime/cli/{chat,repl}`** and **`runtime/tui`** were removed in **D2.2**; use Client **`crabmate-tui`**.
 
 Hot reload for **`serve`**: **`POST /config/reload`** (see **`docs/en/CONFIGURATION.md`**).
 
@@ -161,13 +199,15 @@ Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-c
 cd ../crabmate-client && make frontend
 ```
 
-`serve` is **always API-only** and never hosts a SPA; browser UIs are hosted from the Client repo (its dev flow or any static server) and connect to `serve` over **CORS** (extra Origins: **`CM_WEB_CORS_ALLOWED_ORIGINS`**). **`/`** is 404 while APIs (e.g. **`/health`**) work.
+`serve` is **always API-only** and never hosts a SPA; browser UIs are hosted from the Client repo (its dev flow or any static server)
+  and connect to `serve` over **CORS** (extra Origins: **`CM_WEB_CORS_ALLOWED_ORIGINS`**). **`/`** is 404 while APIs (e.g. **`/health`**) work.
 
 ## Main HTTP routes (`serve`)
 
 ### HTTP auth matrix
 
-Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEARER_TOKEN`** is non-empty at startup, protected routes get the Bearer layer (`Authorization: Bearer` **or** `X-API-Key`). Empty secret → no layer (trusted environments only).
+Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEARER_TOKEN`** is non-empty at startup,
+  protected routes get the Bearer layer (`Authorization: Bearer` **or** `X-API-Key`). Empty secret → no layer (trusted environments only).
 
 | Class | Paths | Bearer layer | Notes |
 |-------|-------|--------------|-------|
@@ -177,7 +217,8 @@ Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEA
 | Static | `/`, SPA | **No** | |
 | E2E | `/e2e/...` | Conditional | **`CM_E2E_FIXTURES=1` only** |
 
-Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation; **4xx/5xx** JSON **`ApiError.request_id`** matches the header (middleware fills when missing). See **`docs/en/CLI_CONTRACT.md`**.
+Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation;
+  **4xx/5xx** JSON **`ApiError.request_id`** matches the header (middleware fills when missing). See **`docs/en/CLI_CONTRACT.md`**.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -251,7 +292,9 @@ make package-deb       # .deb only (Linux + cargo-deb)
 # equivalent: ./scripts/package-release.sh --skip-frontend
 ```
 
-Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produced (unless **`--skip-tar`**); **`.deb`** is copied from **`target/debian/`** only on **Linux** with **`cargo-deb`** installed (use **`--skip-deb`** to skip). Run **`./scripts/package-release.sh --help`** for all flags.
+Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produced (unless **`--skip-tar`**);
+  **`.deb`** is copied from **`target/debian/`** only on **Linux** with **`cargo-deb`** installed (use **`--skip-deb`** to skip). Run
+  **`./scripts/package-release.sh --help`** for all flags.
 
 ## Debian `.deb` package
 
@@ -262,14 +305,20 @@ make package-deb
 sudo dpkg -i dist/crabmate_*.deb   # or target/debian/crabmate_*.deb
 ```
 
-Server **`make package*`** / `.deb` is **server-only** (no UI). Runtime is always API-only and never hosts a SPA; browser UIs are hosted from the Client repo and connect over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**).
+Server **`make package*`** / `.deb` is **server-only** (no UI). Runtime is always API-only and never hosts a SPA;
+  browser UIs are hosted from the Client repo and connect over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**).
 
-After install: `export API_KEY=… && crabmate serve` (API-only). Package includes **`/usr/share/man/man1/crabmate.1`** and **`/usr/share/man/man1/crabmatectl.1`** (`man crabmate` / `man crabmatectl` if **`MANPATH`** includes `/usr/share/man`).
+After install:
+  `export API_KEY=… && crabmate serve` (API-only). Package includes **`/usr/share/man/man1/crabmate.1`** and **`/usr/share/man/man1/crabmatectl.1`**
+  (`man crabmate` / `man crabmatectl` if **`MANPATH`** includes `/usr/share/man`).
 
 ### systemd (`.deb` / tarball)
 
-- **`.deb`**: installs **`/usr/lib/systemd/system/crabmate.service`**, **`/etc/crabmate/config.toml`** (path anchor), **`/etc/crabmate/config/prompts/`**, and **`crabmate.env.example`**; `postinst` creates system user **`crabmate`** and **`/var/lib/crabmate`**. **Does not** `enable` / `start` by default.
-- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. Always API-only (no SPA); **`/`** is 404 while APIs (e.g. **`/health`**) work.
+- **`.deb`**: installs **`/usr/lib/systemd/system/crabmate.service`**, **`/etc/crabmate/config.toml`** (path anchor),
+  **`/etc/crabmate/config/prompts/`**, and **`crabmate.env.example`**;
+  `postinst` creates system user **`crabmate`** and **`/var/lib/crabmate`**. **Does not** `enable` / `start` by default.
+- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. Always API-only (no SPA);
+  **`/`** is 404 while APIs (e.g. **`/health`**) work.
 - **Environment file**: **`KEY=value` only** (no **`export`**); set **`API_KEY`**, and extend **`PATH`** if the system user needs cargo/rustc.
 - Before enabling:
 
@@ -281,11 +330,17 @@ sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service
 ```
 
-- **tar.gz**: ships **`systemd/`**, **`systemd-user/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`**, the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed),
-  and **`systemd-user/crabmate-supervise.service`** under **`/usr/lib/systemd/user/`** if you want the multi-instance supervisor. Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
-- **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`) or **`systemd-user/`** (tarball)
-  runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the system unit above does not apply. `systemctl --user enable --now` starts it;
-  add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**) must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose: that directory is globbed into **system** units,
+- **tar.gz**: ships **`systemd/`**, **`systemd-user/`** and **`etc/crabmate/`** (`config.toml`, prompts,
+  env example). Copy **`etc/crabmate`** to **`/etc/crabmate`**, the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed),
+  and **`systemd-user/crabmate-supervise.service`** under **`/usr/lib/systemd/user/`** if you want the multi-instance supervisor. Broader
+    reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
+- **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`)
+  or **`systemd-user/`** (tarball)
+  runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the
+    system unit above does not apply. `systemctl --user enable --now` starts it;
+  add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**)
+    must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose:
+    that directory is globbed into **system** units,
   where a `%h` / `default.target` unit would be wrong.
 
 Preview from tree: `man -l man/crabmate.1` / `man -l man/crabmatectl.1` (paths relative to repo root).

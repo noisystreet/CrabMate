@@ -1,6 +1,7 @@
 # 工具调用层：对标开源 Agent 的演进方向
 
-**状态**：路线图 / 设计备忘（**未**承诺实现顺序与时间表）。**受众**：维护 **`src/cm_tools/`**、**`tool_registry`**、**`tool_approval`**、**`agent_turn::execute_tools`** 与 **SSE 工具事件** 的开发者。  
+**状态**：路线图 / 设计备忘（**未**承诺实现顺序与时间表）。**受众**：维护 **`src/cm_tools/`**、**`tool_registry`**、**`tool_approval`**、
+  **`agent_turn::execute_tools`** 与 **SSE 工具事件** 的开发者。
 **语言**：中文。  
 **关联**：
 
@@ -97,25 +98,45 @@
 
 ## 8.5 工具收敛：薄 CLI 封装 vs `run_command`（2026-10 分析）
 
-**背景**：近一半内置工具只是把某个 CLI 包成独立 `ToolSpec` + `runner_*`。这些「薄封装」维护成本高于结构化收益时，可考虑收敛为 `run_command`。本节记录收敛的边界、约束与候选路线，供后续切片。
+**背景**：近一半内置工具只是把某个 CLI 包成独立 `ToolSpec` + `runner_*`。这些「薄封装」维护成本高于结构化收益时，可考虑收敛为 `run_command`。
+  本节记录收敛的边界、约束与候选路线，供后续切片。
 
 ### 8.5.1 已落地
 
-- **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`。
-  ~~缺失安装提示仍由 `error_output_playbook` 提供~~ —— 该工具已于 2026-10-27 整工具删除，缺 CLI 时由模型按 `run_command` 的失败输出判断该装什么。详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
-- **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：
-  `ci_pipeline_local` / `lint.rs` 仍**直接调用** `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，不影响这些组合工具的开关语义（如 `run_frontend_build`）。**后续更新**：`ci_pipeline_local` / `quality_workspace` / `release_ready_check` 已整体删除，`container_tools` 随之移除（`frontend_tools` 仅保留 `lint.rs` 仍用到的 `frontend_lint` / `frontend_build`）。
+- **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：
+  统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`。
+  ~~缺失安装提示仍由 `error_output_playbook` 提供~~ —— 该工具已于 2026-10-27 整工具删除，缺 CLI 时由模型按 `run_command` 的失败输出判断该装什么。
+    详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
+- **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：
+  `maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` /
+  `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，
+  统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：
+  `ci_pipeline_local` / `lint.rs` 仍**直接调用** `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，
+    不影响这些组合工具的开关语义（如 `run_frontend_build`）。**后续更新**：`ci_pipeline_local` / `quality_workspace` / `release_ready_check` 已整体删除，
+    `container_tools` 随之移除（`frontend_tools` 仅保留 `lint.rs` 仍用到的 `frontend_lint` / `frontend_build`）。
   `jvm_tools` 及其 `run_maven_*` / `run_gradle_*` 开关后续已整体删除（2026-10-18），JVM 构建统一走 `run_command`。
-- **移除 5 个 Go 族薄封装（§3.2 整族，2026-10-12）**：`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`，统一改用 **`run_command`**（`go` / `gofmt` / `golangci-lint` 已在 `config/tools.toml` 白名单；`go build ./...` 等经 `./...` 可通过参数安全校验）。
-  **无聚合器 / 后台任务 / workflow 耦合**；`go_` 前缀本就不在并行只读批。**Python 族暂缓**（`pytest_run` 关联后台任务装配，`ruff_check` / `mypy_check` / `uv_*` 与 `ci_tools` / `quality_tools` 有复用耦合）。
+- **移除 5 个 Go 族薄封装（§3.2 整族，2026-10-12）**：`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`，
+  统一改用 **`run_command`**（`go` / `gofmt` / `golangci-lint` 已在 `config/tools.toml` 白名单；`go build ./...` 等经 `./...` 可通过参数安全校验）。
+  **无聚合器 / 后台任务 / workflow 耦合**；`go_` 前缀本就不在并行只读批。**Python 族暂缓**（`pytest_run` 关联后台任务装配，
+    `ruff_check` / `mypy_check` / `uv_*` 与 `ci_tools` / `quality_tools` 有复用耦合）。
   详见 CHANGELOG `[Unreleased]` 与 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2。
-- **移除 17 个写侧 Git 工具（B 档）**：`git_stage_files` / `git_commit` / `git_checkout` / `git_branch_create` / `git_branch_delete` / `git_push` / `git_merge` / `git_rebase` / `git_stash` / `git_tag` / `git_reset` / `git_cherry_pick` / `git_revert` / `git_clone` / `git_remote_set_url` / `git_apply` / `git_fetch`，统一改用 **`run_command`** 调用 `git`（`git` 已在 `config/tools.toml` 白名单），
-  能力零损失。**只读 Git 工具保留并做同构合并**：`git_diff` 吸收原 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增可选 `stat` / `name_only` / `base`），保留 `git_status` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`。**为何不一并降级只读**：`run_command` 非只读，
-  降级会连带失去 8.5.2 的四项只读能力（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）——这与 A 档「低频低价值只读」的取舍不同（Git 只读查询在代码审查工作流中使用频率高）。**后续更新**：这 10 个只读工具已合并为单个 **`git`** 工具的 **`action`** 选择器（保留的是只读能力，工具定义从 10 份 schema 收敛为 1 份）。
+- **移除 17 个写侧 Git 工具（B 档）**：
+  `git_stage_files` / `git_commit` / `git_checkout` / `git_branch_create` / `git_branch_delete` / `git_push` / `git_merge` / `git_rebase` / `git_stash`
+  / `git_tag` / `git_reset` / `git_cherry_pick` / `git_revert` / `git_clone` / `git_remote_set_url` / `git_apply` / `git_fetch`，
+  统一改用 **`run_command`** 调用 `git`（`git` 已在 `config/tools.toml` 白名单），
+  能力零损失。**只读 Git 工具保留并做同构合并**：
+    `git_diff` 吸收原 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增可选 `stat` / `name_only` / `base`），
+    保留 `git_status` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` /
+    `git_clean_check`。**为何不一并降级只读**：`run_command` 非只读，
+  降级会连带失去 8.5.2 的四项只读能力（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）——这与 A 档「低频低价值只读」
+    的取舍不同（Git 只读查询在代码审查工作流中使用频率高）。**后续更新**：
+    这 10 个只读工具已合并为单个 **`git`** 工具的 **`action`** 选择器（保留的是只读能力，工具定义从 10 份 schema 收敛为 1 份）。
 
 ### 8.5.2 核心约束（收敛前必须权衡）
 
-`run_command` 在「按工具名」的只读判定中被**明确排除**——见 `tool_retry_policy` / `is_readonly_tool` 注释（同排除的还有 `terminal_session` / `http_request` / 写类 / MCP / 动态 / workflow）。因此任何一个**只读**专用工具改写为 `run_command`，都会**连带失去**：
+`run_command` 在「按工具名」
+  的只读判定中被**明确排除**——见 `tool_retry_policy` / `is_readonly_tool` 注释（同排除的还有 `terminal_session` / `http_request` / 写类 / MCP / 动态 /
+  workflow）。因此任何一个**只读**专用工具改写为 `run_command`，都会**连带失去**：
 
 - `parallel_readonly_batch` 的并行只读批；
 - `tool_retry_policy` 的只读失败重试；
@@ -126,12 +147,18 @@
 
 ### 8.5.3 不可收敛的边界
 
-- **白名单外 CLI**：如 `rust-analyzer` / `pytest` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界。
-  **Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，接受 §8.5.2 的四项只读能力损失。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（见 §8.5.5）。**当时仍保留**：`format_*` / `ruff_check` / `mypy_check` / `uv_*`（与组合工具 `ci_tools` / `quality_tools` 有复用耦合）。**后续演进**：
-  `format_*` 已于 2026-10-20 收敛；`ci_tools` / `quality_tools` 整体删除后，`mypy_check` / `uv_*` 一并移除；`run_lints` 聚合器亦已于 2026-10-28 删除，`ruff_check` / `mypy_check` 函数体随之移除。
+- **白名单外 CLI**：如 `rust-analyzer` / `pytest` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）
+  。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）
+  进入 `allowed_commands`，故不再属于本边界。
+  **Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，
+    接受 §8.5.2 的四项只读能力损失。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（见 §8.5.5）。**当时仍保留**：
+    `format_*` / `ruff_check` / `mypy_check` / `uv_*`（与组合工具 `ci_tools` / `quality_tools` 有复用耦合）。**后续演进**：
+  `format_*` 已于 2026-10-20 收敛；`ci_tools` / `quality_tools` 整体删除后，`mypy_check` / `uv_*` 一并移除；`run_lints` 聚合器亦已于 2026-10-28 删除，
+    `ruff_check` / `mypy_check` 函数体随之移除。
 - **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
 - **Agent / 编排类**：保留。
-- **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），收敛前须确认不破坏该链路。
+- **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），
+  收敛前须确认不破坏该链路。
 
 ### 8.5.4 候选路线（按风险 / 收益排序，非承诺顺序）
 
@@ -141,27 +168,39 @@
 | **B｜合并式精简**（**写侧 + diff 合并已落地**） | 写侧按「全量降级 `run_command`」处理（17 个写 Git 工具）；只读侧按家族聚合并参数化（`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`）。其余家族（`gh_*` / `cargo_*` 等）仍为候选 | 本轮 **-19**（-17 写 + diff 三合一） | 中（须重写 schema / 分发 / 提示词，并回归后台任务与只读语义；`rust_analyzer_*` 8 个不可替代需保留） |
 | **C｜扩白名单再收敛** | 把 8.5.3 白名单外 CLI 也纳入再删封装 | 视范围 | **高**（扩大任意命令执行面，不建议；如做须走 `tool_approval` 审批） |
 
-**推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；**B 的写侧 + diff 合并已落地**（17 写工具降级 `run_command` + `git_diff` 三合一，能力零损失），其余家族合并（`gh_*` / `cargo_*` 等）待后续切片；**C** 暂不推进。
+**推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；
+  **B 的写侧 + diff 合并已落地**（17 写工具降级 `run_command` + `git_diff` 三合一，能力零损失），其余家族合并（`gh_*` / `cargo_*` 等）待后续切片；
+  **C** 暂不推进。
 
 ### 8.5.5 白名单扩充（2026-10，局部落地路线 C）
 
-**背景**：此前存在「能力割裂」——多个内置工具（`go_*` / `ruff_check` / `mypy_check` / `uv_*` / `format_*` / `package_query` / `port_check` 等）内部直接 spawn 的 CLI **不在** `allowed_commands` 中，导致「走专用工具能跑、走 `run_command` 被拒」；且文档已声称 `npx` / `tsc` 在白名单，实际缺失。
+**背景**：此前存在「能力割裂」——多个内置工具（`go_*` / `ruff_check` / `mypy_check` / `uv_*` / `format_*` / `package_query` / `port_check` 等）
+  内部直接 spawn 的 CLI **不在** `allowed_commands` 中，导致「走专用工具能跑、走 `run_command` 被拒」；且文档已声称 `npx` / `tsc` 在白名单，实际缺失。
 
 **做法**：向 `config/tools.toml` 的 `allowed_commands` 新增 **21 项**（102 → 123）：
 
-- **语言工具链（14）**：`npx` / `tsc` / `go` / `gofmt` / `golangci-lint` / `ruff` / `mypy` / `uv` / `rustfmt` / `clang-format` / `shfmt` / `xmllint` / `sqlfluff` / `pg_format`
+- **语言工具链（14）**：
+  `npx` / `tsc` / `go` / `gofmt` / `golangci-lint` / `ruff` / `mypy` / `uv` / `rustfmt` / `clang-format` / `shfmt` / `xmllint` / `sqlfluff` /
+  `pg_format`
 - **归档（2）**：`7z` / `unrar`
 - **系统与包查询（5）**：`dpkg-query` / `rpm` / `ss` / `lsof` / `bc`
 
-**定位**：这是路线 **C（扩白名单）的局部落地**，但**仅扩白名单、不删对应专用工具**——与 C 档「扩白名单**再收敛**」不同。对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*` / `package_query` / `port_check` / `process_list`）在当时**保留**，因其为**只读**工具，
-  降级会失去 §8.5.2 的四项只读能力。（**2026-10 后续演进**：除 `format_*` 外，`go_*` / `ruff_check` / `mypy_check` / `uv_*` / `package_query` / `port_check` / `process_list` 已在「薄 CLI 封装收敛」中陆续改用 `run_command` 并接受上述只读语义代价，
+**定位**：这是路线 **C（扩白名单）的局部落地**，但**仅扩白名单、不删对应专用工具**——与 C 档「扩白名单**再收敛**」不同。
+  对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*` / `package_query` / `port_check` / `process_list`）在当时**保留**，
+  因其为**只读**工具，
+  降级会失去 §8.5.2 的四项只读能力。（**2026-10 后续演进**：除 `format_*` 外，
+    `go_*` / `ruff_check` / `mypy_check` / `uv_*` / `package_query` / `port_check` / `process_list` 已在「薄 CLI 封装收敛」
+    中陆续改用 `run_command` 并接受上述只读语义代价，
   见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2。）
 
 **安全面**：白名单仍是硬闸门，仅扩充允许的命令集合；新增 CLI 均为常规开发工具，未引入任意命令执行面。
 
-**追加（2026-10-18，B 档「先扩白名单再删」）**：再扩 **3 项**（123 → 126）：`typos` / `codespell`（文档拼写）与 `ast-grep`（AST 结构化搜索 / 改写）。**未**扩 `sg`（系统 `/usr/bin/sg` 为 switch-group 工具，避免扩大执行面）。
-  白名单落地后即删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装，改用 `run_command`；`typos` / `codespell` 的函数体保留供 `docs_health_sweep` 复用。这是路线 **C「扩白名单再收敛」的首次按档落地**，
-  代价是失去路径安全 / 存在性校验与只读语义（`ast_grep_rewrite` 另失去写盘 `confirm` 门，`ast-grep run --rewrite` 须自行加 `--update-all`）。详见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2 / §4。
+**追加（2026-10-18，B 档「先扩白名单再删」）**：再扩 **3 项**（123 → 126）：`typos` / `codespell`（文档拼写）与 `ast-grep`（AST 结构化搜索 / 改写）。
+  **未**扩 `sg`（系统 `/usr/bin/sg` 为 switch-group 工具，避免扩大执行面）。
+  白名单落地后即删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装，改用 `run_command`；
+    `typos` / `codespell` 的函数体保留供 `docs_health_sweep` 复用。这是路线 **C「扩白名单再收敛」的首次按档落地**，
+  代价是失去路径安全 / 存在性校验与只读语义（`ast_grep_rewrite` 另失去写盘 `confirm` 门，`ast-grep run --rewrite` 须自行加 `--update-all`）。
+    详见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2 / §4。
 
 **后续**：可评估「工具 spawn 的 CLI ⊆ 白名单」的一致性测试，从机制上防止再次漂移。
 

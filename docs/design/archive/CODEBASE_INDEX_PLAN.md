@@ -2,14 +2,24 @@
 
 # Workspace-wide code index and incremental cache — product plan
 
-> **Status: archived (accepted and implemented)**. The plan shipped; this file is kept as a **design-origin record**, **not** an implementation index — wording such as "plan / TODO / proposed" reflects the time of writing and must not be read as current capability. Authoritative today:
-> `codebase_semantic_search` in **`docs/en/TOOLS.md`** (schema v4, `crabmate_codebase_chunks_fts` FTS5 side table, `crabmate_codebase_files` fingerprints, hybrid by default) and the `codebase_semantic_*` keys in **`docs/en/CONFIGURATION.md`**; where this page disagrees, those two win.
+> **Status: archived (accepted and implemented)**. The plan shipped; this file is kept as a **design-origin record**,
+> **not** an implementation index — wording such as "plan / TODO / proposed"
+> reflects the time of writing and must not be read as current capability. Authoritative today:
+> `codebase_semantic_search` in **`docs/en/TOOLS.md`** (schema v4, `crabmate_codebase_chunks_fts` FTS5 side table,
+> `crabmate_codebase_files` fingerprints, hybrid by default) and the `codebase_semantic_*` keys in **`docs/en/CONFIGURATION.md`**;
+> where this page disagrees, those two win.
 
-**Revision (implemented)**: the `codebase_semantic_search` SQLite store includes **`crabmate_codebase_files`** (`size` / `mtime_ns` / `content_sha256`), **workspace-wide** incremental `rebuild_index`, subtree **`path`** replacement, Rust **symbol hints**, and (schema **v4**+)
+**Revision (implemented)**:
+  the `codebase_semantic_search` SQLite store includes **`crabmate_codebase_files`** (`size` / `mtime_ns` / `content_sha256`),
+  **workspace-wide** incremental `rebuild_index`, subtree **`path`** replacement, Rust **symbol hints**, and (schema **v4**+)
   **FTS5** **`crabmate_codebase_chunks_fts`** with **hybrid** query (BM25 + vector). See **`docs/en/TOOLS.md`** (`codebase_semantic_search`).
 
-Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**,
-  and **gateway-side identity / multi-tenant isolation** (CrabMate keeps a shared service secret; see [FUTURE_PLANS.md](../../en/FUTURE_PLANS.md)). See `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces and [TODOLIST.md](../../en/TODOLIST.md) for related backlog items.
+Directional plan for a **persistent,
+  incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path
+  safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**,
+  and **gateway-side identity / multi-tenant isolation** (CrabMate keeps a shared service secret;
+    see [FUTURE_PLANS.md](../../en/FUTURE_PLANS.md)). See `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces and
+    [TODOLIST.md](../../en/TODOLIST.md) for related backlog items.
 
 ---
 
@@ -19,7 +29,8 @@ Directional plan for a **persistent, incrementally updated** unified index of re
 
 - **Persistent index**: Survive process restarts; avoid full-tree rescans or re-embedding the same files every turn.
 - **Incremental updates**: File-granular (optional directory snapshot) change detection; recompute only affected shards; support large repos.
-- **Single entry**: Metadata (inventory, language stats, dependency graph summary, optional git HEAD) and **searchable content** (full-text / vector chunks) under one storage/version story.
+- **Single entry**: Metadata (inventory, language stats, dependency graph summary, optional git HEAD)
+  and **searchable content** (full-text / vector chunks) under one storage/version story.
 - **Faster browsing**: Low-cost directory listing, symbol search, snippet search, semantic neighbors for models and tools.
 
 ### 1.2 Non-goals (initial release)
@@ -45,18 +56,25 @@ Directional plan for a **persistent, incrementally updated** unified index of re
 
 Four layers (same SQLite or multiple files; one external **index runtime** handle):
 
-1. **Manifest** — Normalized workspace root, index format version, build config fingerprint (`max_file_bytes`, language include list, ignore rule hash). Optional: `git HEAD`, build time, background cursor.
-2. **File catalog** — `rel_path`, `size`, `mtime_ns`, content hash (optional BLAKE3/SHA256), guessed language/type. Enables incremental skip when hash or `(mtime, size)` unchanged.
-3. **Chunks** — Chunking strategy: line windows, AST-aware (future), or fixed token-ish length; store `raw_text` or compressed BLOB, line range. **FTS5** (keyword) and **vectors** (semantic) can share chunk id for hybrid ranking (aligned with long-term memory retrieval direction in TODOLIST).
-4. **Retrieval** — Internal API: `hybrid_query(workspace_id, query, top_k, filters)`. Expose as **tool** (function calling) + optional first-turn injection (strict `max_chars`).
+1. **Manifest** — Normalized workspace root, index format version, build config fingerprint (`max_file_bytes`, language include list,
+  ignore rule hash). Optional: `git HEAD`, build time, background cursor.
+2. **File catalog** — `rel_path`, `size`, `mtime_ns`, content hash (optional BLAKE3/SHA256),
+  guessed language/type. Enables incremental skip when hash or `(mtime, size)` unchanged.
+3. **Chunks** — Chunking strategy: line windows, AST-aware (future), or fixed token-ish length; store `raw_text` or compressed BLOB,
+  line range. **FTS5** (keyword) and **vectors** (semantic)
+  can share chunk id for hybrid ranking (aligned with long-term memory retrieval direction in TODOLIST).
+4. **Retrieval** — Internal API:
+  `hybrid_query(workspace_id, query, top_k, filters)`. Expose as **tool** (function calling) + optional first-turn injection (strict `max_chars`).
 
 ---
 
 ## 4. Persistence and default location
 
-- **Recommended**: **`.crabmate/codebase_index/`** under workspace (or single `codebase_index.sqlite`), same `.crabmate` convention; paths must pass the same **canonical + root boundary** checks as file tools.
+- **Recommended**: **`.crabmate/codebase_index/`** under workspace (or single `codebase_index.sqlite`), same `.crabmate` convention;
+  paths must pass the same **canonical + root boundary** checks as file tools.
 - **Forbidden**: Resolving index files outside workspace unless explicitly configured and still under `workspace_allowed_roots`.
-- **Ignore**: Default `.gitignore` + repo `.crabmateignore` (add with docs if new); exclude `.env`, secret patterns, huge binaries, `node_modules`/`target`, etc. (configurable).
+- **Ignore**: Default `.gitignore` + repo `.crabmateignore` (add with docs if new); exclude `.env`, secret patterns, huge binaries,
+  `node_modules`/`target`, etc. (configurable).
 
 ---
 

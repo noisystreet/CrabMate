@@ -1,6 +1,7 @@
 # TUI 中区展示所有权（ADR）
 
-> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 TUI 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**。下文决策仅适用于已删除的 `src/runtime/tui/`。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 TUI 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。
+> 官方终端为 Client **`crabmate-tui`**。下文决策仅适用于已删除的 `src/runtime/tui/`。
 
 **状态**：~~已采纳（2026-07）~~ **已归档**（实现随 D2.2 移除）  
 **受众**：考古时查阅  
@@ -8,7 +9,8 @@
 
 ## 背景
 
-终端 TUI 对齐 Tauri 行序时，曾同时拼接 **定稿 transcript、Turn 投影、LLM scratch 流式尾**，并用前缀匹配 /「投影非空跳过全部 assistant」等启发式防双显。结果是正文滞后、标签闪烁、定稿丢答等一串展示 bug。
+终端 TUI 对齐 Tauri 行序时，曾同时拼接 **定稿 transcript、Turn 投影、LLM scratch 流式尾**，并用前缀匹配 /「投影非空跳过全部 assistant」
+  等启发式防双显。结果是正文滞后、标签闪烁、定稿丢答等一串展示 bug。
 
 ## 决策
 

@@ -1,6 +1,8 @@
 # 长耗时工具执行：待办
 
-**状态**：P0 已落地；P1 宿主 `run_command` 的 `tool_output_chunk` 已落地；**`python_snippet_run` 已迁入共享会话（删除 pid-only hard_kill）**；**P3 观测已落地**（会话时长直方图、超时/取消/已 kill/残留计数 + 脱敏日志）；测试类工具 chunk 与 P2–P3 其余项未承诺排期。**受众**：维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。  
+**状态**：P0 已落地；P1 宿主 `run_command` 的 `tool_output_chunk` 已落地；**`python_snippet_run` 已迁入共享会话（删除 pid-only hard_kill）**；
+  **P3 观测已落地**（会话时长直方图、超时/取消/已 kill/残留计数 + 脱敏日志）；测试类工具 chunk 与 P2–P3 其余项未承诺排期。**受众**：
+  维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。
 **语言**：中文。  
 **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章）删除对应条目；本文件可改为修订记录或删节。
 
@@ -16,13 +18,19 @@
 
 ## 已拍板（审查后）
 
-1. **第一刀只覆盖宿主 `run_command`**（含审批 `skip_arg_safety` 路径）以及 **workflow 节点里对 `run_command` 的超时**。`cargo_test` / `pytest_run` / 各 `run_and_format*` / `python_snippet_run` / 动态工具 / MCP **不**算 P0 完成定义，但必须抽出可复用会话，避免每个工具再抄一套 wait。
-2. **部分输出与杀进程同一套 IO**：不能继续 `Command::output()`。第一刀就要 `spawn` + **并发排空** stdout/stderr（防管道死锁），截断仍走 `command_max_output_len`。P1 只是把已有缓冲 `emit` 成 `tool_output_chunk`。
+1. **第一刀只覆盖宿主 `run_command`**（含审批 `skip_arg_safety` 路径）以及 **workflow 节点里对 `run_command` 的超时**。
+  `cargo_test` / `pytest_run` / 各 `run_and_format*` / `python_snippet_run` / 动态工具 / MCP **不**算 P0 完成定义，但必须抽出可复用会话，
+  避免每个工具再抄一套 wait。
+2. **部分输出与杀进程同一套 IO**：不能继续 `Command::output()`。第一刀就要 `spawn` + **并发排空** stdout/stderr（防管道死锁），
+  截断仍走 `command_max_output_len`。P1 只是把已有缓冲 `emit` 成 `tool_output_chunk`。
 3. **`python_snippet_hard_kill` 是反例，不是模板**：只对直接 pid `SIGKILL`、无进程组、超时无部分输出。共享实现要升级（见 §共享原语）。
-4. **禁止**用现有 `ToolExecutionClass` 区分「`ls` vs 全量测试」。`run_command` 与 `terminal_session` 同属 `CommandSpawnTimeout`；`cargo_test` 等走 `SyncDefault` / `BlockingSync`。分层超时按 **工具名配置 + 调用方 `timeout_secs`**（见 P2）。
-5. **Docker 沙盒**（`dispatch_non_sync_tool_to_docker` / `run_tool_in_docker`）：P0 **不**承诺杀容器内进程；超时只保证宿主 wait 有界。沙盒 reap 单独立项（P3 或单独 ADR）。
+4. **禁止**用现有 `ToolExecutionClass` 区分「`ls` vs 全量测试」。`run_command` 与 `terminal_session` 同属 `CommandSpawnTimeout`；
+  `cargo_test` 等走 `SyncDefault` / `BlockingSync`。分层超时按 **工具名配置 + 调用方 `timeout_secs`**（见 P2）。
+5. **Docker 沙盒**（`dispatch_non_sync_tool_to_docker` / `run_tool_in_docker`）：P0 **不**承诺杀容器内进程；超时只保证宿主 wait 有界。
+  沙盒 reap 单独立项（P3 或单独 ADR）。
 6. **Unix 优先**（`setsid`/`setpgid` + SIGTERM→SIGKILL）。Windows 可后做；若做，对齐现有 snippet 的 `taskkill /T`，不要假装与 Linux 进程组等价。
-7. **代理保活 ≠ 工具进度**：`chat_handlers/chat/stream.rs` 已有 axum `KeepAlive`。P1 **默认不新增顶层 SSE 键**；UI 进度靠 `tool_output_chunk`。无输出心跳仅当产品确认气泡必须显示「已耗时」时再加，并走协议清单。
+7. **代理保活 ≠ 工具进度**：`chat_handlers/chat/stream.rs` 已有 axum `KeepAlive`。P1 **默认不新增顶层 SSE 键**；UI 进度靠 `tool_output_chunk`。
+  无输出心跳仅当产品确认气泡必须显示「已耗时」时再加，并走协议清单。
 
 ---
 
@@ -83,7 +91,9 @@
 
 ## 0. 现有能力（实现前可先用）
 
-不必等代码：交互/长构建优先 **`terminal_session`**（chunk + `send_signal` / `close`）；短命令保持较小全局超时；`python_snippet_run` 可用 `timeout_secs`（1～600）；只读工具走并行批；`cargo test` 可命中 `test_result_cache`；反代仍建议足够大的 `proxy_read_timeout`（见 `docs/个人VPS部署指南.md`）。
+不必等代码：交互/长构建优先 **`terminal_session`**（chunk + `send_signal` / `close`）；短命令保持较小全局超时；
+  `python_snippet_run` 可用 `timeout_secs`（1～600）；只读工具走并行批；`cargo test` 可命中 `test_result_cache`；
+  反代仍建议足够大的 `proxy_read_timeout`（见 `docs/个人VPS部署指南.md`）。
 
 ---
 
@@ -99,12 +109,16 @@
 - 等待循环同时看：进程退出、墙钟、**可选** `Arc<AtomicBool>` 取消。chat 路径传入 `RunLoopIo.cancel` 与「SSE sender closed」；workflow **只传超时**。
 - 超时/取消：**进程组 SIGTERM → 短等待 → 进程组 SIGKILL**；记录是否已 kill（供日志，脱敏、不打 argv 密钥）。
 - 返回：exit / timeout / cancelled + 已截断 stdout/stderr。显式 `ToolError` 码（`timeout` / 取消），不要只靠正文含「超时」。
-- 优先 `tokio::process::Command` + `kill_on_drop`，避免长命令占死 `spawn_blocking` 线程池。若短期仍在 blocking 线程里 `try_wait` 轮询，须在文档/PR 写明占用时长与迁出计划。
+- 优先 `tokio::process::Command` + `kill_on_drop`，避免长命令占死 `spawn_blocking` 线程池。若短期仍在 blocking 线程里 `try_wait` 轮询，
+  须在文档/PR 写明占用时长与迁出计划。
 
-**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 测试类工具（✅ `cargo_test` / `pytest_run` 已迁入：超时杀进程组、部分输出进错误正文、稳定 `error_code`，共用 `subprocess_session::run_and_capture`）
-  → 其余 `run_and_format*`（未开始；P1 测试工具 chunk 之前）。（原同批迁入的 `cargo_nextest` 专用工具已按薄封装收敛删除、改用 `run_command`，见 `docs/design/tool_thin_wrapper_candidates.md` §3.2。）
+**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）
+  → 测试类工具（✅ `cargo_test` / `pytest_run` 已迁入：超时杀进程组、部分输出进错误正文、稳定 `error_code`，共用 `subprocess_session::run_and_capture`）
+  → 其余 `run_and_format*`（未开始；P1 测试工具 chunk 之前）。（原同批迁入的 `cargo_nextest` 专用工具已按薄封装收敛删除、改用 `run_command`，
+    见 `docs/design/tool_thin_wrapper_candidates.md` §3.2。）
 
-**安全**：改 wait **不得**绕过白名单、`..`/绝对路径、审批门闩。超时/取消 **不得** 走 `is_compile_command_success` 成功路径，**不得** 写入 `test_result_cache`，**不得** 把 `workspace_changed` 打成 true。
+**安全**：改 wait **不得**绕过白名单、`..`/绝对路径、审批门闩。超时/取消 **不得** 走 `is_compile_command_success` 成功路径，
+  **不得** 写入 `test_result_cache`，**不得** 把 `workspace_changed` 打成 true。
 
 ---
 
@@ -118,11 +132,13 @@
 - [x] `execute_run_command.inc.rs` 外圈 `tokio::time::timeout` **触发后必须**对同一会话 kill，不能只返回「命令执行超时（N 秒）」而放任 Child。
 - [x] chat：把 `cancel` / SSE closed **穿进** wait 循环，不要只在工具间隙 `abort_tool_batch_if_sse_closed`。
 - [x] workflow：`tool=run_command` 的节点超时走同一套 kill；删掉「请手动检查孤儿进程」作为 **run_command** 的唯一出路。其它工具节点仍可孤儿，日志须写明范围。
-- [x] **`run_tool_result` / `run_tool_dispatch` 必须走 `run_try_wait` + `ctx.command_timeout_secs`**，不能只用无墙钟的 `run_try`。workflow 跳过外圈 `tokio::time::timeout` 后，否则节点会无限挂起。
+- [x] **`run_tool_result` / `run_tool_dispatch` 必须走 `run_try_wait` + `ctx.command_timeout_secs`**，不能只用无墙钟的 `run_try`。
+  workflow 跳过外圈 `tokio::time::timeout` 后，否则节点会无限挂起。
 - [x] 超时/取消返回已截断输出 + 稳定 `error_code`（现启发式可保留作兜底）；`ToolError.parsed` 保留部分 stdout/stderr。
 - [x] 杀进程后 **drain join / `try_wait` 失败路径须有界**（孤儿占管不得让 `spawn_blocking` 永久卡住）。
 
-**关联文件**：`command.rs`、`execute_run_command.inc.rs`、`exec_serial.rs`（传 cancel）、`cm_workflow/execute/node.rs`、新建会话模块、`python_tools.rs`（迁入时对照删除 hard_kill）。
+**关联文件**：`command.rs`、`execute_run_command.inc.rs`、`exec_serial.rs`（传 cancel）、`cm_workflow/execute/node.rs`、新建会话模块、
+  `python_tools.rs`（迁入时对照删除 hard_kill）。
 
 **测试**（勿残留 sleep）：
 
@@ -144,28 +160,36 @@
 **待实现**：
 
 - [x] **`run_command` 先**（宿主 chat 路径把捕获缓冲打成 `tool_output_chunk`）。
-- [ ] 测试类工具（`cargo_test` / `pytest_run`）**已迁入共享会话**（超时杀进程组、部分输出、稳定 `error_code`），`tool_output_chunk` 待做。（原同批的 `cargo_nextest` 专用工具已按薄封装收敛删除。）
-- [x] 按行或块下发已有 **`tool_output_chunk`**（`tool_call_id`、`seq`、可选 `stream`）。**chunk 不进模型上下文**（`docs/SSE协议.md`）。总量仍受 `command_max_output_len` 约束，避免气泡无限涨。（workflow **不下发** chunk。）
-- [x] **默认不加新顶层 SSE 键**。代理靠现有 HTTP `KeepAlive`。若必须做「无输出仍显示已耗时」，复用控制面/debug 形状，并同步 Client `parser_v2.rs`、`sse_dispatch/types.rs`、`control_classify.rs`、金样（`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)）。
+- [ ] 测试类工具（`cargo_test` / `pytest_run`）**已迁入共享会话**（超时杀进程组、部分输出、稳定 `error_code`），`tool_output_chunk` 待做。
+  （原同批的 `cargo_nextest` 专用工具已按薄封装收敛删除。）
+- [x] 按行或块下发已有 **`tool_output_chunk`**（`tool_call_id`、`seq`、可选 `stream`）。**chunk 不进模型上下文**（`docs/SSE协议.md`）。
+  总量仍受 `command_max_output_len` 约束，避免气泡无限涨。（workflow **不下发** chunk。）
+- [x] **默认不加新顶层 SSE 键**。代理靠现有 HTTP `KeepAlive`。若必须做「无输出仍显示已耗时」，复用控制面/debug 形状，并同步 Client `parser_v2.rs`、
+  `sse_dispatch/types.rs`、`control_classify.rs`、金样（`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)）。
 
 **关联文件**：会话模块、`serial/emit.rs`、`cm_sse_protocol/sse/protocol.rs`、Client `parser_v2.rs`。
 
-**测试**：chunk `seq` 单调；超时信封含部分 stdout；改控制面分发时跑本仓 `golden_ag_ui_classify_matches_expected` 与 Client `golden_ag_ui_v2_parser_matches_expected`。
+**测试**：chunk `seq` 单调；超时信封含部分 stdout；
+  改控制面分发时跑本仓 `golden_ag_ui_classify_matches_expected` 与 Client `golden_ag_ui_v2_parser_matches_expected`。
 
 ---
 
 ## 3. P2 — 按工具名分层墙钟（不是按 class 一刀切）
 
-**问题**：`ls`（经 `run_command`）与全量测试（`cargo_test` 或 `run_command cargo test`）不能靠 `ToolExecutionClass` 分开；给 `BlockingSync` 默认 10–30s 会误杀 snippet/测试。
+**问题**：`ls`（经 `run_command`）与全量测试（`cargo_test` 或 `run_command cargo test`）不能靠 `ToolExecutionClass` 分开；
+  给 `BlockingSync` 默认 10–30s 会误杀 snippet/测试。
 
 **待实现**：
 
 - [ ] **保持** `command_timeout_secs` 作为 `run_command` 与未点名工具的默认上限；**禁止**为迁就个别慢命令把全局默认调到数十分钟。
-- [ ] 配置增加 **按工具名** 的墙钟覆盖（可与 `parallel_wall_timeout_secs` 并列，键为工具名而非 class）。建议先点名：`cargo_test`、`pytest_run`、以及确为瞬时的只读工具（若其外圈仍走 600s `spawn_blocking` timeout）。数值实现时钉进 `config/tools.toml` 注释。
-- [ ] **`run_command` / `cargo_test` / `pytest_run`**：可选参数 **`timeout_secs`**，钳制上限（对齐 `python_snippet_run` 1～600 模式）。模型要跑长构建应显式传大值，而不是暗示「class=command 就是 30s」。
+- [ ] 配置增加 **按工具名** 的墙钟覆盖（可与 `parallel_wall_timeout_secs` 并列，键为工具名而非 class）。建议先点名：`cargo_test`、`pytest_run`、
+  以及确为瞬时的只读工具（若其外圈仍走 600s `spawn_blocking` timeout）。数值实现时钉进 `config/tools.toml` 注释。
+- [ ] **`run_command` / `cargo_test` / `pytest_run`**：可选参数 **`timeout_secs`**，钳制上限（对齐 `python_snippet_run` 1～600 模式）。
+  模型要跑长构建应显式传大值，而不是暗示「class=command 就是 30s」。
 - [ ] **不**对 `run_command` 做 argv 启发式（`ls` vs `cargo`）作为默认策略——易绕过、难测、与白名单正交。若将来要做，须单独 ADR。
 - [ ] 串行 `dispatch_tool` 与并行批读取 **同一套「工具名 → 秒」表**，class 表仅作未点名时的回退。
-- [ ] **`terminal_session`**：现状已是 `parallel_tool_wall_timeout_secs`（即默认 `command_timeout_secs`）包整次 exec。P2 **不**改成「无 turn 墙钟」。应：**保留安全网墙钟**；到期或取消时走会话 `close`/`send_signal`，避免只 `timeout` 掉 future 而 PTY 仍占 8 路上限。
+- [ ] **`terminal_session`**：现状已是 `parallel_tool_wall_timeout_secs`（即默认 `command_timeout_secs`）包整次 exec。P2 **不**改成「无 turn 墙钟」。
+  应：**保留安全网墙钟**；到期或取消时走会话 `close`/`send_signal`，避免只 `timeout` 掉 future 而 PTY 仍占 8 路上限。
 
 **关联文件**：`config/tools.toml`、`cm_config/`、`registry_policy.rs`（可按名查找，不必扩 enum）、工具 JSON Schema（`timeout_secs`）。
 
@@ -177,9 +201,14 @@
 
 - [ ] 其余子进程类迁入共享会话；短同步 SDK / 文件 IO 仍 `spawn_blocking`，墙钟按 P2 工具名表。
 - [ ] **Docker 沙盒超时 reap**（`docker stop/kill` 或 runner 生命周期）：单独设计，勿与 P0 混 PR。
-- [x] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`AGENTS.md` → Repository engineering rules → Secrets & logging）。**实现**：`cm_tools/subprocess_session.rs` 进程内原子计数 + 时长直方图（桶上界 1s/5s/30s/120s/600s/溢出），`session_stats_snapshot()` 快照；会话完成打 `debug`（`pid/kind/killed/duration_ms`）、reap 未确认打 `warn`（残留风险），均不含 argv 与密钥。
-- [x] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。**契约设计已出**：见 [`background_tool_jobs.md`](./background_tool_jobs.md)（`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；
-  实现按该 ADR 切片，不与其它条目混 PR。**已落地**：后端 + Client 核心链路（ADR §1–§7）与模型侧只读查询工具 `background_job_status` / `background_job_list`（ADR §9，P0）；实施计划见 [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**仍待**：可选 `tool_job_finished` SSE 补发（Phase 2）
+- [x] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`AGENTS.md` → Repository engineering rules → Secrets & logging）。
+  **实现**：`cm_tools/subprocess_session.rs` 进程内原子计数 + 时长直方图（桶上界 1s/5s/30s/120s/600s/溢出），`session_stats_snapshot()` 快照；
+  会话完成打 `debug`（`pid/kind/killed/duration_ms`）、reap 未确认打 `warn`（残留风险），均不含 argv 与密钥。
+- [x] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。**契约设计已出**：见 [`background_tool_jobs.md`](./background_tool_jobs.md)
+  （`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；
+  实现按该 ADR 切片，不与其它条目混 PR。**已落地**：后端 + Client 核心链路（ADR §1–§7）
+    与模型侧只读查询工具 `background_job_status` / `background_job_list`（ADR §9，P0）；
+    实施计划见 [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**仍待**：可选 `tool_job_finished` SSE 补发（Phase 2）
   、job 级观测扩展、多副本持久化（另立项）。
 
 与路线图「可观测与执行轨迹」、`tool_calling_evolution.md`「长任务进度事件」同向，落地时合并拆解。
@@ -213,6 +242,7 @@ P0 可先合入，但**整条待办**删除须满足：
 
 ## 仍开放（实现时写入 PR，不必再改目标）
 
-- ~~共享模块的精确路径与是否 `tokio::process` 一次到位，还是先 blocking `try_wait` 再迁。~~ **已落地（PR0–PR4）**：`tokio::process` 一次到位，方案与实施见 [`subprocess_session_tokio_migration_todo.md`](./subprocess_session_tokio_migration_todo.md)。
+- ~~共享模块的精确路径与是否 `tokio::process` 一次到位，还是先 blocking `try_wait` 再迁。~~ **已落地（PR0–PR4）**：`tokio::process` 一次到位，
+  方案与实施见 [`subprocess_session_tokio_migration_todo.md`](./subprocess_session_tokio_migration_todo.md)。
 - `timeout_secs` 对 `run_command` 的 Schema 字段名是否与 snippet 完全一致。
 - 无输出「已耗时」是否做产品（默认不做新 SSE 键）。

@@ -2,7 +2,8 @@
 
 **状态**：设计备忘 / 路线图（**未**承诺实现顺序与版本日期）。**受众**：计划实现或评审「CrabMate × VS Code」官方扩展的维护者；亦供产品与安全评审引用。  
 **语言**：中文。  
-**存放位置**：按仓库惯例置于 **`docs/design/`**（与 **`web_api_integration.md`** 同级）；**不**单独要求 `RFC/` 目录；若日后 RFC 流程成型，可再迁移至 **`docs/rfc/`** 并保留本路径重定向说明。
+**存放位置**：按仓库惯例置于 **`docs/design/`**（与 **`web_api_integration.md`** 同级）；**不**单独要求 `RFC/` 目录；若日后 RFC 流程成型，
+  可再迁移至 **`docs/rfc/`** 并保留本路径重定向说明。
 
 **关联**：
 
@@ -19,7 +20,8 @@
 
 ### 1.1 本文讨论什么
 
-- 在 **Visual Studio Code**（及兼容市场如 **Open VSX / VSCodium** 若选择支持）中，以**官方扩展**形态提供：连接本机或可配置的 **CrabMate `serve`**、流式对话、工作区绑定、鉴权、（后续）审批/澄清等与 Web **协议对齐**的能力。
+- 在 **Visual Studio Code**（及兼容市场如 **Open VSX / VSCodium** 若选择支持）中，以**官方扩展**形态提供：连接本机或可配置的 **CrabMate `serve`**、
+  流式对话、工作区绑定、鉴权、（后续）审批/澄清等与 Web **协议对齐**的能力。
 - 扩展作为 **「编辑器壳 + HTTP/SSE 客户端」**：推理与工具执行仍在 CrabMate 进程内，**不**在扩展宿主内嵌 `run_agent_turn`。
 
 ### 1.2 本文不讨论什么
@@ -45,7 +47,8 @@ VS Code Extension Host
 
 **原则**：
 
-1. **协议复用**：与 **`POST /chat`、`POST /chat/stream`**、**`docs/SSE协议.md`** 一致；扩展侧宜有 **TypeScript 单测**或共享生成类型，与 **`fixtures/sse_control_golden.jsonl`** / **`crabmate-sse-protocol`** 语义对齐（实现方式可选：手写解析、从 OpenAPI 生成、或子仓 CI 对照金测向量）。
+1. **协议复用**：与 **`POST /chat`、`POST /chat/stream`**、**`docs/SSE协议.md`** 一致；扩展侧宜有 **TypeScript 单测**或共享生成类型，
+  与 **`fixtures/sse_control_golden.jsonl`** / **`crabmate-sse-protocol`** 语义对齐（实现方式可选：手写解析、从 OpenAPI 生成、或子仓 CI 对照金测向量）。
 2. **薄壳**：扩展不写第二套「工具执行」与「工作区沙箱」；一律调用现有 HTTP API。
 3. **密钥**：**Web API Bearer** 等敏感项用 **`context.secrets`**，**不**写入用户可同步的 `settings.json`；日志遵循仓库脱敏规则。
 
@@ -64,7 +67,8 @@ VS Code Extension Host
 | **Bearer** | 与 Web 一致：非 loopback 等场景须 **`CM_WEB_API_BEARER_TOKEN`** 或等价配置；扩展从 **SecretStorage** 注入请求头。 |
 | **工作区** | 使用 **`workspace.workspaceFolders`** 与用户显式选择，调用现有 **`POST /workspace`**（或文档规定的等价路径），**避免**扩展侧自行 `canonicalize` 绕过服务端策略。 |
 
-**云厂商 API Key**：首版可约定「仅由 CrabMate 进程通过环境变量 / 配置读取」；若需与 Web 一致支持请求体 **`client_llm`**，须在 UI 与文档中明确 **不落盘明文**、并遵守脱敏规则。
+**云厂商 API Key**：首版可约定「仅由 CrabMate 进程通过环境变量 / 配置读取」；若需与 Web 一致支持请求体 **`client_llm`**，
+  须在 UI 与文档中明确 **不落盘明文**、并遵守脱敏规则。
 
 ---
 
@@ -83,7 +87,8 @@ VS Code Extension Host
 
 ### v2
 
-- **断线重连**：`Last-Event-ID`、**`stream_resume`** 与 **`x-stream-job-id`** 与 Web 行为对齐；处理 **410 / `STREAM_JOB_GONE`** 等（见 **`web_api_integration.md`** 对 SSE 的约束说明）。
+- **断线重连**：`Last-Event-ID`、**`stream_resume`** 与 **`x-stream-job-id`** 与 Web 行为对齐；
+  处理 **410 / `STREAM_JOB_GONE`** 等（见 **`web_api_integration.md`** 对 SSE 的约束说明）。
 - **主题与无障碍**：跟随 VS Code **ColorTheme**、高对比；键盘与焦点在 Webview 与编辑器间可预测。
 
 ---
@@ -101,7 +106,8 @@ VS Code Extension Host
 
 ### 6.1 运行环境拓扑
 
-- **Remote SSH / WSL / Dev Container**：扩展与 **`serve` 须在同一「网络可达侧」**；`127.0.0.1` 在 Remote 内指向远程机而非本机桌面。文档须写清推荐拓扑（例如在 Remote 内同时启动 `serve`）。
+- **Remote SSH / WSL / Dev Container**：扩展与 **`serve` 须在同一「网络可达侧」**；`127.0.0.1` 在 Remote 内指向远程机而非本机桌面。
+  文档须写清推荐拓扑（例如在 Remote 内同时启动 `serve`）。
 - **多根工作区**：定义「当前绑定到 CrabMate 的根文件夹」规则，避免歧义。
 
 ### 6.2 版本与兼容

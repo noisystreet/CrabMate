@@ -1,7 +1,8 @@
 # ADR：P5 — `chat_job_queue` / chat handler 贴近 web-host
 
 > **状态**：**已评估（2026-08-08）** — **暂不**整包迁 `chat_job_queue` 或带状态 chat handler 入 `crabmate-web-host`。  
-> **关联**：[`web_host_extract.md`](./web_host_extract.md)、[`turn_host_decouple.md`](./turn_host_decouple.md) P5、[`turn_runtime_placement.md`](./turn_runtime_placement.md)（P4）、[`crate_dep_policy.md`](./crate_dep_policy.md)。  
+> **关联**：[`web_host_extract.md`](./web_host_extract.md)、[`turn_host_decouple.md`](./turn_host_decouple.md) P5、
+> [`turn_runtime_placement.md`](./turn_runtime_placement.md)（P4）、[`crate_dep_policy.md`](./crate_dep_policy.md)。
 > **非目标**：改 SSE/HTTP 字段；为搬家而新建空 `crabmate-turn-runtime`（P4 已否决）。
 
 ---
@@ -80,7 +81,8 @@ web-host 只应拿注入句柄，不应承载默认实现。
 
 满足**多项**后再开迁移 PR（可修订本文状态）：
 
-1. **可独立依赖的 Turn 入口**：密封/`builder` 子集或 DTO crate，使 worker 不必依赖整包 `crabmate`（与 [`turn_runtime_placement.md`](./turn_runtime_placement.md) §5 同向）。  
+1. **可独立依赖的 Turn 入口**：密封/`builder` 子集或 DTO crate，
+  使 worker 不必依赖整包 `crabmate`（与 [`turn_runtime_placement.md`](./turn_runtime_placement.md) §5 同向）。
 2. **`AppState` / Facet 归属策略**：迁入 web-host，或放弃孤儿 `FromRef`、改用显式提取 / 新状态宿主 crate。  
 3. **internal 能力旁路**：角色/会话模式/记忆/健康元数据等不再迫使 web-host 触 internal。  
 
@@ -101,4 +103,5 @@ web-host 只应拿注入句柄，不应承载默认实现。
 
 ## 7. 成功一句话
 
-**调用边已解（TurnRunner）；模块边仍被「根包 composition root + internal 禁边 + FromRef」锁死——P5 现阶段巩固边界与契约壳，整包搬家等到独立 Turn DTO 与 AppState 归属方案就绪。**
+**调用边已解（TurnRunner）；模块边仍被「根包 composition root + internal 禁边 + FromRef」锁死——P5 现阶段巩固边界与契约壳，
+  整包搬家等到独立 Turn DTO 与 AppState 归属方案就绪。**

@@ -1,16 +1,22 @@
 # ADR：展示 crate 下沉 Client（执行计划）
 
 > **状态**：**Proposed**（2026-08-16）；**W3/W4/W5 缓做**（2026-08-16：优先 [`crates_io_single_package.md`](./crates_io_single_package.md)）。  
-> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A（本仓只维护 Server）；[`client_contract_versioning.md`](./client_contract_versioning.md)（线契约钉版本）；Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)、
+> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A（本仓只维护 Server）；
+> [`client_contract_versioning.md`](./client_contract_versioning.md)（线契约钉版本）；
+> Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)、
 > [`client_shared_logic.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/client_shared_logic.md)。
-> **Client 仓勾选**：[`crabmate-client/docs/design/display_crate_sink.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)（消费侧清单；决策以本文为准）。  
-> **非目标**：把 `sse-protocol` / `api-contract` / `types` 搬进 Client；Server 依赖 Client git crate。**crates.io 单包**见 [`crates_io_single_package.md`](./crates_io_single_package.md)（不依赖 W3）。
+> **Client 仓勾选**：
+> [`crabmate-client/docs/design/display_crate_sink.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)
+> （消费侧清单；决策以本文为准）。
+> **非目标**：把 `sse-protocol` / `api-contract` / `types` 搬进 Client；Server 依赖 Client git crate。
+> **crates.io 单包**见 [`crates_io_single_package.md`](./crates_io_single_package.md)（不依赖 W3）。
 
 ---
 
 ## 1. Context
 
-D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，却仍 git 钉本仓 **7** 个 crate。其中多数是 **怎么画**（投影、工具卡），不是 **线上是什么字节**。
+D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，却仍 git 钉本仓 **7** 个 crate。其中多数是 **怎么画**（投影、工具卡），
+  不是 **线上是什么字节**。
 
 约束：
 
@@ -139,15 +145,18 @@ W6 sse-protocol feature — **并入**单包计划 S1（crates_io_single_package
 
 ### W2b 落地（2026-08-16）
 
-- **W2b.1**：`tool_content_for_display_for_message` 只用信封摘要 / `summarize_tool_call`；`GET /conversation/messages` 的 `role=tool` **不再**填 `display_*`（Client 水合回退本地 `crabmate-tool-card`）。
-- **W2b.2**：本仓删除 `crates/crabmate-tool-card` member；钉清单已同步。圈复杂度门禁现为全仓 **CCN ≤ 10**（`scripts/lizard-rust.sh`），不再使用按模块 caps TOML。
+- **W2b.1**：`tool_content_for_display_for_message` 只用信封摘要 / `summarize_tool_call`；
+  `GET /conversation/messages` 的 `role=tool` **不再**填 `display_*`（Client 水合回退本地 `crabmate-tool-card`）。
+- **W2b.2**：本仓删除 `crates/crabmate-tool-card` member；钉清单已同步。圈复杂度门禁现为全仓 **CCN ≤ 10**（`scripts/lizard-rust.sh`），
+  不再使用按模块 caps TOML。
 - **W2b.3**：`docs/命令行与路由.md` / `docs/en/CLI.md` 已说明 md/`display` 工具段不与 Web 工具卡逐字对齐。
 
 ---
 
 ## 9. W3 — `crabmate-turn-layout` expand（**缓做**）
 
-> 2026-08-16：优先单包 crates.io。W3/W4 不再作为下一波；重启前须对照 [`crates_io_single_package.md`](./crates_io_single_package.md)（切仓后本包已是模块，再迁 Client 无益于发布图）。
+> 2026-08-16：优先单包 crates.io。W3/W4 不再作为下一波；重启前须对照 [`crates_io_single_package.md`](./crates_io_single_package.md)
+> （切仓后本包已是模块，再迁 Client 无益于发布图）。
 
 **入口**：建议 W2b 已合（减并行冲突）；crate **不依赖** `types` / `sse-protocol`（仅 `serde`/`log`），搬家干净。
 
@@ -233,4 +242,5 @@ expand 窗口内 Server 副本仍可编译 `sse-replay`。
 
 `docs/待办清单.md` **B2**：服务端可选布局元数据 + 共享投影 golden。
 
-本 ADR **不实现 B2**。W4 之后「共享投影 golden」的物理位置在 **Client**；若仍要做 B2，改为 Server 下发可选元数据、Client 投影消费，而不是把 `turn-layout` 留在本仓。
+本 ADR **不实现 B2**。W4 之后「共享投影 golden」的物理位置在 **Client**；若仍要做 B2，改为 Server 下发可选元数据、Client 投影消费，
+  而不是把 `turn-layout` 留在本仓。

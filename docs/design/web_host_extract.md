@@ -2,9 +2,11 @@
 
 ## 目标
 
-在**不**拆独立部署进程的前提下，把 Web 控制面与领域回合解耦：handler 只拿所需 **facet**；**`crabmate-web-host`** 承载 HTTP 契约与 serve 壳，**不得**依赖整包 `crabmate-internal`。
+在**不**拆独立部署进程的前提下，把 Web 控制面与领域回合解耦：handler 只拿所需 **facet**；**`crabmate-web-host`** 承载 HTTP 契约与 serve 壳，
+  **不得**依赖整包 `crabmate-internal`。
 
-> 命名：Axum 宿主包为 **`crabmate-web-host`**。Leptos WASM UI 是 Client 仓 **`crabmate-web`**（[`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)），二者勿混用。
+> 命名：Axum 宿主包为 **`crabmate-web-host`**。
+> Leptos WASM UI 是 Client 仓 **`crabmate-web`**（[`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)），二者勿混用。
 
 ## 非目标
 
@@ -28,7 +30,8 @@
 
 ### 为何 handler 未整包迁入 web-host
 
-axum `FromRef<Arc<AppState>> for Facet` 要求 **Facet 与 AppState 同 crate**（孤儿规则）。`AppState` 仍在根包，故带状态的 handler 留在 `src/web/`；web-host 专责契约与 serve 壳。
+axum `FromRef<Arc<AppState>> for Facet` 要求 **Facet 与 AppState 同 crate**（孤儿规则）。`AppState` 仍在根包，故带状态的 handler 留在 `src/web/`；
+  web-host 专责契约与 serve 壳。
 
 回合执行面解耦（`ToolDispatch` / `TurnRunner`）见 **`docs/design/turn_host_decouple.md`**（P1/P2 已在根包落地注入边界）。
 
