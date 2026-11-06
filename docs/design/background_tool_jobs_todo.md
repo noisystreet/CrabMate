@@ -26,7 +26,8 @@
 
 ### Slice 1：后端核心（`run_command` async + job 模块 + 端点）— PR #873 / #874 已合入
 - [x] **1.1 配置**：`[tool_registry]` 新增 6 键（`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`）；热重载经 `POST /config/reload` 重建 `AgentConfig`，创建 job 时读取、已运行 job 不受影响。
-- [x] **1.2 job 模块**（`src/cm_internal/tool_jobs/`，复用 `subprocess_session`）：`types.rs` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）+ 原子状态转移；`registry.rs` 不可枚举 `tool_job_id`（`tooljob_` + 32 hex）+ 并发/排队/条目上限（仅淘汰终态）+ TTL 清理（创建起算 + 终态宽限，清理后轮询 410）；`worker.rs` `tokio::spawn` + `await`（`run_job_async`；panic 由 `JoinError` 兜底：先 terminate 进程组再标 `failed(internal)`；子进程 `kill_on_drop(true)` 兜底 abort/drop）；启动 sweep 为空操作（无持久化，不承诺崩溃恢复）。
+- [x] **1.2 job 模块**（`src/cm_internal/tool_jobs/`，复用 `subprocess_session`）：`types.rs` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）+ 原子状态转移；`registry.rs` 不可枚举 `tool_job_id`（`tooljob_` + 32 hex）+ 并发/排队/条目上限（仅淘汰终态）+ TTL 清理（创建起算 + 终态宽限，
+  清理后轮询 410）；`worker.rs` `tokio::spawn` + `await`（`run_job_async`；panic 由 `JoinError` 兜底：先 terminate 进程组再标 `failed(internal)`；子进程 `kill_on_drop(true)` 兜底 abort/drop）；启动 sweep 为空操作（无持久化，不承诺崩溃恢复）。
 - [x] **1.3 `run_command` 集成**：`RunCommandArgs` 增 `async`（默认 false）与 `timeout_secs`（钳制 1～600）；门闩 `background_jobs_enabled=false` → `invalid_args`，需交互审批 → 拒绝；async 仅对 `run_command` 开放；启动帧软字段序列化且不 bump 协议（`tool_job` 键不注入模型）。
 - [x] **1.4 HTTP 端点**（`src/web/routes/` + `crabmate-api-contract`）：`GET /tools/jobs/{tool_job_id}`（错误码 `401/403/404/410`，新增 `JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH`）；`POST /tools/jobs/{tool_job_id}/cancel`（`queued` 不杀进程、完成态 409、幂等）；归属校验（随机 id 主防护 + 可选 `X-Workspace-Root` 头比对）。
 - [x] **1.5 文档同步**：`docs/SSE协议.md`（`tool_result` 软字段表）、`docs/命令行契约.md` / OpenAPI（两端点 + 新 `ApiError.code`）、`docs/工具说明.md`（`async` 参数与限制）、`docs/配置说明.md` / README（用户可见配置键）。
@@ -48,14 +49,17 @@
 - [x] `run_command` ToolSpec description 宣传 `async` / `timeout_secs` 与两个查询工具（纯文案）。
 - [x] 文档：`docs/工具说明.md` / `docs/en/TOOLS.md`。
 - [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued` / `Succeeded` / `Failed` / 终态无 outcome / TTL 过期 / 截断 / 多字节边界 / list 空结果 / 工作区过滤 + 最新在前 + 命令摘要 / limit）与工具参数层单测；async 端到端（真实 `dispatch_tool` 闭环）。
-- **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。**后续更新（2026-10-24）**：`background_job_cancel` 后来**已实现并独立注册**（终止语义，计入 `write_effect_tools`，见 `background_tool_jobs_contract.md` §9）；此处「否决」仅针对**发起执行型**工具（`start_job` / 会重复实现审批与白名单的 `job_cancel`），不含只读查询与终止语义。同日后 `background_job_status` / `list` / `output` 合并为单个 `background_job` 的 `action` 选择器。
+- **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。**后续更新（2026-10-24）**：`background_job_cancel` 后来**已实现并独立注册**（终止语义，
+  计入 `write_effect_tools`，见 `background_tool_jobs_contract.md` §9）；此处「否决」仅针对**发起执行型**工具（`start_job` / 会重复实现审批与白名单的 `job_cancel`），不含只读查询与终止语义。同日后 `background_job_status` / `list` / `output` 合并为单个 `background_job` 的 `action` 选择器。
 
 ### Slice 5：非 `run_command` 工具的后台执行（装配表，`cargo_test` / `pytest_run`）
 **背景**：`async` 原先只对 `run_command` 开放；测试类工具（`cargo_test` / `pytest_run`）是长耗时主力，但参数是结构化字段而非现成 argv。
 
 **方案（已定）**：**进程载荷**——不为普通工具引入新载荷类型。发起时把参数装配成 `(program, args, cwd)`（与前台**同一套**校验与 CLI 拼装），复用既有 `JobSpawn` 链路，取消/超时/输出环形缓冲/`tool_job_finished` 全部照用，`tool_jobs` 模块**零改动**。
 
-- [x] `cm_tools` 侧 argv helper：`cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取快照 `AssembledCommand`）+ 共享 `tools::command_program_and_args`。`cwd` 原样沿用 `Command::current_dir`（`pytest_run` 已在装配阶段 canonicalize），后台与前台工作目录逐字一致。
+- [x] `cm_tools` 侧 argv helper：
+  `cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取快照 `AssembledCommand`）+ 共享 `tools::command_program_and_args`。
+  `cwd` 原样沿用 `Command::current_dir`（`pytest_run` 已在装配阶段 canonicalize），后台与前台工作目录逐字一致。
 - [x] 门闩与装配：`tool_registry/execute/background_job.rs`（`try_dispatch_background_async_tool`：总开关 → 注册表 → Docker 沙盒拒绝 → 装配 → `launch_background_job`）；`run_command/async_invocation.rs` 收敛到同一发起函数（顺带修掉终态补发里硬编码 `"run_command"`）。
 - [x] 单一事实来源：门闩的「支持」判定与装配共用装配表 `background_async_argv_assembler(name)`（`background_async_gate` 与 `assemble_background_job_spawn` 都查它），「支持清单」不再与装配分支两处漂移。
 - [x] 语义（契约 §1.2/§1.3）：拦截条件 = `async == true` 且 `name != run_command` 且（∈ 装配表 或 ∈ 白名单）；装配表∩白名单 → 发起；装配表×非白名单 → 报「未在白名单中」；白名单×非装配表 → 报「暂不支持后台执行」；两者皆非 → **不拦截**（保持既有「未知参数被忽略」语义）；总开关关闭的文案同时点明白名单条件。

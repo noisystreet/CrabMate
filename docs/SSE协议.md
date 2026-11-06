@@ -2,21 +2,26 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 **`src/cm_sse_protocol`**（`sse/protocol.rs`、`sse/line.rs`）。Client 钉 **`crabmate::cm_sse_protocol`**（`features = ["protocol"]`）；`server` 组合面另有 `sse` 别名，**不要**在 Client 使用。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)（AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 **`src/cm_sse_protocol`**（`sse/protocol.rs`、`sse/line.rs`）。Client 钉 **`crabmate::cm_sse_protocol`**（`features = ["protocol"]`）；
+  `server` 组合面另有 `sse` 别名，**不要**在 Client 使用。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)
+  （AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
 
 ## 协议版本 `v` 与协商
 
 - 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`** 一致。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
 - **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
-- **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
+- **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，
+  文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
 - **演进**：递增 `v` 时须同步：**`src/cm_sse_protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、**`cargo test --lib --no-default-features --features protocol cm_sse_protocol`**（文档内版本标记自检）。
 - **Semver / 发版 / 外仓钉版本**：线协议 `SSE_PROTOCOL_VERSION` 与 Cargo crate semver 是两套轴；破坏性变更、软字段、**当前无 N−1 线协议解码窗口**、git 标签 `client-contract-vX.Y.Z` 钉法见 **[`docs/design/client_contract_versioning.md`](design/client_contract_versioning.md)**。本地/CI 门禁：`bash scripts/check-client-contract.sh`。
 
 ## 传输与分帧
 
 - 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/配置说明.md`**「配置热重载」。）
-- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；**仅 abort SSE 连接不会停止**模型调用与工具（否则无法 `stream_resume`）。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
+- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；
+  服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；
+  **仅 abort SSE 连接不会停止**模型调用与工具（否则无法 `stream_resume`）。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
 - 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
 - **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。另见控制面 **`stream_ended`**。
@@ -71,7 +76,8 @@
   计数来源为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`；压缩原因当前为 `token_budget_summary` / `token_budget_turn_groups` / `token_budget_warning` / `none`。仅 `compress_hits > 0` 时标题为“已压缩工具输出”；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；同步裁剪**不计**这些旁注条数，
   且同 `kind` 的 `context_inject`/`context_trim` **覆盖**旧行。
 
-**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、`max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、`attachment_tokens`、`counting_source`，以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
+**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、`max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、`attachment_tokens`、`counting_source`，
+  以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
 
 ### `tool_result` 常用字段
 
@@ -95,7 +101,8 @@
 | `tool_job_poll_url` | string? | 同上，相对路径 `GET /tools/jobs/{tool_job_id}`（轮询端点） |
 | `tool_job_status` | string? | 同上，发起时恒为 **`queued`**（尚未运行） |
 
-**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取，执行中输出可经 **`GET /tools/jobs/{id}/output`** 增量拉取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键已实现**（终态补发，尽力而为：仅当原 SSE 连接仍存活时投递，连接已关闭则静默丢弃；旧客户端可忽略未知顶层键）。
+**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取，
+  执行中输出可经 **`GET /tools/jobs/{id}/output`** 增量拉取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键已实现**（终态补发，尽力而为：仅当原 SSE 连接仍存活时投递，连接已关闭则静默丢弃；旧客户端可忽略未知顶层键）。
 
 ### `tool_output_chunk` 体内字段
 

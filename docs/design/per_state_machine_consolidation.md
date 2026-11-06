@@ -1,6 +1,7 @@
 # PER 编排：用显式状态机收拢分支（设计）
 
-**状态（2026-08 对齐现实 + 词汇硬化；L2 退役 R4）**：运行时已收敛为 **session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除；意图早退 / `intent_at_turn_start_finished` 亦已拆除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
+**状态（2026-08 对齐现实 + 词汇硬化；L2 退役 R4）**：运行时已收敛为 **session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、
+  分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除；意图早退 / `intent_at_turn_start_finished` 亦已拆除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
 
 **相位词汇真源**（对照表，非全局 FSM）：**`src/cm_agent/agent_turn/phase_vocabulary.rs`**。外循环相位变更只经 **`OuterLoopDriver::record_*`**；金样 **`fixtures/outer_loop_phase_golden.jsonl`**（`cargo test golden_outer_loop_phase`）。
 

@@ -66,7 +66,8 @@
 
 ### 3.3 浅色相关「组件分叉」→ token 覆层（已完成收敛）
 
-历史上以下文件含 **`:root[data-theme="light"]`** 的额外规则；现已 **迁入 `tokens.css` 的覆层变量**（见 §3.2 注释与 `:root` / `:root[data-theme="light"]` 内 `--selection-bg`、`--page-bg-decor-*`、`--nav-rail-bg`、`--btn-primary-*`、`--modal-backdrop-bg`、`--status-agent-select-bg-image`、`--composer-bar-box-shadow`、`--composer-ws-ref-*`），**`base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`** 仅引用 `var(--*)`，**不再**按 `light` 写死选择器。
+历史上以下文件含 **`:root[data-theme="light"]`** 的额外规则；现已 **迁入 `tokens.css` 的覆层变量**（见 §3.2 注释与 `:root` / `:root[data-theme="light"]` 内 `--selection-bg`、`--page-bg-decor-*`、`--nav-rail-bg`、`--btn-primary-*`、`--modal-backdrop-bg`、`--status-agent-select-bg-image`、
+  `--composer-bar-box-shadow`、`--composer-ws-ref-*`），**`base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`** 仅引用 `var(--*)`，**不再**按 `light` 写死选择器。
 
 **推荐路径（优先）**：
 

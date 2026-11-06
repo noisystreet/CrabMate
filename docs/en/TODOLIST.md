@@ -68,7 +68,8 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 - [ ] **Audience role (side-channel critic)**: optional bounded tool-less side calls per **`docs/design/audience_critic_role.md`**; align with **`plan_rewrite`**, staged patch counters, and **`final_plan_semantic_check`**; default fail-open; observability across CLI/TUI/Web per repo conventions. Indexed from **`docs/en/FUTURE_PLANS.md`**.
 
-(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md) (**archived** — the plan shipped; authoritative today is `codebase_semantic_search` in **`docs/en/TOOLS.md`**). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
+(Items mirror the Chinese [TODOLIST.md](../待办清单.md): planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](../design/archive/CODEBASE_INDEX_PLAN.md) (**archived** — the plan shipped;
+  authoritative today is `codebase_semantic_search` in **`docs/en/TOOLS.md`**). **agent_turn vs llm** entrypoint rules: **`docs/en/DEVELOPMENT.md`**.)
 
 ---
 
@@ -87,8 +88,10 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices: **`docs/design/permission_levels.md`**. S1–S6 are in; the items below are the wrap-up.
 
-- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist, but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch, so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
-- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping; the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.
+- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist, but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch,
+  so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
+- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping;
+  the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.
 - [ ] **R5: fold the three tool-visibility decisions into one**: design §17.5 says "not a prerequisite, open a separate PR"; S3 already routes everything through `caps`, so this is deduplication.
 - [ ] **Client (separate repo `crabmate-client`) S5d**: level selector (fed by `GET /permission`'s `available` / `clamped_by` / `ceiling_source`), the L4 second confirmation, and rendering the already-emitted `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel`; switching while idle must call `POST /conversation/state`, otherwise a refresh falls back to the old level.
 - [ ] **Finer-grained approval for disk-write tools**: extend `tool_approval::SensitiveCapability` and config keys if per-tool / per-operation granularity is needed (`run_command` / `http_fetch` / `http_request` / workflow approvals already go through `tool_approval`). The former "sensitive-operation tiers (continued)" item is now covered by this level system, so it was folded in here.
@@ -104,8 +107,13 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 - [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
 
 - [ ] **Tool-card placeholder summary and the `TOOL_CALL_ARGS` frame split (continued)**: both stem from "summary and arguments are handed over in full on the START frame", so decide them together rather than half-fixing either.
-  1. **Keep or drop the placeholder**: `tool_call_summary_from_args` still emits `tool: <name>` when no summary can be derived. The Client's `tool_display` already recognises that string and rebuilds a display line from the argument JSON (and the Server now summarises array-shaped `run_command` commands too), so the placeholder's only remaining job is "keep the protocol field non-empty". It could become an empty string or an optional field, making "no summary" an explicit state — that is an SSE field-semantics change, so third-party consumer contracts and a compatibility window have to be settled at the same time.
-  2. **`TOOL_CALL_ARGS` duplicates `TOOL_CALL_START`**: START already carries the full `arguments` (or the 240-character `argsPreview` when absent), so the ARGS frame adds nothing, and the Client's `on_tool_call_args` / `StreamSink::on_tool_args` hooks are empty wiring today. Making the second frame worthwhile (incremental or chunked delivery, or moving large arguments out of START so the first frame stays small) is a contract change with both shells and the golden fixtures to keep in step.
+  1. **Keep or drop the placeholder**:
+    `tool_call_summary_from_args` still emits `tool: <name>` when no summary can be derived. The Client's `tool_display` already recognises that string and rebuilds a display line from the argument JSON (and the Server now summarises array-shaped `run_command` commands too),
+    so the placeholder's only remaining job is "keep the protocol field non-empty". It could become an empty string or an optional field, making "no summary" an explicit state — that is an SSE field-semantics change,
+    so third-party consumer contracts and a compatibility window have to be settled at the same time.
+  2. **`TOOL_CALL_ARGS` duplicates `TOOL_CALL_START`**: START already carries the full `arguments` (or the 240-character `argsPreview` when absent), so the ARGS frame adds nothing,
+    and the Client's `on_tool_call_args` / `StreamSink::on_tool_args` hooks are empty wiring today. Making the second frame worthwhile (incremental or chunked delivery, or moving large arguments out of START so the first frame stays small)
+    is a contract change with both shells and the golden fixtures to keep in step.
 
 ---
 

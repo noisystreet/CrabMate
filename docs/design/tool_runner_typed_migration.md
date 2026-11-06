@@ -99,7 +99,8 @@
 
 ### 3.2 编译期 smoke
 
-`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）、git 族的 `define_git_runners_try!`（`git::dispatch`），以及 args-only 形态的 `define_runners_args_only_try!`（`present_clarification_questionnaire`，2026-10-28 补）。
+`runners.rs` 的 `mod try_macro_typecheck`（`#[cfg(test)]`）用**真实** `_try` 实现展开孪生宏，防止「宏配对写错但编译器不报」。目前覆盖 6 个 `_try` 函数（`read_file` / `search_in_files` / `glob_files` / `list_tree` / `read_dir` / `read_binary_meta`）、
+  git 族的 `define_git_runners_try!`（`git::dispatch`），以及 args-only 形态的 `define_runners_args_only_try!`（`present_clarification_questionnaire`，2026-10-28 补）。
 
 新增孪生宏时**应同时在 smoke 里挂一个真实实现**，否则宏本身没有任何类型校验。
 
@@ -223,7 +224,8 @@
 | ~~`self_config_info`~~（**已迁 2026-10-27**） | `self_config_info::self_config_info(cfg, sections)` | 已改 `runner_self_config_info_try`：缺 `cfg` → `tool_context_incomplete`（归 `Workspace`），`sections` 未匹配 → `invalid_args`；正文文案与旧实现逐字一致 |
 | ~~`skill_manage`~~（**已迁 2026-10-27**） | `skill_manage::skill_manage(parsed, &cfg.skills, cwd)` | 内部 8 个 `Result<_, String>` helper 全部换成 `Result<_, ToolError>`：参数/目标类 → `invalid_args`，目录与文件 IO → 新增 `skill_manage_io_failed`。**测试断言一行未改**：helper 统一取 `e.message`，文案逐字不变 |
 
-> **修正（2026-10-27，实测）**：原先估计「两个都几乎零成本」只对 `self_config_info` 成立——它只有 runner 层两个分支。`skill_manage` 内部虽已大量使用 `Result<T, String>`（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `scan_entries` / `resolve_remove_target`），但错误类型是 `String`，**换类型要触及约 20 个错误点 + 3 处测试断言**，工作量与本档其余项不是一个量级，故单独切片。
+> **修正（2026-10-27，实测）**：原先估计「两个都几乎零成本」只对 `self_config_info` 成立——它只有 runner 层两个分支。`skill_manage` 内部虽已大量使用 `Result<T, String>`（`install_plan` / `install_layer` / `install_conflicts` / `write_skill_file` / `scan_entries` / `resolve_remove_target`），
+> 但错误类型是 `String`，**换类型要触及约 20 个错误点 + 3 处测试断言**，工作量与本档其余项不是一个量级，故单独切片。
 
 ### 4.9 `file_core.inc.rs`（0）— **已迁 2026-10-28**（形态 `cwd_try`，见 §4.22）
 

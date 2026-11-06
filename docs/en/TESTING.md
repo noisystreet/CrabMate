@@ -24,7 +24,8 @@ Complexity, dependency security, and coverage use separate workflows (**`code-co
 
 ### GitHub Release (tags only)
 
-[`.github/workflows/release.yml`](../../.github/workflows/release.yml) does **not** run on PR/`main` pushes. It runs when you push tag **`vX.Y.Z`** (or **`workflow_dispatch`** with an existing tag): **`make package`**, create/update a GitHub Release, attach artifacts. Body comes from **`CHANGELOG.md`** for the tag’s core **`X.Y.Z`** (so **`v0.1.0-rc.1`** still uses the **`[0.1.0]`** section while **`Cargo.toml`** may stay **`0.1.0`**). Re-running for the same tag updates that Release.
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) does **not** run on PR/`main` pushes. It runs when you push tag **`vX.Y.Z`** (or **`workflow_dispatch`** with an existing tag): **`make package`**, create/update a GitHub Release,
+  attach artifacts. Body comes from **`CHANGELOG.md`** for the tag’s core **`X.Y.Z`** (so **`v0.1.0-rc.1`** still uses the **`[0.1.0]`** section while **`Cargo.toml`** may stay **`0.1.0`**). Re-running for the same tag updates that Release.
 
 ## Pre-commit
 
@@ -40,7 +41,8 @@ Includes (non-exhaustive):
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: every function under **`src/`** must have **CCN ≤ 10**). Optional **`--list-above N`** lists functions above that warning threshold
 - **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**; hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
-- **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
+- **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python);
+  function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
 - **`./scripts/check-sse-protocol.sh`** (when changing SSE / `fixtures/sse_ag_ui_golden.jsonl` / **`fixtures/http_sse_failure_path_golden.jsonl`**)
 
@@ -150,7 +152,10 @@ cd ../crabmate-client && make frontend
 
 > **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md) there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
 
-Directory: Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
+Directory:
+  Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri)
+  (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes;
+  stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
 
 | Phase | Examples | Notes |
 | --- | --- | --- |

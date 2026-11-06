@@ -28,7 +28,8 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 - **Backend** (`src/` + workspace crates): OpenAI-compatible chat, agent turns, HTTP/SSE, tools, workspace, sessions.
 - **Official UI** (Client [frontend](https://github.com/noisystreet/crabmate-client/tree/main/frontend)): Leptos + WASM (Trunk); this repo’s `serve` is **always API-only** and never hosts a SPA (browser UIs connect over **CORS**, **`CM_WEB_CORS_ALLOWED_ORIGINS`**). Local checkouts default to sibling `../crabmate-client` (Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**).
 - **CLI / TUI** (`runtime/`): share **`run_agent_turn`** and tool execution with Web.
-- **Dev / package container** (optional): root **`Dockerfile`** is a **toolchain** image on **Ubuntu 24.04** (Rust + `cargo-deb`; glibc **2.39** / deb `libc6 (>= 2.39)`; not a production runtime). `docker build -t crabmate-dev .` (use `--network=host` only if DNS fails) then `docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev`, or **`make package-docker`**. UI/Trunk stays in Client.
+- **Dev / package container** (optional): root **`Dockerfile`** is a **toolchain** image on **Ubuntu 24.04** (Rust + `cargo-deb`; glibc **2.39** / deb `libc6 (>= 2.39)`; not a production runtime). `docker build -t crabmate-dev .` (use `--network=host` only if DNS fails)
+  then `docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev`, or **`make package-docker`**. UI/Trunk stays in Client.
 
 ## Architecture
 
@@ -65,7 +66,9 @@ flowchart TB
 
 ### Configuration
 
-`AgentConfig`: TOML shards + `CM_*` → `finalize`. Embedded **`config/llm_vendors.toml`** (vendor matchers, `models` lists, outbound caps; not `[agent]` hot-reload). Before HTTP, outbound `chat/completions` flatten or inline **`/uploads/`** and workspace **`@` raster refs** as **`data:`** per catalog **`image_url_content_parts`** (session does not store base64; files live in **`chat_uploads/`** beside the session store). **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
+`AgentConfig`: TOML shards + `CM_*` → `finalize`. Embedded **`config/llm_vendors.toml`** (vendor matchers, `models` lists, outbound caps; not `[agent]` hot-reload). Before HTTP,
+  outbound `chat/completions` flatten or inline **`/uploads/`** and workspace **`@` raster refs** as **`data:`** per catalog **`image_url_content_parts`** (session does not store base64;
+  files live in **`chat_uploads/`** beside the session store). **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
 
 ### Agent main loop (mental model)
 
@@ -108,11 +111,14 @@ Update this table when top-level duties or crate boundaries change. **Do not** m
 | **`cm_chat_export`** | Export envelope (raw / display, `protocol`) |
 | **`observability`** | Tracing init |
 
-Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. crates.io **stable** is **`crabmate` `0.8.0`**; this tree is **`0.8.0`** (git **`v0.8.0`**). **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases); server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]` (**not** a semver promise — see [`crates_io_single_package.md`](../design/crates_io_single_package.md) §2.4). Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
+Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. crates.io **stable** is **`crabmate` `0.8.0`**; this tree is **`0.8.0`** (git **`v0.8.0`**). **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases);
+  server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]` (**not** a semver promise — see [`crates_io_single_package.md`](../design/crates_io_single_package.md) §2.4). Forbidden edges:
+  **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
 
 ## Frontend (summary)
 
-UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch). Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
+UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch). Build:
+  clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 
@@ -133,4 +139,5 @@ Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace 
 
 ## Further reading
 
-`docs/design/` (**server_api_completeness** ADR + `web_api_integration`, agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …). This page is an entry index only.
+`docs/design/` (**server_api_completeness** ADR + `web_api_integration`, agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation,
+  run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …). This page is an entry index only.

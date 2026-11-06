@@ -16,7 +16,8 @@
 
 **CrabMate** is a Rust AI agent that speaks **OpenAI-compatible** `chat/completions` to DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, or a local Ollama.
 
-This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI, Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
+This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI, Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)
+  ** (local checkouts default to sibling `../crabmate-client`); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
 
@@ -89,7 +90,9 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 ## Deployment and security
 
 - **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs a **`web_api_bearer_token`** or an explicit insecure switch.
-- **Web API auth**: embedded default **`web_api_require_bearer = false`** — **`serve`** may start without a shared secret; when a token is set, send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Configure it via **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**) — **not** the LLM **`API_KEY`**. Prefer **`web_api_require_bearer = true`** on exposed networks.
+- **Web API auth**: embedded default **`web_api_require_bearer = false`** — **`serve`** may start without a shared secret; when a token is set,
+  send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Configure it via **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**)
+  — **not** the LLM **`API_KEY`**. Prefer **`web_api_require_bearer = true`** on exposed networks.
 - **CORS**: official shell Origins are allowed by default; add extra browser Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**.
 - **Permission levels**: **`permission_level`** ∈ `chat` / `read` / `workspace` / `approved` (**default**) / `unrestricted`. The ceiling **`permission_level_max`** is **derived from the bind address** when unset (loopback → `unrestricted`, non-loopback → `approved`) and frozen at startup;
   **`POST /config/reload` can only lower it**. Non-loopback `unrestricted` additionally requires **`allow_unrestricted_permission_for_non_loopback = true`**, otherwise **`serve` refuses to start**. Types, config keys, the six-axis projection and the **tool-visibility / early-deny / command-deny** wiring for `chat` / `read` are in place (S1 + S2),
