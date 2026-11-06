@@ -112,7 +112,7 @@ fn import_remote_mcp_server(
     out: &mut McpJsonImportResult,
 ) {
     let url = server.url.unwrap_or_default().trim().to_string();
-    if let Err(e) = crate::cm_mcp::resolve::validate_mcp_remote_url(&url) {
+    if let Err(e) = crate::mcp::resolve::validate_mcp_remote_url(&url) {
         out.warnings.push(format!("「{key}」：{e}"));
         out.skipped_remote.push(key.to_string());
         return;

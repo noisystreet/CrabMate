@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::cm_mcp::McpClientSession;
-use crate::cm_mcp::parse_mcp_openai_tool_name;
+use crate::mcp::McpClientSession;
+use crate::mcp::parse_mcp_openai_tool_name;
 
 /// 单轮内按 slug 索引的 MCP 客户端集合。
 pub struct McpTurnSessions {

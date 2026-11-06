@@ -181,7 +181,7 @@ async fn try_dispatch_dynamic_tool(
 
 async fn try_dispatch_mcp_proxy_tool(
     cfg: &Arc<AgentConfig>,
-    mcp_turn: Option<&crate::cm_internal::mcp::McpTurnHandle>,
+    mcp_turn: Option<&crate::mcp::McpTurnHandle>,
     name: &str,
     args: &str,
 ) -> Option<(String, Option<serde_json::Value>)> {
@@ -204,7 +204,7 @@ async fn try_dispatch_mcp_proxy_tool(
     };
     let guard = sess.lock().await;
     let mcp_args = crate::cm_internal::tool_call_explain::strip_explain_why_if_present(args);
-    let out = crate::cm_internal::mcp::call_mcp_tool(
+    let out = crate::mcp::call_mcp_tool(
         &guard,
         remote.as_str(),
         mcp_args.as_str(),

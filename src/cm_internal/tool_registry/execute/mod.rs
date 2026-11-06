@@ -107,7 +107,7 @@ pub struct DispatchToolMemory<'a> {
         Option<std::sync::Arc<crate::cm_tools::read_file_turn_cache::ReadFileTurnCache>>,
     pub long_term_memory: Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
-    pub mcp_turn: Option<&'a crate::cm_internal::mcp::McpTurnHandle>,
+    pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
 }
 
 /// 单次工具分发入参（嵌套分组，避免顶层继续平铺胀袋）。

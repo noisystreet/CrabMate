@@ -299,7 +299,7 @@ fn validate_mcp_server_endpoints(srv: &McpServerEntry) -> Result<(), String> {
         ));
     }
     if has_url {
-        crate::cm_mcp::resolve::validate_mcp_remote_url(srv.url.as_deref().unwrap_or(""))?;
+        crate::mcp::resolve::validate_mcp_remote_url(srv.url.as_deref().unwrap_or(""))?;
     }
     Ok(())
 }
