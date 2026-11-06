@@ -83,7 +83,7 @@ mod full {
         }
         println!("MCP：部分服务器连接失败：");
         for s in &opened.skipped {
-            let kind = crate::mcp::classify_mcp_connect_error(&s.error);
+            let kind = crate::mcp::resolve::classify_mcp_connect_error(&s.error);
             println!("  [{}] {} — [{kind}] {}", s.id, s.name, s.error);
         }
     }

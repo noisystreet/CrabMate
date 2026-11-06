@@ -61,7 +61,7 @@
 | **L1 侧向调用** | **设计就绪**：观众 / critic，无工具、有界、默认 **fail-open**，锚点仅 C（终答规划闸门旁）与 D（`WorkflowReflectionController::decide` 后） | `docs/design/audience_critic_role.md` | 未实现；不产出可消费工件 |
 | **轮内 DAG** | **已有**：`workflow_execute` 的 `deps` 拓扑分层（Kahn）、层内并行、`max_parallelism`、`fail_fast`、`compensate_on_failure` / `compensate_with`、节点 `max_retries`、`for_each`、`run_if`、`workflow_run_id` | `src/cm_workflow/` | **节点是工具节点**（`tool_name` + `tool_args`），**不能**承载 Agent |
 | **跨轮编排** | **已有**：ReAct 外循环 + `plan_artifact` + `workflow_reflection_controller` | `src/cm_agent/`（外循环） | 同一时刻仍是单一主 Agent |
-| **MCP** | **已有**：客户端支持 stdio 与 Streamable HTTP；服务端 `crabmate mcp serve` 支持 stdio / TCP，**无传输层鉴权** | `src/cm_mcp/` | 服务端缺鉴权；与 Agent↔Agent 正交 |
+| **MCP** | **已有**：客户端支持 stdio 与 Streamable HTTP；服务端 `crabmate mcp serve` 支持 stdio / TCP，**无传输层鉴权** | `src/mcp/` | 服务端缺鉴权；与 Agent↔Agent 正交 |
 | **历史分层多 Agent** | **已移除**：Manager / Operator / Router（`src/agent/hierarchy/`）整棵删除并归档 | `docs/design/archive/分层多智能体架构.md` | — |
 
 **教训**：上一版分层方案在**单进程内**引入了完整的 Manager/Operator 阶段机与专用状态，最终因复杂度与收益不匹配被整棵移除。新方案因此**不新开阶段机**、**不共享可变 `messages`**、**默认关闭**，把「一个主循环 + 有界委托」作为不可动摇的基线。

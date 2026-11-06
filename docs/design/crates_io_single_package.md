@@ -258,7 +258,7 @@ resolver = "2"
 | `crabmate-workflow` | `src/cm_workflow/` | `crate::agent::workflow` 再导出可保留 |
 | `crabmate-approval` | `src/cm_approval/` | |
 | `crabmate-web-host` | `src/cm_web_host/` | 不与 `src/web/` 合并 |
-| `crabmate-mcp` | `src/cm_mcp/` | |
+| `crabmate-mcp` | `src/mcp/` | |
 | `crabmate-benchmark` | `src/cm_benchmark/` | 不与 `src/runtime/benchmark/` 合并 |
 | `crabmate-internal` | `src/cm_internal/` | **整包一座**，S2 不摊平 |
 | `cmd_mate` | `src/cmd_mate/` | **不是** `crabmate-*`，模块名保持 `cmd_mate` |
@@ -272,7 +272,7 @@ src/
   lib.rs
   cm_types/ cm_display_rules/ cm_api_contract/ cm_chat_export/ cm_turn_layout/ cm_sse_protocol/
   cm_agent/ cm_llm/ cm_runtime/ cm_config/ cm_tools/ cm_memory/ cm_workflow/
-  cm_approval/ cm_web_host/ cm_mcp/ cm_benchmark/ cm_internal/
+  cm_approval/ cm_web_host/ mcp/ cm_benchmark/ cm_internal/
   agent/ llm/ runtime/ web/ chat_job_queue/ …   # 原根包 composition
   cmd_mate/
 ```

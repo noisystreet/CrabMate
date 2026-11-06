@@ -526,7 +526,7 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 | **MB-5** | **审计必须脱敏**：L4 的 argv / URL 审计走 `src/cm_tools/redact.rs`，不得原样落日志（AGENTS.md → Secrets & logging 为硬约束）。 |
 | **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。**当前未落地**（§6.4 末尾「落地状态」）：`project_caps` 不读沙盒配置、`PermissionClamp` 无 `sandbox`，故这条规则今天是**待实现**而非既有保证。 |
 | **MB-7** | **L0 不得被绕过**：即便 `tools` 数组为空，执行侧仍有 early-deny（§8.1）；两层都生效，防止模型伪造 `tool_calls` 直穿。 |
-| **MB-8** | **二级执行面不得回读 cfg**：`workflow_execute` 节点、MCP 代理、动态工具的能力参数必须来自 `caps`，禁止在 `cm_workflow` / `cm_mcp` 里重新从 `AgentConfig` 取 `allowed_commands` / `http_fetch_allowed_prefixes`——否则 L2 的“硬边界”只是第一层装饰。 |
+| **MB-8** | **二级执行面不得回读 cfg**：`workflow_execute` 节点、MCP 代理、动态工具的能力参数必须来自 `caps`，禁止在 `cm_workflow` / `mcp` 里重新从 `AgentConfig` 取 `allowed_commands` / `http_fetch_allowed_prefixes`——否则 L2 的“硬边界”只是第一层装饰。 |
 
 ### 9.1 ceiling 的可变更性（实现形态）
 
@@ -829,8 +829,8 @@ impl PathAccess<'_> {
 - 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
 - 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`dispatch.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
 - **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；写成 `tool_origin != Dynamic` 只会更难读。
-- 附带发现（已随 R2 后续清理）：转换后 `cm_mcp/stub.rs` / `cm_mcp/mcp_impl.rs` / `cm_internal/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，**三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
-- 清理时的额外发现（**未处理**，属更大范围的死分支）：`cm_mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
+- 附带发现（已随 R2 后续清理）：转换后 `mcp/stub.rs` / `mcp/mcp_impl.rs` / `src/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，**三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
+- 清理时的额外发现（**未处理**，属更大范围的死分支）：`mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
 
 **问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`dispatch.rs`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
 

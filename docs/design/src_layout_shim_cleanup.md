@@ -9,7 +9,7 @@
 
 ## 1. 背景与根因
 
-仓库曾是 Cargo workspace（根包 + 约 19 个 `crates/*`）。按 [`crates_io_single_package.md`](./crates_io_single_package.md) 合并为单包 `crabmate` 后，原 crate 名以 **`cm_` 前缀模块**形式保留（`cm_types` / `cm_sse_protocol` / `cm_api_contract` / `cm_web_host` / `cm_tools` / `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` / `cm_memory` / `cm_mcp` / `cm_internal` / `cm_runtime` / `cm_benchmark` / `cm_approval` / `cm_display_rules` / `cm_turn_layout` / `cm_chat_export`）。
+仓库曾是 Cargo workspace（根包 + 约 19 个 `crates/*`）。按 [`crates_io_single_package.md`](./crates_io_single_package.md) 合并为单包 `crabmate` 后，原 crate 名以 **`cm_` 前缀模块**形式保留（`cm_types` / `cm_sse_protocol` / `cm_api_contract` / `cm_web_host` / `cm_tools` / `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` / `cm_memory` / `mcp`（原 `cm_mcp`，S4-P1b 已去掉 `cm_` 前缀）/ `cm_internal` / `cm_runtime` / `cm_benchmark` / `cm_approval` / `cm_display_rules` / `cm_turn_layout` / `cm_chat_export`）。
 
 同时，为兑现 `src/lib.rs` 文档承诺的「`server` feature 下**组合面**模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**」，旧名目录被保留为**兼容门面**。
 
