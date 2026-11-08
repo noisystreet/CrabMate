@@ -11,7 +11,7 @@
 #   - self_config_info 的 `web_search` / `http_fetch` → sections 小节 id
 #
 # 格式：相对路径<TAB>工具名<TAB>处数
-src/cm_internal/readonly_tool_ttl_cache.rs	git	1
+src/tool_host/readonly_tool_ttl_cache.rs	git	1
 src/cm_memory/memory/long_term_memory_recall.rs	summarize_experience	2
 src/cm_memory/memory/long_term_memory_store.rs	summarize_experience	1
 src/cm_tools/tools/self_config_info.rs	http_fetch	1

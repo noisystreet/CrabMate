@@ -57,7 +57,7 @@ promised	use message_content_as_str
 promised	use run_agent_turn
 promised	use shared_static_chat_backend
 promised	use sse
-promised	use tool_sandbox
+promised	mod tool_sandbox
 promised	use types
 
 # --- excluded ---

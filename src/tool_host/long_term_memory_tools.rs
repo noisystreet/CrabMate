@@ -157,7 +157,7 @@ pub fn summarize_experience(
     }
 }
 
-/// 供 [`crate::cm_internal::memory_tool_hosts::LongTermMemoryHost`] 持有。
+/// 供 [`crate::tool_host::memory_tool_hosts::LongTermMemoryHost`] 持有。
 pub struct LongTermMemoryHostInner {
     pub rt: Arc<LongTermMemoryRuntime>,
     pub scope_id: String,

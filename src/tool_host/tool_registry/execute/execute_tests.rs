@@ -462,13 +462,13 @@ async fn run_command_chunk_try_send_full_does_not_bump_seq() {
 }
 
 pub(super) fn async_test_sandbox(
-) -> Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend> {
-    crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend()
+) -> Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend> {
+    crate::tool_sandbox::default_sync_default_sandbox_backend()
 }
 
 pub(super) fn async_test_env<'a>(
     cfg: &'a Arc<AgentConfig>,
-    sandbox: &'a Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend>,
+    sandbox: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 ) -> ToolExecEnv<'a> {
     ToolExecEnv {
         cfg,

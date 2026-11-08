@@ -84,6 +84,9 @@ pub struct ApprovalRequestSpec {
     pub sse_args: String,
     pub allowlist_key: Option<String>,
     pub cli_title: &'static str,
+    /// 完整细节（如未白名单命令的完整脚本）。当前生产路径不读取它 —— 只有
+    /// `approval_specs` 的测试断言用；保留是因为各构造点仍在填充真实内容。
+    #[allow(dead_code)]
     pub cli_detail: String,
     pub web_timeline_prefix_zh: &'static str,
 }

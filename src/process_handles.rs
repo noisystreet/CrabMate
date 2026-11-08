@@ -16,7 +16,7 @@ use crate::cm_tools::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
 // 本文件不用再改一次。
 use crate::tool_host::readonly_tool_ttl_cache::ReadonlyToolTtlCache;
 use crate::tool_host::tool_registry::HandlerLookupTable;
-use crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend;
+use crate::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::tool_host::tool_stats::ToolOutcomeRecorder;
 
 /// `run_agent_turn` / 工具执行所需的进程句柄面（不含侧栏任务表与 CLI LTM）。
@@ -110,7 +110,7 @@ impl ProcessHandles {
             Arc::new(WorkspaceChangelistRegistry::default()),
             Arc::new(ToolOutcomeRecorder::new()),
             HandlerLookupTable::default_dispatch(),
-            crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend(),
+            crate::tool_sandbox::default_sync_default_sandbox_backend(),
         )
     }
 

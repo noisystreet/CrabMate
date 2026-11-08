@@ -156,5 +156,3 @@ pub fn interactive_gate_outcome_to_tool_err(outcome: InteractiveGateOutcome) -> 
 pub const HTTP_TOOL_NO_APPROVAL_CHANNEL_ERR: &str =
     "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。";
 
-/// 交互门控失败时的统一错误文案（拒绝或通道不可用）。
-pub const INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR: &str = "错误：审批通道不可用，请重试。";

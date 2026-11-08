@@ -171,7 +171,7 @@ async fn enumerate_tools_from(cfg: &AgentConfig, ws: &str) -> Vec<ToolEntry> {
     }
 
     if !ws.trim().is_empty() {
-        for t in crate::cm_internal::dynamic_tools::load_dynamic_tools(Path::new(ws)) {
+        for t in crate::tool_host::dynamic_tools::load_dynamic_tools(Path::new(ws)) {
             let reason = policy_disabled(cfg, &t.function.name).then_some("disabled_by_policy");
             out.push(ToolEntry {
                 name: t.function.name,
@@ -389,7 +389,7 @@ pub(crate) async fn tools_list_handler(
 fn parameters_for(cfg: &AgentConfig, ws: &str, name: &str, source: &str) -> Value {
     match source {
         "builtin" => cached_params_for_tool_name(name).unwrap_or(Value::Null),
-        "dynamic" if !ws.trim().is_empty() => crate::cm_internal::dynamic_tools::load_dynamic_tools(
+        "dynamic" if !ws.trim().is_empty() => crate::tool_host::dynamic_tools::load_dynamic_tools(
             Path::new(ws),
         )
         .into_iter()
@@ -557,7 +557,7 @@ pub(crate) async fn tools_plugins_handler(
         let cfg = http.cfg.read().await;
         cfg.command_exec.allowed_commands.to_vec()
     };
-    let probes = crate::cm_internal::dynamic_tools::probe_dynamic_tool_files(
+    let probes = crate::tool_host::dynamic_tools::probe_dynamic_tool_files(
         Path::new(&ws),
         &allowed,
     );
@@ -595,7 +595,7 @@ pub(crate) async fn tool_plugin_detail_handler(
         cfg.command_exec.allowed_commands.to_vec()
     };
     let Some(p) =
-        crate::cm_internal::dynamic_tools::probe_dynamic_tool_file(Path::new(&ws), &file, &allowed)
+        crate::tool_host::dynamic_tools::probe_dynamic_tool_file(Path::new(&ws), &file, &allowed)
     else {
         return Err(err(
             StatusCode::NOT_FOUND,

@@ -80,7 +80,7 @@ pub struct DispatchToolPolicy<'a> {
     pub turn_allow: Option<&'a HashSet<String>>,
     /// 与 `crate::cm_internal::TurnRequest::obs` 的 `process_handles` 同源。
     pub handler_lookup: &'a HandlerLookupTable,
-    pub sync_default_sandbox_backend: &'a Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend>,
+    pub sync_default_sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 本回合权限能力快照（S3 接线：命令白名单 / 路径 / 网络 / 外部工具）。
     ///
     /// `None` = 调用方尚未接线（运维 CLI、单测、内部直调），等价于现状：只按 `cfg` 判。
@@ -123,7 +123,7 @@ pub struct DispatchToolParams<'a> {
 /// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。
 struct ToolExecEnv<'a> {
     cfg: &'a Arc<AgentConfig>,
-    sandbox_backend: &'a Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend>,
+    sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 本回合权限能力快照；`None` = 未接线（按 `cfg` 现状判定）。
     permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
