@@ -11,16 +11,10 @@ pub(crate) use crate::cm_types as types;
 // 不属任何 S4 桶的两个模块已在 S4-P2-0 提到 crate 顶层：`crate::process_handles`
 // （进程级句柄集合，被 tool_host / CLI / run_agent_turn 同时持有）与 `crate::text_util`
 // （22 行字符串工具）。见 #1300 §1.4 修正点 2 / 4。
-pub mod agent_errors;
-pub mod agent_role_turn;
-pub mod agent_turn_prep;
-pub mod clarification_sse_bridge;
-pub mod context_bootstrap;
 pub mod dynamic_tools;
 pub mod long_term_memory_tools;
 pub mod memory_tool_hosts;
 pub mod readonly_tool_ttl_cache;
-pub mod session_mode_turn;
 pub mod terminal_session;
 pub mod tool_approval;
 pub mod tool_call_explain;
@@ -28,9 +22,6 @@ pub mod tool_jobs;
 pub mod tool_registry;
 pub mod tool_sandbox;
 pub mod tool_stats;
-pub mod user_message_file_refs;
-
-pub use clarification_sse_bridge::clarification_questionnaire_body_if_tool_ok;
 
 // **兼容保留**（S4-P1a，见 #1300）：这些名字的本体在 `cm_tools` / `cm_memory`，此处仍转发
 // 以维持 `crabmate::cm_internal::*` 的 `#[doc(hidden)]` 可达性。

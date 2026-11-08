@@ -1,9 +1,9 @@
 //! 会话模式（Ask / Plan / Act）解析与回合解析优先级。
 
 use crate::cm_config::AgentConfig;
-use crate::cm_types::{SessionMode, parse_optional_session_mode, parse_session_mode};
+use crate::cm_types::{SessionMode, parse_optional_session_mode};
 
-use crate::cm_internal::agent_role_turn::named_agent_role_for_tool_policy;
+use super::agent_role_turn::named_agent_role_for_tool_policy;
 
 /// 解析请求 / 会话中的模式；空则回落到角色默认或配置默认。
 ///
@@ -38,48 +38,6 @@ pub fn role_default_session_mode_for_turn(
         .agent_roles
         .get(id.as_str())
         .and_then(|spec| spec.default_session_mode)
-}
-
-/// 按命名角色解析初始会话模式（无请求 / 无持久化时）：角色默认 → 全局默认。
-#[must_use]
-pub fn resolve_initial_session_mode(
-    cfg: &AgentConfig,
-    request_agent_role: Option<&str>,
-) -> SessionMode {
-    match resolve_session_mode_for_turn(
-        None,
-        None,
-        role_default_session_mode_for_turn(cfg, None, request_agent_role),
-        cfg.roles_prompts.default_session_mode,
-    ) {
-        Ok(m) => m,
-        Err(_) => SessionMode::Act,
-    }
-}
-
-/// 配置串 → [`SessionMode`]；非法时 warn 并回退 Act。
-pub fn session_mode_from_config_str(raw: &str) -> SessionMode {
-    match parse_session_mode(raw) {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                raw = %raw,
-                "invalid default_session_mode; falling back to act"
-            );
-            SessionMode::Act
-        }
-    }
-}
-
-/// 模式附录文件相对约定（与 `system_prompt_file` 相同解析规则）。
-#[must_use]
-pub fn session_mode_appendix_relpath(mode: SessionMode) -> &'static str {
-    match mode {
-        SessionMode::Ask => "config/prompts/mode_ask.md",
-        SessionMode::Plan => "config/prompts/mode_plan.md",
-        SessionMode::Act => "config/prompts/mode_act.md",
-    }
 }
 
 #[cfg(test)]

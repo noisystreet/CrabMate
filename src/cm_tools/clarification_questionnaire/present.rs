@@ -131,7 +131,7 @@ pub fn parse_present_clarification_body(
 
 /// 内置工具 `present_clarification_questionnaire`：校验参数；Web 流式下 `execute_tools` 会据此补发 SSE。
 ///
-/// **成功正文逐字不变**：`cm_internal::clarification_sse_bridge` 用
+/// **成功正文逐字不变**：`crate::context::clarification_sse_bridge` 用
 /// `tool_output.trim_start().starts_with("退出码：0")` 判断「这是一份登记成功的问卷」，
 /// 改动首行会让 SSE 控制面静默失效。
 ///

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use tracing::warn;
 
-use crate::cm_internal::tool_stats::ToolOutcomeRecorder;
+use crate::tool_host::tool_stats::ToolOutcomeRecorder;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::SessionMode;
 
@@ -144,6 +144,7 @@ pub fn resolve_skills_base_dir(workspace_root: &Path) -> PathBuf {
 }
 
 /// 在已解析的 L3 基底上叠加 L4（思维链附录、工具统计）与可选 L5（Skills top-k）。
+#[allow(dead_code)] // P2-2 桶化暴露：仅单测调用（生产走 `compose_first_system_for_turn`）；判定见 #1300 §4.1
 pub fn compose_system_from_base(
     base_system: &str,
     cfg: &AgentConfig,
@@ -155,6 +156,7 @@ pub fn compose_system_from_base(
 }
 
 /// 从配置解析 L3，再叠加 L4 + 可选 L5。
+#[allow(dead_code)] // P2-2 桶化暴露：仅单测调用（生产走 `compose_first_system_for_turn`）；判定见 #1300 §4.1
 pub fn compose_system_for_turn(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
@@ -261,6 +263,7 @@ pub fn compose_first_system_for_turn_with_diagnostics(
 }
 
 /// 与 [`compose_system_for_turn`] 相同，但 `tool_recorder` 为 `Arc`（Web handler 常用）。
+#[allow(dead_code)] // P2-2 桶化暴露：仅单测调用（生产走 `compose_first_system_for_turn`）；判定见 #1300 §4.1
 pub fn compose_system_for_turn_arc(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
@@ -277,6 +280,7 @@ pub fn compose_system_for_turn_arc(
     )
 }
 
+#[allow(dead_code)] // P2-2 桶化暴露：仅 `compose_system_from_base` 单测调用；接线或删除见 #1300 §4.1
 fn merge_skills_into_system(
     system_prompt: String,
     cfg: &AgentConfig,

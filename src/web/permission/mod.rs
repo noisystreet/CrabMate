@@ -21,8 +21,8 @@ use crate::cm_api_contract::ApiError;
 use crate::cm_api_contract::error_codes;
 use crate::cm_api_contract::permission::{PermissionLevelSource, PermissionView};
 use crate::cm_config::AgentConfig;
-use crate::cm_internal::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job;
-use crate::cm_internal::session_mode_turn::{
+use crate::context::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job;
+use crate::context::session_mode_turn::{
     resolve_session_mode_for_turn, role_default_session_mode_for_turn,
 };
 use crate::cm_types::{PermissionLevel, SessionMode};

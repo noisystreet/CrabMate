@@ -8,8 +8,8 @@ use std::path::Path;
 
 use log::debug;
 
-use crate::cm_internal::context_bootstrap::first_turn_inject::build_first_turn_user_context_markdown;
-use crate::cm_config::{AgentConfig, SharedAgentConfig};
+use super::build_first_turn_user_context_markdown;
+use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
 
 /// 活文档摘要 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。
@@ -81,7 +81,7 @@ pub fn first_turn_project_context_user_message_sync(
 pub fn augmented_system_for_new_conversation(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
-    tool_recorder: &std::sync::Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    tool_recorder: &std::sync::Arc<crate::tool_host::tool_stats::ToolOutcomeRecorder>,
     workspace_root: Option<&Path>,
 ) -> Result<String, String> {
     let role = super::prompt_compose::resolve_agent_role_for_prompt_compose(cfg, agent_role, None)?;
@@ -130,26 +130,6 @@ pub fn compose_new_conversation_messages(
             Message::user_first_turn_workspace_context(ctx),
         ],
         (None, None) => vec![Message::system_only(system_for_turn.to_string())],
-    }
-}
-
-/// `chat` / REPL：在已有 `[system, user]`（如 `messages_chat_seed`）之间插入首轮上下文 `user` 条（与 Web 新会话同源）。
-pub async fn prepend_first_turn_project_context_between_system_and_user(
-    cfg_holder: &SharedAgentConfig,
-    work_dir: &Path,
-    messages: &mut Vec<Message>,
-) {
-    if messages.len() < 2 {
-        return;
-    }
-    if !messages[0].role.trim().eq_ignore_ascii_case("system")
-        || !messages[1].role.trim().eq_ignore_ascii_case("user")
-    {
-        return;
-    }
-    let cfg = cfg_holder.read().await.clone();
-    if let Some(body) = first_turn_project_context_user_message(work_dir, &cfg, None).await {
-        messages.insert(1, Message::user_first_turn_workspace_context(body));
     }
 }
 

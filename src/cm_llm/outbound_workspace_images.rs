@@ -3,7 +3,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::cm_internal::user_message_file_refs::{
+use crate::context::user_message_file_refs::{
     collect_ordered_rel_paths_lenient, is_workspace_chat_image_rel,
 };
 use crate::cm_llm::outbound_images::{

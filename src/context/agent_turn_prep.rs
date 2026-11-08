@@ -62,7 +62,7 @@ pub async fn prepare_tools_for_turn(
     let mut tools_for_turn: Vec<Tool> = tools.to_vec();
     tools_for_turn = crate::mcp::merge_tool_lists(
         tools_for_turn,
-        crate::cm_internal::dynamic_tools::load_dynamic_tools(effective_working_dir),
+        crate::tool_host::dynamic_tools::load_dynamic_tools(effective_working_dir),
     );
     let open = crate::mcp::try_open_session_and_tools(cfg.as_ref()).await;
     let mcp_skipped = open.skipped;

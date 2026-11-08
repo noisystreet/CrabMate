@@ -19,7 +19,7 @@ src/cm_agent/text_sanitize/assistant_tail.rs	1
 src/cm_agent/workspace_snapshot.rs	1
 src/cm_api_contract/openapi.rs	2
 src/cm_benchmark/artifact.rs	2
-src/cm_internal/user_message_file_refs.rs	2
+src/context/user_message_file_refs.rs	2
 src/cm_llm/recording.rs	2
 src/cm_memory/memory/codebase_semantic_index/numeric.rs	3
 src/cm_runtime/latex_unicode.rs	4
