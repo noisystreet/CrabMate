@@ -10,7 +10,7 @@ use crate::cm_tools::memory_tool_host::{
     CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
 };
 
-use crate::cm_internal::long_term_memory_tools::{
+use crate::tool_host::long_term_memory_tools::{
     LongTermMemoryHostInner, LongTermMemoryToolState, long_term_forget, long_term_memory_list,
     long_term_remember, summarize_experience,
 };

@@ -36,12 +36,12 @@ pub(in crate::tool_host::tool_registry::execute) async fn dispatch_non_sync_tool
         Ok(p) => p,
         Err(e) => return Some((e, None)),
     };
-    let inv = crate::tool_host::tool_sandbox::ToolInvocationLine {
+    let inv = crate::tool_sandbox::ToolInvocationLine {
         kind: kind.to_string(),
         tool: None,
         args_json: args.to_string(),
     };
-    let out = crate::tool_host::tool_sandbox::run_tool_in_docker(
+    let out = crate::tool_sandbox::run_tool_in_docker(
         env.sandbox_backend,
         env.cfg.as_ref(),
         effective_working_dir,

@@ -1,28 +1,18 @@
 //! 工具宿主桶（S4-P1c 门面，见 #1300 §1.4）。
 //!
-//! `tool_registry` 已在 S4-P2-4 迁入（本地 `pub mod`）；其余 9 个成员仍住在
-//! `cm_internal`，由 S4-P2-5 搬到本桶。建门面的意义是给根上短名一个稳定落点 ——
-//! `lib_server.rs` 的 `pub(crate) use` 已改指本桶，P2 搬文件时不会牵动任何调用点。
+//! 10 个成员已在 S4-P2-4 / P2-5 全部就位：`tool_registry`（P2-4）与其余 8 个（P2-5）。
+//! `tool_sandbox` 按 §4.2 定案提到 **crate 顶层**（`crate::tool_sandbox`），**不进**本桶 ——
+//! 它有公开面，塞进 `pub(crate)` 桶会制造假结构。
 //!
-//! 成员 10 子项：`tool_registry`、`terminal_session`、`tool_sandbox`、`memory_tool_hosts`、
-//! `tool_stats`、`dynamic_tools`、`tool_approval`、`long_term_memory_tools`、
-//! `tool_call_explain`、`readonly_tool_ttl_cache`。
+//! `lib_server.rs` 的 `pub(crate) use` 指本桶：根上短名 `crate::tool_registry` 等不变，
+//! 变的是定义点。
 
+pub mod dynamic_tools;
+pub mod long_term_memory_tools;
+pub mod memory_tool_hosts;
+pub mod readonly_tool_ttl_cache;
+pub mod terminal_session;
+pub mod tool_approval;
+pub mod tool_call_explain;
 pub mod tool_registry;
-
-// 这些成员有根上短名消费者，由 `lib_server.rs` 的 re-export 使用。
-pub(crate) use crate::cm_internal::{
-    memory_tool_hosts, readonly_tool_ttl_cache, tool_call_explain, tool_stats,
-};
-
-// 这几个成员**没有短名消费者**，但性质分两类，不要一视同仁：
-//   · `dynamic_tools`（4 处长路径）与 `tool_sandbox`（1 处）是**在用**的 —— 上层直接写
-//     `crate::cm_internal::<x>` 绕过了桶，P3 接线时改指本桶即可；
-//   · `long_term_memory_tools` / `terminal_session` / `tool_approval` 当前 **0 引用**，
-//     属死代码候选。P2 搬进来时要单独判断是接线还是删除 —— **别因为进了桶就当它是活的**。
-// P2 搬入后桶内直接可见，届时删掉这条转发即可。用 **item 级** allow —— 模块级罩子会把
-// 真实死代码一起遮住（#1229 的教训）。
-#[allow(unused_imports)]
-pub(crate) use crate::cm_internal::{
-    dynamic_tools, long_term_memory_tools, terminal_session, tool_approval, tool_sandbox,
-};
+pub mod tool_stats;

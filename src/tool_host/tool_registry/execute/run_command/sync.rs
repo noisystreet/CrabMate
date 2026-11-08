@@ -61,7 +61,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_run_command_sy
             workspace_is_set,
             tool_names::RUN_COMMAND,
             args,
-            crate::tool_host::tool_sandbox::write_runner_config_json_with_allowed_commands(
+            crate::tool_sandbox::write_runner_config_json_with_allowed_commands(
                 cfg.as_ref(),
                 effective_allowed_arc.as_ref(),
             ),

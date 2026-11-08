@@ -241,7 +241,7 @@ async fn dispatch_sync_default_tool(
                 None,
             );
         }
-        let out = crate::tool_host::tool_sandbox::run_sync_default_in_docker(
+        let out = crate::tool_sandbox::run_sync_default_in_docker(
             env.sandbox_backend,
             cfg.as_ref(),
             effective_working_dir,

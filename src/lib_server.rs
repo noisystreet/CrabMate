@@ -33,7 +33,8 @@ pub mod cm_internal;
 
 pub mod agent;
 /// Docker 沙盒内 `tool-runner-internal` 入口；二进制与 `main` 经此路径调用。
-pub use crate::cm_internal::tool_sandbox;
+/// Docker 沙盒内 `tool-runner-internal` 入口；S4-P2-5 起为**顶层模块**（§4.2 方案 A）。
+pub mod tool_sandbox;
 /// `cm_internal` 门面：`#[doc(hidden)]`。稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
 // `cm_internal` 只导出**自身实现**。`tools` / `workspace` / `redact` / `tool_result` /
 // `read_file_turn_cache` 等本体在 `cm_tools`，`memory` 在 `cm_memory` —— 经 `cm_internal`

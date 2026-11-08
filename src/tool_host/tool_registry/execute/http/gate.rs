@@ -198,7 +198,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn http_tool_preflight(
         p.workspace_is_set,
         p.tool_name,
         p.args,
-        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {

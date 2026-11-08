@@ -143,7 +143,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_get_weather_we
         workspace_is_set,
         crate::cm_names::GET_WEATHER,
         args,
-        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {
@@ -195,7 +195,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_web_search_web
         workspace_is_set,
         crate::cm_names::WEB_SEARCH,
         args,
-        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {
