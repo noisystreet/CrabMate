@@ -17,6 +17,8 @@ use super::super::{
 
 pub(super) struct StreamJobRuntime {
     pub sse_tx: mpsc::Sender<String>,
+    /// 本 job 的 SSE 投递句柄：`remove_job`/摘除登记之后仍能投递已入队帧（#1316）。
+    pub publisher: crate::sse::StreamPublisher,
     pub cancel: Arc<AtomicBool>,
     pub flight: Arc<PerTurnFlight>,
     pub cfg_turn: Arc<crate::config::AgentConfig>,
@@ -45,18 +47,11 @@ pub(super) async fn stream_job_setup_runtime(
     p: StreamJobSetupParams<'_>,
 ) -> (StreamJobRuntime, tokio::task::JoinHandle<()>) {
     let job_id = p.envelope.job_id;
-    p.queue_deps.sse_stream_hub.register_job(job_id);
-    let hub_bridge = p.queue_deps.sse_stream_hub.clone();
+    let publisher = p.queue_deps.sse_stream_hub.register_job(job_id);
+    let bridge_publisher = publisher.clone();
     let http_tx = p.stream_event_tx.clone();
-    let (sse_tx, mut sse_rx) = mpsc::channel::<String>(1024);
-    let bridge_job = job_id;
-    tokio::spawn(async move {
-        while let Some(line) = sse_rx.recv().await {
-            if let Some(pair) = hub_bridge.publish(bridge_job, line) {
-                let _ = http_tx.send(pair).await;
-            }
-        }
-    });
+    let (sse_tx, sse_rx) = mpsc::channel::<String>(1024);
+    tokio::spawn(stream_job_bridge_loop(sse_rx, bridge_publisher, http_tx));
 
     let caps_line = crate::sse::encode_message(crate::sse::SsePayload::SseCapabilities {
         caps: crate::sse::SseCapabilitiesBody {
@@ -131,6 +126,7 @@ pub(super) async fn stream_job_setup_runtime(
 
     let runtime = StreamJobRuntime {
         sse_tx,
+        publisher,
         cancel,
         flight,
         cfg_turn,
@@ -145,6 +141,26 @@ pub(super) async fn stream_job_setup_runtime(
         approval_session_id,
     };
     (runtime, cancel_watcher)
+}
+
+/// SSE 桥接：内部 `mpsc` → hub 投递 → HTTP 侧 `(seq, data)`。
+///
+/// 用 [`crate::sse::StreamPublisher`] 而不是 `SseStreamHub` + `job_id` 查表：worker 收尾
+/// （`drop(sse_tx)` → `retire` → 返回）与桥接任务被调度之间存在窗口，查表投递恰好在这段
+/// 窗口里把落盘后的终态帧丢掉（#1316）。
+///
+/// `sse_rx` 关闭 ⟺ 所有发送端已 drop ⟺ 本流不可能再产帧，所以登记的摘除放在循环之后，
+/// 而不是由 worker 猜一个时刻。
+pub(crate) async fn stream_job_bridge_loop(
+    mut sse_rx: mpsc::Receiver<String>,
+    publisher: crate::sse::StreamPublisher,
+    http_tx: mpsc::Sender<(u64, String)>,
+) {
+    while let Some(line) = sse_rx.recv().await {
+        // 客户端已断开时不要提前 break：环形缓冲还要继续累积，供 `stream_resume` 重放。
+        let _ = http_tx.send(publisher.publish(line)).await;
+    }
+    publisher.finalize();
 }
 
 fn stream_job_web_tool_ctx(
@@ -214,5 +230,48 @@ fn stream_job_resolve_executor_llm(
             (base, Some(executor_key), model)
         }
         None => (None, None, None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    /// #1316 回归：worker 收尾（入队终态帧 → drop 发送端 → `retire`）**先于**桥接任务首次被
+    /// 调度时，已入队帧仍须到达 HTTP 侧。
+    ///
+    /// 构造不依赖调度细节：桥接任务在 `retire` 之后才 `spawn`，且此前已用 `has_job` 把登记判成
+    /// 「不可重连」并顺手摘除 map 键——它的第一次 `poll` 必然晚于摘除时刻，正是线上「落盘后
+    /// 连发终态帧、中间没有真实 IO 让出点」的形状。任何退回查表投递的改动都会在这里超时失败。
+    #[tokio::test]
+    async fn bridge_delivers_terminal_frames_after_registration_is_gone() {
+        let hub = crate::sse::SseStreamHub::new();
+        let publisher = hub.register_job(9);
+        let (http_tx, mut http_rx) = mpsc::channel::<(u64, String)>(8);
+        let (sse_tx, sse_rx) = mpsc::channel::<String>(8);
+
+        for frame in ["stream_draining", "conversation_saved", "RUN_FINISHED"] {
+            assert!(sse_tx.send(frame.to_string()).await.is_ok(), "入队 {frame}");
+        }
+        drop(sse_tx);
+        publisher.retire(Duration::ZERO);
+        assert!(!hub.has_job(9), "retire 截止后不再受理重连");
+
+        let bridge = tokio::spawn(stream_job_bridge_loop(sse_rx, publisher.clone(), http_tx));
+
+        for want in ["stream_draining", "conversation_saved", "RUN_FINISHED"] {
+            let (_, got) = timeout(Duration::from_millis(500), http_rx.recv())
+                .await
+                .expect("桥接任务应把终态帧送达 HTTP 侧")
+                .expect("http 通道不应提前关闭");
+            assert_eq!(got, want);
+        }
+        timeout(Duration::from_millis(500), bridge)
+            .await
+            .expect("桥接任务应在通道关闭后退出")
+            .expect("桥接任务不应 panic");
+        assert!(!hub.has_job(9), "桥接任务退出后登记仍应为空");
     }
 }
