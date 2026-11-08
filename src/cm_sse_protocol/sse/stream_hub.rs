@@ -203,13 +203,22 @@ mod tests {
         }
         let path = dir.path().join(SSE_REPLAY_FILE);
         let raw = std::fs::read_to_string(&path).expect("jsonl should exist");
-        let lines: Vec<&str> = raw.lines().filter(|l| !l.is_empty()).collect();
-        assert_eq!(lines.len(), 2, "should have 2 lines, got: {raw}");
-        let v1: serde_json::Value = serde_json::from_str(lines[0]).expect("line 1 json");
+        // `CM_SSE_REPLAY_DUMP_DIR` 是进程级环境变量：本用例设它期间，**任何**并发测试
+        // 线程的 `publish` 都会落到同一个 dump 文件（例如同文件 `replay_after` 的 job 7）。
+        // 锁只序列化「读写 env 的测试之间」，挡不住不碰 env 却在窗口内 publish 的测试，
+        // 因此不能靠行数断言，只挑本用例的 `job_id`。
+        let mine: Vec<serde_json::Value> = raw
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .filter(|v: &serde_json::Value| v["job_id"].as_u64() == Some(42))
+            .collect();
+        assert_eq!(mine.len(), 2, "should have 2 lines for job 42, got: {raw}");
+        let v1 = &mine[0];
         assert_eq!(v1["seq"], 1);
         assert_eq!(v1["job_id"], 42);
         assert!(v1["data"].as_str().unwrap().contains("timeline_log"));
-        let v2: serde_json::Value = serde_json::from_str(lines[1]).expect("line 2 json");
+        let v2 = &mine[1];
         assert_eq!(v2["seq"], 2);
         assert_eq!(v2["data"], "plain text delta");
     }
