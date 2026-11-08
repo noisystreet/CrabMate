@@ -17,8 +17,6 @@ use super::super::{
 
 pub(super) struct StreamJobRuntime {
     pub sse_tx: mpsc::Sender<String>,
-    /// 本 job 的 SSE 投递句柄：`remove_job`/摘除登记之后仍能投递已入队帧（#1316）。
-    pub publisher: crate::sse::StreamPublisher,
     pub cancel: Arc<AtomicBool>,
     pub flight: Arc<PerTurnFlight>,
     pub cfg_turn: Arc<crate::config::AgentConfig>,
@@ -47,11 +45,15 @@ pub(super) async fn stream_job_setup_runtime(
     p: StreamJobSetupParams<'_>,
 ) -> (StreamJobRuntime, tokio::task::JoinHandle<()>) {
     let job_id = p.envelope.job_id;
-    let publisher = p.queue_deps.sse_stream_hub.register_job(job_id);
-    let bridge_publisher = publisher.clone();
     let http_tx = p.stream_event_tx.clone();
     let (sse_tx, sse_rx) = mpsc::channel::<String>(1024);
-    tokio::spawn(stream_job_bridge_loop(sse_rx, bridge_publisher, http_tx));
+    // 投递句柄随桥接任务走：它是登记项唯一的强引用，任务退出（通道关闭 ⟺ 不可能再产帧）
+    // 即摘除登记，worker 侧因此不再需要持有它（#1316）。
+    tokio::spawn(stream_job_bridge_loop(
+        sse_rx,
+        p.queue_deps.sse_stream_hub.register_job(job_id),
+        http_tx,
+    ));
 
     let caps_line = crate::sse::encode_message(crate::sse::SsePayload::SseCapabilities {
         caps: crate::sse::SseCapabilitiesBody {
@@ -126,7 +128,6 @@ pub(super) async fn stream_job_setup_runtime(
 
     let runtime = StreamJobRuntime {
         sse_tx,
-        publisher,
         cancel,
         flight,
         cfg_turn,
@@ -256,8 +257,10 @@ mod tests {
             assert!(sse_tx.send(frame.to_string()).await.is_ok(), "入队 {frame}");
         }
         drop(sse_tx);
-        publisher.retire(Duration::ZERO);
-        assert!(!hub.has_job(9), "retire 截止后不再受理重连");
+        // worker 收尾只做 drop 发送端；登记由桥接任务在通道关闭后摘除，这里手动摘除
+        // 模拟「登记已经不在」的最坏时点。
+        hub.remove_job(9);
+        assert!(!hub.has_job(9), "登记已摘除");
 
         let bridge = tokio::spawn(stream_job_bridge_loop(sse_rx, publisher.clone(), http_tx));
 

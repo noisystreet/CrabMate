@@ -5,11 +5,10 @@ use std::sync::Arc;
 use crate::cm_sse_protocol::StreamEndReason;
 use log::{debug, error, info, warn};
 use tokio::sync::mpsc;
-use tokio::time::{Duration, sleep};
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::config::AgentConfig;
-use crate::sse::StreamPublisher;
+use crate::per_turn_flight::PerTurnFlight;
 use crate::types::{Message, assistant_output_kind, message_content_as_str};
 use crate::web::WebChatJobAppFacet;
 
@@ -256,6 +255,11 @@ pub(crate) async fn emit_stream_draining(sse_tx: &mpsc::Sender<String>, job_id: 
         .await;
 }
 
+/// 负载是否为 `final_response` 时间线（V1 / V2 两种形状）。
+///
+/// 仅测试用：生产路径不再回读流内容去判断「本轮是否已发过终答」——那等于让 worker 去问
+/// 转发层它自己发过什么，还得靠轮询等桥接追上（#1316）。
+#[cfg(test)]
 pub(crate) fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
         return false;
@@ -278,28 +282,6 @@ pub(crate) fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
             .and_then(|d| d.get("kind"))
             .and_then(|x| x.as_str())
             .is_some_and(|k| k == "final_response");
-    }
-    false
-}
-
-/// 读**本流句柄**的环形缓冲，而不是查 hub map：map 里可能已没有本 `job_id`（#1316）。
-fn stream_job_has_final_response_timeline(publisher: &StreamPublisher) -> bool {
-    publisher
-        .replay_after(0)
-        .into_iter()
-        .any(|(_, payload)| sse_payload_has_final_response_timeline(&payload))
-}
-
-async fn stream_job_has_final_response_timeline_eventually(publisher: &StreamPublisher) -> bool {
-    const MAX_RETRIES: usize = 5;
-    const RETRY_DELAY_MS: u64 = 20;
-    for attempt in 0..=MAX_RETRIES {
-        if stream_job_has_final_response_timeline(publisher) {
-            return true;
-        }
-        if attempt < MAX_RETRIES {
-            sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
-        }
     }
     false
 }
@@ -382,18 +364,28 @@ pub(crate) fn completed_turn_end_reason(
     }
 }
 
+/// 层 4 兜底：本轮**没有任何** `final_response` 时间线时，用末条助手文本（含仅思维链）补发
+/// `final_response` + `assistant_answer_phase`，避免「`completed` + 无终答帧」的矛盾收尾。
+///
+/// 判定完全在本进程内完成：`final_response` 的唯一生产者就是本函数，因此不需要回读 hub 环形
+/// 缓冲、也不需要轮询等桥接任务追上（那既白等 ~100ms/回合，又把「我发过什么」这个本地事实
+/// 变成了跨层的远程事实，#1316）。幂等由 [`PerTurnFlight::final_response_emitted`] 的
+/// `swap(true)` 保证：先占位再发，重复或并发调用只有一次能落地。
 pub(crate) async fn emit_missing_final_response_fallback_if_needed(
-    publisher: &StreamPublisher,
+    flight: &PerTurnFlight,
     sse_tx: &mpsc::Sender<String>,
+    job_id: u64,
     messages: &[Message],
 ) -> bool {
-    let job_id = publisher.job_id();
-    if stream_job_has_final_response_timeline_eventually(publisher).await {
-        return false;
-    }
     let Some(final_text) = last_assistant_text_for_fallback(messages) else {
         return false;
     };
+    if flight
+        .final_response_emitted
+        .swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        return false;
+    }
     debug!(
         target: "crabmate",
         "stream compatibility fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
@@ -425,9 +417,9 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) truncated: bool,
     pub(super) queue_deps: &'a WebChatQueueDeps,
     pub(super) sse_tx: &'a mpsc::Sender<String>,
-    /// 本 job 的 SSE 投递句柄：判「本轮是否已发过 `final_response`」时读它的环形缓冲，
-    /// 而不是查 hub map（map 里可能已没有本 `job_id`，#1316）。
-    pub(super) publisher: &'a StreamPublisher,
+    /// 本回合的飞行状态：兜底补发终答时间线前用它占位，保证同一回合只发一次
+    /// （不回读 hub 环形缓冲，见 #1316）。
+    pub(super) flight: &'a PerTurnFlight,
     pub(super) job_id: u64,
     pub(super) request_id: Option<String>,
     pub(super) messages: &'a mut Vec<Message>,
@@ -451,7 +443,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         truncated,
         queue_deps,
         sse_tx,
-        publisher,
+        flight,
         job_id,
         request_id,
         messages,
@@ -486,7 +478,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         }
         Ok(outcome) => {
             let fallback_emitted =
-                emit_missing_final_response_fallback_if_needed(publisher, sse_tx, messages).await;
+                emit_missing_final_response_fallback_if_needed(flight, sse_tx, job_id, messages)
+                    .await;
             let end_reason = completed_turn_end_reason(fallback_emitted, truncated, messages);
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(

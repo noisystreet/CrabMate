@@ -1,8 +1,10 @@
+use std::sync::atomic::Ordering;
+
 use crate::cm_sse_protocol::StreamEndReason;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-use crate::sse::SseStreamHub;
+use crate::per_turn_flight::PerTurnFlight;
 use crate::types::{FunctionCall, Message, ToolCall};
 
 use super::ChatJobQueue;
@@ -30,17 +32,16 @@ async fn queue_stream_cancel_flag_roundtrip() {
 
 // `final_response` 兜底回归覆盖：
 // 1) 缺失时应补发（fallback_emits_final_response_when_missing）
-// 2) 已存在且稍后可见时不应误补（fallback_skips_when_final_response_arrives_with_small_delay）
-// 3) 同一 job 二次触发时保持幂等（fallback_is_idempotent_for_same_job）
+// 2) 本回合已发过时不应重复补发（fallback_skips_when_flag_already_set）
+// 3) 同一回合二次触发时保持幂等（fallback_is_idempotent_for_same_turn）
 #[tokio::test]
 async fn fallback_emits_final_response_when_missing() {
-    let hub = SseStreamHub::new();
+    let flight = PerTurnFlight::default();
     let job_id = 42_u64;
-    let publisher = hub.register_job(job_id);
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await;
+    assert!(emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await);
 
     // 跳过 reasoning_end / text_start，读取 timeline + answer_phase
     let _reasoning_end = timeout(Duration::from_millis(200), rx.recv())
@@ -68,41 +69,30 @@ async fn fallback_emits_final_response_when_missing() {
 }
 
 #[tokio::test]
-async fn fallback_skips_when_final_response_arrives_with_small_delay() {
-    let hub = SseStreamHub::new();
-    let job_id = 43_u64;
-    let publisher = hub.register_job(job_id);
+async fn fallback_skips_when_flag_already_set() {
+    let flight = PerTurnFlight::default();
+    // 模拟「本回合已有别的生产者发过终答时间线」：幂等闸已置位。
+    flight.final_response_emitted.store(true, Ordering::Relaxed);
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    let delayed_payload = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
-        log: crate::sse::protocol::TimelineLogBody {
-            kind: "final_response".to_string(),
-            title: "已存在总结".to_string(),
-            detail: None,
-        },
-    });
-    let publisher_for_task = publisher.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let _ = publisher_for_task.publish(delayed_payload);
-    });
-
-    emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await;
+    assert!(
+        !emit_missing_final_response_fallback_if_needed(&flight, &tx, 43, &messages).await,
+        "已发过终答时间线时兜底应返回 false"
+    );
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(no_frame.is_err(), "已有 final_response 时不应再补发");
 }
 
 #[tokio::test]
-async fn fallback_is_idempotent_for_same_job() {
-    let hub = SseStreamHub::new();
+async fn fallback_is_idempotent_for_same_turn() {
+    let flight = PerTurnFlight::default();
     let job_id = 44_u64;
-    let publisher = hub.register_job(job_id);
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![Message::assistant_only("最终总结内容")];
 
-    emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await;
+    assert!(emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await);
     // 跳过 reasoning_end / text_start
     let _r = rx.recv().await;
     let _t = rx.recv().await;
@@ -120,24 +110,28 @@ async fn fallback_is_idempotent_for_same_job() {
         "second frame should be answer_phase CUSTOM: {second}"
     );
 
-    // 首次 fallback 通过桥接后，句柄环形缓冲已可见 final_response；二次调用应无输出。
-    publisher.publish(first);
-    // eventual 内部有 5×20ms 轮询，等待足够久确保 publish 被读到
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    // 二次调用应直接返回 false，不向 tx 写入任何数据
+    // 第 5 帧是 text_message_end：一次兜底固定发 5 帧（reasoning_end / text_start /
+    // final_response / answer_phase / text_end），读空它才能断言「之后没有新帧」。
+    let _text_end = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv text_end")
+        .expect("text_end payload");
+
+    // `final_response_emitted` 已由首次调用占位：二次调用应直接返回 false，不再写任何帧。
     let emitted_again =
-        emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await;
+        emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await;
     assert!(
         !emitted_again,
-        "二次 fallback 应返回 false（hub 中已有 final_response）"
+        "二次 fallback 应返回 false（本回合幂等闸已置位）"
     );
+    let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
+    assert!(no_frame.is_err(), "二次 fallback 不应再写出任何帧");
 }
 
 #[tokio::test]
 async fn fallback_skips_when_turn_has_no_new_assistant() {
-    let hub = SseStreamHub::new();
+    let flight = PerTurnFlight::default();
     let job_id = 45_u64;
-    let publisher = hub.register_job(job_id);
     let (tx, mut rx) = mpsc::channel::<String>(8);
     let messages = vec![
         Message::system_only("sys"),
@@ -146,7 +140,7 @@ async fn fallback_skips_when_turn_has_no_new_assistant() {
         Message::user_only("本轮提问"),
     ];
 
-    emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await;
+    assert!(!emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await);
 
     let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
     assert!(
@@ -159,9 +153,8 @@ async fn fallback_skips_when_turn_has_no_new_assistant() {
 // 杜绝「`completed` + 无 `assistant_answer_phase` + 无 `final_response`」矛盾收尾。
 #[tokio::test]
 async fn fallback_uses_reasoning_when_last_assistant_has_no_content() {
-    let hub = SseStreamHub::new();
+    let flight = PerTurnFlight::default();
     let job_id = 46_u64;
-    let publisher = hub.register_job(job_id);
     let (tx, mut rx) = mpsc::channel::<String>(8);
 
     let mut reasoning_only = Message::assistant_only("");
@@ -170,7 +163,7 @@ async fn fallback_uses_reasoning_when_last_assistant_has_no_content() {
     let messages = vec![Message::user_only("帮我看看"), reasoning_only];
 
     assert!(
-        emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await,
+        emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await,
         "仅有思维链的终态应触发兜底并返回 true"
     );
 
@@ -213,9 +206,8 @@ async fn fallback_uses_reasoning_when_last_assistant_has_no_content() {
 // 层 4 兜底须截断超长思维链（上限 2000 字符 + 省略号），避免整段 CoT 外泄。
 #[tokio::test]
 async fn fallback_truncates_overlong_reasoning() {
-    let hub = SseStreamHub::new();
+    let flight = PerTurnFlight::default();
     let job_id = 47_u64;
-    let publisher = hub.register_job(job_id);
     let (tx, mut rx) = mpsc::channel::<String>(8);
 
     let long_reasoning = "思".repeat(2500);
@@ -224,7 +216,7 @@ async fn fallback_truncates_overlong_reasoning() {
     reasoning_only.reasoning_content = Some(long_reasoning.clone());
     let messages = vec![Message::user_only("帮我看看"), reasoning_only];
 
-    assert!(emit_missing_final_response_fallback_if_needed(&publisher, &tx, &messages).await);
+    assert!(emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await);
 
     let _reasoning_end = timeout(Duration::from_millis(200), rx.recv())
         .await

@@ -16,6 +16,12 @@ pub struct PerTurnFlight {
     /// 层 1：本轮最后一次 assistant 输出的上游 `finish_reason` 是否表示「输出被截断」。
     /// 供编排层在 `stream_ended` 终态里区分「截断」与「正常完成 / 无输出」。
     pub last_assistant_finish_truncated: AtomicBool,
+    /// 本回合是否已下发 `timeline_log kind=final_response`（终答标记）。
+    ///
+    /// **谁发谁置位**：当前唯一的生产者是 `chat_job_queue::stream_finish` 的层 4 兜底，
+    /// 它用 `swap(true)` 兼作幂等闸；将来若改由 Agent 主链路直接下发，也必须在这里置位，
+    /// 否则兜底会重复补发（客户端会看到两条终答时间线）。见 #1316。
+    pub final_response_emitted: AtomicBool,
 }
 
 impl PerTurnFlight {

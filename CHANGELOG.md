@@ -125,12 +125,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   frame queued after the last real IO point — `conversation_saved`, the state snapshot, `RUN_FINISHED` — found the registration already gone and
   was silently discarded. That is why clients saw a permanently frozen `ctx` gauge: the only remaining source was the end-of-turn re-fetch.
   Delivery is now decoupled from discovery: the bridge holds a `StreamPublisher` captured at registration and publishing never consults the hub
-  map, and the hub stores `Weak` entries so a registration lives exactly as long as the stream may still emit. The worker's `remove_job`
-  call became `retire`, which only stops `stream_resume` (after `SSE_STREAM_RETIRE_GRACE` = 1s) and never interrupts delivery; the entry is
-  dropped by the bridge task
-  when its channel closes, i.e. when no frame can follow. A reconnect during the draining window now replays those terminal frames instead of
-  answering 410, and the `final_response` fallback reads the stream's own ring rather than the hub map, so it can no longer conclude a terminal
-  frame is missing merely because the registration was dropped. Refs #1316.
+  map, and the hub stores `Weak` entries so a registration lives exactly as long as the stream may still emit. The worker no longer touches the
+  hub at all — the bridge task drops the registration when its channel closes, i.e. when no frame can follow — so "registered" means "may still
+  emit" and therefore also "can still `stream_resume`", with no second state and no time window. A reconnect during the draining window now
+  replays those terminal frames instead of answering 410. Refs #1316.
+- **The `final_response` fallback stopped asking the SSE hub what it had already sent.** Deciding "did this turn emit a terminal timeline?" meant
+  reading the hub ring buffer back and retrying up to 5×20ms — the worker interrogating the forwarding layer about its own output, and ~100ms of
+  dead wait on every streamed turn. The fallback is the only producer of that frame, so the decision is local now: it claims
+  `PerTurnFlight::final_response_emitted` with `swap(true)` before sending, which keeps it idempotent with no cross-layer read. Refs #1316.
 - **Context compaction stopped short of the model window whenever the round had run an LLM summary,
   and a misconfigured `llm_context_tokens` then had no fallback at all.** Two silent gaps on one path. After a summary the view is
   `[system, summary, tail…]`, so the `min_tail_messages` guard held on every iteration: removal deleted zero groups,
