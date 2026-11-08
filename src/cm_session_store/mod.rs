@@ -22,11 +22,14 @@ use crate::types::Message;
 
 mod backing;
 
-pub(crate) use backing::{ConversationBacking, ConversationRetention, open_conversation_sqlite};
+/// 端口签名里的策略快照。S6-d（#1298）起公开（含字段），否则外部实现写不出
+/// [`SessionStore::save_if_revision`] 的实参。
+pub use backing::ConversationRetention;
+pub(crate) use backing::{ConversationBacking, open_conversation_sqlite};
 
 /// 读会话种子：`messages` + revision + 三列 `active_*` + layout。
 #[derive(Clone)]
-pub(crate) struct ConversationTurnSeed {
+pub struct ConversationTurnSeed {
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
     pub persisted_active_agent_role: Option<String>,
@@ -42,8 +45,11 @@ pub(crate) struct ConversationTurnSeed {
 ///
 /// 入参一律 owned / `&str`，不借 `web` 的类型：运维 CLI、`save-session` 与未来的终端
 /// 可以直接用同一个端口，而不必把 Web 层拖进来。
+/// 会话存储端口。S6-d（#1298）起进承诺面：外部可自行实现并注入，故 trait 与它的
+/// 签名闭包（`ConversationRetention` / `ConversationTurnSeed` / `SaveConversationOutcome`
+/// / `BranchTruncateOutcome` / `ArchiveRow`）都必须可命名。
 #[async_trait]
-pub(crate) trait SessionStore: Send + Sync {
+pub trait SessionStore: Send + Sync {
     /// 当前后端是否 SQLite（少数只在 SQLite 下成立的语义用它分流，例如归档）。
     fn is_sqlite(&self) -> bool;
 
