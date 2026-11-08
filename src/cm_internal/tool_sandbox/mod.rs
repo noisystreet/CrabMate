@@ -31,7 +31,7 @@ use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 
 use self::runner::write_runner_config_json as write_runner_cfg_default;
 
-/// 进程默认 Docker Engine 后端（与 [`crate::cm_internal::process_handles::ProcessHandles`] 注入同源）。
+/// 进程默认 Docker Engine 后端（与 [`crate::process_handles::ProcessHandles`] 注入同源）。
 pub fn default_sync_default_sandbox_backend() -> std::sync::Arc<dyn SyncDefaultSandboxBackend> {
     std::sync::Arc::new(BollardSandboxBackend)
 }

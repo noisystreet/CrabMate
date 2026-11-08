@@ -9,12 +9,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::cm_internal::readonly_tool_ttl_cache::ReadonlyToolTtlCache;
-use crate::cm_internal::tool_registry::HandlerLookupTable;
-use crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend;
-use crate::cm_internal::tool_stats::ToolOutcomeRecorder;
 use crate::cm_tools::workspace::changelist::WorkspaceChangelistRegistry;
 use crate::cm_tools::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
+// 经 `tool_host` 桶门面引用（S4-P2-0）：本模块是**顶层**（不属任何桶），但它持有的四类
+// 句柄分别由 `tool_host` 的成员产生 —— 走桶门面而非硬写 `cm_internal`，P2 搬这些成员时
+// 本文件不用再改一次。
+use crate::tool_host::readonly_tool_ttl_cache::ReadonlyToolTtlCache;
+use crate::tool_host::tool_registry::HandlerLookupTable;
+use crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend;
+use crate::tool_host::tool_stats::ToolOutcomeRecorder;
 
 /// `run_agent_turn` / 工具执行所需的进程句柄面（不含侧栏任务表与 CLI LTM）。
 #[derive(Clone)]
@@ -107,7 +110,7 @@ impl ProcessHandles {
             Arc::new(WorkspaceChangelistRegistry::default()),
             Arc::new(ToolOutcomeRecorder::new()),
             HandlerLookupTable::default_dispatch(),
-            crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend(),
+            crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend(),
         )
     }
 

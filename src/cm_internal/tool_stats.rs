@@ -2,7 +2,7 @@
 //! 在新会话首条 `system` 末尾可选附加短 Markdown 提示（不落盘、不按会话分桶）。
 //!
 //! 状态存放在 [`ToolOutcomeRecorder`] 中，由 Web/CLI 入口构造并经 `crate::cm_internal::TurnRequest` 与
-//! [`crate::cm_internal::process_handles::ProcessHandles`] 显式传递，**不**使用模块级 `static`。
+//! [`crate::process_handles::ProcessHandles`] 显式传递，**不**使用模块级 `static`。
 //!
 //! 另维护环形 **[`ToolExecutionLogEntry`]**（与模型可见 `role: tool` 正文独立），供调试与未来的回放/统计。
 
