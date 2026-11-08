@@ -5,25 +5,26 @@
 //! 设置 `CM_SSE_REPLAY_DUMP_DIR` 后，所有 SSE 事件额外追加写入 `sse-replay-events.jsonl`，
 //! 供前端 TurnLayout replay 调试使用。
 //!
-//! ## 生命周期：投递与「可重连」分开表达（#1316）
+//! ## 生命周期：登记跟着「还能不能产帧」走（#1316）
 //!
-//! 两个**不相等**的事实混用，就会在收尾时序上丢帧：
+//! 这里只承认**一个**事实：`sse_tx` 的所有克隆都 drop ⟺ 桥接任务的 `recv` 返回 `None`
+//! ⟺ 这条流不可能再产出新帧。map 因此只存 **`Weak<StreamEntry>`**，强引用由
+//! [`StreamPublisher`] 持有，桥接任务退出时 [`StreamPublisher::finalize`] 摘除登记；
+//! 于是「登记还在」同时等价于「还可能产帧」与「还能 `stream_resume`」。
 //!
-//! - 「这条流还可能产出新帧」——只有 **`sse_tx` 的所有克隆都 drop**（⟺ 桥接任务的 `recv`
-//!   返回 `None`）才能判定；
-//! - 「还能不能 `stream_resume`」——由 [`StreamPublisher::retire`] 显式声明。
+//! 投递**不查 map**（[`StreamPublisher::publish`] 恒成功）。旧实现让 worker 的
+//! `remove_job` 去代表「不会再有帧」：worker 一返回就把登记删掉，而落盘后连发的
+//! `conversation_saved` / state snapshot / `RUN_FINISHED` 还排在 channel 里、桥接任务
+//! 尚未被调度，查表投递只能拿到 `None`，终态帧被静默丢弃（客户端只剩轮末补拉可用）。
 //!
-//! 因此这里：map 只存 **`Weak<StreamEntry>`**，强引用由 [`StreamPublisher`] 持有，投递
-//! **不查 map**（[`StreamPublisher::publish`] 恒成功）。旧实现让 worker 的 `remove_job`
-//! 同时承担这两件事：worker 一返回就把登记删掉，而落盘后连发的 `conversation_saved` /
-//! state snapshot / `RUN_FINISHED` 还排在 channel 里、桥接任务尚未被调度，查表投递只能
-//! 拿到 `None`，终态帧被静默丢弃（客户端只剩轮末补拉可用）。
+//! **依赖的不变式**：`sse_tx` 的克隆不得跨回合存活——后台工具任务的终态补发用
+//! `out_tx().downgrade()` 正是为此。若哪天有克隆被长期持有，桥接任务与登记都会跟着长存
+//! （改动前同样如此，只是登记会先被 worker 删掉，帧照样丢）。
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 
@@ -91,24 +92,15 @@ fn append_sse_replay_line(job_id: u64, seq: u64, data_payload: &str) {
     }
 }
 
-/// 「还会产帧」的登记项：序号源 + 环形缓冲 + 广播发送端 + 重连截止。
+/// 「还会产帧」的登记项：序号源 + 环形缓冲 + 广播发送端。
 ///
 /// 存活期**严格等于**持有它的 [`StreamPublisher`] 的存活期（hub map 只存 `Weak`）：
-/// 「登记还在」遂等价于「这条流还可能产出新帧」，不再由调用方在某个时刻 `remove_job` 去猜。
+/// 「登记还在」遂等价于「这条流还可能产出新帧」，不由任何调用方在某个时刻去猜。
 #[derive(Debug)]
 struct StreamEntry {
     next_seq: AtomicU64,
     ring: Mutex<VecDeque<(u64, String)>>,
     tx: broadcast::Sender<(u64, String)>,
-    /// `None` = 仍受理 `stream_resume`；`Some` = 过了 `deadline` 即不再受理。
-    retire: Mutex<Option<RetireInfo>>,
-}
-
-/// [`StreamPublisher::retire`] 的记账：`at` 供观测排空耗时，`deadline` 供判定截止。
-#[derive(Debug, Clone, Copy)]
-struct RetireInfo {
-    at: Instant,
-    deadline: Instant,
 }
 
 impl StreamEntry {
@@ -119,7 +111,6 @@ impl StreamEntry {
             next_seq: AtomicU64::new(0),
             ring: Mutex::new(VecDeque::new()),
             tx,
-            retire: Mutex::new(None),
         }
     }
 
@@ -150,29 +141,6 @@ impl StreamEntry {
             .cloned()
             .collect()
     }
-
-    fn retire(&self, grace: Duration) {
-        let now = Instant::now();
-        let deadline = now.checked_add(grace).unwrap_or(now);
-        let mut slot = self.retire.lock().unwrap_or_else(|e| e.into_inner());
-        // 只收紧不放松：重复 retire 不得把「仍可重连」的窗口往后延。
-        match *slot {
-            Some(prev) if prev.deadline <= deadline => {}
-            _ => *slot = Some(RetireInfo { at: now, deadline }),
-        }
-    }
-
-    fn retire_info(&self) -> Option<RetireInfo> {
-        *self.retire.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// 未 retire，或仍在 grace 窗口内。
-    fn is_resumable(&self, now: Instant) -> bool {
-        match self.retire_info() {
-            None => true,
-            Some(info) => now < info.deadline,
-        }
-    }
 }
 
 /// `job_id` → 存活登记项。**弱引用**：存活期由 [`StreamPublisher`] 决定，见模块文档。
@@ -202,13 +170,11 @@ impl SseStreamHub {
             g.retain(|_, w| w.strong_count() > 0);
             match g.get(&job_id).and_then(Weak::upgrade) {
                 Some(existing) => {
-                    if existing.retire_info().is_some() {
-                        log::warn!(
-                            target: "crabmate",
-                            "chat stream job_id={} 重新登记但旧流仍在收尾，沿用旧序号源（job_id 不应复用）",
-                            job_id
-                        );
-                    }
+                    log::warn!(
+                        target: "crabmate",
+                        "chat stream job_id={} 重复登记且旧登记仍存活：沿用旧序号源（job_id 不应复用）",
+                        job_id
+                    );
                     existing
                 }
                 None => {
@@ -225,25 +191,13 @@ impl SseStreamHub {
         }
     }
 
-    /// 存活登记（**不看** retire 截止）——投递路径用。
+    /// 存活登记——唯一判据：登记项还在 ⟺ 这条流还可能产帧 ⟺ 仍受理 `stream_resume`。
     fn live_entry(&self, job_id: u64) -> Option<Arc<StreamEntry>> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(&job_id)
             .and_then(Weak::upgrade)
-    }
-
-    /// 仍受理 `stream_resume` 的登记；retire 截止已过则顺手摘除。
-    fn resumable_entry(&self, job_id: u64) -> Option<Arc<StreamEntry>> {
-        let now = Instant::now();
-        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let entry = g.get(&job_id).and_then(Weak::upgrade)?;
-        if entry.is_resumable(now) {
-            return Some(entry);
-        }
-        g.remove(&job_id);
-        None
     }
 
     /// 查表投递：无存活登记时返回 `None` 并留 debug 日志。
@@ -266,13 +220,12 @@ impl SseStreamHub {
 
     /// 订阅实时事件（`recv()` 得到 **`(seq, data 负载)`**）。
     pub fn subscribe(&self, job_id: u64) -> Option<broadcast::Receiver<(u64, String)>> {
-        self.resumable_entry(job_id).map(|e| e.tx.subscribe())
+        self.live_entry(job_id).map(|e| e.tx.subscribe())
     }
 
     /// 环形缓冲中 `seq > after_seq` 的 `data:` 负载（不含 `id` 行），按序。
     pub fn replay_after(&self, job_id: u64, after_seq: u64) -> Option<Vec<(u64, String)>> {
-        self.resumable_entry(job_id)
-            .map(|e| e.replay_after(after_seq))
+        self.live_entry(job_id).map(|e| e.replay_after(after_seq))
     }
 
     /// 摘除登记。桥接任务退出时走 [`StreamPublisher::finalize`]（带「是否仍是自己」校验）。
@@ -282,15 +235,15 @@ impl SseStreamHub {
     }
 
     pub fn has_job(&self, job_id: u64) -> bool {
-        self.resumable_entry(job_id).is_some()
+        self.live_entry(job_id).is_some()
     }
 }
 
 /// 已登记 `job_id` 的**投递句柄**。
 ///
 /// 持有登记项（`StreamEntry`，私有）的强引用，所以 [`Self::publish`] 不查 hub map、恒成功：
-/// worker 收尾（`drop(sse_tx)` → [`Self::retire`] → 返回）与桥接任务被调度之间的窗口里，
-/// 已入队的终态帧仍能送达 HTTP 侧（#1316）。
+/// worker 收尾（`drop(sse_tx)` → 返回）与桥接任务被调度之间的窗口里，已入队的终态帧仍能
+/// 送达 HTTP 侧（#1316）。
 #[derive(Clone)]
 pub struct StreamPublisher {
     job_id: u64,
@@ -309,28 +262,6 @@ impl StreamPublisher {
         self.entry.publish(self.job_id, data_payload)
     }
 
-    /// 本流环形缓冲里 `seq > after_seq` 的帧。**不受** retire 影响：判「本流是否已发过某帧」
-    /// 必须走这里，而不是查 hub map（map 里可能已没有本 `job_id`）。
-    pub fn replay_after(&self, after_seq: u64) -> Vec<(u64, String)> {
-        self.entry.replay_after(after_seq)
-    }
-
-    /// 自此刻起 `grace` 之后不再受理 `stream_resume`；**不影响**投递，也不摘除登记。
-    pub fn retire(&self, grace: Duration) {
-        self.entry.retire(grace);
-        if let Some(info) = self.entry.retire_info() {
-            log::debug!(
-                target: "crabmate",
-                "chat stream 已停止受理重连 job_id={} grace_ms={} 剩余_ms={}",
-                self.job_id,
-                grace.as_millis(),
-                info.deadline
-                    .saturating_duration_since(Instant::now())
-                    .as_millis()
-            );
-        }
-    }
-
     /// 桥接任务退出（`sse_rx` 关闭 ⟺ 本流不可能再产帧）时摘除登记。
     ///
     /// 只摘除仍指向**本**登记项的那个键：同 `job_id` 已被重新登记时不误删新的。
@@ -338,35 +269,13 @@ impl StreamPublisher {
         let Some(inner) = self.hub.upgrade() else {
             return;
         };
-        {
-            let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
-            let still_self = g
-                .get(&self.job_id)
-                .and_then(Weak::upgrade)
-                .is_some_and(|e| Arc::ptr_eq(&e, &self.entry));
-            if !still_self {
-                return;
-            }
+        let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
+        let still_self = g
+            .get(&self.job_id)
+            .and_then(Weak::upgrade)
+            .is_some_and(|e| Arc::ptr_eq(&e, &self.entry));
+        if still_self {
             g.remove(&self.job_id);
-        }
-        // 观测：排空是否超出 retire 窗口（超出说明还有别的强发送端长期持有这条流）。
-        if let Some(info) = self.entry.retire_info() {
-            let drained_ms = info.at.elapsed().as_millis();
-            if Instant::now() > info.deadline {
-                log::warn!(
-                    target: "crabmate",
-                    "chat stream 排空超过 retire 窗口 job_id={} drained_ms={}",
-                    self.job_id,
-                    drained_ms
-                );
-            } else {
-                log::debug!(
-                    target: "crabmate",
-                    "chat stream 登记已摘除 job_id={} drained_ms={}",
-                    self.job_id,
-                    drained_ms
-                );
-            }
         }
     }
 }
@@ -475,30 +384,6 @@ mod tests {
         assert!(!hub.has_job(8), "句柄 drop 即注销");
         assert!(hub.publish(8, "x".to_string()).is_none());
         assert!(hub.replay_after(8, 0).is_none());
-    }
-
-    /// `retire` 只停止受理重连、不影响投递；窗口只允许收紧，收紧后 `has_job` 转假。
-    #[test]
-    fn retire_caps_resume_but_not_delivery() {
-        let hub = SseStreamHub::new();
-        let publisher = hub.register_job(9);
-        let mut sub = hub.subscribe(9).expect("subscribe");
-
-        publisher.retire(Duration::from_secs(60));
-        assert!(hub.has_job(9), "grace 窗口内仍可重连");
-        assert!(hub.replay_after(9, 0).is_some());
-        assert_eq!(publisher.publish("after-retire".to_string()).0, 1);
-        assert!(sub.try_recv().is_ok(), "retire 不影响投递");
-
-        publisher.retire(Duration::ZERO);
-        assert!(!hub.has_job(9), "截止后不再受理重连");
-        assert!(hub.subscribe(9).is_none());
-        assert_eq!(
-            publisher.publish("still-delivered".to_string()).0,
-            2,
-            "截止只影响重连，不影响投递"
-        );
-        assert!(sub.try_recv().is_ok());
     }
 
     /// `finalize` 幂等，且不误删同 `job_id` 的后来登记。

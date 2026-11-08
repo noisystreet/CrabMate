@@ -38,10 +38,11 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 - **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`,
   in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**:
   `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**,
-  replays from the ring buffer, then subscribes to live broadcast. **In-process only**: once the job's frames are **drained** (or the
-    process restarts), reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**; while frames are still draining a reconnect replays
-    `conversation_saved` / state snapshot / `RUN_FINISHED` too — dropping the registration only affects the reconnect verdict, never the
-    terminal frames on an established connection (#1316; a 1s `SSE_STREAM_RETIRE_GRACE` cap covers a sender held abnormally long).
+  replays from the ring buffer, then subscribes to live broadcast. **In-process only**: once the job's frames are **drained** (the server
+    drops its registration for that `job_id`; or the process restarts), reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. Dropping
+    the registration only affects the reconnect verdict, never the terminal frames on an established connection (#1316):
+    `conversation_saved` / state snapshot / `RUN_FINISHED` are always delivered first, and a reconnect during the draining window still
+    replays them.
     UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` =
     **`x-stream-job-id`**);
   **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose
