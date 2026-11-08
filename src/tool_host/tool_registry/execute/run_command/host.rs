@@ -4,22 +4,19 @@
 //! `execute` 的单一作用域；现为真子模块，跨片调用必须经 `mod.rs` 的显式接口（#1196）。
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
 use crate::cm_tools::tools;
-use crate::cm_types::{CommandApprovalDecision, ToolCall};
+use crate::cm_types::ToolCall;
 
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
 use super::super::*;
-// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::cm_internal::tool_registry::execute) use` 出来的显式接口。
+// 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::tool_host::tool_registry::execute) use` 出来的显式接口。
 use super::*;
 use crate::cm_names as tool_names;
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_impl(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_run_command_impl(
     invoke: RunCommandHostInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
     let RunCommandHostInvoke {

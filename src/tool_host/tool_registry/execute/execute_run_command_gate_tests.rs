@@ -4,7 +4,6 @@ use super::tests::{
     approval_fixture, async_test_env, async_test_sandbox, contains_cmd, evaluate_for_test,
     parsed_run_command, run_command_impl_for_test, test_policy_context, test_policy_context_with_caps,
 };
-use super::*;
 // #1198：`run_command` 的显式接口不再打平进 `execute`，测试按模块路径取。
 use super::run_command::{
     ExecMode, ExternalPathGate, ParsedRunCommandJson, PolicyApproval, PolicyCapabilities,

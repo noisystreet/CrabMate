@@ -12,7 +12,6 @@ use super::run_command::{
     emit_run_command_tool_output_chunk, evaluate_policy, execute_run_command_impl,
     parse_run_command_json, posix_shell_wrap_needs_interactive_approval,
 };
-use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -463,13 +462,13 @@ async fn run_command_chunk_try_send_full_does_not_bump_seq() {
 }
 
 pub(super) fn async_test_sandbox(
-) -> Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend> {
-    crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend()
+) -> Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend> {
+    crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend()
 }
 
 pub(super) fn async_test_env<'a>(
     cfg: &'a Arc<AgentConfig>,
-    sandbox: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
+    sandbox: &'a Arc<dyn crate::tool_host::tool_sandbox::SyncDefaultSandboxBackend>,
 ) -> ToolExecEnv<'a> {
     ToolExecEnv {
         cfg,

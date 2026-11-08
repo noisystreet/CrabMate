@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use crate::cm_internal::tool_registry::is_readonly_tool;
+use crate::tool_host::tool_registry::is_readonly_tool;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Tool;
 

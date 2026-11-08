@@ -4,7 +4,7 @@
 //! 测试可注入假实现而不走真实 `dispatch_tool`。
 
 use async_trait::async_trait;
-use crate::cm_internal::tool_registry::{DispatchToolParams, dispatch_tool};
+use crate::tool_host::tool_registry::{DispatchToolParams, dispatch_tool};
 
 /// 单次工具调用的 registry 分发面（不含 `workflow_execute`）。
 #[async_trait]

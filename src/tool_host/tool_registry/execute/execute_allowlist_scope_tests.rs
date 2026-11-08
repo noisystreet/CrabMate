@@ -6,7 +6,6 @@
 //! 1. `AllowAlways` 写入用**当回合等级**做前缀；
 //! 2. 命中要求等级**严格相等** —— L3 批过的键在 L2 不得继续放行。
 
-use super::*;
 use crate::cm_agent::permission::project_caps;
 use crate::cm_types::{CommandApprovalDecision, PermissionLevel};
 use std::sync::Arc;

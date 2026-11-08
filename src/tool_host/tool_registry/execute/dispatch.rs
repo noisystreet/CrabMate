@@ -15,14 +15,14 @@ use std::time::Duration;
 use log::error;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
+use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
 use crate::cm_tools::tools;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_types::ToolCall;
 
 use super::super::meta::{HandlerId, HandlerLookupTable};
 use super::super::policy::{parallel_tool_wall_timeout_secs, sync_default_runs_inline};
-use super::super::runtime::{ToolRuntime, WebToolRuntime};
+use super::super::runtime::ToolRuntime;
 use super::run_command::{RunCommandHostInvoke, execute_run_command_impl};
 // 祖先层（`execute`）的项，以及 `mod.rs` 里集中声明的兄弟子模块显式接口。
 use super::*;
@@ -54,7 +54,7 @@ fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a dyn cr
 }
 
 /// 检测 `read_dir` 入参中 `path` 是否为外部路径（绝对路径或含 `..`）。
-pub(in crate::cm_internal::tool_registry::execute) fn read_dir_path_is_external(
+pub(in crate::tool_host::tool_registry::execute) fn read_dir_path_is_external(
     args_json: &str,
 ) -> Option<String> {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
@@ -145,7 +145,7 @@ async fn try_dispatch_dynamic_tool(
             None,
         ));
     }
-    let def = match crate::cm_internal::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
+    let def = match crate::tool_host::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
         Ok(Some(d)) => d,
         Ok(None) => return Some((format!("未知工具：{}", name), None)),
         Err(e) => return Some((format!("错误：动态工具加载失败：{}", e), None)),
@@ -155,7 +155,7 @@ async fn try_dispatch_dynamic_tool(
     let cfg2 = Arc::clone(cfg);
     let wall_secs = cfg.command_exec.command_timeout_secs.max(1);
     let handle = tokio::task::spawn_blocking(move || {
-        crate::cm_internal::dynamic_tools::run_dynamic_tool(
+        crate::tool_host::dynamic_tools::run_dynamic_tool(
             &def,
             &args_owned,
             wd.as_path(),
@@ -203,7 +203,7 @@ async fn try_dispatch_mcp_proxy_tool(
         ));
     };
     let guard = sess.lock().await;
-    let mcp_args = crate::cm_internal::tool_call_explain::strip_explain_why_if_present(args);
+    let mcp_args = crate::tool_host::tool_call_explain::strip_explain_why_if_present(args);
     let out = crate::mcp::call_mcp_tool(
         &guard,
         remote.as_str(),
@@ -241,7 +241,7 @@ async fn dispatch_sync_default_tool(
                 None,
             );
         }
-        let out = crate::cm_internal::tool_sandbox::run_sync_default_in_docker(
+        let out = crate::tool_host::tool_sandbox::run_sync_default_in_docker(
             env.sandbox_backend,
             cfg.as_ref(),
             effective_working_dir,
@@ -271,14 +271,14 @@ async fn dispatch_sync_default_tool(
     }
 
     if sync_default_runs_inline(cfg.as_ref(), name) {
-        let hosts = crate::cm_internal::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
+        let hosts = crate::tool_host::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
             cfg.as_ref(),
             long_term_memory.clone(),
             long_term_memory_scope_id.as_deref(),
         );
         let jobs_host = tool_jobs
             .as_ref()
-            .map(|r| crate::cm_internal::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
+            .map(|r| crate::tool_host::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
         let ctx = tools::tool_context_for_with_read_cache_and_memory(
             cfg.as_ref(),
             cfg.command_exec.allowed_commands.as_ref(),
@@ -307,14 +307,14 @@ async fn dispatch_sync_default_tool(
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
     let handle = tokio::task::spawn_blocking(move || {
         crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            let hosts = crate::cm_internal::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
+            let hosts = crate::tool_host::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
                 cfg2.as_ref(),
                 ltm2,
                 ltm_scope2.as_deref(),
             );
             let jobs_host = tj
                 .as_ref()
-                .map(|r| crate::cm_internal::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
+                .map(|r| crate::tool_host::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
             let ctx = tools::tool_context_for_with_read_cache_and_memory(
                 cfg2.as_ref(),
                 cfg2.command_exec.allowed_commands.as_ref(),
@@ -494,7 +494,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
     }
 
     let args_processed =
-        match crate::cm_internal::tool_call_explain::require_explain_for_mutation(cfg.as_ref(), name, args) {
+        match crate::tool_host::tool_call_explain::require_explain_for_mutation(cfg.as_ref(), name, args) {
             Ok(c) => c,
             Err(e) => return (e, None),
         };

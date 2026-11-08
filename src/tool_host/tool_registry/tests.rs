@@ -177,7 +177,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
         },
     };
     let lookup = default_lookup();
-    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let sandbox = crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, payload) = dispatch_tool(DispatchToolParams {
         runtime,
         call: DispatchToolCall {
@@ -231,7 +231,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
         },
     };
     let lookup = default_lookup();
-    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let sandbox = crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, _) = dispatch_tool(DispatchToolParams {
         runtime,
         call: DispatchToolCall {
@@ -286,7 +286,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
         },
     };
     let lookup = default_lookup();
-    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let sandbox = crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, _) = dispatch_tool(DispatchToolParams {
         runtime,
         call: DispatchToolCall {
@@ -333,7 +333,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     let cfg = std::sync::Arc::new(cfg);
     let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let lookup = default_lookup();
-    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let sandbox = crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend();
     let wd = std::path::Path::new(".");
 
     let start_args = r#"{"command":"echo","args":["e2e-background-hi"],"async":true,"timeout_secs":10}"#;
@@ -524,7 +524,7 @@ async fn dispatch_json_format_with_workspace(
         },
     };
     let lookup = default_lookup();
-    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let sandbox = crate::tool_host::tool_sandbox::default_sync_default_sandbox_backend();
     dispatch_tool(DispatchToolParams {
         runtime: ToolRuntime {
             workspace_changed: &mut workspace_changed,

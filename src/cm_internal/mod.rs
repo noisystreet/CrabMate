@@ -18,7 +18,6 @@ pub mod readonly_tool_ttl_cache;
 pub mod terminal_session;
 pub mod tool_approval;
 pub mod tool_call_explain;
-pub mod tool_registry;
 pub mod tool_sandbox;
 pub mod tool_stats;
 
