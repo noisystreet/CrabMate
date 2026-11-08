@@ -238,6 +238,27 @@ Three entry points exist and they are **not** interchangeable — running the wr
   guessing.
 - Do not add a slower check to the pre-commit hooks just to mirror CI; keep the commit hook fast and let CI own the expensive jobs.
 
+### Outbound writes (repository-visible actions)
+
+Acting on the remote in a way other people can see. Local side effects are governed by `tool_approval` / `permission_level`;
+  this section governs repository actions. The two are independent — a tool-approval allowlist is **not** a governance mandate,
+  and this section never relaxes a tool check.
+
+- **May do without asking** (read-only or local-only): `gh issue view` / `search`, `gh issue list`, `gh pr view` / `list` /
+  `checks` / `diff`, `git log` / `diff` / `blame` / `show`, creating a local branch, committing on that branch.
+- **One explicit human approval per action** — state the exact command and its target, then wait: `gh issue close` / `reopen` /
+  `comment` / `edit`, adding or removing labels, `gh pr merge`, `gh release create` / `edit`, pushing a branch (the
+  `--force-with-lease` case above is a subset and needs the same approval), `gh pr edit --base`, deleting a branch.
+- **Only when a human asks for that exact act**: push to `main`, force-push a shared branch, `gh pr merge --admin`,
+  closing an Issue that the current work does not deliver.
+
+Notes on reading this list:
+
+- A blanket approval — “go ahead with everything”, a Web `AllowAlways` on `run_command` — does **not** cover it.
+- A task that itself demands the act (“fix it and open a PR”) is that one approval for `gh pr create` on that branch;
+  it is **not** approval to merge, comment on, or close anything afterwards.
+- Not sure whether an act is repository-visible? It is — ask.
+
 ### Commit & push
 
 - Before **every** `git commit`: `pre-commit run --all-files`. If `pre-commit` is not installed, run at least, from the repo root: `cargo fmt --all`;
