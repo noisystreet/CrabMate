@@ -6,7 +6,10 @@
 //! 实时输出流（环形缓冲）契约见 `docs/design/background_tool_jobs_output_streaming_contract.md`。
 
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+// 只在 `#[cfg(test)]` 的 `from_command` 里解析默认 cwd。
+#[cfg(test)]
+use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

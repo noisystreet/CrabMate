@@ -193,7 +193,7 @@ pub struct RunAgentTurnObs {
     /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::TurnProcessHandles::default_arc`]；完整袋见 [`ProcessHandles`]）。
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用（默认关闭路径）。
-    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
@@ -251,7 +251,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
     pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 /// 构造 [`TurnRequest::web_chat_json`] 所需的参数包。
@@ -285,7 +285,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
     pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
 #[cfg(feature = "web")]
@@ -304,7 +304,7 @@ struct WebChatJobCommonParts<'a> {
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 impl<'a> TurnRequest<'a> {
@@ -559,9 +559,9 @@ pub(crate) use web::AppState;
 #[cfg(feature = "web")]
 pub(crate) fn build_serve_tool_job_registry(
     cfg: &config::AgentConfig,
-) -> std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry> {
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(cfg);
-    crate::cm_internal::tool_jobs::spawn_cleanup_task(
+) -> std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry> {
+    let registry = crate::jobs::tool_jobs::registry_from_config(cfg);
+    crate::jobs::tool_jobs::spawn_cleanup_task(
         std::sync::Arc::clone(&registry),
         std::time::Duration::from_secs(60),
     );

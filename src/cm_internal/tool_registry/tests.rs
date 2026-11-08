@@ -331,7 +331,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     let mut cfg = test_cfg();
     cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
     let cfg = std::sync::Arc::new(cfg);
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let lookup = default_lookup();
     let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
     let wd = std::path::Path::new(".");
@@ -394,7 +394,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
         if rec.status.is_terminal() {
             assert_eq!(
                 rec.status,
-                crate::cm_internal::tool_jobs::JobStatus::Succeeded,
+                crate::jobs::tool_jobs::JobStatus::Succeeded,
                 "async 任务应成功"
             );
             break;

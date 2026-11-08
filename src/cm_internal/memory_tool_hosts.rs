@@ -15,10 +15,10 @@ use crate::cm_internal::long_term_memory_tools::{
     long_term_remember, summarize_experience,
 };
 use crate::cm_memory::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
-use crate::cm_internal::tool_jobs::GetOutcome;
-use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
-use crate::cm_internal::tool_jobs::types::{JobRecord, JobStatus};
-use crate::cm_internal::tool_jobs::WaitOutcome;
+use crate::jobs::tool_jobs::GetOutcome;
+use crate::jobs::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
+use crate::jobs::tool_jobs::types::{JobRecord, JobStatus};
+use crate::jobs::tool_jobs::WaitOutcome;
 use crate::cm_tools::subprocess_session::SessionStream;
 use crate::cm_tools::tool_result::ToolError;
 
@@ -129,11 +129,11 @@ impl DispatchMemoryHosts {
 /// 仅暴露查询能力（不含发起执行/取消），与 ADR `docs/design/background_tool_jobs.md`
 /// 「不新增发起执行型工具组」的约束一致。
 pub struct ToolJobsHost {
-    registry: Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    registry: Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
 }
 
 impl ToolJobsHost {
-    pub fn new(registry: Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>) -> Self {
+    pub fn new(registry: Arc<crate::jobs::tool_jobs::ToolJobRegistry>) -> Self {
         Self { registry }
     }
 }
@@ -337,7 +337,7 @@ impl ToolJobsToolHost for ToolJobsHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_internal::tool_jobs::{
+    use crate::jobs::tool_jobs::{
         CancelOutcome, JobLimits, JobOutcome, JobSpawn, JobStatus, ToolJobRegistry,
     };
     use std::path::PathBuf;

@@ -13,9 +13,12 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::cm_tools::subprocess_session::SessionStream;
 
 use super::types::{
-    JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobSpawn, JobStatus,
+    JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus,
     MAX_ITEMS_PER_RESPONSE, OutputLogRead,
 };
+// 只有 `#[cfg(test)]` 的子模块（`registry_*_tests.rs` 经 `use super::*`）用到它。
+#[cfg(test)]
+use super::types::JobSpawn;
 
 /// 进程内注册表（所有操作持锁，单临界区保证状态转移原子性）。
 ///

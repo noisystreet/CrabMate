@@ -141,7 +141,7 @@ pub(crate) struct WebChatTurnAppFacet {
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
     pub(crate) async_chat_jobs: AsyncChatJobsMap,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    pub(crate) tool_job_registry: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
 }
 
 /// 仅 `GET` 异步任务状态：只持 `async_chat_jobs`。
