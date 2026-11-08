@@ -1,8 +1,8 @@
 # Git 协作流程（GitHub Flow · 分支 · 提交 · Stacked PR）
 
-> 本文件是 `AGENTS.md` →「Repository engineering rules」中 git / GitHub 协作条款的**细则**。
+> 本文件是 `AGENTS.md` §5「Git 与 GitHub 协作」的**细则**。
 > `AGENTS.md` 只保留硬红线摘要；本文件放完整流程与排障步骤。
-> 对外可见写操作的授权边界（关 Issue、merge、push、Release）见 `AGENTS.md` →「Outbound writes」。
+> 对外可见写操作的授权边界（关 Issue、merge、push、Release）见 `AGENTS.md` §4.2「对外写操作」。
 >
 > 以下正文沿用原 `AGENTS.md` 的英文原文，未做改写，以免语义漂移。
 
@@ -55,7 +55,7 @@ git push --force-with-lease=<branch>:<sha-from-ls-remote> origin <branch>
   remote-tracking ref, which is stale right after a rebase (fails as `stale info`), and it cannot tell "someone else
   pushed" apart from "the ref is gone upstream" — the latter is exactly what happens when the base merged and
   `delete_branch_on_merge` removed it.
-- `--force-with-lease` still needs explicit user authorization (see `AGENTS.md` →「Outbound writes」): inspect, then push.
+- `--force-with-lease` still needs explicit user authorization (see `AGENTS.md` §4.2「对外写操作」): inspect, then push.
 - Merging `origin/main` into the branch clears the `CONFLICTING` banner and needs no force-push — **but in this
   rebase-only repo that is not enough to merge**：rebase-merge 重放的是**每个提交**、并丢掉 merge commit，
   所以「只写在 merge commit 里」的冲突解决对它不可见，GitHub 会继续报
