@@ -11,18 +11,18 @@ pub mod registry;
 pub mod types;
 pub mod worker;
 
-pub use registry::{
-    CancelOutcome, GetOutcome, JobRegistryStats, OutputPollOutcome, RegisterError, ToolJobRegistry,
-    WaitOutcome,
-};
-pub use types::{
-    JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus,
-    MAX_ITEMS_PER_RESPONSE, MAX_OUTPUT_ITEMS, OutputEvent, OutputLogRead,
-};
-pub use worker::{
-    JobOutputSink, JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_async,
-    spawn_cleanup_task,
-};
+pub use registry::{GetOutcome, RegisterError, ToolJobRegistry, WaitOutcome};
+pub use types::{JobFinishedSink, JobLimits, JobOutcome};
+pub use worker::{JobSpawn, enqueue_and_launch, spawn_cleanup_task};
+
+// 以下只被 **lib test 单元**消费：lib 单元没有调用方，所以在 lib 编译时会报 `unused_imports`。
+// 保留短路径供测试导入；判据见 #1300 §4.1「桶化会掀开死代码」。
+#[allow(unused_imports)]
+pub use registry::CancelOutcome;
+#[allow(unused_imports)]
+pub use types::JobStatus;
+#[allow(unused_imports)]
+pub use worker::{JobOutputSink, drain_queued, launch_job, run_job_async};
 
 /// 按当前 `[tool_registry]` 配置构建注册表（web 启动 / 热重载时读取一次；已运行 job 不受影响）。
 #[must_use]

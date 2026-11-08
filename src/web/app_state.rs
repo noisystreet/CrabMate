@@ -133,7 +133,7 @@ pub(crate) struct AppStateWebAux {
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
     /// 后台任务注册表（`run_command` 的 `async=true`）；启动时按 `[tool_registry]` 配置构建。
-    pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    pub(crate) tool_job_registry: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
 }
 
 #[derive(Clone)]
@@ -153,7 +153,7 @@ pub(crate) struct WebChatJobAppFacet {
     pub(crate) process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    pub(crate) tool_job_registry: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
 }
 
 impl AppStateConversationRuntime {

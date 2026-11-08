@@ -45,7 +45,7 @@ struct SyncDefaultToolDispatchArgs<'a> {
         Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
     /// 后台任务注册表：供 `background_job_status` / `background_job_list` 只读查询。
-    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_jobs: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 /// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。

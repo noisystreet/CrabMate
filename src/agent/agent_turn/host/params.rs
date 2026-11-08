@@ -96,7 +96,7 @@ pub(crate) struct RunLoopObs {
     /// [`crate::cm_llm::TraceEvent`]。
     pub trace_sink: Option<Arc<dyn crate::cm_llm::TraceSink>>,
     /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用。
-    pub tool_job_registry: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_job_registry: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 /// 单轮 `run_agent_turn` 内相对稳定的一侧（整场不应再混入会话可变字段）。

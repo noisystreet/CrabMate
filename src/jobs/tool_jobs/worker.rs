@@ -18,7 +18,10 @@ use crate::cm_tools::subprocess_session::{
     prepare_piped_process_group, take_utf8_text, wait_child_session_async,
 };
 
-use super::registry::{OutputPollOutcome, RegisterError, ToolJobRegistry};
+use super::registry::{RegisterError, ToolJobRegistry};
+// 只有 `#[cfg(test)]` 的断言读取它；不给 lib 单元添一个 dead import。
+#[cfg(test)]
+use super::registry::OutputPollOutcome;
 use super::types::{JobFinishedSink, JobOutcome, JobStatus};
 
 pub use super::types::JobSpawn;
@@ -217,8 +220,8 @@ mod tests {
         .await
     }
 
-    fn test_limits() -> crate::cm_internal::tool_jobs::types::JobLimits {
-        crate::cm_internal::tool_jobs::types::JobLimits {
+    fn test_limits() -> crate::jobs::tool_jobs::types::JobLimits {
+        crate::jobs::tool_jobs::types::JobLimits {
             max_concurrent: 4,
             max_queued: 32,
             ttl: Duration::from_secs(3600),
@@ -344,7 +347,7 @@ mod tests {
         .expect("enqueue");
         // 等 worker 真正进入等待循环后经注册表取消（验证 cancel_flag 接线）。
         tokio::time::sleep(Duration::from_millis(150)).await;
-        assert_eq!(reg.cancel(&id), crate::cm_internal::tool_jobs::registry::CancelOutcome::Cancelled);
+        assert_eq!(reg.cancel(&id), crate::jobs::tool_jobs::registry::CancelOutcome::Cancelled);
         let rec = loop {
             let rec = reg.get(&id).expect("record");
             if rec.status.is_terminal() {
@@ -359,7 +362,7 @@ mod tests {
     #[tokio::test]
     async fn enqueue_respects_concurrency_and_drains_queued() {
         let reg = Arc::new(ToolJobRegistry::new(
-            crate::cm_internal::tool_jobs::types::JobLimits {
+            crate::jobs::tool_jobs::types::JobLimits {
                 max_concurrent: 1,
                 max_queued: 8,
                 ttl: Duration::from_secs(3600),

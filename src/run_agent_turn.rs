@@ -311,7 +311,7 @@ struct RunLoopAssembly<'a> {
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     request_audit: Option<Arc<crate::request_audit::WebRequestAudit>>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     trace_sink: Option<Arc<dyn crate::llm::TraceSink>>,
     // → RunLoopTurnState 的采样覆盖段（`AgentTurnLlmOverrides` 已在外层解构）

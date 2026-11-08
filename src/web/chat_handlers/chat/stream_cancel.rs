@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use serde::Serialize;
 
 use crate::chat_job_queue::ChatJobQueue;
-use crate::cm_internal::tool_jobs::ToolJobRegistry;
+use crate::jobs::tool_jobs::ToolJobRegistry;
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::http_types::chat::ApiError;
 
@@ -52,7 +52,7 @@ pub(crate) async fn chat_stream_cancel_handler(
 mod tests {
     use super::{ChatStreamCancelResponseBody, apply_stream_cancel};
     use crate::chat_job_queue::ChatJobQueue;
-    use crate::cm_internal::tool_jobs::{JobLimits, JobSpawn, ToolJobRegistry};
+    use crate::jobs::tool_jobs::{JobLimits, JobSpawn, ToolJobRegistry};
     use crate::test_serve::start_test_serve;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -132,11 +132,11 @@ mod tests {
         assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(
             reg.get(&stop).expect("stop").status,
-            crate::cm_internal::tool_jobs::JobStatus::Cancelled
+            crate::jobs::tool_jobs::JobStatus::Cancelled
         );
         assert_eq!(
             reg.get(&keep).expect("keep").status,
-            crate::cm_internal::tool_jobs::JobStatus::Queued
+            crate::jobs::tool_jobs::JobStatus::Queued
         );
     }
 

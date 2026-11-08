@@ -30,7 +30,7 @@ pub(in crate::cm_internal::tool_registry::execute) struct RunCommandHostInvoke<'
     pub(in crate::cm_internal::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     pub(in crate::cm_internal::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 pub(in crate::cm_internal::tool_registry::execute) fn run_command_chunk_sink(

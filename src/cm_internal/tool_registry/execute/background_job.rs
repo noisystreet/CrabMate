@@ -63,7 +63,7 @@ pub(in crate::cm_internal::tool_registry::execute) fn try_dispatch_background_as
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     name: &str,
     args: &str,
-    tool_jobs: Option<&Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_jobs: Option<&Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 ) -> Option<(String, Option<serde_json::Value>)> {
     let cfg_ref: &AgentConfig = cfg.as_ref();
     match background_async_gate(
@@ -142,7 +142,7 @@ fn args_request_background_async(args: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 按工具名装配后台任务 [`JobSpawn`](crate::cm_internal::tool_jobs::JobSpawn)。
+/// 按工具名装配后台任务 [`JobSpawn`](crate::jobs::tool_jobs::JobSpawn)。
 ///
 /// 参数校验复用各工具前台同步路径的同一套逻辑（见装配表），并**原样沿用装配时设定的
 /// 工作目录**（`Command::current_dir`；`pytest_run` 会在此 canonicalize），使后台与前台
@@ -152,12 +152,12 @@ pub(in crate::cm_internal::tool_registry::execute) fn assemble_background_job_sp
     name: &str,
     args_json: &str,
     workspace_root: &Path,
-) -> Result<crate::cm_internal::tool_jobs::JobSpawn, String> {
+) -> Result<crate::jobs::tool_jobs::JobSpawn, String> {
     let Some(assemble) = background_async_argv_assembler(name) else {
         return Err(background_async_unsupported_message(name));
     };
     let cmd = assemble(args_json, workspace_root)?;
-    Ok(crate::cm_internal::tool_jobs::JobSpawn {
+    Ok(crate::jobs::tool_jobs::JobSpawn {
         program: cmd.program,
         args: cmd.args,
         cwd: cmd.cwd.unwrap_or_else(|| workspace_root.to_path_buf()),
@@ -176,18 +176,18 @@ fn background_async_unsupported_message(name: &str) -> String {
 ///
 /// `tool_name` 须为**真实**工具名（终态补发摘要 `summarize_tool_call` 使用）。
 pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
-    registry: &Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    registry: &Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     tool_name: &str,
     args: &str,
     effective_working_dir: &Path,
-    spawn: crate::cm_internal::tool_jobs::JobSpawn,
+    spawn: crate::jobs::tool_jobs::JobSpawn,
 ) -> (String, Option<serde_json::Value>) {
     let finished_sink = background_job_finished_sink(web_ctx, tool_name, args);
     // 来源回合 `job_id`：供 `POST /chat/stream/{job_id}/cancel` 级联取消本回合后台任务。
     // 无同进程 SSE（运维 CLI 等）时为 `None`。
     let source_turn_job_id = web_ctx.and_then(|c| c.turn_job_id());
-    let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
+    let id = match crate::jobs::tool_jobs::enqueue_and_launch(
         Arc::clone(registry),
         effective_working_dir.to_path_buf(),
         source_turn_job_id,
@@ -196,13 +196,13 @@ pub(in crate::cm_internal::tool_registry::execute) fn launch_background_job(
         finished_sink,
     ) {
         Ok(id) => id,
-        Err(crate::cm_internal::tool_jobs::RegisterError::QueueFull) => {
+        Err(crate::jobs::tool_jobs::RegisterError::QueueFull) => {
             return (
                 "错误：后台任务队列已满，请稍后重试或去掉 async 参数。".to_string(),
                 None,
             );
         }
-        Err(crate::cm_internal::tool_jobs::RegisterError::AtCapacity) => {
+        Err(crate::jobs::tool_jobs::RegisterError::AtCapacity) => {
             return (
                 "错误：后台任务注册表已达条目上限，请稍后重试。".to_string(),
                 None,
@@ -230,12 +230,12 @@ fn background_job_finished_sink(
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     tool_name: &str,
     args: &str,
-) -> Option<crate::cm_internal::tool_jobs::JobFinishedSink> {
+) -> Option<crate::jobs::tool_jobs::JobFinishedSink> {
     let tx_weak = web_ctx?.out_tx().downgrade();
     let tool_name = tool_name.to_string();
     let args = args.to_string();
-    let sink: crate::cm_internal::tool_jobs::JobFinishedSink = Arc::new(
-        move |job_id: &str, outcome: &crate::cm_internal::tool_jobs::JobOutcome| {
+    let sink: crate::jobs::tool_jobs::JobFinishedSink = Arc::new(
+        move |job_id: &str, outcome: &crate::jobs::tool_jobs::JobOutcome| {
             let body = crate::cm_sse_protocol::sse::ToolJobFinishedBody {
                 tool_job_id: job_id.to_string(),
                 status: outcome.status.as_str().to_string(),

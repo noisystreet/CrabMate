@@ -483,7 +483,7 @@ pub(super) async fn run_command_impl_for_test<'a>(
     env: &'a ToolExecEnv<'a>,
     wd: &'a Path,
     web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
-    registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
     args: &'a str,
 ) -> (String, Option<serde_json::Value>) {
     let mut workspace_changed = false;
@@ -530,7 +530,7 @@ async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
     let cfg = Arc::new(cfg);
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
@@ -562,7 +562,7 @@ async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
     loop {
         let rec = registry.get(&id_owned).expect("record");
         if rec.status.is_terminal() {
-            assert_eq!(rec.status, crate::cm_internal::tool_jobs::JobStatus::Succeeded);
+            assert_eq!(rec.status, crate::jobs::tool_jobs::JobStatus::Succeeded);
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -584,7 +584,7 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
     allowed.push("sleep".to_string());
     cfg.command_exec.allowed_commands = allowed.into();
     let cfg = Arc::new(cfg);
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
@@ -632,7 +632,7 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
     loop {
         let rec = registry.get(&id).expect("record");
         if rec.status.is_terminal() {
-            assert_eq!(rec.status, crate::cm_internal::tool_jobs::JobStatus::Cancelled);
+            assert_eq!(rec.status, crate::jobs::tool_jobs::JobStatus::Cancelled);
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -648,7 +648,7 @@ async fn run_command_async_rejects_allow_once_requiring_command() {
     // 变成放行、断言失真；固定成窄白名单（`definitely_not_allowlisted_cmd_xyz` 不在其中）。
     cfg.command_exec.allowed_commands = vec!["cargo".to_string()].into();
     let cfg = Arc::new(cfg);
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
@@ -811,7 +811,7 @@ async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal
         std::collections::HashSet::from(["cargo_test".to_string()]),
     );
     let cfg = Arc::new(cfg);
-    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let dir = cargo_workspace();
     // 过滤器不匹配任何测试 → `cargo test` 退出码 0。
     let args_json = r#"{"async":true,"test_filter":"no_such_test_zzz"}"#;
@@ -838,7 +838,7 @@ async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal
         if rec.status.is_terminal() {
             assert_eq!(
                 rec.status,
-                crate::cm_internal::tool_jobs::JobStatus::Succeeded,
+                crate::jobs::tool_jobs::JobStatus::Succeeded,
                 "exit_code={:?} error_code={:?}",
                 rec.outcome.as_ref().and_then(|o| o.exit_code),
                 rec.outcome.as_ref().and_then(|o| o.error_code.clone())

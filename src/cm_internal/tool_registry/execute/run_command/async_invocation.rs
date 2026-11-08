@@ -24,7 +24,7 @@ pub(in crate::cm_internal::tool_registry::execute) struct RunCommandAsyncInvoke<
     pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
-    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
+    pub(in crate::cm_internal::tool_registry::execute) tool_jobs: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
     pub(in crate::cm_internal::tool_registry::execute) parsed: ParsedRunCommandJson,
     pub(in crate::cm_internal::tool_registry::execute) decision: PolicyDecision<'a>,
     pub(in crate::cm_internal::tool_registry::execute) timeout_secs: Option<u64>,
@@ -80,7 +80,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_run_command_
             .unwrap_or(cfg.command_exec.command_timeout_secs)
             .max(1),
     );
-    let spawn = crate::cm_internal::tool_jobs::JobSpawn {
+    let spawn = crate::jobs::tool_jobs::JobSpawn {
         program,
         args: prepared.cmd_args,
         cwd: prepared.effective_working_dir,

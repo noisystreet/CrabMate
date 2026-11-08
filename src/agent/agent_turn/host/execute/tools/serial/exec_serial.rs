@@ -73,7 +73,7 @@ struct SerialToolLoopState<'a> {
     sync_default_sandbox_backend:
         std::sync::Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: std::sync::Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
-    tool_job_registry: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_job_registry: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
     workspace_changed: &'a mut bool,
 }
 

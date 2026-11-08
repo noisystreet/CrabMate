@@ -94,7 +94,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// 与 [`crate::process_handles::TurnProcessHandles::readonly_tool_ttl_cache`] 同源。
     pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
     /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用。
-    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 pub(crate) use crate::agent::agent_turn::policy::{
@@ -171,7 +171,7 @@ struct ExecuteToolsCommonCtx<'a> {
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
-    tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {

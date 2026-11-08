@@ -87,10 +87,10 @@ pub async fn start_test_serve_with_config(
     let sse_stream_hub = Arc::new(SseStreamHub::new());
     let tool_job_registry = {
         let g = cfg_holder.read().await;
-        crate::cm_internal::tool_jobs::registry_from_config(&g)
+        crate::jobs::tool_jobs::registry_from_config(&g)
     };
     // 后台任务 TTL 清理定时器（终态过期 → 轮询 410）。
-    crate::cm_internal::tool_jobs::spawn_cleanup_task(
+    crate::jobs::tool_jobs::spawn_cleanup_task(
         Arc::clone(&tool_job_registry),
         std::time::Duration::from_secs(60),
     );

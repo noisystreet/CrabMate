@@ -13,8 +13,8 @@ use axum::http::{HeaderMap, StatusCode};
 
 use crate::AppState;
 use crate::cm_api_contract::error_codes;
-use crate::cm_internal::tool_jobs::registry::{CancelOutcome, GetOutcome, OutputPollOutcome};
-use crate::cm_internal::tool_jobs::types::{JobStatus, OutputLogRead};
+use crate::jobs::tool_jobs::registry::{CancelOutcome, GetOutcome, OutputPollOutcome};
+use crate::jobs::tool_jobs::types::{JobStatus, OutputLogRead};
 use crate::web::http_types::chat::ApiError;
 use crate::cm_api_contract::tool_jobs::{
     ToolJobCancelResponseBody, ToolJobOutputItem, ToolJobOutputResponseBody,
@@ -267,7 +267,7 @@ fn cancel_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_internal::tool_jobs::types::JobRecord;
+    use crate::jobs::tool_jobs::types::JobRecord;
     use std::path::PathBuf;
 
     fn record(workspace: &str) -> JobRecord {
@@ -275,12 +275,12 @@ mod tests {
             id: "tooljob_test".to_string(),
             workspace: PathBuf::from(workspace),
             source_turn_job_id: None,
-            status: crate::cm_internal::tool_jobs::types::JobStatus::Queued,
+            status: crate::jobs::tool_jobs::types::JobStatus::Queued,
             created_at: SystemTime::now(),
             finished_at: None,
             cancel_requested: false,
             cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            spawn: crate::cm_internal::tool_jobs::JobSpawn {
+            spawn: crate::jobs::tool_jobs::JobSpawn {
                 program: "true".to_string(),
                 args: Vec::new(),
                 cwd: PathBuf::from("/"),
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn output_body_maps_streams_and_serializes_stable_keys() {
-        use crate::cm_internal::tool_jobs::types::{OutputEvent, OutputLogRead};
+        use crate::jobs::tool_jobs::types::{OutputEvent, OutputLogRead};
         let log_read = OutputLogRead {
             items: vec![
                 OutputEvent {

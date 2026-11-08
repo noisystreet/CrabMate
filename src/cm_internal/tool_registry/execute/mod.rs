@@ -98,7 +98,7 @@ pub struct DispatchToolObs<'a> {
     /// 用户取消；`run_command` 等待循环会观察此标志。
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// 后台任务注册表；`None` 时 `run_command` 的 `async=true` 返回未启用（默认关闭路径）。
-    pub tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    pub tool_jobs: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 /// 只读缓存、LTM、MCP 等附属宿主（字段不删，仅分组）。
