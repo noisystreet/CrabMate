@@ -30,20 +30,53 @@ check_forbidden_mod() {
 }
 
 echo "== module dependency policy =="
-check_forbidden_mod src/cm_workflow crate::cm_internal \
-  "workflow may only use cm_approval for Web approval SSE"
-check_forbidden_mod src/cm_tools crate::cm_internal \
-  "tools must not depend on internal facade"
-check_forbidden_mod src/cm_agent crate::cm_internal \
-  "agent module must not depend on internal facade"
-check_forbidden_mod src/cm_approval crate::cm_internal \
-  "approval types must stay below internal"
-check_forbidden_mod src/cm_web_host crate::cm_internal \
-  "web host must not depend on internal facade"
-# CLI 分派层（S5，见 #1295）：只认「子命令 → 执行体」。需要内部能力时由执行体自己取，
-# 或由根包提供门面（如 `crate::build_serve_tool_job_registry`）。
-check_forbidden_mod src/cm_cli crate::cm_internal \
-  "cli dispatch layer must not depend on internal facade; use a root-package facade"
+
+# S4 终态（#1300 §4.2 的「P3 收紧禁边」）：`cm_internal` 已由 P4 整体消解。
+# 原先这里是 6 条按目录的否定边（cm_workflow / cm_tools / cm_agent / cm_approval /
+# cm_web_host / cm_cli ↛ crate::cm_internal）。改成白名单式后规则只剩一条：
+#   **任何目录都不许引用 `crate::cm_internal`，也不许重建 `src/cm_internal/`。**
+# 前者比逐个目录列边更严（新目录自动被覆盖），后者挡住「以加工作区为名」的回归。
+#
+# 白名单当前为空：口径终态（C1）就是零引用，不存在「允许引用的目录」。
+# 真需要豁免时往下面这个数组加**相对路径前缀**（如 `src/some_dir`），并在 PR 里写清理由
+# —— 数组非空即意味着 `cm_internal` 正在回归，评审应当怀疑而不是默认接受。
+CM_INTERNAL_ALLOW=()
+
+check_no_cm_internal_refs() {
+  if [[ -d src/cm_internal ]]; then
+    echo "FORBIDDEN: src/cm_internal/ 不得重建（S4-P4 已消解该模块，见 #1300）"
+    fail=1
+  else
+    echo "ok: src/cm_internal/ 不存在"
+  fi
+
+  # 注释行剔除：文档里写的路径不是引用（与已删除的 check-cm-internal-refs.sh 同口径）。
+  local hits
+  hits="$(grep -Rn --include='*.rs' 'crate::cm_internal' src 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(//|/\*)' || true)"
+  if [[ -n "$hits" ]]; then
+    if [[ ${#CM_INTERNAL_ALLOW[@]} -gt 0 ]]; then
+      local filtered=""
+      local line allow
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        for allow in "${CM_INTERNAL_ALLOW[@]}"; do
+          [[ "$line" == "$allow"* ]] && continue 2
+        done
+        filtered+="$line"$'\n'
+      done <<< "$hits"
+      hits="$filtered"
+    fi
+  fi
+  if [[ -n "$hits" ]]; then
+    echo "FORBIDDEN: crate::cm_internal 已无白名单可依（S4 终态是零引用，见 #1300）"
+    printf '%s\n' "$hits" | head -40
+    fail=1
+  else
+    echo "ok: no crate::cm_internal references"
+  fi
+}
+check_no_cm_internal_refs
 
 # 工具名边界（#1155）：`cm_names` 是零依赖叶子，`cm_config` / `cm_types` 不得反向依赖 `cm_tools`。
 # 这几条边此前只靠注释约束 —— Rust 单 crate 内模块循环引用照样编译，不加检查就没人拦得住。
