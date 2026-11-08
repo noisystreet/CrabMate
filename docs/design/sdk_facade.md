@@ -1,6 +1,7 @@
-# SDK 面与命令薄封装（设计草案）
+# SDK 面与命令薄封装（设计，已实施）
 
-**状态**：**草案；S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、
+**状态**：**已实施完毕（S1–S6 六条线闭环，设计转入维护态）；
+  S5-a 已实施（#1274 / #1275）；S1-a 与 S1-b 的 feature 解绑已实施（#1279）；S1-b 的 `SessionStore` 端口（#1284 / #1286）、
   S3-a 的审批端口（#1280）与 S3-b 的 `PolicyEngine` 端口（#1282）已实施；S2 的 S2-0 / S2-1（#1288）、S2-2（#1291）、S2-4（#1290）已实施，S2-3 核销放弃；
   S3-b 的 `ApprovalBroker` 端口收窄已实施（5 → 4 方法）**。S5 已实施（#1295）；
   **S6-a / S6-b / S6-c 已实施（#1297）**——承诺面已从散文改为 `fixtures/public_api_golden.txt` 显式清单（96 项：
@@ -8,13 +9,14 @@
     `scripts/check-crate-deps.sh` 改为白名单式禁边（白名单为空 ⇒ 任何 `crate::cm_internal` 引用即失败），根面 96 → 95 项（promised 50 未动）；
     **S6-d（端口 trait 上根）已实施（#1298）**——`TurnEngine` / `PolicyEngine` / `ApprovalBroker` / `SessionStore`
     与它们的签名闭包进 `promised`（50 → 67 项），`prelude` 经裁决**不做**（§11 Q6）。
-    P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。
+    P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q6 已决（§11）。
+    **终态**：根面 **112** 项（promised **67** / excluded **45**）。
   原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。
     S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
 **受众**：维护者、Client（Web / `crabmate-tui`）维护者、贡献者。
 **语言**：中文。
 **维护**：实施或废弃某一切片时，同步修订本文头部状态、[`docs/design/README.md`](README.md) 索引与 [`docs/待办清单.md`](../待办清单.md)。跟踪 Issue：
-  [#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动）。
+  [#1272](https://github.com/noisystreet/CrabMate/issues/1272)（索引与决策记录，不承载改动；**已随 S6-d 收官关闭**）。
 
 ---
 
@@ -342,7 +344,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | 阶段 | 内容 | 验证锚点 | 依赖 / 回退 |
 |---|---|---|---|
 | **S5-a**（先做） | `cli_run.rs` 减行，纯搬移一分为三 | 见 §12.3 | 见 §12.2；**唯一有硬截止的一步** |
-| **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `lib_server.rs`；**`SessionStore` trait ⏳ 未做**——形态取决于目标（复用 vs 承诺面），见 §7.1 |
+| **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `lib_server.rs`；**`SessionStore` trait ✅**（#1284 / #1286；S6-d 起与伴生类型一并进承诺面） |
 | **S2** | `TurnRequest` / `TurnEvent` / `TurnEngine`；旧 BuildArgs 转 `#[deprecated]` 封装（P2） | `fixtures/sse_ag_ui_golden.jsonl`、`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl` **不改即绿** | **无前置**（2026-11-04 已核销：`RunAgentTurnSession<'a>` 只有 3 个字段、**不含** store 句柄 ⇒ S1/S2/S3 互不阻塞）；按「一组一组搬」，每组一次提交。**进度**：**S2-0 / S2-1 / S2-4 ✅**：三项正名已落地（`TurnRequest` / `TurnEngine` / `TurnOutcome`；`RunAgentTurnParams` 留 `#[deprecated]` 别名，因它经 `include!` 落在 crate 根属公开 API）；`TurnOutcome` 已 struct 化为 `{ commit, stats: TurnStats }`，六个聚合字段**全部取自既有账本**（`TurnBudgetCounter` × 5 + `PerTurnFlight::last_assistant_finish_truncated`），**刻意不含「本轮工具调用次数」**（`ToolOutcomeRecorder` 是进程级累计，无单轮维度）；`run_agent_turn` `nloc` 197 → 177 → 185；**S2-2 ✅**：投影口径见 §5.1.1（三层结构 + 映射表 A/B + `ToolResult` 必须带 `partial` + 缺口 G1/G2 + 三态 `Dropped`/`Unknown`），代码落在 `cm_sdk_event`，`replay` 的静默兜底改为 debug 诊断；`messages` owned 化经核销**建议放弃**（`&mut` 仅跨 3 行，且 `ModelContextView::derive` 已 `to_vec()`） |
 | **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b ✅**（#1282/S3-b）：`PolicyEngine` 端口已落地（`cm_agent::permission::PolicyEngine`，执行面签名由 `Option<&PermissionCaps>` 改为 `Option<&dyn PolicyEngine>`，并加「端口 ≡ 自由函数」等价性测试）；**`ToolSandbox` 早已是端口**（`Arc<dyn SyncDefaultSandboxBackend>`，`cm_internal::tool_sandbox`），**`ToolHost` 本体也已存在**（`ToolExecutionHost` + `ToolDispatch`）。**端口收窄已完成**：`ApprovalBroker` 从 5 个方法收到 **4**（`cancel()` 全仓 0 调用点，能力已由 `approval_sink().cancel` 送达，详见 §7.2）；`ports` 命名收口**主动不做**（收益在 S4 的禁边表，单独落只是无消费者的间接层，见 §8）。全程只包现有代码，**不新增审批语义** |
 | **S4** | `cm_internal` 拆桶；禁边改为**零引用 + 白名单为空**（P1） | `scripts/check-crate-deps.sh` 白名单式规则；`crate::cm_internal` 长路径 **40 → 0**、根上短名 **306 → 118**；根面 96 → 95 项 | ✅ **已完成（#1300，2026-11-08）**：P1a/P1b（#1301）、P1c（#1302）、P2-0（#1307）、P2-1（#1308）、P2-2 + P2-3（#1309）、P2-4 + P2-5（#1310）、P3 + P4（#1311），`cm_internal` 整体删除。**偏差**：设计原本要求的「上层只准引用 `ports`」未以 `src/ports` 命名空间落地（§7.2 末段 / #1300 §4.2） |
@@ -358,7 +360,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
   `ports` 命名收口**主动不做**（收益在 S4 禁边表，单独做只是无消费者的间接层，违反 §8）。
     `ToolHost` 本体与 `ToolSandbox` 经核销**已经存在**（`ToolExecutionHost` + `ToolDispatch`；`Arc<dyn SyncDefaultSandboxBackend>`），不需要新建。
 
-### 7.1 S1-b 的 `SessionStore` trait 为什么没有跟着解绑一起做
+### 7.1 S1-b 的 `SessionStore` trait 为什么当时没有跟着解绑一起做（已解决）
 
 解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、
   `conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
@@ -373,7 +375,11 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | **承诺面**：为 S6 准备契约（§5.3 的 `SessionStore` / `LoadedConversation` / `Revision`） | 按 §5.3 定义 owned 请求 / 结果类型，`ConversationBacking` 只作为实现之一 | 需先定 §11 Q2 的「承诺清单」要列哪些项，否则又是「先写 trait 再找消费者」 |
 
 直接照 §5.3 草案签名抽一个 trait 会同时踩两条：它拿 `web` 的类型当参数（污染承诺面），
-  而当前唯一消费者 `AppStateConversationRuntime` 也不需要一个 trait（它持有具体 enum 就够）。**等目标定下来再做，不为「把 S1 打勾」而抽。**
+  而当时唯一消费者 `AppStateConversationRuntime` 也不需要一个 trait（它持有具体 enum 就够）。**等目标定下来再做，不为「把 S1 打勾」而抽。**
+
+> **后续**：目标按「承诺面」定（§11 Q2），trait 于 #1284 / #1286 落地（10 方法、入参不借 `web` 类型），
+> S6-d（#1298）再把 `SessionStore` 与 `ConversationRetention` / `ConversationTurnSeed` / 存档结果类型一并上根。
+> 本节保留的是「为什么当时不做」的决策依据，不是遗留待办。
 
 ### 7.2 S3-a 的端口面为什么比 §5.2 草案宽
 
@@ -432,7 +438,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 |---|---|
 | 类型化 `TurnEvent` 与 `SsePayload` 双真源 | 必须单向派生（`SsePayload` → `TurnEvent`），或让 `TurnEvent` 成为唯一真源、`SsePayload` 由它编码。二者择一写进 ADR，否则会二次漂移（倾向见 §11 Q1） |
 | `#[deprecated]` 过渡期双路径 | 旧 BuildArgs 与新 `TurnRequest` 并存期间，两条路径的行为必须由同一批金样覆盖，否则「新旧不一致」会被藏住 |
-| 棘轮上限 | fn nloc ≤ 200 / file ≤ 920。**现状**：`cli_run.rs` 912 仍逼近上限，`cli_run_serve.rs` 经 S5-a 第一步已降到 **391**。所以「把 serve 装配搬进 `cli_run_serve.rs`」这种最直觉的做法在拆 lock 之前会让后者到 950+ 行，必须一分为三（见 §12.2）。任何搬移后都要复测，别只看总行数减少 |
+| 棘轮上限 | fn nloc ≤ 200 / file ≤ 920。**已解除**：`cli_run.rs` 912 → **25** 行（S5 起 `cli_run*.rs` 并入 `src/cm_cli/`），当初「把 serve 装配搬进 `cli_run_serve.rs` 会让后者到 950+ 行」的坑随之消失（见 §12.2）。搬移后仍要复测，别只看总行数减少 |
 | 与 Client 契约耦合 | S2/S6 触碰 `cm_sse_protocol` 的公开面即关联 `client-contract-v*` 钉版本（见 [`client_contract_versioning.md`](client_contract_versioning.md)），需确认是否同时出 pin |
 
 ## 10. 核对状态
@@ -444,7 +450,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | 源文件数 / 总行 | `find src -name '*.rs' \| wc -l`；`find src -name '*.rs' -print0 \| xargs -0 cat \| wc -l` | 773 / 189 534 |
 | `cm_internal` 引用面 | `grep -rln 'crate::cm_internal' src --include='*.rs' \| wc -l` | 勘察时 66（内部 46 / 外部 **20**）；**S4 后 0**（模块已删除） |
 | 外部引用分布 | 同上 + `sed 's#/[^/]*$##' \| sort \| uniq -c` | `web/` 6、`src/` 根 4、`agent/agent_turn/host/` 系 5、`chat_job_queue/worker` 2、`user_data` 1、`cm_llm` 1、`cm_config` 1 |
-| `cli_run.rs` 行数 | `wc -l src/cli_run.rs` | **912**（上限 920） |
+| `cli_run.rs` 行数 | `wc -l src/cli_run.rs` | 勘察时 **912**（上限 920）；S5-a 后 493；**S5 后 25** |
 | `Commands` 变体数 | `awk '/pub enum Commands/,/^}/' … \| grep -cE '^    [A-Z]'` | 14（变体名见 §2） |
 | `ParsedCliArgs` 字段 / `EarlyCliDispatch` 字段 / `try_early_*` 数 | 同上手法 | 24 / 13 / 11 |
 | `WebChat*BuildArgs` 字段数 | `awk '/pub struct WebChatStreamBuildArgs/,/^}/' \| grep -c 'pub '` | 25 / 22 |
@@ -459,8 +465,9 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 ### 10.2 仍未核对（实施前必查）
 
-- **未运行** `cargo build` / `cargo test` / `pre-commit`；本文所有行为性结论都来自只读阅读与 `grep`。
-  **S5-a 完成后仍未在本文件补记实测**——它的真实验证记录在 §12.2.2 与 #1274 / #1275 的 PR 正文里。
+- ~~**未运行** `cargo build` / `cargo test` / `pre-commit`；本文所有行为性结论都来自只读阅读与 `grep`~~ —— **已过时**：
+  S1–S6 各切片的实测记录分别在其 PR 正文（#1279 / #1288 / #1290 / #1291 / #1301…/#1312），S6-d 收官时还跑过
+  全量 `cargo test --workspace` 与 10 项 CI job；本文头部状态与 §7 表按那些记录更新。
 - ~~**`cm_internal` 的分桶方案仍是建议值**~~ —— **已核销（S4 收官，2026-11-08）**：分桶按实际落位修订为「四桶 + 4 个顶层模块」，
   逐桶分期与踩坑记录见 #1300 §1.4 / §4.1；`cm_internal` 已整体删除，此条不再适用。
 - 原列的「两处行号未复核」「`SessionStore` 与 `ConversationBacking` 是否重复抽象」「S2 与 S1 的耦合」三条**已于 2026-11-04 核销**，见 §10.3。
