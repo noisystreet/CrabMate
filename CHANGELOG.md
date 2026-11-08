@@ -12,6 +12,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Four port traits are now part of the promised SDK surface (S6-d).** `TurnEngine` / `PolicyEngine` /
+  `ApprovalBroker` / `SessionStore` and their signature closure (`TurnOutcome`, `RunAgentTurnError`,
+  `ConversationRetention`, `ConversationTurnSeed`, `SaveConversationOutcome`, `BranchTruncateOutcome`, `ArchiveRow`, ...)
+  are exported from the crate root, so a downstream crate can implement and inject them instead of only calling
+  `run_agent_turn`. The promise list grew from 50 to **67** of 112 root items, and the new
+  `tests/ports_implementable.rs` implements all four from outside the crate — the only hard evidence that
+  "promised" means "implementable". `ToolExecutionHost` / `ToolDispatch` / `ToolOutcomeRecorder` are deliberately
+  **not** hoisted (their signatures name crate-internal types), no `prelude` is added, and no existing type was
+  renamed: `ChatCompletionsBackend`, `TraceSink` and `mod tool_sandbox` were already promised, so renaming them
+  would have been breaking. `async_trait` is re-exported for version alignment only — the `#[async_trait]`
+  expansion still refers to `::async_trait`, so downstreams keep their own dependency on it.
+
 - **The `context_compaction` debug line now names its caller and survives the no-budget case.**
   `ContextCompactionReport` gained `format_for_log()`, and both callers now go through one
   `log_compaction_report(phase, report)` helper. Before this only `prepare_messages_for_model` emitted the line — the

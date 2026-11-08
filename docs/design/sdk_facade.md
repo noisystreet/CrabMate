@@ -6,7 +6,8 @@
   **S6-a / S6-b / S6-c 已实施（#1297）**——承诺面已从散文改为 `fixtures/public_api_golden.txt` 显式清单（96 项：
     promised 50 / excluded 46）+ `scripts/check-public-api.py` pre-commit 门禁；**S4 已实施（#1300）**——`cm_internal` 拆桶完成并整体删除，
     `scripts/check-crate-deps.sh` 改为白名单式禁边（白名单为空 ⇒ 任何 `crate::cm_internal` 引用即失败），根面 96 → 95 项（promised 50 未动）；
-    S6-d（端口 trait 上根与 `prelude`）另立 #1298，两条前置（#1297 与 S4）均已解除，尚未开工。
+    **S6-d（端口 trait 上根）已实施（#1298）**——`TurnEngine` / `PolicyEngine` / `ApprovalBroker` / `SessionStore`
+    与它们的签名闭包进 `promised`（50 → 67 项），`prelude` 经裁决**不做**（§11 Q6）。
     P1–P7 现状证据见 §2 与 §10.1；§10.2 原列的三条「实施前必查」已于 2026-11-04 核销（§10.3），Q1–Q4 已决（§11）。
   原先唯一带**硬截止**的 **S5-a**（§12）已解除：`cli_run.rs` **912 → 493** 行（file 棘轮上限 920，余量 **427**）。
     S2-0 顺带把 `run_agent_turn` 从 **nloc 197** 降到 **177**，S2-4 再降到 **185**（fn 棘轮上限 200）。
@@ -87,6 +88,13 @@ crabmate::{  TurnEngine / TurnRequest / TurnEvent / TurnOutcome   ← 回合执�
 ```
 
 分层判据（可写进禁边脚本）：**承诺面 = crate 根上显式 `pub use` 的那一组类型；`internal::*` 不得出现在根上任何 `pub use` 的签名里。**
+
+> **落地口径（S6-d，#1298）**：上面这张图是**草案名**，与代码现状有 8 处对不上（`ToolHost` / `ToolOutcome` / `ToolCtx` /
+> `Conversation` / `Revision` / `LlmGateway` / `EventSink` / `prelude` 在代码里没有同名类型）。裁决是**改这张图、不改类型名**
+> （§11 Q5）。实际上根的是四个端口：`TurnEngine`（`src/turn_runner.rs`）、`PolicyEngine`（`cm_agent::permission`）、
+> `ApprovalBroker`（`cm_approval`）、`SessionStore`（`cm_session_store`），外加它们的签名闭包。
+> `ToolExecutionHost` / `ToolDispatch` / `ToolOutcomeRecorder` **不**上根：签名里就是 crate 内部类型，承诺它们只会造出
+> 「承诺了却无法实现」的假承诺面（核实见 #1298 的实施记录）。
 
 ### 4.1 为什么不用 `sdk::` 前缀
 
@@ -340,7 +348,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | **S4** | `cm_internal` 拆桶；禁边改为**零引用 + 白名单为空**（P1） | `scripts/check-crate-deps.sh` 白名单式规则；`crate::cm_internal` 长路径 **40 → 0**、根上短名 **306 → 118**；根面 96 → 95 项 | ✅ **已完成（#1300，2026-11-08）**：P1a/P1b（#1301）、P1c（#1302）、P2-0（#1307）、P2-1（#1308）、P2-2 + P2-3（#1309）、P2-4 + P2-5（#1310）、P3 + P4（#1311），`cm_internal` 整体删除。**偏差**：设计原本要求的「上层只准引用 `ports`」未以 `src/ports` 命名空间落地（§7.2 末段 / #1300 §4.2） |
 | **S5** | CLI 分派表 + `cm_cli/` 禁边 + serve builder（P4） | `crabmate --help` 与 `man/crabmate.1` **无 diff** | **已完成（#1295）**：`ParsedCliArgs` 收为 `{ global, command }`、`cm_cli/` 按命令分模块、`cli_run.rs` 493 → 34 行，两条禁边进 `check-crate-deps.sh` 与 `PER_DIR_FILE_LINES_CAPS`。**serve builder 未按字面做**（builder 在宿主模块、装配以闭包注入是独立的一步），见 §6 约束 3 |
 | **S6-a/b/c** | 承诺面从「模块存在」升级为显式清单（P6、P7） | `fixtures/public_api_golden.txt` + `scripts/check-public-api.py`（pre-commit） | ✅ **已完成（#1297）**：根面 96 项（promised 50 / excluded 46），未归类即失败；§2.4 的「以 `src/lib.rs` 为准」已撤下；新增 `#[doc(hidden)]` 三处（`run_cli_from_parsed`、`WebChat*BuildArgs`） |
-| **S6-d** | 端口 trait 上根 + `prelude` 取舍 | 可换实现测试 | ⏳ **#1298**，排在 #1297 与 S4 之后；设计稿点名的 15 个名字里 **8 个在代码中不存在** |
+| **S6-d** | 端口 trait 上根 + `prelude` 取舍 | `tests/ports_implementable.rs`（外部 crate 逐个实现 4 个端口） | ✅ **已完成（#1298）**：四个端口与签名闭包进承诺面（`promised` 50 → 67，根面 95 → 112 项）；`ToolExecutionHost` / `ToolDispatch` / `ToolOutcomeRecorder` **不**上根（签名即内部类型）；`prelude` **不做**（§11 Q5/Q6） |
 
 **S3-b 的持有形态口径**（#1282）：`PermissionCaps` 仍是 owned 快照，构造点在 `agent_turn::host::params`（回合参数里一份）；
   执行面只借用 `&dyn PolicyEngine`。分层因此明确——持有者负责 `project_caps` / min 链，借用方只消费端口，端口实现里不再出现具体类型。
@@ -396,9 +404,9 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 **`ports` 命名收口主动不做**：它的收益在 S4 的禁边表（「上层只准引用 `ports`」），单独做只是加一层无消费者的间接——与 §8「不为看起来干净而搬文件」
   冲突。S4 开工时一并落，届时有真实的引用面约束替它证明价值。
 
-**当前推荐顺序（2026-11-08 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、
-  **S6-a/b/c（#1297）**、**S4（#1300）** 全部已完成，**S1 / S2 / S3 / S4 / S5 五条线闭环**。剩余只有 **S6-d**（#1298，端口 trait 上根 + `prelude` 取舍），
-  它的两条前置（#1297 的清单门禁、S4 的模块归属冻结）均已解除，可随时开工。下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
+**当前顺序（2026-11-08 更新）**：S5-a（§12）、S1-a / S1-b（含 `SessionStore` 端口）、S2（全四片）、S3-a / S3-b（含端口收窄）、**S5（#1295）**、
+  **S6-a/b/c（#1297）**、**S4（#1300）**、**S6-d（#1298）** 全部已完成，**S1–S6 六条线闭环，本设计进入维护态**。
+  下方「排序依据」保留为那一轮决策的历史，其中「只剩 8 行余量」已不成立。
 
 **排序依据**：
 
@@ -467,7 +475,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | `docs/design/crate_dep_policy.md:42-51`（禁边只覆盖 5 个模块） | **成立**：「禁止边（门禁）」表（实测位于 `:42-51`）只列 `cm_workflow` / `cm_tools` / `cm_agent` / `cm_approval` / `cm_web_host` 五条，且只针对 `crate::cm_internal` | S4 的前提不变 |
 | §3 P3 说的「`web_tool_ctx` / `tool_job_registry` 泄进 `tool_registry`」 | **结论成立、位置写错**：`src/cm_tools/` 内这两个名字命中 **0** 处；真实渗漏点是执行面 **trait 签名**——`src/agent/agent_turn/host/execute/tool_execution_trait.rs:24` 的 `pub web_tool_ctx: Option<&'a WebToolRuntime>`（`WebToolRuntime` 定义在 `src/cm_tools/tool_runtime.rs:16`） | **S3 的切口改为执行面 trait**，不是 `cm_tools` 内部；P3 行已相应修正 |
 
-## 11. 决策记录（原「待决问题」，Q1–Q4 均已决）
+## 11. 决策记录（原「待决问题」，Q1–Q6 均已决）
 
 - **Q1：`TurnEvent` 与 `SsePayload` 谁是真源？** — **已决（2026-11-04）：`SsePayload` 是真源，
   `TurnEvent` 由它单向派生**（`impl From<SsePayload> for TurnEvent`，反向不提供）。
@@ -492,6 +500,17 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
   **按切片开 Issue，不做一个大 Issue**：S5-a 先行（见 §12），其余切片各自独立成 Issue；[#1272](https://github.com/noisystreet/CrabMate/issues/1272)
     仅作索引与决策记录，本身不承载改动。
   理由：S1–S6 独立可合并，一个大 Issue 会让「完成」永远无法成立，也会诱使在一个 PR 里跨阶段改动，与 GitHub Flow 的小 PR 要求冲突。
+
+- **Q5：设计稿点名的 15 个名字里 8 个不存在，改名还是改稿？** — **已决（#1298）：改稿，不改类型名。**
+  实测（`417b2f22`）：`ToolHost` 的本体是 `ToolExecutionHost` + `ToolDispatch` 两件套；`ToolOutcome` 只有进程级账本
+  `ToolOutcomeRecorder`；`ToolCtx` / `Conversation` / `Revision` 无对应物；`LlmGateway` 即 `ChatCompletionsBackend`、
+  `EventSink` 最接近 `TraceSink`、`ToolSandbox` 即顶层 `tool_sandbox::SyncDefaultSandboxBackend`——后两者（`ChatCompletionsBackend` /
+  `TraceSink` 与 `mod tool_sandbox`）**已在承诺面**，改名就是 breaking 且要动 CHANGELOG 与下游。
+  理由：`cm_*` 前缀与既有名字是切仓锚点（§8 的非目标）；「SDK 面的收益」来自**可实现性**，不是命名审美。
+
+- **Q6：要不要 `prelude`？** — **已决（#1298）：不做。**
+  全仓原本没有 `prelude`；它只会把已在清单里的 4–6 个名字再导出一遍，换不来能力，却多一个**必须同步**的永久导出面
+  （与 §8「不为看起来干净加间接层」冲突）。要重新评估须先有真实的下游「少写 `use`」诉求，而不是先建再找消费者。
 
 ## 12. 最小可行切片：S5-a
 

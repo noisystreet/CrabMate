@@ -6,8 +6,8 @@
 //! **承诺面是显式清单，不是「根上所有 `pub` 项」**：根级每个公开名字必须在
 //! `fixtures/public_api_golden.txt` 里归入 `promised` 或 `excluded`，由
 //! `scripts/check-public-api.py` 在 pre-commit 校验——新增公开项不改清单即失败（这是
-//! 刻意的摩擦，见 #1297 与 `docs/design/sdk_facade.md` §11 Q2）。当前根面 **96** 项：
-//! `promised` 50 / `excluded` 46。设计依据见 `docs/design/crates_io_single_package.md` §2.4。
+//! 刻意的摩擦，见 #1297 与 `docs/design/sdk_facade.md` §11 Q2）。当前根面 **112** 项：
+//! `promised` **67** / `excluded` **45**。设计依据见 `docs/design/crates_io_single_package.md` §2.4。
 //!
 //! - **承诺 `protocol`**（Client / WASM）：六个模块 [`cm_types`]、[`cm_display_rules`]、
 //!   [`cm_api_contract`]、[`cm_chat_export`]、[`cm_turn_layout`]、[`cm_sse_protocol`]。
@@ -19,7 +19,9 @@
 //!   `types` 的**存在**，以及回合面（`run`、`run_agent_turn`、`TurnRequest` 与其公开字段类型、
 //!   `TurnOutcome` / `TurnStats`）、工具面（`build_tools*`、`ToolsBuildOptions`、
 //!   `ProcessHandles` / `TurnProcessHandles`、`tool_sandbox`）、LLM 与配置面
-//!   （`ChatCompletionsBackend` 及配套、`AgentConfig` / `load_config`）。完整名单以清单为准。
+//!   （`ChatCompletionsBackend` 及配套、`AgentConfig` / `load_config`），以及**四个端口 trait**
+//!   `TurnEngine` / `PolicyEngine` / `ApprovalBroker` / `SessionStore` 与它们的签名闭包——外部可自行实现并注入
+//!   （S6-d，见 #1298；`tests/ports_implementable.rs` 以外部 crate 视角逐个实现，钉住「可实现」）。完整名单以清单为准。
 //! - **不承诺**：清单里 `excluded` 的 46 项——`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` /
 //!   `cm_config` / `cm_workflow` / `cm_internal` / `cm_ctl`、`e2e_scenario`、`test_serve`；
 //!   CLI 内部入口 `run_cli_from_parsed`、CLI 解析助手与 `EXIT_*` 退出码常量；工具注册表
