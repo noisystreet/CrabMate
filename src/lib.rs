@@ -22,8 +22,8 @@
 //!   （`ChatCompletionsBackend` 及配套、`AgentConfig` / `load_config`），以及**四个端口 trait**
 //!   `TurnEngine` / `PolicyEngine` / `ApprovalBroker` / `SessionStore` 与它们的签名闭包——外部可自行实现并注入
 //!   （S6-d，见 #1298；`tests/ports_implementable.rs` 以外部 crate 视角逐个实现，钉住「可实现」）。完整名单以清单为准。
-//! - **不承诺**：清单里 `excluded` 的 46 项——`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` /
-//!   `cm_config` / `cm_workflow` / `cm_internal` / `cm_ctl`、`e2e_scenario`、`test_serve`；
+//! - **不承诺**：清单里 `excluded` 的 45 项——`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` /
+//!   `cm_config` / `cm_workflow` / `cm_ctl`、`e2e_scenario`、`test_serve`；
 //!   CLI 内部入口 `run_cli_from_parsed`、CLI 解析助手与 `EXIT_*` 退出码常量；工具注册表
 //!   内部元数据；S2 遗留参数袋 `WebChat*BuildArgs`；`agent::agent_turn` 等组合面内部路径。
 //!   `cm_tools` / `cmd_mate` 等为实现模块，`pub(crate)`。
@@ -31,7 +31,7 @@
 //! 本 crate 默认 feature 是带库的 **`serve` 服务器**，不是通用嵌入式 Agent SDK。
 //! HTTP 线契约以 `docs/SSE协议.md`、`cm_api_contract` 与 `GET /openapi.json` 为准。
 //!
-//! 日志由 **`tracing`** 处理；**`observability::init_tracing_subscriber`**（`cm_internal`）安装 **`tracing-subscriber`** 并用 **`tracing-log`** 桥接既有 `log::` 调用。`RUST_LOG` 优先。未设置时：`serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。时间戳默认**本机本地时区**（RFC3339）。设 **`CM_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
+//! 日志由 **`tracing`** 处理；**`observability::init_tracing_subscriber`**（`obs` 桶）安装 **`tracing-subscriber`** 并用 **`tracing-log`** 桥接既有 `log::` 调用。`RUST_LOG` 优先。未设置时：`serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。时间戳默认**本机本地时区**（RFC3339）。设 **`CM_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
 
 // `web/openapi.rs` 中 `serde_json::json!` 体量较大，默认递归深度不足会无法编译。
 #![recursion_limit = "512"]
