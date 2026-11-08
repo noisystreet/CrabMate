@@ -21,6 +21,9 @@ pub type ScoredRow = (f32, f32, MemoryRow);
 pub const MIN_RECALL_BASE_SCORE: f32 = 0.30;
 
 /// 相对衰减：低于 `top1 分数 × RELATIVE_SCORE_RATIO` 的候选一律丢弃，剪掉长尾噪声。
+// 生产侧唯一调用点在 `long_term_memory.rs` 的 `#[cfg(feature = "fastembed")]` 分支，
+// 默认 feature 构建只剩单测引用：按 feature 对齐，而不是删常量或整条 cfg 门控。
+#[cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 pub const RELATIVE_SCORE_RATIO: f32 = 0.55;
 
 /// `prioritize_experience` 时为回合记忆保留的最少槽位，避免经验条独占注入预算。

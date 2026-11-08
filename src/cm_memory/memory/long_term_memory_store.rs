@@ -380,6 +380,9 @@ pub fn list_recent_for_scope(
 /// 配方迁移会把历史向量整列置 NULL；若不回填，这些行将永远只能走关键词召回。
 ///
 /// 纯读：过期行由 `expires_at_unix` 条件排除，不触发物理回收。
+// 调用方只有 `backfill_missing_embeddings` 的 `#[cfg(feature = "fastembed")]` 版本与单测，
+// 默认 feature 构建视为死代码：按 feature 对齐，不为打包方便去删生产语义。
+#[cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 pub fn list_missing_embedding_for_scope(
     conn: &Connection,
     scope_id: &str,
@@ -400,6 +403,8 @@ pub fn list_missing_embedding_for_scope(
 }
 
 /// 按主键写回向量（供配方迁移后的回填使用）。
+// 同上：只有 fastembed 回填路径与单测调用。
+#[cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 pub fn update_embedding(
     conn: &Connection,
     id: i64,
