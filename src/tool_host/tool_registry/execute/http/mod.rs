@@ -10,11 +10,11 @@ mod tools;
 
 // 显式接口（#1198）：兄弟子模块与 `run_command` 只能经此取用本目录的项。
 // `gate` 的闸门接口供兄弟 `tools` 与 `run_command` 的并行预取共用。
-pub(in crate::cm_internal::tool_registry::execute) use gate::{
+pub(in crate::tool_host::tool_registry::execute) use gate::{
     HttpToolPreflightParams, http_fetch_prefetch_approval, http_tool_preflight,
     spawn_blocking_http_tool,
 };
-pub(in crate::cm_internal::tool_registry::execute) use tools::{
+pub(in crate::tool_host::tool_registry::execute) use tools::{
     execute_get_weather_web, execute_http_fetch_impl, execute_http_request_impl,
     execute_web_search_web,
 };

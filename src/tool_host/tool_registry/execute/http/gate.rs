@@ -8,8 +8,7 @@ use std::time::Duration;
 
 use log::error;
 
-use crate::cm_internal::tool_approval;
-use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
+use crate::tool_host::tool_approval;
 use crate::cm_tools::tools;
 
 use super::super::run_command::dispatch_non_sync_tool_to_docker;
@@ -124,7 +123,7 @@ fn http_net_gate(
 async fn http_tool_gate_url_approval(
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
-    spec: &crate::cm_internal::tool_approval::ApprovalRequestSpec,
+    spec: &crate::tool_host::tool_approval::ApprovalRequestSpec,
     sse_log_label: &'static str,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
     if web_ctx.is_none() {
@@ -148,21 +147,21 @@ async fn http_tool_gate_url_approval(
 }
 
 /// 前缀白名单 + 可选 Web 审批 + Docker 分流；通过后返回 `Ok(())` 以继续 `spawn_blocking`。
-pub(in crate::cm_internal::tool_registry::execute) struct HttpToolPreflightParams<'a> {
-    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
-    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
-    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
-    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
-    pub(in crate::cm_internal::tool_registry::execute) tool_name: &'static str,
-    pub(in crate::cm_internal::tool_registry::execute) url: &'a reqwest::Url,
-    pub(in crate::cm_internal::tool_registry::execute) storage_key: &'a str,
-    pub(in crate::cm_internal::tool_registry::execute) sse_log_label: &'static str,
-    pub(in crate::cm_internal::tool_registry::execute) approval_spec:
-        &'a crate::cm_internal::tool_approval::ApprovalRequestSpec,
+pub(in crate::tool_host::tool_registry::execute) struct HttpToolPreflightParams<'a> {
+    pub(in crate::tool_host::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) args: &'a str,
+    pub(in crate::tool_host::tool_registry::execute) tool_name: &'static str,
+    pub(in crate::tool_host::tool_registry::execute) url: &'a reqwest::Url,
+    pub(in crate::tool_host::tool_registry::execute) storage_key: &'a str,
+    pub(in crate::tool_host::tool_registry::execute) sse_log_label: &'static str,
+    pub(in crate::tool_host::tool_registry::execute) approval_spec:
+        &'a crate::tool_host::tool_approval::ApprovalRequestSpec,
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn http_tool_preflight(
+pub(in crate::tool_host::tool_registry::execute) async fn http_tool_preflight(
     p: HttpToolPreflightParams<'_>,
 ) -> Result<(), (String, Option<serde_json::Value>)> {
     let cfg = p.env.cfg;
@@ -199,7 +198,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn http_tool_preflight(
         p.workspace_is_set,
         p.tool_name,
         p.args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {
@@ -208,7 +207,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn http_tool_preflight(
     Ok(())
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn spawn_blocking_http_tool(
+pub(in crate::tool_host::tool_registry::execute) async fn spawn_blocking_http_tool(
     tool_label: &'static str,
     name: &str,
     outer_wall_secs: u64,
@@ -232,7 +231,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn spawn_blocking_http_
 }
 
 /// 并行预取：`http_fetch` URL 审批（与单工具路径共用 spec 构建器与网络门）。
-pub(in crate::cm_internal::tool_registry::execute) async fn http_fetch_prefetch_approval(
+pub(in crate::tool_host::tool_registry::execute) async fn http_fetch_prefetch_approval(
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     cfg: &crate::cm_config::AgentConfig,
     permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,

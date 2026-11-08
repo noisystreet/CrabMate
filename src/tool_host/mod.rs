@@ -1,16 +1,18 @@
 //! 工具宿主桶（S4-P1c 门面，见 #1300 §1.4）。
 //!
-//! **本文件当前只做转发**：成员仍住在 `cm_internal`，P2 才逐个搬进来（`tool_registry`
-//! 23 文件 / 5473 行独占一期）。建门面的意义是给根上短名一个稳定落点 —— `lib_server.rs`
-//! 的 `pub(crate) use` 已改指本桶，P2 搬文件时不会牵动任何调用点。
+//! `tool_registry` 已在 S4-P2-4 迁入（本地 `pub mod`）；其余 9 个成员仍住在
+//! `cm_internal`，由 S4-P2-5 搬到本桶。建门面的意义是给根上短名一个稳定落点 ——
+//! `lib_server.rs` 的 `pub(crate) use` 已改指本桶，P2 搬文件时不会牵动任何调用点。
 //!
 //! 成员 10 子项：`tool_registry`、`terminal_session`、`tool_sandbox`、`memory_tool_hosts`、
 //! `tool_stats`、`dynamic_tools`、`tool_approval`、`long_term_memory_tools`、
 //! `tool_call_explain`、`readonly_tool_ttl_cache`。
 
+pub mod tool_registry;
+
 // 这些成员有根上短名消费者，由 `lib_server.rs` 的 re-export 使用。
 pub(crate) use crate::cm_internal::{
-    memory_tool_hosts, readonly_tool_ttl_cache, tool_call_explain, tool_registry, tool_stats,
+    memory_tool_hosts, readonly_tool_ttl_cache, tool_call_explain, tool_stats,
 };
 
 // 这几个成员**没有短名消费者**，但性质分两类，不要一视同仁：

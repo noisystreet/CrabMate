@@ -11,28 +11,27 @@ use crate::cm_config::SyncDefaultToolSandboxMode;
 use crate::cm_tools::tools;
 
 use super::super::policy::terminal_session_outer_wall_secs;
-use super::super::runtime::WebToolRuntime;
 use super::run_command::{
     ExecMode, ParsedRunCommandJson, PolicyContext, evaluate_policy, parse_run_command_json,
 };
 // 祖先层（`execute`）的项：`ToolExecEnv` 与 Web 未设置工作区的统一提示。
 use super::{ToolExecEnv, WEB_WORKSPACE_PANEL_HINT};
 
-pub(in crate::cm_internal::tool_registry::execute) struct TerminalSessionExecInvoke<'a> {
-    pub(in crate::cm_internal::tool_registry::execute) env: &'a ToolExecEnv<'a>,
-    pub(in crate::cm_internal::tool_registry::execute) effective_working_dir: &'a Path,
-    pub(in crate::cm_internal::tool_registry::execute) workspace_is_set: bool,
-    pub(in crate::cm_internal::tool_registry::execute) workspace_changed: &'a mut bool,
-    pub(in crate::cm_internal::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
-    pub(in crate::cm_internal::tool_registry::execute) args: &'a str,
-    pub(in crate::cm_internal::tool_registry::execute) sse_out_tx:
+pub(in crate::tool_host::tool_registry::execute) struct TerminalSessionExecInvoke<'a> {
+    pub(in crate::tool_host::tool_registry::execute) env: &'a ToolExecEnv<'a>,
+    pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
+    pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
+    pub(in crate::tool_host::tool_registry::execute) workspace_changed: &'a mut bool,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) args: &'a str,
+    pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
         Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub(in crate::cm_internal::tool_registry::execute) sse_control_mirror:
+    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror:
         Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    pub(in crate::cm_internal::tool_registry::execute) tool_call_id: &'a str,
-    pub(in crate::cm_internal::tool_registry::execute) sse_encoder:
+    pub(in crate::tool_host::tool_registry::execute) tool_call_id: &'a str,
+    pub(in crate::tool_host::tool_registry::execute) sse_encoder:
         Option<&'a dyn crate::cm_sse_protocol::sse::SseEncoder>,
-    pub(in crate::cm_internal::tool_registry::execute) cancel:
+    pub(in crate::tool_host::tool_registry::execute) cancel:
         Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
@@ -90,7 +89,7 @@ fn parse_terminal_session_exec(
         .map_err(|e| (e.extended_user_message(), None))
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_terminal_session_impl(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_terminal_session_impl(
     invoke: TerminalSessionExecInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
     let TerminalSessionExecInvoke {
@@ -150,12 +149,12 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_terminal_ses
     };
 
     let wall_secs = terminal_session_outer_wall_secs(cfg.as_ref());
-    let sse = crate::cm_internal::terminal_session::TerminalSseSink {
+    let sse = crate::tool_host::terminal_session::TerminalSseSink {
         out_tx: sse_out_tx,
         control_mirror: sse_control_mirror,
         encoder: sse_encoder,
     };
-    let fut = crate::cm_internal::terminal_session::execute_terminal_session(
+    let fut = crate::tool_host::terminal_session::execute_terminal_session(
         cfg,
         effective_working_dir,
         args,

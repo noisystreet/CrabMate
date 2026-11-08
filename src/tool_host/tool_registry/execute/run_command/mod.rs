@@ -18,21 +18,26 @@ mod sync;
 
 // `WebToolRuntime` 是本流水线各阶段注入参数的公共类型；原先由 `execute` 的 glob 重导出顺带
 // 带入，现在按显式接口给各子模块（#1198）。
-pub(super) use super::super::runtime::WebToolRuntime;
 
 // 显式接口：**逐项列出**本流水线对 `execute` 暴露的东西，兄弟子模块也只能经由这里
 // 互相调用。不用 glob 重导出是有意的——glob 会把「谁依赖谁」重新藏起来，正是本 Issue
 // 要消除的问题。
 pub(super) use approval::{
-    ExecMode, ExternalPathGate, ParsedRunCommandJson, PolicyApproval, PolicyCapabilities,
-    PolicyContext, PolicyDecision, PolicyError, RunCommandCaps, approve_external_run_command_paths_if_needed,
-    approve_posix_shell_wrap_if_needed, evaluate_policy, parse_run_command_json,
+    ExecMode, ParsedRunCommandJson, PolicyContext, PolicyDecision, evaluate_policy,
+    parse_run_command_json,
+};
+// 以下只被 **lib test 单元**消费：lib 单元没有调用方，故用 `cfg(test)` 限定。
+// 判据见 #1300 §4.1「桶化会掀开死代码」。
+#[cfg(test)]
+pub(super) use approval::{
+    ExternalPathGate, PolicyApproval, PolicyCapabilities, PolicyError, RunCommandCaps,
+    approve_external_run_command_paths_if_needed, approve_posix_shell_wrap_if_needed,
     posix_shell_wrap_needs_interactive_approval,
 };
 pub(super) use async_invocation::{RunCommandAsyncInvoke, execute_run_command_async};
-pub(super) use chunks::{
-    RunCommandHostInvoke, emit_run_command_tool_output_chunk, run_command_chunk_sink,
-};
+pub(super) use chunks::{RunCommandHostInvoke, run_command_chunk_sink};
+#[cfg(test)]
+pub(super) use chunks::emit_run_command_tool_output_chunk;
 pub(super) use docker::dispatch_non_sync_tool_to_docker;
 pub(super) use facade::{
     RunCommandCapabilities, RunCommandFacadeInvoke, execute_run_command_facade,

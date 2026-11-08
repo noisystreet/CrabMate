@@ -9,17 +9,16 @@ use std::time::Duration;
 
 use log::error;
 
-use crate::cm_internal::tool_registry::policy::{
+use crate::tool_host::tool_registry::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, web_search_outer_wall_secs,
 };
-use crate::cm_internal::tool_registry::runtime::WebToolRuntime;
 use crate::cm_tools::tools;
 
 use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::super::ToolExecEnv;
 use super::{HttpToolPreflightParams, http_tool_preflight, spawn_blocking_http_tool};
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_fetch_impl(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_http_fetch_impl(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -34,7 +33,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_fetch_i
     };
     let key = tools::http_fetch::storage_key(&url);
     let approval_args = tools::http_fetch::approval_args_display(method, &url);
-    let spec = crate::cm_internal::tool_approval::approval_spec_http_fetch(&approval_args, &key);
+    let spec = crate::tool_host::tool_approval::approval_spec_http_fetch(&approval_args, &key);
     if let Err(out) = http_tool_preflight(HttpToolPreflightParams {
         env,
         effective_working_dir,
@@ -72,7 +71,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_fetch_i
     (s, None)
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_request_impl(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_http_request_impl(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -91,7 +90,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_request
     let approval_args =
         tools::http_fetch::approval_args_display_request(method, &url, has_body);
     let spec =
-        crate::cm_internal::tool_approval::approval_spec_http_request(&approval_args, &key);
+        crate::tool_host::tool_approval::approval_spec_http_request(&approval_args, &key);
     if let Err(out) = http_tool_preflight(HttpToolPreflightParams {
         env,
         effective_working_dir,
@@ -130,7 +129,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_http_request
     (s, None)
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_get_weather_web(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_get_weather_web(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -144,7 +143,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_get_weather_
         workspace_is_set,
         crate::cm_names::GET_WEATHER,
         args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {
@@ -182,7 +181,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_get_weather_
     (s, None)
 }
 
-pub(in crate::cm_internal::tool_registry::execute) async fn execute_web_search_web(
+pub(in crate::tool_host::tool_registry::execute) async fn execute_web_search_web(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
@@ -196,7 +195,7 @@ pub(in crate::cm_internal::tool_registry::execute) async fn execute_web_search_w
         workspace_is_set,
         crate::cm_names::WEB_SEARCH,
         args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+        crate::tool_host::tool_sandbox::write_runner_config_json(cfg.as_ref()),
     )
     .await
     {

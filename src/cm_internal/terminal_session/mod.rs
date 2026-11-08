@@ -1,6 +1,6 @@
 //! Linux PTY 交互会话工具 **`terminal_session`**（其它平台返回明确错误）。
 //!
-//! 主执行路径在 [`crate::cm_internal::tool_registry`] 的异步分发中，以便下发 SSE **`tool_output_chunk`**。
+//! 主执行路径在 `crate::tool_registry`（根上短名，定义已迁至 `tool_host` 桶）的异步分发中，以便下发 SSE **`tool_output_chunk`**。
 
 #[cfg(target_os = "linux")]
 mod linux;
