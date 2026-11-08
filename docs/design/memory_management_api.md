@@ -23,13 +23,13 @@
 
 | 能力 | 工具 | 关键实现 |
 |------|------|----------|
-| 写入（显式） | `long_term_remember` | [long_term_memory_tools.rs](../../src/cm_internal/long_term_memory_tools.rs#L45) → [explicit_remember_blocking](../../src/cm_memory/memory/long_term_memory.rs#L675) |
-| 写入（经验沉淀） | `summarize_experience` | [long_term_memory_tools.rs](../../src/cm_internal/long_term_memory_tools.rs#L104) → [summarize_experience_remember_blocking](../../src/cm_memory/memory/long_term_memory.rs#L687) |
+| 写入（显式） | `long_term_remember` | [long_term_memory_tools.rs](../../src/tool_host/long_term_memory_tools.rs#L45) → [explicit_remember_blocking](../../src/cm_memory/memory/long_term_memory.rs#L675) |
+| 写入（经验沉淀） | `summarize_experience` | [long_term_memory_tools.rs](../../src/tool_host/long_term_memory_tools.rs#L104) → [summarize_experience_remember_blocking](../../src/cm_memory/memory/long_term_memory.rs#L687) |
 | 删除 | `long_term_forget`（按 `memory_id` 或 `memory_text`） | [explicit_forget_blocking](../../src/cm_memory/memory/long_term_memory.rs#L735) |
 | 列举 | `long_term_memory_list`（返回**纯文本**，非 JSON） | [list_recent_blocking](../../src/cm_memory/memory/long_term_memory.rs#L766) |
 
-工具在 `long_term_memory_enabled=true` 时注册（[agent_turn_prep.rs](../../src/cm_internal/agent_turn_prep.rs#L80-L87)），
-  宿主按 `scope_id` 构造（[memory_tool_hosts.rs](../../src/cm_internal/memory_tool_hosts.rs#L76-L91)）。
+工具在 `long_term_memory_enabled=true` 时注册（[agent_turn_prep.rs](../../src/context/agent_turn_prep.rs#L80-L87)），
+  宿主按 `scope_id` 构造（[memory_tool_hosts.rs](../../src/tool_host/memory_tool_hosts.rs#L76-L91)）。
 
 ### 1.2 作用域（scope）
 

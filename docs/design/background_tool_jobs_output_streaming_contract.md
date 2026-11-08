@@ -155,7 +155,7 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 | 面 | 后端 | Client |
 |----|------|--------|
 | 子进程层 | `SubprocessWaitCtl.uncapped_live` + `append_captured`（`cm_tools/subprocess_session.rs`） | — |
-| job 缓冲 | `src/cm_internal/tool_jobs/`：`types.rs`（`JobOutputLog`/元素）、`registry.rs`（侧表 `outputs` + `push_output`/`read_output(cursor)`/终态裁剪）、`worker.rs`（`chunk_sink` 接线，`run_job_async` 置 `uncapped_live`） | — |
+| job 缓冲 | `src/jobs/tool_jobs/`：`types.rs`（`JobOutputLog`/元素）、`registry.rs`（侧表 `outputs` + `push_output`/`read_output(cursor)`/终态裁剪）、`worker.rs`（`chunk_sink` 接线，`run_job_async` 置 `uncapped_live`） | — |
 | 配置 | `cm_config` `ToolRegistryPolicyConfig` + `config/tools.toml` | — |
 | HTTP 端点 | `src/cm_api_contract/tool_jobs.rs`（响应体）+ `src/web/routes/tools/`（handler，Bearer + 归属校验 + `get_checked` 过期语义） | — |
 | 观测 | `JobRegistryStats` 增 `output_retained_bytes` / `output_events_dropped`；日志带 `tool_job_id` | — |

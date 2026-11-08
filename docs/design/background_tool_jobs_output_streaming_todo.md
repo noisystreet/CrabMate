@@ -47,7 +47,7 @@
   只影响终态快照）。
 - [ ] 回归：`uncapped_live=false`（默认）时既有同步路径 chunk 语义不变（单测钉：满 cap 后不再发 chunk）。
 
-**1.2 job 环形输出缓冲**（`src/cm_internal/tool_jobs/`）
+**1.2 job 环形输出缓冲**（`src/jobs/tool_jobs/`）
 - [ ] `types.rs`：`JobOutputLog`（`seq` 单调自 1、`VecDeque<(u64 seq, SessionStream, String)>`、字节合计）；常量 `MAX_OUTPUT_ITEMS=8192`、
   `MAX_ITEMS_PER_RESPONSE=500`。
 - [ ] `registry.rs`：侧表 `outputs: HashMap<String, JobOutputLog>`（**不并入 `JobRecord`**，避免状态轮询克隆缓冲）；`register` 建、

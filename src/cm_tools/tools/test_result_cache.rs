@@ -210,6 +210,7 @@ pub fn store_cached(enabled: bool, max_entries: usize, key: TestCacheKey, output
 }
 
 /// 仅 **`cargo test`**：丢弃进程内 LRU，避免 crate 内单测与集成测试夹具互相污染。
+#[cfg(test)]
 pub fn reset_test_result_cache_for_tests() {
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *g = None;

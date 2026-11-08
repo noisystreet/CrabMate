@@ -136,7 +136,7 @@ HTTP 轮询对**模型**不可用（模型只能调工具）。因此新增两�
 
 - **只读 registry，不走 HTTP、不发起执行、不重复实现审批/白名单/路径校验**；
   `cm_tools` 侧经 trait [`ToolJobsToolHost`](../../src/cm_tools/memory_tool_host.rs) 注入注册表能力（`cm_tools` 禁引 `cm_internal`，
-  见 [`crate_dep_policy.md`](./crate_dep_policy.md)），实现在 [`cm_internal/memory_tool_hosts.rs`](../../src/cm_internal/memory_tool_hosts.rs)
+  见 [`crate_dep_policy.md`](./crate_dep_policy.md)），实现在 [`cm_internal/memory_tool_hosts.rs`](../../src/tool_host/memory_tool_hosts.rs)
   的 `ToolJobsHost`。
 - **与「不新增发起执行型工具组」不冲突**（见 Alternatives）：否决的是会重复实现审批/白名单的**发起型**工具，本项为**只读查询**。
 - `run_command` 的 ToolSpec description 同时宣传 `async` / `timeout_secs`（schema 早已就绪，属纯文案变更）。

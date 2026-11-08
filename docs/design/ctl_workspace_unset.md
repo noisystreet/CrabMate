@@ -139,7 +139,7 @@ Some(x) ──POST /workspace {path:""}─► Some("")          显式复位
 8. 未设置即拒绝，逐点核对：
    - `src/web/chat_handlers/chat/stream.rs:238-243`
    - `src/web/chat_handlers/chat/enqueue.rs:96`
-   - `src/cm_internal/process_handles.rs:136`（先区分「进程 cwd」与「agent 工作区」，前者未必该拒）
+   - `src/process_handles.rs:136`（先区分「进程 cwd」与「agent 工作区」，前者未必该拒）
    - `src/cli_run_serve.rs:142`、`:221`
    - `src/runtime/benchmark/runner.rs:57`
    - `src/runtime/cli_*` 的 `cli_effective_work_dir` 各处

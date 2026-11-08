@@ -65,7 +65,6 @@ excluded	fn run_cli_from_parsed
 excluded	mod cm_agent
 excluded	mod cm_config
 excluded	mod cm_ctl
-excluded	mod cm_internal
 excluded	mod cm_llm
 excluded	mod cm_workflow
 excluded	mod e2e_scenario

@@ -8,7 +8,7 @@
 
 - 新增 **`src/cm_approval`**：`SensitiveCapability`、`ApprovalRequestSpec`、`WebApprovalSink`、`run_web_tool_approval` 等。
 - **`src/cm_workflow`** 仅依赖 **`src/cm_approval`**（不再依赖 `cm_internal`）。
-- **`src/cm_internal/tool_approval`** 再导出 approval，并保留 CLI/TUI / `interactive_gate_*`。
+- **`src/tool_host/tool_approval`** 再导出 approval，并保留 CLI/TUI / `interactive_gate_*`。
 
 ## 第 2 轮：根包 `lib.rs` 再导出
 

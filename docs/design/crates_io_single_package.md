@@ -290,7 +290,7 @@ resolver = "2"
 | `crabmate-web-host` | `src/cm_web_host/` | 不与 `src/web/` 合并 |
 | `crabmate-mcp` | `src/mcp/` | |
 | `crabmate-benchmark` | `src/cm_benchmark/` | 不与 `src/runtime/benchmark/` 合并 |
-| `crabmate-internal` | `src/cm_internal/` | **整包一座**，S2 不摊平 |
+| `crabmate-internal` | ~~`src/cm_internal/`~~ **已删除** | **整包一座**，S2 不摊平；后由 S4（#1300）拆桶搬空并于 P4 删除该目录 |
 | `cmd_mate` | `src/cmd_mate/` | **不是** `crabmate-*`，模块名保持 `cmd_mate` |
 
 **不要在 S2 做**：把 `cm_internal` 拆进根；把两棵 `agent_turn` 合成一目录；给 Client 再导出第二个 crates.io 包名。

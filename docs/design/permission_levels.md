@@ -58,11 +58,11 @@
 | 轴 | 机制 | 锚点 |
 |---|---|---|
 | 工具可见性 | `SessionMode` Ask/Plan → `PlanStepExecutorKind::ReviewReadonly` | `src/agent/agent_turn/turn_loop/run_dispatch.rs:34`、`turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） |
-| 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/cm_internal/agent_role_turn.rs:202` |
-| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/cm_internal/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
+| 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/context/agent_role_turn.rs:202` |
+| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/tool_host/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
 | 路径 | 根内相对路径硬校验；绝对路径 / `..` 在文件工具直接拒 | `src/cm_tools/tools/file/path.rs:127`（`resolve_for_read`）、`:159`（`resolve_for_write`）、`src/cm_tools/workspace/path.rs` |
-| 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed`） |
-| 人工审批 / 隔离 | `SensitiveCapability`（5 类）+ Docker 沙盒 | `src/cm_approval/mod.rs:26`、`src/cm_internal/tool_approval/approval_specs.rs`、`src/cm_internal/tool_sandbox/mod.rs:82` |
+| 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/tool_host/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed`） |
+| 人工审批 / 隔离 | `SensitiveCapability`（5 类）+ Docker 沙盒 | `src/cm_approval/mod.rs:26`、`src/tool_host/tool_approval/approval_specs.rs`、`src/tool_sandbox/mod.rs:82` |
 
 ### 1.2 三个真实缺口
 
@@ -258,7 +258,7 @@ effective = min(chosen, ceiling, role.max_permission_level)
 
 ### 6.2 持久化必须重算（fail-safe）
 
-`active_permission_level` 像 `active_session_mode` 一样落库（`src/cm_internal/session_mode_turn.rs:86` 的同一模式），但**恢复时必须重新过一遍 §6.1**。
+`active_permission_level` 像 `active_session_mode` 一样落库（`src/context/session_mode_turn.rs:86` 的同一模式），但**恢复时必须重新过一遍 §6.1**。
   理由：运维把 `permission_level_max` 调低后，旧会话若按库里的 `unrestricted` 续跑，等于降级失效。规则写死：
 
 > **持久化只存“请求意图”，不存“生效结果”；生效结果每回合重算。**
@@ -936,7 +936,7 @@ dst.permission.permission_level_max =
 
 ### 16.5 审批弹窗也要带等级
 
-`command_approval_request` 的载荷（`src/cm_internal/tool_approval/approval_specs.rs`）应附当前 `level`，
+`command_approval_request` 的载荷（`src/tool_host/tool_approval/approval_specs.rs`）应附当前 `level`，
   让用户在点 `AllowAlways` 前看到“这是 L3 会话在请求越界”，而不是只看到命令本身。实现上与 §11 第 3 条一致：**复用现有 control-plane 字段，
   不改 `SSE_PROTOCOL_VERSION`**。
 
@@ -1116,24 +1116,24 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | 概念 | 位置 |
 |---|---|
 | `SessionMode` 定义与 `requires_readonly_tools` | `src/cm_types/session_mode.rs` |
-| `session_mode` 回合解析（含持久化） | `src/cm_internal/session_mode_turn.rs:11`、`:86` |
+| `session_mode` 回合解析（含持久化） | `src/context/session_mode_turn.rs:11`、`:86` |
 | Ask/Plan 挂只读约束 | `src/agent/agent_turn/turn_loop/run_dispatch.rs:34` |
 | 单回合工具定义过滤 | `src/agent/agent_turn/turn_loop/outer_loop.rs:101` |
 | 子代理角色工具表 | `src/cm_agent/step_executor_policy.rs:91` |
 | early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93` |
-| 角色 `allowed_tools` 解析 | `src/cm_config/agent_roles.rs:111`、`src/cm_internal/agent_role_turn.rs:162` |
+| 角色 `allowed_tools` 解析 | `src/cm_config/agent_roles.rs:111`、`src/context/agent_role_turn.rs:162` |
 | 只读/写工具分类 | `src/cm_tools/registry_policy.rs:105`、`:149` |
-| `run_command` 策略评估 | `src/cm_internal/tool_registry/execute/run_command/approval.rs` |
+| `run_command` 策略评估 | `src/tool_host/tool_registry/execute/run_command/approval.rs` |
 | `PolicyDecision` 结构 | 同上（`run_command/approval.rs`，`struct PolicyDecision`） |
 | 白名单 `*` 哨兵 | `src/cm_tools/tools/command_shell_script.rs:29` |
 | 文件路径解析/写入 | `src/cm_tools/tools/file/path.rs:127`、`:159` |
 | 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_types/path_utils.rs`（`SENSITIVE_WORKSPACE_PREFIXES`，单一来源） |
-| `read_dir` 工作区外审批 | `src/cm_internal/tool_registry/execute/mod.rs:134` |
-| http 前缀 + 审批 preflight | `src/cm_internal/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed` / `http_tool_preflight`） |
+| `read_dir` 工作区外审批 | `src/tool_host/tool_registry/execute/mod.rs:134` |
+| http 前缀 + 审批 preflight | `src/tool_host/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed` / `http_tool_preflight`） |
 | 审批能力域 | `src/cm_approval/mod.rs:26` |
-| 审批载荷构造 | `src/cm_internal/tool_approval/approval_specs.rs` |
+| 审批载荷构造 | `src/tool_host/tool_approval/approval_specs.rs` |
 | 执行附件（`RunLoopAttach`） | `src/agent/agent_turn/host/params.rs:65` |
-| Docker 沙盒挂载 | `src/cm_internal/tool_sandbox/mod.rs:82` |
+| Docker 沙盒挂载 | `src/tool_sandbox/mod.rs:82` |
 | ceiling 推导（loopback 判断） | `src/cli_run.rs:534`（`validate_bind_auth`） |
 | 会话级 allowlist（内存态） | `src/chat_job_queue/worker/stream_job_setup.rs:162` |
 | workflow 节点能力上下文 | `src/cm_workflow/run.rs:228`、`src/cm_workflow/execute/node.rs:36` |

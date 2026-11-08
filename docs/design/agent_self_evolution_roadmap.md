@@ -32,7 +32,7 @@
 
 | 环节 | 实现 | 位置 |
 |---|---|---|
-| 模型自主沉淀经验 | `summarize_experience`（≥20 字符、去重、共用写入路径） | [`long_term_memory_tools.rs`](../../src/cm_internal/long_term_memory_tools.rs#L95-L132) |
+| 模型自主沉淀经验 | `summarize_experience`（≥20 字符、去重、共用写入路径） | [`long_term_memory_tools.rs`](../../src/tool_host/long_term_memory_tools.rs#L95-L132) |
 | 系统启发式自动沉淀 | 仅识别「构建/验证类工具由失败转成功」 | [`auto_summarize_experience.rs`](../../src/cm_memory/memory/auto_summarize_experience.rs#L1-L20) |
 | 回合结束自动索引 | `user`/`assistant` 终答正文入库（可配 `long_term_memory_auto_index_turns`） | [`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs) |
 | 召回注入 | 经验源优先 + 标签/关键词加权 | [`long_term_memory_recall.rs`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40) |

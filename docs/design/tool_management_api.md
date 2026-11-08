@@ -28,8 +28,8 @@
 | 来源 | 注册时机 | 命名 | 关键实现 |
 |------|----------|------|----------|
 | **内置工具** | 编译期静态表 | 原名（如 `run_command`） | [tool_specs_registry/mod.rs](../../src/cm_tools/tools/tool_specs_registry/mod.rs#L13-L46) |
-| **工作区动态工具** | 每回合扫描 `<workspace>/plugins/*.json` | `dyn__` 前缀 | [dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L17-L41) |
-| **MCP 工具** | 每回合按配置开/复用会话后合并 | `mcp__{slug}__{remote}` | [agent_turn_prep.rs](../../src/cm_internal/agent_turn_prep.rs#L64-L76) |
+| **工作区动态工具** | 每回合扫描 `<workspace>/plugins/*.json` | `dyn__` 前缀 | [dynamic_tools.rs](../../src/tool_host/dynamic_tools.rs#L17-L41) |
+| **MCP 工具** | 每回合按配置开/复用会话后合并 | `mcp__{slug}__{remote}` | [agent_turn_prep.rs](../../src/context/agent_turn_prep.rs#L64-L76) |
 | **skills** | 不进工具表；经元工具 `skill_manage`（install/list/remove）与 composer `/` 斜杠 | — | [skill_manage.rs](../../src/cm_tools/tools/skill_manage.rs) |
 
 四类工具的**共同事实**：没有任何一处「启用/禁用」状态位——「在场」只由构建期特性门与回合拼接逻辑决定。
@@ -51,7 +51,7 @@
     `src/cm_config` 内检索 `dev_tags` / `tool_categories` **无任何匹配**——即 `categories` / `dev_tags` 两个过滤维度**根本没有配置入口**，
     当前恒为「不过滤」。
 
-**回合期**（[prepare_tools_for_turn](../../src/cm_internal/agent_turn_prep.rs#L57-L101)，其唯一调用点在 [run_agent_turn.rs](../../src/run_agent_turn.rs)）：
+**回合期**（[prepare_tools_for_turn](../../src/context/agent_turn_prep.rs#L57-L101)，其唯一调用点在 [run_agent_turn.rs](../../src/run_agent_turn.rs)）：
 
 1. 合并工作区动态工具（L64-67）；
 2. 尝试开/复用 MCP 会话并合并远端工具（L68-76）；
@@ -124,7 +124,7 @@
 | **单工具详情 + 策略投影**（`GET /tools/{name}`） | **应补（P1）** | `[tool_registry]` 25 字段与 `registry_policy` 的判定结果（只读/写类/可并行/内联/可后台/可重试）已有公开函数可调，却完全不可见；这是 §1.6 观测面缺口的直接补口 |
 | **单工具启停**（`PUT /tools/{name}/enabled`） | **应补（P1）** | 现在关一个工具必须改代码（加 `retain` 特判）或整体关掉某子系统的全部工具（如 `long_term_memory_enabled=false` 连带关三个工具）；「临时停用某个危险工具」是最常见的运维诉求 |
 | **启停的配置落点**（`[tool_registry] disabled_tools`） | **应补（P1）** | 是 §1.4 已就绪段落的自然延伸：热重载白名单、范围校验先例、TOML 段位置都已具备 |
-| **工作区动态工具 HTTP 只读列表** | **应补（P1）** | `plugins/*.json` 现在是黑盒：加载失败一律 `log::warn!` 后静默跳过（[dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L83-L90)），用户看不到「文件写错在哪」 |
+| **工作区动态工具 HTTP 只读列表** | **应补（P1）** | `plugins/*.json` 现在是黑盒：加载失败一律 `log::warn!` 后静默跳过（[dynamic_tools.rs](../../src/tool_host/dynamic_tools.rs#L83-L90)），用户看不到「文件写错在哪」 |
 | **工作区动态工具 HTTP 写入** | **暂缓（P2）** | 写盘 + 命令白名单双重安全面（`command` 必须命中 `allowed_commands`），需单独定路径守卫与冲突语义 |
 | **skills 单条启停** | **不采纳（本轮）** | 语义不清：同名 skill 在 system / user / workspace 三层可并存，禁用哪一层需先定消歧规则；而 `skill_manage` 的 remove 已能覆盖「不要它」的主诉求 |
 | **工具执行 / 直调 HTTP 入口** | **不采纳** | `POST /tools/{name}/invoke` 会绕过审批、回合预算与 changelist，安全面上不接受（见 §3.6） |
@@ -187,7 +187,7 @@
 | 值 | 触发条件 | 现状来源 |
 |----|----------|----------|
 | `feature_not_built` | 编译期未启用 `fastembed` | [runners.rs](../../src/cm_tools/tools/runners.rs#L42-L44) |
-| `config_disabled` | `codebase_semantic_search_enabled=false` / `long_term_memory_enabled=false` | [agent_turn_prep.rs](../../src/cm_internal/agent_turn_prep.rs#L77-L87) |
+| `config_disabled` | `codebase_semantic_search_enabled=false` / `long_term_memory_enabled=false` | [agent_turn_prep.rs](../../src/context/agent_turn_prep.rs#L77-L87) |
 | `disabled_by_policy` | 命中 `[tool_registry] disabled_tools` / `disabled_tool_prefixes` | **D3 落地后才会出现** |
 
 **实现要点（两条硬约束）**：
@@ -237,7 +237,7 @@
 **持久化落点：本机用户数据**，而非 TOML 写回。理由与既有先例一致：
 
 - 新增 `cm_internal/user_data/store.rs` 同目录文件 `tool_overrides.json`（`CM_CRABMATE_USER_DATA_DIR`），
-  与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级（[store.rs](../../src/cm_internal/user_data/store.rs)）；
+  与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级（[store.rs](../../src/user_data/store.rs)）；
 - 复用 `apply_user_data_llm_overrides` 的既有管线形态：在 [config_reload.rs](../../src/runtime/config_reload.rs) 与 [cli_run.rs](../../src/cli_run.rs)
   两处调用点追加一个 `apply_user_data_tool_overrides(&mut cfg)`，即**同时覆盖启动与 `POST /config/reload` 热路径**；
 - 不引入 TOML 程序化写回（避免破坏用户手写注释与格式），TOML 侧仍可由用户静态声明同一个字段。
@@ -273,7 +273,7 @@ else if !prefixes.is_empty() { … retain … }
   含 `parameters` / `args` / `pass_args_json`（未设置工作区或文件不存在 **404 `PLUGIN_NOT_FOUND`**）。
 - `PUT /tools/plugins/{file}`（创建/覆盖）与 `DELETE /tools/plugins/{file}`（**204 幂等**）。
 - 服务端复用同一套校验：`validate_file` 的 4 条（`dyn__` 前缀 / `description` 非空 / `parameters` 须 JSON 对象 / `command` 非空，
-  [dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；
+  [dynamic_tools.rs](../../src/tool_host/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；
   失败 **400 `INVALID_PLUGIN_DEFINITION`**。
 - **路径守卫**：`{file}` 仅允许 `[A-Za-z0-9_-]+\.json`，显式拒绝分隔符与 `..`（对齐 `/workspace/file` 的既有风格）。
 - 暂缓理由：写盘 + 命令白名单双重安全面，且需先定「同名文件覆盖是否需要 `confirm`」与 changelist 归属口径。

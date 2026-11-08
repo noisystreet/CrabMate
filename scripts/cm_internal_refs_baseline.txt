@@ -1,4 +1,0 @@
-# 由 bash scripts/check-cm-internal-refs.sh --print-baseline 生成。
-# 只许降不许升；名单自动派生，搬迁子模块后无需手工改本文件。
-C1	0
-C2	118
