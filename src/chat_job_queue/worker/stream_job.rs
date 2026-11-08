@@ -164,6 +164,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             truncated: assistant_finish_truncated,
             queue_deps: queue_deps.as_ref(),
             sse_tx: &rt.sse_tx,
+            publisher: &rt.publisher,
             job_id,
             request_id: request_id.clone(),
             messages: &mut messages,
@@ -197,6 +198,10 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .await;
     }
     drop(rt.sse_tx);
-    queue_deps.sse_stream_hub.remove_job(job_id);
+    // 只停止「受理重连」，不停止投递：`conversation_saved` / state snapshot / `RUN_FINISHED`
+    // 可能还排在 channel 里，由桥接任务持有的 `StreamPublisher` 送出；登记的摘除也交给它在
+    // 通道关闭（⟺ 不可能再产帧）之后完成（#1316）。
+    rt.publisher
+        .retire(crate::sse::protocol::SSE_STREAM_RETIRE_GRACE);
     JobOutcome::Stream { ok, cancelled, err }
 }

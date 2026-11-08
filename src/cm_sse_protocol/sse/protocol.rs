@@ -4,10 +4,19 @@
 //!
 //! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE协议.md`**（与 Client `frontend/src/sse_dispatch/` 对齐）。
 
+use std::time::Duration;
+
 pub use crate::cm_sse_protocol::{SSE_PROTOCOL_VERSION, StreamEndReason};
 
 /// 服务端为每条 `/chat/stream` SSE 事件分配的 **`id:`**（`Last-Event-ID`）环形缓冲容量（仅内存；进程重启后不可恢复）。
 pub const SSE_RESUME_RING_CAP: usize = 512;
+
+/// `stream` 任务收尾后仍受理 **`stream_resume`** 的宽限（#1316）。
+///
+/// worker 收尾到桥接任务排空之间，终态帧还排在通道里；这段时间内重连应仍能拿到它们。
+/// 正常路径下登记由桥接任务退出时摘除（≈微秒级），本值只是「异常长期持有发送端」时的上限：
+/// 超出后 `has_job` 转假，重连按既有契约返回 **HTTP 410 `STREAM_JOB_GONE`**。
+pub const SSE_STREAM_RETIRE_GRACE: Duration = Duration::from_secs(1);
 
 fn default_sse_v() -> u8 {
     SSE_PROTOCOL_VERSION

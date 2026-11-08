@@ -38,7 +38,7 @@ pub use final_response_terminal::{
 #[cfg(feature = "server")]
 pub use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 #[cfg(feature = "server")]
-pub use stream_hub::SseStreamHub;
+pub use stream_hub::{SseStreamHub, StreamPublisher};
 
 #[cfg(feature = "server")]
 pub use control_mirror::SseControlMirror;

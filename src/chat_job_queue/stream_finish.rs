@@ -9,7 +9,7 @@ use tokio::time::{Duration, sleep};
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::config::AgentConfig;
-use crate::sse::SseStreamHub;
+use crate::sse::StreamPublisher;
 use crate::types::{Message, assistant_output_kind, message_content_as_str};
 use crate::web::WebChatJobAppFacet;
 
@@ -282,21 +282,19 @@ pub(crate) fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
     false
 }
 
-fn stream_job_has_final_response_timeline(hub: &SseStreamHub, job_id: u64) -> bool {
-    hub.replay_after(job_id, 0)
-        .unwrap_or_default()
+/// 读**本流句柄**的环形缓冲，而不是查 hub map：map 里可能已没有本 `job_id`（#1316）。
+fn stream_job_has_final_response_timeline(publisher: &StreamPublisher) -> bool {
+    publisher
+        .replay_after(0)
         .into_iter()
         .any(|(_, payload)| sse_payload_has_final_response_timeline(&payload))
 }
 
-async fn stream_job_has_final_response_timeline_eventually(
-    hub: &SseStreamHub,
-    job_id: u64,
-) -> bool {
+async fn stream_job_has_final_response_timeline_eventually(publisher: &StreamPublisher) -> bool {
     const MAX_RETRIES: usize = 5;
     const RETRY_DELAY_MS: u64 = 20;
     for attempt in 0..=MAX_RETRIES {
-        if stream_job_has_final_response_timeline(hub, job_id) {
+        if stream_job_has_final_response_timeline(publisher) {
             return true;
         }
         if attempt < MAX_RETRIES {
@@ -385,12 +383,12 @@ pub(crate) fn completed_turn_end_reason(
 }
 
 pub(crate) async fn emit_missing_final_response_fallback_if_needed(
-    hub: &SseStreamHub,
+    publisher: &StreamPublisher,
     sse_tx: &mpsc::Sender<String>,
-    job_id: u64,
     messages: &[Message],
 ) -> bool {
-    if stream_job_has_final_response_timeline_eventually(hub, job_id).await {
+    let job_id = publisher.job_id();
+    if stream_job_has_final_response_timeline_eventually(publisher).await {
         return false;
     }
     let Some(final_text) = last_assistant_text_for_fallback(messages) else {
@@ -427,6 +425,9 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) truncated: bool,
     pub(super) queue_deps: &'a WebChatQueueDeps,
     pub(super) sse_tx: &'a mpsc::Sender<String>,
+    /// 本 job 的 SSE 投递句柄：判「本轮是否已发过 `final_response`」时读它的环形缓冲，
+    /// 而不是查 hub map（map 里可能已没有本 `job_id`，#1316）。
+    pub(super) publisher: &'a StreamPublisher,
     pub(super) job_id: u64,
     pub(super) request_id: Option<String>,
     pub(super) messages: &'a mut Vec<Message>,
@@ -450,6 +451,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         truncated,
         queue_deps,
         sse_tx,
+        publisher,
         job_id,
         request_id,
         messages,
@@ -483,13 +485,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
             (false, true, None, StreamEndReason::Cancelled)
         }
         Ok(outcome) => {
-            let fallback_emitted = emit_missing_final_response_fallback_if_needed(
-                queue_deps.sse_stream_hub.as_ref(),
-                sse_tx,
-                job_id,
-                messages,
-            )
-            .await;
+            let fallback_emitted =
+                emit_missing_final_response_fallback_if_needed(publisher, sse_tx, messages).await;
             let end_reason = completed_turn_end_reason(fallback_emitted, truncated, messages);
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(

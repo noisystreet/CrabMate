@@ -34,8 +34,12 @@
 - **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。
   断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：
   `{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；
-  服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，
-    `code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；
+  服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：
+  任务的帧**排空后**（或进程重启后）重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**；
+  帧尚未排空的收尾窗口内仍可重连，能补回 `conversation_saved` / state snapshot / `RUN_FINISHED`
+  ——登记的移除只影响重连判定，不影响已建立连接上的终态帧（#1316；另有 1s 宽限
+  `SSE_STREAM_RETIRE_GRACE` 给「异常长期持有发送端」兜底，超出后重连即 410）。
+  用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；
   **仅 abort SSE 连接不会停止**模型调用与工具（否则无法 `stream_resume`）。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
 - 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，
   并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”
