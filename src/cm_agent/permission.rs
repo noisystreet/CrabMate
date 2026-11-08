@@ -91,7 +91,7 @@ pub enum ExternalTools {
 /// 不能让依赖方向反向）。
 pub use crate::cm_types::PathScope;
 
-/// 白名单「全放行」哨兵，与 [`crate::cm_tools::tools::allowlist_allows_all`] 同一约定。
+/// 白名单「全放行」哨兵，与 `crate::cm_tools::tools::allowlist_allows_all` 同一约定（该模块为 `pub(crate)`，故只写路径不做 intra-doc 链接）。
 ///
 /// `CommandScope::Any`（L4）靠它落成配置层能理解的值，不新增第二套「全放行」表示。
 pub const COMMAND_ALLOW_ALL: &str = "*";

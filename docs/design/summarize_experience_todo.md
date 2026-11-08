@@ -18,7 +18,7 @@
 - 同义词合并（如 `"ownership"` ← `"own"`, `"rc"`, `"refcell"`）
 - 若白名单为空则不限制（向后兼容）
 
-**关联文件**：`src/cm_config/types/mod.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_config/types/mod.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -31,7 +31,7 @@
 - 可在函数中增加启发式检查：若经验文本中出现项目绝对路径、个人主机名、具体的 `conversation_id`/`session_id` 模式，发警告日志（不拒绝写入，但不阻塞）
 - 未来可扩展为 `experience_clean` 预处理步骤（剥离上下文依赖词）
 
-**关联文件**：`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -47,7 +47,7 @@
 - 在 SQLite 存储层增加 `confidence TEXT` 列
 - 检索时可按置信度过滤或排序
 
-**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_internal/long_term_memory_tools.rs`、
+**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/tool_host/long_term_memory_tools.rs`、
   `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
 ---
@@ -90,7 +90,7 @@
 - 单次工具调用批量写入多条经验，减少工具调用次数
 - 错误处理：部分成功时回滚全部或记录失败列表
 
-**关联文件**：`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、
+**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、
   `src/cm_tools/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
 
 ---
@@ -117,7 +117,7 @@
 - 支持将经验写入项目级 scope（如 `project:{project_name}`），使同一项目的多个会话共享检索
 - 需要新增 `long_term_memory_join_scope` 工具或配置项，允许模型将当前会话经验提升为项目级
 
-**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -173,7 +173,7 @@
 - 检索注入时，同一 chain 的经验可选择性展开（全部展开 / 仅头尾 / 仅最终 insight）
 - 新增工具 `start_experience_chain(experience, problem_description)` 创建链；`append_experience(chain_id, experience, role)` 追加节点
 
-**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -189,7 +189,7 @@
 - 系统根据建议自动执行（缩短 TTL、写入替代关系）或交由用户确认
 - 可在 `AgentConfig` 中配置 `auto_review_on_session_start: bool`（默认开启）
 
-**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -205,7 +205,7 @@
 - 低置信度经验默认设置短 TTL，自动淘汰
 
 **关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、
-  `src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+  `src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
 ---
 
@@ -223,7 +223,7 @@
 - 用户可通过 `workspace_style_list` 查看当前工作区的风格规范
 - 与普通经验分离：workspace style 永不自动淘汰（除非显式删除）
 
-**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 
@@ -254,7 +254,7 @@
 - 模型在规划阶段（plan + execute 之前）可主动查询 anti-pattern 作为排除列表
 - 与 `summarize_experience` 共用 `explicit_remember_blocking` 写入路径，共用 embedding 检索，存储层完全复用
 
-**关联文件**：`src/cm_internal/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
 ---
 
@@ -305,7 +305,7 @@
 - 新会话的 `prepare_messages` 自动注入该摘要（作为 system prompt 的一部分，而非普通工具注入）
 - 用户可随时 `regenerate_project_digest` 手动刷新
 
-**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
+**关联文件**：`src/cm_memory/memory/long_term_memory.rs`、`src/tool_host/long_term_memory_tools.rs`
 
 ---
 

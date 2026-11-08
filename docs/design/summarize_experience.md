@@ -162,7 +162,7 @@ VALUES
 
 ### Step 1: 添加工具函数
 
-**文件**: `src/cm_internal/long_term_memory_tools.rs`
+**文件**: `src/tool_host/long_term_memory_tools.rs`
 
 新增 `SummarizeExperienceArgs` 结构体和 `summarize_experience()` 函数。内部调用 `rt.explicit_remember_blocking()`，与 `long_term_remember` 共用同一写入路径。
 

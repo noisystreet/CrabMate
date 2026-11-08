@@ -32,7 +32,7 @@
 - [x] **1.1 配置**：`[tool_registry]` 新增 6 键（`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、
   `background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`）；
   热重载经 `POST /config/reload` 重建 `AgentConfig`，创建 job 时读取、已运行 job 不受影响。
-- [x] **1.2 job 模块**（`src/cm_internal/tool_jobs/`，复用 `subprocess_session`）：
+- [x] **1.2 job 模块**（`src/jobs/tool_jobs/`，复用 `subprocess_session`）：
   `types.rs` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）+ 原子状态转移；
   `registry.rs` 不可枚举 `tool_job_id`（`tooljob_` + 32 hex）+ 并发/排队/条目上限（仅淘汰终态）+ TTL 清理（创建起算 + 终态宽限，
   清理后轮询 410）；`worker.rs` `tokio::spawn` + `await`（`run_job_async`；panic 由 `JoinError` 兜底：先 terminate 进程组再标 `failed(internal)`；

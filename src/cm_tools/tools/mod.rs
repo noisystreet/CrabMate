@@ -15,14 +15,16 @@ mod command;
 mod command_error;
 mod command_exec;
 mod command_outcome;
-pub use command_outcome::{CommandDigest, CommandOutcome, ExitStatusKind};
+pub use command_outcome::CommandDigest;
+#[cfg(test)]
+pub use command_outcome::ExitStatusKind;
 pub use command::{
     CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
     dash_c_script_body, is_shell_dash_c_invocation,
     join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run, run_async,
+    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run_async,
     scan_run_command_unsafe_args_spec,
 };
 pub use command_error::RunCommandError;
@@ -350,7 +352,7 @@ pub fn build_tools() -> Vec<Tool> {
     build_tools_with_options(ToolsBuildOptions::default())
 }
 
-/// 构建传给 API 的工具列表：可按顶层分类过滤（[`ToolCategory::Basic`] / [`ToolCategory::Development`]）。
+/// 构建传给 API 的工具列表：可按顶层分类过滤（`ToolCategory::Basic` / `ToolCategory::Development`）。
 pub fn build_tools_filtered(allowed: Option<&[ToolCategory]>) -> Vec<Tool> {
     build_tools_with_options(ToolsBuildOptions {
         categories: allowed,
@@ -794,7 +796,8 @@ pub fn summarize_tool_call_parsed(name: &str, args_parsed: &serde_json::Value) -
 }
 
 /// 仅 **`cargo test`**：重置少数进程级可变 `static`（`run_command` 秒级限流、**`test_result_cache`** LRU）。
-/// 集成测试可在夹具开头调用 crate 根 **`crate::cm_tools::reset_process_tool_globals_for_tests`**。
+/// 集成测试可在夹具开头调用 crate 根 `reset_process_tool_globals_for_tests`（它再转到此处）。
+#[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {
     command::reset_run_command_rate_limit_for_tests();
     test_result_cache::reset_test_result_cache_for_tests();

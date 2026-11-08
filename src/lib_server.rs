@@ -27,9 +27,6 @@ pub(crate) mod jobs;
 pub(crate) mod obs;
 pub(crate) mod tool_host;
 pub(crate) mod cm_benchmark;
-#[doc(hidden)]
-#[allow(unused_imports)]
-pub mod cm_internal;
 
 pub mod agent;
 /// Docker 沙盒内 `tool-runner-internal` 入口；二进制与 `main` 经此路径调用。

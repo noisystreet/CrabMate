@@ -1,4 +1,4 @@
-//! Development 工具子域标签：按语言栈 / 职责过滤，与 [`super::ToolCategory::Development`] 配合使用。
+//! Development 工具子域标签：按语言栈 / 职责过滤，与 `super::ToolCategory::Development` 配合使用。
 
 /// 与工作区、壳命令、编排、元数据等相关，**不绑定**特定语言运行时。
 pub const GENERAL: &str = "general";
@@ -25,7 +25,7 @@ pub const DOCKER: &str = "docker";
 
 /// 返回 `Development` 工具的标签切片；**非 Development 工具名**返回空（调用方按分类跳过）。
 ///
-/// #1157：标签的唯一真源是 [`super::ToolSpec::tags`]（声明点在
+/// #1157：标签的唯一真源是 `super::ToolSpec::tags`（声明点在
 /// `tool_specs_registry/specs/*.inc.rs`）。此前这里另有一张约 200 行的 `match`，与声明点
 /// 各写一份——漏改其一不会报错，只会在 [`super::build_tools_with_options`] 的栈裁剪里
 /// **静默丢工具**（或留下本不该出现的工具）。

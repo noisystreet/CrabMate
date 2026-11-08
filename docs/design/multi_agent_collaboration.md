@@ -68,7 +68,7 @@
 
 | 层 | 现状 | 位置 | 缺口 |
 |---|---|---|---|
-| **L0 角色** | **已有**：人设 + 工具白名单（`allowed_tools`），按回合 / 会话切换，同一时刻仅一个生效；`act` 模式工具 = 全量 ∩ 角色白名单，越权调用在执行层被拒 | `src/cm_config/agent_role_spec.rs`、`src/cm_internal/agent_role_turn.rs`、`src/cm_types/session_mode.rs`、`config/agent_roles.toml` | 无并发角色；无角色间消息 |
+| **L0 角色** | **已有**：人设 + 工具白名单（`allowed_tools`），按回合 / 会话切换，同一时刻仅一个生效；`act` 模式工具 = 全量 ∩ 角色白名单，越权调用在执行层被拒 | `src/cm_config/agent_role_spec.rs`、`src/context/agent_role_turn.rs`、`src/cm_types/session_mode.rs`、`config/agent_roles.toml` | 无并发角色；无角色间消息 |
 | **L1 侧向调用** | **设计就绪**：观众 / critic，无工具、有界、默认 **fail-open**，锚点仅 C（终答规划闸门旁）与 D（`WorkflowReflectionController::decide` 后） | `docs/design/audience_critic_role.md` | 未实现；不产出可消费工件 |
 | **轮内 DAG** | **已有**：`workflow_execute` 的 `deps` 拓扑分层（Kahn）、层内并行、`max_parallelism`、`fail_fast`、`compensate_on_failure` / `compensate_with`、节点 `max_retries`、`for_each`、`run_if`、`workflow_run_id` | `src/cm_workflow/` | **节点是工具节点**（`tool_name` + `tool_args`），**不能**承载 Agent |
 | **跨轮编排** | **已有**：ReAct 外循环 + `plan_artifact` + `workflow_reflection_controller` | `src/cm_agent/`（外循环） | 同一时刻仍是单一主 Agent |

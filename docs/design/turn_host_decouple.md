@@ -113,7 +113,7 @@ crabmate-internal / crabmate-tools
 | `src/agent/agent_turn/host/execute/tool_execution_host.rs` | 经 `ToolDispatch` 调 registry |
 | `src/agent/agent_turn/host/execute/tool_dispatch.rs` | `ToolDispatch` / `InternalToolDispatch` |
 | `src/agent/agent_turn/host/execute/tool_execution_trait.rs` | `ToolExecutionHost` |
-| `src/cm_internal/tool_registry/` | `dispatch_tool` / `DispatchToolParams` |
+| `src/tool_host/tool_registry/` | `dispatch_tool` / `DispatchToolParams` |
 | `src/chat_job_queue/worker/` | Web 异步回合消费者 |
 | `src/web/app_state.rs` / `app_state_facets.rs` | Web 状态与 facet（含 **`WebChatAppFacet`**） |
 | `scripts/check-crate-deps.sh` | 禁边门禁 |

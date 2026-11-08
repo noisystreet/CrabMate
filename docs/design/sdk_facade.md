@@ -39,8 +39,8 @@
 | `WebChatStreamBuildArgs` **25** 个平铺字段 / `WebChatJsonBuildArgs` **22** 个 | `src/lib_server.rs:190` / `:223` | ✅ |
 | `TurnRunner` 注入点的参数袋仍是 `RunAgentTurnParams<'_>` | `src/turn_runner.rs:19` | ✅ |
 | `conversation_store` 是 **13 个 `pub fn` 收 `&Connection`**（`migrate`:51、`open_file`:137、`load`:210、`save_if_revision`:307、`set_active_state`:389、`save_with_archive_if_revision`:427……），且被 `web` feature 门控 | `src/conversation_store.rs`；`src/lib_server.rs:53` | ✅ |
-| `cm_internal` 暴露 **25** 个 `pub mod` + 多组再导出 | `src/cm_internal/mod.rs:11-43` | ✅ |
-| 全仓 **66** 个文件引用 `crate::cm_internal`，其中**外部（非 `cm_internal/` 内）20 个** | `grep -rln crate::cm_internal src --include=*.rs` | ✅ |
+| ~~`cm_internal` 暴露 **25** 个 `pub mod` + 多组再导出~~ | ~~`src/cm_internal/mod.rs:11-43`~~ | ✅ **已消解**：S4 四桶搬空后 P4 删除该模块 |
+| 全仓 **66** 个文件引用 `crate::cm_internal`，其中**外部（非 `cm_internal/` 内）20 个** | `grep -rln crate::cm_internal src --include=*.rs` | ✅ 勘察时快照；S4 完成后为 **0** |
 | 外部 20 个的分布：`web/` 6、`src/` 根 4、`agent/agent_turn/host/` 系 5、`chat_job_queue/worker` 2、`user_data` 1、`cm_llm` 1、`cm_config` 1 | 同上 | ✅ 决定 S4 的拆分粒度，见 §10 |
 | 下层反向依赖 **只有 1 处真实 `use`**：`cm_llm` → `cm_internal::user_message_file_refs` | `src/cm_llm/outbound_workspace_images.rs:6` | ✅ 附注：`src/cm_config/xdg.rs:1` 也命中 grep，但那只是 doc comment 提到路径，**不是**依赖——按「grep 命中数」下结论会高估 |
 | `tool_job_registry` 以具体类型出现在回合入参袋 | `src/agent/agent_turn/host/params.rs:100` | ✅ |

@@ -18,11 +18,9 @@ mod output_header;
 mod run_command;
 mod tool_error;
 
-pub use normalize::{
-    CRABMATE_TOOL_ENVELOPE_VERSION_V1, NormalizedToolEnvelope, normalize_tool_message_content,
-};
+pub use normalize::{NormalizedToolEnvelope, normalize_tool_message_content};
 pub use output_header::{
-    CRABMATE_TOOL_OUTPUT_KIND, CRABMATE_TOOL_OUTPUT_VERSION, CrabmateToolOutputEnvelope,
+    CrabmateToolOutputEnvelope,
     CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
     ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
     WorkspaceWriteDiffFile, prepend_crabmate_tool_output, prepend_crabmate_tool_output_with_ok,
@@ -370,6 +368,7 @@ pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str
 
 /// 从已写入对话历史的 `role: tool` `content` 判断工具是否**成功**（与信封 `ok` 或 `parse_tool_output` 一致）。
 /// `tool_name_fallback` 在非信封正文时用于 `parse_tool_output` 的错误码归类。
+#[cfg(test)]
 pub fn tool_message_content_ok_for_model(content: &str, tool_name_fallback: &str) -> bool {
     if let Some(env) = normalize_tool_message_content(content) {
         return env.ok;

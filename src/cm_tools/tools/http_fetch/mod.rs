@@ -12,18 +12,19 @@ mod decode;
 mod policy;
 mod sync_fetch;
 
-pub use args::{
-    ABS_MAX_BODY_BYTES, FetchMethod, HttpBodyTextFormat, RequestMethod, parse_http_fetch_args,
-    parse_http_request_args,
-};
-pub use args::{HttpFetchArgs, HttpRequestArgs};
+pub use args::{parse_http_fetch_args, parse_http_request_args};
+// 以下只被 lib test 单元消费（`tests` 里断言枚举成员与正文转换），lib 单元没有调用方。
+#[cfg(test)]
+pub use args::{FetchMethod, HttpBodyTextFormat, RequestMethod};
+#[cfg(test)]
 pub use decode::html_to_readable_text;
+pub use args::{HttpFetchArgs, HttpRequestArgs};
 pub use policy::{
-    approval_args_display, approval_args_display_request, display_redacted, request_storage_key,
+    approval_args_display, approval_args_display_request, request_storage_key,
     prefixes_include_allow_any, storage_key, url_matches_allowed_prefixes,
 };
 pub use sync_fetch::{
-    default_user_agent, fetch_with_method, request_with_json_body, run_direct, run_request_direct,
+    fetch_with_method, request_with_json_body, run_direct, run_request_direct,
 };
 
 #[cfg(test)]

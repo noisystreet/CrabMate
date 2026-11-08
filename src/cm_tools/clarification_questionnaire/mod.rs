@@ -24,6 +24,6 @@ pub use answers::{
     merge_user_text_with_clarification_answers, normalize_clarify_questionnaire_answers_raw,
 };
 pub use present::{
-    ClarificationQuestionField, ClarificationQuestionnaireBody, parse_present_clarification_body,
+    ClarificationQuestionnaireBody, parse_present_clarification_body,
     run_present_clarification_questionnaire,
 };

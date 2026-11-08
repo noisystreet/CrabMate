@@ -10,7 +10,7 @@ use crate::cm_tools::tools::is_registered_tool_name;
 
 /// 校验 `nodes` 与 `for_each_pending` 的每个 `tool_name`；任一未注册即返回错误。
 ///
-/// 放行条件：内建注册表命中（[`is_registered_tool_name`]），**或** `tool_origin` 非
+/// 放行条件：内建注册表命中（`is_registered_tool_name`），**或** `tool_origin` 非
 /// `Builtin`（`mcp__*` / `dyn__*`）。后两者是运行时注册的，静态不可枚举，硬校验会误伤；
 /// 它们能否真正执行仍由执行期判定——当前 workflow 节点走内建 dispatch，`mcp__*` 执行到
 /// 该节点依旧会 `unknown_tool`，本函数只保证「不提前拦」。

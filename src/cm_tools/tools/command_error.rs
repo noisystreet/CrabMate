@@ -156,6 +156,7 @@ impl RunCommandError {
     }
 
     /// 简短分类键，供 metrics / 结构化日志（不含命令名等细节时可只记此项）。
+    #[cfg(test)]
     #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
