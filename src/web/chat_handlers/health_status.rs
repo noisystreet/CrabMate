@@ -48,7 +48,7 @@ pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> im
     Json(health_report_view(report))
 }
 
-/// `cm_internal::health::HealthReport` → 契约公开视图（线上 JSON 形状不变）。
+/// `crate::obs::health::HealthReport` → 契约公开视图（线上 JSON 形状不变）。
 fn health_report_view(report: health::HealthReport) -> HealthReportView {
     HealthReportView {
         status: report.status,

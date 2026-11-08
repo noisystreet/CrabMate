@@ -1,6 +1,6 @@
 //! `GET /health` 响应：健康检查公开视图（与线上 JSON 1:1）。
 //!
-//! 服务端 `cm_internal::health::HealthReport` 仅 `Serialize` 且随 `server` feature 编译；
+//! 服务端 `crate::obs::health::HealthReport` 仅 `Serialize` 且随 `server` feature 编译；
 //! 本模块为 protocol 可见的线契约视图，由 handler 做一对一转换（形状不变）。
 
 use schemars::JsonSchema;
