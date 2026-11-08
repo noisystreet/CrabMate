@@ -112,8 +112,26 @@ pub use run_agent_turn::run_agent_turn;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-#[allow(unused_imports)] // `DefaultTurnEngine` 供文档与类型探查；装配走 `default_turn_engine`
-pub(crate) use turn_runner::{DefaultTurnEngine, TurnEngine, default_turn_engine};
+// **S6-d（#1298）：端口 trait 与它们的签名闭包进承诺面。**
+//
+// 承诺的理由是「外部有理由自己实现」，不是「名字好听」：`ToolExecutionHost` /
+// `ToolDispatch` / `ToolOutcomeRecorder` 的签名里就是 crate 内部类型，故**不**上根
+// （见 `docs/design/sdk_facade.md` §7.2）；下面这四组都能被下游完整实现。
+//
+// 符号级 re-export（而非把 `cm_approval` / `turn_runner` / `conversation_store`
+// 整模块 pub）：源模块保持 `pub(crate)`，只有承诺的名字出去——否则内部项会随模块
+// 可见性一起变成事实上的公开面，而清单门禁看不到它们。
+pub use turn_runner::{DefaultTurnEngine, TurnEngine, default_turn_engine};
+pub use cm_agent::permission::PolicyEngine;
+pub use cm_approval::{ApprovalBroker, WebApprovalSink};
+pub use conversation_store::{ArchiveReason, ArchiveRow, BranchTruncateOutcome, SaveConversationOutcome};
+pub use cm_session_store::{ConversationRetention, ConversationTurnSeed, SessionStore};
+pub use crate::agent::agent_turn::host::errors::{
+    AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason,
+};
+/// 端口以 `#[async_trait]` 声明。不 re-export 宏，外部实现就只能自己猜版本；
+/// 承诺 trait 却不承诺它要求的宏，等于把「可实现」变成一句口号。
+pub use async_trait::async_trait;
 // `run_agent_turn` 是 crate 根的公开入口，其返回类型因此必须公开可达（S2-4，见 #1285）。
 pub use turn_runner::{TurnOutcome, TurnStats};
 
@@ -545,8 +563,6 @@ impl<'a> TurnRequest<'a> {
     }
 }
 
-#[cfg(feature = "sqlite")]
-pub(crate) use crate::conversation_store::SaveConversationOutcome;
 #[cfg(feature = "web")]
 pub(crate) use web::AppState;
 

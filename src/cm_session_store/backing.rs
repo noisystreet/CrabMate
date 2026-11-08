@@ -78,15 +78,15 @@ fn nonempty_persisted_column(raw: String) -> Option<String> {
 /// `Copy` 是刻意的：SQLite 分支要把它移进 `spawn_blocking` 闭包，
 /// 传引用会要求 `&ConversationRetention` 活到 `'static`（编译器 E0521）。
 #[derive(Clone, Copy)]
-pub(crate) struct ConversationRetention {
+pub struct ConversationRetention {
     /// `0` = 不过期。
-    pub(crate) ttl_secs: u64,
+    pub ttl_secs: u64,
     /// `0` = 不限条数。
-    pub(crate) max_entries: usize,
+    pub max_entries: usize,
     /// 单会话归档行数上限；`0` = 不限（§4.2 / C4）。
-    pub(crate) archive_max_rows_per_conversation: usize,
+    pub archive_max_rows_per_conversation: usize,
     /// 归档 codec 选择阈值（字节，§3.8）。
-    pub(crate) archive_codec_min_bytes: usize,
+    pub archive_codec_min_bytes: usize,
 }
 
 /// 在 `spawn_blocking` 里跑一段同步 SQLite 操作，把三类失败统一成 `Err(String)`：
