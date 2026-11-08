@@ -10,6 +10,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-08
+
+**Git pre-release `v0.8.1-alpha.1`** (second alpha of the `0.8.1` line, after `v0.8.1-alpha.0`;
+  still the first thing after **`v0.8.0`** on the release track). crates.io remains **`0.8.0`**
+  (`cargo install crabmate` does not pick this up). Install
+  from the GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+
+One entry below is **BREAKING** for existing configs:
+  `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is
+  behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`),
+  and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
+
 ### Added
 
 - **Four port traits are now part of the promised SDK surface (S6-d).** `TurnEngine` / `PolicyEngine` /
@@ -57,6 +69,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   asserts the four agree and names the drifted file. Refs #1269.
 
 ### Changed
+
 - **`turn-replay-events.jsonl` writes `context_inject` / `context_trim` details as JSON objects, not double-encoded text.**
   Both events already produced a JSON string for `detail`, which replay then wrapped again as
   `{"text": "<json string>", "phase": …}` — reading `before_tokens` offline meant `jq '.detail.text | fromjson'`. They now
@@ -117,52 +130,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   every field a snapshot of an existing counter taken before the loop state is dropped. Per-turn tool-call count is deliberately absent:
   `ToolOutcomeRecorder` is process-wide, so any number reported there would be unrelated to the turn. Three consumers adapted;
   error paths still carry no stats. Refs #1285.
-
-### Fixed
-
-- **`/chat/stream` no longer drops the terminal frames it just wrote when the job finished.** `run_stream_queued_job` ended with
-  `drop(sse_tx)` immediately followed by `remove_job` (no `await` in between), and the SSE bridge published through a hub lookup, so every
-  frame queued after the last real IO point — `conversation_saved`, the state snapshot, `RUN_FINISHED` — found the registration already gone and
-  was silently discarded. That is why clients saw a permanently frozen `ctx` gauge: the only remaining source was the end-of-turn re-fetch.
-  Delivery is now decoupled from discovery: the bridge holds a `StreamPublisher` captured at registration and publishing never consults the hub
-  map, and the hub stores `Weak` entries so a registration lives exactly as long as the stream may still emit. The worker no longer touches the
-  hub at all — the bridge task drops the registration when its channel closes, i.e. when no frame can follow — so "registered" means "may still
-  emit" and therefore also "can still `stream_resume`", with no second state and no time window. A reconnect during the draining window now
-  replays those terminal frames instead of answering 410. Refs #1316.
-- **The `final_response` fallback stopped asking the SSE hub what it had already sent.** Deciding "did this turn emit a terminal timeline?" meant
-  reading the hub ring buffer back and retrying up to 5×20ms — the worker interrogating the forwarding layer about its own output, and ~100ms of
-  dead wait on every streamed turn. The fallback is the only producer of that frame, so the decision is local now: it claims
-  `PerTurnFlight::final_response_emitted` with `swap(true)` before sending, which keeps it idempotent with no cross-layer read. Refs #1316.
-- **Context compaction stopped short of the model window whenever the round had run an LLM summary,
-  and a misconfigured `llm_context_tokens` then had no fallback at all.** Two silent gaps on one path. After a summary the view is
-  `[system, summary, tail…]`, so the `min_tail_messages` guard held on every iteration: removal deleted zero groups,
-  and an oversized retained tail went out over budget. Removal now runs in two stages — the soft target first, honouring the guard; then,
-  only if the hard input limit would still be exceeded, the guard is released (the recent two groups always survive,
-  and dropped groups stay archived through `removed_prefix`, so no history is lost). Separately,
-  with `llm_context_tokens > 0` the char budget was switched off,
-  so a value larger than the model's real window meant neither level ever triggered until the upstream returned a context-overflow error;
-  compaction now logs a visible warning when the estimate still exceeds the input budget. No config key, wire protocol or SSE event change.
-- **`docs/en/TOOLS.md` claimed a `run_command` dangerous-argv gate that never existed — the claim is withdrawn, not implemented.**
-  The permission table's footnote told readers that `unrestricted` still gates dangerous argv (`git reset --hard`, `git push --force`),
-  and the Chinese doc said the same as design intent. Neither was true: there is no such check in `src/`, and `git` is an ordinary allowlisted command,
-  so those invocations were already silent at `workspace` level — the promise made the level look stricter than it is. The gate is now deliberately not
-  implemented (#1259), because it could not be honest: `script`, `terminal_session` or `python_snippet_run` reach the same effect,
-  and `unrestricted` has `approval = AuditOnly` with no dialog in which to ask a human,
-  so hard-denying there would make L4 less capable than L3 while staying bypassable. Docs, design §9 MB-4 and the tracked TODO are updated;
-  **behaviour is unchanged**. Refs #1259.
-- **`man/crabmate.1` / `man/crabmatectl.1` were still stamped `0.8.0` while the package was `0.8.1-alpha.0`**,
-  so a `.deb`/tarball install showed a man page whose `.TH` and VERSION section disagreed with `crabmate -V` — nothing caught it because man
-  regeneration was manual and untested. Both pages are regenerated here, and the new version-sync guard keeps them in step from now on. Refs #1269.
-
-## [0.8.1] - 2026-11-03
-
-**Git pre-release `v0.8.1-alpha.0`** (first alpha after **`v0.8.0`**). crates.io remains **`0.8.0`** (`cargo install crabmate` does not pick this up). Install
-  from the GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
-
-One entry below is **BREAKING** for existing configs:
-  `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is
-  behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`),
-  and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
 
 ### Removed
 
@@ -232,6 +199,40 @@ One entry below is **BREAKING** for existing configs:
   lost the invocation entirely. The splitter now walks from `命令：` to the first terminator (`退出码：` / `标准输出：` / `标准错误：` / `(无输出)`)
   and keeps every line in between, and it no longer assumes `命令：` is on line 1. Residual ambiguity:
   an invocation containing its own line that starts with `退出码：` is still cut there.
+
+- **`/chat/stream` no longer drops the terminal frames it just wrote when the job finished.** `run_stream_queued_job` ended with
+  `drop(sse_tx)` immediately followed by `remove_job` (no `await` in between), and the SSE bridge published through a hub lookup, so every
+  frame queued after the last real IO point — `conversation_saved`, the state snapshot, `RUN_FINISHED` — found the registration already gone and
+  was silently discarded. That is why clients saw a permanently frozen `ctx` gauge: the only remaining source was the end-of-turn re-fetch.
+  Delivery is now decoupled from discovery: the bridge holds a `StreamPublisher` captured at registration and publishing never consults the hub
+  map, and the hub stores `Weak` entries so a registration lives exactly as long as the stream may still emit. The worker no longer touches the
+  hub at all — the bridge task drops the registration when its channel closes, i.e. when no frame can follow — so "registered" means "may still
+  emit" and therefore also "can still `stream_resume`", with no second state and no time window. A reconnect during the draining window now
+  replays those terminal frames instead of answering 410. Refs #1316.
+- **The `final_response` fallback stopped asking the SSE hub what it had already sent.** Deciding "did this turn emit a terminal timeline?" meant
+  reading the hub ring buffer back and retrying up to 5×20ms — the worker interrogating the forwarding layer about its own output, and ~100ms of
+  dead wait on every streamed turn. The fallback is the only producer of that frame, so the decision is local now: it claims
+  `PerTurnFlight::final_response_emitted` with `swap(true)` before sending, which keeps it idempotent with no cross-layer read. Refs #1316.
+- **Context compaction stopped short of the model window whenever the round had run an LLM summary,
+  and a misconfigured `llm_context_tokens` then had no fallback at all.** Two silent gaps on one path. After a summary the view is
+  `[system, summary, tail…]`, so the `min_tail_messages` guard held on every iteration: removal deleted zero groups,
+  and an oversized retained tail went out over budget. Removal now runs in two stages — the soft target first, honouring the guard; then,
+  only if the hard input limit would still be exceeded, the guard is released (the recent two groups always survive,
+  and dropped groups stay archived through `removed_prefix`, so no history is lost). Separately,
+  with `llm_context_tokens > 0` the char budget was switched off,
+  so a value larger than the model's real window meant neither level ever triggered until the upstream returned a context-overflow error;
+  compaction now logs a visible warning when the estimate still exceeds the input budget. No config key, wire protocol or SSE event change.
+- **`docs/en/TOOLS.md` claimed a `run_command` dangerous-argv gate that never existed — the claim is withdrawn, not implemented.**
+  The permission table's footnote told readers that `unrestricted` still gates dangerous argv (`git reset --hard`, `git push --force`),
+  and the Chinese doc said the same as design intent. Neither was true: there is no such check in `src/`, and `git` is an ordinary allowlisted command,
+  so those invocations were already silent at `workspace` level — the promise made the level look stricter than it is. The gate is now deliberately not
+  implemented (#1259), because it could not be honest: `script`, `terminal_session` or `python_snippet_run` reach the same effect,
+  and `unrestricted` has `approval = AuditOnly` with no dialog in which to ask a human,
+  so hard-denying there would make L4 less capable than L3 while staying bypassable. Docs, design §9 MB-4 and the tracked TODO are updated;
+  **behaviour is unchanged**. Refs #1259.
+- **`man/crabmate.1` / `man/crabmatectl.1` were still stamped `0.8.0` while the package was `0.8.1-alpha.0`**,
+  so a `.deb`/tarball install showed a man page whose `.TH` and VERSION section disagreed with `crabmate -V` — nothing caught it because man
+  regeneration was manual and untested. Both pages are regenerated here, and the new version-sync guard keeps them in step from now on. Refs #1269.
 
 ## [0.8.0] - 2026-11-01
 
@@ -2820,8 +2821,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.0...HEAD
-[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.0...v0.8.1-alpha.0
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...HEAD
+[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.0...v0.8.1-alpha.1
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...v0.6.0
