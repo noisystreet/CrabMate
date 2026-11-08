@@ -188,7 +188,7 @@ pub fn count_prompt_tokens_openai_compat_vendor_slice(
     None
 }
 
-/// 新会话首条消息（`system` + 可选 L6 工作区上下文 `user`，与 [`crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages`] 一致）的 prompt token 粗估。
+/// 新会话首条消息（`system` + 可选 L6 工作区上下文 `user`，与 `crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages` 一致）的 prompt token 粗估。
 pub fn prompt_token_count_new_session_baseline(
     cfg: &AgentConfig,
     baseline_messages: &[Message],

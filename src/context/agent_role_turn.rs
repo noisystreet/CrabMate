@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::cm_internal::context_bootstrap::prompt_compose::{
+use super::context_bootstrap::prompt_compose::{
     FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
     resolve_agent_role_for_prompt_compose, resolve_skills_base_dir,
 };
@@ -61,7 +61,7 @@ pub fn apply_agent_role_switch_to_messages(
     cfg: &AgentConfig,
     messages: &mut [Message],
     role_id: Option<&str>,
-    tool_recorder: &Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    tool_recorder: &Arc<crate::tool_host::tool_stats::ToolOutcomeRecorder>,
     workspace_root: Option<&Path>,
     user_msg_for_skills: Option<&str>,
     session_mode: Option<crate::cm_types::SessionMode>,
@@ -119,7 +119,7 @@ pub fn maybe_apply_mid_session_agent_role_switch(
     messages: &mut [Message],
     persisted_active: Option<&str>,
     request_agent_role: Option<&str>,
-    tool_recorder: &Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    tool_recorder: &Arc<crate::tool_host::tool_stats::ToolOutcomeRecorder>,
     workspace_root: Option<&Path>,
     user_msg_for_skills: &str,
     session_mode: Option<crate::cm_types::SessionMode>,
@@ -209,12 +209,12 @@ pub fn turn_tool_denied_message(name: &str) -> String {
 
 /// 在原有「只读并行批」判定之上，叠加多角色工具白名单。
 pub fn tool_calls_allow_parallel_for_role(
-    handler_lookup: &crate::cm_internal::tool_registry::HandlerLookupTable,
+    handler_lookup: &crate::tool_host::tool_registry::HandlerLookupTable,
     cfg: &AgentConfig,
     tool_calls: &[ToolCall],
     turn_allow: Option<&HashSet<String>>,
 ) -> bool {
-    if !crate::cm_internal::tool_registry::tool_calls_allow_parallel_sync_batch(handler_lookup, cfg, tool_calls)
+    if !crate::tool_host::tool_registry::tool_calls_allow_parallel_sync_batch(handler_lookup, cfg, tool_calls)
     {
         return false;
     }

@@ -90,7 +90,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     );
     // 角色级权限上限：与工具白名单同一角色解析口径（设计 §6.1 的 min 链）。
     let permission_role_max =
-        crate::cm_internal::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
+        crate::context::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
             &cfg_turn,
             persisted_active_agent_role.as_deref(),
             request_agent_role.as_deref(),

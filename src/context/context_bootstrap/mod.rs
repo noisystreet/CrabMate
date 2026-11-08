@@ -11,4 +11,4 @@ pub mod project_dependency_brief;
 pub mod prompt_compose;
 
 pub use crate::cm_tools::project_profile;
-pub use first_turn_inject::{build_first_turn_user_context_markdown, merge_first_turn_injections};
+pub use first_turn_inject::build_first_turn_user_context_markdown;

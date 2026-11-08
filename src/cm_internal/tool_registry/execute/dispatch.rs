@@ -479,8 +479,8 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         sandbox_backend: sync_default_sandbox_backend,
         permission,
     };
-    if !crate::cm_internal::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
-        return (crate::cm_internal::agent_role_turn::turn_tool_denied_message(name), None);
+    if !crate::context::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
+        return (crate::context::agent_role_turn::turn_tool_denied_message(name), None);
     }
 
     if let Some(out) =
