@@ -8,6 +8,9 @@ pub(crate) use crate::cm_memory;
 pub(crate) use crate::cm_types;
 pub(crate) use crate::cm_types as types;
 
+// 不属任何 S4 桶的两个模块已在 S4-P2-0 提到 crate 顶层：`crate::process_handles`
+// （进程级句柄集合，被 tool_host / CLI / run_agent_turn 同时持有）与 `crate::text_util`
+// （22 行字符串工具）。见 #1300 §1.4 修正点 2 / 4。
 pub mod agent_errors;
 pub mod agent_role_turn;
 pub mod agent_turn_prep;
@@ -18,12 +21,10 @@ pub mod health;
 pub mod long_term_memory_tools;
 pub mod memory_tool_hosts;
 pub mod observability;
-pub mod process_handles;
 pub mod readonly_tool_ttl_cache;
 pub mod request_chrome_trace;
 pub mod session_mode_turn;
 pub mod terminal_session;
-pub mod text_util;
 pub mod tool_approval;
 pub mod tool_call_explain;
 pub mod tool_jobs;
@@ -46,8 +47,6 @@ pub use crate::cm_tools::{
     cargo_metadata, github_token, health_dep_compat, project_metrics, read_file_turn_cache, redact,
     text_encoding, tool_result, tools, workspace,
 };
-
-pub use process_handles::{ProcessHandles, TurnProcessHandles};
 
 #[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {

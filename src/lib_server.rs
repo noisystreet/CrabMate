@@ -40,8 +40,10 @@ pub use crate::cm_internal::tool_sandbox;
 // 转发只会让内部桶看起来比实际更中心（S4-P1a，见 #1300），故按本体直连。
 // 不属任何桶的两个顶层模块（§1.4 修正点 2 / 4）：`process_handles` 是进程级句柄集合，
 // 被 tool_host / CLI / run_agent_turn 同时持有，塞进任一个桶都会制造反向依赖；
-// `text_util` 只有 22 行，凑进 obs 只是假结构。
-pub(crate) use crate::cm_internal::{process_handles, text_util};
+// `text_util` 只有 22 行，凑进 obs 只是假结构。S4-P2-0 起两者已是**本地顶层模块**
+// （`src/process_handles.rs` / `src/text_util.rs`），不再是 `cm_internal` 的转发。
+mod process_handles;
+mod text_util;
 // 其余短名改由四个桶门面接管（S4-P1c）。上层写 `crate::tool_registry` 等不变；
 // 变的是这些名字的**定义点**，P2 把文件搬进桶时调用点不再受影响。
 pub(crate) use crate::context::{

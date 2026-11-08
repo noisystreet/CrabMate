@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::cm_names as tool_names;
-use crate::cm_internal::process_handles::TurnProcessHandles;
+use crate::process_handles::TurnProcessHandles;
 use crate::cm_tools::read_file_turn_cache::ReadFileTurnCache;
 use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
 use crate::cm_config::AgentConfig;

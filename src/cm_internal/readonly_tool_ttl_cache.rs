@@ -22,7 +22,7 @@ struct CacheEntry {
     output: String,
 }
 
-/// 进程级句柄：挂在 [`crate::cm_internal::process_handles::ProcessHandles`] 上，由 Web / CLI 共用。
+/// 进程级句柄：挂在 [`crate::process_handles::ProcessHandles`] 上，由 Web / CLI 共用。
 pub struct ReadonlyToolTtlCache {
     inner: Mutex<HashMap<String, CacheEntry>>,
 }

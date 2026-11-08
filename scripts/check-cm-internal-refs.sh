@@ -57,8 +57,9 @@ SUB=$( {
 # C2 名单：根上从 cm_internal（**或其桶门面**）再导出的短名。
 #
 # 来源集合必须包含 4 个桶名：S4-P1c 把短名的**定义点**分发到桶之后，`lib_server.rs` 里
-# `crate::cm_internal::{…}` 只剩 `process_handles` / `text_util` 两项。若仍只认 cm_internal，
-# C2 会从 134 凭空跌到 36 —— 虚假改善，比虚假恶化更容易让人误判「提前达标」。
+# `crate::cm_internal::{…}` 只剩 `process_handles` / `text_util` 两项；S4-P2-0 又把这两项提为
+# 本地顶层模块，故该块现已归零。若仍只认 cm_internal 而漏掉 4 个桶，C2 会凭空跌到 0 ——
+# 虚假改善，比虚假恶化更容易让人误判「提前达标」。
 # 桶成员的本体此刻仍在 cm_internal（P2 才搬走），所以它们的引用确实还算耦合。
 SHORT=$(awk '
   /^pub\(crate\) use crate::(cm_internal|tool_host|context|obs|jobs)::/ {
