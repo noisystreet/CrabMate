@@ -477,3 +477,70 @@ fn finalize_uses_actual_summary_tail_as_group_removal_floor() {
         with_actual_tail.len()
     );
 }
+
+/// #1327：同步管道保留最近组的完整 `tool` 正文——即使它远超 `tool_message_max_chars`。
+#[test]
+fn sync_pipeline_keeps_newest_tool_group_body() {
+    let mut cfg = multi_turn_cfg();
+    cfg.tool_transcript.tool_message_max_chars = 4_096;
+    let huge = "y".repeat(200_000);
+    // `tool` 必须紧跟 `assistant(tool_calls)`，否则会被管道的孤立剔除先删掉。
+    let mut messages = vec![
+        Message::system_only("sys"),
+        Message::user_only("u0"),
+        Message::assistant_tool_calls(vec![crate::cm_types::ToolCall::function(
+            "c1".to_string(),
+            "run_command".to_string(),
+            "{}".to_string(),
+        )]),
+        Message::tool_result("c1", huge.clone()),
+    ];
+    let _ = sync_trim_and_estimate_before(&cfg, &mut messages, &[], None, None);
+    let kept = crate::cm_types::message_content_as_str(&messages[3].content)
+        .map(|s| s.chars().count())
+        .unwrap_or(0);
+    assert_eq!(kept, huge.chars().count(), "最新组正文应保持完整");
+}
+
+/// #1327 兜底：已删到最近组仍超硬上限时，才允许压最近组。
+#[test]
+fn newest_tool_group_is_compressed_only_as_last_resort() {
+    let mut cfg = multi_turn_cfg();
+    cfg.tool_transcript.tool_message_max_chars = 4_096;
+    let huge = "y".repeat(200_000);
+    // `tool` 必须紧跟 `assistant(tool_calls)`，否则会被管道的孤立剔除先删掉。
+    let mut messages = vec![
+        Message::system_only("sys"),
+        Message::user_only("u0"),
+        Message::assistant_tool_calls(vec![crate::cm_types::ToolCall::function(
+            "c1".to_string(),
+            "run_command".to_string(),
+            "{}".to_string(),
+        )]),
+        Message::tool_result("c1", huge.clone()),
+    ];
+    let (_pipeline, before) = sync_trim_and_estimate_before(&cfg, &mut messages, &[], None, None);
+    let report = finalize_token_budget_compaction(
+        &cfg,
+        &mut messages,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
+    let kept = crate::cm_types::message_content_as_str(&messages[3].content)
+        .map(|s| s.chars().count())
+        .unwrap_or(0);
+    assert!(kept < huge.chars().count(), "超硬上限时应兜底压缩最近组");
+    let budget =
+        crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg).expect("budget");
+    assert!(
+        report.after.used_input_tokens <= budget.max_input_tokens,
+        "兜底后应回到硬上限内：{} > {}",
+        report.after.used_input_tokens,
+        budget.max_input_tokens
+    );
+}

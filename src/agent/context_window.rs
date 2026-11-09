@@ -288,7 +288,7 @@ fn finalize_token_budget_compaction(
             .clamp(4, 64)
             .max(actual)
     });
-    let compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
+    let mut compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
         cfg,
         messages,
         params.tools,
@@ -299,6 +299,27 @@ fn finalize_token_budget_compaction(
     );
     if compaction.removed_turn_groups > 0 {
         let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+    }
+    // #1327：最新 `MIN_RECENT_TURN_GROUPS` 组默认不参与 `tool_message_max_chars` 降级，避免把模型眼前
+    // 正要用的输出采样掉。但那只是**软保护**：已删到最近若干组仍超硬上限时，超限来自最近组自身，
+    // 这时才允许连最近组一起压——与尾部 `tail_guard` 在「尾部自身就撞硬上限」时放行是同一套取舍。
+    if let Some(budget) = compaction.budget
+        && compaction.after.used_input_tokens > budget.max_input_tokens
+        && compaction.removed_turn_groups == 0
+    {
+        let hits = crate::agent::message_pipeline::compress_tool_message_contents(
+            messages,
+            cfg.tool_transcript.tool_message_max_chars,
+            0,
+        );
+        if hits > 0 {
+            compaction.after = crate::agent::context_compaction::estimate_final_request_tokens(
+                cfg,
+                messages,
+                params.tools,
+                params.model_override,
+            );
+        }
     }
     // 压缩已尽力（分级释放 + 删到最近两整组）仍超硬上限：多半是 `llm_context_tokens`
     // 与模型真实窗口不一致，而配置了窗口后 `context_char_budget` 已被停用
