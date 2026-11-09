@@ -221,6 +221,13 @@ pub fn compose_first_system_for_turn_with_diagnostics(
             forced_skill,
         });
     let base = resolve_role_system_base(cfg, agent_role)?;
+    // L2 技能索引（全量 `id — description`）在此拼装，扫描基准与 `skill_read` 同一口径：会话工作区根。
+    // 旧实现放在进程级 finalize、按 `run_command_working_dir` 扫描，多工作区下索引与会话实际可读的技能不一致（#1326）。
+    let base = merge_skills_index_lenient(
+        base,
+        cfg,
+        skills_base_dir.as_deref().or(workspace_root.as_deref()),
+    );
     // 项目规则（AGENTS.md）按**会话工作区根**读取，紧接 L3 基底之后。
     // 注意：Web 续聊每轮都会重算首条 system，因此 AGENTS.md 的改动会在下一轮生效，
     // 同时使该会话的 system 前缀缓存失效（规则实时性优先于缓存命中率）。
@@ -278,6 +285,39 @@ pub fn compose_system_for_turn_arc(
         skills,
         role_resolution,
     )
+}
+
+/// L2 技能索引（全量 `id — description`），扫描基准与 `skill_read` 一致：**会话工作区根**。
+///
+/// `None`（既无 `skills_base_dir` 也无 `workspace_root`）时不拼索引——避免把 `.crabmate/skills`
+/// 这类相对路径解释成本进程 cwd，让「有没有会话工作区」这件事对结果保持显式。
+/// 读目录失败只告警降级：索引是发现面，不该让整轮 `build_messages_for_turn` 失败（#1326）。
+fn merge_skills_index_lenient(
+    system_prompt: String,
+    cfg: &AgentConfig,
+    workspace_root: Option<&Path>,
+) -> String {
+    let Some(root) = workspace_root else {
+        return system_prompt;
+    };
+    let base_dir = resolve_skills_base_dir(root);
+    match crate::cm_config::skills::merge_system_prompt_with_skills_index(
+        system_prompt.clone(),
+        cfg.skills.list_opts(base_dir.as_path()),
+        cfg.skills.skills_enabled,
+        cfg.skills.skills_max_chars,
+    ) {
+        Ok(merged) => merged,
+        Err(e) => {
+            warn!(
+                target: "crabmate",
+                error = %e,
+                skills_base = %base_dir.display(),
+                "skills index skipped: scan failed; continuing without L2 index"
+            );
+            system_prompt
+        }
+    }
 }
 
 #[allow(dead_code)] // P2-2 桶化暴露：仅 `compose_system_from_base` 单测调用；接线或删除见 #1300 §4.1
@@ -463,14 +503,16 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let skills_dir = tmp.path().join(".crabmate/skills");
         std::fs::create_dir_all(&skills_dir).expect("create skills dir");
+        // 正文用「只在正文出现」的标记：L2 索引会列出全部技能（含 beta 的 description），
+        // 但正文只应注入被 `/<id>` 强制的 alpha（#1326）。
         std::fs::write(
             skills_dir.join("a.md"),
-            "---\nname: alpha\n---\nalpha body\n",
+            "---\nname: alpha\ndescription: Alpha desc\n---\nALPHA_BODY_ONLY\n",
         )
         .expect("write a");
         std::fs::write(
             skills_dir.join("b.md"),
-            "---\nname: beta\n---\nbeta body cargo\n",
+            "---\nname: beta\ndescription: Beta desc\n---\nBETA_BODY_ONLY cargo\n",
         )
         .expect("write b");
         let forced = crate::cm_config::skills_slash::resolve_skill_by_id(
@@ -504,9 +546,165 @@ mod tests {
             },
         )
         .expect("compose");
-        assert!(system.contains("alpha body"));
-        assert!(!system.contains("beta body"));
+        assert!(
+            system.contains("ALPHA_BODY_ONLY"),
+            "forced skill body should be injected"
+        );
+        assert!(
+            !system.contains("BETA_BODY_ONLY"),
+            "non-forced skill body must not be injected"
+        );
+        assert!(
+            system.contains("Beta desc"),
+            "L2 index still lists every skill's description"
+        );
         assert!(diag.skills_selected_labels[0].contains("[forced]"));
+    }
+
+    /// L2 索引是**发现面**：`skills_top_k = 0`（默认）不注入任何正文，但必须列出全部技能及其描述。
+    #[test]
+    fn compose_first_system_index_lists_every_skill_without_bodies() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let skills_dir = tmp.path().join(".crabmate/skills");
+        std::fs::create_dir_all(&skills_dir).expect("create skills dir");
+        let skills = [
+            ("alpha", "Alpha desc"),
+            ("beta", "Beta desc"),
+            ("gamma", "Gamma desc"),
+        ];
+        for (id, desc) in skills {
+            std::fs::write(
+                skills_dir.join(format!("{id}.md")),
+                format!("---\nname: {id}\ndescription: {desc}\n---\n{id}_BODY_ONLY\n"),
+            )
+            .expect("write skill");
+        }
+        let mut cfg = embed_default_config();
+        cfg.skills.skills_enabled = true;
+        cfg.skills.skills_dir = ".crabmate/skills".to_string();
+        cfg.skills.skills_user_dir.clear();
+        cfg.skills.skills_system_dir.clear();
+        cfg.skills.skills_top_k = 0;
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        let (system, diag) = compose_first_system_for_turn_with_diagnostics(
+            &cfg,
+            &rec,
+            FirstSystemComposeOpts {
+                agent_role: None,
+                user_msg_for_skills: None,
+                skills_base_dir: Some(tmp.path().to_path_buf()),
+                workspace_root: Some(tmp.path().to_path_buf()),
+                forced_skill: None,
+                role_resolution: RoleSystemResolution::Strict,
+                session_mode: None,
+            },
+        )
+        .expect("compose");
+        for (id, desc) in skills {
+            assert!(system.contains(id), "index should list `{id}`");
+            assert!(system.contains(desc), "index should carry `{id}` description");
+            assert!(
+                !system.contains(&format!("{id}_BODY_ONLY")),
+                "skill bodies stay out of the first system"
+            );
+        }
+        assert!(!diag.layers_applied.contains(&"L5".to_string()));
+        assert_eq!(diag.skills_total_docs, 0);
+    }
+
+    /// 索引基准 = **会话工作区根**：两个工作区的技能集不能串台（`skill_read` 用同一基准，finding #7）。
+    #[test]
+    fn compose_first_system_index_follows_session_workspace() {
+        let ws_a = tempfile::tempdir().expect("ws a");
+        let ws_b = tempfile::tempdir().expect("ws b");
+        for (ws, id) in [(&ws_a, "workspace_a_skill"), (&ws_b, "workspace_b_skill")] {
+            let dir = ws.path().join(".crabmate/skills");
+            std::fs::create_dir_all(&dir).expect("create skills dir");
+            std::fs::write(
+                dir.join(format!("{id}.md")),
+                format!("---\nname: {id}\ndescription: {id} desc\n---\n{id} body\n"),
+            )
+            .expect("write skill");
+        }
+        let mut cfg = embed_default_config();
+        cfg.skills.skills_enabled = true;
+        cfg.skills.skills_dir = ".crabmate/skills".to_string();
+        cfg.skills.skills_user_dir.clear();
+        cfg.skills.skills_system_dir.clear();
+        cfg.skills.skills_top_k = 0;
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        let compose_for = |root: &Path| {
+            compose_first_system_for_turn_with_diagnostics(
+                &cfg,
+                &rec,
+                FirstSystemComposeOpts {
+                    agent_role: None,
+                    user_msg_for_skills: None,
+                    skills_base_dir: Some(root.to_path_buf()),
+                    workspace_root: Some(root.to_path_buf()),
+                    forced_skill: None,
+                    role_resolution: RoleSystemResolution::Strict,
+                    session_mode: None,
+                },
+            )
+            .expect("compose")
+            .0
+        };
+        let system_a = compose_for(ws_a.path());
+        let system_b = compose_for(ws_b.path());
+        assert!(system_a.contains("workspace_a_skill"));
+        assert!(
+            !system_a.contains("workspace_b_skill"),
+            "工作区 A 不应看到工作区 B 的技能"
+        );
+        assert!(system_b.contains("workspace_b_skill"));
+        assert!(
+            !system_b.contains("workspace_a_skill"),
+            "工作区 B 不应看到工作区 A 的技能"
+        );
+    }
+
+    /// 同一会话内（配置与工作区不变）首条 `system` 必须逐字节稳定，且**不随本轮用户输入变化**——
+    /// 这是前缀缓存能命中的前提（#1326 验收第 1 条里可自动化的部分）。
+    #[test]
+    fn compose_first_system_is_stable_across_turns() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let skills_dir = tmp.path().join(".crabmate/skills");
+        std::fs::create_dir_all(&skills_dir).expect("create skills dir");
+        std::fs::write(
+            skills_dir.join("alpha.md"),
+            "---\nname: alpha\ndescription: Alpha desc\n---\nalpha body\n",
+        )
+        .expect("write skill");
+        let mut cfg = embed_default_config();
+        cfg.skills.skills_dir = ".crabmate/skills".to_string();
+        cfg.skills.skills_user_dir.clear();
+        cfg.skills.skills_system_dir.clear();
+        cfg.skills.skills_top_k = 0;
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        let compose = |user: &str| {
+            compose_first_system_for_turn(
+                &cfg,
+                &rec,
+                FirstSystemComposeOpts {
+                    agent_role: None,
+                    user_msg_for_skills: Some(user),
+                    skills_base_dir: Some(tmp.path().to_path_buf()),
+                    workspace_root: Some(tmp.path().to_path_buf()),
+                    forced_skill: None,
+                    role_resolution: RoleSystemResolution::Strict,
+                    session_mode: None,
+                },
+            )
+            .expect("compose")
+        };
+        let first = compose("请解释这段 Rust 代码");
+        assert_eq!(first, compose("请解释这段 Rust 代码"), "重复组装应逐字节稳定");
+        assert_eq!(
+            first,
+            compose("换个话题：写个快排"),
+            "首条 system 不应随本轮用户输入变化"
+        );
     }
 
     #[test]

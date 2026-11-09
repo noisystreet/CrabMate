@@ -143,4 +143,45 @@ mod tests {
         assert!(out.chars().count() < 4_000, "应被截断");
         assert!(out.contains("skills_max_chars"), "应带截断提示");
     }
+
+    /// 三层（工作区 / 用户级 / 系统级）都要能按 id 读到正文：后两层在工作区之外，
+    /// 正是 `read_file` 到不了、必须由本工具承担的原因（#1326 验收项）。
+    #[test]
+    fn reads_user_and_system_layer_skills_outside_workspace() {
+        let ws = tempfile::tempdir().unwrap();
+        let user = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        write_skill(
+            ws.path(),
+            ".crabmate/skills/ws-skill/SKILL.md",
+            "---\nname: ws-skill\n---\nworkspace body\n",
+        );
+        write_skill(
+            user.path(),
+            "user-skill/SKILL.md",
+            "---\nname: user-skill\n---\nuser body\n",
+        );
+        write_skill(
+            system.path(),
+            "system-skill/SKILL.md",
+            "---\nname: system-skill\n---\nsystem body\n",
+        );
+        let mut section = skills_section(32_000);
+        section.skills_user_dir = user.path().to_str().unwrap().to_string();
+        section.skills_system_dir = system.path().to_str().unwrap().to_string();
+
+        for (id, marker) in [
+            ("ws-skill", "workspace body"),
+            ("user-skill", "user body"),
+            ("system-skill", "system body"),
+        ] {
+            let out = skill_read(
+                SkillReadArgs { id: id.to_string() },
+                &section,
+                ws.path(),
+            )
+            .unwrap_or_else(|e| panic!("`{id}` 应可读：{e}"));
+            assert!(out.contains(marker), "`{id}` 输出应含正文：{out}");
+        }
+    }
 }

@@ -1,5 +1,6 @@
-//! 可选多角色（`config/agent_roles.toml`）：每条角色在通用 L0 基底上叠加增量正文，再合并 cursor rules 与 skills。
+//! 可选多角色（`config/agent_roles.toml`）：每条角色在通用 L0 基底上叠加增量正文。
 //! 工程 / 审阅 / 科学等角色另叠加 **`coding_workbench_increment`**；陪聊 / 哲学 / 文学角色不叠加该层。
+//! 技能 L2 索引与 L5 正文不属角色层：前者按会话工作区根在首条 `system` 组装时拼装，后者由 `skill_read` 按需读取。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,6 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use super::agent_role_spec::AgentRoleSpec;
-use super::skills;
 
 pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, AgentRoleSpec>>;
 
@@ -170,9 +170,6 @@ struct RoleSystemMergeCtx<'a> {
     coding_workbench_enabled: bool,
     system_prompt_search_bases: &'a [PathBuf],
     run_command_working_dir: &'a Path,
-    skills_enabled: bool,
-    skills_list_opts: skills::SkillsListOpts<'a>,
-    skills_max_chars: usize,
 }
 
 fn merge_role_delta_with_layers(
@@ -187,12 +184,8 @@ fn merge_role_delta_with_layers(
         ctx.coding_workbench_enabled,
         delta,
     );
-    skills::merge_system_prompt_with_skills_index(
-        combined,
-        ctx.skills_list_opts,
-        ctx.skills_enabled,
-        ctx.skills_max_chars,
-    )
+    // 技能 L2 索引按会话工作区根拼装，不属角色级 Delta；见 `context_bootstrap::prompt_compose`（#1326）。
+    Ok(combined)
 }
 
 fn merge_role_system_prompt(
@@ -316,23 +309,18 @@ pub(super) fn prepend_l0_base_to_role_body(base_l0: &str, role_body: &str) -> St
     }
 }
 
-/// 由累加后的角色条目生成 `id -> 已合并 skills 索引的 system`；并校验 `default_role_id`。
+/// 由累加后的角色条目生成 `id -> 角色 system`；并校验 `default_role_id`。
 pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub entries: HashMap<String, AgentRoleEntryBuilder>,
     pub default_role_id: Option<String>,
     pub global_effective_system_prompt: &'a str,
-    /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未合并编程层 / skills。
+    /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未叠加编程层。
     pub universal_l0_system_prompt: &'a str,
     /// 编程工作台增量正文（已解析）；空串表示不叠加。
     pub coding_workbench_increment: &'a str,
     pub coding_workbench_enabled: bool,
     pub system_prompt_search_bases: &'a [PathBuf],
     pub run_command_working_dir: &'a Path,
-    pub skills_enabled: bool,
-    pub skills_dir: &'a str,
-    pub skills_user_dir: &'a str,
-    pub skills_system_dir: &'a str,
-    pub skills_max_chars: usize,
 }
 
 pub(super) fn finalize_agent_role_catalog(
@@ -347,18 +335,7 @@ pub(super) fn finalize_agent_role_catalog(
         coding_workbench_enabled,
         system_prompt_search_bases,
         run_command_working_dir,
-        skills_enabled,
-        skills_dir,
-        skills_user_dir,
-        skills_system_dir,
-        skills_max_chars,
     } = p;
-    let skills_list_opts = skills::SkillsListOpts {
-        workspace_base_dir: run_command_working_dir,
-        skills_dir,
-        skills_user_dir,
-        skills_system_dir,
-    };
     let merge_ctx = RoleSystemMergeCtx {
         global_effective_system_prompt,
         universal_l0_system_prompt,
@@ -366,9 +343,6 @@ pub(super) fn finalize_agent_role_catalog(
         coding_workbench_enabled,
         system_prompt_search_bases,
         run_command_working_dir,
-        skills_enabled,
-        skills_list_opts,
-        skills_max_chars,
     };
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {

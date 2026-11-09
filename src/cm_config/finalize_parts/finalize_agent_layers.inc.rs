@@ -159,11 +159,6 @@ struct PromptMergeForRoles {
     coding_workbench_increment_file: String,
     coding_workbench_increment: String,
     system_prompt: String,
-    skills_enabled: bool,
-    skills_dir: String,
-    skills_user_dir: String,
-    skills_system_dir: String,
-    skills_max_chars: u64,
 }
 
 fn load_required_system_prompt_for_finalize(
@@ -222,46 +217,13 @@ fn merge_system_prompt_layers_for_finalize(
     )?;
     let system_prompt =
         stack_l0_with_coding_workbench(&universal_l0_system_prompt, &coding_workbench_increment);
-    let skills_enabled = b.skills.skills_enabled.unwrap_or(true);
-    let skills_dir = b
-        .skills
-        .skills_dir
-        .clone()
-        .unwrap_or_else(|| ".crabmate/skills".to_string());
-    let skills_user_dir =
-        skills::resolve_skills_layer_dir_setting(b.skills.skills_user_dir.as_ref(), || {
-            skills::default_skills_user_dir()
-        });
-    let skills_system_dir =
-        skills::resolve_skills_layer_dir_setting(b.skills.skills_system_dir.as_ref(), || {
-            skills::default_skills_system_dir()
-        });
-    let skills_max_chars = b
-        .skills
-        .skills_max_chars
-        .unwrap_or(32_000)
-        .clamp(1024, 1_000_000);
-    let system_prompt = skills::merge_system_prompt_with_skills_index(
-        system_prompt,
-        skills::SkillsListOpts {
-            workspace_base_dir: run_command_working_dir,
-            skills_dir: &skills_dir,
-            skills_user_dir: &skills_user_dir,
-            skills_system_dir: &skills_system_dir,
-        },
-        skills_enabled,
-        skills_max_chars as usize,
-    )?;
+    // 技能 L2 索引不在此拼装：它按**会话工作区根**扫描，与 `skill_read` 同一基准，
+    // 见 `context_bootstrap::prompt_compose`（#1326）。
     Ok(PromptMergeForRoles {
         universal_l0_system_prompt,
         coding_workbench_enabled,
         coding_workbench_increment_file,
         coding_workbench_increment,
         system_prompt,
-        skills_enabled,
-        skills_dir,
-        skills_user_dir,
-        skills_system_dir,
-        skills_max_chars,
     })
 }
