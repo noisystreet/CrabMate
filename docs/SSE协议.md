@@ -96,8 +96,10 @@
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
   未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
   `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `tail_kept`，
-    并可选携带 `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` / `tool_schema_tokens` /
-    `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` / `compaction_reason`。
+    并可选携带 `tool_compressed` / `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` /
+    `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` /
+    `compaction_reason`。其中 `tool_compressed` 是被降级的 `tool` 正文条目数组（元素为
+    `index` / `original_chars` / `kept_chars`，每个用户回合最多 16 条），`[]` 表示本回合无明细。
   计数来源为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`；
     压缩原因当前为 `token_budget_summary` / `token_budget_turn_groups` / `token_budget_warning` / `none`。仅 `compress_hits > 0` 时标题为“已压缩工具输出”
     ；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；
