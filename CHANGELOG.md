@@ -10,6 +10,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **`skill_read`: skills 正文改为按需读取（discovery-based loading, #1326).** It takes a callable id only
+  (frontmatter `name` / flat-file stem / `<id>/SKILL.md` dir name) and resolves it through the same logic as
+  `/<skill-id>`, so the readable scope is exactly the configured three skill layers — which is why it can also reach
+  the user layer (`$XDG_CONFIG_HOME/crabmate/skills`) and the system layer (`/etc/crabmate/skills`) that `read_file`
+  cannot touch (they live outside the session workspace). Bodies are truncated at `skills_max_chars`.
+
+### Changed
+
+- **The skills index now lists every skill with its description** (`id — description`). Entry count is no longer
+  bounded by `skills_top_k`, only by `skills_max_chars`.
+- **`skills_top_k` defaults to `0` instead of `4`** (per-turn body pre-injection is off by default), so the first
+  `system` message stops changing every turn (the session prefix cache survives) and the skills directories are no
+  longer rescanned per turn. `0` is now a valid value (the validation range was 1–64); `skills_top_k > 0` keeps the
+  old scored-selection path.
+
 ## [0.8.1] - 2026-11-08
 
 **Git pre-release `v0.8.1-alpha.1`** (second alpha of the `0.8.1` line, after `v0.8.1-alpha.0`;
