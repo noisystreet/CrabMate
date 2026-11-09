@@ -335,6 +335,19 @@ pub fn runner_skill_manage_try(args: &str, ctx: &ToolContext<'_>) -> Result<Stri
 }
 
 #[allow(clippy::result_large_err)]
+pub fn runner_skill_read_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    let Some(cfg) = ctx.cfg else {
+        return Err(ToolError::workspace(
+            "tool_context_incomplete",
+            "错误：工具上下文缺少 AgentConfig".to_string(),
+        ));
+    };
+    let parsed: super::tool_param_types::SkillReadArgs =
+        super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
+    skill_read::skill_read(parsed, &cfg.skills, ctx.working_dir)
+}
+
+#[allow(clippy::result_large_err)]
 pub fn runner_apply_patch_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     patch::run_with_changelist_try(args, ctx)
 }

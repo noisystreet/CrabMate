@@ -17,4 +17,13 @@
             summary: static "Skill install/list/remove",
             description: "管理技能（skills）文件，支持 install / list / remove 三种 action。`list`：列出三层（system → user → workspace，同 id 工作区优先）已安装技能及其描述、路径与跨层覆盖标注。`install`：将 Markdown 正文写入 `<层目录>/<name>/SKILL.md` 并自动生成 frontmatter（name/description）；可选参数：name（技能 id，字母/数字/-/_，≤64 字符）、content（Markdown 正文）、description（一句话描述，缺省取正文首行）、layer（workspace 默认 / user；不允许 system）、force（同层同 id 冲突时覆盖需 true）。`remove`：按可调用 id 删除技能文件，必须显式 `confirm=true`；跨层歧义时用 `layer`（默认 workspace）消歧。技能在下一轮对话自动生效，无需重启。需要给 agent 安装新技能/斜杠命令、查看已装技能、卸载技能时调用本工具。",
         },
+        builtin_tool! {
+            name: tool_names::SKILL_READ,
+            args: args::SkillReadArgs,
+            category: Development,
+            tags: [dev_tag::GENERAL],
+            runner: runner_skill_read_try,
+            summary: static "Read a skill body by id",
+            description: "按可调用 id 读取**技能正文**（`SKILL.md` 全文）。技能索引只常驻名称与描述；需要某条技能的条文时用本工具读取，不要凭索引猜测。`id` 取 `skill_manage` 的 `list` 输出里的可调用标识（frontmatter `name`、平铺文件 stem 或 `<id>/SKILL.md` 的目录名）。三层（系统 / 用户 / 工作区，工作区优先）均可读，用户级与系统级目录在工作区之外，故不能用 `read_file` 代替。正文按 `skills_max_chars` 截断。未找到时返回可选 id 示例。",
+        },
 ]

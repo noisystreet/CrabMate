@@ -202,6 +202,8 @@ pub const EVENT: &str = "event";
 pub const SELF_CONFIG_INFO: &str = "self_config_info";
 /// `skill_manage`
 pub const SKILL_MANAGE: &str = "skill_manage";
+/// `skill_read`
+pub const SKILL_READ: &str = "skill_read";
 
 // --- `specs/text_code_nav.inc.rs` ---
 /// `text_diff`
@@ -289,6 +291,7 @@ pub static ALL: &[&str] = &[
     EVENT,
     SELF_CONFIG_INFO,
     SKILL_MANAGE,
+    SKILL_READ,
     TEXT_DIFF,
     TABLE_TEXT,
     CODE_NAV,

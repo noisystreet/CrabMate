@@ -88,6 +88,15 @@ pub struct SkillManageArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
+pub struct SkillReadArgs {
+    /// 技能可调用 id（frontmatter `name`、平铺文件 stem 或 `<id>/SKILL.md` 的目录名）。
+    /// 不接受路径：三层 skills 目录由配置决定，工具内不做任意路径读取。
+    #[schemars(length(min = 1, max = 64))]
+    pub id: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
 pub struct RepoOverviewSweepArgs {
     pub doc_paths: Option<Vec<String>>,
     pub source_roots: Option<Vec<String>>,
