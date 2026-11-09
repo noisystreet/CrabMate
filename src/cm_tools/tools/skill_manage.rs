@@ -524,7 +524,6 @@ mod tests {
             skills_user_dir: user_dir.to_string(),
             skills_system_dir: String::new(),
             skills_max_chars: 8000,
-            skills_top_k: 4,
         }
     }
 

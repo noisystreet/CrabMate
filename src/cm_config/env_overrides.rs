@@ -241,7 +241,6 @@ fn env_override_skills_part_5(b: &mut ConfigBuilder) {
     apply_trimmed_opt(&mut b.skills.skills_user_dir, "CM_SKILLS_USER_DIR");
     apply_trimmed_opt(&mut b.skills.skills_system_dir, "CM_SKILLS_SYSTEM_DIR");
     apply_parse(&mut b.skills.skills_max_chars, "CM_SKILLS_MAX_CHARS");
-    apply_parse(&mut b.skills.skills_top_k, "CM_SKILLS_TOP_K");
 }
 
 fn env_override_tool_streaming_flags(b: &mut ConfigBuilder) {

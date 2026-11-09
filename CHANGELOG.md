@@ -31,6 +31,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `run_command_working_dir`. Multi-workspace servers now list exactly the skills the session can actually read; a
   failed scan only logs a warning and drops the index instead of failing the whole turn.
 
+### Removed
+
+- **BREAKING: per-turn scored skill pre-injection and its `skills_top_k` key are gone (#1326).** Skill bodies now have
+  exactly two sources: an explicit `/<skill-id>` forced injection and `skill_read` on demand. A leftover `skills_top_k`
+  (or `CM_SKILLS_TOP_K`) in an existing config now **fails the config load** — delete that line. This also drops the old
+  scoring path (path `+4` / name `+5` / body-head `+1`, falling back to the first N by path when nothing matched), which is
+  why Chinese queries used to get the same alphabetically-first skills regardless of topic.
+
 ## [0.8.1] - 2026-11-08
 
 **Git pre-release `v0.8.1-alpha.1`** (second alpha of the `0.8.1` line, after `v0.8.1-alpha.0`;

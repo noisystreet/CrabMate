@@ -88,11 +88,8 @@ skills_dir = ".crabmate/skills"
 # skills_user_dir = "-"
 # skills_system_dir = "-"
 skills_max_chars = 32000
-# 索引列出**全部**技能（`id — description`），条目数不受本键约束，只受 `skills_max_chars` 约束；
-# 正文由模型按需调用 `skill_read` 读取，不再按轮预注入。
-# `0`（默认）= 关闭预注入（推荐，首条 system 在会话内稳定，前缀缓存可复用）；
-# `> 0` = 保留旧的「按用户消息打分取前 N 条注入」路径（CJK 打分较弱，仅在确知收益时开启）。
-skills_top_k = 0
+# 索引列出**全部**技能（`id — description`），条目数不设上限，只受 `skills_max_chars` 截断；
+# 正文不预注入：由模型调 `skill_read` 按需读取，或由用户 `/<skill-id>` 强制注入。
 # 系统提示词：默认 L0 正文在 **`config/prompts/base_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。
 # 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 CM_SYSTEM_PROMPT、CM_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
 system_prompt_file = "config/prompts/base_system_prompt.md"

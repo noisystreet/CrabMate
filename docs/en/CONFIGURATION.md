@@ -144,7 +144,6 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_SKILLS_SYSTEM_DIR` | **System** skills dir. When omitted, defaults to **`/etc/crabmate/skills`**; set **`-`** / **`none`** / empty to disable. Same-id priority: **workspace > user > system**. First-time seed copies `/etc` **`skills/`** into XDG (no overwrite); **deleting the user copy does not remove a skill still provided by the system layer**. |
 | `CM_SKILLS_DISABLE_HOST_LAYERS` | When **`1`** / **`true`**, disable user+system layers (for tests/CI). Can still be overridden by **`CM_SKILLS_USER_DIR`** / **`CM_SKILLS_SYSTEM_DIR`**. |
 | `CM_SKILLS_MAX_CHARS` | Max injected skills chars (Top-K and `/id` force). |
-| `CM_SKILLS_TOP_K` | Max skills selected per turn from the user message (default `4`). **`/<id> [task]`** skips Top-K and forces that skill. |
 
 **Web workspace**: After **`serve`** starts, until the sidebar sets a root via **`POST /workspace`**,
   the server does **not** treat **`run_command_working_dir`** (often `"."`) as a selected workspace: workspace-root first-turn context is not injected,
@@ -420,8 +419,9 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
   **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). In-process **`chat` / `repl` /
     TUI** entries and **`workspace_session::initial_workspace_messages`** are removed (Client shell / D2.2).
 
-**Workspace + user-query dynamic selection**: With **`skills_enabled`** and **`skills_top_k`** (**`CM_SKILLS_TOP_K`**),
-  Web (and Client **`crabmate-tui`**) can merge Top-K snippets from the **merged three-layer skills catalog** into the first **`system`** each turn:
+**Skills discovery (default)**: with **`skills_enabled`**, the first **`system`** carries a **full** `id — description` index of the
+  **merged three-layer skills catalog**, and bodies come on demand via **`skill_read`** (or forced by **`/<skill-id>`**). The old
+  per-turn Top-K scoring (**`skills_top_k`** / **`CM_SKILLS_TOP_K`**) was removed; a leftover key now fails the config load. Layers:
   workspace **`skills_dir`** (default **`.crabmate/skills`**),
   user **`skills_user_dir`** (default **`$XDG_CONFIG_HOME/crabmate/skills`**), system **`skills_system_dir`** (default **`/etc/crabmate/skills`**);
     same callable id prefers **workspace > user > system** (cross-layer override;

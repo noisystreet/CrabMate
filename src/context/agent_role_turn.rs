@@ -44,17 +44,7 @@ pub fn named_agent_role_for_tool_policy(
         .map(str::to_string)
 }
 
-fn last_user_message_text(messages: &[Message]) -> Option<String> {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role.trim().eq_ignore_ascii_case("user"))
-        .map(|m| crate::cm_types::message_content_into_text_lossy(m.content.clone()))
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// 将首条 `system` 更新为新角色正文（保留后续 transcript）；含 L4 与可选 L5（skills top-k）。
+/// 将首条 `system` 更新为新角色正文（保留后续 transcript）；含 L4 与 L2 索引。
 ///
 /// `session_mode`：`None` 时用配置 `default_session_mode`（与 [`compose_first_system_for_turn`] 一致）。
 pub fn apply_agent_role_switch_to_messages(
@@ -63,14 +53,8 @@ pub fn apply_agent_role_switch_to_messages(
     role_id: Option<&str>,
     tool_recorder: &Arc<crate::tool_host::tool_stats::ToolOutcomeRecorder>,
     workspace_root: Option<&Path>,
-    user_msg_for_skills: Option<&str>,
     session_mode: Option<crate::cm_types::SessionMode>,
 ) -> Result<(), String> {
-    let last_user_owned = last_user_message_text(messages);
-    let skills_user = user_msg_for_skills
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or(last_user_owned.as_deref());
     let skills_base = workspace_root.map(resolve_skills_base_dir);
     let resolved_role = resolve_agent_role_for_prompt_compose(cfg, role_id, None)?;
     let sys = compose_first_system_for_turn(
@@ -78,7 +62,6 @@ pub fn apply_agent_role_switch_to_messages(
         tool_recorder,
         FirstSystemComposeOpts {
             agent_role: resolved_role.as_deref(),
-            user_msg_for_skills: skills_user,
             skills_base_dir: skills_base,
             workspace_root: workspace_root.map(Path::to_path_buf),
             forced_skill: None,
@@ -121,7 +104,6 @@ pub fn maybe_apply_mid_session_agent_role_switch(
     request_agent_role: Option<&str>,
     tool_recorder: &Arc<crate::tool_host::tool_stats::ToolOutcomeRecorder>,
     workspace_root: Option<&Path>,
-    user_msg_for_skills: &str,
     session_mode: Option<crate::cm_types::SessionMode>,
 ) -> Result<(), String> {
     if messages.is_empty() {
@@ -140,7 +122,6 @@ pub fn maybe_apply_mid_session_agent_role_switch(
         Some(req_id),
         tool_recorder,
         workspace_root,
-        Some(user_msg_for_skills),
         session_mode,
     )
 }

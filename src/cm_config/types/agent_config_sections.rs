@@ -97,7 +97,6 @@ pub struct SkillsConfigSection {
     /// 系统级层（如 `/etc/crabmate/skills`）。空串表示关闭；默认约定路径见 finalize。
     pub skills_system_dir: String,
     pub skills_max_chars: usize,
-    pub skills_top_k: usize,
 }
 
 #[derive(Debug, Clone)]

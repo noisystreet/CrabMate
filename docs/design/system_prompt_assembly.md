@@ -23,7 +23,7 @@
 | **L2** | Skills **索引**（非全文：`id — description` **全量**，受 `skills_max_chars` 约束；工作区 + 用户级 + 系统级合并；扫描基准 = **会话工作区根**，与 `skill_read` 同源） | 首条 `system` 构建（`prompt_compose`） |
 | **L3** | `agent_roles` 每角色正文；首条 `system` 构建时在其**末尾追加环境/界面 locale 输出语言指令**（`resolve_role_system_base`） | `finalize_agent_role_catalog`（+ 首条构建追加） |
 | **L4** | thinking 附录、工具统计等运行时附录 | 首条 `system` 构建 |
-| **L5** | Skills **正文**：默认**不注入**（`skills_top_k = 0`，由模型调 `skill_read` 按需读取）；`skills_top_k > 0` 时按轮 top-k 注入；`/<skill-id>` 始终强制注入（同源三层合并） | Web `build_messages_for_turn` / CLI 刷新首条 |
+| **L5** | Skills **正文**：只在 **`/<skill-id>`** 时强制注入（同源三层合并）；其余按需由模型调 `skill_read`。旧的按轮 top-k 打分预注入已删除（#1326） | 首条 `system` 构建（`/<id>`）/ 工具调用（`skill_read`） |
 | **L6** | 首轮工作区上下文（活文档摘要 / 备忘 / 依赖摘要；专用 **user**） | `compose_new_conversation_messages` |
 | **L7** | Act 句启发式 hint（`system_execution_constraint_hint`；形如「【执行约束】本轮：…。勿越过。」） | 外循环 P 步前 |
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |
