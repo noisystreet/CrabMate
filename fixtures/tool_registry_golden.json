@@ -99,41 +99,6 @@
     },
     {
       "args": {
-        "exclude": [
-          "x"
-        ],
-        "format": "x",
-        "output": "x",
-        "sources": [
-          "x"
-        ]
-      },
-      "summary": "pack 1 items into x",
-      "tool": "archive_pack"
-    },
-    {
-      "args": {
-        "archive": "x",
-        "files": [
-          "x"
-        ],
-        "output_dir": "x",
-        "strip_components": 1
-      },
-      "summary": "unpack x to x",
-      "tool": "archive_unpack"
-    },
-    {
-      "args": {
-        "archive": "x",
-        "max_entries": 1,
-        "verbose": false
-      },
-      "summary": "list archive: x",
-      "tool": "archive_list"
-    },
-    {
-      "args": {
         "max_results": 1,
         "proxy": "x",
         "query": "x"
@@ -563,9 +528,6 @@
     }
   ],
   "registry_order": [
-    "archive_pack",
-    "archive_unpack",
-    "archive_list",
     "get_weather",
     "web_search",
     "http_fetch",
@@ -630,7 +592,8 @@
     "json_format",
     "env_var_check",
     "self_config_info",
-    "skill_manage"
+    "skill_manage",
+    "skill_read"
   ],
   "tools": {
     "append_file": {
@@ -5019,6 +4982,31 @@
       },
       "summary": {
         "static": "Skill install/list/remove"
+      },
+      "tags": [
+        "general"
+      ]
+    },
+    "skill_read": {
+      "category": "development",
+      "description": "按可调用 id 读取**技能正文**（`SKILL.md` 全文）。技能索引只常驻名称与描述；需要某条技能的条文时用本工具读取，不要凭索引猜测。`id` 取 `skill_manage` 的 `list` 输出里的可调用标识（frontmatter `name`、平铺文件 stem 或 `<id>/SKILL.md` 的目录名）。三层（系统 / 用户 / 工作区，工作区优先）均可读，用户级与系统级目录在工作区之外，故不能用 `read_file` 代替。正文按 `skills_max_chars` 截断。未找到时返回可选 id 示例。",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "default": "",
+            "description": "技能可调用 id（frontmatter `name`、平铺文件 stem 或 `<id>/SKILL.md` 的目录名）。\n不接受路径：三层 skills 目录由配置决定，工具内不做任意路径读取。",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "title": "SkillReadArgs",
+        "type": "object"
+      },
+      "summary": {
+        "static": "Read a skill body by id"
       },
       "tags": [
         "general"
