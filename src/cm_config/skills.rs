@@ -639,6 +639,11 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
             meta,
         ));
     }
+    // `skills_top_k == 0`（默认）：发现式加载下正文由 `skill_read` 按需读取，这里既不扫描目录也不预注入。
+    // 好处有二：省掉每轮全量文件 IO；首条 system 在会话内保持稳定，前缀缓存不再逐轮失效（#1326）。
+    if opts.top_k == 0 {
+        return Ok((system_prompt, SkillsSelectionMeta::default()));
+    }
     let docs = list_skills(opts.list_opts())?;
     if docs.is_empty() {
         return Ok((system_prompt, SkillsSelectionMeta::default()));
@@ -812,5 +817,63 @@ mod tests {
             docs[0].description.as_deref(),
             Some("Design and review APIs, including REST/HTTP contracts.")
         );
+    }
+
+    #[test]
+    fn index_lists_every_skill_with_description() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skills = tmp.path().join(".crabmate/skills");
+        for (name, desc) in [("alpha", "Alpha desc"), ("beta", "Beta desc"), ("gamma", "Gamma desc")] {
+            write_skill(
+                &skills,
+                &format!("{name}.md"),
+                &format!("---\nname: {name}\ndescription: {desc}\n---\n{name} body\n"),
+            );
+        }
+        let docs = list_skills(SkillsListOpts {
+            workspace_base_dir: tmp.path(),
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: "",
+            skills_system_dir: "",
+        })
+        .unwrap();
+        assert_eq!(docs.len(), 3);
+        let idx = render_skills_index_appendix(&docs, 32_000);
+        assert!(idx.contains("当前共 3 条技能"), "应报全量条数：{idx}");
+        for (name, desc) in [("alpha", "Alpha desc"), ("beta", "Beta desc"), ("gamma", "Gamma desc")] {
+            assert!(idx.contains(name), "索引应含 {name}：{idx}");
+            assert!(idx.contains(desc), "索引应含 {name} 的描述：{idx}");
+        }
+        assert!(idx.contains("skill_read"), "索引应提示用 skill_read 取正文");
+    }
+
+    /// `top_k == 0`（默认）时既不预注入、也不扫描目录——首条 system 因此逐轮稳定。
+    #[test]
+    fn top_k_zero_skips_pre_injection_and_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skills = tmp.path().join(".crabmate/skills");
+        write_skill(
+            &skills,
+            "alpha.md",
+            "---\nname: alpha\ndescription: Alpha desc\n---\nalpha body\n",
+        );
+        let (out, meta) = merge_system_prompt_with_skills_selected_with_meta(
+            "base".to_string(),
+            SkillsSelectedMergeOpts {
+                skills_enabled: true,
+                skills_dir: ".crabmate/skills",
+                skills_user_dir: "",
+                skills_system_dir: "",
+                skills_max_chars: 32_000,
+                base_dir: tmp.path(),
+                user_text: "alpha",
+                top_k: 0,
+                forced_skill: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(out, "base", "top_k == 0 时不应追加正文");
+        assert!(meta.selected_labels.is_empty());
+        assert_eq!(meta.total_docs, 0, "top_k == 0 时不应扫描目录");
     }
 }
