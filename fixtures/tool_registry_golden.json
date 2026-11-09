@@ -99,6 +99,41 @@
     },
     {
       "args": {
+        "exclude": [
+          "x"
+        ],
+        "format": "x",
+        "output": "x",
+        "sources": [
+          "x"
+        ]
+      },
+      "summary": "pack 1 items into x",
+      "tool": "archive_pack"
+    },
+    {
+      "args": {
+        "archive": "x",
+        "files": [
+          "x"
+        ],
+        "output_dir": "x",
+        "strip_components": 1
+      },
+      "summary": "unpack x to x",
+      "tool": "archive_unpack"
+    },
+    {
+      "args": {
+        "archive": "x",
+        "max_entries": 1,
+        "verbose": false
+      },
+      "summary": "list archive: x",
+      "tool": "archive_list"
+    },
+    {
+      "args": {
         "max_results": 1,
         "proxy": "x",
         "query": "x"
@@ -528,6 +563,9 @@
     }
   ],
   "registry_order": [
+    "archive_pack",
+    "archive_unpack",
+    "archive_list",
     "get_weather",
     "web_search",
     "http_fetch",

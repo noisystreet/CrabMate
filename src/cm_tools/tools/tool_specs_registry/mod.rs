@@ -420,8 +420,18 @@ mod registry_golden_tests {
             merged.insert(name.clone(), shape.clone());
         }
 
+        // 顺序必须按同一全集合并：本 feature 组合没注册、但快照里仍有形状的名字要留在顺序里，
+        // 否则一次不带 `archive-tools` 的 BLESS 会把它从 `registry_order` 擦掉，
+        // 而 CI 用 `--all-features` 跑测试，下一轮顺序断言就炸（两套组合应互不擦除）。
+        let mut order_with_foreign = order.to_vec();
+        for name in &previous_order {
+            if merged.contains_key(name.as_str()) && !order_with_foreign.contains(name) {
+                order_with_foreign.push(name.clone());
+            }
+        }
+
         json!({
-            "registry_order": merged_order(&previous_order, order),
+            "registry_order": merged_order(&previous_order, &order_with_foreign),
             "tools": merged,
             "dynamic_summary_samples": samples,
         })
@@ -503,5 +513,38 @@ mod registry_golden_tests {
         assert_order(&expected, &order);
         assert_tools(&expected, &tools);
         assert_samples(&expected, &samples);
+    }
+
+    /// BLESS 的顺序合并必须与 `tools` 同源：本 feature 组合没注册、但快照里仍有形状的名字
+    /// 不能被擦掉，否则「不带 `archive-tools` 的 BLESS」与「`--all-features` 的 CI」会互相打脸。
+    #[test]
+    fn bless_keeps_foreign_feature_order() {
+        let previous = json!({
+            "registry_order": ["archive_pack", "read_file", "create_file"],
+            "tools": {
+                "archive_pack": {"category": "archive"},
+                "read_file": {"category": "read"},
+                "create_file": {"category": "write"},
+            },
+            "dynamic_summary_samples": [],
+        });
+        // 模拟未开 `archive-tools` 的构建：当前注册表里没有 archive_pack。
+        let order = vec!["read_file".to_string(), "create_file".to_string()];
+        let mut tools = BTreeMap::new();
+        tools.insert("read_file".to_string(), json!({"category": "read"}));
+        tools.insert("create_file".to_string(), json!({"category": "write"}));
+
+        let snapshot = blessed(Some(&previous), &order, &tools, &[]);
+        let kept: Vec<&str> = snapshot["registry_order"]
+            .as_array()
+            .expect("registry_order 应为数组")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(kept, vec!["archive_pack", "read_file", "create_file"]);
+        assert!(
+            snapshot["tools"].get("archive_pack").is_some(),
+            "其它 feature 注册的工具形状也必须留在 tools 里"
+        );
     }
 }
