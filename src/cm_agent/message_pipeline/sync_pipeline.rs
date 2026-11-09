@@ -6,7 +6,8 @@ use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
 
 use super::transforms::{
-    RemovedPrefix, compress_tool_message_contents, drop_orphan_tool_messages,
+    MIN_RECENT_TURN_GROUPS, RemovedPrefix, compress_tool_message_contents,
+    drop_orphan_tool_messages,
     estimate_non_system_chars, take_chat_timeline_markers, trim_messages_by_char_budget,
     trim_messages_by_count,
 };
@@ -20,7 +21,6 @@ pub enum MessagePipelineStage {
     AfterCompressTool,
     AfterTrimByCount,
     AfterTrimByCharBudget,
-    AfterSecondCompressTool,
     AfterDropOrphanTool,
     AfterMergeAssistantsInPlace,
 }
@@ -32,7 +32,6 @@ impl MessagePipelineStage {
             Self::AfterCompressTool => "after_compress_tool",
             Self::AfterTrimByCount => "after_trim_count",
             Self::AfterTrimByCharBudget => "after_trim_char_budget",
-            Self::AfterSecondCompressTool => "after_compress_tool_2",
             Self::AfterDropOrphanTool => "after_drop_orphan_tool",
             Self::AfterMergeAssistantsInPlace => "after_merge_assistants",
         }
@@ -131,7 +130,8 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
-    let mut tool_compress_hits = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+    let tool_compress_hits =
+        compress_tool_message_contents(messages, cfg.tool_message_max_chars, MIN_RECENT_TURN_GROUPS);
     if tool_compress_hits > 0 {
         ctr.tool_compress_hits
             .fetch_add(tool_compress_hits as u64, Ordering::Relaxed);
@@ -171,17 +171,6 @@ pub fn apply_session_sync_pipeline_with_config(
         record_and_trace(
             &mut report,
             MessagePipelineStage::AfterTrimByCharBudget,
-            messages,
-        );
-        let c2 = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
-        if c2 > 0 {
-            ctr.tool_compress_hits
-                .fetch_add(c2 as u64, Ordering::Relaxed);
-            tool_compress_hits = tool_compress_hits.saturating_add(c2);
-        }
-        record_and_trace(
-            &mut report,
-            MessagePipelineStage::AfterSecondCompressTool,
             messages,
         );
     }

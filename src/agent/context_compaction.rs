@@ -3,8 +3,8 @@
 //! 本模块只派生模型视图所需的计量与确定性删组；LLM 摘要仍由 `context_window` 编排。
 
 use crate::agent::message_pipeline::{
-    RemovedPrefix, conversation_messages_to_vendor_body, conversation_turn_groups,
-    remove_oldest_turn_group,
+    MIN_RECENT_TURN_GROUPS, RemovedPrefix, conversation_messages_to_vendor_body,
+    conversation_turn_groups, recent_groups_start, remove_oldest_turn_group,
 };
 use crate::agent::tiktoken_prompt_tokens::{
     count_prompt_tokens_openai_compat_vendor_slice, count_serialized_text_tokens_openai_compat,
@@ -15,7 +15,6 @@ use crate::llm::{
 };
 use crate::types::{Message, MessageContent, Tool};
 
-const MIN_RECENT_TURN_GROUPS: usize = 2;
 /// 分级释放 ① 的上限：旧交互组 `tool` 正文二次压缩到的字符数。
 ///
 /// 同步管道只按 `tool_message_max_chars`（默认 32 KiB）压 `tool` 正文，与模型窗口无关；
@@ -280,18 +279,6 @@ pub fn estimate_final_request_tokens(
         vendor_overhead_tokens,
         counting_source: Some(message_counting_source),
     }
-}
-
-/// 最近 `keep_groups` 个完整交互组的起点下标；组数不足时返回 `messages.len()`（无可降级区间）。
-fn recent_groups_start(messages: &[Message], keep_groups: usize) -> usize {
-    if keep_groups == 0 {
-        return 0;
-    }
-    let groups = conversation_turn_groups(messages);
-    if groups.len() <= keep_groups {
-        return messages.len();
-    }
-    groups[groups.len() - keep_groups].start
 }
 
 /// 分级释放 ①：把**最近 `keep_groups` 组之外**的 `tool` 正文二次压缩到 `max_chars`。

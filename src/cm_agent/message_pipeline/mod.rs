@@ -10,9 +10,9 @@
 //! 对 [`apply_session_sync_pipeline`] / [`apply_session_sync_pipeline_with_config`] 中**固定**为：
 //!
 //! 1. 暂存 `crabmate_timeline`（不计入条数/字符预算），记录起点快照（`SessionSyncStart`）
-//! 2. **`compress_tool_message_contents`**（`tool_message_max_chars`）
+//! 2. **`compress_tool_message_contents`**（`tool_message_max_chars`，**跳过最近 `MIN_RECENT_TURN_GROUPS` 组**，见 #1327）
 //! 3. **`trim_messages_by_count`**（`max_message_history`）
-//! 4. 若 **`context_char_budget > 0`**：`trim_messages_by_char_budget` → 再次 **`compress_tool_message_contents`**
+//! 4. 若 **`context_char_budget > 0`**：`trim_messages_by_char_budget`（裁剪不会让正文变长，故不再重复压缩 `tool`）
 //! 5. **`drop_orphan_tool_messages`**，再把暂存的时间线旁注接回尾部
 //!
 //! 新增步骤须同步更新 [`sync_pipeline::MessagePipelineStage`]、本列表、以及 `docs/开发文档.md` 中上下文策略描述。
@@ -49,9 +49,10 @@ pub use sync_pipeline::{
     apply_session_sync_pipeline, apply_session_sync_pipeline_with_config,
 };
 pub use transforms::{
-    ConversationTurnGroup, RemovedPrefix, complete_pending_tool_responses_for_persistence,
-    compress_tool_message_contents, conversation_turn_groups, drop_orphan_tool_messages,
-    estimate_message_chars, estimate_non_system_chars, remove_oldest_turn_group,
+    ConversationTurnGroup, MIN_RECENT_TURN_GROUPS, RemovedPrefix,
+    complete_pending_tool_responses_for_persistence, compress_tool_message_contents,
+    conversation_turn_groups, drop_orphan_tool_messages, estimate_message_chars,
+    estimate_non_system_chars, recent_groups_start, remove_oldest_turn_group,
     trim_messages_by_char_budget, trim_messages_by_count,
 };
 

@@ -1,7 +1,7 @@
 use crate::cm_types::{Message, ToolCall};
 
 use super::{
-    MessagePipelineConfig, MessagePipelineReport, MessagePipelineStage,
+    MIN_RECENT_TURN_GROUPS, MessagePipelineConfig, MessagePipelineReport, MessagePipelineStage,
     apply_session_sync_pipeline_with_config, complete_pending_tool_responses_for_persistence,
     compress_tool_message_contents, conversation_messages_to_vendor_body, conversation_turn_groups,
     drop_orphan_tool_messages, trim_messages_by_char_budget, trim_messages_by_count,
@@ -15,7 +15,7 @@ fn tool_msg(s: &str) -> Message {
 fn compress_tool_truncates() {
     let long = "x".repeat(2000);
     let mut v = vec![tool_msg(&long)];
-    compress_tool_message_contents(&mut v, 256);
+    compress_tool_message_contents(&mut v, 256, 0);
     let c = crate::cm_types::message_content_as_str(&v[0].content).unwrap();
     assert!(c.starts_with(&"x".repeat(256)));
     assert!(c.contains("截断"));
@@ -222,11 +222,6 @@ fn pipeline_report_skips_char_budget_stages_when_budget_zero() {
         "budget=0 不应出现 AfterTrimByCharBudget: {:?}",
         stages
     );
-    assert!(
-        !stages.contains(&MessagePipelineStage::AfterSecondCompressTool),
-        "budget=0 不应出现 AfterSecondCompressTool: {:?}",
-        stages
-    );
     assert_eq!(
         stages.first(),
         Some(&MessagePipelineStage::SessionSyncStart)
@@ -238,7 +233,7 @@ fn pipeline_report_skips_char_budget_stages_when_budget_zero() {
 }
 
 #[test]
-fn pipeline_report_includes_char_trim_and_second_compress_when_budget_positive() {
+fn pipeline_report_includes_char_trim_when_budget_positive() {
     let mut v = vec![
         Message::system_only("s"),
         Message::user_only("x".repeat(100)),
@@ -256,11 +251,6 @@ fn pipeline_report_includes_char_trim_and_second_compress_when_budget_positive()
     assert!(
         stages.contains(&MessagePipelineStage::AfterTrimByCharBudget),
         "budget>0 且超长时应出现 AfterTrimByCharBudget: {:?}",
-        stages
-    );
-    assert!(
-        stages.contains(&MessagePipelineStage::AfterSecondCompressTool),
-        "budget>0 时应出现第二次 compress 阶段: {:?}",
         stages
     );
 }
@@ -433,4 +423,62 @@ fn persistence_keeps_truncated_call_that_already_has_response() {
     assert_eq!(added, 0);
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].tool_calls.as_ref().expect("call").len(), 1);
+}
+
+fn body_chars(m: &Message) -> usize {
+    crate::cm_types::message_content_as_str(&m.content)
+        .map(|s| s.chars().count())
+        .unwrap_or(0)
+}
+
+/// #1327：最近 `MIN_RECENT_TURN_GROUPS` 组的 `tool` 正文保持完整，只有更旧组被压。
+#[test]
+fn compress_skips_recent_turn_groups() {
+    let long = "x".repeat(2_000);
+    let mut v = vec![
+        Message::system_only("s"),
+        Message::user_only("t1"),
+        tool_msg(&long),
+        Message::user_only("t2"),
+        tool_msg(&long),
+        Message::user_only("t3"),
+        tool_msg(&long),
+    ];
+    let hits = compress_tool_message_contents(&mut v, 256, MIN_RECENT_TURN_GROUPS);
+    assert_eq!(hits, 1, "只应压最旧一组");
+    assert!(body_chars(&v[2]) < 2_000, "最旧组应被压");
+    assert_eq!(body_chars(&v[4]), 2_000, "最近第二组应完整");
+    assert_eq!(body_chars(&v[6]), 2_000, "最新组应完整");
+}
+
+/// `keep_recent_groups = 0` 是硬上限兜底路径：全部压缩。
+#[test]
+fn compress_all_when_keep_recent_groups_zero() {
+    let long = "x".repeat(2_000);
+    let mut v = vec![
+        Message::system_only("s"),
+        Message::user_only("t1"),
+        tool_msg(&long),
+        Message::user_only("t2"),
+        tool_msg(&long),
+        Message::user_only("t3"),
+        tool_msg(&long),
+    ];
+    assert_eq!(compress_tool_message_contents(&mut v, 256, 0), 3);
+    for idx in [2usize, 4, 6] {
+        assert!(body_chars(&v[idx]) < 2_000, "idx {idx} 应被压");
+    }
+}
+
+/// 组数不足 `keep_recent_groups` 时没有可降级区间。
+#[test]
+fn compress_noop_when_groups_fewer_than_keep() {
+    let long = "x".repeat(2_000);
+    let mut v = vec![
+        Message::system_only("s"),
+        Message::user_only("t1"),
+        tool_msg(&long),
+    ];
+    assert_eq!(compress_tool_message_contents(&mut v, 256, MIN_RECENT_TURN_GROUPS), 0);
+    assert_eq!(body_chars(&v[2]), 2_000);
 }

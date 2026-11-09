@@ -175,11 +175,41 @@ pub fn estimate_non_system_chars(messages: &[Message]) -> usize {
         .sum()
 }
 
+/// 「最近若干交互组保持完整」的分级口径，压缩与删组共用（#1327）。
+///
+/// 最近这么多组的 `tool` 正文不参与 `tool_message_max_chars` 降级：刚产出的工具输出往往正是
+/// 模型下一步决策的依据，采样它常常换来一次额外的工具往返。
+pub const MIN_RECENT_TURN_GROUPS: usize = 2;
+
+/// 「可降级前缀」的结束下标：`[0, 返回值)` 里的 `tool` 正文才允许降级。
+///
+/// - `keep_groups == 0` → `messages.len()`：全部可降级（硬上限兜底路径）。
+/// - 组数不足 `keep_groups` → `0`：最近若干组已覆盖整个会话，**没有更旧的正文可降级**
+///   （#1327：早期实现在此返回 `messages.len()`，会把唯一那组的最新输出也压掉）。
+pub fn recent_groups_start(messages: &[Message], keep_groups: usize) -> usize {
+    if keep_groups == 0 {
+        return messages.len();
+    }
+    let groups = conversation_turn_groups(messages);
+    if groups.len() <= keep_groups {
+        return 0;
+    }
+    groups[groups.len() - keep_groups].start
+}
+
 /// 截断 `tool` 消息正文（过长时追加说明尾注）；返回本轮压缩的 `tool` 条数。
-pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize) -> usize {
+///
+/// `keep_recent_groups`：最近这么多交互组的 `tool` 正文保持原样；传 `0` 表示全部压缩
+/// （硬上限兜底路径用，见 `context_window` 的 token 预算收尾）。
+pub fn compress_tool_message_contents(
+    messages: &mut [Message],
+    max_chars: usize,
+    keep_recent_groups: usize,
+) -> usize {
     let max_chars = max_chars.max(256);
+    let boundary = recent_groups_start(messages, keep_recent_groups);
     let mut n = 0usize;
-    for m in messages.iter_mut() {
+    for m in messages.iter_mut().take(boundary) {
         if m.role != "tool" {
             continue;
         }
