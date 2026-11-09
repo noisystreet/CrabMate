@@ -197,19 +197,28 @@ pub fn recent_groups_start(messages: &[Message], keep_groups: usize) -> usize {
     groups[groups.len() - keep_groups].start
 }
 
-/// 截断 `tool` 消息正文（过长时追加说明尾注）；返回本轮压缩的 `tool` 条数。
+/// 一次 `tool` 正文降级的明细（#1327 C 案）：供 `context_trim` 追溯「哪条被压、压掉多少」。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ToolCompressHit {
+    /// 该 `tool` 消息在本次调用 `messages` 切片中的下标（压缩不改顺序）。
+    pub index: usize,
+    pub original_chars: usize,
+    pub kept_chars: usize,
+}
+
+/// 同 [`compress_tool_message_contents`]，但返回逐条明细而非计数。
 ///
 /// `keep_recent_groups`：最近这么多交互组的 `tool` 正文保持原样；传 `0` 表示全部压缩
 /// （硬上限兜底路径用，见 `context_window` 的 token 预算收尾）。
-pub fn compress_tool_message_contents(
+pub fn compress_tool_message_contents_detailed(
     messages: &mut [Message],
     max_chars: usize,
     keep_recent_groups: usize,
-) -> usize {
+) -> Vec<ToolCompressHit> {
     let max_chars = max_chars.max(256);
     let boundary = recent_groups_start(messages, keep_recent_groups);
-    let mut n = 0usize;
-    for m in messages.iter_mut().take(boundary) {
+    let mut hits: Vec<ToolCompressHit> = Vec::new();
+    for (index, m) in messages.iter_mut().enumerate().take(boundary) {
         if m.role != "tool" {
             continue;
         }
@@ -220,11 +229,26 @@ pub fn compress_tool_message_contents(
             && let Some(compressed) =
                 crate::cm_tools::tool_result::maybe_compress_tool_message_content(s, max_chars)
         {
+            let original_chars = s.chars().count();
+            let kept_chars = compressed.chars().count();
             *s = compressed;
-            n += 1;
+            hits.push(ToolCompressHit {
+                index,
+                original_chars,
+                kept_chars,
+            });
         }
     }
-    n
+    hits
+}
+
+/// 截断 `tool` 消息正文（过长时追加说明尾注）；返回本轮压缩的 `tool` 条数。
+pub fn compress_tool_message_contents(
+    messages: &mut [Message],
+    max_chars: usize,
+    keep_recent_groups: usize,
+) -> usize {
+    compress_tool_message_contents_detailed(messages, max_chars, keep_recent_groups).len()
 }
 
 fn trim_tail_after_system(after: &[Message], tail_keep: usize) -> Vec<Message> {

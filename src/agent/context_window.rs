@@ -212,7 +212,7 @@ pub fn prepare_messages_before_model_call_sync_with_budget(
 }
 
 /// 同步裁剪 + 可选 LLM 摘要后的轻量结果（供时间线；不含 SSE）。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrepareMessagesDelta {
     pub pipeline: crate::agent::message_pipeline::MessagePipelineDelta,
     pub summarized: bool,

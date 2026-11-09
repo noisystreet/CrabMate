@@ -6,8 +6,8 @@ use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
 
 use super::transforms::{
-    MIN_RECENT_TURN_GROUPS, RemovedPrefix, compress_tool_message_contents,
-    drop_orphan_tool_messages,
+    MIN_RECENT_TURN_GROUPS, RemovedPrefix, ToolCompressHit,
+    compress_tool_message_contents_detailed, drop_orphan_tool_messages,
     estimate_non_system_chars, take_chat_timeline_markers, trim_messages_by_char_budget,
     trim_messages_by_count,
 };
@@ -47,13 +47,15 @@ pub struct PipelineStepSnapshot {
 }
 
 /// 单次会话同步的轻量结果（始终填充，供回合时间线；与 `GET /status` 进程累计无关）。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MessagePipelineDelta {
     pub n_before: usize,
     pub n_after: usize,
     pub trim_count_hit: bool,
     pub trim_char_hit: bool,
     pub tool_compress_hits: usize,
+    /// 本档命中的 `tool` 正文明细（#1327 C 案）；空表示没有降级。
+    pub tool_compressed: Vec<ToolCompressHit>,
     /// 被移出视图前缀的连续区间（以「摘除旁注后、`n_before` 时」的会话坐标为基准）。
     pub removed_prefix: RemovedPrefix,
 }
@@ -130,8 +132,12 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
-    let tool_compress_hits =
-        compress_tool_message_contents(messages, cfg.tool_message_max_chars, MIN_RECENT_TURN_GROUPS);
+    let tool_compressed = compress_tool_message_contents_detailed(
+        messages,
+        cfg.tool_message_max_chars,
+        MIN_RECENT_TURN_GROUPS,
+    );
+    let tool_compress_hits = tool_compressed.len();
     if tool_compress_hits > 0 {
         ctr.tool_compress_hits
             .fetch_add(tool_compress_hits as u64, Ordering::Relaxed);
@@ -193,6 +199,7 @@ pub fn apply_session_sync_pipeline_with_config(
         trim_count_hit,
         trim_char_hit,
         tool_compress_hits,
+        tool_compressed,
         removed_prefix,
     }
 }

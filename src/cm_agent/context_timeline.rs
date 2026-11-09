@@ -62,7 +62,7 @@ impl Default for ContextCompactionTimelineSnapshot {
 }
 
 /// 一次 `prepare_messages_for_model` 完成后的快照（含 changelist sync）。
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ContextTimelineSnapshot<'a> {
     pub messages: &'a [Message],
     pub pipeline: MessagePipelineDelta,
@@ -82,6 +82,7 @@ pub struct ContextTimelineAcc {
     count_hit: bool,
     char_hit: bool,
     compress_hits: usize,
+    tool_compressed: Vec<crate::cm_agent::message_pipeline::ToolCompressHit>,
     summarized: bool,
     summary_tail_kept: Option<usize>,
     token_before: Option<u32>,
@@ -99,6 +100,21 @@ pub struct ContextTimelineAcc {
     sse_inject_sent: bool,
     sse_trim_sent: bool,
     persist_flushed: bool,
+}
+
+/// 追加本档的降级明细；每个用户回合最多留 `MAX_TOOL_COMPRESS_DETAIL` 条，
+/// 否则一个回合内多次 prepare 会让 `context_trim` 的 `detail` 无界增长。
+fn merge_tool_compress_detail(
+    acc: &mut Vec<crate::cm_agent::message_pipeline::ToolCompressHit>,
+    hits: &[crate::cm_agent::message_pipeline::ToolCompressHit],
+) {
+    const MAX_TOOL_COMPRESS_DETAIL: usize = 16;
+    for hit in hits {
+        if acc.len() >= MAX_TOOL_COMPRESS_DETAIL {
+            return;
+        }
+        acc.push(*hit);
+    }
 }
 
 impl ContextTimelineAcc {
@@ -130,6 +146,7 @@ impl ContextTimelineAcc {
         self.compress_hits = self
             .compress_hits
             .saturating_add(snap.pipeline.tool_compress_hits);
+        merge_tool_compress_detail(&mut self.tool_compressed, &snap.pipeline.tool_compressed);
         if snap.summarized {
             self.summarized = true;
             if snap.summary_tail_kept.is_some() {
@@ -213,6 +230,15 @@ impl ContextTimelineAcc {
             "n_before": self.n_before.unwrap_or(0),
             "n_after": self.n_after,
             "compress_hits": self.compress_hits,
+            "tool_compressed": self
+                .tool_compressed
+                .iter()
+                .map(|h| serde_json::json!({
+                    "index": h.index,
+                    "original_chars": h.original_chars,
+                    "kept_chars": h.kept_chars,
+                }))
+                .collect::<Vec<_>>(),
             "summarized": self.summarized,
             "tail_kept": self.summary_tail_kept,
             "before_tokens": self.token_before,
@@ -435,6 +461,11 @@ mod tests {
                 trim_count_hit: false,
                 trim_char_hit: false,
                 tool_compress_hits: 1,
+                tool_compressed: vec![crate::cm_agent::message_pipeline::ToolCompressHit {
+                    index: 2,
+                    original_chars: 40_000,
+                    kept_chars: 32_768,
+                }],
                 ..MessagePipelineDelta::default()
             },
             summarized: false,
@@ -445,6 +476,12 @@ mod tests {
         assert_eq!(events[0].kind, KIND_CONTEXT_TRIM);
         assert_eq!(events[0].title, TITLE_TOOL_COMPRESS);
         assert!(events[0].detail.contains("\"compress_hits\":1"));
+        assert!(
+            events[0].detail.contains("\"tool_compressed\":[{"),
+            "detail 应带被压条目明细: {}",
+            events[0].detail
+        );
+        assert!(events[0].detail.contains("\"original_chars\":40000"));
     }
 
     #[test]
