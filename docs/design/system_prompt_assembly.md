@@ -20,8 +20,8 @@
 | **L0** | `system_prompt` / `base_system_prompt.md` | `finalize` |
 | **L0b** | `coding_workbench_increment*`（可按角色跳过） | `finalize` |
 | **L1'** | **`AGENTS.md`**（会话工作区根；取代原 `.cursor/rules` 兼容） | 首条 `system` 构建（`prompt_compose`） |
-| **L2** | Skills **索引**（非全文：`id — description` **全量**，受 `skills_max_chars` 约束；工作区 + 用户级 + 系统级合并） | `finalize` |
-| **L3** | `agent_roles` 每角色正文后再跑 L2；首条 `system` 构建时在其**末尾追加环境/界面 locale 输出语言指令**（`resolve_role_system_base`） | `finalize_agent_role_catalog`（+ 首条构建追加） |
+| **L2** | Skills **索引**（非全文：`id — description` **全量**，受 `skills_max_chars` 约束；工作区 + 用户级 + 系统级合并；扫描基准 = **会话工作区根**，与 `skill_read` 同源） | 首条 `system` 构建（`prompt_compose`） |
+| **L3** | `agent_roles` 每角色正文；首条 `system` 构建时在其**末尾追加环境/界面 locale 输出语言指令**（`resolve_role_system_base`） | `finalize_agent_role_catalog`（+ 首条构建追加） |
 | **L4** | thinking 附录、工具统计等运行时附录 | 首条 `system` 构建 |
 | **L5** | Skills **正文**：默认**不注入**（`skills_top_k = 0`，由模型调 `skill_read` 按需读取）；`skills_top_k > 0` 时按轮 top-k 注入；`/<skill-id>` 始终强制注入（同源三层合并） | Web `build_messages_for_turn` / CLI 刷新首条 |
 | **L6** | 首轮工作区上下文（活文档摘要 / 备忘 / 依赖摘要；专用 **user**） | `compose_new_conversation_messages` |
@@ -29,13 +29,14 @@
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |
 
 运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，
-  由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令；其后由 `prompt_compose` 按**会话工作区根**追加 **`AGENTS.md`**（L1'，
-  受 `agents_md_*` 约束），再叠 L4（及 Web/CLI 的 L5）。
+  由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令；其后由 `prompt_compose` 按**会话工作区根**拼 **L2**（技能索引）与
+  **`AGENTS.md`**（L1'，受 `agents_md_*` 约束），再叠 L4（及 Web/CLI 的 L5）。L2 与 L5 同源（同一组 `skills_*` 配置键、同一基准目录），
+  因此索引里列出的技能必然能被 `skill_read` 读到；索引读目录失败只告警降级，不让整轮组装报错。
 
 ## 会话生命周期（摘要）
 
-1. 配置装载：L0 → L0b → L2 →（角色）L3。  
-2. 新会话：`system` = 角色 system + L1'（`AGENTS.md`）+ L4（+ L5）；可选 L6 `user`；再真实用户 `user`。  
+1. 配置装载：L0 → L0b →（角色）L3；**L2** 留到首条 `system` 构建时按会话工作区根拼装。  
+2. 新会话：`system` = 角色 system + L2（技能索引）+ L1'（`AGENTS.md`）+ L4（+ L5）；可选 L6 `user`；再真实用户 `user`。  
 3. 续聊可因 `agent_role` 重写首条 `system`（`agent_role_turn`）。  
 4. 从磁盘恢复时常用**当前配置**替换首条 `system`。  
 5. 每轮 Agent：L7（如有）→ 管道 / L8。

@@ -26,6 +26,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `system` message stops changing every turn (the session prefix cache survives) and the skills directories are no
   longer rescanned per turn. `0` is now a valid value (the validation range was 1–64); `skills_top_k > 0` keeps the
   old scored-selection path.
+- **The skills index is composed when the first `system` message is built, using the session workspace root** as its
+  scan base (the same base `skill_read` uses), instead of being baked into the process-level `finalize` output with
+  `run_command_working_dir`. Multi-workspace servers now list exactly the skills the session can actually read; a
+  failed scan only logs a warning and drops the index instead of failing the whole turn.
 
 ## [0.8.1] - 2026-11-08
 

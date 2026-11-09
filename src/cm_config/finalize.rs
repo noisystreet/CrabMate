@@ -863,11 +863,6 @@ fn finalize_agent_config(
             coding_workbench_enabled: pm.coding_workbench_enabled,
             system_prompt_search_bases: &system_prompt_search_bases,
             run_command_working_dir: run_command_working_dir.as_path(),
-            skills_enabled: pm.skills_enabled,
-            skills_dir: &pm.skills_dir,
-            skills_user_dir: &pm.skills_user_dir,
-            skills_system_dir: &pm.skills_system_dir,
-            skills_max_chars: pm.skills_max_chars as usize,
         })?;
 
     let (default_session_mode, permission) = derive_session_policy(&b)?;
