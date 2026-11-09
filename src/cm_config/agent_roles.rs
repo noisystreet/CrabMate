@@ -173,7 +173,6 @@ struct RoleSystemMergeCtx<'a> {
     skills_enabled: bool,
     skills_list_opts: skills::SkillsListOpts<'a>,
     skills_max_chars: usize,
-    skills_top_k: usize,
 }
 
 fn merge_role_delta_with_layers(
@@ -193,7 +192,6 @@ fn merge_role_delta_with_layers(
         ctx.skills_list_opts,
         ctx.skills_enabled,
         ctx.skills_max_chars,
-        ctx.skills_top_k,
     )
 }
 
@@ -335,7 +333,6 @@ pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub skills_user_dir: &'a str,
     pub skills_system_dir: &'a str,
     pub skills_max_chars: usize,
-    pub skills_top_k: usize,
 }
 
 pub(super) fn finalize_agent_role_catalog(
@@ -355,7 +352,6 @@ pub(super) fn finalize_agent_role_catalog(
         skills_user_dir,
         skills_system_dir,
         skills_max_chars,
-        skills_top_k,
     } = p;
     let skills_list_opts = skills::SkillsListOpts {
         workspace_base_dir: run_command_working_dir,
@@ -373,7 +369,6 @@ pub(super) fn finalize_agent_role_catalog(
         skills_enabled,
         skills_list_opts,
         skills_max_chars,
-        skills_top_k,
     };
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {

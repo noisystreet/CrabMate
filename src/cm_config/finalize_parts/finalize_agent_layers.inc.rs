@@ -164,7 +164,6 @@ struct PromptMergeForRoles {
     skills_user_dir: String,
     skills_system_dir: String,
     skills_max_chars: u64,
-    skills_top_k: usize,
 }
 
 fn load_required_system_prompt_for_finalize(
@@ -242,7 +241,6 @@ fn merge_system_prompt_layers_for_finalize(
         .skills_max_chars
         .unwrap_or(32_000)
         .clamp(1024, 1_000_000);
-    let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     let system_prompt = skills::merge_system_prompt_with_skills_index(
         system_prompt,
         skills::SkillsListOpts {
@@ -253,7 +251,6 @@ fn merge_system_prompt_layers_for_finalize(
         },
         skills_enabled,
         skills_max_chars as usize,
-        skills_top_k,
     )?;
     Ok(PromptMergeForRoles {
         universal_l0_system_prompt,
@@ -266,6 +263,5 @@ fn merge_system_prompt_layers_for_finalize(
         skills_user_dir,
         skills_system_dir,
         skills_max_chars,
-        skills_top_k,
     })
 }

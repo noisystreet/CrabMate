@@ -498,32 +498,32 @@ fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title:
     truncated
 }
 
-fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize, max_entries: usize) -> String {
-    if docs.is_empty() || max_entries == 0 {
+/// 索引即「发现面」：列出**全部**技能（`id — description`），正文不进 `system`，由 `skill_read` 按需读取。
+///
+/// 条目数**不设上限**：旧版把 `skills_top_k` 当索引条目上限，导致大部分技能对模型不可见（#1326）。
+/// 预算只由 `skills_max_chars` 约束。
+fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
+    if docs.is_empty() {
         return String::new();
     }
-    let listed = docs.len().min(max_entries);
     let mut body = format!(
-        "【项目技能索引（skills）】\n当前检测到 {} 条技能，以下展示前 {} 条索引；详细正文在按轮（L5）按用户消息动态注入。\n",
-        docs.len(),
-        listed
+        "【项目技能索引（skills）】\n当前共 {} 条技能。需要某条技能的条文时，用 `skill_read` 按 `id` 按需读取；正文不在本 system 中。\n",
+        docs.len()
     );
-    for d in docs.iter().take(max_entries) {
-        body.push('\n');
-        if let Some(name) = d.name.as_deref().filter(|n| !n.trim().is_empty()) {
-            body.push_str("- ");
-            body.push_str(name.trim());
-            body.push_str(" (`");
-            body.push_str(&d.display_path);
-            body.push_str("`)");
-        } else {
-            body.push_str("- `");
-            body.push_str(&d.display_path);
-            body.push('`');
+    for d in docs {
+        body.push_str("\n- ");
+        body.push_str(&crate::cm_config::skills_slash::skill_callable_id(d));
+        let description = skill_ui_description(d);
+        if !description.trim().is_empty() {
+            body.push_str(" — ");
+            body.push_str(description.trim());
         }
+        body.push_str(" (`");
+        body.push_str(&d.display_path);
+        body.push_str("`)");
     }
     body.push_str(
-        "\n\n[提示] 若当前任务依赖具体技能条文，以本轮动态注入内容为准，不得假定索引之外的正文已进入上下文。",
+        "\n\n[提示] 索引只给名称与描述；具体条文以 `skill_read` 读到的正文为准，不得假定未读取的技能条文已进入上下文。",
     );
     if body.chars().count() <= max_chars {
         return body;
@@ -677,7 +677,6 @@ pub(crate) fn merge_system_prompt_with_skills_index(
     list_opts: SkillsListOpts<'_>,
     skills_enabled: bool,
     skills_max_chars: usize,
-    max_entries: usize,
 ) -> Result<String, String> {
     if !skills_enabled {
         return Ok(system_prompt);
@@ -686,7 +685,7 @@ pub(crate) fn merge_system_prompt_with_skills_index(
     if docs.is_empty() {
         return Ok(system_prompt);
     }
-    let appendix = render_skills_index_appendix(&docs, skills_max_chars, max_entries);
+    let appendix = render_skills_index_appendix(&docs, skills_max_chars);
     if appendix.is_empty() {
         return Ok(system_prompt);
     }
