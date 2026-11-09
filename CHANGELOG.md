@@ -10,6 +10,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-09
+
+**Git pre-release `v0.8.1-beta.0`** (third pre-release of the `0.8.1` line, after `v0.8.1-alpha.0` and
+  `v0.8.1-alpha.1`; still the first thing after **`v0.8.0`** on the release track). crates.io remains **`0.8.0`**
+  (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball / `.deb`, or
+  `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+
+Two entries below are **BREAKING** for existing configs: `permission_confirm_tools` and `skills_top_k` are both gone,
+  and a leftover line for either one in `[agent]` now fails the config load — read `Removed` before upgrading.
+  Everything else is behaviour-preserving: the `run_command` rewrite explanations stay opt-in
+  (`CM_RUN_COMMAND_ECHO_REWRITES`), and the skill-description fix only changes text that used to render as a
+  literal `>-`. SSE wire protocol stays **v2**.
+
 ### Added
 
 - **`skill_read`: skills 正文改为按需读取（discovery-based loading, #1326).** It takes a callable id only
@@ -17,42 +30,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `/<skill-id>`, so the readable scope is exactly the configured three skill layers — which is why it can also reach
   the user layer (`$XDG_CONFIG_HOME/crabmate/skills`) and the system layer (`/etc/crabmate/skills`) that `read_file`
   cannot touch (they live outside the session workspace). Bodies are truncated at `skills_max_chars`.
-
-### Changed
-
-- **The skills index now lists every skill with its description** (`id — description`). Entry count is no longer
-  bounded by `skills_top_k`, only by `skills_max_chars`.
-- **`skills_top_k` defaults to `0` instead of `4`** (per-turn body pre-injection is off by default), so the first
-  `system` message stops changing every turn (the session prefix cache survives) and the skills directories are no
-  longer rescanned per turn. `0` is now a valid value (the validation range was 1–64); `skills_top_k > 0` keeps the
-  old scored-selection path.
-- **The skills index is composed when the first `system` message is built, using the session workspace root** as its
-  scan base (the same base `skill_read` uses), instead of being baked into the process-level `finalize` output with
-  `run_command_working_dir`. Multi-workspace servers now list exactly the skills the session can actually read; a
-  failed scan only logs a warning and drops the index instead of failing the whole turn.
-
-### Removed
-
-- **BREAKING: per-turn scored skill pre-injection and its `skills_top_k` key are gone (#1326).** Skill bodies now have
-  exactly two sources: an explicit `/<skill-id>` forced injection and `skill_read` on demand. A leftover `skills_top_k`
-  (or `CM_SKILLS_TOP_K`) in an existing config now **fails the config load** — delete that line. This also drops the old
-  scoring path (path `+4` / name `+5` / body-head `+1`, falling back to the first N by path when nothing matched), which is
-  why Chinese queries used to get the same alphabetically-first skills regardless of topic.
-
-## [0.8.1] - 2026-11-08
-
-**Git pre-release `v0.8.1-alpha.1`** (second alpha of the `0.8.1` line, after `v0.8.1-alpha.0`;
-  still the first thing after **`v0.8.0`** on the release track). crates.io remains **`0.8.0`**
-  (`cargo install crabmate` does not pick this up). Install
-  from the GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
-
-One entry below is **BREAKING** for existing configs:
-  `permission_confirm_tools` is gone and a leftover line in `[agent]` now fails the config load — read `Removed` before upgrading. Everything else is
-  behaviour-preserving: the `run_command` rewrite explanations stay opt-in (`CM_RUN_COMMAND_ECHO_REWRITES`),
-  and the skill-description fix only changes text that used to render as a literal `>-`. SSE wire protocol stays **v2**.
-
-### Added
-
 - **Four port traits are now part of the promised SDK surface (S6-d).** `TurnEngine` / `PolicyEngine` /
   `ApprovalBroker` / `SessionStore` and their signature closure (`TurnOutcome`, `RunAgentTurnError`,
   `ConversationRetention`, `ConversationTurnSeed`, `SaveConversationOutcome`, `BranchTruncateOutcome`, `ArchiveRow`, ...)
@@ -98,6 +75,17 @@ One entry below is **BREAKING** for existing configs:
   asserts the four agree and names the drifted file. Refs #1269.
 
 ### Changed
+
+- **The skills index now lists every skill with its description** (`id — description`). Entry count is no longer
+  bounded by `skills_top_k`, only by `skills_max_chars`.
+- **`skills_top_k` defaults to `0` instead of `4`** (per-turn body pre-injection is off by default), so the first
+  `system` message stops changing every turn (the session prefix cache survives) and the skills directories are no
+  longer rescanned per turn. `0` is now a valid value (the validation range was 1–64); `skills_top_k > 0` keeps the
+  old scored-selection path.
+- **The skills index is composed when the first `system` message is built, using the session workspace root** as its
+  scan base (the same base `skill_read` uses), instead of being baked into the process-level `finalize` output with
+  `run_command_working_dir`. Multi-workspace servers now list exactly the skills the session can actually read; a
+  failed scan only logs a warning and drops the index instead of failing the whole turn.
 
 - **`turn-replay-events.jsonl` writes `context_inject` / `context_trim` details as JSON objects, not double-encoded text.**
   Both events already produced a JSON string for `detail`, which replay then wrapped again as
@@ -161,6 +149,12 @@ One entry below is **BREAKING** for existing configs:
   error paths still carry no stats. Refs #1285.
 
 ### Removed
+
+- **BREAKING: per-turn scored skill pre-injection and its `skills_top_k` key are gone (#1326).** Skill bodies now have
+  exactly two sources: an explicit `/<skill-id>` forced injection and `skill_read` on demand. A leftover `skills_top_k`
+  (or `CM_SKILLS_TOP_K`) in an existing config now **fails the config load** — delete that line. This also drops the old
+  scoring path (path `+4` / name `+5` / body-head `+1`, falling back to the first N by path when nothing matched), which is
+  why Chinese queries used to get the same alphabetically-first skills regardless of topic.
 
 - **The `permission_confirm_tools` config key and `CM_PERMISSION_CONFIRM_TOOLS` are removed — the key never had a consumer.**
   It was parsed from TOML, merged from the environment variable, trimmed, and stored on `PermissionConfig`;
@@ -2850,8 +2844,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...HEAD
-[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.0...v0.8.1-alpha.1
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.0...HEAD
+[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.0
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...v0.6.0
