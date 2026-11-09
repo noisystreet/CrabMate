@@ -90,7 +90,6 @@ pub fn augmented_system_for_new_conversation(
         tool_recorder,
         super::prompt_compose::FirstSystemComposeOpts {
             agent_role: role.as_deref(),
-            user_msg_for_skills: None,
             skills_base_dir: None,
             workspace_root: workspace_root.map(Path::to_path_buf),
             forced_skill: None,

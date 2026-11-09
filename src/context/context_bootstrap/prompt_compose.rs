@@ -113,14 +113,6 @@ pub fn resolve_agent_role_for_prompt_compose(
     Ok(None)
 }
 
-/// L5：按当前用户输入从工作区 skills 目录选材时的上下文。
-pub struct SkillsComposeContext<'a> {
-    pub base_dir: &'a Path,
-    pub user_text: &'a str,
-    /// 用户通过 `/<id>` 显式选用的 skill；若设置则跳过 Top-K。
-    pub forced_skill: Option<crate::cm_config::skills::SkillDoc>,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FirstSystemComposeDiagnostics {
     pub layers_applied: Vec<String>,
@@ -143,16 +135,16 @@ pub fn resolve_skills_base_dir(workspace_root: &Path) -> PathBuf {
     }
 }
 
-/// 在已解析的 L3 基底上叠加 L4（思维链附录、工具统计）与可选 L5（Skills top-k）。
+/// 在已解析的 L3 基底上叠加 L4（思维链附录、工具统计）与可选 `/<id>` 技能正文。
 #[allow(dead_code)] // P2-2 桶化暴露：仅单测调用（生产走 `compose_first_system_for_turn`）；判定见 #1300 §4.1
 pub fn compose_system_from_base(
     base_system: &str,
     cfg: &AgentConfig,
     tool_recorder: &ToolOutcomeRecorder,
-    skills: Option<SkillsComposeContext<'_>>,
+    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
 ) -> String {
     let augmented = tool_recorder.augment_system_prompt(base_system, cfg);
-    merge_skills_into_system(augmented, cfg, skills)
+    merge_skills_into_system_with_meta(augmented, cfg, forced_skill).0
 }
 
 /// 从配置解析 L3，再叠加 L4 + 可选 L5。
@@ -161,21 +153,26 @@ pub fn compose_system_for_turn(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
     tool_recorder: &ToolOutcomeRecorder,
-    skills: Option<SkillsComposeContext<'_>>,
+    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
     _role_resolution: RoleSystemResolution,
 ) -> Result<String, String> {
     let base = resolve_role_system_base(cfg, agent_role)?;
-    Ok(compose_system_from_base(&base, cfg, tool_recorder, skills))
+    Ok(compose_system_from_base(
+        &base,
+        cfg,
+        tool_recorder,
+        forced_skill,
+    ))
 }
 
-/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5 + 会话模式附录）。`agent_role` 须经 [`resolve_agent_role_for_prompt_compose`] 解析后再传入。
+/// 首条 `system` 组装参数（L3 基底 + L2 索引 + L4 + 可选 `/<id>` 正文 + 会话模式附录）。
+/// `agent_role` 须经 [`resolve_agent_role_for_prompt_compose`] 解析后再传入。
 pub struct FirstSystemComposeOpts<'a> {
     pub agent_role: Option<&'a str>,
-    pub user_msg_for_skills: Option<&'a str>,
     pub skills_base_dir: Option<PathBuf>,
     /// 会话工作区根：用于读取 `<root>/AGENTS.md` 并追加到 L3 之后；`None` 时跳过。
     pub workspace_root: Option<PathBuf>,
-    /// 用户 `/<id>` 强制选用的 skill（与 [`SkillsComposeContext::forced_skill`] 同源）。
+    /// 用户 `/<id>` 强制选用的 skill：命中则把其正文追加在 L4 之后。
     pub forced_skill: Option<crate::cm_config::skills::SkillDoc>,
     /// 保留字段；实现恒按 [`RoleSystemResolution::Strict`] 解析已传入的 `agent_role`。
     pub role_resolution: RoleSystemResolution,
@@ -205,21 +202,12 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     );
     let FirstSystemComposeOpts {
         agent_role,
-        user_msg_for_skills,
         skills_base_dir,
         workspace_root,
         forced_skill,
         role_resolution: _,
         session_mode,
     } = opts;
-    let skills_ctx = skills_base_dir
-        .as_ref()
-        .zip(user_msg_for_skills)
-        .map(|(base, user)| SkillsComposeContext {
-            base_dir: base.as_path(),
-            user_text: user,
-            forced_skill,
-        });
     let base = resolve_role_system_base(cfg, agent_role)?;
     // L2 技能索引（全量 `id — description`）在此拼装，扫描基准与 `skill_read` 同一口径：会话工作区根。
     // 旧实现放在进程级 finalize、按 `run_command_working_dir` 扫描，多工作区下索引与会话实际可读的技能不一致（#1326）。
@@ -243,7 +231,7 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     };
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
-    let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, skills_ctx);
+    let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, forced_skill);
     let mode = session_mode.unwrap_or(cfg.roles_prompts.default_session_mode);
     let merged = append_session_mode_appendix(merged, mode);
     let chars_final = merged.chars().count();
@@ -275,14 +263,14 @@ pub fn compose_system_for_turn_arc(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
     tool_recorder: &Arc<ToolOutcomeRecorder>,
-    skills: Option<SkillsComposeContext<'_>>,
+    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
     role_resolution: RoleSystemResolution,
 ) -> Result<String, String> {
     compose_system_for_turn(
         cfg,
         agent_role,
         tool_recorder.as_ref(),
-        skills,
+        forced_skill,
         role_resolution,
     )
 }
@@ -320,21 +308,13 @@ fn merge_skills_index_lenient(
     }
 }
 
-#[allow(dead_code)] // P2-2 桶化暴露：仅 `compose_system_from_base` 单测调用；接线或删除见 #1300 §4.1
-fn merge_skills_into_system(
-    system_prompt: String,
-    cfg: &AgentConfig,
-    skills: Option<SkillsComposeContext<'_>>,
-) -> String {
-    merge_skills_into_system_with_meta(system_prompt, cfg, skills).0
-}
-
 fn merge_skills_into_system_with_meta(
     system_prompt: String,
     cfg: &AgentConfig,
-    skills: Option<SkillsComposeContext<'_>>,
+    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
 ) -> (String, crate::cm_config::skills::SkillsSelectionMeta) {
-    let Some(sk) = skills else {
+    let Some(doc) = forced_skill else {
+        // 没 `/<id>` 就不动 `system`：正文只来自 `skill_read`。（旧的按轮打分预注入已删除，#1326）
         return (
             system_prompt,
             crate::cm_config::skills::SkillsSelectionMeta::default(),
@@ -344,14 +324,8 @@ fn merge_skills_into_system_with_meta(
         system_prompt.clone(),
         crate::cm_config::skills::SkillsSelectedMergeOpts {
             skills_enabled: cfg.skills.skills_enabled,
-            skills_dir: cfg.skills.skills_dir.as_str(),
-            skills_user_dir: cfg.skills.skills_user_dir.as_str(),
-            skills_system_dir: cfg.skills.skills_system_dir.as_str(),
             skills_max_chars: cfg.skills.skills_max_chars,
-            base_dir: sk.base_dir,
-            user_text: sk.user_text,
-            top_k: cfg.skills.skills_top_k,
-            forced_skill: sk.forced_skill.as_ref(),
+            forced_skill: Some(&doc),
         },
     )
     .unwrap_or((
@@ -363,7 +337,6 @@ fn merge_skills_into_system_with_meta(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn embed_default_config() -> crate::cm_config::AgentConfig {
         crate::cm_config::load_config_test_env::without_cm_env_overrides(|| {
@@ -440,7 +413,6 @@ mod tests {
             &rec,
             FirstSystemComposeOpts {
                 agent_role: None,
-                user_msg_for_skills: None,
                 skills_base_dir: None,
                 workspace_root: None,
                 forced_skill: None,
@@ -460,46 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn compose_first_system_diagnostics_with_skills_reports_l5_selection() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let skills_dir = tmp.path().join(".crabmate/skills");
-        std::fs::create_dir_all(&skills_dir).expect("create skills dir");
-        let mut f = std::fs::File::create(skills_dir.join("rust.md")).expect("create skill file");
-        writeln!(
-            f,
-            "---\nname: Rust Build Skill\n---\n使用 cargo test 与 cargo clippy 进行验证。"
-        )
-        .expect("write skill");
-
-        let mut cfg = embed_default_config();
-        cfg.skills.skills_enabled = true;
-        cfg.skills.skills_dir = ".crabmate/skills".to_string();
-        cfg.skills.skills_user_dir.clear();
-        cfg.skills.skills_system_dir.clear();
-        cfg.skills.skills_top_k = 4;
-        let rec = Arc::new(ToolOutcomeRecorder::new());
-        let (_system, diag) = compose_first_system_for_turn_with_diagnostics(
-            &cfg,
-            &rec,
-            FirstSystemComposeOpts {
-                agent_role: None,
-                user_msg_for_skills: Some("请帮我跑 cargo test"),
-                skills_base_dir: Some(tmp.path().to_path_buf()),
-                workspace_root: Some(tmp.path().to_path_buf()),
-                forced_skill: None,
-                role_resolution: RoleSystemResolution::Strict,
-                session_mode: None,
-            },
-        )
-        .expect("compose");
-        assert!(diag.layers_applied.contains(&"L5".to_string()));
-        assert_eq!(diag.skills_total_docs, 1);
-        assert_eq!(diag.skills_selected_labels.len(), 1);
-        assert!(diag.skills_selected_labels[0].contains("Rust Build Skill"));
-    }
-
-    #[test]
-    fn compose_first_system_forced_skill_skips_topk() {
+    fn compose_first_system_forced_skill_injects_body() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let skills_dir = tmp.path().join(".crabmate/skills");
         std::fs::create_dir_all(&skills_dir).expect("create skills dir");
@@ -530,14 +463,12 @@ mod tests {
         cfg.skills.skills_dir = ".crabmate/skills".to_string();
         cfg.skills.skills_user_dir.clear();
         cfg.skills.skills_system_dir.clear();
-        cfg.skills.skills_top_k = 4;
         let rec = Arc::new(ToolOutcomeRecorder::new());
         let (system, diag) = compose_first_system_for_turn_with_diagnostics(
             &cfg,
             &rec,
             FirstSystemComposeOpts {
                 agent_role: None,
-                user_msg_for_skills: Some("cargo"),
                 skills_base_dir: Some(tmp.path().to_path_buf()),
                 workspace_root: Some(tmp.path().to_path_buf()),
                 forced_skill: Some(forced),
@@ -561,7 +492,7 @@ mod tests {
         assert!(diag.skills_selected_labels[0].contains("[forced]"));
     }
 
-    /// L2 索引是**发现面**：`skills_top_k = 0`（默认）不注入任何正文，但必须列出全部技能及其描述。
+    /// L2 索引是**发现面**：不注入任何正文，但必须列出全部技能及其描述。
     #[test]
     fn compose_first_system_index_lists_every_skill_without_bodies() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -584,14 +515,12 @@ mod tests {
         cfg.skills.skills_dir = ".crabmate/skills".to_string();
         cfg.skills.skills_user_dir.clear();
         cfg.skills.skills_system_dir.clear();
-        cfg.skills.skills_top_k = 0;
         let rec = Arc::new(ToolOutcomeRecorder::new());
         let (system, diag) = compose_first_system_for_turn_with_diagnostics(
             &cfg,
             &rec,
             FirstSystemComposeOpts {
                 agent_role: None,
-                user_msg_for_skills: None,
                 skills_base_dir: Some(tmp.path().to_path_buf()),
                 workspace_root: Some(tmp.path().to_path_buf()),
                 forced_skill: None,
@@ -631,7 +560,6 @@ mod tests {
         cfg.skills.skills_dir = ".crabmate/skills".to_string();
         cfg.skills.skills_user_dir.clear();
         cfg.skills.skills_system_dir.clear();
-        cfg.skills.skills_top_k = 0;
         let rec = Arc::new(ToolOutcomeRecorder::new());
         let compose_for = |root: &Path| {
             compose_first_system_for_turn_with_diagnostics(
@@ -639,7 +567,6 @@ mod tests {
                 &rec,
                 FirstSystemComposeOpts {
                     agent_role: None,
-                    user_msg_for_skills: None,
                     skills_base_dir: Some(root.to_path_buf()),
                     workspace_root: Some(root.to_path_buf()),
                     forced_skill: None,
@@ -664,8 +591,8 @@ mod tests {
         );
     }
 
-    /// 同一会话内（配置与工作区不变）首条 `system` 必须逐字节稳定，且**不随本轮用户输入变化**——
-    /// 这是前缀缓存能命中的前提（#1326 验收第 1 条里可自动化的部分）。
+    /// 同一会话内（配置与工作区不变）首条 `system` 必须逐字节稳定——前缀缓存能命中的前提
+    /// （#1326 验收第 1 条里可自动化的部分）。正文预注入已删除，`system` 不再随轮次或输入变化。
     #[test]
     fn compose_first_system_is_stable_across_turns() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -680,15 +607,13 @@ mod tests {
         cfg.skills.skills_dir = ".crabmate/skills".to_string();
         cfg.skills.skills_user_dir.clear();
         cfg.skills.skills_system_dir.clear();
-        cfg.skills.skills_top_k = 0;
         let rec = Arc::new(ToolOutcomeRecorder::new());
-        let compose = |user: &str| {
+        let compose = || {
             compose_first_system_for_turn(
                 &cfg,
                 &rec,
                 FirstSystemComposeOpts {
                     agent_role: None,
-                    user_msg_for_skills: Some(user),
                     skills_base_dir: Some(tmp.path().to_path_buf()),
                     workspace_root: Some(tmp.path().to_path_buf()),
                     forced_skill: None,
@@ -698,13 +623,7 @@ mod tests {
             )
             .expect("compose")
         };
-        let first = compose("请解释这段 Rust 代码");
-        assert_eq!(first, compose("请解释这段 Rust 代码"), "重复组装应逐字节稳定");
-        assert_eq!(
-            first,
-            compose("换个话题：写个快排"),
-            "首条 system 不应随本轮用户输入变化"
-        );
+        assert_eq!(compose(), compose(), "重复组装应逐字节稳定");
     }
 
     #[test]
@@ -719,7 +638,6 @@ mod tests {
             &rec,
             FirstSystemComposeOpts {
                 agent_role: None,
-                user_msg_for_skills: None,
                 skills_base_dir: None,
                 workspace_root: Some(tmp.path().to_path_buf()),
                 forced_skill: None,

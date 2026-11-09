@@ -166,7 +166,6 @@ fn u64_range_rows_a1() -> &'static [U64RangeRow] {
             1024,
             1_000_000,
         ),
-        ("skills_top_k", |b| b.skills.skills_top_k, 0, 64),
         (
             "tool_message_max_chars",
             |b| b.tool_transcript.tool_message_max_chars,

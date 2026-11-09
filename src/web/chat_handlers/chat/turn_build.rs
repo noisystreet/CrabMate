@@ -203,7 +203,6 @@ fn refresh_existing_turn_system(
     seed: &mut ConversationTurnSeed,
     agent_role: Option<&str>,
     session_mode: Option<crate::types::SessionMode>,
-    user_msg: &str,
     workspace_root: &std::path::Path,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
     forced_skill: Option<crate::config::skills::SkillDoc>,
@@ -230,7 +229,6 @@ fn refresh_existing_turn_system(
         agent_role,
         tool_recorder,
         Some(workspace_root),
-        user_msg,
         Some(mode),
     )?;
     let role_for_turn =
@@ -245,7 +243,6 @@ fn refresh_existing_turn_system(
         tool_recorder,
         FirstSystemComposeOpts {
             agent_role: role_for_turn.as_deref(),
-            user_msg_for_skills: Some(user_msg),
             skills_base_dir: Some(skills_base),
             workspace_root: Some(workspace_root.to_path_buf()),
             forced_skill,
@@ -276,7 +273,6 @@ struct TurnBuildParts<'a> {
     mode_opt: Option<crate::types::SessionMode>,
     /// 本请求显式申请的权限等级；`None` = 沿用 seed 里的持久意图。
     permission_level: Option<&'a str>,
-    user_msg: &'a str,
     root: &'a std::path::Path,
     forced_skill: Option<crate::config::skills::SkillDoc>,
     last_user: Message,
@@ -294,7 +290,6 @@ async fn build_existing_conversation_turn(
             &mut seed,
             parts.agent_role,
             parts.mode_opt,
-            parts.user_msg,
             parts.root,
             &state.process_handles.tool_outcome_recorder,
             parts.forced_skill,
@@ -335,7 +330,6 @@ async fn build_new_conversation_turn(
         &state.process_handles.tool_outcome_recorder,
         FirstSystemComposeOpts {
             agent_role: role_for_turn.as_deref(),
-            user_msg_for_skills: Some(parts.user_msg),
             skills_base_dir: Some(skills_base),
             workspace_root: Some(parts.root.to_path_buf()),
             forced_skill: parts.forced_skill,
@@ -389,10 +383,10 @@ pub(super) async fn build_messages_for_turn(
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
     // 存盘 / 水合 / UI：`last_user` 保留含 `/<skill-id>` 的原文（及上游已展开的 file 附录）。
-    // 送模型：`prepare_turn_user_and_forced_skill` 的剥离结果只用于本轮 system（forced skill / 选用）；
-    // 出站 `messages_for_api_*` 会对普通 user 再剥 `/<skill-id>`，避免与 L5 附录重复，且多轮历史亦不把斜杠带回供应商。
+    // 剥离 `/<skill-id>` 只为检出 forced skill：正文由 `/<id>` 强制注入，其余条文走 `skill_read` 按需读取
+    // （旧的按轮打分预注入已删除，#1326）；出站 `messages_for_api_*` 会对普通 user 再剥一次，多轮历史也不带斜杠回供应商。
     let raw_user_for_store = user_msg.to_string();
-    let (user_msg, forced_skill) = {
+    let (_stripped_user, forced_skill) = {
         let cfg = state.cfg.read().await;
         prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)?
     };
@@ -406,7 +400,6 @@ pub(super) async fn build_messages_for_turn(
         agent_role,
         mode_opt,
         permission_level,
-        user_msg: user_msg.as_str(),
         root: root.as_path(),
         forced_skill,
         last_user,

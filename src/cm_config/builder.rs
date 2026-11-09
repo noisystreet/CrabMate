@@ -244,7 +244,6 @@ impl ConfigBuilder {
         let sk = &mut self.skills;
         sk.skills_enabled = agent.skills_enabled.or(sk.skills_enabled);
         sk.skills_max_chars = agent.skills_max_chars.or(sk.skills_max_chars);
-        sk.skills_top_k = agent.skills_top_k.or(sk.skills_top_k);
         let tt = &mut self.tool_transcript;
         tt.tool_message_max_chars = agent.tool_message_max_chars.or(tt.tool_message_max_chars);
         tt.tool_result_envelope_v1 = agent.tool_result_envelope_v1.or(tt.tool_result_envelope_v1);

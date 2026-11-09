@@ -451,7 +451,6 @@ fn build_turn_messages(cfg: &AgentConfig, user_text: &str, workspace_root: &Path
         &recorder,
         FirstSystemComposeOpts {
             agent_role: None,
-            user_msg_for_skills: None,
             skills_base_dir: None,
             workspace_root: Some(workspace_root.to_path_buf()),
             forced_skill: None,

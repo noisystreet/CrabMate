@@ -8,7 +8,6 @@ struct FinalizeTailScalars {
     skills_user_dir: String,
     skills_system_dir: String,
     skills_max_chars: u64,
-    skills_top_k: usize,
     final_plan_requirement: FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
@@ -577,7 +576,6 @@ struct TailAgentsMdSkillsPack {
     skills_user_dir: String,
     skills_system_dir: String,
     skills_max_chars: u64,
-    skills_top_k: usize,
 }
 
 fn tail_agents_md_and_skills_fields(b: &ConfigBuilder) -> TailAgentsMdSkillsPack {
@@ -601,7 +599,6 @@ fn tail_agents_md_and_skills_fields(b: &ConfigBuilder) -> TailAgentsMdSkillsPack
             skills::default_skills_system_dir()
         });
     let skills_max_chars = b.skills.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
-    let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     TailAgentsMdSkillsPack {
         agents_md_enabled,
         agents_md_max_chars,
@@ -610,7 +607,6 @@ fn tail_agents_md_and_skills_fields(b: &ConfigBuilder) -> TailAgentsMdSkillsPack
         skills_user_dir,
         skills_system_dir,
         skills_max_chars,
-        skills_top_k,
     }
 }
 
@@ -674,7 +670,6 @@ fn assemble_finalize_tail_scalars(
         skills_user_dir: pack.skills_user_dir,
         skills_system_dir: pack.skills_system_dir,
         skills_max_chars: pack.skills_max_chars,
-        skills_top_k: pack.skills_top_k,
         final_plan_requirement,
         plan_rewrite_max_attempts,
         final_plan_require_strict_workflow_node_coverage,

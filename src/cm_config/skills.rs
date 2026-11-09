@@ -43,29 +43,15 @@ impl SkillsConfigSection {
     }
 }
 
-/// Options for [`merge_system_prompt_with_skills_selected_with_meta`].
+/// Options for [`merge_system_prompt_with_skills_selected_with_meta`]：只承载 `/<id>` 强制注入所需入参。
+///
+/// 旧的按轮打分预注入（`top_k` / `user_text` / 三层目录扫描）已删除（#1326）：正文只有两条来源——
+/// `/<id>` 强制注入（本结构）与 `skill_read` 按需读取。
 #[derive(Debug, Clone, Copy)]
 pub struct SkillsSelectedMergeOpts<'a> {
     pub skills_enabled: bool,
-    pub skills_dir: &'a str,
-    pub skills_user_dir: &'a str,
-    pub skills_system_dir: &'a str,
     pub skills_max_chars: usize,
-    pub base_dir: &'a Path,
-    pub user_text: &'a str,
-    pub top_k: usize,
     pub forced_skill: Option<&'a SkillDoc>,
-}
-
-impl SkillsSelectedMergeOpts<'_> {
-    fn list_opts(&self) -> SkillsListOpts<'_> {
-        SkillsListOpts {
-            workspace_base_dir: self.base_dir,
-            skills_dir: self.skills_dir,
-            skills_user_dir: self.skills_user_dir,
-            skills_system_dir: self.skills_system_dir,
-        }
-    }
 }
 
 fn is_markdown_file(path: &Path) -> bool {
@@ -462,14 +448,6 @@ fn merge_skills_layer(out: &mut Vec<SkillDoc>, layer: Vec<SkillDoc>) {
     out.extend(layer);
 }
 
-fn render_skills_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
-    render_skills_appendix_with_title(
-        docs,
-        max_chars,
-        "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n",
-    )
-}
-
 fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
     let title = format!(
         "【用户显式选用技能（/{}）】\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
@@ -500,8 +478,8 @@ fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title:
 
 /// 索引即「发现面」：列出**全部**技能（`id — description`），正文不进 `system`，由 `skill_read` 按需读取。
 ///
-/// 条目数**不设上限**：旧版把 `skills_top_k` 当索引条目上限，导致大部分技能对模型不可见（#1326）。
-/// 预算只由 `skills_max_chars` 约束。
+/// 条目数**不设上限**：旧版既把条目数绑在 `skills_top_k` 上、又按轮注入正文，导致大部分技能对模型不可见、
+/// 首条 `system` 逐轮变化（#1326）；那套打分预注入已删除。预算只由 `skills_max_chars` 约束。
 fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
     if docs.is_empty() {
         return String::new();
@@ -535,84 +513,6 @@ fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
     truncated
 }
 
-fn extract_query_terms(user_text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    for ch in user_text.chars() {
-        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-            cur.push(ch.to_ascii_lowercase());
-        } else if !cur.is_empty() {
-            if cur.chars().count() >= 2 {
-                out.push(cur.clone());
-            }
-            cur.clear();
-        }
-    }
-    if !cur.is_empty() && cur.chars().count() >= 2 {
-        out.push(cur);
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
-fn score_skill_doc(doc: &SkillDoc, terms: &[String]) -> usize {
-    if terms.is_empty() {
-        return 0;
-    }
-    let mut score = 0usize;
-    let path_l = doc.display_path.to_ascii_lowercase();
-    let name_l = doc.name.clone().unwrap_or_default().to_ascii_lowercase();
-    let content_head_l = doc
-        .content
-        .chars()
-        .take(800)
-        .collect::<String>()
-        .to_ascii_lowercase();
-    for t in terms {
-        if path_l.contains(t) {
-            score += 4;
-        }
-        if !name_l.is_empty() && name_l.contains(t) {
-            score += 5;
-        }
-        if content_head_l.contains(t) {
-            score += 1;
-        }
-    }
-    score
-}
-
-pub(crate) fn select_skills_top_k(
-    docs: &[SkillDoc],
-    user_text: &str,
-    top_k: usize,
-) -> Vec<SkillDoc> {
-    if docs.is_empty() || top_k == 0 {
-        return Vec::new();
-    }
-    let terms = extract_query_terms(user_text);
-    let mut scored: Vec<(usize, &SkillDoc)> = docs
-        .iter()
-        .map(|d| (score_skill_doc(d, &terms), d))
-        .collect();
-    scored.sort_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then_with(|| a.1.display_path.cmp(&b.1.display_path))
-    });
-    let any_positive = scored.iter().any(|(s, _)| *s > 0);
-    if any_positive {
-        scored
-            .into_iter()
-            .filter(|(s, _)| *s > 0)
-            .take(top_k)
-            .map(|(_, d)| d.clone())
-            .collect::<Vec<_>>()
-    } else {
-        docs.iter().take(top_k).cloned().collect::<Vec<_>>()
-    }
-}
-
 pub fn merge_system_prompt_with_skills_selected_with_meta(
     system_prompt: String,
     opts: SkillsSelectedMergeOpts<'_>,
@@ -639,42 +539,9 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
             meta,
         ));
     }
-    // `skills_top_k == 0`（默认）：发现式加载下正文由 `skill_read` 按需读取，这里既不扫描目录也不预注入。
-    // 好处有二：省掉每轮全量文件 IO；首条 system 在会话内保持稳定，前缀缓存不再逐轮失效（#1326）。
-    if opts.top_k == 0 {
-        return Ok((system_prompt, SkillsSelectionMeta::default()));
-    }
-    let docs = list_skills(opts.list_opts())?;
-    if docs.is_empty() {
-        return Ok((system_prompt, SkillsSelectionMeta::default()));
-    }
-    let mut meta = SkillsSelectionMeta {
-        total_docs: docs.len(),
-        selected_labels: Vec::new(),
-    };
-    let selected = select_skills_top_k(&docs, opts.user_text, opts.top_k);
-    if selected.is_empty() {
-        return Ok((system_prompt, meta));
-    }
-    meta.selected_labels = selected
-        .iter()
-        .map(|d| {
-            d.name
-                .as_deref()
-                .map(str::trim)
-                .filter(|n| !n.is_empty())
-                .map(|n| format!("{n} ({})", d.display_path))
-                .unwrap_or_else(|| d.display_path.clone())
-        })
-        .collect();
-    let appendix = render_skills_appendix(&selected, opts.skills_max_chars);
-    if appendix.is_empty() {
-        return Ok((system_prompt, meta));
-    }
-    Ok((
-        format!("{}\n\n{}", system_prompt.trim_end(), appendix),
-        meta,
-    ))
+    // 无 `/<id>` 强制注入时什么都不做：正文只来自 `skill_read`（按需）或 `/<id>`（显式）。
+    // 旧的按轮打分预注入已删除（#1326）——这里既不扫描目录也不改 `system`，首条消息因此逐轮稳定。
+    Ok((system_prompt, SkillsSelectionMeta::default()))
 }
 
 pub(crate) fn merge_system_prompt_with_skills_index(
@@ -847,33 +714,20 @@ mod tests {
         assert!(idx.contains("skill_read"), "索引应提示用 skill_read 取正文");
     }
 
-    /// `top_k == 0`（默认）时既不预注入、也不扫描目录——首条 system 因此逐轮稳定。
+    /// 没有 `/<id>` 强制注入时既不追加正文、也不扫描目录——首条 `system` 因此逐轮稳定。
     #[test]
-    fn top_k_zero_skips_pre_injection_and_scan() {
-        let tmp = tempfile::tempdir().unwrap();
-        let skills = tmp.path().join(".crabmate/skills");
-        write_skill(
-            &skills,
-            "alpha.md",
-            "---\nname: alpha\ndescription: Alpha desc\n---\nalpha body\n",
-        );
+    fn no_forced_skill_leaves_system_untouched() {
         let (out, meta) = merge_system_prompt_with_skills_selected_with_meta(
             "base".to_string(),
             SkillsSelectedMergeOpts {
                 skills_enabled: true,
-                skills_dir: ".crabmate/skills",
-                skills_user_dir: "",
-                skills_system_dir: "",
                 skills_max_chars: 32_000,
-                base_dir: tmp.path(),
-                user_text: "alpha",
-                top_k: 0,
                 forced_skill: None,
             },
         )
         .unwrap();
-        assert_eq!(out, "base", "top_k == 0 时不应追加正文");
+        assert_eq!(out, "base", "无强制注入时不应追加正文");
         assert!(meta.selected_labels.is_empty());
-        assert_eq!(meta.total_docs, 0, "top_k == 0 时不应扫描目录");
+        assert_eq!(meta.total_docs, 0, "无强制注入时不应扫描目录");
     }
 }
