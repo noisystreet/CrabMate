@@ -28,18 +28,24 @@ pub(super) fn finalize_cli_config_path(explicit: Option<String>) -> Option<Strin
 }
 
 /// 载入配置并叠加 user-data 覆盖（LLM / 工具 / Web Bearer 密钥槽）。
+///
+/// **顺序即契约**：user-data 覆盖先应用，**CLI 显式覆盖最后落定**。
+/// 早期实现把 CLI 覆盖放在 user-data 之前，于是 `--llm-context-tokens` 会被
+/// `~/.local/share/crabmate/llm_overrides.json` 的 `client_llm.llm_context_tokens` 静默盖掉（#1340）。
+/// `--no-tools` 一类工具覆盖不受影响：`apply_user_data_tool_overrides` 只在既有禁用集上**追加**禁用，
+/// 顺序互换不会让它把 CLI 的禁用放开。
 pub(super) fn load_cli_agent_config(
     config_path: Option<&str>,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<config::AgentConfig, Box<dyn std::error::Error>> {
-    let mut cfg = apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(config_path)?,
-        llm_context_tokens_cli,
-    );
+    let mut cfg = config::load_config_for_cli(config_path)?;
     crate::user_data::apply_user_data_llm_overrides(&mut cfg);
     crate::user_data::apply_user_data_tool_overrides(&mut cfg);
     crate::user_data::apply_user_data_web_api_bearer(&mut cfg);
-    Ok(cfg)
+    Ok(apply_cli_llm_context_tokens_override(
+        cfg,
+        llm_context_tokens_cli,
+    ))
 }
 
 /// `crabmate models` / `crabmate probe`：`bearer` 时仍要求进程环境变量 **`API_KEY`** 非空。
@@ -74,4 +80,38 @@ pub(super) fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> St
         );
     }
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #1340：`--llm-context-tokens` 必须在 user-data 覆盖**之后**落定，不能被它盖回。
+    ///
+    /// 测试直接模拟「user-data 已把窗口写成大值」这一步，再应用 CLI 覆盖：
+    /// 顺序一旦被改回 user-data 在后，这条断言就会红。
+    #[test]
+    fn cli_llm_context_tokens_override_wins_over_user_data_layer() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        cfg.llm_sampling.llm_context_tokens = 1_000_000;
+        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(100_000));
+        assert_eq!(cfg.llm_sampling.llm_context_tokens, 100_000);
+    }
+
+    /// 未给 CLI 覆盖时，user-data 的值必须原样保留（不能顺手清成配置默认）。
+    #[test]
+    fn absent_cli_override_keeps_user_data_value() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        cfg.llm_sampling.llm_context_tokens = 1_000_000;
+        let cfg = apply_cli_llm_context_tokens_override(cfg, None);
+        assert_eq!(cfg.llm_sampling.llm_context_tokens, 1_000_000);
+    }
+
+    /// `0` 视为「不覆盖」（见 `GlobalOpts::llm_context_tokens` 的说明），上限仍是 10M。
+    #[test]
+    fn cli_override_is_capped_at_ten_million() {
+        let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(u32::MAX));
+        assert_eq!(cfg.llm_sampling.llm_context_tokens, 10_000_000);
+    }
 }

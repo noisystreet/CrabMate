@@ -38,6 +38,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `turn_project_projection_golden.jsonl`. `batch_narration_text` / `batch_narration_row` remain public (the
   Client imports the former). **CLI-visible**: the `rows` output shape changes; no flag, wire protocol or config move.
 
+- **`max_message_history` default raised from 256 to 1024 (#1339).** The message-count trim used to fire long before the
+  token budget did (tool-heavy ReAct sessions average ~1,200–1,650 tokens/message, so 256 messages ≈ 300k–420k tokens,
+  against `trigger_tokens` ≈ 834k at a 1M window) — which read as "context compaction at 30%". The count cap now sits
+  above the token-trigger equivalent; see `docs/配置说明.md` §上下文窗口. Same config key, only the default changes.
+
+### Fixed
+
+- **Global `--llm-context-tokens` was silently overridden by user-data (#1340).** `load_cli_agent_config` applied the CLI
+  override *before* `apply_user_data_llm_overrides`, so a `client_llm.llm_context_tokens` entry in
+  `~/.local/share/crabmate/llm_overrides.json` always won and `serve --llm-context-tokens N` had no effect. The CLI
+  override is now applied last (explicit CLI beats user-data); tool overrides are unchanged, because
+  `apply_user_data_tool_overrides` only ever *adds* disables.
+
 ## [0.8.1] - 2026-11-09
 
 **Git pre-release `v0.8.1-beta.0`** (third pre-release of the `0.8.1` line, after `v0.8.1-alpha.0` and

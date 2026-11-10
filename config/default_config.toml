@@ -29,8 +29,12 @@ api_max_retries = 3
 api_retry_delay_secs = 1
 
 # 2. 对话历史、上下文预算与摘要
-# Token 预算为主；消息条数仅作异常安全兜底。工具型 ReAct 单回合可产生多条 assistant/tool 消息。
-max_message_history = 256
+# Token 预算为主；消息条数是高位兜底，但它必须**高于 token 触发的等效水位**，
+# 否则条数闸会先动手（表现为「上下文才两三成就丢历史」）：
+#   max_message_history × 平均 token/条 ≥ trigger_tokens（= 85% × (llm_context_tokens − max_tokens − 安全余量)）
+# 工具型 ReAct 单回合可产生多条 assistant/tool 消息，实测约 1,200~1,650 token/条；
+# 取 1024 条时等效水位约 123~169 万，高于 1M 窗口下的 trigger_tokens(≈83.4 万)。
+max_message_history = 1024
 context_char_budget = 200000
 context_min_messages_after_system = 4
 # 最终请求 Token 达到安全输入预算的 85% 时压缩到 70%；另预留固定安全余量吸收供应商封装误差。
