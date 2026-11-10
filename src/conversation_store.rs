@@ -791,9 +791,13 @@ fn truncate_and_clear_archive(
 
 /// 会话库 `layout` 覆盖率（B4/P4 门禁，见 Issue #1333 与 `docs/Turn布局设计.md` §16.5）。
 ///
-/// 统计口径与 [`layout_meta_from_column`] 一致：`layout_meta_json` 为 `NULL` **或空白**都算「无 layout」，
-/// 这类行在 `GET /conversation/messages` 上只能走 legacy 读路径。删除 legacy 读路径前，
-/// 该占比必须低于既定阈值——本结构只负责**测量**，不含判定。
+/// 统计口径与 [`layout_meta_from_column`] 对齐：`layout_meta_json` 为 `NULL`，或**只含空白**
+/// （空格 / 制表 / 换行 / 回车——即 Rust `str::trim` 会去掉的那几个）都算「无 layout」。
+/// 这类行在 `GET /conversation/messages` 上只能走 legacy 读路径；删除该路径前，占比必须低于
+/// 既定阈值。本结构只**测量**，不含判定。
+///
+/// 刻意保持 `pub`：`crabmate doctor` 是当前唯一消费者，但该指标后续要给 Client 仓复用，
+/// 收成 `pub(crate)` 会逼两边各写一份 SQL。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LayoutCoverage {
     /// 会话总行数。
@@ -813,6 +817,9 @@ impl LayoutCoverage {
 /// 只读统计会话库的 `layout` 覆盖率：**不**建表、不迁移、不写盘。
 ///
 /// 表不存在（新库 / 从未落盘过会话）按全零返回而不是报错——诊断命令不该因为「还没用过」而失败。
+///
+/// `SQLITE_OPEN_URI` 只是重申 rusqlite 的 `OpenFlags::default()`；路径来自本地配置，
+/// 若含 `?` / `#` 会被当成 URI 参数——那是既有默认行为，不在这里另立规矩。
 pub fn layout_coverage(path: &Path) -> Result<LayoutCoverage, rusqlite::Error> {
     let conn = Connection::open_with_flags(
         path,
@@ -834,9 +841,12 @@ fn layout_coverage_from_conn(conn: &Connection) -> Result<LayoutCoverage, rusqli
         return Ok(LayoutCoverage::default());
     }
     let total: i64 = conn.query_row(&format!("SELECT count(*) FROM {TABLE}"), [], |r| r.get(0))?;
+    // 空白字符集显式列举：SQLite 的 `trim(x)` 默认只删空格，而读路径用的是 Rust
+    // `str::trim()`（还会删 \t\n\r）。不显式对齐，"\n" 会被统计成「有 layout」。
     let without_layout: i64 = conn.query_row(
         &format!(
-            "SELECT count(*) FROM {TABLE} WHERE layout_meta_json IS NULL OR trim(layout_meta_json) = ''"
+            "SELECT count(*) FROM {TABLE} WHERE layout_meta_json IS NULL \
+             OR trim(layout_meta_json, ' ' || char(9) || char(10) || char(13)) = ''"
         ),
         [],
         |r| r.get(0),
