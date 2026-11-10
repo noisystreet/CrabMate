@@ -10,6 +10,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- **v1 turn projectors leave the public API (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and
+  `project_turn_web` (`crabmate sse-replay` + golden) are now `pub(crate)` and no longer re-exported by
+  `cm_turn_layout`; Web has been on `project_turn_web_v2` / `project_turn_projection` since B2.
+  `fixtures/turn_project_web_golden.jsonl` is documented as a **replay contract**. No wire-protocol, config,
+  tool, or CLI change — downstream crates that never imported the two v1 symbols are unaffected.
+
 ## [0.8.1] - 2026-11-09
 
 **Git pre-release `v0.8.1-beta.0`** (third pre-release of the `0.8.1` line, after `v0.8.1-alpha.0` and
