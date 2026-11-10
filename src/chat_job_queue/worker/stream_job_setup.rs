@@ -175,17 +175,19 @@ fn log_terminal_order_summary(publisher: &crate::sse::StreamPublisher) {
     if report.is_clean() {
         debug!(
             target: "crabmate",
-            "terminal_order_summary job_id={} event_after_terminal_count=0 repeated_terminal_count=0 terminal_seen={}",
+            "terminal_order_summary job_id={} event_after_terminal_count=0 repeated_terminal_count=0 error_then_finished_count={} terminal_seen={}",
             publisher.job_id(),
+            report.error_then_finished,
             report.terminal_seen
         );
     } else {
         warn!(
             target: "crabmate",
-            "terminal_order_summary job_id={} event_after_terminal_count={} repeated_terminal_count={} terminal_seen={}",
+            "terminal_order_summary job_id={} event_after_terminal_count={} repeated_terminal_count={} error_then_finished_count={} terminal_seen={}",
             publisher.job_id(),
             report.event_after_terminal,
             report.repeated_terminal,
+            report.error_then_finished,
             report.terminal_seen
         );
     }

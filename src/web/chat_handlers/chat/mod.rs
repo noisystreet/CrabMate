@@ -411,12 +411,15 @@ fn hydration_layout_projection(
     if !crate::cm_turn_layout::layout_prefers_projection(Some(meta)) {
         return ("legacy", None, None);
     }
+    // v2 但落盘侧没有 hash（旧行 / 手工数据）⇒ **无基线**：报 `None` 而不是 `false`。
+    // `false` 会被读成「差分稳定」，而实际是「没法比」——两者对 B4 的判断完全相反。
+    // 顺带省掉一次全量重算。
+    let Some(persisted) = meta.projection_hash.as_deref() else {
+        return ("layout_v2", None, None);
+    };
     let derived = crate::cm_turn_layout::layout_meta_from_messages(messages);
-    let changed = derived.projection_hash.as_deref() != meta.projection_hash.as_deref();
-    let hash_prefix = meta
-        .projection_hash
-        .as_deref()
-        .map(|h| h.chars().take(12).collect::<String>());
+    let changed = derived.projection_hash.as_deref() != Some(persisted);
+    let hash_prefix = Some(persisted.chars().take(12).collect::<String>());
     ("layout_v2", Some(changed), hash_prefix)
 }
 
@@ -454,5 +457,16 @@ mod hydration_telemetry_tests {
         assert_eq!(source, "layout_v2");
         assert_eq!(changed, Some(true));
         assert_eq!(prefix.as_deref(), Some("hash-that-wi"));
+    }
+
+    /// v2 但落盘缺 hash ⇒ `None`（无基线），**不能**报 `false`——那会被读成「差分稳定」。
+    #[test]
+    fn v2_layout_without_persisted_hash_has_no_baseline() {
+        let messages = vec![Message::user_only("hi")];
+        let v2 = meta(2, None);
+        let (source, changed, prefix) = hydration_layout_projection(Some(&v2), &messages);
+        assert_eq!(source, "layout_v2");
+        assert_eq!(changed, None, "无基线必须与「稳定」区分开");
+        assert_eq!(prefix, None);
     }
 }
