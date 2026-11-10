@@ -680,7 +680,9 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | **E3** | 双读：新会话写元数据；hydration 消费 `layout` 记差分（行数/角色序/文本 hash）；GET 历史保持 legacy 行 id（完整同键投影待 Client 可复用投影器）；无元数据走 legacy | ✅ Client 双读观测；不 stamp 流式活键；E4 前**不**删 same-revision 守卫 |
 | **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | ⬜ 删除条件见下 |
 
-**E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；线上无终态后业务事件；legacy 会话比例可接受。
+**E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；
+线上无终态后业务事件；legacy 会话比例可接受——该比例由 **`crabmate doctor`** 的「会话布局覆盖率」给出
+（`layout_meta_json` 为 NULL / 空白的行占比，B4/P4 落地）。
 
 ### 16.6 测试与可观测性（落地时）
 

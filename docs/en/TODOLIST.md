@@ -47,7 +47,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 > Compat-layer shrink **todos in this section are authoritative** (local drafts are gitignored and must not be cited as docs).  
 > **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web;
-> soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`,
+> soft `terminal_order`, removed in B4/P3); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`,
 > persist/truncate from `messages`, projection goldens); **B3 / Turn §16 E3** (hydration dual-read:
 > consume `layout` for row-count/role-order/text-hash diffs; persisted GET history keeps legacy row ids, does not stamp live stream keys);
 > **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default)
@@ -57,6 +57,17 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 > **Next**: **B4**. Items below need a compatibility window.
 
 - [ ] **B4 (E4)**: Contract: drop post-terminal business frames, same-revision bandage, legacy merge/dedupe (only after E4 exit criteria).
+  - **P1 telemetry landed** ([`#1333`](https://github.com/noisystreet/CrabMate/issues/1333)): `event_after_terminal_count` /
+    `terminal_order_summary` / two-phase finish timings / `hydration_projection_source` / `projection_hash_changed` as
+    structured logs; reverse gate in `fixtures/sse_terminal_order_golden.jsonl`. Shrinking still needs §16.5 data.
+  - **P2 landed** (PR #1335): v1 projectors `project_turn` / `project_turn_web` narrowed to `pub(crate)`; v1 goldens
+    pinned as the replay contract.
+  - **P3 landed**: `sse_capabilities.terminal_order` and `SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED` removed
+    (**BREAKING**, see `CHANGELOG.md` `Removed`); terminal order is now always the new one, `SSE_PROTOCOL_VERSION`
+    stays **2**. Official Client never read the field (verified: 0 references in `crabmate-client`).
+  - **P4 landed**: `crabmate doctor` reports conversation-layout coverage (`layout_meta_json` NULL/blank row ratio) as
+    gate data; `GET /conversation/messages` always carries `layout` (`null` = not persisted). Deleting the legacy read
+    path itself belongs to E4 / §16.5.
 
 ---
 
