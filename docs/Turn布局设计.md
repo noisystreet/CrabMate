@@ -115,7 +115,7 @@ flowchart TB
 **金样**：`fixtures/turn_project_golden.jsonl`、`fixtures/turn_project_web_golden.jsonl` 属 **v1 replay 契约**
 （前者仅 `project_turn` 金样，后者 `project_turn_web` 仅 `sse-replay` + 金样，两者**不是**公开 API，#1333 P2）；
 Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`，事件语料另见 Client 侧
-`golden_turn_web_stored_sync`（读 Client 仓那份同名拷贝，断言走 v2）。
+`golden_turn_web_stored_sync`（读 `fixtures/turn_web_v2_stored_sync.jsonl`，与本文 v1 金样**用例逐条同源**，改任一侧都要回填）。
 **测试**：`cargo test --lib golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
