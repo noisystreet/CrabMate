@@ -40,6 +40,8 @@
 - 出现在：控制面 JSON 顶层 **`v`**、首帧 **`sse_capabilities.supported_sse_v`**、请求可选 **`client_sse_protocol`**。
 - **Bump 条件**：控制面 JSON **形状或语义**对旧客户端不兼容（删/改顶层键含义、改变必选字段、改变官方前端必须识别的分类结果等）。
 - **不 bump**：软字段（旧客户端忽略即可），例如可选 **`request_id`** / AG-UI **`requestId`** 等（见 `docs/SSE协议.md`）。
+- **移除软字段**：同样**不** bump `SSE_PROTOCOL_VERSION`，但必须在 `CHANGELOG.md` 记 `Removed`
+  （例：#1333 P3 删 `sse_capabilities.terminal_order`；集成方依赖该字段的分支要一起删）。
 
 协商与错误码（保持可预期，勿擅自改码名）：
 
