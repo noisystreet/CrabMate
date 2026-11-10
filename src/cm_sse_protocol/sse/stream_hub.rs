@@ -149,6 +149,10 @@ impl StreamEntry {
     ///
     /// 告警节流：每条流只对**首次**「终态后业务帧」`warn` 一次，累计值由桥接任务在
     /// 通道关闭后汇总（见 `chat_job_queue::worker::stream_job_bridge_loop`）。
+    ///
+    /// 顺序说明：`seq` 由 `next_seq` 原子分配，而分类顺序由 `order_watch` 自己的锁决定；
+    /// 并发 `publish` 下两者可能交错，日志里的 `seq` 未必是真实相邻帧。计数只关心终态与非
+    /// 终态的先后，不受影响。
     fn note_terminal_order(&self, job_id: u64, seq: u64, data_payload: &str) {
         let obs = {
             let mut watch = self.order_watch.lock().unwrap_or_else(|e| e.into_inner());
@@ -162,7 +166,7 @@ impl StreamEntry {
         } else if obs.repeated_terminal {
             log::warn!(
                 target: "crabmate",
-                "repeated_terminal job_id={job_id} seq={seq}：终态后又下发终态帧"
+                "repeated_terminal job_id={job_id} seq={seq}：终态后又下发终态帧（`RUN_FINISHED` 之后的任意终态，或 `RUN_ERROR` 之后再来 `RUN_ERROR`）"
             );
         }
     }

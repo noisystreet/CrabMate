@@ -262,8 +262,11 @@ pub(crate) async fn emit_stream_draining(sse_tx: &mpsc::Sender<String>, job_id: 
 /// 口径：
 /// - 第一段 = `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身）；
 /// - 第二段 = `conversation_saved` 入队 → **终态帧入队之后**（含可选 `STATE_SNAPSHOT`）；
-/// - `saved_at == None` 表示本回合**没有**发 `conversation_saved`（`Conflict` / 落盘后读不到
-///   revision）。此时两段都记 `None`——**不要**折成 0ms，否则指标会把「未落盘」算成「落盘极快」。
+/// - `saved_at == None` ⇒ 本回合**没有**发 `conversation_saved`（`Conflict` / 落盘后读不到
+///   revision）。此时 `saved_emitted=false` 且两个 ms 字段恒为 `0`——它们**无意义**，
+///   不要当成 0ms 计入统计（否则「未落盘」会被算成「落盘极快」）。
+///
+/// 字段都是裸数字/布尔，`CM_LOG_JSON=1` 后可直接聚合，不需要从 `Some(12)` 里再剥一层。
 ///
 /// 脱敏：只记会话 id 与毫秒数，不含消息正文。
 fn log_finish_timing(
@@ -272,11 +275,12 @@ fn log_finish_timing(
     draining_at: Instant,
     saved_at: Option<Instant>,
 ) {
-    let to_saved_ms = saved_at.map(|t| t.duration_since(draining_at).as_millis() as u64);
-    let to_finished_ms = saved_at.map(|t| t.elapsed().as_millis() as u64);
+    let saved_emitted = saved_at.is_some();
+    let to_saved_ms = saved_at.map_or(0, |t| t.duration_since(draining_at).as_millis() as u64);
+    let to_finished_ms = saved_at.map_or(0, |t| t.elapsed().as_millis() as u64);
     info!(
         target: "crabmate",
-        "stream_finish_timing job_id={job_id} conversation_id={conversation_id} stream_draining_to_saved_ms={to_saved_ms:?} conversation_saved_to_finished_ms={to_finished_ms:?}"
+        "stream_finish_timing job_id={job_id} conversation_id={conversation_id} saved_emitted={saved_emitted} stream_draining_to_saved_ms={to_saved_ms} conversation_saved_to_finished_ms={to_finished_ms}"
     );
 }
 
@@ -512,8 +516,10 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 );
             // Phase E1：先发非终态 `stream_draining`（解除「模型生成中」），再落盘 →
             // `conversation_saved` → 可选 snapshot → **最后** `RUN_FINISHED`。
-            let draining_at = Instant::now();
             emit_stream_draining(sse_tx, job_id).await;
+            // 计时起点取在 `stream_draining` **入队之后**，与 §16.6 的口径一致
+            // （第一段 = draining 入队 → saved 入队）。
+            let draining_at = Instant::now();
             match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
                 app,
                 queue_deps,

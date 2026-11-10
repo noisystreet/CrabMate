@@ -693,10 +693,11 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | 指标 | 落点 | 口径 |
 |---|---|---|
 | `event_after_terminal_count` | `cm_sse_protocol/sse/stream_hub.rs` 的 `StreamEntry::publish` | 终态（`RUN_FINISHED` / `RUN_ERROR`，含 V1 形状 `stream_ended` / 带 `code` 的 `error`）之后再投递的**非终态**帧条数 |
-| `repeated_terminal` | 同上 | 终态后再来终态；单独计数，不并进上一项 |
+| `repeated_terminal` | 同上 | 真重复：首次终态是 `RUN_FINISHED` 之后的任意终态，或 `RUN_ERROR` 之后再来 `RUN_ERROR`。`RUN_ERROR` → `RUN_FINISHED`（取消 / 冲突 / 失败的既有收尾形状）**不算**违规 |
+| `error_then_finished` | 同上 | `RUN_ERROR` → `RUN_FINISHED` 条数。只观测，留给 P3/P4 收敛时取数 |
 | `terminal_order_summary` | `chat_job_queue::worker::stream_job_bridge_loop` | 流关闭时一次汇总；带 `terminal_seen`，用于区分「干净跑完」与「没跑到终态就断了」 |
-| `stream_draining_to_saved_ms` | `chat_job_queue::stream_finish::log_finish_timing` | `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身） |
-| `conversation_saved_to_finished_ms` | 同上 | `conversation_saved` 入队 → 终态帧入队之后（含可选 `STATE_SNAPSHOT`） |
+| `stream_draining_to_saved_ms` | `chat_job_queue::stream_finish::log_finish_timing` | `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身）；同条日志带 `saved_emitted` |
+| `conversation_saved_to_finished_ms` | 同上 | `conversation_saved` 入队 → 终态帧入队之后（含可选 `STATE_SNAPSHOT`）；`saved_emitted=false` 时两个 ms 无意义 |
 | `hydration_projection_source` | `web/chat_handlers/chat` 的 `GET /conversation/messages` | `layout_v2` / `legacy`（后者含 `layout` 缺失或 `layout_schema_version < 2`） |
 | `projection_hash_changed` | 同上 | 由 `messages` 重新派生的 hash ≠ 落盘 `projection_hash` |
 
@@ -704,8 +705,13 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 
 - 终态序观测挂在**投递口**而不是收尾函数：收尾函数自己不会在终态后再发帧，违例恰恰来自
   后台工具任务、审批等持同一 `sse_tx` 的迟到帧。观测**不拦帧、不重排**，纯计数。
-- `saved_at` 为 `None`（`Conflict` / 落盘后读不到 revision）时两段耗时都记 `None`，
-  **不**折成 `0ms`，否则「未落盘」会被统计成「落盘极快」。
+- 终态分两类（`RUN_FINISHED` / `RUN_ERROR`）：取消 / 冲突 / 失败路径本来就是「先 `RUN_ERROR`、
+  worker 再补 `RUN_FINISHED`」，这是客户端接受的既有形状。若把「终态后再来终态」一律算重复，
+  每次非成功回合都会让指标变脏、每次都 `warn`，真信号被淹没——所以它单独记 `error_then_finished`。
+- `saved_emitted=false`（`Conflict` / 落盘后读不到 revision）时两个 ms 字段恒为 `0` 且**无意义**，
+  聚合时必须先按 `saved_emitted=true` 过滤，否则「未落盘」会被算成「落盘极快」。
+- `projection_hash_changed` 是三态：`None` = 无基线（v2 但落盘缺 hash / legacy），
+  `false` = 派生与落盘一致，`true` = 不一致。**别把 `None` 读成稳定**。
 - 反向门禁：`fixtures/sse_terminal_order_golden.jsonl` 由
   `cm_sse_protocol::terminal_order::tests::golden_terminal_order_matches_expected` 驱动
   （帧序列 → 期望违规数）。此前只有「顺序正确」的正向断言。

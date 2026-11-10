@@ -352,6 +352,8 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 - **Server self-check (telemetry, not contract)**: the SSE hub classifies every frame on the delivery path and
   only counts/warns on violations (`event_after_terminal_count` / `repeated_terminal`); it never blocks or
   reorders frames. Per-stream totals are logged as `terminal_order_summary` when the stream closes.
+  `RUN_ERROR` followed by `RUN_FINISHED` (cancel / conflict / failure teardown) is the existing shape and does
+  **not** count as a repeated terminal (tracked separately as `error_then_finished`).
   See **`docs/Turn布局设计.md` §16.6**.
 
 ### Tool calls
