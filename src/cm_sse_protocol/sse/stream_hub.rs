@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::broadcast;
 
 use super::protocol::SSE_RESUME_RING_CAP;
+use crate::cm_sse_protocol::terminal_order::{TerminalOrderReport, TerminalOrderWatch};
 
 /// SSE replay dump 文件名。
 const SSE_REPLAY_FILE: &str = "sse-replay-events.jsonl";
@@ -101,6 +102,8 @@ struct StreamEntry {
     next_seq: AtomicU64,
     ring: Mutex<VecDeque<(u64, String)>>,
     tx: broadcast::Sender<(u64, String)>,
+    /// 终态序观测（#1333 P1）。**只计数**，不参与投递决策——见 [`Self::note_terminal_order`]。
+    order_watch: Mutex<TerminalOrderWatch>,
 }
 
 impl StreamEntry {
@@ -111,6 +114,7 @@ impl StreamEntry {
             next_seq: AtomicU64::new(0),
             ring: Mutex::new(VecDeque::new()),
             tx,
+            order_watch: Mutex::new(TerminalOrderWatch::default()),
         }
     }
 
@@ -120,6 +124,7 @@ impl StreamEntry {
     /// 当 `CM_SSE_REPLAY_DUMP_DIR` 设置时，同时将事件追加写入 `sse-replay-events.jsonl`。
     fn publish(&self, job_id: u64, data_payload: String) -> (u64, String) {
         let seq = self.next_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        self.note_terminal_order(job_id, seq, &data_payload);
         {
             let mut ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
             ring.push_back((seq, data_payload.clone()));
@@ -131,6 +136,43 @@ impl StreamEntry {
         let _ = self.tx.send((seq, data_payload.clone()));
         append_sse_replay_line(job_id, seq, &data_payload);
         (seq, data_payload)
+    }
+
+    /// 终态序观测（#1333 P1 / Turn §16.6 的 `event_after_terminal_count`）。
+    ///
+    /// 这是**所有** Web 帧的必经之路（worker 收尾帧、后台工具任务迟到帧、审批帧都经
+    /// [`StreamPublisher::publish`]），所以它比「在收尾处打点」更接近「终态后还有没有帧」
+    /// 的真实语义：收尾函数自己当然不会在终态后再发帧，问题恰恰出在别处的迟到帧。
+    ///
+    /// **不改变下行行为**：只计数 + 打日志；分类在 `ring` 锁之外做（避免把 JSON 解析
+    /// 塞进已有的临界区），且 [`TerminalOrderWatch`] 内部有子串预筛，正文 delta 不解析。
+    ///
+    /// 告警节流：每条流只对**首次**「终态后业务帧」`warn` 一次，累计值由桥接任务在
+    /// 通道关闭后汇总（见 `chat_job_queue::worker::stream_job_bridge_loop`）。
+    fn note_terminal_order(&self, job_id: u64, seq: u64, data_payload: &str) {
+        let obs = {
+            let mut watch = self.order_watch.lock().unwrap_or_else(|e| e.into_inner());
+            watch.observe(data_payload)
+        };
+        if obs.event_after_terminal && obs.first_after_terminal {
+            log::warn!(
+                target: "crabmate",
+                "event_after_terminal_count job_id={job_id} seq={seq}：终态后又下发业务帧（B4/E4 收缩证据；不拦帧）"
+            );
+        } else if obs.repeated_terminal {
+            log::warn!(
+                target: "crabmate",
+                "repeated_terminal job_id={job_id} seq={seq}：终态后又下发终态帧"
+            );
+        }
+    }
+
+    /// 终态序累计（与 `event_after_terminal_count` 同名同义）。
+    fn terminal_order_report(&self) -> TerminalOrderReport {
+        self.order_watch
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .report()
     }
 
     /// 环形缓冲中 `seq > after_seq` 的 `data:` 负载（不含 `id` 行），按序。
@@ -262,6 +304,12 @@ impl StreamPublisher {
         self.entry.publish(self.job_id, data_payload)
     }
 
+    /// 终态序累计（`event_after_terminal_count` 的取值来源）。
+    #[must_use]
+    pub fn terminal_order_report(&self) -> TerminalOrderReport {
+        self.entry.terminal_order_report()
+    }
+
     /// 桥接任务退出（`sse_rx` 关闭 ⟺ 本流不可能再产帧）时摘除登记。
     ///
     /// 只摘除仍指向**本**登记项的那个键：同 `job_id` 已被重新登记时不误删新的。
@@ -283,6 +331,20 @@ impl StreamPublisher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1333 P1：投递路径即观测点——终态后再投业务帧要能被记到这条流自己头上。
+    #[test]
+    fn publish_counts_frames_after_terminal() {
+        let hub = SseStreamHub::new();
+        let publisher = hub.register_job(13);
+        assert!(publisher.terminal_order_report().is_clean());
+        let _ = publisher.publish(r#"{"type":"RUN_FINISHED"}"#.to_string());
+        assert!(publisher.terminal_order_report().is_clean());
+        let _ = publisher.publish("迟到的正文 delta".to_string());
+        let report = publisher.terminal_order_report();
+        assert_eq!(report.event_after_terminal, 1);
+        assert!(report.terminal_seen);
+    }
 
     #[test]
     fn ring_trims_and_replay() {

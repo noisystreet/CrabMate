@@ -341,6 +341,9 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 - **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，
   由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
 - **后续收缩（E4）**：待删除「终态后业务帧」兼容等；见 **`docs/Turn布局设计.md` §16**。
+- **服务端自检（观测，非契约）**：服务端在 SSE hub 的投递口逐帧判定终态序；违规只计数 + `warn`
+  （`event_after_terminal_count` / `repeated_terminal`），**不**拦帧、**不**改下行序列，累加值在流关闭时以
+  `terminal_order_summary` 汇总。它是 E4 收缩前的证据来源，口径见 **`docs/Turn布局设计.md` §16.6**。
 
 ### 工具调用
 

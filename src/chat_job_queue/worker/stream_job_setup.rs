@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use log::info;
+use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
@@ -161,7 +161,34 @@ pub(crate) async fn stream_job_bridge_loop(
         // 客户端已断开时不要提前 break：环形缓冲还要继续累积，供 `stream_resume` 重放。
         let _ = http_tx.send(publisher.publish(line)).await;
     }
+    log_terminal_order_summary(&publisher);
     publisher.finalize();
+}
+
+/// 本流的终态序汇总（#1333 P1 / Turn §16.6）。
+///
+/// 违规在 [`crate::sse::StreamPublisher::publish`] 里已按帧 `warn` 过；这里只补一条**收尾**
+/// 记录：关闭 B4 要求 `event_after_terminal_count == 0` 连续一个版本区间，光看「没有 warn」
+/// 分不清「干净跑完」与「流压根没跑到终态就断了」，所以要连 `terminal_seen` 一起记。
+fn log_terminal_order_summary(publisher: &crate::sse::StreamPublisher) {
+    let report = publisher.terminal_order_report();
+    if report.is_clean() {
+        debug!(
+            target: "crabmate",
+            "terminal_order_summary job_id={} event_after_terminal_count=0 repeated_terminal_count=0 terminal_seen={}",
+            publisher.job_id(),
+            report.terminal_seen
+        );
+    } else {
+        warn!(
+            target: "crabmate",
+            "terminal_order_summary job_id={} event_after_terminal_count={} repeated_terminal_count={} terminal_seen={}",
+            publisher.job_id(),
+            report.event_after_terminal,
+            report.repeated_terminal,
+            report.terminal_seen
+        );
+    }
 }
 
 fn stream_job_web_tool_ctx(

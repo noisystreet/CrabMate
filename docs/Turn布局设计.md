@@ -688,6 +688,29 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
   `projection_hash_changed` 等；**禁止**记密钥与完整正文。告警：终态后事件、revision 久不到达、同 revision hash 抖动、hydration 后空壳增加、
   `on_done` 重复。
 
+**P1 观测落地（#1333，只记结构化日志，不引入 metrics 端点）**
+
+| 指标 | 落点 | 口径 |
+|---|---|---|
+| `event_after_terminal_count` | `cm_sse_protocol/sse/stream_hub.rs` 的 `StreamEntry::publish` | 终态（`RUN_FINISHED` / `RUN_ERROR`，含 V1 形状 `stream_ended` / 带 `code` 的 `error`）之后再投递的**非终态**帧条数 |
+| `repeated_terminal` | 同上 | 终态后再来终态；单独计数，不并进上一项 |
+| `terminal_order_summary` | `chat_job_queue::worker::stream_job_bridge_loop` | 流关闭时一次汇总；带 `terminal_seen`，用于区分「干净跑完」与「没跑到终态就断了」 |
+| `stream_draining_to_saved_ms` | `chat_job_queue::stream_finish::log_finish_timing` | `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身） |
+| `conversation_saved_to_finished_ms` | 同上 | `conversation_saved` 入队 → 终态帧入队之后（含可选 `STATE_SNAPSHOT`） |
+| `hydration_projection_source` | `web/chat_handlers/chat` 的 `GET /conversation/messages` | `layout_v2` / `legacy`（后者含 `layout` 缺失或 `layout_schema_version < 2`） |
+| `projection_hash_changed` | 同上 | 由 `messages` 重新派生的 hash ≠ 落盘 `projection_hash` |
+
+口径补充：
+
+- 终态序观测挂在**投递口**而不是收尾函数：收尾函数自己不会在终态后再发帧，违例恰恰来自
+  后台工具任务、审批等持同一 `sse_tx` 的迟到帧。观测**不拦帧、不重排**，纯计数。
+- `saved_at` 为 `None`（`Conflict` / 落盘后读不到 revision）时两段耗时都记 `None`，
+  **不**折成 `0ms`，否则「未落盘」会被统计成「落盘极快」。
+- 反向门禁：`fixtures/sse_terminal_order_golden.jsonl` 由
+  `cm_sse_protocol::terminal_order::tests::golden_terminal_order_matches_expected` 驱动
+  （帧序列 → 期望违规数）。此前只有「顺序正确」的正向断言。
+- 关闭条件里的「连续一个版本区间为 0」按上述日志 grep 统计；阈值数据出来后回填 Issue #1333。
+
 ### 16.7 验收
 
 1. `RUN_FINISHED` / `RUN_ERROR` 为最后一个业务事件。  
