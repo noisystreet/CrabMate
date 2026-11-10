@@ -30,11 +30,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   count and how many rows lack `layout_meta_json` (NULL or blank) — i.e. how much traffic can only use the legacy read
   path. It feeds the §16.5 threshold check before that path is removed; the threshold itself is **not** hardcoded.
 
-- **v1 turn projectors leave the public API (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and
-  `project_turn_web` (`crabmate sse-replay` + golden) are now `pub(crate)` and no longer re-exported by
-  `cm_turn_layout`; Web has been on `project_turn_web_v2` / `project_turn_projection` since B2.
-  `fixtures/turn_project_web_golden.jsonl` is documented as a **replay contract**. No wire-protocol, config,
-  tool, or CLI change — downstream crates that never imported the two v1 symbols are unaffected.
+- **v1 turn projectors removed (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and `project_turn_web`
+  (`crabmate sse-replay` + golden) are **deleted**; `sse-replay --format rows` now projects through
+  `project_turn_web_v2`, so its row list no longer contains aggregated `assistant_batch_narration` entries
+  (closed commentary becomes its own row, plus `assistant_timeline`). `fixtures/turn_project_golden.jsonl` and
+  `fixtures/turn_project_web_golden.jsonl` are removed; Web's contract golden stays
+  `turn_project_projection_golden.jsonl`. `batch_narration_text` / `batch_narration_row` remain public (the
+  Client imports the former). **CLI-visible**: the `rows` output shape changes; no flag, wire protocol or config move.
 
 ## [0.8.1] - 2026-11-09
 

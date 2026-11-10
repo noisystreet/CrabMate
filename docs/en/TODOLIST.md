@@ -60,8 +60,8 @@ This file lists **only open** work items. **Remove an item when it is done** (do
   - **P1 telemetry landed** ([`#1333`](https://github.com/noisystreet/CrabMate/issues/1333)): `event_after_terminal_count` /
     `terminal_order_summary` / two-phase finish timings / `hydration_projection_source` / `projection_hash_changed` as
     structured logs; reverse gate in `fixtures/sse_terminal_order_golden.jsonl`. Shrinking still needs §16.5 data.
-  - **P2 landed** (PR #1335): v1 projectors `project_turn` / `project_turn_web` narrowed to `pub(crate)`; v1 goldens
-    pinned as the replay contract.
+  - **P2 landed** (PR #1335 / #1336): v1 projectors `project_turn` / `project_turn_web` **removed** (`sse-replay` moved
+    to v2); both v1 goldens deleted, leaving `turn_project_projection_golden.jsonl` as the Web contract.
   - **P3 landed**: `sse_capabilities.terminal_order` and `SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED` removed
     (**BREAKING**, see `CHANGELOG.md` `Removed`); terminal order is now always the new one, `SSE_PROTOCOL_VERSION`
     stays **2**. Official Client never read the field (verified: 0 references in `crabmate-client`).

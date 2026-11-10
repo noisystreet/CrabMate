@@ -10,7 +10,7 @@
 **目标读者**：维护者；变更 **`turn_segment_*`**、
   Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream)
   或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、
-  **`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
+  **`fixtures/turn_project_projection_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
     下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
 
 ---
@@ -110,13 +110,14 @@ flowchart TB
 | `model.rs` | `Turn`、`ToolStep`、`TurnSegment`、`SegmentKind` |
 | `event.rs` | `TurnEvent`（`SegmentStart/Delta/End`、`ToolCall`、`ToolPhaseEnd`） |
 | `reduce.rs` | `reduce_event`：允许 **晚到 `SegmentDelta`** 挂到已关闭段或 `seg-before-{tool_call_id}` |
-| `project.rs` | `project_turn`（v1，仅金样）→ `Vec<ProjectedRow>`；Web 走 `project_turn_projection` |
+| `project.rs` | `project_turn_web_v2` / `project_turn_projection`（v1 `project_turn` / `project_turn_web` 已随 #1333 删除） |
 
-**金样**：`fixtures/turn_project_golden.jsonl`、`fixtures/turn_project_web_golden.jsonl` 属 **v1 replay 契约**
-（前者仅 `project_turn` 金样，后者 `project_turn_web` 仅 `sse-replay` + 金样，两者**不是**公开 API，#1333 P2）；
-Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`，事件语料另见 Client 侧
-`golden_turn_web_stored_sync`（读 `fixtures/turn_web_v2_stored_sync.jsonl`，与本文 v1 金样**用例逐条同源**，改任一侧都要回填）。
-**测试**：`cargo test --lib golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
+**金样**：Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`（`project_turn_projection`
+finalized/active）。原 v1 金样 `turn_project_golden.jsonl` / `turn_project_web_golden.jsonl` 随 v1 投影器
+（`project_turn` / `project_turn_web`）在 #1333 一并删除；`batch_narration_row` 仍由 `batch_narration_text`
+派生。事件语料另见 Client 侧 `golden_turn_web_stored_sync`（读 `fixtures/turn_web_v2_stored_sync.jsonl`，
+其用例与本文原 v1 金样同源，改任一侧仍要回填）。
+**测试**：`cargo test --lib golden_turn_project_projection` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
 
@@ -228,8 +229,7 @@ Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`，事件语�
 ## 9. 非目标与已知边界
 
 - **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；
-  **CLI** 尚未将 `Turn` 投影到 stdout transcript。金样：
-  `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`）。
+  **CLI** 尚未将 `Turn` 投影到 stdout transcript（排障用 `sse-replay --format rows|canonical`，已切 v2 投影）。
 - **服务端 `Message` 列表**顺序仍按 OpenAI 工具协议；本设计主要修正 **Web `StoredMessage` 展示/导出** 与终端 TUI 本轮投影。
 - **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**；
   读侧经 `is_ephemeral_timeline_assistant_for_chat_ui` 对主列与导出一并跳过。
@@ -242,8 +242,8 @@ Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`，事件语�
 
 - [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、
   `parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
-- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` +
-  `cargo test -p crabmate golden_turn_project` / `golden_turn_project_web` +
+- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_projection_golden.jsonl` +
+  `cargo test -p crabmate golden_turn_project_projection` +
   `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测
@@ -316,7 +316,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **2（已落地）** | 段边界时机 I5 | LLM 流内解析 `tool_call.id` 时 emit `turn_segment_start/end`；reducer `SegmentStart` 关闭其它 open 段 | `src/cm_llm/api/sse_parser.rs`、`stream_host.rs`、`reduce.rs` |
 | **2（已落地）** | 形态 B 投影 | `sync_turn_projection` 按 **`project_turn`** 行序 upsert | `turn_layout.rs`、`project.rs` |
 | **3（已落地，P1 退役）** | 形态 C I4 | ~~`dedupe_redundant_loading_tail` 于 `on_done`~~ → P1 删除 | 曾：`turn_layout.rs`、`stream_end.rs` |
-| **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_golden.jsonl` |
+| **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_projection_golden.jsonl`（v1 金样已删） |
 | **4（已落地）** | **收敛写入 I6–I8** | plain delta / `final_response` 仅经 canonical 投影写正文；`final_response` 不 push 新泡；overlay 与投影互斥 | `delta_apply.rs`、`timeline_dispatch.rs`、`turn_layout.rs`、`stream_text_overlay.rs` |
 | **5（已落地）** | **单一读路径** | 导出与 TUI 共用 ephemeral / 空壳过滤（P1 起无 assistant fuzzy dedupe） | `visible_messages.rs`、`session_export.rs`、`tui_transcript_sync.rs` |
 
@@ -506,7 +506,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 ```
 
 **仍保留**：`demote_answer_before_tools`、post-tool loading peel/pin、
-  `TurnReducer` 金样（`fixtures/turn_project_golden.jsonl` 仍可按 step 锚点断言 canonical，与 UI 投影可分叉）。
+  `TurnReducer` 金样（canonical 仍可按 step 锚点断言、与 UI 投影可分叉；原 v1 金样已随 #1333 删除）。
 
 ### 13.2 Hydration 与缓存版本
 

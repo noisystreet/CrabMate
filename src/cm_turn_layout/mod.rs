@@ -2,13 +2,12 @@
 //!
 //! - **Reducer**：按 SSE / 内部事件更新 canonical 状态（允许事件到达顺序与展示顺序不同）。
 //! - **Projector**：`Turn` → 有序 [`ProjectedRow`]；`project_turn_web_v2` / [`project_turn_projection`]
-//!   为 Web 定稿行 + 可选 active。**v1**（`project_turn` / `project_turn_web`）已收为 crate 内私有：
-//!   生产只剩 `sse-replay`，其余仅金样（#1333 P2，勿再对外暴露）。
+//!   为 Web 定稿行 + 可选 active。**v1 块布局投影器已随 #1333 移除**（`project_turn` / `project_turn_web`，
+//!   原唯一消费者是 `crabmate sse-replay`，已切到 v2），v1 金样一并删除。
 //!
-//! 金样：`turn_project_golden.jsonl` / `turn_project_web_golden.jsonl` 属 **v1 replay 契约**
-//! （前者仅 `project_turn` 金样，后者仅 `sse-replay` + 金样）；Web 现行契约是
-//! `turn_project_projection_golden.jsonl`（`project_turn_projection` finalized/active）。
-//! 测试：`cargo test --lib golden_turn_project` / `golden_turn_project_web` / `golden_turn_project_projection`。
+//! 金样：Web 现行契约是 `turn_project_projection_golden.jsonl`（`project_turn_projection`
+//! finalized/active）。`batch_narration_row` 仍从 [`batch_narration_text`] 派生，供 Web 批说明气泡用。
+//! 测试：`cargo test --lib golden_turn_project_projection`。
 
 mod event;
 mod hydration_diff;
@@ -44,18 +43,9 @@ mod golden {
     use crate::cm_turn_layout::event::TurnEvent;
     use crate::cm_turn_layout::model::Turn;
     use crate::cm_turn_layout::project::{
-        ActiveProjectedRow, ProjectedRow, project_turn, project_turn_projection, project_turn_web,
+        ActiveProjectedRow, ProjectedRow, project_turn_projection,
     };
     use crate::cm_turn_layout::reduce::TurnReducer;
-
-    #[derive(Debug, Deserialize)]
-    struct GoldenCase {
-        id: String,
-        events: Vec<TurnEvent>,
-        expect: Vec<ProjectedRow>,
-        #[serde(default)]
-        expect_open_preview: Option<String>,
-    }
 
     #[derive(Debug, Deserialize)]
     struct ProjectionGoldenCase {
@@ -101,59 +91,6 @@ mod golden {
             reducer.apply(&mut turn, ev);
         }
         turn
-    }
-
-    #[test]
-    fn golden_turn_project() {
-        let path = fixture_path("turn_project_golden.jsonl");
-        for (line_no, case) in load_cases::<GoldenCase>(&path) {
-            let turn = reduce_events(case.events);
-            let got = project_turn(&turn);
-            assert_eq!(
-                got,
-                case.expect,
-                "case {} at {}:{}",
-                case.id,
-                path.display(),
-                line_no
-            );
-        }
-    }
-
-    #[test]
-    fn golden_turn_project_web() {
-        let path = fixture_path("turn_project_web_golden.jsonl");
-        for (line_no, case) in load_cases::<GoldenCase>(&path) {
-            let turn = reduce_events(case.events);
-            let got = project_turn_web(&turn);
-            assert_eq!(
-                got,
-                case.expect,
-                "case {} at {}:{}",
-                case.id,
-                path.display(),
-                line_no
-            );
-            if let Some(ref preview) = case.expect_open_preview {
-                let open = crate::cm_turn_layout::streaming_commentary_block_text(&turn)
-                    .unwrap_or_default();
-                assert_eq!(
-                    open,
-                    *preview,
-                    "case {} open preview at {}:{}",
-                    case.id,
-                    path.display(),
-                    line_no
-                );
-                if let Some(batch) = crate::cm_turn_layout::batch_narration_text(&turn) {
-                    assert!(
-                        !batch.contains(preview.as_str()),
-                        "case {}: open preview must not duplicate batch row",
-                        case.id
-                    );
-                }
-            }
-        }
     }
 
     #[test]
