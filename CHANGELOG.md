@@ -24,7 +24,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **`GET /conversation/messages` always carries `layout` (#1333 P4).** The "omit the key when the stored row has no
   `layout_meta_json`" fallback is gone: unpersisted sessions now serialize `"layout": null` instead of dropping the key.
-  `Option`-typed clients see no difference, and the OpenAPI shape is unchanged (still nullable / not required).
+  `Option`-typed clients see no difference; the OpenAPI schema still says optional/nullable, i.e. it is *looser*
+  than the implementation (the key is now always emitted).
 - **`crabmate doctor` reports conversation-layout coverage (#1333 P4).** A new read-only block prints the session-row
   count and how many rows lack `layout_meta_json` (NULL or blank) — i.e. how much traffic can only use the legacy read
   path. It feeds the §16.5 threshold check before that path is removed; the threshold itself is **not** hardcoded.
