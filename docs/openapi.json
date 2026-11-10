@@ -681,7 +681,7 @@
                 "type": "null"
               }
             ],
-            "description": "会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。"
+            "description": "会话级布局；`null` = 未持久化。P4 起该键**总是**出现（不再省略），不随本页 `messages` 窗口切片。"
           },
           "messages": {
             "description": "OpenAI 兼容 chat messages 对象数组",

@@ -224,8 +224,7 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
-    /// 会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 会话级布局；`null` = 未持久化。P4 起该键**总是**出现（不再省略），不随本页 `messages` 窗口切片。
     pub layout: Option<ConversationLayoutMeta>,
     /// 可选的模型视图回放配方；旧会话为空。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -390,8 +389,8 @@ pub struct ConversationMessagesResponseBody<M> {
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
-    /// 会话级布局元数据；省略表示未写入。不随本页 `messages` 窗口切片；当前保存路径仍不写（hydration 不变）。
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 会话级布局元数据；`null` = 未持久化。P4 起该键**总是**出现（不再省略），见 `docs/Turn布局设计.md` §16.1 / §16.5。
+    /// 不随本页 `messages` 窗口切片。
     pub layout: Option<ConversationLayoutMeta>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_artifacts: Vec<serde_json::Value>,
@@ -538,5 +537,34 @@ mod b5_roundtrip_serde_tests {
         )
         .expect("parse query with include_archive");
         assert_eq!(q.include_archive, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod p4_layout_contract_tests {
+    use super::*;
+
+    /// P4：`layout` 键**总是**出现（未持久化时为 `null`），不再靠「省略该键」兜底。
+    #[test]
+    fn messages_response_always_serializes_layout_key() {
+        let body = ConversationMessagesResponseBody {
+            conversation_id: "c1".to_string(),
+            revision: 1,
+            active_agent_role: None,
+            active_session_mode: None,
+            active_permission_level: None,
+            effective_permission_level: None,
+            tiktoken_prompt_tokens: None,
+            layout: None,
+            context_artifacts: Vec::new(),
+            archive: Vec::<serde_json::Value>::new(),
+            messages: Vec::<serde_json::Value>::new(),
+            total_count: 0,
+            window_start_index: 0,
+            has_older: false,
+        };
+        let v = serde_json::to_value(&body).expect("serialize response body");
+        assert!(v.get("layout").is_some(), "layout 键必须始终出现，got: {v}");
+        assert!(v["layout"].is_null(), "未持久化时应为 null，got: {v}");
     }
 }

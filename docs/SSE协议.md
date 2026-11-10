@@ -87,7 +87,7 @@
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（必有旧字段 `prompt_tokens` + `tiktoken_model`；Phase 3 可选软字段见下） | Leptos：更新 `revision`；优先用 Server `used_input_tokens / max_input_tokens` 更新底栏 |
-| `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致）；可选软字段 **`terminal_order`**（当前为 **`saved_before_finished`**，旧客户端忽略） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
+| `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
 | `stream_draining` | 非终态收尾：模型/工具已结束、正在落盘；`job_id` | Web：可提前进入 Draining 文案；**不**置 `saw_stream_ended` |
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`）。**`truncated`**：上游 `finish_reason == "length"`（token 上限）或流在 `[DONE]` 前被切断（无正常收尾）；层 1 截断识别，优先级高于 `fallback` / `completed` / `no_output` | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
@@ -337,7 +337,7 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 **终态顺序（Phase E1，服务端现行）**
 
 - **服务端（新序）**：可选 **`stream_draining`** → 落盘 → **`conversation_saved`** →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED` / `RUN_ERROR`。
-  首帧 `sse_capabilities.terminal_order = saved_before_finished`（软字段，**不** bump `SSE_PROTOCOL_VERSION`）。
+  首帧不再下发 `terminal_order`（B4/P3 已删除该软字段）；终态序**恒为**新序，`SSE_PROTOCOL_VERSION` 不变。
 - **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，
   由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
 - **后续收缩（E4）**：待删除「终态后业务帧」兼容等；见 **`docs/Turn布局设计.md` §16**。

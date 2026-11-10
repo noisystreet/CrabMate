@@ -337,9 +337,6 @@ pub struct SseCapabilitiesBody {
     pub resume_ring_cap: usize,
     /// 本流在队列与 hub 中的 `job_id`；断线重连时填入 `stream_resume.job_id`。
     pub job_id: u64,
-    /// 软能力：终态业务序。当前服务端为 [`crate::cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED`]；旧客户端忽略即可。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub terminal_order: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

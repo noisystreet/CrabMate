@@ -326,6 +326,9 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     print_doctor_user_data_block();
     println!();
 
+    print_doctor_conversation_layout_block(cfg);
+    println!();
+
     print_doctor_tty_approval_block(cfg);
 }
 
@@ -430,4 +433,40 @@ pub async fn run_probe_cli(
         println!("{}", n);
     }
     Ok(())
+}
+
+/// 会话库 `layout` 覆盖率（B4/P4 门禁）：**只读**统计 legacy 行占比，不建表、不写盘。
+///
+/// 用途是给「删 legacy 读路径」提供数据（Issue #1333 关闭条件 4）。阈值**不**在代码里硬编码：
+/// 数据出来后在 Issue 与 `docs/Turn布局设计.md` §16.5 回填，避免把一次拍板写死进程序。
+fn print_doctor_conversation_layout_block(cfg: &AgentConfig) {
+    println!("【会话布局覆盖率（B4/P4 门禁）】");
+    let raw = cfg
+        .conversation_persistence
+        .conversation_store_sqlite_path
+        .trim();
+    if raw.is_empty() {
+        println!("  conversation_store_sqlite_path 未配置（纯内存后端，无持久化行可统计）");
+        return;
+    }
+    let path = std::path::Path::new(raw);
+    if !path.exists() {
+        println!("  会话库尚不存在: {}（首次落盘后才有数据）", path.display());
+        return;
+    }
+    match crate::conversation_store::layout_coverage(path) {
+        Ok(cov) => match cov.legacy_ratio() {
+            Some(ratio) => println!(
+                "  会话行 {} / 无 layout 行 {}（{:.1}% 只能走 legacy 读路径）",
+                cov.total,
+                cov.without_layout,
+                ratio * 100.0
+            ),
+            None => println!("  会话行 0（空库，占比无意义）"),
+        },
+        Err(e) => println!("  [!] 无法读取会话库 {}: {e}", path.display()),
+    }
+    println!(
+        "  口径: layout_meta_json 为 NULL 或空白；删 legacy 读路径前须低于既定阈值（见 Issue #1333）"
+    );
 }
