@@ -10,6 +10,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **Two-gate context self-check (#1342).** Config load now compares the message-count cap against the token trigger
+  (`max_message_history × assumed 1,200 tokens/message` vs `trigger_tokens`) and logs a `warn` with the suggested cap
+  when the count gate would fire first — the failure mode behind #1339. `crabmate doctor` prints the same comparison
+  (window → input budget, both gates, which fires first). The trigger formula now has exactly one implementation
+  (`cm_config::context_gates`), shared by the runtime budget, the self-check and doctor, so the three cannot drift.
+
 ### Removed
 
 - **BREAKING: `sse_capabilities.terminal_order` is gone (#1333 P3).** The first SSE frame no longer carries the soft

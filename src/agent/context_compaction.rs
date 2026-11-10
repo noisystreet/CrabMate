@@ -77,34 +77,18 @@ pub struct ContextTokenBudget {
 }
 
 impl ContextTokenBudget {
+    /// 与配置自检、`crabmate doctor` 共用 `cm_config::context_gates` 的**同一份**推导（#1342）：
+    /// 公式只写一遍，改阈值语义不会出现「运行期与诊断各算一套」的静默分叉。
     #[must_use]
     pub fn from_config(cfg: &AgentConfig) -> Option<Self> {
-        let context_window_tokens = cfg.llm_sampling.llm_context_tokens;
-        if context_window_tokens == 0 {
-            return None;
-        }
-        let reserved_output_tokens = cfg
-            .llm_sampling
-            .max_tokens
-            .min(context_window_tokens.saturating_sub(256));
-        let available_after_output =
-            context_window_tokens.saturating_sub(reserved_output_tokens);
-        let safety_margin_tokens = cfg
-            .context_pipeline
-            .context_token_safety_margin_tokens
-            .min(available_after_output.saturating_sub(128));
-        let max_input_tokens = available_after_output.saturating_sub(safety_margin_tokens);
+        let parts = crate::cm_config::context_gates::ContextTokenBudgetParts::from_config(cfg)?;
         Some(Self {
-            context_window_tokens,
-            reserved_output_tokens,
-            safety_margin_tokens,
-            max_input_tokens,
-            trigger_tokens: max_input_tokens
-                .saturating_mul(cfg.context_pipeline.context_token_trigger_percent)
-                / 100,
-            target_tokens: max_input_tokens
-                .saturating_mul(cfg.context_pipeline.context_token_target_percent)
-                / 100,
+            context_window_tokens: parts.context_window_tokens,
+            reserved_output_tokens: parts.reserved_output_tokens,
+            safety_margin_tokens: parts.safety_margin_tokens,
+            max_input_tokens: parts.max_input_tokens,
+            trigger_tokens: parts.trigger_tokens,
+            target_tokens: parts.target_tokens,
         })
     }
 }
