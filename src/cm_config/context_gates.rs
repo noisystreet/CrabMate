@@ -16,6 +16,12 @@ use crate::cm_config::AgentConfig;
 /// **只用于告警与诊断展示**，不参与任何裁剪判定，也不用于自动调参。
 pub const ASSUMED_TOKENS_PER_MESSAGE: u64 = 1_200;
 
+/// `max_message_history` 的取值上界，与 `cm_config::validate` 的同名行单一同源（#1342）。
+///
+/// 存在的意义：自检给出的「建议条数」在超大窗口下会**超出**这个上界，用户照着调会被校验
+/// 直接拒绝。告警必须能识别这种「建议值不可达」的情形，改指另一条路（调低触发百分比）。
+pub const MAX_MESSAGE_HISTORY_LIMIT: u64 = 1_024;
+
 /// 最终请求输入预算的分段推导结果。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ContextTokenBudgetParts {
@@ -122,13 +128,17 @@ pub fn context_gate_alignment(cfg: &AgentConfig) -> Option<ContextGateAlignment>
 ///
 /// 返回文案而不是直接打日志，是为了让测试能断言「两条线的数值都出现」，
 /// 不必去抓日志输出。
+///
+/// 建议条数可能**超出**上界（超大窗口 + 默认 1024 条时会算到 1,400 上下），那时「调大条数」
+/// 这条路走不通，文案追加 [`unreachable_suggestion_hint`] 指向另一条路。
 #[must_use]
 pub fn count_gate_warning(cfg: &AgentConfig) -> Option<String> {
     let alignment = context_gate_alignment(cfg)?;
     if !alignment.count_gate_wins() {
         return None;
     }
-    Some(format!(
+    let suggested = alignment.suggested_max_message_history();
+    let mut message = format!(
         "配置提示：条数闸会比 token 预算先动手 —— max_message_history={} 条 × 假定 {} token/条 ≈ {} token，\
 低于 trigger_tokens={}（llm_context_tokens={}，trigger={}%）。后果：上下文水位还很低就会按条数裁剪历史。\
 建议 max_message_history ≥ {}，或调低 context_token_trigger_percent。见 #1339 / #1342。",
@@ -138,7 +148,26 @@ pub fn count_gate_warning(cfg: &AgentConfig) -> Option<String> {
         alignment.budget.trigger_tokens,
         alignment.budget.context_window_tokens,
         cfg.context_pipeline.context_token_trigger_percent,
-        alignment.suggested_max_message_history(),
+        suggested,
+    );
+    if let Some(hint) = unreachable_suggestion_hint(suggested) {
+        message.push_str(&hint);
+    }
+    Some(message)
+}
+
+/// 「建议条数 > 上界」时的补充提示：此时可执行的动作只剩调阈值。
+///
+/// `pub` 是为了让 `crabmate doctor` 的双闸块复用同一句文案（诊断与自检不得各写一套）。
+#[must_use]
+pub fn unreachable_suggestion_hint(suggested: usize) -> Option<String> {
+    let suggested = u64::try_from(suggested).ok()?;
+    if suggested <= MAX_MESSAGE_HISTORY_LIMIT {
+        return None;
+    }
+    Some(format!(
+        "【注意】该建议值 {suggested} 超过 max_message_history 的上界 {MAX_MESSAGE_HISTORY_LIMIT}（配置校验会拒绝），\
+条数这条路走不通：请调低 context_token_trigger_percent，或接受条数闸先到。"
     ))
 }
 
@@ -212,5 +241,49 @@ mod tests {
             .expect("alignment")
             .budget
             .trigger_tokens
+    }
+
+    /// 一个「窗口够大、条数取上界」的配置：建议条数会超过 `max_message_history` 上界。
+    fn two_mega_at_limit_cfg() -> AgentConfig {
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        cfg.session_ui.max_message_history =
+            usize::try_from(MAX_MESSAGE_HISTORY_LIMIT).expect("limit fits usize");
+        cfg.llm_sampling.llm_context_tokens = 2_000_000;
+        cfg.llm_sampling.max_tokens = 16_384;
+        cfg
+    }
+
+    /// 建议条数超出配置上界时，告警必须指出「条数这条路走不通」（#1342 收尾）。
+    ///
+    /// 否则用户照着一个被 `validate` 拒绝的值去改，只会得到一条无关的校验错误。
+    #[test]
+    fn warning_flags_unreachable_suggestion_beyond_limit() {
+        let cfg = two_mega_at_limit_cfg();
+        let suggested = context_gate_alignment(&cfg)
+            .expect("alignment")
+            .suggested_max_message_history();
+        assert!(
+            u64::try_from(suggested).expect("usize fits u64") > MAX_MESSAGE_HISTORY_LIMIT,
+            "2M 窗口的建议值应超过上界，实际 {suggested}"
+        );
+        let msg = count_gate_warning(&cfg).expect("应触发告警");
+        assert!(msg.contains(&suggested.to_string()), "应含建议值: {msg}");
+        assert!(
+            msg.contains(&MAX_MESSAGE_HISTORY_LIMIT.to_string()),
+            "应含上界数值: {msg}"
+        );
+        assert!(msg.contains("上界"), "应指出建议值不可达: {msg}");
+    }
+
+    /// 建议值仍在范围内时不追加「不可达」提示（否则告警会误导）。
+    #[test]
+    fn warning_has_no_unreachable_hint_when_suggestion_fits() {
+        let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        let mut cfg_small = cfg;
+        cfg_small.session_ui.max_message_history = 256;
+        cfg_small.llm_sampling.llm_context_tokens = 1_000_000;
+        cfg_small.llm_sampling.max_tokens = 16_384;
+        let msg = count_gate_warning(&cfg_small).expect("256 条应触发告警");
+        assert!(!msg.contains("上界"), "建议值 696 可达成，不该提上界: {msg}");
     }
 }

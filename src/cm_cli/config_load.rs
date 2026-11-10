@@ -47,15 +47,24 @@ pub(super) fn load_cli_agent_config(
     Ok(cfg)
 }
 
+/// 最终 cfg 上的两道闸自检文案；`None` 表示一致或 token 预算未启用。
+///
+/// 触发条件（`count_gate_warning` 内）：`max_message_history × 假定 token/条 < trigger_tokens`，
+/// 此时条数闸会先动手，用户观感是「上下文水位才两三成就丢历史」（#1339）。
+///
+/// 独立成函数是为了让测试能在**不抓日志**的前提下断言「最终 cfg 是否该告警」——
+/// 层序一旦被改坏（例如 CLI 覆盖挪到 user-data 之前），`load_cli_agent_config` 的
+/// 自检输入就不再是最终值，这条断言会红。
+fn context_gate_warning(cfg: &config::AgentConfig) -> Option<String> {
+    config::context_gates::count_gate_warning(cfg)
+}
+
 /// 两道闸（条数 / token 预算）的等效水位不一致时告警（#1342）。
 ///
-/// 触发条件：`max_message_history × 假定 token/条 < trigger_tokens` —— 此时条数闸会先动手，
-/// 用户观感是「上下文水位才两三成就丢历史」（#1339）。
-///
-/// 必须在本函数（即 user-data 与 CLI 覆盖**都应用之后**）调用：`config::load_config` 那一层
-/// 还没有 user-data 的窗口覆盖，看到的不是最终生效值。
+/// 必须在层序**都应用之后**调用（本模块的 `load_cli_agent_config`）：`config::load_config`
+/// 那一层还没有 user-data 的窗口覆盖，看到的不是最终生效值。
 fn warn_on_context_gate_misalignment(cfg: &config::AgentConfig) {
-    if let Some(message) = config::context_gates::count_gate_warning(cfg) {
+    if let Some(message) = context_gate_warning(cfg) {
         log::warn!(target: "crabmate", "{message}");
     }
 }
@@ -125,5 +134,38 @@ mod tests {
         let cfg = crate::cm_config::load_config(None).expect("embedded default config");
         let cfg = apply_cli_llm_context_tokens_override(cfg, Some(u32::MAX));
         assert_eq!(cfg.llm_sampling.llm_context_tokens, 10_000_000);
+    }
+
+    /// 内嵌默认（1024 条 × 262,144 窗口）满足双闸不变量：启动不应刷告警。
+    #[test]
+    fn embedded_default_config_has_no_gate_warning() {
+        let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        assert!(
+            context_gate_warning(&cfg).is_none(),
+            "默认配置不该告警：{:?}",
+            context_gate_warning(&cfg)
+        );
+    }
+
+    /// #1342 验收 1 的内核：自检输入必须是**层序都应用之后**的最终 cfg。
+    ///
+    /// 场景取自 Issue 实测：1M 窗口 + 256 条告警（307,200 < 834,332）；
+    /// 同一配置再经 CLI 层把窗口收成 262,144 后告警消失（307,200 > 207,155）。
+    /// 若把 CLI 覆盖挪回 user-data 之前，第二段断言就会红。
+    #[test]
+    fn gate_warning_tracks_final_cfg_after_cli_layer() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        cfg.session_ui.max_message_history = 256;
+        cfg.llm_sampling.llm_context_tokens = 1_000_000;
+        cfg.llm_sampling.max_tokens = 16_384;
+        assert!(
+            context_gate_warning(&cfg).is_some(),
+            "1M 窗口 + 256 条应告警"
+        );
+        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(262_144));
+        assert!(
+            context_gate_warning(&cfg).is_none(),
+            "CLI 层收小窗口后条数闸不再先到，不该告警"
+        );
     }
 }
