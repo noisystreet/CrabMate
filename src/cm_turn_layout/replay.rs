@@ -1,5 +1,5 @@
 //! Replay runner：从 SSE 事件录制文件或后端 turn-replay 事件文件读取事件，
-//! 映射为 [`TurnEvent`] 并驱动 [`TurnReducer`] + [`project_turn_web`] 投影。
+//! 映射为 [`TurnEvent`] 并驱动 [`TurnReducer`] + `project_turn_web`（crate 内 v1 块布局，#1333 P2）投影。
 //!
 //! 支持两种 JSONL 格式（自动检测）：
 //! 1. **`sse-replay-events.jsonl`**（由 `CM_SSE_REPLAY_DUMP_DIR` 生成）：每行含 `seq`/`job_id`/`data`，`data` 为 AG-UI JSON。

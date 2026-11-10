@@ -1,11 +1,13 @@
 //! Canonical **`Turn`** layout + reducer + projector（对齐 OpenAI assistant→tool→assistant 与 AG-UI 段边界）。
 //!
 //! - **Reducer**：按 SSE / 内部事件更新 canonical 状态（允许事件到达顺序与展示顺序不同）。
-//! - **Projector**：`Turn` → 有序 [`ProjectedRow`]；`project_turn_web` 保留 v1 块布局，
-//!   `project_turn_web_v2` / [`project_turn_projection`] 为 Web 定稿行 + 可选 active。
+//! - **Projector**：`Turn` → 有序 [`ProjectedRow`]；`project_turn_web_v2` / [`project_turn_projection`]
+//!   为 Web 定稿行 + 可选 active。**v1**（`project_turn` / `project_turn_web`）已收为 crate 内私有：
+//!   生产只剩 `sse-replay`，其余仅金样（#1333 P2，勿再对外暴露）。
 //!
-//! 金样：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 块布局 `project_turn_web`）、
-//! `fixtures/turn_project_projection_golden.jsonl`（`project_turn_projection` finalized/active）；
+//! 金样：`turn_project_golden.jsonl` / `turn_project_web_golden.jsonl` 属 **v1 replay 契约**
+//! （前者仅 `project_turn` 金样，后者仅 `sse-replay` + 金样）；Web 现行契约是
+//! `turn_project_projection_golden.jsonl`（`project_turn_projection` finalized/active）。
 //! 测试：`cargo test --lib golden_turn_project` / `golden_turn_project_web` / `golden_turn_project_projection`。
 
 mod event;
@@ -25,8 +27,8 @@ pub use persist_layout::layout_meta_from_messages;
 pub use project::{
     ASSISTANT_ANSWER, ASSISTANT_BATCH_NARRATION, ASSISTANT_COMMENTARY, ActiveProjectedRow,
     ProjectedRow, TurnProjection, batch_narration_row, batch_narration_text, commentary_for_tool,
-    project_turn, project_turn_projection, project_turn_web, project_turn_web_v2,
-    streaming_commentary_before_tool, streaming_commentary_block_text,
+    project_turn_projection, project_turn_web_v2, streaming_commentary_before_tool,
+    streaming_commentary_block_text,
 };
 pub use reduce::{
     TurnReducer, close_open_commentary_segments, reduce_event, try_split_combined_post_tool_answer,
