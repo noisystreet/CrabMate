@@ -133,8 +133,12 @@ fn first_step_with_commentary_index(turn: &Turn) -> Option<usize> {
 }
 
 /// 将 canonical [`Turn`] 投影为聊天气泡顺序（纯函数；金样见 `fixtures/turn_project_golden.jsonl`）。
+///
+/// **v1 逐步投影，仅金样用**：Web 走 [`project_turn_web_v2`] / [`project_turn_projection`]，
+/// `sse-replay` 走 `project_turn_web`，生产路径已无消费者 —— #1333 P2 把它收出公开 API。
+#[cfg(test)]
 #[must_use]
-pub fn project_turn(turn: &Turn) -> Vec<ProjectedRow> {
+pub(crate) fn project_turn(turn: &Turn) -> Vec<ProjectedRow> {
     let mut out = Vec::new();
     for t in &turn.pre_tool_timeline {
         out.push(row("assistant_timeline", t.clone()));
@@ -162,8 +166,11 @@ pub fn project_turn(turn: &Turn) -> Vec<ProjectedRow> {
 
 /// Web 块布局投影：无旁注工具 → 单条 `assistant_batch_narration` → 含旁注工具批。
 /// 终答由 overlay 承载，`flush_final_answer_row` 从 overlay 参数读取。
+///
+/// **v1 块布局**：生产消费者只剩 `crabmate sse-replay`（`cm_turn_layout::replay`）与本模块的
+/// [`batch_narration_row`]；Web 已走 [`project_turn_web_v2`] —— #1333 P2 把它收出公开 API。
 #[must_use]
-pub fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
+pub(crate) fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
     let mut out = Vec::new();
     let anchor_idx = first_step_with_commentary_index(turn);
     let batch = batch_narration_text(turn);
