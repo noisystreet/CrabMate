@@ -1,6 +1,7 @@
 //! 流式任务在 `run_agent_turn` 之后的收尾：落盘、SSE 终端帧、`final_response` 兜底等。
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::cm_sse_protocol::StreamEndReason;
 use log::{debug, error, info, warn};
@@ -255,6 +256,30 @@ pub(crate) async fn emit_stream_draining(sse_tx: &mpsc::Sender<String>, job_id: 
         .await;
 }
 
+/// 收尾两段耗时（`docs/Turn布局设计.md` §16.6 的 `stream_draining_to_saved_ms` /
+/// `conversation_saved_to_finished_ms`）。
+///
+/// 口径：
+/// - 第一段 = `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身）；
+/// - 第二段 = `conversation_saved` 入队 → **终态帧入队之后**（含可选 `STATE_SNAPSHOT`）；
+/// - `saved_at == None` 表示本回合**没有**发 `conversation_saved`（`Conflict` / 落盘后读不到
+///   revision）。此时两段都记 `None`——**不要**折成 0ms，否则指标会把「未落盘」算成「落盘极快」。
+///
+/// 脱敏：只记会话 id 与毫秒数，不含消息正文。
+fn log_finish_timing(
+    job_id: u64,
+    conversation_id: &str,
+    draining_at: Instant,
+    saved_at: Option<Instant>,
+) {
+    let to_saved_ms = saved_at.map(|t| t.duration_since(draining_at).as_millis() as u64);
+    let to_finished_ms = saved_at.map(|t| t.elapsed().as_millis() as u64);
+    info!(
+        target: "crabmate",
+        "stream_finish_timing job_id={job_id} conversation_id={conversation_id} stream_draining_to_saved_ms={to_saved_ms:?} conversation_saved_to_finished_ms={to_finished_ms:?}"
+    );
+}
+
 /// 负载是否为 `final_response` 时间线（V1 / V2 两种形状）。
 ///
 /// 仅测试用：生产路径不再回读流内容去判断「本轮是否已发过终答」——那等于让 worker 去问
@@ -487,6 +512,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 );
             // Phase E1：先发非终态 `stream_draining`（解除「模型生成中」），再落盘 →
             // `conversation_saved` → 可选 snapshot → **最后** `RUN_FINISHED`。
+            let draining_at = Instant::now();
             emit_stream_draining(sse_tx, job_id).await;
             match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
                 app,
@@ -503,6 +529,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
             .await
             {
                 crate::SaveConversationOutcome::Saved => {
+                    let mut saved_at: Option<Instant> = None;
                     if let Some(new_rev) = app
                         .conversation
                         .load_conversation_seed(conversation_id)
@@ -522,6 +549,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                             "chat_job_queue::stream conversation_saved",
                         )
                         .await;
+                        saved_at = Some(Instant::now());
                     }
                     // 落盘之后：已 strip 注入，形状贴近会话 store（非流式中途视图）。
                     let snapshot_state = serde_json::json!({
@@ -545,6 +573,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         tiktoken_prompt_tokens.clone(),
                     )
                     .await;
+                    log_finish_timing(job_id, conversation_id, draining_at, saved_at);
                     (true, false, None, end_reason)
                 }
                 crate::SaveConversationOutcome::Conflict => {

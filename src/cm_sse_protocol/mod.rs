@@ -12,6 +12,7 @@ mod control_classify;
 pub mod sse;
 mod sse_frame;
 mod stream_end_reason;
+mod terminal_order;
 
 pub use ag_ui_classify::{AgUiParseDispatch, classify_ag_ui_sse_data};
 pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
@@ -21,6 +22,10 @@ pub use sse_frame::{
     extract_stream_ended_reason, is_sse_done_sentinel, join_sse_data_lines, parse_sse_event_id,
 };
 pub use stream_end_reason::StreamEndReason;
+pub use terminal_order::{
+    SseFrameRole, TerminalOrderObservation, TerminalOrderReport, TerminalOrderWatch,
+    classify_sse_frame_role,
+};
 
 /// 当前控制面版本：信封顶层 **`v`**，以及首帧 **`sse_capabilities.supported_sse_v`**。
 pub const SSE_PROTOCOL_VERSION: u8 = 2;

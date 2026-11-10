@@ -1,0 +1,18 @@
+# 终态序反向 golden（#1333 B4/P1）：帧序列 → 期望违规数。
+#
+# 列：描述 <TAB> 帧 JSON 数组 <TAB> 期望 event_after_terminal <TAB> 期望 repeated_terminal
+# 帧 = 一条 SSE `data:` 负载（可含多行，`\n` 分隔多个 AG-UI 事件）。
+# 语义见 docs/SSE协议.md「终态顺序」、docs/Turn布局设计.md §16.6 / §16.7 验收 1。
+# 这些用例由 src/cm_sse_protocol/terminal_order.rs 的 golden_terminal_order_matches_expected 驱动。
+现行新序 stream_draining→saved→snapshot→RUN_FINISHED	["{\"type\":\"CUSTOM\",\"customType\":\"stream_draining\"}","{\"type\":\"CUSTOM\",\"customType\":\"conversation_saved\",\"data\":{\"revision\":42}}","{\"type\":\"STATE_SNAPSHOT\",\"state\":{}}","{\"type\":\"RUN_FINISHED\",\"threadId\":\"t\",\"runId\":\"1\"}"]	0	0
+终态后再来工具结果（B4 要删的那类兼容）	["{\"type\":\"RUN_FINISHED\"}","{\"type\":\"TOOL_CALL_RESULT\",\"toolCallId\":\"tc-1\",\"content\":\"done\"}"]	1	0
+终态后再来裸文本 delta	["{\"type\":\"RUN_FINISHED\"}","最后一句话还在流式下发"]	1	0
+旧序：终态后才来 conversation_saved	["{\"type\":\"RUN_FINISHED\"}","{\"type\":\"CUSTOM\",\"customType\":\"conversation_saved\",\"data\":{\"revision\":43}}"]	1	0
+重复终态单独计数，不并进 event_after_terminal	["{\"type\":\"RUN_FINISHED\"}","{\"type\":\"RUN_FINISHED\"}"]	0	1
+RUN_ERROR 后仍有业务帧	["{\"type\":\"RUN_ERROR\",\"message\":\"upstream 500\"}","{\"type\":\"TEXT_MESSAGE_CONTENT\",\"delta\":\"残余\"}"]	1	0
+终态后连续三帧业务	["{\"type\":\"RUN_FINISHED\"}","{\"type\":\"STATE_SNAPSHOT\"}","{\"type\":\"CUSTOM\",\"customType\":\"sse_capabilities\"}","残帧"]	3	0
+单帧多行工具事件不误报	["{\"type\":\"TOOL_CALL_START\",\"toolCallId\":\"tc-1\"}\n{\"type\":\"TOOL_CALL_ARGS\",\"toolCallId\":\"tc-1\"}\n{\"type\":\"TOOL_CALL_END\",\"toolCallId\":\"tc-1\"}","{\"type\":\"RUN_FINISHED\"}"]	0	0
+V1 形状正序	["{\"v\":1,\"stream_draining\":{\"job_id\":1}}","{\"v\":1,\"conversation_saved\":{\"revision\":7}}","{\"v\":1,\"stream_ended\":{\"job_id\":1,\"reason\":\"completed\"}}"]	0	0
+V1 形状：stream_ended 后再来 error 帧（重复终态）	["{\"v\":1,\"stream_ended\":{\"job_id\":1,\"reason\":\"completed\"}}","{\"v\":1,\"error\":\"收尾失败\",\"code\":\"CONVERSATION_CONFLICT\"}"]	0	1
+只有业务帧、从未出现终态（连接中断）	["{\"type\":\"RUN_STARTED\"}","{\"type\":\"TEXT_MESSAGE_CONTENT\",\"delta\":\"半截\"}"]	0	0
+正文里出现 RUN_FINISHED 字面量不是终态	["{\"type\":\"TEXT_MESSAGE_CONTENT\",\"delta\":\"协议要求先发 RUN_FINISHED\"}","{\"type\":\"RUN_FINISHED\"}"]	0	0
