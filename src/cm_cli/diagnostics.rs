@@ -10,11 +10,11 @@ use crate::http_client;
 
 /// `crabmate doctor`：一页本地诊断（人读、脱敏）。
 pub(super) fn run_doctor(global: &CliGlobals) -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = super::config_load::load_cli_agent_config(
+    let (cfg, trace) = super::config_load::load_cli_agent_config_traced(
         global.config_path.as_deref(),
         global.llm_context_tokens,
     )?;
-    crate::runtime::cli_doctor::print_doctor_report(&cfg, global.workspace.as_deref());
+    crate::runtime::cli_doctor::print_doctor_report(&cfg, global.workspace.as_deref(), &trace);
     Ok(())
 }
 

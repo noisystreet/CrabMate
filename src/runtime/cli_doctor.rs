@@ -7,6 +7,7 @@ use reqwest::Client;
 
 use crate::AgentConfig;
 use crate::config::{ExposeSecret, LlmHttpAuthMode};
+use crate::config::layer_precedence::LayerTrace;
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -298,7 +299,10 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
 }
 
 /// 同步打印一页诊断（不要求 API_KEY）。
-pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
+///
+/// `trace` 为配置层溯源（#1342 P2），由调用方用
+/// `cm_cli::config_load::load_cli_agent_config_traced` 一并取回。
+pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>, trace: &LayerTrace) {
     println!("CrabMate doctor（人读摘要；密钥与令牌永不打印）");
     println!("版本: {}", env!("CARGO_PKG_VERSION"));
     println!();
@@ -328,6 +332,9 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
 
     print_doctor_context_gates_block(cfg);
     print_doctor_conversation_layout_block(cfg);
+    println!();
+
+    print_doctor_config_layer_block(cfg, trace);
     println!();
 
     print_doctor_tty_approval_block(cfg);
@@ -489,6 +496,28 @@ fn doctor_context_gates_lines(cfg: &AgentConfig) -> Vec<String> {
     lines
 }
 
+/// 配置层溯源（#1342 P2）：关键键最终被哪一层改动，以及层序表本身。
+///
+/// 目的：回答「这个值到底谁定的」不必再读调用序列（#1340）。密钥类键只显示
+/// 「已设置/未设置」，永不打印明文。
+fn print_doctor_config_layer_block(cfg: &AgentConfig, trace: &LayerTrace) {
+    println!("【配置层溯源（#1342）】");
+    for line in doctor_config_layer_lines(cfg, trace) {
+        println!("{line}");
+    }
+}
+
+/// 溯源块正文（不含标题），测试直接断言内容而不抓 stdout。
+fn doctor_config_layer_lines(cfg: &AgentConfig, trace: &LayerTrace) -> Vec<String> {
+    let layers: Vec<&str> = crate::config::layer_precedence::LAYERS
+        .iter()
+        .map(|layer| layer.as_str())
+        .collect();
+    let mut lines = vec![format!("  层序（低 → 高）: {}", layers.join(" → "))];
+    lines.extend(trace.doctor_lines(cfg));
+    lines
+}
+
 /// 会话库 `layout` 覆盖率（B4/P4 门禁）：**只读**统计 legacy 行占比，不建表、不写盘。
 ///
 /// 用途是给「删 legacy 读路径」提供数据（Issue #1333 关闭条件 4）。阈值**不**在代码里硬编码：
@@ -571,5 +600,22 @@ mod tests {
         let lines = doctor_context_gates_lines(&cfg_with(0, 1_024)).join("\n");
         assert!(lines.contains("token 预算未启用"), "{lines}");
         assert!(lines.contains("context_char_budget"), "{lines}");
+    }
+
+    /// 溯源块必须同时给出层序表与「谁定的」，且 bearer 只显示状态（#1342 P2）。
+    #[test]
+    fn config_layer_block_reports_order_and_sources() {
+        use crate::config::layer_precedence::LayerTrace;
+
+        let cfg = cfg_with(262_144, 1_024);
+        let trace = LayerTrace::default();
+        let lines = doctor_config_layer_lines(&cfg, &trace).join("\n");
+        assert!(
+            lines.contains("embedded → user_toml → env → user_data → cli"),
+            "{lines}"
+        );
+        assert!(lines.contains("llm_context_tokens = 262144"), "{lines}");
+        assert!(lines.contains("沿用内嵌默认"), "{lines}");
+        assert!(lines.contains("web_api_bearer_token = "), "{lines}");
     }
 }
