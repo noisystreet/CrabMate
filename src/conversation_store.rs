@@ -13,6 +13,8 @@ use crate::cm_types::StructuralCommit;
 
 mod archive;
 #[cfg(test)]
+mod coverage_tests;
+#[cfg(test)]
 mod tests;
 
 // A3/A4 接线前，lib 构建下暂无调用方；保留原 `conversation_store::…` 路径。
@@ -785,4 +787,62 @@ fn truncate_and_clear_archive(
     archive::delete_archive_for_conversation(&tx, id)?;
     tx.commit()?;
     Ok(BranchTruncateOutcome::Saved)
+}
+
+/// 会话库 `layout` 覆盖率（B4/P4 门禁，见 Issue #1333 与 `docs/Turn布局设计.md` §16.5）。
+///
+/// 统计口径与 [`layout_meta_from_column`] 一致：`layout_meta_json` 为 `NULL` **或空白**都算「无 layout」，
+/// 这类行在 `GET /conversation/messages` 上只能走 legacy 读路径。删除 legacy 读路径前，
+/// 该占比必须低于既定阈值——本结构只负责**测量**，不含判定。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LayoutCoverage {
+    /// 会话总行数。
+    pub total: u64,
+    /// `layout_meta_json` 为空（NULL / 空白）的行数。
+    pub without_layout: u64,
+}
+
+impl LayoutCoverage {
+    /// 无 layout 行占比；`total == 0` 时为 `None`（空库没有「占比」可言，不要报 `0%` 误导）。
+    #[must_use]
+    pub fn legacy_ratio(&self) -> Option<f64> {
+        (self.total > 0).then(|| self.without_layout as f64 / self.total as f64)
+    }
+}
+
+/// 只读统计会话库的 `layout` 覆盖率：**不**建表、不迁移、不写盘。
+///
+/// 表不存在（新库 / 从未落盘过会话）按全零返回而不是报错——诊断命令不该因为「还没用过」而失败。
+pub fn layout_coverage(path: &Path) -> Result<LayoutCoverage, rusqlite::Error> {
+    let conn = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    layout_coverage_from_conn(&conn)
+}
+
+fn layout_coverage_from_conn(conn: &Connection) -> Result<LayoutCoverage, rusqlite::Error> {
+    let has_table = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![TABLE],
+            |_r| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_table {
+        return Ok(LayoutCoverage::default());
+    }
+    let total: i64 = conn.query_row(&format!("SELECT count(*) FROM {TABLE}"), [], |r| r.get(0))?;
+    let without_layout: i64 = conn.query_row(
+        &format!(
+            "SELECT count(*) FROM {TABLE} WHERE layout_meta_json IS NULL OR trim(layout_meta_json) = ''"
+        ),
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(LayoutCoverage {
+        total: u64::try_from(total).unwrap_or(0),
+        without_layout: u64::try_from(without_layout).unwrap_or(0),
+    })
 }

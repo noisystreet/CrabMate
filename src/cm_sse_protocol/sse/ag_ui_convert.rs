@@ -245,15 +245,11 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
         SsePayload::SseCapabilities { caps } => AgUiEvent::Custom {
             custom_type: "sse_capabilities".into(),
             data: {
-                let mut data = serde_json::json!({
+                serde_json::json!({
                     "supportedSseV": caps.supported_sse_v,
                     "resumeRingCap": caps.resume_ring_cap,
                     "jobId": caps.job_id,
-                });
-                if let Some(order) = &caps.terminal_order {
-                    data["terminalOrder"] = serde_json::json!(order);
-                }
-                data
+                })
             },
         },
         // 前 5 个变体已在 `convert_sse_payload_to_ag_ui` 中处理，不应到达这里
@@ -558,7 +554,6 @@ mod tests {
                         supported_sse_v: 2,
                         resume_ring_cap: 512,
                         job_id: 1,
-                        terminal_order: None,
                     },
                 },
                 "sse_capabilities",
@@ -866,10 +861,6 @@ mod golden_tests {
                         supported_sse_v: 2,
                         resume_ring_cap: 512,
                         job_id: 1,
-                        terminal_order: Some(
-                            crate::cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED
-                                .to_string(),
-                        ),
                     },
                 },
                 "CUSTOM",

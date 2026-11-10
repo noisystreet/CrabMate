@@ -10,7 +10,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: `sse_capabilities.terminal_order` is gone (#1333 P3).** The first SSE frame no longer carries the soft
+  field `terminal_order` (`saved_before_finished`), and `cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED`
+  is removed from the public API. The order it advertised is now the only one the server emits
+  (`stream_draining` → persist → `conversation_saved` → `RUN_FINISHED`), so clients only had to ignore the field;
+  `SSE_PROTOCOL_VERSION` stays **v2**. Integrations that branched on it should drop the branch.
+  Note: this deliberately skips the "deprecate one release first" step written in #1333, to clear P3 in a single PR;
+  restoring a compat window means re-adding one field plus one constant.
+
 ### Changed
+
+- **`GET /conversation/messages` always carries `layout` (#1333 P4).** The "omit the key when the stored row has no
+  `layout_meta_json`" fallback is gone: unpersisted sessions now serialize `"layout": null` instead of dropping the key.
+  `Option`-typed clients see no difference, and the OpenAPI shape is unchanged (still nullable / not required).
+- **`crabmate doctor` reports conversation-layout coverage (#1333 P4).** A new read-only block prints the session-row
+  count and how many rows lack `layout_meta_json` (NULL or blank) — i.e. how much traffic can only use the legacy read
+  path. It feeds the §16.5 threshold check before that path is removed; the threshold itself is **not** hardcoded.
 
 - **v1 turn projectors leave the public API (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and
   `project_turn_web` (`crabmate sse-replay` + golden) are now `pub(crate)` and no longer re-exported by

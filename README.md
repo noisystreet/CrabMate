@@ -69,7 +69,7 @@ With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer
 | Subcommand | Summary |
 | --- | --- |
 | **`serve`** | HTTP API (**always API-only**, no SPA). UI is hosted by the Client repo and connects via CORS. Default port **8080**, bind **127.0.0.1**. **`--workspace-unset`** starts with a *pending* workspace (the client binds it later via **`POST /workspace`**; tool calls answer **`WORKSPACE_NOT_SET`** until then); **`crabmatectl`** emits it when a declaration omits `workspace`. |
-| **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
+| **`doctor`** | One-page local diagnostics (**no** `API_KEY`), incl. conversation-layout coverage (legacy-row ratio). |
 | **`config`** | Load config and self-check. |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
 | **`save-session`** | Export session file to **`<workspace>/.crabmate/exports/`** (alias **`export-session`**). |

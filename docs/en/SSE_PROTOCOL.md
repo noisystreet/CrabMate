@@ -95,7 +95,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** (legacy required fields plus Phase 3 soft fields below) | Updates `revision`; context meter prefers Server `used_input_tokens / max_input_tokens` |
 | `stream_draining` | Non-terminal wrap-up: model/tools done, persisting; `job_id` | Web: may enter Draining UI early; does **not** set `saw_stream_ended` |
-| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`); optional soft **`terminal_order`** (currently **`saved_before_finished`**; older clients ignore) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
+| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
 | `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`); optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`). **`truncated`**: upstream `finish_reason == "length"` (token cap) or the stream was cut off before `[DONE]` (no clean finish); layer-1 truncation detection, which takes precedence over `fallback` / `completed` / `no_output` | Web: extract first and swallow (independent of other control-plane branches); update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
@@ -343,8 +343,8 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 **Terminal event order (Phase E1, current server)**
 
 - **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`)
-  → **last** `RUN_FINISHED` / `RUN_ERROR`. First-frame `sse_capabilities.terminal_order = saved_before_finished` (soft field;
-  does **not** bump `SSE_PROTOCOL_VERSION`).
+  → **last** `RUN_FINISHED` / `RUN_ERROR`. The first frame no longer carries `terminal_order`
+  (B4/P3 removed that soft field); the terminal order is **always** the new one and `SSE_PROTOCOL_VERSION` is unchanged.
 - **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`;
   also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`,
   driven by body completion (Client `frontend/src/api/chat_stream/sse_frame.rs`).

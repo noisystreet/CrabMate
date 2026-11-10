@@ -319,8 +319,9 @@ mod tests {
         );
     }
 
+    /// P4：`layout` 键不再省略——未持久化时序列化为 `null`；`archive` 仍按空省略。
     #[test]
-    fn conversation_messages_json_omits_absent_layout() {
+    fn conversation_messages_json_serializes_null_layout() {
         let body = ConversationMessagesResponseBody {
             conversation_id: "c".into(),
             revision: 1,
@@ -338,7 +339,11 @@ mod tests {
             has_older: false,
         };
         let v = serde_json::to_value(&body).expect("serialize");
-        assert!(v.get("layout").is_none());
+        assert_eq!(
+            v.get("layout"),
+            Some(&Value::Null),
+            "P4 起 layout 键必须存在且为 null"
+        );
         assert!(v.get("archive").is_none(), "empty archive must be omitted");
     }
 
