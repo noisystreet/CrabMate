@@ -322,7 +322,30 @@ pub fn disabled_tools_snapshot(set: Option<&Arc<std::collections::HashSet<String
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, HashSet};
+
+    use serde::Deserialize;
+
     use super::*;
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        cases: Vec<Case>,
+    }
+
+    #[derive(Deserialize)]
+    struct Case {
+        name: String,
+        #[serde(default)]
+        layers: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+        expected: BTreeMap<String, Expectation>,
+    }
+
+    #[derive(Deserialize)]
+    struct Expectation {
+        value: serde_json::Value,
+        source: Option<String>,
+    }
 
     fn default_cfg() -> AgentConfig {
         crate::cm_config::load_config(None).expect("embedded default config")
@@ -388,5 +411,114 @@ mod tests {
         assert!(text.contains("已设置（值已隐藏）"), "{text}");
         assert!(!text.contains("xyzzy"), "溯源行泄露了密钥: {text}");
         assert!(text.contains("最后由 user_data"), "{text}");
+    }
+
+    fn u32_of(value: &serde_json::Value, key: WatchedKey) -> u32 {
+        u32::try_from(value.as_u64().unwrap_or_else(|| panic!("{} 需要整数", key.as_str())))
+            .unwrap_or_else(|_| panic!("{} 超出 u32", key.as_str()))
+    }
+
+    fn usize_of(value: &serde_json::Value, key: WatchedKey) -> usize {
+        usize::try_from(value.as_u64().unwrap_or_else(|| panic!("{} 需要整数", key.as_str())))
+            .unwrap_or_else(|_| panic!("{} 超出 usize", key.as_str()))
+    }
+
+    /// 按 fixture 声明的键值写入 cfg（模拟该层「改了这些键」）。
+    fn set_watched(cfg: &mut AgentConfig, key: WatchedKey, value: &serde_json::Value) {
+        match key {
+            WatchedKey::LlmContextTokens => cfg.llm_sampling.llm_context_tokens = u32_of(value, key),
+            WatchedKey::MaxTokens => cfg.llm_sampling.max_tokens = u32_of(value, key),
+            WatchedKey::MaxMessageHistory => {
+                cfg.session_ui.max_message_history = usize_of(value, key);
+            }
+            WatchedKey::DisabledTools => {
+                let names: Vec<String> = value
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{} 需要字符串数组", key.as_str()))
+                    .iter()
+                    .map(|item| {
+                        item.as_str()
+                            .unwrap_or_else(|| panic!("{} 元素需为字符串", key.as_str()))
+                            .to_string()
+                    })
+                    .collect();
+                cfg.tool_registry_policy.tool_registry_disabled_tools =
+                    Some(Arc::new(names.into_iter().collect::<HashSet<String>>()));
+            }
+            WatchedKey::WebApiBearer => {
+                let token = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{} 需要字符串占位", key.as_str()));
+                cfg.web_api.web_api_bearer_token =
+                    secrecy::SecretString::new(token.to_string().into());
+            }
+        }
+    }
+
+    /// 当前取值（与 fixture 的 `value` 同一口径；bearer 只报 set/unset）。
+    fn current_json(cfg: &AgentConfig, key: WatchedKey) -> serde_json::Value {
+        match key {
+            WatchedKey::LlmContextTokens => serde_json::json!(cfg.llm_sampling.llm_context_tokens),
+            WatchedKey::MaxTokens => serde_json::json!(cfg.llm_sampling.max_tokens),
+            WatchedKey::MaxMessageHistory => serde_json::json!(cfg.session_ui.max_message_history),
+            WatchedKey::DisabledTools => serde_json::json!(disabled_tools_snapshot(
+                cfg.tool_registry_policy.tool_registry_disabled_tools.as_ref()
+            )),
+            WatchedKey::WebApiBearer => {
+                let set = !cfg
+                    .web_api
+                    .web_api_bearer_token
+                    .expose_secret()
+                    .trim()
+                    .is_empty();
+                serde_json::json!(if set { "set" } else { "unset" })
+            }
+        }
+    }
+
+    /// #1342 P1：层优先级 golden。把某层挪到另一层之前 / 之后，本断言必红。
+    #[test]
+    fn golden_layer_precedence_matrix_matches_fixture() {
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../../fixtures/config_layer_precedence.json"))
+                .expect("parse fixtures/config_layer_precedence.json");
+        assert!(!fixture.cases.is_empty(), "golden 不得为空");
+        for case in fixture.cases {
+            let mut cfg = default_cfg();
+            let mut trace = LayerTrace::default();
+            apply_post_load_layers(&mut cfg, &mut trace, |layer, cfg| {
+                let Some(overrides) = case.layers.get(layer.as_str()) else {
+                    return;
+                };
+                for (raw_key, value) in overrides {
+                    let key = WatchedKey::from_str_exact(raw_key)
+                        .unwrap_or_else(|| panic!("golden 里的未知键 {raw_key}"));
+                    set_watched(cfg, key, value);
+                }
+            });
+            for (raw_key, expectation) in &case.expected {
+                let key = WatchedKey::from_str_exact(raw_key)
+                    .unwrap_or_else(|| panic!("golden 里的未知键 {raw_key}"));
+                assert_eq!(
+                    current_json(&cfg, key),
+                    expectation.value,
+                    "case={} key={raw_key} 最终取值不符",
+                    case.name
+                );
+                let expected_source = expectation
+                    .source
+                    .as_deref()
+                    .map(|raw| {
+                        ConfigLayer::from_str_exact(raw)
+                            .unwrap_or_else(|| panic!("golden 里的未知层 {raw}"))
+                    });
+                assert_eq!(
+                    trace.source_of(key),
+                    expected_source,
+                    "case={} key={raw_key} 来源层不符",
+                    case.name
+                );
+            }
+        }
     }
 }
