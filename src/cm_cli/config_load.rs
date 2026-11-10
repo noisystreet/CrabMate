@@ -42,10 +42,22 @@ pub(super) fn load_cli_agent_config(
     crate::user_data::apply_user_data_llm_overrides(&mut cfg);
     crate::user_data::apply_user_data_tool_overrides(&mut cfg);
     crate::user_data::apply_user_data_web_api_bearer(&mut cfg);
-    Ok(apply_cli_llm_context_tokens_override(
-        cfg,
-        llm_context_tokens_cli,
-    ))
+    let cfg = apply_cli_llm_context_tokens_override(cfg, llm_context_tokens_cli);
+    warn_on_context_gate_misalignment(&cfg);
+    Ok(cfg)
+}
+
+/// 两道闸（条数 / token 预算）的等效水位不一致时告警（#1342）。
+///
+/// 触发条件：`max_message_history × 假定 token/条 < trigger_tokens` —— 此时条数闸会先动手，
+/// 用户观感是「上下文水位才两三成就丢历史」（#1339）。
+///
+/// 必须在本函数（即 user-data 与 CLI 覆盖**都应用之后**）调用：`config::load_config` 那一层
+/// 还没有 user-data 的窗口覆盖，看到的不是最终生效值。
+fn warn_on_context_gate_misalignment(cfg: &config::AgentConfig) {
+    if let Some(message) = config::context_gates::count_gate_warning(cfg) {
+        log::warn!(target: "crabmate", "{message}");
+    }
 }
 
 /// `crabmate models` / `crabmate probe`：`bearer` 时仍要求进程环境变量 **`API_KEY`** 非空。

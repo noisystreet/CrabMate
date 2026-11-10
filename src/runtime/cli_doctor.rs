@@ -326,6 +326,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     print_doctor_user_data_block();
     println!();
 
+    print_doctor_context_gates_block(cfg);
     print_doctor_conversation_layout_block(cfg);
     println!();
 
@@ -433,6 +434,44 @@ pub async fn run_probe_cli(
         println!("{}", n);
     }
     Ok(())
+}
+
+/// 上下文「双闸」对照（#1342）：只读打印 token 预算与条数闸的等效水位，并指出先到者。
+///
+/// 目的：让「为什么上下文才两三成就丢历史」不必读源码就能回答（#1339）。
+/// 假定 token/条 的取值与配置自检同源（`cm_config::context_gates`），不参与任何裁剪判定。
+fn print_doctor_context_gates_block(cfg: &AgentConfig) {
+    println!("【上下文双闸对照（#1342）】");
+    let Some(alignment) = crate::cm_config::context_gates::context_gate_alignment(cfg) else {
+        println!("  llm_context_tokens = 0（token 预算未启用，走 context_char_budget 降级路径）");
+        return;
+    };
+    let b = alignment.budget;
+    println!(
+        "  窗口 {} → 输出预留 {} − 安全余量 {} = 输入预算 {}",
+        b.context_window_tokens,
+        b.reserved_output_tokens,
+        b.safety_margin_tokens,
+        b.max_input_tokens
+    );
+    println!(
+        "  token 闸: trigger {} / target {}",
+        b.trigger_tokens, b.target_tokens
+    );
+    println!(
+        "  条数闸: max_message_history={} 条 × 假定 {} token/条 ≈ {} token",
+        alignment.max_message_history,
+        alignment.assumed_tokens_per_message,
+        alignment.count_gate_tokens
+    );
+    if alignment.count_gate_wins() {
+        println!(
+            "  先到: 条数闸 [!] 上下文水位还很低就会按条数裁剪；建议 max_message_history ≥ {}",
+            alignment.suggested_max_message_history()
+        );
+    } else {
+        println!("  先到: token 闸（条数闸为高位兜底）");
+    }
 }
 
 /// 会话库 `layout` 覆盖率（B4/P4 门禁）：**只读**统计 legacy 行占比，不建表、不写盘。

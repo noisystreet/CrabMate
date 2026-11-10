@@ -31,6 +31,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     // 环境变量覆盖（优先级最高）
     apply_env_overrides(&mut b);
 
+    // 两道闸（条数 / token 预算）的自检刻意**不**放这里：本层还没有 user-data 覆盖，
+    // 看到的窗口可能小于最终生效值，会在窗口被放大后才真正成立的不变量上漏报（#1342）。
+    // 自检在 `cm_cli::config_load::load_cli_agent_config`（最终 cfg）里做。
     finalize(b, system_prompt_search_bases)
 }
 

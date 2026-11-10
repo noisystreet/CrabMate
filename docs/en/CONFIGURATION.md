@@ -836,6 +836,8 @@ Before each model call, Server estimates the final-request input from vendor-sha
     `max_message_history` (default **1024**) is a high-count fallback that must stay above the token trigger. With `llm_context_tokens = 0`,
   **`context_char_budget`** remains the fallback. **`tool_message_max_chars`** compresses long **`role: tool`** content first;
     with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
+  Load-time self-check: when `max_message_history × assumed 1,200 tokens/message < trigger_tokens`, the server logs a
+  `warn` with the suggested cap; `crabmate doctor` prints the same two-gate comparison (#1342).
 
 Trimming, summarization,
   and tool-output compression now modify only a per-turn **`ModelContextView`**. A successful turn appends its new messages to the complete canonical

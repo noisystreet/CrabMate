@@ -6,6 +6,7 @@ mod agent_roles;
 mod assembly;
 mod builder;
 pub mod cli;
+pub mod context_gates;
 mod env_override_apply;
 mod env_overrides;
 mod final_plan_requirement_mode;
