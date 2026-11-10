@@ -15,6 +15,13 @@
 - [ ] 若改动架构或 **`src/` 模块组织**：已更新 **`docs/开发文档.md`**（见 **`AGENTS.md` → Architecture & documentation sync**）
 - [ ] 无真实密钥、token、私钥进入 diff；日志与错误信息已脱敏（见 **`AGENTS.md` → Secrets & logging**）
 
+## 影响面三问（#1342）
+
+- [ ] 本 PR 新增/改动的**数字**都写清了等效语义（× 平均 token/条、字符单价、水位百分比…）？
+- [ ] 它与其它闸/预算的**等效水位**谁先到已核对？（`crabmate doctor` 的「上下文双闸对照」可直接查）
+- [ ] 是否改动**跨层优先级**（内嵌 / TOML / env / user-data / CLI）？改了须同步
+  `fixtures/config_layer_precedence.json`，并说明对应测试为何会变红。
+
 ## 相关 Issue
 
 <!-- 例如 Closes #123，无则写 N/A -->

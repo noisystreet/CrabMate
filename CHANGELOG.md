@@ -17,6 +17,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   when the count gate would fire first — the failure mode behind #1339. `crabmate doctor` prints the same comparison
   (window → input budget, both gates, which fires first). The trigger formula now has exactly one implementation
   (`cm_config::context_gates`), shared by the runtime budget, the self-check and doctor, so the three cannot drift.
+- **Config layer precedence is now data, not call order (#1342).** Five layers (embedded → user TOML → `CM_*` env →
+  user-data → explicit CLI flags) are expressed once in `cm_config::layer_precedence::LAYERS`, and `LayerTrace` records
+  which layer last changed `llm_context_tokens` / `max_tokens` / `max_message_history` /
+  `tool_registry_disabled_tools` / `web_api_bearer_token`. `crabmate doctor` prints the order plus those
+  `key → last writing layer` rows (secrets as set/unset only), so "who wins" is answerable without reading the call
+  sequence (#1340's root cause). A fixture-driven matrix (`fixtures/config_layer_precedence.json`) fails if a layer
+  moves.
+- **Two-gate warning names an unreachable suggestion.** When the computed cap exceeds the `max_message_history` upper
+  bound (1024), the warning says so and points at `context_token_trigger_percent` instead of an impossible value; the
+  bound is now defined once and shared with config validation.
 
 ### Removed
 

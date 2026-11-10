@@ -20,6 +20,13 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
     changing it requires a **rebuild** (not **`POST /config/reload`**). `load_config` merges in order **defaults → session → context_inject → tools →
     sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables.
 
+**Layer precedence and provenance (#1342)**: five layers, lowest to highest —
+  **embedded shards → user TOML → `CM_*` env vars → user-data (`llm_overrides.json` / `tool_overrides.json` / keyring) →
+  explicit CLI flags** (e.g. **`--llm-context-tokens`**). The order lives in exactly one place, **`LAYERS`** in
+  **`src/cm_config/layer_precedence.rs`**; `crabmate doctor` prints that order plus the final value and last writing layer
+  for **`llm_context_tokens` / `max_tokens` / `max_message_history` / `tool_registry_disabled_tools` / `web_api_bearer_token`**
+  (secrets are reported as set/unset only, never printed).
+
 ## Hot reload (without restarting `serve`)
 
 - **CLI (historical)**: In-process **`repl` `/config reload`** entry is removed (D2.1).
@@ -838,6 +845,8 @@ Before each model call, Server estimates the final-request input from vendor-sha
     with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
   Load-time self-check: when `max_message_history × assumed 1,200 tokens/message < trigger_tokens`, the server logs a
   `warn` with the suggested cap; `crabmate doctor` prints the same two-gate comparison (#1342).
+  If the suggested cap exceeds the `max_message_history` upper bound (**1024**), the `warn` says so explicitly and
+  points at the other lever (lower `context_token_trigger_percent`, or accept the count gate firing first).
 
 Trimming, summarization,
   and tool-output compression now modify only a per-turn **`ModelContextView`**. A successful turn appends its new messages to the complete canonical
