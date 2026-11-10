@@ -13,6 +13,7 @@ mod final_plan_requirement_mode;
 mod finalize;
 mod gateway_hints;
 mod hot_reload;
+pub mod layer_precedence;
 mod load;
 mod permission;
 mod scheduled_agent_task;
@@ -45,6 +46,7 @@ pub use gateway_hints::{
 };
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
+pub(crate) use load::load_config_traced;
 pub use permission::{
     clamp_permission_ceiling_on_reload, freeze_permission_ceiling_for_bind,
     reconcile_default_level_with_ceiling, resolve_permission_ceiling, validate_permission_config,

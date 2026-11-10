@@ -7,16 +7,13 @@ use std::env;
 use log::info;
 
 use crate::config;
+use crate::config::layer_precedence::{ConfigLayer, LayerTrace, apply_post_load_layers};
 
 /// `--llm-context-tokens` 覆盖已加载配置的 `llm_context_tokens`（上限 10M，防手滑写天文数字）。
-fn apply_cli_llm_context_tokens_override(
-    mut cfg: config::AgentConfig,
-    cli_tokens: Option<u32>,
-) -> config::AgentConfig {
+fn apply_cli_llm_context_tokens_override(cfg: &mut config::AgentConfig, cli_tokens: Option<u32>) {
     if let Some(n) = cli_tokens {
         cfg.llm_sampling.llm_context_tokens = n.min(10_000_000);
     }
-    cfg
 }
 
 /// `--config` 为空时回落到交互式 CLI 的 XDG 默认路径（与历史行为一致）。
@@ -38,13 +35,34 @@ pub(super) fn load_cli_agent_config(
     config_path: Option<&str>,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<config::AgentConfig, Box<dyn std::error::Error>> {
-    let mut cfg = config::load_config_for_cli(config_path)?;
-    crate::user_data::apply_user_data_llm_overrides(&mut cfg);
-    crate::user_data::apply_user_data_tool_overrides(&mut cfg);
-    crate::user_data::apply_user_data_web_api_bearer(&mut cfg);
-    let cfg = apply_cli_llm_context_tokens_override(cfg, llm_context_tokens_cli);
+    load_cli_agent_config_traced(config_path, llm_context_tokens_cli).map(|(cfg, _)| cfg)
+}
+
+/// 与 [`load_cli_agent_config`] 相同，另返回层溯源（`crabmate doctor` 用，#1342）。
+///
+/// 层序由 `config::layer_precedence::LAYERS` **单一表述**驱动：这里只写「每层怎么改」，
+/// 不再用调用先后表达优先级（#1340 的根治项）。
+pub(super) fn load_cli_agent_config_traced(
+    config_path: Option<&str>,
+    llm_context_tokens_cli: Option<u32>,
+) -> Result<(config::AgentConfig, LayerTrace), Box<dyn std::error::Error>> {
+    let (mut cfg, mut trace) = config::load_config_traced(config_path).map_err(|e| {
+        eprintln!("{e}");
+        std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+    })?;
+    let mut cli_tokens = llm_context_tokens_cli;
+    apply_post_load_layers(&mut cfg, &mut trace, |layer, cfg| match layer {
+        ConfigLayer::UserData => {
+            crate::user_data::apply_user_data_llm_overrides(cfg);
+            crate::user_data::apply_user_data_tool_overrides(cfg);
+            crate::user_data::apply_user_data_web_api_bearer(cfg);
+        }
+        ConfigLayer::Cli => apply_cli_llm_context_tokens_override(cfg, cli_tokens.take()),
+        // 这三层在 `cm_config::load_config_traced` 的 builder 阶段按同一张表执行。
+        ConfigLayer::Embedded | ConfigLayer::UserToml | ConfigLayer::Env => {}
+    });
     warn_on_context_gate_misalignment(&cfg);
-    Ok(cfg)
+    Ok((cfg, trace))
 }
 
 /// 最终 cfg 上的两道闸自检文案；`None` 表示一致或 token 预算未启用。
@@ -115,7 +133,7 @@ mod tests {
     fn cli_llm_context_tokens_override_wins_over_user_data_layer() {
         let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
         cfg.llm_sampling.llm_context_tokens = 1_000_000;
-        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(100_000));
+        apply_cli_llm_context_tokens_override(&mut cfg, Some(100_000));
         assert_eq!(cfg.llm_sampling.llm_context_tokens, 100_000);
     }
 
@@ -124,15 +142,15 @@ mod tests {
     fn absent_cli_override_keeps_user_data_value() {
         let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
         cfg.llm_sampling.llm_context_tokens = 1_000_000;
-        let cfg = apply_cli_llm_context_tokens_override(cfg, None);
+        apply_cli_llm_context_tokens_override(&mut cfg, None);
         assert_eq!(cfg.llm_sampling.llm_context_tokens, 1_000_000);
     }
 
     /// `0` 视为「不覆盖」（见 `GlobalOpts::llm_context_tokens` 的说明），上限仍是 10M。
     #[test]
     fn cli_override_is_capped_at_ten_million() {
-        let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(u32::MAX));
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        apply_cli_llm_context_tokens_override(&mut cfg, Some(u32::MAX));
         assert_eq!(cfg.llm_sampling.llm_context_tokens, 10_000_000);
     }
 
@@ -162,7 +180,7 @@ mod tests {
             context_gate_warning(&cfg).is_some(),
             "1M 窗口 + 256 条应告警"
         );
-        let cfg = apply_cli_llm_context_tokens_override(cfg, Some(262_144));
+        apply_cli_llm_context_tokens_override(&mut cfg, Some(262_144));
         assert!(
             context_gate_warning(&cfg).is_none(),
             "CLI 层收小窗口后条数闸不再先到，不该告警"
