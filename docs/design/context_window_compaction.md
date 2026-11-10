@@ -479,7 +479,7 @@ CREATE INDEX IF NOT EXISTS idx_crabmate_conversation_archive_conv
 canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) + N(最近交互组) + 当前回合
 ```
 
-`N` 有界 ⇒ `canonical` 长度有界 ⇒ 每回合克隆与重算成本有界。可另加 `max_message_history`（Phase 2 已提至 256）作为异常安全兜底。
+`N` 有界 ⇒ `canonical` 长度有界 ⇒ 每回合克隆与重算成本有界。可另加 `max_message_history`（Phase 2 提至 256，现默认 **1024**，见 #1339）作为异常安全兜底。
 
 ---
 

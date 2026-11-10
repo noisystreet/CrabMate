@@ -372,7 +372,7 @@ mod llm_context_budget_tests {
         let value: toml::Value =
             toml::from_str(include_str!("../../../config/default_config.toml"))
                 .expect("parse default config");
-        assert_eq!(value["agent"]["max_message_history"].as_integer(), Some(256));
+        assert_eq!(value["agent"]["max_message_history"].as_integer(), Some(1024));
         assert_eq!(
             value["agent"]["context_token_trigger_percent"].as_integer(),
             Some(85)
