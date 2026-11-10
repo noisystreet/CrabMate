@@ -1,0 +1,67 @@
+{
+  "note": "配置层优先级 golden（#1342 P1）。每案：layers 声明各层写入的键值，expected 声明最终取值与来源层；来源为 null 表示没有层改动过（沿用内嵌默认）。层序由 src/cm_config/layer_precedence.rs 的 LAYERS 决定，改顺序此文件必红。",
+  "cases": [
+    {
+      "name": "cli_wins_over_user_data",
+      "layers": {
+        "user_data": { "llm_context_tokens": 1000000 },
+        "cli": { "llm_context_tokens": 100000 }
+      },
+      "expected": {
+        "llm_context_tokens": { "value": 100000, "source": "cli" }
+      }
+    },
+    {
+      "name": "user_data_is_source_when_cli_silent",
+      "layers": {
+        "user_data": { "llm_context_tokens": 500000 }
+      },
+      "expected": {
+        "llm_context_tokens": { "value": 500000, "source": "user_data" }
+      }
+    },
+    {
+      "name": "same_value_at_higher_layer_is_not_a_source_change",
+      "layers": {
+        "user_data": { "max_tokens": 16384 },
+        "cli": { "llm_context_tokens": 262144 }
+      },
+      "expected": {
+        "max_tokens": { "value": 16384, "source": null },
+        "llm_context_tokens": { "value": 262144, "source": null }
+      }
+    },
+    {
+      "name": "unrelated_cli_override_keeps_user_data_source",
+      "layers": {
+        "user_data": { "max_message_history": 512 },
+        "cli": { "llm_context_tokens": 100000 }
+      },
+      "expected": {
+        "max_message_history": { "value": 512, "source": "user_data" },
+        "llm_context_tokens": { "value": 100000, "source": "cli" }
+      }
+    },
+    {
+      "name": "disabled_tools_tracked_at_user_data",
+      "layers": {
+        "user_data": { "tool_registry_disabled_tools": ["run_command", "http_fetch"] }
+      },
+      "expected": {
+        "tool_registry_disabled_tools": {
+          "value": ["http_fetch", "run_command"],
+          "source": "user_data"
+        }
+      }
+    },
+    {
+      "name": "bearer_is_tracked_as_set_or_unset_only",
+      "layers": {
+        "user_data": { "web_api_bearer_token": "placeholder-not-a-real-token" }
+      },
+      "expected": {
+        "web_api_bearer_token": { "value": "set", "source": "user_data" }
+      }
+    }
+  ]
+}
