@@ -132,75 +132,6 @@ fn first_step_with_commentary_index(turn: &Turn) -> Option<usize> {
     })
 }
 
-/// 将 canonical [`Turn`] 投影为聊天气泡顺序（纯函数；金样见 `fixtures/turn_project_golden.jsonl`）。
-///
-/// **v1 逐步投影，仅金样用**：Web 走 [`project_turn_web_v2`] / [`project_turn_projection`]，
-/// `sse-replay` 走 `project_turn_web`，生产路径已无消费者 —— #1333 P2 把它收出公开 API。
-#[cfg(test)]
-#[must_use]
-pub(crate) fn project_turn(turn: &Turn) -> Vec<ProjectedRow> {
-    let mut out = Vec::new();
-    for t in &turn.pre_tool_timeline {
-        out.push(row("assistant_timeline", t.clone()));
-    }
-    for step in &turn.steps {
-        if let Some(ref c) = step.before_commentary
-            && !c.trim().is_empty()
-        {
-            out.push(ProjectedRow {
-                kind: "assistant_commentary".into(),
-                text: c.clone(),
-                tool_name: None,
-                tool_call_id: Some(step.tool_call_id.clone()),
-            });
-        }
-        out.push(ProjectedRow {
-            kind: "tool".into(),
-            text: step.summary.clone(),
-            tool_name: Some(step.name.clone()),
-            tool_call_id: Some(step.tool_call_id.clone()),
-        });
-    }
-    out
-}
-
-/// Web 块布局投影：无旁注工具 → 单条 `assistant_batch_narration` → 含旁注工具批。
-/// 终答由 overlay 承载，`flush_final_answer_row` 从 overlay 参数读取。
-///
-/// **v1 块布局**：生产消费者只剩 `crabmate sse-replay`（`cm_turn_layout::replay`）与本模块的
-/// [`batch_narration_row`]；Web 已走 [`project_turn_web_v2`] —— #1333 P2 把它收出公开 API。
-#[must_use]
-pub(crate) fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
-    let mut out = Vec::new();
-    let anchor_idx = first_step_with_commentary_index(turn);
-    let batch = batch_narration_text(turn);
-
-    for (i, step) in turn.steps.iter().enumerate() {
-        if anchor_idx.is_some_and(|a| i < a) {
-            out.push(tool_row(step));
-        }
-    }
-    if let Some(text) = batch.clone() {
-        out.push(ProjectedRow {
-            kind: ASSISTANT_BATCH_NARRATION.into(),
-            text,
-            tool_name: None,
-            tool_call_id: anchor_idx
-                .and_then(|i| turn.steps.get(i).map(|s| s.tool_call_id.clone())),
-        });
-    }
-    if let Some(a) = anchor_idx {
-        for step in &turn.steps[a..] {
-            out.push(tool_row(step));
-        }
-    } else {
-        for step in &turn.steps {
-            out.push(tool_row(step));
-        }
-    }
-    out
-}
-
 /// Web v2 投影：每个工具调用前的已关闭旁注独立成行。
 ///
 /// `tool_call_id` 同时作为旁注行的稳定 projection key。已关闭旁注首次插入后正文可经
@@ -289,12 +220,20 @@ pub fn project_turn_projection(turn: &Turn) -> TurnProjection {
     }
 }
 
-/// `project_turn_web` 中的批说明行（若有）。
+/// 批说明行（若有）：无旁注工具批的聚合文案。
+///
+/// 独立于 v2 投影（v2 不再产出 `assistant_batch_narration` 行）；文案仍由
+/// [`batch_narration_text`] 派生，供 Web 侧「批说明」气泡与金样对照使用。
 #[must_use]
 pub fn batch_narration_row(turn: &Turn) -> Option<ProjectedRow> {
-    project_turn_web(turn)
-        .into_iter()
-        .find(|r| r.kind == ASSISTANT_BATCH_NARRATION)
+    let text = batch_narration_text(turn)?;
+    Some(ProjectedRow {
+        kind: ASSISTANT_BATCH_NARRATION.into(),
+        text,
+        tool_name: None,
+        tool_call_id: first_step_with_commentary_index(turn)
+            .and_then(|i| turn.steps.get(i).map(|s| s.tool_call_id.clone())),
+    })
 }
 
 #[cfg(test)]
@@ -379,8 +318,8 @@ mod tests {
             },
         );
         r.apply(&mut turn, TurnEvent::ToolPhaseEnd);
-        // 终答由 overlay 承载，`project_turn` 不产生 `assistant_answer` 行。
-        let rows = project_turn(&turn);
+        // 终答由 overlay 承载，投影不产生 `assistant_answer` 行。
+        let rows = project_turn_web_v2(&turn);
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].kind, "tool");
         assert_eq!(rows[1].kind, "assistant_commentary");
@@ -416,76 +355,6 @@ mod tests {
         );
         assert_eq!(batch_narration_text(&turn).as_deref(), Some("段已关闭。"));
         assert!(streaming_commentary_block_text(&turn).is_none());
-    }
-
-    #[test]
-    fn project_turn_web_hpcg_block_layout() {
-        let mut turn = Turn::default();
-        let r = TurnReducer;
-        r.apply(
-            &mut turn,
-            TurnEvent::ToolCall {
-                tool_call_id: "tc_archive".into(),
-                name: "archive_list".into(),
-                summary: "list archive".into(),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::SegmentStart {
-                segment_id: "seg-before-tc_unpack".into(),
-                kind: SegmentKind::Commentary,
-                before_tool_call_id: Some("tc_unpack".into()),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::SegmentDelta {
-                segment_id: "seg-before-tc_unpack".into(),
-                delta: "好的，先解压。".into(),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::ToolCall {
-                tool_call_id: "tc_unpack".into(),
-                name: "unpack".into(),
-                summary: "unpack archive".into(),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::SegmentStart {
-                segment_id: "seg-before-tc_read".into(),
-                kind: SegmentKind::Commentary,
-                before_tool_call_id: Some("tc_read".into()),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::SegmentDelta {
-                segment_id: "seg-before-tc_read".into(),
-                delta: "读取 INSTALL。".into(),
-            },
-        );
-        r.apply(
-            &mut turn,
-            TurnEvent::ToolCall {
-                tool_call_id: "tc_read".into(),
-                name: "read_file".into(),
-                summary: "read INSTALL".into(),
-            },
-        );
-        let rows = project_turn_web(&turn);
-        assert_eq!(rows[0].kind, "tool");
-        assert_eq!(rows[0].tool_call_id.as_deref(), Some("tc_archive"));
-        assert_eq!(rows[1].kind, "assistant_batch_narration");
-        assert_eq!(rows[1].text, "好的，先解压。读取 INSTALL。");
-        assert_eq!(rows[1].tool_call_id.as_deref(), Some("tc_unpack"));
-        assert_eq!(rows[2].kind, "tool");
-        assert_eq!(rows[2].tool_call_id.as_deref(), Some("tc_unpack"));
-        assert_eq!(rows[3].kind, "tool");
-        assert_eq!(rows[3].tool_call_id.as_deref(), Some("tc_read"));
     }
 
     #[test]
