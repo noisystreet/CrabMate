@@ -58,7 +58,8 @@ fn u64_range_rows_a1() -> &'static [U64RangeRow] {
             "max_message_history",
             |b| b.session_ui.max_message_history,
             1,
-            1024,
+            // 上界与自检共用一处常量：改上限不会出现「告警建议值被校验拒绝」（#1342）。
+            super::context_gates::MAX_MESSAGE_HISTORY_LIMIT,
         ),
         (
             "command_timeout_secs",

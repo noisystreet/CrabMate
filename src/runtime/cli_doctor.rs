@@ -442,36 +442,51 @@ pub async fn run_probe_cli(
 /// 假定 token/条 的取值与配置自检同源（`cm_config::context_gates`），不参与任何裁剪判定。
 fn print_doctor_context_gates_block(cfg: &AgentConfig) {
     println!("【上下文双闸对照（#1342）】");
+    for line in doctor_context_gates_lines(cfg) {
+        println!("{line}");
+    }
+}
+
+/// 双闸对照块正文（**不含**标题）：拆出来是为了让测试直接断言两条线的数值与「先到者」，
+/// 不必抓 stdout（`cargo test` 默认吞掉 `println!`）。
+fn doctor_context_gates_lines(cfg: &AgentConfig) -> Vec<String> {
     let Some(alignment) = crate::cm_config::context_gates::context_gate_alignment(cfg) else {
-        println!("  llm_context_tokens = 0（token 预算未启用，走 context_char_budget 降级路径）");
-        return;
+        return vec![
+            "  llm_context_tokens = 0（token 预算未启用，走 context_char_budget 降级路径）".to_string(),
+        ];
     };
     let b = alignment.budget;
-    println!(
-        "  窗口 {} → 输出预留 {} − 安全余量 {} = 输入预算 {}",
-        b.context_window_tokens,
-        b.reserved_output_tokens,
-        b.safety_margin_tokens,
-        b.max_input_tokens
-    );
-    println!(
-        "  token 闸: trigger {} / target {}",
-        b.trigger_tokens, b.target_tokens
-    );
-    println!(
-        "  条数闸: max_message_history={} 条 × 假定 {} token/条 ≈ {} token",
-        alignment.max_message_history,
-        alignment.assumed_tokens_per_message,
-        alignment.count_gate_tokens
-    );
+    let mut lines = vec![
+        format!(
+            "  窗口 {} → 输出预留 {} − 安全余量 {} = 输入预算 {}",
+            b.context_window_tokens,
+            b.reserved_output_tokens,
+            b.safety_margin_tokens,
+            b.max_input_tokens
+        ),
+        format!(
+            "  token 闸: trigger {} / target {}",
+            b.trigger_tokens, b.target_tokens
+        ),
+        format!(
+            "  条数闸: max_message_history={} 条 × 假定 {} token/条 ≈ {} token",
+            alignment.max_message_history,
+            alignment.assumed_tokens_per_message,
+            alignment.count_gate_tokens
+        ),
+    ];
     if alignment.count_gate_wins() {
-        println!(
-            "  先到: 条数闸 [!] 上下文水位还很低就会按条数裁剪；建议 max_message_history ≥ {}",
-            alignment.suggested_max_message_history()
-        );
+        let suggested = alignment.suggested_max_message_history();
+        lines.push(format!(
+            "  先到: 条数闸 [!] 上下文水位还很低就会按条数裁剪；建议 max_message_history ≥ {suggested}"
+        ));
+        if let Some(hint) = crate::cm_config::context_gates::unreachable_suggestion_hint(suggested) {
+            lines.push(format!("  {hint}"));
+        }
     } else {
-        println!("  先到: token 闸（条数闸为高位兜底）");
+        lines.push("  先到: token 闸（条数闸为高位兜底）".to_string());
     }
+    lines
 }
 
 /// 会话库 `layout` 覆盖率（B4/P4 门禁）：**只读**统计 legacy 行占比，不建表、不写盘。
@@ -508,4 +523,53 @@ fn print_doctor_conversation_layout_block(cfg: &AgentConfig) {
     println!(
         "  口径: layout_meta_json 为 NULL 或空白；删 legacy 读路径前须低于既定阈值（见 Issue #1333）"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with(window: u32, history: usize) -> AgentConfig {
+        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
+        cfg.llm_sampling.llm_context_tokens = window;
+        cfg.llm_sampling.max_tokens = 16_384;
+        cfg.session_ui.max_message_history = history;
+        cfg
+    }
+
+    /// 1M 窗口 + 256 条：块里必须同时出现两条线的数值，并指出条数闸先到。
+    #[test]
+    fn gates_block_reports_both_values_and_winner() {
+        let lines = doctor_context_gates_lines(&cfg_with(1_000_000, 256)).join("\n");
+        assert!(lines.contains("trigger 834332"), "{lines}");
+        assert!(lines.contains("≈ 307200 token"), "{lines}");
+        assert!(lines.contains("先到: 条数闸 [!]"), "{lines}");
+        assert!(lines.contains("max_message_history ≥ 696"), "{lines}");
+        assert!(!lines.contains("上界"), "696 可达成，不该提上界: {lines}");
+    }
+
+    /// 默认（1024 条 × 262,144 窗口）：token 闸先到，条数闸只是高位兜底。
+    #[test]
+    fn gates_block_reports_token_gate_winner_at_default() {
+        let lines = doctor_context_gates_lines(&cfg_with(262_144, 1_024)).join("\n");
+        assert!(lines.contains("先到: token 闸"), "{lines}");
+        assert!(!lines.contains("[!]"), "{lines}");
+    }
+
+    /// 超大窗口 + 上界条数：建议值不可达，块里要给出替代路径。
+    #[test]
+    fn gates_block_flags_unreachable_suggestion() {
+        let lines = doctor_context_gates_lines(&cfg_with(2_000_000, 1_024)).join("\n");
+        assert!(lines.contains("先到: 条数闸 [!]"), "{lines}");
+        assert!(lines.contains("上界"), "{lines}");
+        assert!(lines.contains("context_token_trigger_percent"), "{lines}");
+    }
+
+    /// `llm_context_tokens = 0`：明确说明走字符预算降级，而不是静默省略整块。
+    #[test]
+    fn gates_block_states_disabled_budget() {
+        let lines = doctor_context_gates_lines(&cfg_with(0, 1_024)).join("\n");
+        assert!(lines.contains("token 预算未启用"), "{lines}");
+        assert!(lines.contains("context_char_budget"), "{lines}");
+    }
 }
