@@ -164,8 +164,6 @@ W6 sse-protocol feature — **并入**单包计划 S1（crates_io_single_package
 
 金样（随 crate 走，**不要**继续用 `../../fixtures` 指回 Server）：
 
-- `fixtures/turn_project_golden.jsonl`
-- `fixtures/turn_project_web_golden.jsonl`
 - `fixtures/turn_project_projection_golden.jsonl`
 
 放到 Client `crates/crabmate-turn-layout/fixtures/`（改 `CARGO_MANIFEST_DIR` 拼接）。

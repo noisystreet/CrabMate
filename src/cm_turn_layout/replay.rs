@@ -1,5 +1,5 @@
 //! Replay runner：从 SSE 事件录制文件或后端 turn-replay 事件文件读取事件，
-//! 映射为 [`TurnEvent`] 并驱动 [`TurnReducer`] + `project_turn_web`（crate 内 v1 块布局，#1333 P2）投影。
+//! 映射为 [`TurnEvent`] 并驱动 [`TurnReducer`] + `project_turn_web_v2` 投影。
 //!
 //! 支持两种 JSONL 格式（自动检测）：
 //! 1. **`sse-replay-events.jsonl`**（由 `CM_SSE_REPLAY_DUMP_DIR` 生成）：每行含 `seq`/`job_id`/`data`，`data` 为 AG-UI JSON。
@@ -17,7 +17,7 @@ use std::path::Path;
 
 use crate::cm_turn_layout::event::TurnEvent;
 use crate::cm_turn_layout::model::{SegmentKind, Turn};
-use crate::cm_turn_layout::project::project_turn_web;
+use crate::cm_turn_layout::project::project_turn_web_v2;
 use crate::cm_turn_layout::reduce::TurnReducer;
 
 // ── 格式 1：sse-replay-events.jsonl ──────────────────────────────
@@ -275,7 +275,7 @@ fn detect_format(first_line: &str) -> Result<JsonlFormat, String> {
 
 // ── 公共接口 ──────────────────────────────────────────────────────
 
-/// 从 JSONL 事件文件读取事件（自动检测格式），回放为 Web 块布局投影行。
+/// 从 JSONL 事件文件读取事件（自动检测格式），回放为 Web v2 投影行。
 ///
 /// 对于多 Turn 文件，合并所有 Turn 的投影行（按 Turn 顺序排列）。
 pub fn replay_sse_events_to_web_rows(
@@ -292,7 +292,7 @@ pub fn replay_sse_events_to_web_rows(
                 tool_call_id: None,
             });
         }
-        rows.extend(project_turn_web(turn));
+        rows.extend(project_turn_web_v2(turn));
     }
     Ok(rows)
 }
@@ -463,11 +463,11 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
-        // 无工具调用场景：`project_turn_web` 仅产生 batch 行（纯文本 delta 不写入 canonical）
-        // 终答由 overlay 承载，replay 不产生 `assistant_answer` 行
+        // v2 投影不再产出 `assistant_batch_narration` 行（v1 块布局已随 #1333 P2 移除）；
+        // 纯文本 delta 不进 canonical、终答由 overlay 承载，故此处不应出现 batch 行。
         assert!(
-            rows.is_empty() || rows.iter().any(|r| r.kind == "assistant_batch_narration"),
-            "expected batch or empty rows, got: {rows:?}"
+            rows.iter().all(|r| r.kind != "assistant_batch_narration"),
+            "v1 batch row must be gone, got: {rows:?}"
         );
     }
 
@@ -481,7 +481,7 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
-        // `project_turn_web` 不产生 `assistant_answer` 行
+        // 投影不产生 `assistant_answer` 行（终答由 overlay 承载）。
         assert!(
             rows.iter().any(|r| r.kind == "tool"),
             "expected tool row, got: {rows:?}"
