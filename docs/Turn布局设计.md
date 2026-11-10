@@ -110,9 +110,12 @@ flowchart TB
 | `model.rs` | `Turn`、`ToolStep`、`TurnSegment`、`SegmentKind` |
 | `event.rs` | `TurnEvent`（`SegmentStart/Delta/End`、`ToolCall`、`ToolPhaseEnd`） |
 | `reduce.rs` | `reduce_event`：允许 **晚到 `SegmentDelta`** 挂到已关闭段或 `seg-before-{tool_call_id}` |
-| `project.rs` | `project_turn` → `Vec<ProjectedRow>` |
+| `project.rs` | `project_turn`（v1，仅金样）→ `Vec<ProjectedRow>`；Web 走 `project_turn_projection` |
 
-**金样**：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 事件形状 + v2 stored sync）
+**金样**：`fixtures/turn_project_golden.jsonl`、`fixtures/turn_project_web_golden.jsonl` 属 **v1 replay 契约**
+（前者仅 `project_turn` 金样，后者 `project_turn_web` 仅 `sse-replay` + 金样，两者**不是**公开 API，#1333 P2）；
+Web 现行契约是 `fixtures/turn_project_projection_golden.jsonl`，事件语料另见 Client 侧
+`golden_turn_web_stored_sync`（读 Client 仓那份同名拷贝，断言走 v2）。
 **测试**：`cargo test --lib golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
@@ -240,7 +243,7 @@ flowchart TB
 - [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、
   `parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
 - [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` +
-  `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` +
+  `cargo test -p crabmate golden_turn_project` / `golden_turn_project_web` +
   `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测
