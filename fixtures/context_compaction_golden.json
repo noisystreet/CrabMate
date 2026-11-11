@@ -1,5 +1,5 @@
 {
-  "note": "上下文压缩 characterization golden（#1347 S1）。只断言结构字段（触发/删组数/剩余组/原因），不锁定 tiktoken 精确值——分词器与模型映射升级不该让本文件变红；精确水位由 context_compaction 的既有单测覆盖。改 compact_messages_to_token_budget 的判定（阈值、守卫、级数）必须让本文件出现预期内的变化。",
+  "note": "上下文压缩 characterization golden（#1347 S1+S2）。只断言结构字段（触发/动作序列/删组数/剩余组/原因），不锁定 tiktoken 精确值——分词器与模型映射升级不该让本文件变红；精确水位由 context_compaction 的既有单测覆盖。`expect.actions` 锁的是决策动作序列（级数与顺序），与 `removed_turn_groups` 互补：动作是「打算压哪几级」，删组数是「实际动了多少」（可以都是动作却一组没删）。改 compact_messages_to_token_budget 或 policy::plan_compaction 的判定（阈值、守卫、级数、顺序）必须让本文件出现预期内的变化。",
   "cases": [
     {
       "name": "below_trigger_no_action",
@@ -30,7 +30,8 @@
         "removed_turn_groups": 0,
         "groups_left": 2,
         "reason": "none",
-        "degraded_min": 0
+        "degraded_min": 0,
+        "actions": []
       }
     },
     {
@@ -73,7 +74,11 @@
         "removed_turn_groups": 1,
         "groups_left": 3,
         "reason": "token_budget_turn_groups",
-        "degraded_min": 1
+        "degraded_min": 1,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     },
     {
@@ -116,7 +121,11 @@
         "removed_turn_groups": 0,
         "groups_left": 4,
         "reason": "token_budget_warning",
-        "degraded_min": 1
+        "degraded_min": 1,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     },
     {
@@ -158,7 +167,11 @@
         "removed_turn_groups": 2,
         "groups_left": 2,
         "reason": "token_budget_turn_groups",
-        "degraded_min": 0
+        "degraded_min": 0,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     },
     {
@@ -202,7 +215,11 @@
         "removed_turn_groups": 0,
         "groups_left": 3,
         "reason": "token_budget_summary",
-        "degraded_min": 0
+        "degraded_min": 0,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     },
     {
@@ -246,7 +263,11 @@
         "removed_turn_groups": 1,
         "groups_left": 2,
         "reason": "token_budget_summary",
-        "degraded_min": 0
+        "degraded_min": 0,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     },
     {
@@ -278,7 +299,11 @@
         "removed_turn_groups": 0,
         "groups_left": 2,
         "reason": "token_budget_warning",
-        "degraded_min": 0
+        "degraded_min": 0,
+        "actions": [
+          "degrade_old_tool_bodies",
+          "trim_turn_groups_to"
+        ]
       }
     }
   ]

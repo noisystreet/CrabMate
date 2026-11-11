@@ -303,14 +303,17 @@ fn finalize_token_budget_compaction(
     // #1327：最新 `MIN_RECENT_TURN_GROUPS` 组默认不参与 `tool_message_max_chars` 降级，避免把模型眼前
     // 正要用的输出采样掉。但那只是**软保护**：已删到最近若干组仍超硬上限时，超限来自最近组自身，
     // 这时才允许连最近组一起压——与尾部 `tail_guard` 在「尾部自身就撞硬上限」时放行是同一套取舍。
-    if let Some(budget) = compaction.budget
-        && compaction.after.used_input_tokens > budget.max_input_tokens
-        && compaction.removed_turn_groups == 0
-    {
+    // 该不该放开由 `policy::plan_hard_limit_fallback` 判（#1347 S2），这里只执行。
+    if let Some(squeeze) = crate::agent::context_compaction::policy::plan_hard_limit_fallback(
+        compaction.after,
+        compaction.budget,
+        compaction.removed_turn_groups,
+        cfg.tool_transcript.tool_message_max_chars,
+    ) {
         let hits = crate::agent::message_pipeline::compress_tool_message_contents(
             messages,
-            cfg.tool_transcript.tool_message_max_chars,
-            0,
+            squeeze.max_chars,
+            squeeze.keep_groups,
         );
         if hits > 0 {
             compaction.after = crate::agent::context_compaction::estimate_final_request_tokens(
@@ -324,16 +327,17 @@ fn finalize_token_budget_compaction(
     // 压缩已尽力（分级释放 + 删到最近两整组）仍超硬上限：多半是 `llm_context_tokens`
     // 与模型真实窗口不一致，而配置了窗口后 `context_char_budget` 已被停用
     // （见 `message_pipeline_config_for_turn`），此时没有任何一级还能兜住。给出显式信号，
-    // 不要让它静默变成上游的上下文超限错误。
-    if let Some(budget) = compaction.budget
-        && compaction.after.used_input_tokens > budget.max_input_tokens
-    {
+    // 不要让它静默变成上游的上下文超限错误。阈值判定见 `policy::exhausted_warning`。
+    if let Some(over) = crate::agent::context_compaction::policy::exhausted_warning(
+        compaction.after,
+        compaction.budget,
+    ) {
         warn!(
             target: "crabmate::context_compaction",
             "上下文压缩后仍超出输入预算：after_tokens={} max_input_tokens={} context_window_tokens={}；请检查 llm_context_tokens 是否与模型真实窗口一致",
-            compaction.after.used_input_tokens,
-            budget.max_input_tokens,
-            budget.context_window_tokens
+            over.after_tokens,
+            over.max_input_tokens,
+            over.context_window_tokens
         );
     }
     compaction
