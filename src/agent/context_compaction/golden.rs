@@ -1,7 +1,8 @@
 //! 上下文压缩的 characterization golden（#1347 S1）。
 //!
 //! **它守什么**：`compact_messages_to_token_budget` 的**判定**——什么时候触发、压哪一级、
-//! 停在哪。S2 要把「决策」抽成纯 policy，本文件是那次搬家的等价性基准：搬家前后必须同绿。
+//! 停在哪。S2 把「决策」抽成纯 policy（[`super::policy`]）后，本文件同时守两条：
+//! ① 执行结果的结构字段不变；② policy 给出的**动作序列**（级数与顺序）与夹具一致。
 //!
 //! **它不守什么**：tiktoken 的精确水位。分词器 / 模型映射升级不该让这里变红，所以只断言
 //! 结构字段（`token_triggered` / 删组数 / 剩余组数 / `compaction_reason` / 是否有降级），
@@ -15,7 +16,8 @@ use crate::agent::message_pipeline::conversation_turn_groups;
 use crate::config::AgentConfig;
 use crate::types::Message;
 
-use super::{compact_messages_to_token_budget, estimate_final_request_tokens};
+use super::policy::{CompactionProbe, plan_compaction};
+use super::{ContextTokenBudget, compact_messages_to_token_budget, estimate_final_request_tokens};
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -76,6 +78,12 @@ struct Expect {
     /// 旧组 `tool` 正文被二次压缩的条数下限。
     #[serde(default)]
     degraded_min: usize,
+    /// 决策**动作序列**（级数与顺序），由 `policy::ContextAction::kind` 命名。
+    ///
+    /// 与 `removed_turn_groups` 互补：动作是「打算压哪几级」，删组数是「实际动了多少」。
+    /// 例如 `old_tool_body_degrade_alone_suffices` 两个动作都在，却一组都没删。
+    #[serde(default)]
+    actions: Vec<String>,
 }
 
 fn load_fixture() -> Fixture {
@@ -139,6 +147,10 @@ fn build_messages(specs: &[MsgSpec]) -> Vec<Message> {
 #[derive(Debug, PartialEq, Eq)]
 struct Shape {
     token_triggered: bool,
+    /// policy 给出的触发判定：必须与报告的 `token_triggered` 同源（报告不再自己算一遍）。
+    plan_token_triggered: bool,
+    /// policy 给出的动作序列（级数与顺序）。
+    actions: Vec<&'static str>,
     removed_turn_groups: usize,
     groups_left: usize,
     reason: &'static str,
@@ -149,6 +161,13 @@ fn run_case(case: &Case) -> Shape {
     let cfg = config_of(&case.config);
     let mut messages = build_messages(&case.messages);
     let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
+    // 摘要还没发生，两个水位相同——与 `compact_messages_to_token_budget` 内部的取法一致。
+    let plan = plan_compaction(&CompactionProbe {
+        budget: ContextTokenBudget::from_config(&cfg),
+        before,
+        current: before,
+        min_tail_messages: case.min_tail,
+    });
     let report = compact_messages_to_token_budget(
         &cfg,
         &mut messages,
@@ -160,6 +179,8 @@ fn run_case(case: &Case) -> Shape {
     );
     Shape {
         token_triggered: report.token_triggered,
+        plan_token_triggered: plan.token_triggered,
+        actions: plan.kinds(),
         removed_turn_groups: report.removed_turn_groups,
         groups_left: conversation_turn_groups(&messages).len(),
         reason: report.compaction_reason(),
@@ -177,6 +198,17 @@ fn golden_context_compaction_matches_fixture() {
         assert_eq!(
             got.token_triggered, expect.token_triggered,
             "case={} token_triggered 不符: {got:?}",
+            case.name
+        );
+        assert_eq!(
+            got.plan_token_triggered, got.token_triggered,
+            "case={} 报告的 token_triggered 必须来自 policy（不许再各算一遍）: {got:?}",
+            case.name
+        );
+        let expected_actions: Vec<&str> = expect.actions.iter().map(String::as_str).collect();
+        assert_eq!(
+            got.actions, expected_actions,
+            "case={} 动作序列（级数与顺序）不符: {got:?}",
             case.name
         );
         assert_eq!(

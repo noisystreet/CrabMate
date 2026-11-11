@@ -247,6 +247,16 @@ user
 软目标只是理想值，撞不上窗口就不该为它牺牲摘要留下的原文；放开底线删掉的原文仍在
 canonical 里，提交时按 `removed_prefix` 进归档表，不会丢。
 
+**决策单点（#1347 S2）**：「压哪一级、停在哪」由 `context_compaction::policy` 的纯函数
+`plan_compaction(&CompactionProbe) -> CompactionPlan` 决定，执行留在 `compact_messages_to_token_budget`。
+动作序列是**有界的释放臂列表**（当前最多两级：`degrade_old_tool_bodies` → `trim_turn_groups_to`），
+每臂自带守卫参数（`tail_guard` / `min_groups` / `hard_limit_tokens`）；执行器逐臂执行、逐臂重估——
+删组次数取决于每删一步后的真实水位，policy 不预测它，所以「某个动作在、却一组没删」是合法结果。
+硬上限兜底（是否连最近组一起压）与「仍超硬上限」告警另由 `plan_hard_limit_fallback` /
+`exhausted_warning` 两条独立阈值判定，执行点都在 `finalize_token_budget_compaction`。
+等价性由 `fixtures/context_compaction_golden.json` 的 `expect.actions`（级数与顺序）与
+`removed_turn_groups`（实际动了多少）联合守住。
+
 #### 3.4 持久化历史与模型视图分离
 
 长期目标是：

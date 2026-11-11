@@ -544,3 +544,77 @@ fn newest_tool_group_is_compressed_only_as_last_resort() {
         budget.max_input_tokens
     );
 }
+
+/// #1347 S2：只读旁路与主路径的压缩**决策**来自同一个 policy。
+///
+/// 两入口本来就共用执行体（`compact_messages_to_token_budget` → `finalize_token_budget_compaction`），
+/// 这条断言把「决策同源」钉成可执行的形式：同输入下动作序列一致、删组数与删条数逐项相同，
+/// 且报告的 `token_triggered` 就来自 policy（没有任何一处再自己算一遍）。
+#[tokio::test]
+async fn readonly_entry_uses_the_same_compaction_plan_as_main_path() {
+    let mut cfg = crate::config::load_config(None).expect("embed default");
+    cfg.llm_sampling.llm_context_tokens = 4_096;
+    cfg.llm_sampling.max_tokens = 512;
+    cfg.session_ui.max_message_history = 1_000;
+    cfg.context_pipeline.context_char_budget = 1_000_000;
+    cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+    cfg.context_pipeline.context_summary_trigger_chars = 0;
+
+    let build = || {
+        let mut messages = vec![Message::system_only("sys")];
+        for turn in 0..30 {
+            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+            messages.push(Message::assistant_only(format!("a{turn}")));
+        }
+        messages
+    };
+
+    let mut readonly = build();
+    let before = crate::agent::context_compaction::estimate_final_request_tokens(
+        &cfg, &readonly, &[], None,
+    );
+    let plan = crate::agent::context_compaction::policy::plan_compaction(
+        &crate::agent::context_compaction::policy::CompactionProbe {
+            budget: crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg),
+            before,
+            current: before,
+            min_tail_messages: 0,
+        },
+    );
+    assert_eq!(
+        plan.kinds(),
+        vec!["degrade_old_tool_bodies", "trim_turn_groups_to"],
+        "该夹具应触发两级释放"
+    );
+
+    let delta = prepare_readonly_model_messages(&cfg, &mut readonly, &[], None, None)
+        .await
+        .expect("readonly entry");
+    assert_eq!(delta.compaction.token_triggered, plan.token_triggered);
+
+    // 主路径同输入：走 `finalize_token_budget_compaction`，决策与结果必须与只读入口一致。
+    let mut main = build();
+    let main_before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &main, &[], None);
+    let report = finalize_token_budget_compaction(
+        &cfg,
+        &mut main,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before: main_before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
+    assert_eq!(report.token_triggered, plan.token_triggered);
+    assert_eq!(
+        report.removed_turn_groups, delta.compaction.removed_turn_groups,
+        "同输入下两入口的删组数必须相同"
+    );
+    assert_eq!(
+        report.removed_messages, delta.compaction.removed_messages,
+        "同输入下两入口的删条数必须相同"
+    );
+    assert_eq!(main, readonly, "压完之后的模型视图也应逐条相同");
+}
