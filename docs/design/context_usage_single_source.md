@@ -13,19 +13,24 @@
 issue 的原始描述是「四处各算一套」。核对代码后，更准确的说法是：**同一份数据被塞进语义不同的字段**，
 而展示层要靠一个字符串标记去猜它是哪一种。
 
-三个具体矛盾：
+两个具体矛盾：
 
-1. **`prompt_tokens` 名不符实**。`enrich_snapshot_from_latest_model_context_artifact`
-   （[tiktoken_prompt_tokens.rs](../../src/agent/tiktoken_prompt_tokens.rs)）把 `prompt_tokens` 覆写成
-   `report.after.message_tokens`（**不含** tool schema，默认配置下差约 29K），而同一条 snapshot 里
-   `used_input_tokens` 却是含 schema 的总量。两个字段名并存，读者无法判断哪个是「模型实际收到的输入」。
-2. **`used_input_tokens` 一字段两语义**。同一处用
+1. **`used_input_tokens` 一字段两语义**。`enrich_snapshot_from_latest_model_context_artifact`
+   （[tiktoken_prompt_tokens.rs](../../src/agent/tiktoken_prompt_tokens.rs)）用
    `provider_input_tokens.unwrap_or(estimated)` 赋值，再靠 `counting_source = "provider_usage"` 这个字符串
-   区分。Client 的用量水位（`crabmate-client-api` 的 `context_axis.rs`，`ContextUsedWatermark`）据此做
+   区分口径。Client 的用量水位（`crabmate-client-api` 的 `context_axis.rs`，`ContextUsedWatermark`）据此做
    「滚动最大 / 压缩后回落」，两种口径混用会让状态栏在「估算」与「上游计费」之间跳变。
-3. **同回合两出口可能不等**。`context_trim.detail.after_tokens` 恒为 tiktoken 估算
+2. **同回合两出口可能不等**。`context_trim.detail.after_tokens` 恒为 tiktoken 估算
    （[context_timeline/mod.rs](../../src/cm_agent/context_timeline/mod.rs) 的 `ContextCompactionTimelineSnapshot`），
    而 SSE `tiktokenPromptTokens.used_input_tokens` 在同回合可能已是 provider 值。
+
+**一条已排除的误判（别再当待办）**：`enrich_snapshot_*` 把 `prompt_tokens` 写成
+`report.after.message_tokens`，看上去「名不符实」，但
+[`TiktokenPromptTokensSnapshot`](../../src/cm_types/tiktoken_snapshot.rs) 的字段文档明写它是
+**兼容旧 Client 的消息 prompt Token**（不含 tools 与输出预留，完整口径看 `used_input_tokens`）。
+Client 侧它只做兜底（`used_input_tokens.or(prompt_tokens)`，前端与 TUI 各一处），
+改成总量只会让旧兜底值凭空涨约 29K，没有消费方受益。
+**结论：保持 message-only，S3b 不动它**，只在 `enrich` 处标注「legacy 兼容字段，勿改」。
 
 另外两个事实决定了验收怎么写：
 
@@ -63,7 +68,7 @@ pub struct TurnInputUsage {
 | 出口 | 改造 |
 | --- | --- |
 | `context_trim.detail` | `after_tokens = estimated.used_input_tokens`（字段名与值均不变）；新增 `provider_input_tokens`（有值才出现） |
-| SSE `tiktokenPromptTokens` | `used_input_tokens` **只填 estimated**；`provider_input_tokens` 独立字段；`prompt_tokens` 恢复为「总输入估算」而不是被覆写成 message-only（**破坏性**，见 §4） |
+| SSE `tiktokenPromptTokens` | `used_input_tokens` **只填 estimated**；`provider_input_tokens` 已是独立字段（`tiktoken_snapshot.rs` 现有），`counting_source` 不再被改写成 `provider_usage`；**`prompt_tokens` 保持 message-only**（legacy 兼容字段，见 §1 误判纠正） |
 | `GET /status` | 新增 `context_budget`（静态快照：`context_window_tokens` / `max_input_tokens` / `trigger_tokens` / `target_tokens`），供 Client 取分母。**不加入回合用量**（见 §2.3） |
 | `crabmate doctor` | 不改数值，只改文案：明确「预算推导 + 基线估算，非回合实测」，并在文档里声明它不是 usage 出口 |
 
@@ -90,7 +95,8 @@ Server 侧**同时提供**两个值，不做选择：`context_window_tokens`（�
 ### S3a：类型与单源（不改任何出口的数值）
 
 1. `cm_types` 加 `TurnInputUsage` + `from_report`；`ContextTokenEstimate` / `ContextTokenBudget`
-   目前定义在 `agent::context_compaction`，需要一个 `cm_types` 可见的镜像或上移（二选一，见 §6 Q1）。
+   **已按「上移」实施**：三个类型移入 `cm_types::turn_input_usage`，`agent::context_compaction`
+   re-export 保持既有路径可用（`from_config` 推导仍留在 `agent`，因为它依赖 `cm_config`）。
 2. `context_trim.detail`、SSE snapshot、`/status` 内部改为从 `TurnInputUsage` 取值，
    **字段名与数值一律不变**。
 3. 单测：同一 `ContextCompactionReport` 经三出口得到的 `estimated.used_input_tokens` 逐位相等。
@@ -99,19 +105,26 @@ Server 侧**同时提供**两个值，不做选择：`context_window_tokens`（�
 
 ### S3b：口径分离（破坏性，需 Client 同步）
 
-1. SSE：`used_input_tokens` 只填 estimated，`provider_input_tokens` 独立；`prompt_tokens` 语义恢复。
-2. `/status`：新增 `context_budget`，补契约测试。
-3. doctor：文案改「非回合实测」。
-4. 文档：`docs/SSE协议.md`、`docs/命令行与路由.md`（`/status` 字段）、`docs/配置说明.md`（如涉分母说明）。
-5. Client：状态栏改为 `estimated` 口径；`prompt_tokens` 若有消费点，同步。
+1. SSE：`used_input_tokens` 只填 estimated；`counting_source` 不再被改写成 `provider_usage`
+   （Client 只在时间线里原样显示该字符串，无逻辑分支）。**`prompt_tokens` 不动。**
+2. `/status`：`StatusShellView` 新增 `context_budget`（嵌套
+   `{ context_window_tokens, max_input_tokens, trigger_tokens, target_tokens }`，
+   数据源 `context_gates::ContextTokenBudgetParts::from_config`），同步
+   `fixtures/status_shell_view_golden.json`，并重生成 `docs/openapi.json`
+   （`CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`）。
+3. doctor：文案改「预算推导（非回合实测）」。
+4. 文档：`docs/SSE协议.md`（`used_input_tokens` 口径 + `provider_input_tokens`）、
+   `docs/命令行与路由.md`（`/status` 字段）、`docs/配置说明.md`（如涉分母说明）。
+5. Client：**无需改代码**（`context_axis.rs` 已用 `used_input_tokens`，两处 fallback 顺序已是
+   `used → prompt_tokens`）；只需同版本发布 + release note 说明数值变化。
 
 ## 4. 破坏性影响与迁移
 
 | 变更 | 影响 | 迁移 |
 | --- | --- | --- |
 | SSE `used_input_tokens` 不再可能是 provider 值 | 有 provider usage 的供应商上，数值会降 1~3%；provider 缺失时不变 | Client 同版本发布；`client-contract-v*` 钉子 |
-| SSE `prompt_tokens` 从 message-only 恢复为总输入 | 若 Client 用它做分母/展示，数值会**升**约 29K | 先查 Client 三个消费点再改；必要时 S3b 拆两步 |
-| `/status` 新增 `context_budget` | 纯新增，向后兼容 | 无 |
+| SSE `counting_source` 不再出现 `provider_usage` | 该值只被时间线原样展示（`tui_body_chunks.rs`），无逻辑分支 | 无 |
+| `/status` 新增 `context_budget` | 纯新增，向后兼容（Client 侧解析刻意不加 `deny_unknown_fields`） | 无 |
 | doctor 文案 | 纯展示 | 无 |
 
 `SSE_PROTOCOL_VERSION` **不需要** bump：本设计不改事件结构，只改某个已有字段的取值口径与新增可选字段。
@@ -124,13 +137,13 @@ Server 侧**同时提供**两个值，不做选择：`context_window_tokens`（�
 2. **在 `/status` 里存最近 usage**：见 §2.3。
 3. **Client 侧自己拆两个数**：那需要 Client 也跑 tiktoken 或再解析一遍，等于把口径复制一份。
 4. **改分母为输入预算**：会让所有百分比整体上移约 2%，且引入首轮前后分母跳变的旧问题。
+5. **恢复 `prompt_tokens` 的「总输入」语义**（issue 原设想）：该字段是给旧 Client 的 message-only
+   兼容值，Client 只用它兜底；改成总量会让兜底值凭空涨约 29K，而没有任何消费方受益。见 §1 误判纠正。
 
 ## 6. 待拍板
 
-1. `ContextTokenEstimate` / `ContextTokenBudget` 今天是 `agent::context_compaction` 里的 pub 类型。
-   `TurnInputUsage` 放 `cm_types` 就要么在 `cm_types` 里镜像一份（两份定义，需同步测试），
-   要么把两个类型上移到 `cm_types`（改 import 面，触及 `context_compaction` / `context_timeline`）。
-   **建议上移**——它们是纯数据、无依赖，正是 `cm_types` 的定位。
-2. `prompt_tokens` 语义恢复要不要拆成独立的第三个 PR（S3c）？它比 `used_input_tokens` 更危险，
-   因为「变大了」不容易被注意到。
-3. Client 分母策略的 ADR 编号与落点（Client 仓 ADR 0005 是否容纳，还是新开一条）。
+1. **已决**：三个类型上移到 `cm_types`（纯数据、无依赖；`from_config` 留在 `agent`，它依赖 `cm_config`）。
+2. **已决**：不做 `prompt_tokens` 的语义变更（§1 误判纠正）。
+3. **仍开放**：`used_input_tokens` 口径切换能否接受（有 provider 的供应商上状态栏降 1~3%）？
+   这是 S3b **唯一**的破坏点；若不接受，S3b 只剩 `/status` 加字段 + doctor 文案。
+4. **仍开放**：Client 分母策略的 ADR 编号与落点（Client 仓 ADR 0005 是否容纳，还是新开一条）。

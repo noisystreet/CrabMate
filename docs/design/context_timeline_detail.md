@@ -1,7 +1,7 @@
 # 上下文时间线事件的类型化（#1347 S4 设计）
 
 > 状态：**S4a 已实施**（`ContextTimelineDetail` 类型化，wire 与 canonical 字节不变）；
-> **S4b 未实施**（`detail` 改 JSON object 需另开 issue，属协议面决策）。
+> **S4b 已决策不做**（`detail` 是 7 个 `timeline_log` 生产点共用的字段，改动远超本设计初估，见 §2.2）。
 > 对应 Issue #1347 的 S4。
 > 本文只解决 `context_trim` / `context_inject` 的 `detail` 靠约定、没有编译期约束的问题；
 > 用量口径见 [context_usage_single_source.md](context_usage_single_source.md)。
@@ -77,23 +77,41 @@ pub struct TrimDetail {
 - 加一条**防漂移测试**：同一 `ContextTimelineAcc` 状态下，类型化实现序列化出的 detail 字符串
   与旧实现**逐字相同**。这比 golden 更强，因为 golden 只覆盖到夹具里的那几种状态。
 
-收益：22 个手写字段变成 struct 字段（漏一个编译不过）；`tool_compressed` 由结构体直接序列化；
+收益：21 个手写字段变成 struct 字段（漏一个编译不过）；`tool_compressed` 由结构体直接序列化；
 Client、`SSE_PROTOCOL_VERSION`、两个 golden **全都不动**。
 
-### 2.2 S4b：wire 变 JSON object（**本设计不做**，另开 issue 决策）
+### 2.2 S4b：wire 变 JSON object —— **已决策：不做**
 
-做到 `detail: serde_json::Value`（消费方直接取 `detail.after_tokens`，免 `JSON.parse`）需要：
+`TimelineLogBody.detail` 不是 `context_*` 专用字段，而是**所有 `timeline_log` 事件共用**的。
+本仓有 7 个生产点：
 
-1. `SSE_PROTOCOL_VERSION` bump；
-2. `TimelineLogBody.detail: Option<Value>`；
+| 位置 | 事件 |
+| --- | --- |
+| `src/run_agent_turn.rs` | 终答相关旁注 |
+| `src/agent/agent_turn/host/execute/tools/emit.rs` | `tool_result_summary` |
+| `src/agent/agent_turn/turn_loop/orchestration_route.rs` | 路由旁注 |
+| `src/agent/agent_turn/turn_loop/context_timeline_sse.rs` | `context_trim` / `context_inject` |
+| `src/cm_sse_protocol/sse/final_response_terminal.rs` | 终态（`detail: None`） |
+| `src/cm_sse_protocol/sse/web_approval.rs` | `approval_decision` |
+| `src/cm_sse_protocol/sse/ag_ui_convert.rs` | AG-UI 投影（`detail: None`） |
+
+把 `Option<String>` 改成 `Option<Value>` 的真实成本：
+
+1. 7 个生产点全改——其中审批、工具摘要的 `detail` 是**纯文本**，要包成 `Value::String`
+   或 `{"text": …}`；
+2. `replay_detail_value` 的「纯文本 → `{"text": …}` 包装」回退分支（`context_timeline_sse.rs`，
+   有 3 条测试守着）语义失效，要么删、要么改成异构判断；
 3. Client 三个解析点改签名（`context_axis.rs` 的 `context_trim_after_used_tokens` /
    `context_trim_history_removed` / 水位回落，`timeline_skill.rs` 的注入识别）；
-4. **旧 canonical marker 双形状兼容读**（`String` 与 `Object` 都要吃得下）；
-5. `fixtures/sse_ag_ui_golden.jsonl` / `fixtures/sse_control_golden.jsonl` 更新；
-6. `docs/SSE协议.md` + Client 侧文档同步。
+4. **旧 canonical marker 里 `detail` 是字符串**，读侧必须永久双形状兼容；
+5. `SSE_PROTOCOL_VERSION` bump + 两个 SSE golden + 两份文档。
 
-这就是 issue 里标「中高、跨仓」的那一步。收益只是「少一次 parse」，成本是协议版本 + 双仓同步 + 旧数据兼容。
-**建议 S4a 落地并观察一版后再单独决策**；若做，双形状兼容读必须先于写入侧切换上线。
+收益只有一个：Client 少一次 `serde_json::from_str::<Value>`（微秒级）。
+
+**结论：不做。** 改为在 `docs/SSE协议.md` 写明「`context_trim` / `context_inject` 的 `detail`
+是服务端类型化 JSON（`ContextTimelineDetail`）的字符串形态，字段集见本设计」——
+Server 侧的类型化收益（S4a）已经拿到，wire 不用动。
+若将来仍要做，须单开 issue 并带上面这份成本清单；写入侧切换**必须晚于**双形状兼容读上线。
 
 ### 2.3 title 分流的收尾
 
