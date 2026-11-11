@@ -503,6 +503,9 @@ fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
     body.push_str(
         "\n\n[提示] 索引只给名称与描述；具体条文以 `skill_read` 读到的正文为准，不得假定未读取的技能条文已进入上下文。",
     );
+    body.push_str(
+        "\n\n[提示] 要把稳定做法沉淀成可复用技能时，用 `skill_manage`（`action=install`）写入，下一轮即生效。",
+    );
     if body.chars().count() <= max_chars {
         return body;
     }
@@ -712,6 +715,7 @@ mod tests {
             assert!(idx.contains(desc), "索引应含 {name} 的描述：{idx}");
         }
         assert!(idx.contains("skill_read"), "索引应提示用 skill_read 取正文");
+        assert!(idx.contains("skill_manage"), "索引应提示可用 skill_manage 沉淀新技能：{idx}");
     }
 
     /// 没有 `/<id>` 强制注入时既不追加正文、也不扫描目录——首条 `system` 因此逐轮稳定。
