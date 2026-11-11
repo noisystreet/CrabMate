@@ -468,6 +468,8 @@ pub fn compact_messages_to_token_budget(
 }
 
 #[cfg(test)]
+mod golden;
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{FunctionDef, Tool};
