@@ -64,8 +64,9 @@ Token 分级在另一处、更晚执行（`compact_messages_to_token_budget`，`
   走 `tool_output_head_tail_sample`，并写 `output_truncated` / `output_original_chars` / `output_kept_*`。
   非 envelope 形状退化为前缀截断（`:427`）。
 - 幂等：采样后 `output` ≤ 上限，再次调用返回 `None`（`:411` 早退）。所以 ④ 是纯浪费。
-- 观测：本档命中会置 `has_trim()`（`src/cm_agent/context_timeline.rs:166`，含 `compress_hits > 0`），
-  发 `context_trim`，`detail` 里只有 `compress_hits` **计数**（`context_timeline.rs:210-229`）——
+- 观测：本档命中会置 `has_trim()`（`cm_agent/context_timeline` 的 `ContextTimelineAcc`，含 `compress_hits > 0`），
+  发 `context_trim`，`detail` 里只有 `compress_hits` **计数**（`ContextTimelineAcc::trim_event` 构造的
+  `TrimDetail`，见 [`context_timeline_detail.md`](context_timeline_detail.md)）——
   客户端水位据此回落，但「哪一条被压了、压掉多少」无处可查。
 
 ## 3. 对 issue 三条问题的核实结论

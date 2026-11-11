@@ -289,7 +289,8 @@ fn drop_orphan_after_trim_count_in_full_pipeline() {
 #[test]
 fn pipeline_parks_timeline_so_history_budget_keeps_users() {
     use crate::cm_agent::context_timeline::{
-        KIND_CONTEXT_INJECT, KIND_CONTEXT_TRIM, ContextTimelineEvent, timeline_marker,
+        ContextTimelineDetail, InjectDetail, KIND_CONTEXT_INJECT, KIND_CONTEXT_TRIM,
+        ContextTimelineEvent, TrimDetail, timeline_marker,
     };
     use crate::cm_types::is_chat_timeline_marker;
 
@@ -301,12 +302,12 @@ fn pipeline_parks_timeline_so_history_budget_keeps_users() {
         timeline_marker(&ContextTimelineEvent {
             kind: KIND_CONTEXT_INJECT,
             title: "t".into(),
-            detail: "{}".into(),
+            detail: ContextTimelineDetail::Inject(InjectDetail::default()),
         }),
         timeline_marker(&ContextTimelineEvent {
             kind: KIND_CONTEXT_TRIM,
             title: "t".into(),
-            detail: "{}".into(),
+            detail: ContextTimelineDetail::Trim(TrimDetail::default()),
         }),
     ];
     let cfg = MessagePipelineConfig {

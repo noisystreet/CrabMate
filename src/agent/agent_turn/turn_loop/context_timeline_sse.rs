@@ -14,7 +14,8 @@ pub(crate) async fn emit_context_timeline_sse(
             log: TimelineLogBody {
                 kind: ev.kind.to_string(),
                 title: ev.title.clone(),
-                detail: Some(ev.detail.clone()),
+                // 类型化的 `detail` 只在 encode 边界序列化一次：线上仍是字符串化 JSON（S4a）。
+                detail: Some(ev.detail.to_json_string()),
             },
         };
         let _ = send_sse_control_payload_optional(
@@ -38,7 +39,8 @@ fn append_context_timeline_replay_event(ev: &ContextTimelineEvent) {
     if !crate::turn_replay_dump::replay_dump_enabled() {
         return;
     }
-    let detail = replay_detail_value(ev.detail.as_str());
+    let encoded = ev.detail.to_json_string();
+    let detail = replay_detail_value(encoded.as_str());
     crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
         ev.kind,
         ev.title.as_str(),

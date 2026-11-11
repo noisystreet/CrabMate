@@ -1,0 +1,5 @@
+{
+  "note": "context_trim / context_inject 的 detail 在线上的字节形状（#1347 S4a）。这份夹具是「detail 类型化之前」手写 serde_json::json! 实现的实拍输出；上下文时间线类型化后必须逐字相同（含键顺序与 null 位置），否则线上与 canonical 会出现两种形态。改 detail 的字段名/顺序/默认值都要让本文件同步变红。",
+  "trim_detail": "{\"count_hit\":true,\"char_hit\":false,\"n_before\":8,\"n_after\":2,\"compress_hits\":1,\"tool_compressed\":[{\"index\":3,\"original_chars\":40000,\"kept_chars\":2000}],\"summarized\":true,\"history_removed\":true,\"tail_kept\":6,\"before_tokens\":9000,\"after_tokens\":6000,\"max_input_tokens\":8000,\"reserved_output_tokens\":2000,\"message_tokens\":5000,\"tool_schema_tokens\":900,\"attachment_tokens\":100,\"counting_source\":\"matched_tokenizer\",\"token_triggered\":true,\"removed_turn_groups\":2,\"removed_messages\":6,\"compaction_reason\":\"token_budget_turn_groups\"}",
+  "inject_detail": "{\"kinds\":[\"memory\"],\"skills\":[\"foo.md\"],\"forced\":false}"
+}

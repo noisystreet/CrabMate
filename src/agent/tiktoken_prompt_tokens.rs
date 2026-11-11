@@ -243,29 +243,34 @@ fn enrich_snapshot_from_latest_model_context_artifact(
     else {
         return snapshot;
     };
-    let report = artifact.compaction;
-    if report.after.counting_source.is_none() {
+    let usage = artifact.compaction.input_usage();
+    if usage.estimated.counting_source.is_none() {
         return snapshot;
     }
-    snapshot.prompt_tokens = report.after.message_tokens;
+    // S3a：取数来源收敛到 `TurnInputUsage`，**取值口径暂不变**（provider 仍覆盖 `used`）。
+    // S3b 才会把这里拆成「`used_input_tokens` 只填 estimated + `provider_input_tokens` 独立字段」。
+    // 同一档还有第二处待拆：`prompt_tokens` 被写成了 message-only（不含 tool schema，默认差约 29K），
+    // 与字段名不符——它也在 S3b 的范围内，别只改 `used_input_tokens` 就以为拆完了。
+    let estimated = usage.estimated;
+    snapshot.prompt_tokens = estimated.message_tokens;
     snapshot.used_input_tokens = Some(
-        report
+        usage
             .provider_input_tokens
             .and_then(|tokens| u32::try_from(tokens).ok())
-            .unwrap_or(report.after.used_input_tokens),
+            .unwrap_or(estimated.used_input_tokens),
     );
-    snapshot.max_input_tokens = report.budget.map(|budget| budget.max_input_tokens);
-    snapshot.reserved_output_tokens =
-        report.budget.map(|budget| budget.reserved_output_tokens);
-    snapshot.message_tokens = Some(report.after.message_tokens);
-    snapshot.tool_schema_tokens = Some(report.after.tool_schema_tokens);
-    snapshot.attachment_tokens = Some(report.after.attachment_tokens);
-    snapshot.counting_source = report
-        .after
+    snapshot.max_input_tokens = usage.budget.map(|budget| budget.max_input_tokens);
+    snapshot.reserved_output_tokens = usage
+        .budget
+        .map(|budget| budget.reserved_output_tokens);
+    snapshot.message_tokens = Some(estimated.message_tokens);
+    snapshot.tool_schema_tokens = Some(estimated.tool_schema_tokens);
+    snapshot.attachment_tokens = Some(estimated.attachment_tokens);
+    snapshot.counting_source = estimated
         .counting_source
         .map(|source| source.as_str().to_string());
-    snapshot.provider_input_tokens = report.provider_input_tokens;
-    if report.provider_input_tokens.is_some() {
+    snapshot.provider_input_tokens = usage.provider_input_tokens;
+    if usage.provider_input_tokens.is_some() {
         snapshot.counting_source = Some("provider_usage".to_string());
     }
     snapshot

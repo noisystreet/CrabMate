@@ -1,10 +1,12 @@
 # 回合输入用量的单一来源（#1347 S3 设计）
 
-> 状态：**设计稿，未实施**。对应 Issue #1347 的 S3（S1 characterization golden、S2 决策 policy 已落地）。
+> 状态：**S3a 已实施**（`TurnInputUsage` + 三出口收敛到单点取数，取值口径未变）；
+> **S3b 未实施**（出口取值口径拆分 + `/status` 补 `context_budget`，需 Client 同步）。
+> 对应 Issue #1347 的 S3（S1 characterization golden、S2 决策 policy 已落地）。
 > 本文只解决「用了多少 Token 由谁定义」；压缩**判定**见 [context_window_compaction.md](context_window_compaction.md)，
 > 事件**形状**见 [context_timeline_detail.md](context_timeline_detail.md)。
 >
-> 基线：`main` @ `ae75d0ec`（S2 已合）。
+> 基线：`main` @ `69176f0d`（S2 已合入 main）。
 
 ## 1. 问题
 
@@ -22,7 +24,7 @@ issue 的原始描述是「四处各算一套」。核对代码后，更准确�
    区分。Client 的用量水位（`crabmate-client-api` 的 `context_axis.rs`，`ContextUsedWatermark`）据此做
    「滚动最大 / 压缩后回落」，两种口径混用会让状态栏在「估算」与「上游计费」之间跳变。
 3. **同回合两出口可能不等**。`context_trim.detail.after_tokens` 恒为 tiktoken 估算
-   （[context_timeline.rs](../../src/cm_agent/context_timeline.rs) 的 `ContextCompactionTimelineSnapshot`），
+   （[context_timeline/mod.rs](../../src/cm_agent/context_timeline/mod.rs) 的 `ContextCompactionTimelineSnapshot`），
    而 SSE `tiktokenPromptTokens.used_input_tokens` 在同回合可能已是 provider 值。
 
 另外两个事实决定了验收怎么写：

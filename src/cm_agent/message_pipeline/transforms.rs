@@ -198,7 +198,10 @@ pub fn recent_groups_start(messages: &[Message], keep_groups: usize) -> usize {
 }
 
 /// 一次 `tool` 正文降级的明细（#1327 C 案）：供 `context_trim` 追溯「哪条被压、压掉多少」。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// serde 派生供 `context_trim.detail` 直接序列化（#1347 S4a）：字段顺序即 JSON 键顺序，
+/// 与 S4a 之前手写 `json!` 映射的输出逐字一致。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ToolCompressHit {
     /// 该 `tool` 消息在本次调用 `messages` 切片中的下标（压缩不改顺序）。
     pub index: usize,

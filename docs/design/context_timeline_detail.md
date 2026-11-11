@@ -1,17 +1,19 @@
 # 上下文时间线事件的类型化（#1347 S4 设计）
 
-> 状态：**设计稿，未实施**。对应 Issue #1347 的 S4。
+> 状态：**S4a 已实施**（`ContextTimelineDetail` 类型化，wire 与 canonical 字节不变）；
+> **S4b 未实施**（`detail` 改 JSON object 需另开 issue，属协议面决策）。
+> 对应 Issue #1347 的 S4。
 > 本文只解决 `context_trim` / `context_inject` 的 `detail` 靠约定、没有编译期约束的问题；
 > 用量口径见 [context_usage_single_source.md](context_usage_single_source.md)。
 >
-> 基线：`main` @ `ae75d0ec`（S2 已合）。
+> 基线：`main` @ `69176f0d`（S2 已合入 main）。
 
 ## 1. 现状与问题
 
 `ContextTimelineEvent` 的 `detail` 是 **String**：
 
 ```rust
-// src/cm_agent/context_timeline.rs
+// src/cm_agent/context_timeline/mod.rs
 pub struct ContextTimelineEvent {
     pub kind: &'static str,
     pub title: String,
@@ -19,7 +21,9 @@ pub struct ContextTimelineEvent {
 }
 ```
 
-`trim_event` / `inject_event` 用 `serde_json::json!{ … }.to_string()` 手工铺开（`trim_event` 共 22 个字段，
+> S4a 之后该字段是 `ContextTimelineDetail`；上面的 `String` 是**类型化之前**的形态，保留作对照。
+
+`trim_event` / `inject_event` 用 `serde_json::json!{ … }.to_string()` 手工铺开（`trim_event` 共 21 个字段，
 其中 `tool_compressed` 还要手写一层 map）。由此产生四个问题：
 
 1. **字段集合靠约定**：漏字段、改名、类型写错都在运行期才暴露，编译器帮不上忙。
@@ -59,7 +63,7 @@ pub struct TrimDetail {
     pub tail_kept: Option<usize>,
     pub before_tokens: Option<u32>,
     pub after_tokens: Option<u32>,
-    // …与今天 22 个字段一一对应
+    // …与类型化之前的 21 个 `json!` 键一一对应（顺序即键顺序）
 }
 ```
 
@@ -99,16 +103,19 @@ Client、`SSE_PROTOCOL_VERSION`、两个 golden **全都不动**。
   注意旧 canonical 数据仍在，所以是改成「按 kind 判定」而不是「按 title 猜」，
   不是简单删代码。
 
-## 3. 实施步骤（S4a）
+## 3. 实施步骤（S4a，已实施）
 
-1. 在 `context_timeline.rs`（或子模块 `context_timeline/detail.rs`）定义 `ContextTimelineDetail`
-   与两个 detail struct；字段与今天的 `json!` 一一对应，先只做「同一份数据换表达」。
-2. `ContextTimelineEvent.detail` 改类型；`inject_event` / `trim_event` 改为构造函数返回 struct。
-3. encode 边界补 `to_string()`（两处）；`timeline_marker` 与 SSE 的 wire 不变。
-4. 防漂移测试 + 旧 marker 兼容测试（喂 `{"kind":"context_trim","title":…,"detail":"{…}"}`）。
-5. 更新本文与 [context_window_compaction.md](context_window_compaction.md) 的交叉引用；
-   `docs/SSE协议.md` **不需要**改（形状没变），但可以在该节补一句「`detail` 是字符串化 JSON，
-   服务端已类型化，线格式属 S4b 的独立决策」。
+落地形态：新子模块 [`context_timeline/detail.rs`](../../src/cm_agent/context_timeline/detail.rs)
+（`TrimDetail` / `InjectDetail` / `ContextTimelineDetail`），`context_timeline.rs` 同步改为目录
+（`mod.rs` + `detail.rs`），`MAX_TOOL_COMPRESS_DETAIL` 提到模块级。
+
+1. 定义 `ContextTimelineDetail` 与两个 detail struct；字段顺序与类型化前的 `json!` 一一对应。
+2. `ContextTimelineEvent.detail` 改类型；`inject_event` / `trim_event` 改为构造 struct。
+3. 只在 encode 边界 `to_json_string()`（SSE `context_timeline_sse` 与 `timeline_marker` 两处）。
+4. 两条测试：`detail_json_bytes_match_golden`（字节形状，夹具
+   [context_timeline_detail_golden.json](../../fixtures/context_timeline_detail_golden.json)）、
+   `legacy_detail_string_parses_into_trim_detail`（旧 marker 缺字段兼容）。
+5. `docs/SSE协议.md` **不需要**改（形状没变）。
 
 ## 4. 验收
 
@@ -129,9 +136,7 @@ Client、`SSE_PROTOCOL_VERSION`、两个 golden **全都不动**。
 
 ## 6. 待拍板
 
-1. `ContextTimelineDetail` 放 `cm_agent/context_timeline.rs` 还是新子模块？（该文件 752 行，接近 920 行棘轮，
-   建议拆 `context_timeline/detail.rs`）
-2. 防漂移测试怎么取「旧实现」的期望？两条路：① 把今天的 `json!` 输出存成 fixture 快照；
-   ② 在测试里保留一份 `json!` 构造作为对照实现（短期两份，S4a 合入后删除）。
-   **建议 ①**，fixture 快照更符合仓库既有 golden 习惯。
-3. Client 侧去 title 分流的 PR 何时发？（可晚于 S4a，不阻塞）
+1. **已决**：拆成子模块 `context_timeline/detail.rs`（原文件 752 行，加上类型定义与测试会贴到 920 行棘轮）。
+2. **已决**：防漂移测试用 **fixture 快照**（`fixtures/context_timeline_detail_golden.json`），
+   不在测试里保留第二份 `json!` 对照实现。
+3. **仍开放**：Client 侧去 title 分流的 PR 何时发？（可晚于 S4a，不阻塞）
