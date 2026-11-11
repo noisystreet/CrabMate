@@ -461,10 +461,14 @@ fn doctor_context_gates_lines(cfg: &AgentConfig) -> Vec<String> {
     let Some(alignment) = crate::cm_config::context_gates::context_gate_alignment(cfg) else {
         return vec![
             "  llm_context_tokens = 0（token 预算未启用，走 context_char_budget 降级路径）".to_string(),
+            "  口径：预算推导，非回合实测（回合用量看 `context_trim` 与 SSE `tiktokenPromptTokens`）"
+                .to_string(),
         ];
     };
     let b = alignment.budget;
     let mut lines = vec![
+        "  口径：预算推导，非回合实测（回合用量看 `context_trim` 与 SSE `tiktokenPromptTokens`）"
+            .to_string(),
         format!(
             "  窗口 {} → 输出预留 {} − 安全余量 {} = 输入预算 {}",
             b.context_window_tokens,
@@ -601,6 +605,19 @@ mod tests {
         let lines = doctor_context_gates_lines(&cfg_with(0, 1_024)).join("\n");
         assert!(lines.contains("token 预算未启用"), "{lines}");
         assert!(lines.contains("context_char_budget"), "{lines}");
+    }
+
+    /// #1347 S3b：doctor 是离线命令、没有回合，块里必须自报「预算推导，非回合实测」，
+    /// 否则很容易被当成「本会话用了多少」的权威数字（issue 原验收曾这样要求过）。
+    #[test]
+    fn gates_block_declares_estimate_not_turn_measurement() {
+        for lines in [
+            doctor_context_gates_lines(&cfg_with(262_144, 1_024)).join("\n"),
+            doctor_context_gates_lines(&cfg_with(0, 1_024)).join("\n"),
+        ] {
+            assert!(lines.contains("非回合实测"), "{lines}");
+            assert!(lines.contains("context_trim"), "应指向真正的用量出口: {lines}");
+        }
     }
 
     /// 溯源块必须同时给出层序表与「谁定的」，且 bearer 只显示状态（#1342 P2）。

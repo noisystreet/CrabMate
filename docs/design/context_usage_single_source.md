@@ -1,7 +1,7 @@
 # 回合输入用量的单一来源（#1347 S3 设计）
 
-> 状态：**S3a 已实施**（`TurnInputUsage` + 三出口收敛到单点取数，取值口径未变）；
-> **S3b 未实施**（出口取值口径拆分 + `/status` 补 `context_budget`，需 Client 同步）。
+> 状态：**S3a + S3b 已实施**（`TurnInputUsage` 单点取数；SSE `used_input_tokens` 恒为估算、
+> 上游 usage 走独立字段；`/status` 新增 `context_budget`；doctor 标注「非回合实测」）。
 > 对应 Issue #1347 的 S3（S1 characterization golden、S2 决策 policy 已落地）。
 > 本文只解决「用了多少 Token 由谁定义」；压缩**判定**见 [context_window_compaction.md](context_window_compaction.md)，
 > 事件**形状**见 [context_timeline_detail.md](context_timeline_detail.md)。
@@ -124,7 +124,7 @@ Server 侧**同时提供**两个值，不做选择：`context_window_tokens`（�
 | --- | --- | --- |
 | SSE `used_input_tokens` 不再可能是 provider 值 | 有 provider usage 的供应商上，数值会降 1~3%；provider 缺失时不变 | Client 同版本发布；`client-contract-v*` 钉子 |
 | SSE `counting_source` 不再出现 `provider_usage` | 该值只被时间线原样展示（`tui_body_chunks.rs`），无逻辑分支 | 无 |
-| `/status` 新增 `context_budget` | 纯新增，向后兼容（Client 侧解析刻意不加 `deny_unknown_fields`） | 无 |
+| `/status` 新增 `context_budget` | 纯新增，且顺带把**响应体** `StatusShellView` / `ContextBudgetView` 的 `deny_unknown_fields` 去掉（请求体保留），旧 Client 忽略新键即可 | 无需升 pin；要消费新字段再升 `client-contract-v0.3.0` |
 | doctor 文案 | 纯展示 | 无 |
 
 `SSE_PROTOCOL_VERSION` **不需要** bump：本设计不改事件结构，只改某个已有字段的取值口径与新增可选字段。
@@ -139,6 +139,9 @@ Server 侧**同时提供**两个值，不做选择：`context_window_tokens`（�
 4. **改分母为输入预算**：会让所有百分比整体上移约 2%，且引入首轮前后分母跳变的旧问题。
 5. **恢复 `prompt_tokens` 的「总输入」语义**（issue 原设想）：该字段是给旧 Client 的 message-only
    兼容值，Client 只用它兜底；改成总量会让兜底值凭空涨约 29K，而没有任何消费方受益。见 §1 误判纠正。
+6. **保留 `StatusShellView` 的 `deny_unknown_fields`、靠契约钉协调发布**（否决）：壳层 `StatusData`
+   就是该类型，留着它意味着**每次给 `/status` 加字段都会打断未升级的 Client**。响应体入站宽容、
+   出站由 golden 逐字段断言守住，才是这个方向的正确取舍。
 
 ## 6. 待拍板
 

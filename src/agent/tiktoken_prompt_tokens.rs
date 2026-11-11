@@ -247,18 +247,16 @@ fn enrich_snapshot_from_latest_model_context_artifact(
     if usage.estimated.counting_source.is_none() {
         return snapshot;
     }
-    // S3a：取数来源收敛到 `TurnInputUsage`，**取值口径暂不变**（provider 仍覆盖 `used`）。
-    // S3b 才会把这里拆成「`used_input_tokens` 只填 estimated + `provider_input_tokens` 独立字段」。
-    // 同一档还有第二处待拆：`prompt_tokens` 被写成了 message-only（不含 tool schema，默认差约 29K），
-    // 与字段名不符——它也在 S3b 的范围内，别只改 `used_input_tokens` 就以为拆完了。
+    // #1347 S3b：两条口径**并列**——`used_input_tokens` 恒为估算（视图口径），上游 usage 只走
+    // `provider_input_tokens`。此前用 `provider ?? estimated` 塞进同一个 `used_input_tokens`、
+    // 再靠 `counting_source = "provider_usage"` 标记，等于让一个字段承担两种语义，
+    // Client 的用量水位会在「估算」与「计费」之间跳变。现在消费方要哪个取哪个。
     let estimated = usage.estimated;
+    // `prompt_tokens` 是**给旧 Client 的兼容字段**（message-only，不含 tools / 附件 / 输出预留）：
+    // 消费方只用它做 `used_input_tokens.or(prompt_tokens)` 的兜底。**语义不要改**——改成总量只会
+    // 让旧兜底值凭空涨约 29K，无任何消费方受益（见 docs/design/context_usage_single_source.md §1）。
     snapshot.prompt_tokens = estimated.message_tokens;
-    snapshot.used_input_tokens = Some(
-        usage
-            .provider_input_tokens
-            .and_then(|tokens| u32::try_from(tokens).ok())
-            .unwrap_or(estimated.used_input_tokens),
-    );
+    snapshot.used_input_tokens = Some(estimated.used_input_tokens);
     snapshot.max_input_tokens = usage.budget.map(|budget| budget.max_input_tokens);
     snapshot.reserved_output_tokens = usage
         .budget
@@ -269,10 +267,9 @@ fn enrich_snapshot_from_latest_model_context_artifact(
     snapshot.counting_source = estimated
         .counting_source
         .map(|source| source.as_str().to_string());
+    // 上游 usage 只透出、不参与 `counting_source`：它计量的是「计费口径」，与「这次估算用的是哪个分词器」
+    // 是两件事（此前用 `provider_usage` 覆盖 `counting_source` 正是在混淆这两者）。
     snapshot.provider_input_tokens = usage.provider_input_tokens;
-    if usage.provider_input_tokens.is_some() {
-        snapshot.counting_source = Some("provider_usage".to_string());
-    }
     snapshot
 }
 
@@ -357,8 +354,10 @@ mod tests {
         assert!(snap.tiktoken_model == "gpt-4" || snap.tiktoken_model == "gpt-4o");
     }
 
+    /// #1347 S3b：artifact 的用量拆成两条并列口径——`used_input_tokens` 恒为估算，
+    /// 上游 usage 只出现在 `provider_input_tokens`（不再覆写 `used`、也不再借 `counting_source` 标记）。
     #[test]
-    fn latest_model_context_artifact_unifies_budget_and_provider_usage() {
+    fn latest_model_context_artifact_keeps_provider_usage_separate() {
         let cfg = crate::config::load_config(None).expect("default config");
         let report = crate::agent::context_compaction::ContextCompactionReport {
             after: crate::agent::context_compaction::ContextTokenEstimate {
@@ -397,9 +396,22 @@ mod tests {
 
         let snapshot = prompt_token_count_vendor_shaped_for_session(&cfg, &messages)
             .expect("token snapshot");
-        assert_eq!(snapshot.used_input_tokens, Some(920));
+        assert_eq!(
+            snapshot.used_input_tokens,
+            Some(900),
+            "used 恒为估算（900），不是 provider 的 920"
+        );
+        assert_eq!(snapshot.provider_input_tokens, Some(920), "上游 usage 单独透出");
         assert_eq!(snapshot.max_input_tokens, Some(3_456));
         assert_eq!(snapshot.tool_schema_tokens, Some(150));
-        assert_eq!(snapshot.counting_source.as_deref(), Some("provider_usage"));
+        assert_eq!(
+            snapshot.counting_source.as_deref(),
+            Some("matched_tokenizer"),
+            "counting_source 只描述估算来源，不再被 provider_usage 覆盖"
+        );
+        assert_eq!(
+            snapshot.prompt_tokens, 700,
+            "prompt_tokens 保持 message-only 的 legacy 语义"
+        );
     }
 }

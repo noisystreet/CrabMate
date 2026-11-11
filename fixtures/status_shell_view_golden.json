@@ -23,5 +23,11 @@
   "conversation_store_sqlite_path_configured": true,
   "conversation_store_sqlite_active": true,
   "permission_level_default": "approved",
-  "permission_level_max": "unrestricted"
+  "permission_level_max": "unrestricted",
+  "context_budget": {
+    "context_window_tokens": 64000,
+    "max_input_tokens": 45568,
+    "trigger_tokens": 38732,
+    "target_tokens": 31897
+  }
 }
