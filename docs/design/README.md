@@ -58,13 +58,15 @@
 | [audience_critic_role.md](audience_critic_role.md) | 观众角色（侧向点评）：设计草案 |
 | [multi_agent_collaboration.md](multi_agent_collaboration.md) | 多 Agent 协作：分层演进设计草案（L0–L4 与 A2A 定位） |
 
-## 5. 上下文 / 提示词（5）
+## 5. 上下文 / 提示词（7）
 
 | 文档 | 说明 |
 |---|---|
 | [context_trimming_scheme.md](context_trimming_scheme.md) | 上下文裁剪方案设计 |
 | [context_window_management_react_pruning.md](context_window_management_react_pruning.md) | 上下文窗口管理（ReAct 循环裁剪） |
 | [context_window_compaction.md](context_window_compaction.md) | ADR：上下文窗口压缩 — Token 主导 + 跨回合基线化 + 原文归档 |
+| [context_usage_single_source.md](context_usage_single_source.md) | 回合输入用量的单一来源（#1347 S3）：**设计稿，未实施** |
+| [context_timeline_detail.md](context_timeline_detail.md) | 上下文时间线事件类型化（#1347 S4）：**设计稿，未实施**；S4a 不动 wire |
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
 
