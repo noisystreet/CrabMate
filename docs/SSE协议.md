@@ -95,7 +95,7 @@
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
   未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
-  `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `tail_kept`，
+  `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `history_removed` / `tail_kept`，
     并可选携带 `tool_compressed` / `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` /
     `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` /
     `compaction_reason`。其中 `tool_compressed` 是被降级的 `tool` 正文条目数组（元素为
@@ -105,6 +105,13 @@
     ；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；
     同步裁剪**不计**这些旁注条数，
   且同 `kind` 的 `context_inject`/`context_trim` **覆盖**旧行。
+
+  **`history_removed`（#1345，布尔，消费方契约）**：本回合是否**真的**动过历史——
+  即 `count_hit || char_hit || summarized || removed_turn_groups > 0`。消费方（Web / TUI）
+  只有在它为 `true` 时才应把「上下文用量水位」向下重置；为 `false` 时该事件只表示
+  **工具正文被截断**（视图层，canonical 不变，`used_input_tokens` 的下降只是同一回合内
+  截断前后的差），水位应继续取滚动最大。此前该信息只能从 `title` 文案推断，
+  导致「每轮工具截断都把用量条拽下来」被误读成历史被压缩。
 
 **`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、
   `max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、
