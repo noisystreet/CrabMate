@@ -38,6 +38,30 @@ pub(super) fn load_cli_agent_config(
     load_cli_agent_config_traced(config_path, llm_context_tokens_cli).map(|(cfg, _)| cfg)
 }
 
+/// 一层在最终 `AgentConfig` 上的**实际写入**（生产口径）。
+///
+/// 抽成具名函数是为了让测试能直接钉住「这一层做了什么」：删掉任一
+/// `apply_user_data_*`（或 CLI 覆盖）都会让本模块的用例变红——层表驱动之后，
+/// 「顺序对不对」有 golden 守，「这一步还在不在」就靠这里。
+///
+/// `cli_tokens` 是 `&mut Option<_>`：CLI 层只消费一次，重复访问不会二次生效。
+fn apply_layer(
+    cfg: &mut config::AgentConfig,
+    layer: ConfigLayer,
+    cli_tokens: &mut Option<u32>,
+) {
+    match layer {
+        ConfigLayer::UserData => {
+            crate::user_data::apply_user_data_llm_overrides(cfg);
+            crate::user_data::apply_user_data_tool_overrides(cfg);
+            crate::user_data::apply_user_data_web_api_bearer(cfg);
+        }
+        ConfigLayer::Cli => apply_cli_llm_context_tokens_override(cfg, cli_tokens.take()),
+        // 这三层在 `cm_config::load_config_traced` 的 builder 阶段按同一张表执行。
+        ConfigLayer::Embedded | ConfigLayer::UserToml | ConfigLayer::Env => {}
+    }
+}
+
 /// 与 [`load_cli_agent_config`] 相同，另返回层溯源（`crabmate doctor` 用，#1342）。
 ///
 /// 层序由 `config::layer_precedence::LAYERS` **单一表述**驱动：这里只写「每层怎么改」，
@@ -51,15 +75,8 @@ pub(super) fn load_cli_agent_config_traced(
         std::io::Error::new(std::io::ErrorKind::InvalidData, e)
     })?;
     let mut cli_tokens = llm_context_tokens_cli;
-    apply_post_load_layers(&mut cfg, &mut trace, |layer, cfg| match layer {
-        ConfigLayer::UserData => {
-            crate::user_data::apply_user_data_llm_overrides(cfg);
-            crate::user_data::apply_user_data_tool_overrides(cfg);
-            crate::user_data::apply_user_data_web_api_bearer(cfg);
-        }
-        ConfigLayer::Cli => apply_cli_llm_context_tokens_override(cfg, cli_tokens.take()),
-        // 这三层在 `cm_config::load_config_traced` 的 builder 阶段按同一张表执行。
-        ConfigLayer::Embedded | ConfigLayer::UserToml | ConfigLayer::Env => {}
+    apply_post_load_layers(&mut cfg, &mut trace, |layer, cfg| {
+        apply_layer(cfg, layer, &mut cli_tokens);
     });
     warn_on_context_gate_misalignment(&cfg);
     Ok((cfg, trace))
@@ -122,68 +139,4 @@ pub(super) fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> St
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// #1340：`--llm-context-tokens` 必须在 user-data 覆盖**之后**落定，不能被它盖回。
-    ///
-    /// 测试直接模拟「user-data 已把窗口写成大值」这一步，再应用 CLI 覆盖：
-    /// 顺序一旦被改回 user-data 在后，这条断言就会红。
-    #[test]
-    fn cli_llm_context_tokens_override_wins_over_user_data_layer() {
-        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        cfg.llm_sampling.llm_context_tokens = 1_000_000;
-        apply_cli_llm_context_tokens_override(&mut cfg, Some(100_000));
-        assert_eq!(cfg.llm_sampling.llm_context_tokens, 100_000);
-    }
-
-    /// 未给 CLI 覆盖时，user-data 的值必须原样保留（不能顺手清成配置默认）。
-    #[test]
-    fn absent_cli_override_keeps_user_data_value() {
-        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        cfg.llm_sampling.llm_context_tokens = 1_000_000;
-        apply_cli_llm_context_tokens_override(&mut cfg, None);
-        assert_eq!(cfg.llm_sampling.llm_context_tokens, 1_000_000);
-    }
-
-    /// `0` 视为「不覆盖」（见 `GlobalOpts::llm_context_tokens` 的说明），上限仍是 10M。
-    #[test]
-    fn cli_override_is_capped_at_ten_million() {
-        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        apply_cli_llm_context_tokens_override(&mut cfg, Some(u32::MAX));
-        assert_eq!(cfg.llm_sampling.llm_context_tokens, 10_000_000);
-    }
-
-    /// 内嵌默认（1024 条 × 262,144 窗口）满足双闸不变量：启动不应刷告警。
-    #[test]
-    fn embedded_default_config_has_no_gate_warning() {
-        let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        assert!(
-            context_gate_warning(&cfg).is_none(),
-            "默认配置不该告警：{:?}",
-            context_gate_warning(&cfg)
-        );
-    }
-
-    /// #1342 验收 1 的内核：自检输入必须是**层序都应用之后**的最终 cfg。
-    ///
-    /// 场景取自 Issue 实测：1M 窗口 + 256 条告警（307,200 < 834,332）；
-    /// 同一配置再经 CLI 层把窗口收成 262,144 后告警消失（307,200 > 207,155）。
-    /// 若把 CLI 覆盖挪回 user-data 之前，第二段断言就会红。
-    #[test]
-    fn gate_warning_tracks_final_cfg_after_cli_layer() {
-        let mut cfg = crate::cm_config::load_config(None).expect("embedded default config");
-        cfg.session_ui.max_message_history = 256;
-        cfg.llm_sampling.llm_context_tokens = 1_000_000;
-        cfg.llm_sampling.max_tokens = 16_384;
-        assert!(
-            context_gate_warning(&cfg).is_some(),
-            "1M 窗口 + 256 条应告警"
-        );
-        apply_cli_llm_context_tokens_override(&mut cfg, Some(262_144));
-        assert!(
-            context_gate_warning(&cfg).is_none(),
-            "CLI 层收小窗口后条数闸不再先到，不该告警"
-        );
-    }
-}
+mod tests;

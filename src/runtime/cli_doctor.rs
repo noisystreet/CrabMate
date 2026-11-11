@@ -331,6 +331,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>, trace
     println!();
 
     print_doctor_context_gates_block(cfg);
+    println!();
     print_doctor_conversation_layout_block(cfg);
     println!();
 
@@ -616,6 +617,16 @@ mod tests {
         );
         assert!(lines.contains("llm_context_tokens = 262144"), "{lines}");
         assert!(lines.contains("沿用内嵌默认"), "{lines}");
-        assert!(lines.contains("web_api_bearer_token = "), "{lines}");
+        let bearer_line = lines
+            .lines()
+            .find(|line| line.contains("web_api_bearer_token"))
+            .expect("溯源块必须列出 bearer 一行");
+        assert!(
+            bearer_line.contains("未设置") || bearer_line.contains("已设置（值已隐藏）"),
+            "bearer 只允许这两种展示: {bearer_line}"
+        );
+        // 值描述与外层括号曾叠成 `（未设置）（未覆盖（沿用内嵌默认））`——这里正面守住。
+        assert!(!lines.contains("（（"), "括号不得叠: {lines}");
+        assert!(!lines.contains("））"), "括号不得叠: {lines}");
     }
 }

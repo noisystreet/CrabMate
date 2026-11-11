@@ -67,7 +67,8 @@ impl ConfigLayer {
     ];
 }
 
-/// **唯一**的层顺序表：改顺序只改这里，不要在调用点手工排 `apply_*`。
+/// **唯一**的层顺序表：字面量在 [`ConfigLayer::ALL`]，这里只是它的别名。
+/// 调整顺序只改那一处，不要在调用点手工排 `apply_*`。
 ///
 /// 覆盖它的两个执行点各按同一张表走：
 /// - [`is_pre_load_layer`] 的层由 `cm_config::load::load_config_traced` 内部按序执行，
@@ -134,7 +135,7 @@ impl WatchedKey {
 /// 两层的 bearer 都非空但内容不同时记为未变化——doctor 从不打印该值，区分它们没有意义，
 /// 也不该为判断差异把明文在两个结构里各存一份。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct WatchedValues {
+pub(crate) struct WatchedValues {
     llm_context_tokens: Option<u64>,
     max_tokens: Option<u64>,
     max_message_history: Option<u64>,
@@ -250,12 +251,18 @@ impl LayerTrace {
     }
 
     /// 已记录的（键, 来源）对，顺序按首次记录。
+    ///
+    /// 只给测试/调试用；生产展示走 [`Self::doctor_lines`]，避免多一处需要保持格式的出口。
     #[must_use]
+    #[cfg(test)]
     pub fn rows(&self) -> &[(WatchedKey, ConfigLayer)] {
         &self.rows
     }
 
     /// doctor 用的「值 + 来源」行；密钥只写「已设置/未设置」。
+    ///
+    /// 括号只出现一次：值描述自己不带括号（`未设置` / `N 个`），来源整体放进外层括号，
+    /// 否则会叠成 `（未设置）（未覆盖（沿用内嵌默认））` 这种读不懂的行。
     #[must_use]
     pub fn doctor_lines(&self, cfg: &AgentConfig) -> Vec<String> {
         WatchedKey::ALL
@@ -263,7 +270,7 @@ impl LayerTrace {
             .map(|key| {
                 let source = self
                     .source_of(*key)
-                    .map_or("未覆盖（沿用内嵌默认）".to_string(), |layer| {
+                    .map_or("未覆盖，沿用内嵌默认".to_string(), |layer| {
                         format!("最后由 {}", layer.as_str())
                     });
                 format!("  {} = {}（{source}）", key.as_str(), describe_value(cfg, *key))
@@ -281,7 +288,7 @@ fn describe_value(cfg: &AgentConfig, key: WatchedKey) -> String {
             .tool_registry_policy
             .tool_registry_disabled_tools
             .as_ref()
-            .map_or_else(|| "（未设置）".to_string(), |set| format!("{} 个", set.len())),
+            .map_or_else(|| "未设置".to_string(), |set| format!("{} 个", set.len())),
         WatchedKey::WebApiBearer => {
             if cfg
                 .web_api
@@ -393,6 +400,24 @@ mod tests {
             trace.source_of(WatchedKey::LlmContextTokens),
             Some(ConfigLayer::UserData),
             "cli 只是重复写了同值，来源应停在 user_data"
+        );
+    }
+
+    /// 内嵌分片是**基线**而不是覆盖层：它写下的值不得在 trace 里留行。
+    ///
+    /// 否则 doctor 会把默认值一律说成「最后由 embedded」，而 golden 里
+    /// `source: null`（沿用内嵌默认）这条口径就永远不会出现在真实输出里——两处各说一套。
+    #[test]
+    fn embedded_shards_leave_no_trace_rows() {
+        let (_cfg, trace) =
+            crate::cm_config::load_config_traced(None).expect("embedded default config load ok");
+        assert!(
+            trace
+                .rows()
+                .iter()
+                .all(|(_, layer)| *layer != ConfigLayer::Embedded),
+            "内嵌分片不得记成来源: {:?}",
+            trace.rows()
         );
     }
 
