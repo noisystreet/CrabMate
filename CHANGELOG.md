@@ -30,6 +30,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **BREAKING: turn usage is now two planes and `/status` exposes the input budget (#1347 S3b).**
+  SSE `tiktokenPromptTokens.used_input_tokens` is now **always the tiktoken estimate**; upstream `usage` no longer
+  overwrites it and only appears in `provider_input_tokens`. `counting_source` no longer takes the value
+  `provider_usage` — that field now describes only the estimator (`matched_tokenizer` / `fallback_tokenizer` /
+  `conservative_bytes`). `prompt_tokens` stays message-only as the legacy fallback it was documented to be.
+  `StatusShellView` gains an optional `context_budget`
+  (`context_window_tokens` / `max_input_tokens` / `trigger_tokens` / `target_tokens`), derived from the same
+  `cm_config::context_gates` as the runtime budget and `crabmate doctor`; the doctor's context block now labels
+  itself "预算推导，非回合实测". `StatusShellView` and `ContextBudgetView` are **response** bodies and no longer
+  `deny_unknown_fields`, so a client pinned before this change keeps working (it ignores the new key) — the
+  attribute is still used on request bodies where rejecting typos matters. **Migration:** upgrade the client pin
+  (`client-contract-v0.3.0`) to actually consume `context_budget`; nothing breaks if you don't. `SSE_PROTOCOL_VERSION`
+  stays `2` (the field set is unchanged; only the semantics of `used_input_tokens` tightened, so state bars on
+  providers that report usage will read 1–3 % lower).
 - **`context_trim` carries an explicit `history_removed` flag (#1345).** The SSE timeline event used to distinguish
   "tool output truncated" from "history trimmed" only through its localized `title`, so consumers reset the
   context-usage watermark on *every* tool-body truncation: the status bar dropped each turn while no history was

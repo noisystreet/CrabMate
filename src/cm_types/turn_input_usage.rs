@@ -87,3 +87,46 @@ impl TurnInputUsage {
         self.estimated.used_input_tokens
     }
 }
+
+/// 输入预算的**对外展示子集**（#1347 S3b）：`GET /status?view=shell` 的 `context_budget`。
+///
+/// 只暴露展示需要的四项——`reserved_output_tokens` / `safety_margin_tokens` 已隐含在
+/// `max_input_tokens` 里，不进契约面（否则以后调公式还要改 Client）。
+///
+/// 放在 `cm_types` 而不是 `cm_api_contract` 的原因：推导需要 `cm_config`（`context_gates`），
+/// 而 `cm_api_contract` 必须保持「纯 serde、不拉配置加载」（前端 WASM 也编译它）。
+///
+/// 与 `StatusShellView` 一样是**响应体**：不 `deny_unknown_fields`——以后给预算加字段时，
+/// 未升级的 Client 应当忽略掉而不是解析失败。
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(default)]
+pub struct ContextBudgetView {
+    pub context_window_tokens: u32,
+    pub max_input_tokens: u32,
+    pub trigger_tokens: u32,
+    pub target_tokens: u32,
+}
+
+impl ContextBudgetView {
+    /// 由预算分段推导结果构造（`cm_config::context_gates`）。
+    #[must_use]
+    pub const fn from_parts(parts: (u32, u32, u32, u32)) -> Self {
+        let (context_window_tokens, max_input_tokens, trigger_tokens, target_tokens) = parts;
+        Self {
+            context_window_tokens,
+            max_input_tokens,
+            trigger_tokens,
+            target_tokens,
+        }
+    }
+}

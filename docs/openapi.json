@@ -574,6 +574,36 @@
         "title": "ConfigReloadResponseBody",
         "type": "object"
       },
+      "ContextBudgetView": {
+        "description": "输入预算的**对外展示子集**（#1347 S3b）：`GET /status?view=shell` 的 `context_budget`。\n\n只暴露展示需要的四项——`reserved_output_tokens` / `safety_margin_tokens` 已隐含在\n`max_input_tokens` 里，不进契约面（否则以后调公式还要改 Client）。\n\n放在 `cm_types` 而不是 `cm_api_contract` 的原因：推导需要 `cm_config`（`context_gates`），\n而 `cm_api_contract` 必须保持「纯 serde、不拉配置加载」（前端 WASM 也编译它）。\n\n与 `StatusShellView` 一样是**响应体**：不 `deny_unknown_fields`——以后给预算加字段时，\n未升级的 Client 应当忽略掉而不是解析失败。",
+        "properties": {
+          "context_window_tokens": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_input_tokens": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target_tokens": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger_tokens": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ConversationLayoutMeta": {
         "description": "`GET /conversation/messages` 可选布局元数据。\n\n**会话级**（与 `revision` 同范围），**不**随 `limit` / `before_index` 对 `messages` 分页切片。\n落盘 JSON 与本类型 serde 相同。新保存写入该对象；旧行可省略。\n官方 Web（B3）：双读本字段记差分（行数/角色序/文本 hash）；GET 还原的历史行保持 legacy id，\n不把流式活键（`turn-commentary-*` / `turn-final-answer`）stamp 到持久化水合行。无本字段则纯 legacy。",
         "properties": {
@@ -1215,8 +1245,7 @@
         "type": "object"
       },
       "StatusShellView": {
-        "additionalProperties": false,
-        "description": "Web UI / 状态栏 / 设置页消费的 `/status` 视图（`?view=shell`）。",
+        "description": "Web UI / 状态栏 / 设置页消费的 `/status` 视图（`?view=shell`）。\n\n**响应体，刻意不 `deny_unknown_fields`**（#1347 S3b）：壳层前端把本类型直接当 `StatusData`\n反序列化，若这里拒绝未知字段，Server 每加一个字段都会让未升级的 Client **解析失败**\n（`/status` 整块拿不到）。入站宽容 + 出站由 golden 逐字段断言守住，是响应体应有的取舍；\n**请求体**（`workspace.rs` / `api.rs` 的 `*Body`）保持 `deny_unknown_fields`，那是为了拒拼写错误。",
         "properties": {
           "agent_role_default_session_modes": {
             "additionalProperties": {
@@ -1232,6 +1261,17 @@
           },
           "api_base": {
             "type": "string"
+          },
+          "context_budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextBudgetView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "输入预算快照（#1347 S3b）：供 Client 取「用量 / 预算」的分母。\n\n与运行期预算、doctor 同源于 `cm_config::context_gates`；未配置 `llm_context_tokens`\n（走字符预算降级路径）时缺省。**不含**回合实测用量——那走 `context_trim` / SSE。"
           },
           "context_char_budget": {
             "default": 0,

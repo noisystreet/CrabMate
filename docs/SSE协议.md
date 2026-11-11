@@ -94,7 +94,11 @@
 
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
-  未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
+  未知 kind 应忽略）。
+  **`detail` 是字符串化 JSON**（先 `JSON.parse` 再取键），服务端已把 `context_*` 的字段集类型化为
+  `ContextTimelineDetail`（见 [design/context_timeline_detail.md](design/context_timeline_detail.md)）；
+  线格式保持字符串以便旧会话 / 旧 Client 双读，改 object 属独立决策且当前**不做**。
+  `context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
   `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `history_removed` / `tail_kept`，
     并可选携带 `tool_compressed` / `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` /
     `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` /
@@ -113,11 +117,15 @@
   截断前后的差），水位应继续取滚动最大。此前该信息只能从 `title` 文案推断，
   导致「每轮工具截断都把用量条拽下来」被误读成历史被压缩。
 
-**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、
+**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计，**恒为 tiktoken 估算**）、
   `max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、
   `attachment_tokens`、`counting_source`，
-  以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，
-    或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
+  以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`。
+  **两条口径并列**（#1347 S3b）：`used_input_tokens` 只表示估算，上游 usage 只出现在 `provider_input_tokens`，
+  后者**不会**覆盖前者；`counting_source` 也不再出现 `provider_usage`（它只描述估算来源）。
+  `prompt_tokens` 是给旧 Client 的**兼容字段**（message-only，不含 tools / 附件 / 输出预留），不要当总量用。
+  旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`
+  （字段集不变，只改 `used_input_tokens` 的取值口径——属必须在 release note 明写的类型）。
 
 ### `tool_result` 常用字段
 

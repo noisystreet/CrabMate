@@ -21,10 +21,15 @@ pub struct TiktokenPromptTokensSnapshot {
     pub tool_schema_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_tokens: Option<u32>,
-    /// `tiktoken` / `character_fallback` / `provider_usage`。
+    /// 估算来源：`matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`。
+    ///
+    /// **不再出现 `provider_usage`**（#1347 S3b）：上游 usage 走 [`Self::provider_input_tokens`]，
+    /// 与「这次估算用的哪个分词器」是两回事，混在一个字段里会让消费方误判 `used_input_tokens` 的口径。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counting_source: Option<String>,
     /// 供应商响应 usage 给出的输入 Token；仅在上游返回时存在，用于校准估算。
+    ///
+    /// **不参与** [`Self::used_input_tokens`]（后者恒为 tiktoken 估算）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_input_tokens: Option<u64>,
 }

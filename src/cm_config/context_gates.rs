@@ -124,6 +124,21 @@ pub fn context_gate_alignment(cfg: &AgentConfig) -> Option<ContextGateAlignment>
     ))
 }
 
+/// `GET /status?view=shell` 的 `context_budget`（#1347 S3b）：展示用的四项预算快照。
+///
+/// 与运行期预算、配置自检、`crabmate doctor` 共用 [`ContextTokenBudgetParts`] 这一份推导，
+/// 不另算。未配置窗口（走字符预算降级路径）时返回 `None`。
+#[must_use]
+pub fn status_context_budget(cfg: &AgentConfig) -> Option<crate::cm_types::ContextBudgetView> {
+    let b = ContextTokenBudgetParts::from_config(cfg)?;
+    Some(crate::cm_types::ContextBudgetView::from_parts((
+        b.context_window_tokens,
+        b.max_input_tokens,
+        b.trigger_tokens,
+        b.target_tokens,
+    )))
+}
+
 /// 不变量被违反时的告警文案；满足不变量或未启用 token 预算时返回 `None`。
 ///
 /// 返回文案而不是直接打日志，是为了让测试能断言「两条线的数值都出现」，

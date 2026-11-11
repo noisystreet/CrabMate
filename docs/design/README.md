@@ -65,7 +65,7 @@
 | [context_trimming_scheme.md](context_trimming_scheme.md) | 上下文裁剪方案设计 |
 | [context_window_management_react_pruning.md](context_window_management_react_pruning.md) | 上下文窗口管理（ReAct 循环裁剪） |
 | [context_window_compaction.md](context_window_compaction.md) | ADR：上下文窗口压缩 — Token 主导 + 跨回合基线化 + 原文归档 |
-| [context_usage_single_source.md](context_usage_single_source.md) | 回合输入用量的单一来源（#1347 S3）：**S3a 已实施**（`TurnInputUsage` 单点取数）；S3b 未实施 |
+| [context_usage_single_source.md](context_usage_single_source.md) | 回合输入用量的单一来源（#1347 S3）：**S3a+S3b 已实施**（用量单点 + SSE 口径拆分 + `/status` 预算） |
 | [context_timeline_detail.md](context_timeline_detail.md) | 上下文时间线事件类型化（#1347 S4）：**S4a 已实施**（wire 字节不变）；**S4b 已决策不做**（见该文 §2.2） |
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
