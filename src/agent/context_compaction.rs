@@ -33,55 +33,11 @@ const DEGRADE_TOOL_MAX_CHARS: usize = 2_000;
 const IMAGE_TOKEN_ESTIMATE: u32 = 1_024;
 const VENDOR_REQUEST_OVERHEAD_TOKENS: u32 = 32;
 
-/// 本次估算使用的来源。
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ContextTokenCountingSource {
-    MatchedTokenizer,
-    FallbackTokenizer,
-    ConservativeBytes,
-}
-
-impl ContextTokenCountingSource {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::MatchedTokenizer => "matched_tokenizer",
-            Self::FallbackTokenizer => "fallback_tokenizer",
-            Self::ConservativeBytes => "conservative_bytes",
-        }
-    }
-}
-
-/// 最终请求输入的分项 Token 估算。
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
-#[serde(default)]
-pub struct ContextTokenEstimate {
-    pub used_input_tokens: u32,
-    pub message_tokens: u32,
-    pub tool_schema_tokens: u32,
-    pub attachment_tokens: u32,
-    pub vendor_overhead_tokens: u32,
-    pub counting_source: Option<ContextTokenCountingSource>,
-}
-
-/// 从完整上下文窗口扣除输出预留与安全余量后的输入预算。
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
-#[serde(default)]
-pub struct ContextTokenBudget {
-    pub context_window_tokens: u32,
-    pub reserved_output_tokens: u32,
-    pub safety_margin_tokens: u32,
-    pub max_input_tokens: u32,
-    pub trigger_tokens: u32,
-    pub target_tokens: u32,
-}
+// 计量的三个纯数据类型定义在 `cm_types`（#1347 S3a）：SSE / HTTP 与 agent 共用同一形状，
+// 不再各持一份。这里 re-export，保持既有路径 `crate::agent::context_compaction::*` 可用。
+pub use crate::cm_types::{
+    ContextTokenBudget, ContextTokenCountingSource, ContextTokenEstimate, TurnInputUsage,
+};
 
 impl ContextTokenBudget {
     /// 与配置自检、`crabmate doctor` 共用 `cm_config::context_gates` 的**同一份**推导（#1342）：
@@ -163,6 +119,19 @@ impl ContextCompactionReport {
                 .map_or("unknown", ContextTokenCountingSource::as_str),
             self.compaction_reason(),
         )
+    }
+
+    /// 本回合输入用量的权威形状（#1347 S3a）：对外出口都从这里取值。
+    ///
+    /// `estimated` 取报告的 `after`（视图口径）；`provider_input_tokens` 原样透出，
+    /// **不**覆盖 `estimated`——把两种语义塞进同一个字段正是 S3 要修的东西（取值切换在 S3b）。
+    #[must_use]
+    pub const fn input_usage(&self) -> TurnInputUsage {
+        TurnInputUsage {
+            estimated: self.after,
+            provider_input_tokens: self.provider_input_tokens,
+            budget: self.budget,
+        }
     }
 
     #[must_use]

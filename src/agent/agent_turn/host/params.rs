@@ -371,6 +371,9 @@ impl RunLoopParams<'_> {
                 delta.summary_tail_kept,
             ),
         );
+        // 用量取权威形状（#1347 S3a）：`context_trim.detail` 不再自己从报告里逐字段挑，
+        // 与 SSE `tiktokenPromptTokens` 走同一个 `TurnInputUsage`（S3b 才会拆口径）。
+        let usage = delta.compaction.input_usage();
         let events = self.turn.context_timeline.merge(
             crate::cm_agent::context_timeline::ContextTimelineSnapshot {
                 messages: self.turn.messages_buf,
@@ -379,22 +382,19 @@ impl RunLoopParams<'_> {
                 summary_tail_kept: delta.summary_tail_kept,
                 compaction:
                     crate::cm_agent::context_timeline::ContextCompactionTimelineSnapshot {
+                        // `before` 是压缩前的诊断水位，不在 `TurnInputUsage`（「本回合发了多少」）
+                        // 的范围内，所以仍直接取报告。
                         before_tokens: delta.compaction.before.used_input_tokens,
-                        after_tokens: delta.compaction.after.used_input_tokens,
-                        max_input_tokens: delta
-                            .compaction
-                            .budget
-                            .map(|budget| budget.max_input_tokens),
-                        reserved_output_tokens: delta
-                            .compaction
+                        after_tokens: usage.estimated_used(),
+                        max_input_tokens: usage.budget.map(|budget| budget.max_input_tokens),
+                        reserved_output_tokens: usage
                             .budget
                             .map(|budget| budget.reserved_output_tokens),
-                        message_tokens: delta.compaction.after.message_tokens,
-                        tool_schema_tokens: delta.compaction.after.tool_schema_tokens,
-                        attachment_tokens: delta.compaction.after.attachment_tokens,
-                        counting_source: delta
-                            .compaction
-                            .after
+                        message_tokens: usage.estimated.message_tokens,
+                        tool_schema_tokens: usage.estimated.tool_schema_tokens,
+                        attachment_tokens: usage.estimated.attachment_tokens,
+                        counting_source: usage
+                            .estimated
                             .counting_source
                             .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str),
                         token_triggered: delta.compaction.token_triggered,

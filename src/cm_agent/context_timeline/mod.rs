@@ -1,6 +1,10 @@
 //! 回合上下文时间线：从会话缓冲与管道 delta 收集至多两条事件（注入+skill / 窗口操作）。
 //!
 //! 不发 SSE、不依赖 `execute/tools`。外循环多次 `prepare_*` 只合并回合态。
+//!
+//! **`detail` 是类型化的**（#1347 S4a）：`ContextTimelineDetail` 取代手写 `serde_json::json!`，
+//! 字段集合与类型变成编译期约束；序列化只在 encode 边界发生（SSE / `timeline_marker`），
+//! 线上与 canonical 的形状仍是**字符串化 JSON**（S4b 才考虑改成 object）。
 
 use crate::cm_agent::message_pipeline::MessagePipelineDelta;
 use crate::cm_types::{
@@ -10,6 +14,9 @@ use crate::cm_types::{
     user_message_counts_for_branch_truncation,
 };
 
+mod detail;
+pub use detail::{ContextTimelineDetail, InjectDetail, TrimDetail};
+
 pub const KIND_CONTEXT_INJECT: &str = "context_inject";
 pub const KIND_CONTEXT_TRIM: &str = "context_trim";
 
@@ -17,12 +24,15 @@ const TITLE_INJECT: &str = "本轮已注入上下文";
 const TITLE_TRIM: &str = "已裁剪历史";
 const TITLE_TOOL_COMPRESS: &str = "已压缩工具输出";
 
+/// 每回合最多保留多少条 `tool` 正文明细，避免一个回合内多次 prepare 让 `detail` 无界增长。
+const MAX_TOOL_COMPRESS_DETAIL: usize = 16;
+
 /// 可编码为 `timeline_log` 的一条旁注（kind 已按 §6.1 合并）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextTimelineEvent {
     pub kind: &'static str,
     pub title: String,
-    pub detail: String,
+    pub detail: ContextTimelineDetail,
 }
 
 /// 一次 `prepare_messages_for_model` 完成后的快照（含 changelist sync）。
@@ -108,7 +118,6 @@ fn merge_tool_compress_detail(
     acc: &mut Vec<crate::cm_agent::message_pipeline::ToolCompressHit>,
     hits: &[crate::cm_agent::message_pipeline::ToolCompressHit],
 ) {
-    const MAX_TOOL_COMPRESS_DETAIL: usize = 16;
     for hit in hits {
         if acc.len() >= MAX_TOOL_COMPRESS_DETAIL {
             return;
@@ -222,56 +231,45 @@ impl ContextTimelineAcc {
     }
 
     fn inject_event(&self) -> ContextTimelineEvent {
-        let detail = serde_json::json!({
-            "kinds": self.inject_kinds,
-            "skills": self.skill_ids,
-            "forced": self.skill_forced,
-        })
-        .to_string();
         ContextTimelineEvent {
             kind: KIND_CONTEXT_INJECT,
             title: TITLE_INJECT.to_string(),
-            detail,
+            detail: ContextTimelineDetail::Inject(InjectDetail {
+                kinds: self.inject_kinds.clone(),
+                skills: self.skill_ids.clone(),
+                forced: self.skill_forced,
+            }),
         }
     }
 
     fn trim_event(&self) -> ContextTimelineEvent {
-        let detail = serde_json::json!({
-            "count_hit": self.count_hit,
-            "char_hit": self.char_hit,
-            "n_before": self.n_before.unwrap_or(0),
-            "n_after": self.n_after,
-            "compress_hits": self.compress_hits,
-            "tool_compressed": self
-                .tool_compressed
-                .iter()
-                .map(|h| serde_json::json!({
-                    "index": h.index,
-                    "original_chars": h.original_chars,
-                    "kept_chars": h.kept_chars,
-                }))
-                .collect::<Vec<_>>(),
-            "summarized": self.summarized,
-            "history_removed": self.history_removed(),
-            "tail_kept": self.summary_tail_kept,
-            "before_tokens": self.token_before,
-            "after_tokens": self.token_after,
-            "max_input_tokens": self.max_input_tokens,
-            "reserved_output_tokens": self.reserved_output_tokens,
-            "message_tokens": self.message_tokens,
-            "tool_schema_tokens": self.tool_schema_tokens,
-            "attachment_tokens": self.attachment_tokens,
-            "counting_source": self.counting_source,
-            "token_triggered": self.token_triggered,
-            "removed_turn_groups": self.removed_turn_groups,
-            "removed_messages": self.removed_messages,
-            "compaction_reason": self.compaction_reason,
-        })
-        .to_string();
         ContextTimelineEvent {
             kind: KIND_CONTEXT_TRIM,
             title: self.trim_title().to_string(),
-            detail,
+            // 字段顺序即 JSON 键顺序，与 S4a 之前的 `json!` 逐字一致（见 `detail` 模块文档）。
+            detail: ContextTimelineDetail::Trim(TrimDetail {
+                count_hit: self.count_hit,
+                char_hit: self.char_hit,
+                n_before: self.n_before.unwrap_or(0),
+                n_after: self.n_after,
+                compress_hits: self.compress_hits,
+                tool_compressed: self.tool_compressed.clone(),
+                summarized: self.summarized,
+                history_removed: self.history_removed(),
+                tail_kept: self.summary_tail_kept,
+                before_tokens: self.token_before,
+                after_tokens: self.token_after,
+                max_input_tokens: self.max_input_tokens,
+                reserved_output_tokens: self.reserved_output_tokens,
+                message_tokens: self.message_tokens,
+                tool_schema_tokens: self.tool_schema_tokens,
+                attachment_tokens: self.attachment_tokens,
+                counting_source: self.counting_source.map(str::to_string),
+                token_triggered: self.token_triggered,
+                removed_turn_groups: self.removed_turn_groups,
+                removed_messages: self.removed_messages,
+                compaction_reason: self.compaction_reason.map(str::to_string),
+            }),
         }
     }
 
@@ -413,10 +411,11 @@ fn skill_file_ids(body: &str) -> Vec<String> {
 }
 
 pub fn timeline_marker(event: &ContextTimelineEvent) -> Message {
+    // `detail` 仍写成**字符串**：canonical 与 SSE 同形状（S4a 不改 wire，见 `detail` 模块文档）。
     let content = serde_json::json!({
         "kind": event.kind,
         "title": event.title,
-        "detail": event.detail,
+        "detail": event.detail.to_json_string(),
     })
     .to_string();
     Message {
@@ -488,17 +487,20 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, KIND_CONTEXT_TRIM);
         assert_eq!(events[0].title, TITLE_TOOL_COMPRESS);
-        assert!(events[0].detail.contains("\"compress_hits\":1"));
-        assert!(
-            events[0].detail.contains("\"tool_compressed\":[{"),
-            "detail 应带被压条目明细: {}",
-            events[0].detail
+        let trim = events[0].detail.as_trim().expect("trim detail");
+        assert_eq!(trim.compress_hits, 1);
+        assert_eq!(
+            trim.tool_compressed,
+            vec![crate::cm_agent::message_pipeline::ToolCompressHit {
+                index: 2,
+                original_chars: 40_000,
+                kept_chars: 32_768,
+            }],
+            "detail 应带被压条目明细"
         );
-        assert!(events[0].detail.contains("\"original_chars\":40000"));
         assert!(
-            events[0].detail.contains("\"history_removed\":false"),
-            "纯工具截断不得声称动过历史（#1345）: {}",
-            events[0].detail
+            !trim.history_removed,
+            "纯工具截断不得声称动过历史（#1345）"
         );
     }
 
@@ -548,9 +550,8 @@ mod tests {
             assert_eq!(ev.kind, KIND_CONTEXT_TRIM, "{label}");
             assert_eq!(ev.title, TITLE_TRIM, "{label} 应展示为真裁剪");
             assert!(
-                ev.detail.contains("\"history_removed\":true"),
-                "{label} 的 detail 应标出 history_removed=true: {}",
-                ev.detail
+                ev.detail.as_trim().expect("trim detail").history_removed,
+                "{label} 的 detail 应标出 history_removed=true"
             );
         }
     }
@@ -585,11 +586,11 @@ mod tests {
         });
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].title, TITLE_TRIM);
-        assert!(events[0].detail.contains("\"before_tokens\":9000"));
-        assert!(
-            events[0]
-                .detail
-                .contains("\"compaction_reason\":\"token_budget_turn_groups\"")
+        let trim = events[0].detail.as_trim().expect("trim detail");
+        assert_eq!(trim.before_tokens, Some(9_000));
+        assert_eq!(
+            trim.compaction_reason.as_deref(),
+            Some("token_budget_turn_groups")
         );
     }
 
@@ -619,9 +620,10 @@ mod tests {
         assert_eq!(first[0].kind, KIND_CONTEXT_INJECT);
         assert_eq!(first[1].kind, KIND_CONTEXT_TRIM);
         assert_eq!(first[1].title, TITLE_TRIM);
-        assert!(first[0].detail.contains("memory"));
-        assert!(first[0].detail.contains("foo.md"));
-        assert!(first[1].detail.contains("\"summarized\":true"));
+        let inject = first[0].detail.as_inject().expect("inject detail");
+        assert!(inject.kinds.iter().any(|k| k == "memory"));
+        assert!(inject.skills.iter().any(|s| s == "foo.md"));
+        assert!(first[1].detail.as_trim().expect("trim detail").summarized);
         let second = acc.merge(ContextTimelineSnapshot {
             messages: &msgs,
             pipeline: MessagePipelineDelta {
@@ -748,5 +750,124 @@ mod tests {
         let hint = skill_hint_from_messages(&msgs);
         assert!(!hint.forced);
         assert!(hint.ids.is_empty());
+    }
+
+
+    /// 旧 canonical marker 的 `detail` 是字符串化 JSON（S4a 不改写历史数据）：
+    /// 读侧必须能从**最老形状**解析出 `TrimDetail`，缺字段按默认值补而不是解析失败。
+    #[test]
+    fn legacy_detail_string_parses_into_trim_detail() {
+        let legacy = r#"{"count_hit":true,"n_before":12,"n_after":8}"#;
+        let detail: ContextTimelineDetail =
+            serde_json::from_str(legacy).expect("parse legacy detail");
+        let trim = detail.as_trim().expect("trim detail");
+        assert!(trim.count_hit);
+        assert_eq!(trim.n_before, 12);
+        assert_eq!(trim.n_after, 8);
+        assert!(trim.tool_compressed.is_empty(), "缺字段按默认值补");
+        assert_eq!(trim.after_tokens, None);
+        assert_eq!(trim.compaction_reason, None);
+    }
+
+    /// 判别必须按**形状**分派（review 补）：`untagged` + 全字段 `default` 的 struct 若允许
+    /// 未知字段，`{"kinds":…}` 会被 `Trim` 先吞成 `Trim(default)`，`Inject` 分支永不命中。
+    /// 这条测两个方向都能落到正确变体——它是 `deny_unknown_fields` 的回归守卫。
+    #[test]
+    fn detail_json_dispatches_by_shape() {
+        let inject_json = r#"{"kinds":["memory"],"skills":["foo.md"],"forced":false}"#;
+        let detail: ContextTimelineDetail =
+            serde_json::from_str(inject_json).expect("parse inject detail");
+        assert!(
+            detail.as_inject().is_some(),
+            "inject 形状不得被 Trim 吞掉: {detail:?}"
+        );
+
+        let trim_json = r#"{"count_hit":true,"n_before":12}"#;
+        let detail: ContextTimelineDetail =
+            serde_json::from_str(trim_json).expect("parse trim detail");
+        assert!(
+            detail.as_trim().is_some(),
+            "trim 形状不得被 Inject 吞掉: {detail:?}"
+        );
+    }
+
+    /// #1347 S4a：`detail` 类型化后，序列化字节必须与类型化之前的 `json!` 实现**逐字相同**。
+    ///
+    /// 守的是 wire 形状本身：`detail` 在线上与 canonical 里仍是字符串化 JSON，
+    /// 键改名 / 换序 / 漏字段都会让新老数据出现两种形态，而线上的字节差异在 Client 侧
+    /// 通常是「某个字段读不到」这种沉默失败。夹具即类型化前那份实现的实拍输出。
+    #[test]
+    fn detail_json_bytes_match_golden() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/context_timeline_detail_golden.json"
+        ))
+        .expect("parse fixtures/context_timeline_detail_golden.json");
+
+        // trim：全部字段都有值的那一档（最容易被漏掉的是 `null` 的位置与键顺序）。
+        let msgs = vec![Message::system_only("s"), Message::user_only("latest")];
+        let mut acc = ContextTimelineAcc::default();
+        let events = acc.merge(ContextTimelineSnapshot {
+            messages: &msgs,
+            pipeline: MessagePipelineDelta {
+                n_before: 8,
+                n_after: 2,
+                trim_count_hit: true,
+                tool_compress_hits: 1,
+                tool_compressed: vec![crate::cm_agent::message_pipeline::ToolCompressHit {
+                    index: 3,
+                    original_chars: 40_000,
+                    kept_chars: 2_000,
+                }],
+                ..MessagePipelineDelta::default()
+            },
+            summarized: true,
+            summary_tail_kept: Some(6),
+            compaction: ContextCompactionTimelineSnapshot {
+                before_tokens: 9_000,
+                after_tokens: 6_000,
+                max_input_tokens: Some(8_000),
+                reserved_output_tokens: Some(2_000),
+                message_tokens: 5_000,
+                tool_schema_tokens: 900,
+                attachment_tokens: 100,
+                counting_source: Some("matched_tokenizer"),
+                token_triggered: true,
+                removed_turn_groups: 2,
+                removed_messages: 6,
+                compaction_reason: "token_budget_turn_groups",
+            },
+        });
+        let trim = events
+            .iter()
+            .find(|e| e.kind == KIND_CONTEXT_TRIM)
+            .expect("trim event");
+        assert_eq!(
+            trim.detail.to_json_string(),
+            fixture["trim_detail"].as_str().unwrap_or("<missing>"),
+            "trim detail 的字节形状必须与类型化前一致"
+        );
+
+        // inject：kinds + skills + forced（`skills` 来自系统提示里的「技能文件:」行）。
+        let msgs = vec![
+            Message::system_only("s\n\n【项目技能（skills）】\n技能文件: foo.md\n"),
+            named_user(CRABMATE_LONG_TERM_MEMORY_NAME, "mem"),
+        ];
+        let mut acc = ContextTimelineAcc::default();
+        let events = acc.merge(ContextTimelineSnapshot {
+            messages: &msgs,
+            pipeline: MessagePipelineDelta::default(),
+            summarized: false,
+            summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
+        });
+        let inject = events
+            .iter()
+            .find(|e| e.kind == KIND_CONTEXT_INJECT)
+            .expect("inject event");
+        assert_eq!(
+            inject.detail.to_json_string(),
+            fixture["inject_detail"].as_str().unwrap_or("<missing>"),
+            "inject detail 的字节形状必须与类型化前一致"
+        );
     }
 }

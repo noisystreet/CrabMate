@@ -446,3 +446,54 @@ fn degrade_threshold_stays_far_below_tool_body_cap() {
          否则分级释放 ① 永不命中"
     );
 }
+
+/// #1347 S3a：`TurnInputUsage` 是权威形状——`estimated` 恒为报告视图口径，
+/// `provider_input_tokens` 独立透出、**不**覆盖 `estimated`。
+///
+/// 注意这里**不**断言「SSE 出口与它逐位相等」：S3a 只把取数来源收敛到单点，
+/// 出口取值口径的拆分（provider 不再覆盖 `used_input_tokens`）是 S3b 的事。
+/// 在那之前 `enrich_snapshot_from_latest_model_context_artifact` 仍按旧语义取 `provider ?? estimated`。
+#[test]
+fn input_usage_keeps_estimated_and_provider_apart() {
+    let estimated = ContextTokenEstimate {
+        used_input_tokens: 40_000,
+        message_tokens: 38_000,
+        tool_schema_tokens: 1_900,
+        ..ContextTokenEstimate::default()
+    };
+    let budget = ContextTokenBudget {
+        max_input_tokens: 120_000,
+        context_window_tokens: 140_000,
+        ..ContextTokenBudget::default()
+    };
+    let report = ContextCompactionReport {
+        budget: Some(budget),
+        before: estimated,
+        after: estimated,
+        provider_input_tokens: Some(41_234),
+        ..ContextCompactionReport::default()
+    };
+
+    let usage = report.input_usage();
+    assert_eq!(
+        usage.estimated_used(),
+        report.after.used_input_tokens,
+        "estimated 必须原样取自报告的 after（视图口径）"
+    );
+    assert_eq!(
+        usage.estimated_used(),
+        40_000,
+        "provider 值不得改写 estimated —— 一字段两语义正是 S3 要修的东西"
+    );
+    assert_eq!(usage.provider_input_tokens, Some(41_234));
+    assert_eq!(usage.budget.map(|b| b.max_input_tokens), Some(120_000));
+    assert_eq!(usage.budget.map(|b| b.context_window_tokens), Some(140_000));
+
+    // provider 缺失是常态（流式 / 部分网关不回 usage），不能因此让 estimated 变空。
+    let bare = ContextCompactionReport {
+        provider_input_tokens: None,
+        ..report
+    };
+    assert_eq!(bare.input_usage().estimated_used(), 40_000);
+    assert_eq!(bare.input_usage().provider_input_tokens, None);
+}
