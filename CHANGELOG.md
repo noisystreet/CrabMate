@@ -28,6 +28,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   bound (1024), the warning says so and points at `context_token_trigger_percent` instead of an impossible value; the
   bound is now defined once and shared with config validation.
 
+### Changed
+
+- **`context_trim` carries an explicit `history_removed` flag (#1345).** The SSE timeline event used to distinguish
+  "tool output truncated" from "history trimmed" only through its localized `title`, so consumers reset the
+  context-usage watermark on *every* tool-body truncation: the status bar dropped each turn while no history was
+  actually removed (`removed_turn_groups=0`, `summarized=false`). The `detail` now always includes
+  `history_removed = count_hit || char_hit || summarized || removed_turn_groups > 0`; consumers should reset the
+  watermark only when it is `true` and otherwise keep the rolling maximum. Additive field — the title, existing
+  fields and `SSE_PROTOCOL_VERSION` are unchanged.
+
 ### Removed
 
 - **BREAKING: `sse_capabilities.terminal_order` is gone (#1333 P3).** The first SSE frame no longer carries the soft

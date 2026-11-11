@@ -188,8 +188,20 @@ impl ContextTimelineAcc {
             || self.removed_turn_groups > 0
     }
 
+    /// 本轮是否真的动过历史（删组 / 摘要 / 条数或字符裁剪）。
+    ///
+    /// **契约（#1345）**：只有 `true` 时服务端 `used_input_tokens` 才可能低于此前的峰值，
+    /// 客户端据此决定要不要把「上下文用量水位」回落；纯工具正文截断（`compress_hits > 0`
+    /// 而其余为 0）不改变历史，水位应继续走滚动最大。
+    ///
+    /// 此前该信息只隐含在 `title` 文案里（`TITLE_TRIM` / `TITLE_TOOL_COMPRESS`），
+    /// 消费方按展示文案分流，脆弱且容易被读成「历史被压缩」。
+    fn history_removed(&self) -> bool {
+        self.count_hit || self.char_hit || self.summarized || self.removed_turn_groups > 0
+    }
+
     fn trim_title(&self) -> &'static str {
-        if self.count_hit || self.char_hit || self.summarized || self.removed_turn_groups > 0 {
+        if self.history_removed() {
             TITLE_TRIM
         } else {
             TITLE_TOOL_COMPRESS
@@ -240,6 +252,7 @@ impl ContextTimelineAcc {
                 }))
                 .collect::<Vec<_>>(),
             "summarized": self.summarized,
+            "history_removed": self.history_removed(),
             "tail_kept": self.summary_tail_kept,
             "before_tokens": self.token_before,
             "after_tokens": self.token_after,
@@ -482,6 +495,64 @@ mod tests {
             events[0].detail
         );
         assert!(events[0].detail.contains("\"original_chars\":40000"));
+        assert!(
+            events[0].detail.contains("\"history_removed\":false"),
+            "纯工具截断不得声称动过历史（#1345）: {}",
+            events[0].detail
+        );
+    }
+
+    /// #1345：`history_removed` 是四条「真动历史」路径的并集，任一条成立即 `true`。
+    ///
+    /// 客户端只在这个字段为 `true` 时回落用量水位，所以它必须覆盖全部四种删/压路径——
+    /// 漏掉任何一种，状态栏就会停在旧峰值（与工具截断那次故障相反方向的 bug）。
+    #[test]
+    fn history_removed_covers_every_real_trim_path() {
+        let msgs = vec![Message::system_only("s"), Message::user_only("hi")];
+        let cases: [(&str, MessagePipelineDelta, bool, ContextCompactionTimelineSnapshot); 4] = [
+            (
+                "count_hit",
+                MessagePipelineDelta { trim_count_hit: true, ..Default::default() },
+                false,
+                ContextCompactionTimelineSnapshot::default(),
+            ),
+            (
+                "char_hit",
+                MessagePipelineDelta { trim_char_hit: true, ..Default::default() },
+                false,
+                ContextCompactionTimelineSnapshot::default(),
+            ),
+            (
+                "summarized",
+                MessagePipelineDelta::default(),
+                true,
+                ContextCompactionTimelineSnapshot::default(),
+            ),
+            (
+                "removed_turn_groups",
+                MessagePipelineDelta::default(),
+                false,
+                ContextCompactionTimelineSnapshot { removed_turn_groups: 2, ..Default::default() },
+            ),
+        ];
+        for (label, pipeline, summarized, compaction) in cases {
+            let mut acc = ContextTimelineAcc::default();
+            let events = acc.merge(ContextTimelineSnapshot {
+                messages: &msgs,
+                pipeline,
+                summarized,
+                summary_tail_kept: summarized.then_some(6),
+                compaction,
+            });
+            let ev = events.first().unwrap_or_else(|| panic!("{label} 应产生事件"));
+            assert_eq!(ev.kind, KIND_CONTEXT_TRIM, "{label}");
+            assert_eq!(ev.title, TITLE_TRIM, "{label} 应展示为真裁剪");
+            assert!(
+                ev.detail.contains("\"history_removed\":true"),
+                "{label} 的 detail 应标出 history_removed=true: {}",
+                ev.detail
+            );
+        }
     }
 
     #[test]
