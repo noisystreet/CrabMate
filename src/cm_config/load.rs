@@ -4,7 +4,7 @@ use super::assembly;
 use super::builder::ConfigBuilder;
 use super::env_overrides::apply_env_overrides;
 use super::finalize::finalize;
-use super::layer_precedence::{ConfigLayer, LayerTrace, WatchedValues};
+use super::layer_precedence::{ConfigLayer, LAYERS, LayerTrace, WatchedValues, is_pre_load_layer};
 use super::types::AgentConfig;
 
 /// 源码树内嵌默认 `system_prompt_file` 等相对路径的解析锚点（`CARGO_MANIFEST_DIR` = 仓库根）。
@@ -31,27 +31,32 @@ pub(crate) fn load_config_traced(
 ) -> Result<(AgentConfig, LayerTrace), String> {
     let mut b = ConfigBuilder::default();
     let mut trace = LayerTrace::default();
-    let empty = WatchedValues::default();
+    let mut system_prompt_search_bases: Vec<std::path::PathBuf> = Vec::new();
 
-    // 嵌入默认分片与用户 TOML 的合并顺序见 `assembly` 模块文档。
-    assembly::apply_embedded_config_shards(&mut b)?;
-    let embedded = WatchedValues::from_builder(&b);
-    embedded.record_changes(&empty, ConfigLayer::Embedded, &mut trace);
-
-    let mut system_prompt_search_bases = assembly::merge_user_config_layers(config_path, &mut b)?;
-    let user_toml = WatchedValues::from_builder(&b);
-    user_toml.record_changes(&embedded, ConfigLayer::UserToml, &mut trace);
-
-    for base in embedded_repo_config_search_bases() {
-        if base.is_dir() {
-            system_prompt_search_bases.push(base);
+    // 三层都按 `LAYERS` 的表序执行：顺序不是这里的 `match` 分支排列，而是表里那一行。
+    for layer in LAYERS.iter().copied().filter(|l| is_pre_load_layer(*l)) {
+        let prev = WatchedValues::from_builder(&b);
+        match layer {
+            ConfigLayer::Embedded => assembly::apply_embedded_config_shards(&mut b)?,
+            ConfigLayer::UserToml => {
+                system_prompt_search_bases =
+                    assembly::merge_user_config_layers(config_path, &mut b)?;
+                for base in embedded_repo_config_search_bases() {
+                    if base.is_dir() {
+                        system_prompt_search_bases.push(base);
+                    }
+                }
+            }
+            ConfigLayer::Env => apply_env_overrides(&mut b),
+            ConfigLayer::UserData | ConfigLayer::Cli => {}
+        }
+        // 内嵌分片是**基线**、不是覆盖层：它写下的值不记来源，doctor 才会在「没人改过」时
+        // 显示「沿用内嵌默认」。这与 `fixtures/config_layer_precedence.json` 里
+        // `source: null` 的口径是同一条——两处不能各说一套。
+        if layer != ConfigLayer::Embedded {
+            WatchedValues::from_builder(&b).record_changes(&prev, layer, &mut trace);
         }
     }
-
-    // 环境变量覆盖（优先级最高）
-    apply_env_overrides(&mut b);
-    let env = WatchedValues::from_builder(&b);
-    env.record_changes(&user_toml, ConfigLayer::Env, &mut trace);
 
     // 两道闸（条数 / token 预算）的自检刻意**不**放这里：本层还没有 user-data 覆盖，
     // 看到的窗口可能小于最终生效值，会在窗口被放大后才真正成立的不变量上漏报（#1342）。
