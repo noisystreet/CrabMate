@@ -9,6 +9,12 @@
 //! 精确数字由 `context_compaction` 既有单测覆盖。
 //!
 //! 夹具：`fixtures/context_compaction_golden.json`（与 SSE golden 同族，单文件多 case）。
+//!
+//! **有意取舍**：`expect.actions` 直接取 `policy::plan_compaction` 的输出，**不**经过执行器回传。
+//! 若将来判定被内联回 `compact_messages_to_token_budget`、而 plan 只留着算 `token_triggered`，
+//! 这条断言不会红（会红的是下面「报告与 policy 同源」那条）。要做到强耦合得让执行器把消费过的
+//! 动作序列回传出来，而 `ContextCompactionReport` 目前是 `Copy`、且是 `context_trim.detail`
+//! 的 wire 形状——那是 S4 的范围，这里先用同源断言兜住入口漂移。
 
 use serde::Deserialize;
 

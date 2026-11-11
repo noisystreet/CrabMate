@@ -429,3 +429,20 @@ fn min_tail_messages_default_tail_keeps_more_groups_than_no_guard() {
         guarded_messages.len()
     );
 }
+
+/// ADR §3.3 的不变式：`DEGRADE_TOOL_MAX_CHARS` 必须**显著小于** `tool_message_max_chars`。
+///
+/// 反了会静默失效：同步管道先按 `tool_message_max_chars` 压过一遍，正文若已在该值以下，
+/// `maybe_compress_tool_message_content` 返回 `None`，分级释放 ① 永不命中——而压缩照样
+/// 「看起来在工作」（删组仍生效），只有 Token 水位会莫名偏高。policy 单测里的
+/// `max_chars: DEGRADE_TOOL_MAX_CHARS` 是**自比**（改常量不会红），所以这条单独钉一次。
+#[test]
+fn degrade_threshold_stays_far_below_tool_body_cap() {
+    let cfg = crate::config::load_config(None).expect("embedded config");
+    let cap = cfg.tool_transcript.tool_message_max_chars;
+    assert!(
+        cap >= DEGRADE_TOOL_MAX_CHARS * 8,
+        "tool_message_max_chars={cap} 应远大于 DEGRADE_TOOL_MAX_CHARS={DEGRADE_TOOL_MAX_CHARS}，\
+         否则分级释放 ① 永不命中"
+    );
+}

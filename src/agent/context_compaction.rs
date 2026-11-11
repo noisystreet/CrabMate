@@ -1,6 +1,9 @@
 //! 最终请求形状的 Token 预算与完整交互组压缩。
 //!
 //! 本模块只派生模型视图所需的计量与确定性删组；LLM 摘要仍由 `context_window` 编排。
+//!
+//! **决策**（压哪一级、停在哪）在 `policy` 子模块：纯函数返回有界动作序列，本文件只做执行与
+//! 逐组重估（#1347 S2）。新增一级释放 = policy 多一个变体 + 本模块多一个执行分支。
 
 use crate::agent::message_pipeline::{
     RemovedPrefix, conversation_messages_to_vendor_body, conversation_turn_groups,
@@ -453,6 +456,11 @@ pub fn compact_messages_to_token_budget(
                 if compressed_old_tool_messages > 0 {
                     after = estimate_final_request_tokens(cfg, messages, tools, model_override);
                 }
+                // 报告的水位必须跟着执行走。当前 policy 恒把本动作与 `TrimTurnGroupsTo` 成对给出，
+                // 所以 `remove_old_groups_to_target` 随后会用 `after` 覆盖 `removal.after`；
+                // 但一旦出现「只降级、不删组」的单体动作（policy 抽出来正是为了让这种组合可加），
+                // 少了这一行报告就会停在**降级前**的水位，`context_trim` 与 S3 的权威用量跟着错。
+                removal.after = after;
             }
             ContextAction::TrimTurnGroupsTo {
                 target_tokens,
