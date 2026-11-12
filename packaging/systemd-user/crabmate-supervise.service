@@ -19,10 +19,22 @@
 #   2. `ExecStart` 必须是**绝对路径**（systemd 不查 PATH）。下面按 `~/.local/bin`
 #      写；若 crabmatectl 装在 `/usr/bin`（deb 包即如此），改成 `/usr/bin/crabmatectl`。
 #
-# 为什么是 `--watch --restart on-failure`：
+# 为什么是 `--watch --restart on-failure --socket`：
 #   `supervise` 不带 `--watch` 时只做一次收敛就退出（那条形态适合让 systemd 自己
 #   按 Restart= 拉起）；要让「声明被改」与「实例自己崩了」都由 ctl 负责，才需要
 #   这两个开关。`--restart` 默认是 `never`，不写就不会有重启行为。
+#
+#   为什么还要 `--socket`：这是客户端管理 lane 的**唯一**通道。TUI / Desktop 被禁止
+#   spawn `crabmatectl`，也不该自己写 `instances.toml`（会与 `--watch` 构成两个写入者），
+#   于是它们的 `/ctl` 列表与 `/lane new|close|open` 全部经这条 unix socket；不给它，
+#   客户端只剩「连已经存在的实例」，加 / 停 lane 必须回到终端敲 ctl。socket 不监听 TCP、
+#   目录 `0700` / socket `0600`，仅有文件权限这一道鉴权，故不扩大攻击面（同用户进程本来
+#   就能直接写 `instances.toml`）。
+#
+#   路径显式写成 `%t/crabmate/ctl.sock`：`%t` 在 user 单元里就是 `$XDG_RUNTIME_DIR`，
+#   与客户端派生默认路径的算法一致。不写值时 ctl 在 `XDG_RUNTIME_DIR` 缺失的情况下会
+#   回退到状态目录，而客户端**不猜**（拿不到该变量就判定「控制面未启用」）—— 显式给出
+#   才不会出现「ctl 在服务、客户端找不到」。
 
 [Unit]
 Description=CrabMate local multi-instance serve supervisor (crabmatectl)
@@ -31,7 +43,12 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/crabmatectl supervise --from-config --watch --restart on-failure
+# ctl 自己会建 `0700` 目录并 chmod socket（`paths::prepare_control_socket`），
+# 但对 `$XDG_RUNTIME_DIR` 下的目录交给 systemd 更干净：`systemctl --user stop` 之后
+# socket 与目录一起消失，残留只在 ctl 被 SIGKILL 时出现，那种情况由 `clear_stale()` 兜住。
+RuntimeDirectory=crabmate
+RuntimeDirectoryMode=0700
+ExecStart=%h/.local/bin/crabmatectl supervise --from-config --watch --restart on-failure --socket %t/crabmate/ctl.sock
 # ctl 常驻失败时由 systemd 兜底；ctl 是**唯一**的写者，重启它会重新读声明收敛。
 Restart=on-failure
 RestartSec=5
