@@ -9,7 +9,7 @@ use crate::cm_config::env_override_apply::{apply_bool, apply_csv_allow_empty, ap
 ///
 /// 列表键用 `apply_csv_allow_empty`：空串语义是**显式清空**（如某形态下不要 L0 控制面工具），
 /// 与 `permission_read_tools` 的「显式空数组 = 配置错误」由 `finalize` 的校验兜住。
-pub(super) fn apply_env_permission_overrides(b: &mut ConfigBuilder) {
+pub(super) fn apply(b: &mut ConfigBuilder) {
     let perm = &mut b.permission;
     apply_nonempty_opt(&mut perm.permission_level_str, "CM_PERMISSION_LEVEL");
     apply_nonempty_opt(

@@ -5,7 +5,7 @@
 use crate::cm_config::builder::ConfigBuilder;
 use crate::cm_config::env_override_apply::{apply_bool, apply_nonempty_opt, apply_parse};
 
-pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
+pub(super) fn apply(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);
     env_override_final_plan_flags(b);
 }

@@ -1,15 +1,16 @@
-//! 聊天队列、只读并行缓存、会话变更集等 `CM_*` 覆盖。
+//! `chat_queues_cache.*` 的 `CM_*` 覆盖（聊天队列并发 / 排队上限与只读缓存）。
+//!
+//! 会话级工作区变更集属 `session_workspace_changelist` 段，见 `session_changelist.rs`。
 
 use crate::cm_config::builder::ConfigBuilder;
 use crate::cm_config::env_override_apply::{apply_bool, apply_parse};
 
-pub(super) fn env_override_chat_queue_parallel_and_caches(b: &mut ConfigBuilder) {
-    chat_queue_override_sizes(b);
-    parallel_readonly_and_test_result_caches(b);
-    session_workspace_changelist_env(b);
+pub(super) fn apply(b: &mut ConfigBuilder) {
+    queue_sizes(b);
+    readonly_and_test_result_caches(b);
 }
 
-fn chat_queue_override_sizes(b: &mut ConfigBuilder) {
+fn queue_sizes(b: &mut ConfigBuilder) {
     apply_parse(
         &mut b.chat_queues_cache.chat_queue_max_concurrent,
         "CM_CHAT_QUEUE_MAX_CONCURRENT",
@@ -24,7 +25,7 @@ fn chat_queue_override_sizes(b: &mut ConfigBuilder) {
     );
 }
 
-fn parallel_readonly_and_test_result_caches(b: &mut ConfigBuilder) {
+fn readonly_and_test_result_caches(b: &mut ConfigBuilder) {
     apply_parse(
         &mut b.chat_queues_cache.read_file_turn_cache_max_entries,
         "CM_READ_FILE_TURN_CACHE_MAX_ENTRIES",
@@ -44,20 +45,5 @@ fn parallel_readonly_and_test_result_caches(b: &mut ConfigBuilder) {
     apply_parse(
         &mut b.chat_queues_cache.test_result_cache_max_entries,
         "CM_TEST_RESULT_CACHE_MAX_ENTRIES",
-    );
-}
-
-fn session_workspace_changelist_env(b: &mut ConfigBuilder) {
-    apply_bool(
-        &mut b
-            .session_workspace_changelist
-            .session_workspace_changelist_enabled,
-        "CM_SESSION_WORKSPACE_CHANGELIST_ENABLED",
-    );
-    apply_parse(
-        &mut b
-            .session_workspace_changelist
-            .session_workspace_changelist_max_chars,
-        "CM_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS",
     );
 }
