@@ -1103,7 +1103,7 @@ dependencies = [
 
 [[package]]
 name = "crabmate"
-version = "0.8.1-beta.0"
+version = "0.8.1-beta.1"
 dependencies = [
  "async-trait",
  "axum",
