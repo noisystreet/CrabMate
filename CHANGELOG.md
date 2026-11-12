@@ -10,101 +10,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Added
+## [0.8.1] - 2026-11-12
 
-- **The user-level systemd unit now starts `crabmatectl` with `--socket`.** `packaging/systemd-user/crabmate-supervise.service`
-  ran `supervise --from-config --watch --restart on-failure` with no control plane, which left TUI / Desktop without
-  `/ctl`, `/lane new`, `/lane close` and `/lane open` — those go through the unix socket precisely because the client
-  is forbidden to spawn `crabmatectl` or to write `instances.toml` itself (that would race `--watch` on one file).
-  It now passes an explicit `--socket %t/crabmate/ctl.sock` and declares `RuntimeDirectory=crabmate` (+ `0700`), so the
-  socket is derived from the same `$XDG_RUNTIME_DIR` the clients compute and disappears with the unit on
-  `systemctl --user stop`. No `src/` change; the Server side already offered the control plane.
-
-- **Two-gate context self-check (#1342).** Config load now compares the message-count cap against the token trigger
-  (`max_message_history × assumed 1,200 tokens/message` vs `trigger_tokens`) and logs a `warn` with the suggested cap
-  when the count gate would fire first — the failure mode behind #1339. `crabmate doctor` prints the same comparison
-  (window → input budget, both gates, which fires first). The trigger formula now has exactly one implementation
-  (`cm_config::context_gates`), shared by the runtime budget, the self-check and doctor, so the three cannot drift.
-- **Config layer precedence is now data, not call order (#1342).** Five layers (embedded → user TOML → `CM_*` env →
-  user-data → explicit CLI flags) are expressed once in `cm_config::layer_precedence::LAYERS`, and `LayerTrace` records
-  which layer last changed `llm_context_tokens` / `max_tokens` / `max_message_history` /
-  `tool_registry_disabled_tools` / `web_api_bearer_token`. `crabmate doctor` prints the order plus those
-  `key → last writing layer` rows (secrets as set/unset only), so "who wins" is answerable without reading the call
-  sequence (#1340's root cause). A fixture-driven matrix (`fixtures/config_layer_precedence.json`) fails if a layer
-  moves.
-- **Two-gate warning names an unreachable suggestion.** When the computed cap exceeds the `max_message_history` upper
-  bound (1024), the warning says so and points at `context_token_trigger_percent` instead of an impossible value; the
-  bound is now defined once and shared with config validation.
-
-### Changed
-
-- **BREAKING: turn usage is now two planes and `/status` exposes the input budget (#1347 S3b).**
-  SSE `tiktokenPromptTokens.used_input_tokens` is now **always the tiktoken estimate**; upstream `usage` no longer
-  overwrites it and only appears in `provider_input_tokens`. `counting_source` no longer takes the value
-  `provider_usage` — that field now describes only the estimator (`matched_tokenizer` / `fallback_tokenizer` /
-  `conservative_bytes`). `prompt_tokens` stays message-only as the legacy fallback it was documented to be.
-  `StatusShellView` gains an optional `context_budget`
-  (`context_window_tokens` / `max_input_tokens` / `trigger_tokens` / `target_tokens`), derived from the same
-  `cm_config::context_gates` as the runtime budget and `crabmate doctor`; the doctor's context block now labels
-  itself "预算推导，非回合实测". `StatusShellView` and `ContextBudgetView` are **response** bodies and no longer
-  `deny_unknown_fields`, so a client pinned before this change keeps working (it ignores the new key) — the
-  attribute is still used on request bodies where rejecting typos matters. **Migration:** upgrade the client pin
-  (`client-contract-v0.3.0`) to actually consume `context_budget`; nothing breaks if you don't. `SSE_PROTOCOL_VERSION`
-  stays `2` (the field set is unchanged; only the semantics of `used_input_tokens` tightened, so state bars on
-  providers that report usage will read 1–3 % lower).
-- **`context_trim` carries an explicit `history_removed` flag (#1345).** The SSE timeline event used to distinguish
-  "tool output truncated" from "history trimmed" only through its localized `title`, so consumers reset the
-  context-usage watermark on *every* tool-body truncation: the status bar dropped each turn while no history was
-  actually removed (`removed_turn_groups=0`, `summarized=false`). The `detail` now always includes
-  `history_removed = count_hit || char_hit || summarized || removed_turn_groups > 0`; consumers should reset the
-  watermark only when it is `true` and otherwise keep the rolling maximum. Additive field — the title, existing
-  fields and `SSE_PROTOCOL_VERSION` are unchanged.
-
-### Removed
-
-- **BREAKING: `sse_capabilities.terminal_order` is gone (#1333 P3).** The first SSE frame no longer carries the soft
-  field `terminal_order` (`saved_before_finished`), and `cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED`
-  is removed from the public API. The order it advertised is now the only one the server emits
-  (`stream_draining` → persist → `conversation_saved` → `RUN_FINISHED`), so clients only had to ignore the field;
-  `SSE_PROTOCOL_VERSION` stays **v2**. Integrations that branched on it should drop the branch.
-  Note: this deliberately skips the "deprecate one release first" step written in #1333, to clear P3 in a single PR;
-  restoring a compat window means re-adding one field plus one constant.
-
-### Changed
-
-- **`GET /conversation/messages` always carries `layout` (#1333 P4).** The "omit the key when the stored row has no
-  `layout_meta_json`" fallback is gone: unpersisted sessions now serialize `"layout": null` instead of dropping the key.
-  `Option`-typed clients see no difference; the OpenAPI schema still says optional/nullable, i.e. it is *looser*
-  than the implementation (the key is now always emitted).
-- **`crabmate doctor` reports conversation-layout coverage (#1333 P4).** A new read-only block prints the session-row
-  count and how many rows lack `layout_meta_json` (NULL or blank) — i.e. how much traffic can only use the legacy read
-  path. It feeds the §16.5 threshold check before that path is removed; the threshold itself is **not** hardcoded.
-
-- **v1 turn projectors removed (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and `project_turn_web`
-  (`crabmate sse-replay` + golden) are **deleted**; `sse-replay --format rows` now projects through
-  `project_turn_web_v2`, so its row list no longer contains aggregated `assistant_batch_narration` entries
-  (closed commentary becomes its own row, plus `assistant_timeline`). `fixtures/turn_project_golden.jsonl` and
-  `fixtures/turn_project_web_golden.jsonl` are removed; Web's contract golden stays
-  `turn_project_projection_golden.jsonl`. `batch_narration_text` / `batch_narration_row` remain public (the
-  Client imports the former). **CLI-visible**: the `rows` output shape changes; no flag, wire protocol or config move.
-
-- **`max_message_history` default raised from 256 to 1024 (#1339).** The message-count trim used to fire long before the
-  token budget did (tool-heavy ReAct sessions average ~1,200–1,650 tokens/message, so 256 messages ≈ 300k–420k tokens,
-  against `trigger_tokens` ≈ 834k at a 1M window) — which read as "context compaction at 30%". The count cap now sits
-  above the token-trigger equivalent; see `docs/配置说明.md` §上下文窗口. Same config key, only the default changes.
-
-### Fixed
-
-- **Global `--llm-context-tokens` was silently overridden by user-data (#1340).** `load_cli_agent_config` applied the CLI
-  override *before* `apply_user_data_llm_overrides`, so a `client_llm.llm_context_tokens` entry in
-  `~/.local/share/crabmate/llm_overrides.json` always won and `serve --llm-context-tokens N` had no effect. The CLI
-  override is now applied last (explicit CLI beats user-data); tool overrides are unchanged, because
-  `apply_user_data_tool_overrides` only ever *adds* disables.
-
-## [0.8.1] - 2026-11-09
-
-**Git pre-release `v0.8.1-beta.0`** (third pre-release of the `0.8.1` line, after `v0.8.1-alpha.0` and
-  `v0.8.1-alpha.1`; still the first thing after **`v0.8.0`** on the release track). crates.io remains **`0.8.0`**
+**Git pre-release `v0.8.1-beta.1`** (fourth pre-release of the `0.8.1` line, after `v0.8.1-alpha.0`,
+  `v0.8.1-alpha.1` and `v0.8.1-beta.0`; still the first thing after **`v0.8.0`** on the release track). crates.io remains **`0.8.0`**
   (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball / `.deb`, or
   `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
 
@@ -112,7 +21,12 @@ Two entries below are **BREAKING** for existing configs: `permission_confirm_too
   and a leftover line for either one in `[agent]` now fails the config load — read `Removed` before upgrading.
   Everything else is behaviour-preserving: the `run_command` rewrite explanations stay opt-in
   (`CM_RUN_COMMAND_ECHO_REWRITES`), and the skill-description fix only changes text that used to render as a
-  literal `>-`. SSE wire protocol stays **v2**.
+  literal `>-`.
+
+This round adds **two more BREAKING entries on the SSE / API side**, so read `Changed` and `Removed` before
+  upgrading a pinned client: `tiktokenPromptTokens.used_input_tokens` is now always the tiktoken estimate
+  (upstream `usage` moved to `provider_input_tokens`), and `sse_capabilities.terminal_order` is gone.
+  `SSE_PROTOCOL_VERSION` stays **v2** — no field was added or removed on the wire.
 
 ### Added
 
@@ -164,6 +78,28 @@ Two entries below are **BREAKING** for existing configs: `permission_confirm_too
   re-resolves the lockfile and prints the CHANGELOG heading (core version only — a `-pre` heading breaks `release.yml`'s extraction)
   plus the link-reference line; it writes files and never commits or tags. `scripts/check-version-sync.sh` (pre-commit + `ci.yml`)
   asserts the four agree and names the drifted file. Refs #1269.
+- **The user-level systemd unit now starts `crabmatectl` with `--socket`.** `packaging/systemd-user/crabmate-supervise.service`
+  ran `supervise --from-config --watch --restart on-failure` with no control plane, which left TUI / Desktop without
+  `/ctl`, `/lane new`, `/lane close` and `/lane open` — those go through the unix socket precisely because the client
+  is forbidden to spawn `crabmatectl` or to write `instances.toml` itself (that would race `--watch` on one file).
+  It now passes an explicit `--socket %t/crabmate/ctl.sock` and declares `RuntimeDirectory=crabmate` (+ `0700`), so the
+  socket is derived from the same `$XDG_RUNTIME_DIR` the clients compute and disappears with the unit on
+  `systemctl --user stop`. No `src/` change; the Server side already offered the control plane.
+- **Two-gate context self-check (#1342).** Config load now compares the message-count cap against the token trigger
+  (`max_message_history × assumed 1,200 tokens/message` vs `trigger_tokens`) and logs a `warn` with the suggested cap
+  when the count gate would fire first — the failure mode behind #1339. `crabmate doctor` prints the same comparison
+  (window → input budget, both gates, which fires first). The trigger formula now has exactly one implementation
+  (`cm_config::context_gates`), shared by the runtime budget, the self-check and doctor, so the three cannot drift.
+- **Config layer precedence is now data, not call order (#1342).** Five layers (embedded → user TOML → `CM_*` env →
+  user-data → explicit CLI flags) are expressed once in `cm_config::layer_precedence::LAYERS`, and `LayerTrace` records
+  which layer last changed `llm_context_tokens` / `max_tokens` / `max_message_history` /
+  `tool_registry_disabled_tools` / `web_api_bearer_token`. `crabmate doctor` prints the order plus those
+  `key → last writing layer` rows (secrets as set/unset only), so "who wins" is answerable without reading the call
+  sequence (#1340's root cause). A fixture-driven matrix (`fixtures/config_layer_precedence.json`) fails if a layer
+  moves.
+- **Two-gate warning names an unreachable suggestion.** When the computed cap exceeds the `max_message_history` upper
+  bound (1024), the warning says so and points at `context_token_trigger_percent` instead of an impossible value; the
+  bound is now defined once and shared with config validation.
 
 ### Changed
 
@@ -238,6 +174,45 @@ Two entries below are **BREAKING** for existing configs: `permission_confirm_too
   every field a snapshot of an existing counter taken before the loop state is dropped. Per-turn tool-call count is deliberately absent:
   `ToolOutcomeRecorder` is process-wide, so any number reported there would be unrelated to the turn. Three consumers adapted;
   error paths still carry no stats. Refs #1285.
+- **BREAKING: turn usage is now two planes and `/status` exposes the input budget (#1347 S3b).**
+  SSE `tiktokenPromptTokens.used_input_tokens` is now **always the tiktoken estimate**; upstream `usage` no longer
+  overwrites it and only appears in `provider_input_tokens`. `counting_source` no longer takes the value
+  `provider_usage` — that field now describes only the estimator (`matched_tokenizer` / `fallback_tokenizer` /
+  `conservative_bytes`). `prompt_tokens` stays message-only as the legacy fallback it was documented to be.
+  `StatusShellView` gains an optional `context_budget`
+  (`context_window_tokens` / `max_input_tokens` / `trigger_tokens` / `target_tokens`), derived from the same
+  `cm_config::context_gates` as the runtime budget and `crabmate doctor`; the doctor's context block now labels
+  itself "预算推导，非回合实测". `StatusShellView` and `ContextBudgetView` are **response** bodies and no longer
+  `deny_unknown_fields`, so a client pinned before this change keeps working (it ignores the new key) — the
+  attribute is still used on request bodies where rejecting typos matters. **Migration:** upgrade the client pin
+  (`client-contract-v0.3.0`) to actually consume `context_budget`; nothing breaks if you don't. `SSE_PROTOCOL_VERSION`
+  stays `2` (the field set is unchanged; only the semantics of `used_input_tokens` tightened, so state bars on
+  providers that report usage will read 1–3 % lower).
+- **`context_trim` carries an explicit `history_removed` flag (#1345).** The SSE timeline event used to distinguish
+  "tool output truncated" from "history trimmed" only through its localized `title`, so consumers reset the
+  context-usage watermark on *every* tool-body truncation: the status bar dropped each turn while no history was
+  actually removed (`removed_turn_groups=0`, `summarized=false`). The `detail` now always includes
+  `history_removed = count_hit || char_hit || summarized || removed_turn_groups > 0`; consumers should reset the
+  watermark only when it is `true` and otherwise keep the rolling maximum. Additive field — the title, existing
+  fields and `SSE_PROTOCOL_VERSION` are unchanged.
+- **`GET /conversation/messages` always carries `layout` (#1333 P4).** The "omit the key when the stored row has no
+  `layout_meta_json`" fallback is gone: unpersisted sessions now serialize `"layout": null` instead of dropping the key.
+  `Option`-typed clients see no difference; the OpenAPI schema still says optional/nullable, i.e. it is *looser*
+  than the implementation (the key is now always emitted).
+- **`crabmate doctor` reports conversation-layout coverage (#1333 P4).** A new read-only block prints the session-row
+  count and how many rows lack `layout_meta_json` (NULL or blank) — i.e. how much traffic can only use the legacy read
+  path. It feeds the §16.5 threshold check before that path is removed; the threshold itself is **not** hardcoded.
+- **v1 turn projectors removed (#1333 P2).** `cm_turn_layout::project_turn` (golden-only) and `project_turn_web`
+  (`crabmate sse-replay` + golden) are **deleted**; `sse-replay --format rows` now projects through
+  `project_turn_web_v2`, so its row list no longer contains aggregated `assistant_batch_narration` entries
+  (closed commentary becomes its own row, plus `assistant_timeline`). `fixtures/turn_project_golden.jsonl` and
+  `fixtures/turn_project_web_golden.jsonl` are removed; Web's contract golden stays
+  `turn_project_projection_golden.jsonl`. `batch_narration_text` / `batch_narration_row` remain public (the
+  Client imports the former). **CLI-visible**: the `rows` output shape changes; no flag, wire protocol or config move.
+- **`max_message_history` default raised from 256 to 1024 (#1339).** The message-count trim used to fire long before the
+  token budget did (tool-heavy ReAct sessions average ~1,200–1,650 tokens/message, so 256 messages ≈ 300k–420k tokens,
+  against `trigger_tokens` ≈ 834k at a 1M window) — which read as "context compaction at 30%". The count cap now sits
+  above the token-trigger equivalent; see `docs/配置说明.md` §上下文窗口. Same config key, only the default changes.
 
 ### Removed
 
@@ -264,6 +239,13 @@ Two entries below are **BREAKING** for existing configs: `permission_confirm_too
   no startup failure). Behaviour is unchanged either way: `delete_files` / `delete_dir` still require `confirm=true` at every level,
   including `unrestricted`. The neighbouring gap — `run_command`'s dangerous-argv gate (`git reset --hard` / `git push --force`)
   being promised by the docs but never implemented — is a separate issue and stays tracked in `docs/待办清单.md`. Refs #1260.
+- **BREAKING: `sse_capabilities.terminal_order` is gone (#1333 P3).** The first SSE frame no longer carries the soft
+  field `terminal_order` (`saved_before_finished`), and `cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED`
+  is removed from the public API. The order it advertised is now the only one the server emits
+  (`stream_draining` → persist → `conversation_saved` → `RUN_FINISHED`), so clients only had to ignore the field;
+  `SSE_PROTOCOL_VERSION` stays **v2**. Integrations that branched on it should drop the branch.
+  Note: this deliberately skips the "deprecate one release first" step written in #1333, to clear P3 in a single PR;
+  restoring a compat window means re-adding one field plus one constant.
 
 ### Fixed
 
@@ -347,6 +329,12 @@ Two entries below are **BREAKING** for existing configs: `permission_confirm_too
 - **`man/crabmate.1` / `man/crabmatectl.1` were still stamped `0.8.0` while the package was `0.8.1-alpha.0`**,
   so a `.deb`/tarball install showed a man page whose `.TH` and VERSION section disagreed with `crabmate -V` — nothing caught it because man
   regeneration was manual and untested. Both pages are regenerated here, and the new version-sync guard keeps them in step from now on. Refs #1269.
+- **Global `--llm-context-tokens` was silently overridden by user-data (#1340).** `load_cli_agent_config` applied the CLI
+  override *before* `apply_user_data_llm_overrides`, so a `client_llm.llm_context_tokens` entry in
+  `~/.local/share/crabmate/llm_overrides.json` always won and `serve --llm-context-tokens N` had no effect. The CLI
+  override is now applied last (explicit CLI beats user-data); tool overrides are unchanged, because
+  `apply_user_data_tool_overrides` only ever *adds* disables.
+
 
 ## [0.8.0] - 2026-11-01
 
@@ -2935,8 +2923,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.0...HEAD
-[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.0
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.1...HEAD
+[0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.1
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...v0.6.0
