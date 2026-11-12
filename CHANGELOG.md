@@ -12,6 +12,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **The user-level systemd unit now starts `crabmatectl` with `--socket`.** `packaging/systemd-user/crabmate-supervise.service`
+  ran `supervise --from-config --watch --restart on-failure` with no control plane, which left TUI / Desktop without
+  `/ctl`, `/lane new`, `/lane close` and `/lane open` — those go through the unix socket precisely because the client
+  is forbidden to spawn `crabmatectl` or to write `instances.toml` itself (that would race `--watch` on one file).
+  It now passes an explicit `--socket %t/crabmate/ctl.sock` and declares `RuntimeDirectory=crabmate` (+ `0700`), so the
+  socket is derived from the same `$XDG_RUNTIME_DIR` the clients compute and disappears with the unit on
+  `systemctl --user stop`. No `src/` change; the Server side already offered the control plane.
+
 - **Two-gate context self-check (#1342).** Config load now compares the message-count cap against the token trigger
   (`max_message_history × assumed 1,200 tokens/message` vs `trigger_tokens`) and logs a `warn` with the suggested cap
   when the count gate would fire first — the failure mode behind #1339. `crabmate doctor` prints the same comparison

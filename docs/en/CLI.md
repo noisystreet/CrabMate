@@ -336,7 +336,9 @@ sudo systemctl status crabmate.service
     reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
 - **User-level unit** (**no root**, containers, throwaway machines): **`/usr/lib/systemd/user/crabmate-supervise.service`** (`.deb`)
   or **`systemd-user/`** (tarball)
-  runs **`crabmatectl supervise --from-config --watch --restart on-failure`** over **multiple** instances — this is the path for hosts where the
+  runs **`crabmatectl supervise --from-config --watch --restart on-failure`** plus
+  **`--socket %t/crabmate/ctl.sock`** (the socket TUI / Desktop use to add or soft-delete lanes)
+  over **multiple** instances — this is the path for hosts where the
     system unit above does not apply. `systemctl --user enable --now` starts it;
   add `loginctl enable-linger "$USER"` to keep it alive while logged out. **`instances.toml`** (and any referenced **`profiles.toml`**)
     must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose:
