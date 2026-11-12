@@ -107,6 +107,17 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # 环境覆盖守卫（#1353）：`part_<数字>` 函数名只许降不许升；`cm_config/env_overrides/`
+      # 的 `CM_*` 键集合必须与 `fixtures/env_override_keys.txt` 一致且不重复。为什么单独
+      # 需要键 golden：现有 `cargo test` 只有少数几个键真跑过 env 层，其余键搬错文件或
+      # 绑错字段是静默的。有意增删键时跑 `python3 scripts/env_override_guard.py --write-golden`。
+      - id: env-override-guard
+        name: env override guard (no new part_N, CM_* key golden, #1353)
+        entry: bash scripts/env-override-ratchet.sh
+        language: system
+        pass_filenames: false
+        files: ^(src/cm_config/env_overrides/.*\.rs|fixtures/env_override_keys\.txt|scripts/env_override_guard\.py|scripts/part_name_baseline\.txt)$
+        stages: [pre-commit]
       # cargo test（含 golden_sse_control / golden_turn_route_decision 等）仅在 CI 跑，见 .github/workflows/ci.yml 与 code-complexity.yml
       # Desktop/Android / 业务 UI：Client 仓 crabmate-client（路径 A Phase 4）
       - id: taplo-format
