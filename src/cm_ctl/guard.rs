@@ -83,6 +83,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+    use crate::cm_ctl::env_file::CredEnv;
     use crate::cm_ctl::identity;
     use crate::cm_ctl::ops::{self, Ctx, Origin, UpArgs};
     use crate::cm_ctl::paths::CtlPaths;
@@ -301,6 +302,8 @@ mod tests {
             port: None,
             yes: false,
             env: BTreeMap::new(),
+            env_file: None,
+            env_file_env: CredEnv::default(),
             timeout: Duration::from_millis(100),
             origin: Origin::Cli,
             profile: None,
@@ -387,6 +390,8 @@ mod tests {
             port: None,
             yes: false,
             env: BTreeMap::new(),
+            env_file: None,
+            env_file_env: CredEnv::default(),
             timeout: Duration::from_millis(100),
             origin: Origin::Cli,
             profile: None,

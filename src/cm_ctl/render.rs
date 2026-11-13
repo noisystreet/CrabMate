@@ -477,6 +477,7 @@ fn supervise_line(step: &Step, dry_run: bool) -> String {
 mod tests {
     use std::collections::BTreeMap;
 
+    use crate::cm_ctl::env_file::CredEnv;
     use crate::cm_ctl::supervise::{StartSpec, Step};
 
     use super::supervise_line;
@@ -491,6 +492,7 @@ mod tests {
             serve_config: None,
             port: Some(8081),
             env: BTreeMap::new(),
+            env_file_env: CredEnv::default(),
             profile: None,
             profile_fingerprint: None,
             no_tools: false,
@@ -520,6 +522,7 @@ mod tests {
             serve_config: None,
             port: None,
             env: BTreeMap::new(),
+            env_file_env: CredEnv::default(),
             profile: None,
             profile_fingerprint: None,
             no_tools: false,

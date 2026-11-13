@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
+use super::env_file::CredEnv;
 use super::instances::{self, Declaration, InstancesFile};
 use super::ops::{self, Ctx, Origin, UpArgs};
 use super::probe::{Observed, Probe};
@@ -83,6 +84,12 @@ pub struct StartSpec {
     pub serve_config: Option<String>,
     pub port: Option<u16>,
     pub env: BTreeMap<String, String>,
+    /// 凭据通道（`env_file`）已解析的值：允许 `API_KEY` / `*_TOKEN` / `*_SECRET`，
+    /// 与 `env` 同键时 `env` 优先（见 [`super::spawn::build_env`]）。
+    ///
+    /// 类型是 [`CredEnv`] 而非裸 `BTreeMap`：`Step` 会 `derive(Debug)`，凭据值不该
+    /// 有任何机会被 `{:?}` 带进日志。
+    pub env_file_env: CredEnv,
     /// 引用的 profile 名（写进状态记录，供下一轮比对）。
     pub profile: Option<String>,
     /// 生效 profile 的指纹（只比名字会漏掉「改了内容但没改名」）。
@@ -217,12 +224,7 @@ fn step_for_decl(
     }
 
     let Some((rec, probe)) = current else {
-        return Ok(Step::Start {
-            name: name.to_string(),
-            spec: start_spec(decl, workspace.as_deref(), None, resolved.as_ref()),
-            restart: false,
-            reason: "尚无实例记录".to_string(),
-        });
+        return start_step(name, decl, workspace.as_deref(), None, resolved.as_ref(), false, "尚无实例记录".to_string());
     };
 
     // 用户显式 `down` 过的实例：声明不得越过用户意图把它拉起来
@@ -237,12 +239,15 @@ fn step_for_decl(
 
     // profile 变更**不热改**运行中实例（#1165）：重启才生效，且必须先说清原因
     if let Some(reason) = profile_change_reason(decl, rec, probe.pid_alive, decl_fingerprint.as_deref()) {
-        return Ok(Step::Start {
-            name: name.to_string(),
-            spec: start_spec(decl, workspace.as_deref(), rec.port, resolved.as_ref()),
-            restart: true,
+        return start_step(
+            name,
+            decl,
+            workspace.as_deref(),
+            rec.port,
+            resolved.as_ref(),
+            true,
             reason,
-        });
+        );
     }
 
     if probe.observed == Observed::Ready {
@@ -252,11 +257,36 @@ fn step_for_decl(
     }
     // 其余观测态（starting / stale / failed / stopped）都按「重启」处理：
     // 端口优先沿用记录里的值，`base_url` 才不会在每次收敛后漂移。
+    start_step(
+        name,
+        decl,
+        workspace.as_deref(),
+        rec.port,
+        resolved.as_ref(),
+        true,
+        format!("观测态为 {}，需要重新拉起", probe.observed.as_str()),
+    )
+}
+
+/// 造一个 `Start` 步骤。
+///
+/// 三处调用点（无记录 / profile 变更 / 观测态需重新拉起）共用它，只为了不把三个
+/// `start_spec` 的 `?` 叠进 [`step_for_decl`]：那个函数的 CCN 已经贴上 10 的上限（`scripts/lizard-rust.sh`）。
+#[allow(clippy::too_many_arguments)]
+fn start_step(
+    name: &str,
+    decl: &Declaration,
+    workspace: Option<&str>,
+    recorded_port: Option<u16>,
+    resolved: Option<&profiles::Resolved>,
+    restart: bool,
+    reason: String,
+) -> Result<Step, CtlError> {
     Ok(Step::Start {
         name: name.to_string(),
-        spec: start_spec(decl, workspace.as_deref(), rec.port, resolved.as_ref()),
-        restart: true,
-        reason: format!("观测态为 {}，需要重新拉起", probe.observed.as_str()),
+        spec: start_spec(decl, workspace, recorded_port, resolved)?,
+        restart,
+        reason,
     })
 }
 
@@ -292,13 +322,21 @@ fn disabled_step(name: &str, current: Option<&(InstanceRecord, Probe)>) -> Step 
 
 /// 端口优先级：声明 > 记录（仅重启时） > 端口池；config / env / `--no-tools`
 /// 由 profile 决定（无 profile 时退回实例自身的 `config` / `env`）。
+///
+/// 返回 `Result` 只为一件事：`env_file` 必须在**真想启动**时读，而不是解析声明
+/// 文件时读——否则一个坏凭据文件会让 `ls` / `status` / `remove` 全体失败，
+/// 而不是只让该 lane 落 `failed` + `last_error`。
 pub(crate) fn start_spec(
     decl: &Declaration,
     workspace: Option<&str>,
     recorded_port: Option<u16>,
     resolved: Option<&profiles::Resolved>,
-) -> StartSpec {
-    StartSpec {
+) -> Result<StartSpec, CtlError> {
+    let env_file_env = match decl.env_file_path()? {
+        Some(path) => super::env_file::load(&path)?,
+        None => CredEnv::default(),
+    };
+    Ok(StartSpec {
         workspace: workspace.map(str::to_string),
         serve_config: resolved
             .and_then(|r| r.serve_config.clone())
@@ -307,10 +345,11 @@ pub(crate) fn start_spec(
         env: resolved
             .map(|r| r.env.clone())
             .unwrap_or_else(|| decl.env.clone()),
+        env_file_env,
         profile: decl.profile.clone(),
         profile_fingerprint: resolved.map(|r| r.fingerprint()),
         no_tools: resolved.map(|r| r.no_tools).unwrap_or(false),
-    }
+    })
 }
 
 /// profile 变更且进程仍在跑 ⇒ 需要重启（`None` = 无需动作）。
@@ -403,6 +442,9 @@ fn exec_start(
         // `--yes` 必须由实例级显式决定，绝不由声明隐式给出（见 Issue #1163）
         yes: false,
         env: spec.env,
+        // 声明侧凭据已由 `start_spec` 读好并校验；`env_file: None` 表示不再重复读文件
+        env_file: None,
+        env_file_env: spec.env_file_env,
         timeout: opts.timeout,
         origin: Origin::Supervise,
         profile: spec.profile,

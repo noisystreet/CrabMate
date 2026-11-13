@@ -25,6 +25,7 @@ fn decl(workspace: &str, enabled: bool, port: Option<u16>) -> Declaration {
         port,
         enabled,
         env: BTreeMap::new(),
+        env_file: None,
     }
 }
 
@@ -400,5 +401,60 @@ fn missing_profile_is_reported_at_plan_time() {
     // 计划阶段就报错：不能等到 spawn 才发现引用错了
     let err = plan(&ctx, &file).expect_err("引用不存在的 profile 应报错");
     assert_eq!(err.error_code, "profile_not_found");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// `env_file` 权限过宽必须在**计划阶段**报错：这是安全边界，也是「坏文件只影响
+/// 这一条 lane」的那条取舍的落点（别的事儿都没发生，实例也没被停）。
+#[test]
+fn bad_env_file_is_reported_at_plan_time() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempdir("env_file_bad");
+    let ctx = ctx_at(&tmp);
+    let creds = tmp.join("creds.env");
+    std::fs::write(&creds, "API_KEY=sk-fake\n").expect("写 env_file");
+    std::fs::set_permissions(&creds, std::fs::Permissions::from_mode(0o644)).expect("权限");
+
+    let mut d = decl("/tmp/a", true, None);
+    d.env_file = Some(creds.display().to_string());
+    let file = file_with(&[("a", d)]);
+
+    let err = plan(&ctx, &file).expect_err("权限过宽应被拒绝");
+    assert_eq!(err.error_code, "env_file_insecure");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// 正常 `env_file` 的值进**独立通道** `env_file_env`，不混进声明 `env`
+/// （后者对 `API_KEY` 是硬拒绝的，混进去只会自相矛盾）。
+#[test]
+fn good_env_file_reaches_start_spec_credentials() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempdir("env_file_ok");
+    let ctx = ctx_at(&tmp);
+    let creds = tmp.join("creds.env");
+    std::fs::write(&creds, "API_KEY=sk-fake-from-file\n").expect("写 env_file");
+    std::fs::set_permissions(&creds, std::fs::Permissions::from_mode(0o600)).expect("权限");
+
+    let mut d = decl("/tmp/a", true, None);
+    d.env_file = Some(creds.display().to_string());
+    let file = file_with(&[("a", d)]);
+
+    let steps = plan(&ctx, &file).expect("计划");
+    match &steps[0] {
+        Step::Start { spec, .. } => {
+            assert_eq!(
+                spec.env_file_env.get("API_KEY").map(String::as_str),
+                Some("sk-fake-from-file"),
+                "凭据应进独立通道"
+            );
+            assert!(
+                !spec.env.contains_key("API_KEY"),
+                "凭据不得混进声明 env：{spec:?}"
+            );
+        }
+        other => panic!("期望 Start，实际 {other:?}"),
+    }
     let _ = std::fs::remove_dir_all(&tmp);
 }

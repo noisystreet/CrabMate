@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
+use super::env_file::CredEnv;
 use super::instances::{self, Declaration};
 use super::ops::{Origin, UpArgs};
 use super::profiles;
@@ -39,6 +40,9 @@ pub(crate) fn args_from_record(
         // 记录里有才沿用：`restart` 不应替用户新增或撤销 `--yes`（改动它会改变工具面）
         yes: rec.yes,
         env: resolved.map(|r| r.env.clone()).unwrap_or_default(),
+        // 记录只存 `env_keys`（名）：没有声明就拿不到 `env_file` 的值
+        env_file: None,
+        env_file_env: CredEnv::default(),
         // 就绪等待来自 `--timeout`，与终止宽限 `--grace` 是两个独立旋钮
         timeout,
         // 沿用原持有者：`supervise` 拉起的实例被人工 restart 后仍归 `supervise` 回收，
@@ -77,7 +81,15 @@ pub(crate) fn plan_restart(
 ) -> Result<RestartPlan, CtlError> {
     let Some(decl) = decl else {
         let args = args_from_record(rec, resolved, timeout);
-        let notes = env_loss_notes("该实例不在 instances.toml 里", rec, &args.env)?;
+        let mut notes = env_loss_notes("该实例不在 instances.toml 里", rec, &args.env)?;
+        // 记录只存 `env_keys`（名），凭据值无论如何恢复不了；但只在它**用过**凭据时提示，
+        // 否则每条人工起的实例都会多一句无关的告警。
+        if rec.env_keys.iter().any(|k| looks_like_credential(k)) {
+            notes.push(
+                "该实例不在声明里：`env_file` 不会沿用（记录只存变量名）；需要凭据请写进 instances.toml"
+                    .to_string(),
+            );
+        }
         return Ok(RestartPlan { args, notes });
     };
 
@@ -85,7 +97,7 @@ pub(crate) fn plan_restart(
     // `POST /workspace` 绑定过，缺省时沿用记录里的值——「不回填」不等于「把已绑定的
     // 丢掉」，否则重启一次就退回待绑定态。
     let declared_workspace = decl.workspace_path()?.map(|p| p.display().to_string());
-    let spec = supervise::start_spec(decl, declared_workspace.as_deref(), rec.port, resolved);
+    let spec = supervise::start_spec(decl, declared_workspace.as_deref(), rec.port, resolved)?;
     let args = UpArgs {
         name: rec.name.clone(),
         workspace: declared_workspace.or_else(|| rec.workspace.clone()),
@@ -96,6 +108,9 @@ pub(crate) fn plan_restart(
         // `--yes` 与持有者只有记录知道，且必须是记录那一份（`StartSpec` 没有这两个字段）
         yes: rec.yes,
         env: spec.env,
+        // 声明侧凭据已在 `start_spec` 里解析校验过：这里传值，不重复读文件
+        env_file: None,
+        env_file_env: spec.env_file_env,
         timeout,
         origin: Origin::from_record(rec),
         profile: spec.profile,
@@ -190,7 +205,8 @@ fn env_loss_notes(
     rec: &InstanceRecord,
     declared: &BTreeMap<String, String>,
 ) -> Result<Vec<String>, CtlError> {
-    let (_, keys) = spawn::build_env(declared)?;
+    // 凭据通道不参与「丢 env」判定：`env_keys` 只记名，凭据类键永不出现在声明侧
+    let (_, keys) = spawn::build_env(declared, &CredEnv::default())?;
     let kept: Vec<&str> = keys.iter().map(String::as_str).collect();
     let lost: Vec<&str> = rec
         .env_keys
@@ -205,6 +221,13 @@ fn env_loss_notes(
         "{reason}：以下环境变量重启后不再注入（状态记录只存变量名，值无法回读）——{}",
         lost.join(", ")
     )])
+}
+
+/// 记录里的变量名是否「看起来是凭据」。
+///
+/// 只用于决定要不要提示「`env_file` 不会沿用」：记录只存名，能判断的只有形状。
+fn looks_like_credential(key: &str) -> bool {
+    key == "API_KEY" || key.ends_with("_TOKEN") || key.ends_with("_SECRET")
 }
 
 /// profile 变了先说一句：`restart` 已按声明生效，别让人以为还是旧的那份。
@@ -317,6 +340,7 @@ mod tests {
             port: None,
             enabled: true,
             env: BTreeMap::new(),
+            env_file: None,
         }
     }
 
@@ -429,17 +453,35 @@ mod tests {
     #[test]
     fn undeclared_instance_reports_lost_env() {
         let mut rec = InstanceRecord::new("a");
-        rec.env_keys = vec!["GIT_SSH_COMMAND".to_string()];
+        rec.env_keys = vec!["GIT_SSH_COMMAND".to_string(), "API_KEY".to_string()];
 
         let plan = plan_restart(&rec, None, None, Duration::from_secs(5)).expect("应成功");
 
         assert!(plan.args.env.is_empty(), "记录拿不回值，只能是空表");
-        assert_eq!(plan.notes.len(), 1, "应有一条丢失提示：{:?}", plan.notes);
+        assert_eq!(plan.notes.len(), 2, "应各有一条提示：{:?}", plan.notes);
         assert!(
             plan.notes[0].contains("GIT_SSH_COMMAND"),
             "提示要点出变量名：{}",
             plan.notes[0]
         );
+        // 凭据通道也恢复不了：记录里连路径都没有，必须单独说清
+        assert!(
+            plan.notes.iter().any(|n| n.contains("env_file")),
+            "用过凭据的未声明实例要提示 `env_file` 不会沿用：{:?}",
+            plan.notes
+        );
+    }
+
+    /// 对照：没用过凭据的实例不该被塞一句 `env_file` 告警（否则每条人工起的实例都多一句噪音）。
+    #[test]
+    fn undeclared_instance_without_credentials_gets_no_env_file_note() {
+        let mut rec = InstanceRecord::new("a");
+        rec.env_keys = vec!["GIT_SSH_COMMAND".to_string()];
+
+        let plan = plan_restart(&rec, None, None, Duration::from_secs(5)).expect("应成功");
+
+        assert_eq!(plan.notes.len(), 1, "{:?}", plan.notes);
+        assert!(!plan.notes[0].contains("env_file"), "{:?}", plan.notes);
     }
 
     /// 声明里删掉了某个变量，同样要报——否则「改了声明」与「变量消失」之间没有线索。

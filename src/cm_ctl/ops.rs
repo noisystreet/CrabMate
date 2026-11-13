@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::env_file::{self, CredEnv};
 use super::guard;
 use super::identity;
 use super::lock;
@@ -91,6 +92,11 @@ pub struct UpArgs {
     pub port: Option<u16>,
     pub yes: bool,
     pub env: BTreeMap<String, String>,
+    /// CLI `--env-file`：**未解析**的路径，由 `ops` 在启动前读取（`0600` 校验）。
+    /// 声明式路径不填它——那边已在 `supervise::start_spec` 解析进 `env_file_env`。
+    pub env_file: Option<String>,
+    /// 已解析的凭据值（来自声明 `env_file`）：值不进状态记录，只活到 `Command::env`。
+    pub env_file_env: CredEnv,
     pub timeout: Duration,
     /// 谁在拉起这个实例（决定它将来会不会被 `supervise` 回收）。
     pub origin: Origin,
@@ -152,12 +158,28 @@ fn existing_if_ready(ctx: &Ctx, name: &str) -> Result<Option<InstanceRecord>, Ct
     }
 }
 
+/// 解析本次要注入的凭据：已解析的（声明 / `restart`）+ CLI `--env-file`（未解析）。
+///
+/// 声明侧的值在 `supervise::start_spec` 就解好了（那里能准确报出是哪个 lane 的
+/// 凭据文件坏了）；CLI 侧只有路径，所以在这里读一次。
+fn resolve_credentials(args: &UpArgs) -> Result<CredEnv, CtlError> {
+    let mut credentials = args.env_file_env.clone();
+    let Some(raw) = args.env_file.as_deref() else {
+        return Ok(credentials);
+    };
+    // `--env-file '~/k.env'` 被引号包住时 shell 不展开波浪号，这里补上
+    let path = paths::absolutize(&paths::expand_tilde(raw.trim()))?;
+    credentials.extend(env_file::load(&path)?.into_inner());
+    Ok(credentials)
+}
+
 /// 构造 spawn 规格。
 fn build_spec(
     ctx: &Ctx,
     args: &UpArgs,
     workspace: Option<&Path>,
     port: u16,
+    env_file_env: &CredEnv,
 ) -> SpawnSpec {
     let log_path = ctx.paths.log_path(&args.name);
     SpawnSpec {
@@ -167,6 +189,7 @@ fn build_spec(
         yes: args.yes,
         no_tools: args.no_tools,
         env: args.env.clone(),
+        env_file_env: env_file_env.clone(),
         log_path,
         home: ctx.paths.instance_home(&args.name),
         ready_json: true,
@@ -181,6 +204,7 @@ fn spawn_and_record(
     args: &UpArgs,
     workspace: Option<&Path>,
     port: u16,
+    env_file_env: &CredEnv,
 ) -> Result<InstanceRecord, CtlError> {
     let rec_path = ctx.record_path(&args.name)?;
     let _guard = lock::acquire(&ctx.lock_path())?;
@@ -193,7 +217,7 @@ fn spawn_and_record(
     // 还没就绪的实例，此时覆盖记录同样会把它变成孤儿。
     guard::ensure_not_live(ctx, &args.name)?;
 
-    let spec = build_spec(ctx, args, workspace, port);
+    let spec = build_spec(ctx, args, workspace, port, env_file_env);
     let spawned = spawn::spawn_serve(&spec)?;
     let pid = spawned.pid();
 
@@ -295,9 +319,10 @@ fn up_once(
     args: &UpArgs,
     workspace: Option<&Path>,
     port: u16,
+    env_file_env: &CredEnv,
     warnings: &[String],
 ) -> Result<UpOutcome, CtlError> {
-    let rec = spawn_and_record(ctx, args, workspace, port)?;
+    let rec = spawn_and_record(ctx, args, workspace, port, env_file_env)?;
 
     // 已健康（锁内二次确认命中）：直接复用
     if rec.state == InstanceState::Ready {
@@ -363,6 +388,8 @@ enum Launch {
         /// `None` = 待绑定（子 serve 以 `--workspace-unset` 启动，等 client 设置）。
         workspace: Option<PathBuf>,
         port: u16,
+        /// 已校验过的凭据（`env_file`）：值与状态记录无关，只活到 `Command::env`。
+        env_file_env: CredEnv,
         /// 预检提示，透传到 `UpOutcome` 由输出层打印。
         warnings: Vec<String>,
     },
@@ -441,17 +468,20 @@ fn prepare_up(ctx: &Ctx, args: &UpArgs) -> Result<Launch, CtlError> {
     guard::ensure_not_live(ctx, &args.name)?;
 
     let port = select_port(ctx, args)?;
+    // 凭据在 spawn 之前读：坏文件要在这里就失败，而不是等子进程起来才发现没拿到钥
+    let env_file_env = resolve_credentials(args)?;
     let warnings = preflight_warnings(args.serve_config.as_deref(), workspace.as_deref())?;
     Ok(Launch::New {
         workspace,
         port,
+        env_file_env,
         warnings,
     })
 }
 
 /// 启动实例；同名且健康时幂等返回。
 pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
-    let (workspace, port, warnings) = match prepare_up(ctx, args)? {
+    let (workspace, port, env_file_env, warnings) = match prepare_up(ctx, args)? {
         Launch::Existing(rec) => {
             return Ok(UpOutcome {
                 record: *rec,
@@ -463,16 +493,25 @@ pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
         Launch::New {
             workspace,
             port,
+            env_file_env,
             warnings,
-        } => (workspace, port, warnings),
+        } => (workspace, port, env_file_env, warnings),
     };
 
-    match up_once(ctx, args, workspace.as_deref(), port, &warnings) {
+    match up_once(ctx, args, workspace.as_deref(), port, &env_file_env, &warnings) {
         Ok(out) => Ok(out),
         // 端口竞争：池内顺延重试一次，仍失败则把两个原因都说清
         Err(e) if e.error_code == "readiness_failed" && args.port.is_none() => {
             let retry = ctx.pool.next_free_from(port)?;
-            up_once(ctx, args, workspace.as_deref(), retry, &warnings).map_err(|e2| {
+            up_once(
+                ctx,
+                args,
+                workspace.as_deref(),
+                retry,
+                &env_file_env,
+                &warnings,
+            )
+            .map_err(|e2| {
                 CtlError::general(
                     "port_race",
                     format!("端口 {port} 启动失败，顺延到 {retry} 仍失败：{}", e2.message),
@@ -734,6 +773,8 @@ mod tests {
             port: None,
             yes: false,
             env: BTreeMap::new(),
+            env_file: None,
+            env_file_env: CredEnv::default(),
             timeout: Duration::from_millis(100),
             origin: Origin::Cli,
             profile: None,
@@ -762,6 +803,8 @@ mod tests {
             port: Some(port),
             yes: true,
             env: BTreeMap::new(),
+            env_file: None,
+            env_file_env: CredEnv::default(),
             timeout: Duration::from_millis(100),
             origin: Origin::Cli,
             profile: None,
@@ -803,6 +846,47 @@ mod tests {
         assert_eq!(err.error_code, "port_in_use");
         assert!(err.message.contains(&port.to_string()), "{}", err.message);
         drop(held);
+    }
+
+    /// CLI 侧凭据：坏权限必须在 `up` 之前失败；给定文件与已解析值要合并进同一份。
+    #[test]
+    fn resolve_credentials_reads_file_and_merges_parsed_values() {
+        use crate::cm_ctl::env_file::CredEnv;
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempdir("resolve_creds");
+        let p = tmp.join("k.env");
+        std::fs::write(&p, "API_KEY=sk-fake\n").expect("写 env_file");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).expect("权限");
+
+        let mut parsed = CredEnv::default();
+        parsed.insert("OTHER_TOKEN".to_string(), "t".to_string());
+        let args = UpArgs {
+            name: "x".to_string(),
+            workspace: None,
+            serve_config: None,
+            port: None,
+            yes: false,
+            env: BTreeMap::new(),
+            env_file: Some(p.display().to_string()),
+            env_file_env: parsed,
+            timeout: Duration::from_millis(100),
+            origin: Origin::Cli,
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+
+        // 先验坏权限：0644 必须报错（与声明侧同一道闸门）
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).expect("放宽");
+        let err = resolve_credentials(&args).expect_err("0644 应被拒绝");
+        assert_eq!(err.error_code, "env_file_insecure");
+
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).expect("收紧");
+        let creds = resolve_credentials(&args).expect("应成功");
+        let keys: Vec<&str> = creds.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["API_KEY", "OTHER_TOKEN"], "两条来源都应合并");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     use crate::test_fixtures::tempdir;
