@@ -10,6 +10,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `.deb`'s user-level supervisor unit no longer ships a dead `ExecStart`.** The packaged
+  `/usr/lib/systemd/user/crabmate-supervise.service` inherits the source-install path
+  `%h/.local/bin/crabmatectl`, which does not exist on a deb install; `postinst` now writes the corrected
+  `ExecStart` into `/etc/systemd/user/crabmate-supervise.service.d/10-deb-binary-path.conf`
+  (removed on `purge`). Previously `systemctl --user enable --now` failed with `203/EXEC`.
+
 ## [0.8.1] - 2026-11-12
 
 **Git pre-release `v0.8.1-beta.1`** (fourth pre-release of the `0.8.1` line, after `v0.8.1-alpha.0`,

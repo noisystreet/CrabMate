@@ -17,7 +17,10 @@
 #        install -m 600 /dev/null ~/.config/crabmate/instances.toml
 #      引用了 profile 时 `profiles.toml` 同样要 `0600`（`profiles_file_insecure`）。
 #   2. `ExecStart` 必须是**绝对路径**（systemd 不查 PATH）。下面按 `~/.local/bin`
-#      写；若 crabmatectl 装在 `/usr/bin`（deb 包即如此），改成 `/usr/bin/crabmatectl`。
+#      写；若 crabmatectl 装在 `/usr/bin`，改成 `/usr/bin/crabmatectl`。
+#      deb 包**不需要**手改：其 postinst 会往
+#      `/etc/systemd/user/crabmate-supervise.service.d/10-deb-binary-path.conf`
+#      写入指向 `/usr/bin/crabmatectl` 的覆盖层（见 `packaging/debian/postinst`）。
 #
 # 为什么是 `--watch --restart on-failure --socket`：
 #   `supervise` 不带 `--watch` 时只做一次收敛就退出（那条形态适合让 systemd 自己

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+# postinst 生成的覆盖层不是 conffile，dpkg 不会自己删；purge 时清掉，避免残留指向已删除二进制的
+# ExecStart 覆盖（`remove` 保留是 dpkg 惯例：管理员可能只是想临时卸掉再装回来）。
+case "$1" in
+purge)
+	rm -f /etc/systemd/user/crabmate-supervise.service.d/10-deb-binary-path.conf
+	rmdir /etc/systemd/user/crabmate-supervise.service.d 2>/dev/null || true
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0
