@@ -1,5 +1,5 @@
 //! `supervise --socket`：本地 unix socket 控制面（`add` / `remove` / `list` /
-//! `disable` / `enable`）。
+//! `disable` / `enable` / `restart` / `status`）。
 //!
 //! 存在的理由很具体：TUI 要在界面里增删 lane（= 增删一个 serve 进程），但它被
 //! 禁止 spawn 进程，也不该自己写 `instances.toml` —— 那会和 `--watch` 构成两个
@@ -27,10 +27,11 @@ use serde_json::{Value, json};
 use super::CtlError;
 use super::decl;
 use super::instances::{self, Declaration};
-use super::ops::Ctx;
-use super::probe::Observed;
+use super::ops::{self, Ctx};
+use super::probe::{self, Observed};
 use super::query;
 use super::record::{InstanceRecord, InstanceState};
+use super::render;
 
 /// 单行请求上限：请求体是几个短字段，64 KiB 已远超合理值，超出即拒绝。
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
@@ -40,6 +41,16 @@ const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 等主循环处理完请求的上限（启动实例可能慢，故比读超时宽）。
 const HANDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// `restart` 的缺省终止宽限 / 就绪等待，与 CLI 的 `--grace` / `--timeout` 缺省一致。
+const DEFAULT_RESTART_GRACE: Duration = Duration::from_secs(10);
+const DEFAULT_RESTART_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `restart` 的 `grace + timeout` 上限（= [`HANDLE_TIMEOUT`] 减 10s 余量）。
+///
+/// 控制面的 `restart` 同步执行且响应要带结果；超预算时客户端只会拿到
+/// `handle_timeout`，而实例可能已经停掉、重启已经开始——见 [`restart_budget`]。
+const RESTART_BUDGET_MAX: Duration = Duration::from_secs(50);
 
 /// 控制面服务端：持有请求通道与 socket 路径。
 pub struct Server {
@@ -175,6 +186,10 @@ pub enum Request {
     Disable(TargetRequest),
     /// 撤销 [`Request::Disable`]：声明项本就还在，只把 `enabled` 放开。
     Enable(TargetRequest),
+    /// 重启一条 lane：与 CLI 同一条实现（`ops::restart`，声明优先重建）。
+    Restart(RestartRequest),
+    /// 单实例详情：形状就是 `status --json`，客户端只维护一套解析。
+    Status(TargetRequest),
 }
 
 /// `{"op":"list"}`：两个字段都可省略。
@@ -221,6 +236,22 @@ pub struct TargetRequest {
     pub name: String,
 }
 
+/// `{"op":"restart","name":"proj-a","grace":10,"timeout":10}`。
+///
+/// 两个时长省略时与 CLI 的缺省一致（各 10s）。**不做** `all`：重启是逐条 lane 的
+/// 动作，批量该由客户端自己循环——只有它知道顺序与并发度。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestartRequest {
+    pub name: String,
+    /// 终止宽限（秒）：超时后 SIGKILL。
+    #[serde(default)]
+    pub grace: Option<u64>,
+    /// 就绪等待（秒）。与宽限是两个独立旋钮（同 CLI 的 `--timeout`）。
+    #[serde(default)]
+    pub timeout: Option<u64>,
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -241,13 +272,17 @@ impl Request {
         // 少了这一层，`{"op":"list","evil":1}` 会被静默接受。
         let allowed: &[&str] = match op {
             "add" => &["op", "name", "workspace", "profile", "port", "enabled"],
-            // `disable` / `enable` 只收 `name`：它们不是 `update`，不接受任何其它字段
-            "remove" | "disable" | "enable" => &["op", "name"],
+            // `disable` / `enable` / `status` 只收 `name`：它们不是 `update`，不接受任何其它字段
+            "remove" | "disable" | "enable" | "status" => &["op", "name"],
+            // `restart` 的时长要进白名单：漏了它就会被下面那道闸门拒掉
+            "restart" => &["op", "name", "grace", "timeout"],
             "list" => &["op", "include_unmanaged"],
             other => {
                 return Err(Response::err(
                     "bad_request",
-                    format!("未知 `op`：{other}（支持 add / remove / list / disable / enable）"),
+                    format!(
+                        "未知 `op`：{other}（支持 add / remove / list / disable / enable / restart / status）"
+                    ),
                 ));
             }
         };
@@ -294,10 +329,14 @@ impl Response {
 pub fn handle(ctx: &Ctx, path: &Path, request: Request) -> (Response, bool) {
     match request {
         Request::List(l) => (list(ctx, path, l.include_unmanaged), false),
+        // 只读 + 单实例：不写盘，也就不需要主循环再收敛一遍
+        Request::Status(t) => (status(ctx, &t.name), false),
         Request::Add(a) => add(path, a),
         Request::Remove(r) => remove(path, r),
         Request::Disable(t) => set_decl_enabled(path, ctx, t.name, false),
         Request::Enable(t) => set_decl_enabled(path, ctx, t.name, true),
+        // `restart` 自己做了 down + up，不需要主循环再收敛一遍
+        Request::Restart(r) => (restart(ctx, r), false),
     }
 }
 
@@ -371,6 +410,66 @@ fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Res
         }
         Err(e) => (Response::err(e.error_code, e.message), false),
     }
+}
+
+/// 单实例详情：**形状就是 `status --json`**（同一份 [`render::status_json`]）。
+///
+/// 不新增字段是刻意的：客户端要给「列表里的行」与「单实例详情」各写一套解析，
+/// 两套字段名迟早漂移，而这里能复用就说明它本来是一件事。
+fn status(ctx: &Ctx, name: &str) -> Response {
+    match query::status(ctx, name) {
+        Ok((rec, p)) => Response::ok(render::status_json(&rec, &p)),
+        Err(e) => Response::err(e.error_code, e.message),
+    }
+}
+
+/// 重启一条 lane，并把**结果**作为一行 `status` 回给客户端。
+///
+/// 同步执行（down → up → 等就绪）是刻意的：`ok` 不能只表示「请求收到了」——
+/// 重启失败时实例是**停着的**，客户端必须当场知道，否则它会继续把 lane 画成已就绪。
+/// 代价是这段时间主循环不推进别的收敛（单线程、「一条请求一处写盘」的既有取舍），
+/// 所以预算必须在 [`RESTART_BUDGET_MAX`] 以内，由 [`restart_budget`] 先把关。
+fn restart(ctx: &Ctx, r: RestartRequest) -> Response {
+    let (grace, timeout) = match restart_budget(&r) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    match ops::restart(ctx, &r.name, grace, timeout) {
+        Ok(out) => {
+            let probed = probe::observe(&out.record);
+            let mut body = render::status_json(&out.record, &probed);
+            body["restarted"] = json!(true);
+            // 与 CLI 打到 stderr 的 WARN 同一批（声明里的 env 丢了 / profile 漂移 /
+            // 声明为 enabled = false 等）：客户端读不到 stderr，只能进响应体。
+            body["notes"] = json!(out.warnings);
+            Response::ok(body)
+        }
+        Err(e) => Response::err(e.error_code, e.message),
+    }
+}
+
+/// `grace + timeout` 的预算检查。
+///
+/// 超预算时**拒绝**，而不是让客户端等到 `handle_timeout`：那时实例可能已经停掉、
+/// 重启也已经开始，客户端却拿不到任何结论——「不知道发生了什么」比明确拒绝更糟。
+fn restart_budget(r: &RestartRequest) -> Result<(Duration, Duration), Response> {
+    let grace = r.grace.map_or(DEFAULT_RESTART_GRACE, Duration::from_secs);
+    let timeout = r
+        .timeout
+        .map_or(DEFAULT_RESTART_TIMEOUT, Duration::from_secs);
+    let total = grace.saturating_add(timeout);
+    if total > RESTART_BUDGET_MAX {
+        return Err(Response::err(
+            "restart_budget_exceeded",
+            format!(
+                "`grace + timeout` 不得超过 {} 秒（本次 {} 秒）；更大的宽限请用 `crabmatectl restart {} --grace …`",
+                RESTART_BUDGET_MAX.as_secs(),
+                total.as_secs(),
+                r.name
+            ),
+        ));
+    }
+    Ok((grace, timeout))
 }
 
 /// 列出声明的实例及其状态记录。

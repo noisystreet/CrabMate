@@ -416,3 +416,103 @@ fn supervise_restarts_crashed_instance() {
     let _ = sup.kill();
     let _ = sup.wait();
 }
+
+/// 往控制面 socket 发一行 JSON，读回一行（`supervise --socket` 的线协议）。
+fn socket_call(sock: &Path, req: &serde_json::Value) -> serde_json::Value {
+    use std::io::{BufRead, BufReader, Write};
+
+    let mut stream = std::os::unix::net::UnixStream::connect(sock)
+        .unwrap_or_else(|e| panic!("连不上控制面 socket {}：{e}", sock.display()));
+    stream
+        .set_read_timeout(Some(Duration::from_secs(90)))
+        .expect("设读超时");
+    stream
+        .write_all(format!("{req}\n").as_bytes())
+        .expect("应能写请求");
+    let mut line = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut line)
+        .expect("应能读响应");
+    serde_json::from_str(&line).unwrap_or_else(|e| panic!("控制面响应应是合法 JSON：{e}／{line}"))
+}
+
+/// 控制面的 `status` / `restart`：客户端只经这条 socket 管 lane，所以「拿单实例详情」
+/// 与「重启单条 lane」必须真的可用。
+///
+/// 非走真进程不可：`restart` 的全部价值在「旧进程真的没了、新进程真的起来了」，
+/// 单测只够证明它走到了 `ops::restart`（且报错分支）。
+#[test]
+fn socket_status_and_restart_drive_a_lane() {
+    let sb = Sandbox::new();
+    let ws = sb.workspace("sock");
+    let port = 18139u16;
+    let name = "s";
+    sb.write_declaration(&format!(
+        "[instances.{name}]\nworkspace = \"{}\"\nport = {port}\n",
+        ws.display()
+    ));
+    let sock = sb.root().join("ctl.sock");
+
+    let mut sup = sb
+        .command(&[
+            "supervise",
+            "--from-config",
+            "--watch",
+            "--socket",
+            &sock.display().to_string(),
+            "--interval",
+            "1",
+            "--timeout",
+            "30",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("启动 supervise --socket");
+
+    wait_until(
+        "首轮收敛后实例应 ready",
+        Duration::from_secs(120),
+        || sb.record_opt(name).is_some_and(|r| r["state"] == "ready") && tcp_ok(port),
+    );
+    let first_pid = sb.record(name)["pid"].clone();
+
+    // 1) status：形状必须是 `status --json` + `ok`，不多不少
+    let v = socket_call(&sock, &serde_json::json!({"op": "status", "name": name}));
+    assert_eq!(v["ok"], serde_json::json!(true), "status 失败：{v}");
+    assert_eq!(v["name"], serde_json::json!(name));
+    assert_eq!(v["state"], serde_json::json!("ready"), "{v}");
+    assert_eq!(
+        v["base_url"],
+        serde_json::json!(format!("http://127.0.0.1:{port}/"))
+    );
+    let mut expected = contract_keys("status_row");
+    expected.push("ok".to_string());
+    expected.sort();
+    assert_eq!(
+        sorted_keys(&v),
+        expected,
+        "status op 的字段集必须与 status --json 一致"
+    );
+
+    // 2) restart：换进程、仍 ready，并把 CLI 打到 stderr 的提示放进 notes
+    let v = socket_call(
+        &sock,
+        &serde_json::json!({"op": "restart", "name": name, "grace": 1, "timeout": 30}),
+    );
+    assert_eq!(v["ok"], serde_json::json!(true), "restart 失败：{v}");
+    assert_eq!(v["restarted"], serde_json::json!(true));
+    assert_eq!(
+        v["state"],
+        serde_json::json!("ready"),
+        "重启后应已就绪：{v}"
+    );
+    assert!(v["notes"].is_array(), "notes 应恒为数组：{v}");
+    assert_ne!(v["pid"], first_pid, "重启必须换进程");
+    wait_until("重启后端口应可连", Duration::from_secs(30), || {
+        tcp_ok(port)
+    });
+
+    let _ = sup.kill();
+    let _ = sup.wait();
+}

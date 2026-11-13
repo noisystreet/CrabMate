@@ -563,3 +563,137 @@ fn disable_rejects_unknown_field() {
     assert!(!decl.exists(), "非法请求不得创建声明文件");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---- `restart` / `status`（#1355 B：客户端要能重启单条 lane、拿单实例详情）----
+
+/// 写一条「没有 pid」的记录：不会被误判成健康，也不会真的去 spawn。
+fn write_record(ctx: &Ctx, name: &str, workspace: Option<&str>) -> PathBuf {
+    use crate::cm_ctl::record::{DesiredState, InstanceRecord, InstanceState};
+    ctx.paths.ensure_dirs().expect("建目录");
+    let mut rec = InstanceRecord::new(name);
+    rec.state = InstanceState::Ready;
+    rec.desired_state = DesiredState::Running;
+    rec.workspace = workspace.map(str::to_string);
+    let path = ctx.paths.record_path(name).expect("记录路径");
+    crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
+    path
+}
+
+/// `status` 的响应**必须就是** `status --json`（`fixtures/ctl_contract.json` 的
+/// `status_row`）加一个 `ok`：客户端只维护一套解析，多一个字段都是新契约。
+#[test]
+fn status_op_reuses_the_pinned_status_row() {
+    let dir = tempdir("st_row");
+    let ctx = ctx_at(&dir);
+    write_record(&ctx, "p", Some("/tmp"));
+
+    let (resp, dirty) = handle(
+        &ctx,
+        &dir.join(instances::FILE_NAME),
+        Request::Status(TargetRequest {
+            name: "p".to_string(),
+        }),
+    );
+    assert!(!dirty, "只读 op 不得触发收敛");
+
+    let v: Value = serde_json::from_str(&resp.to_line()).expect("响应应为 JSON");
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["name"], json!("p"));
+
+    let mut expected = crate::cm_ctl::tests::expected_keys("status_row");
+    expected.push("ok".to_string());
+    expected.sort();
+    let mut actual: Vec<String> = v
+        .as_object()
+        .expect("响应应是 JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    actual.sort();
+    assert_eq!(actual, expected, "status op 的字段集必须是 status_row + ok");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 没有记录就是 `instance_not_found`，与 CLI `status` 同口径。
+#[test]
+fn status_op_reports_missing_instance() {
+    let (v, _, dir) = roundtrip("st_missing", r#"{"op":"status","name":"ghost"}"#);
+    assert_eq!(v["ok"], json!(false));
+    assert_eq!(v["code"], json!("instance_not_found"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `status` 也只收 `name`。
+#[test]
+fn status_rejects_unknown_field() {
+    let (v, _, dir) = roundtrip("st_evil", r#"{"op":"status","name":"p","all":true}"#);
+    assert_eq!(v["code"], json!("bad_request"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `restart` 同样只收 `name` / `grace` / `timeout`：多给的字段一律拒绝。
+#[test]
+fn restart_rejects_unknown_field() {
+    let (v, _, dir) = roundtrip("rs_evil", r#"{"op":"restart","name":"p","port":18199}"#);
+    assert_eq!(v["code"], json!("bad_request"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 没有状态记录就没有可重建的规格：与 CLI 同口径报 `instance_not_found`。
+#[test]
+fn restart_op_reports_missing_instance() {
+    let (v, _, dir) = roundtrip("rs_missing", r#"{"op":"restart","name":"ghost"}"#);
+    assert_eq!(v["ok"], json!(false));
+    assert_eq!(v["code"], json!("instance_not_found"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 预算超限时**拒绝**：让客户端等到 `handle_timeout` 会把「实例到底重启了没有」
+/// 变成未知（那时 `down` 可能已经执行）。
+#[test]
+fn restart_op_refuses_budget_beyond_handler_window() {
+    let dir = tempdir("rs_budget");
+    let ctx = ctx_at(&dir);
+    let (resp, dirty) = handle(
+        &ctx,
+        &dir.join(instances::FILE_NAME),
+        Request::Restart(RestartRequest {
+            name: "p".to_string(),
+            grace: Some(40),
+            timeout: Some(40),
+        }),
+    );
+    assert!(!dirty);
+    let v: Value = serde_json::from_str(&resp.to_line()).expect("响应应为 JSON");
+    assert_eq!(v["ok"], json!(false));
+    assert_eq!(v["code"], json!("restart_budget_exceeded"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 缺省时长与 CLI 一致（各 10s），且确实走到了 `ops::restart`：记录里的 workspace
+/// 不存在 ⇒ 报 `bad_workspace`（不是 `instance_not_found`，也不是预算错误）。
+#[test]
+fn restart_op_reaches_ops_restart_with_cli_defaults() {
+    let dir = tempdir("rs_ops");
+    let ctx = ctx_at(&dir);
+    write_record(&ctx, "p", Some("/definitely-not-here-ctl"));
+
+    let (resp, dirty) = handle(
+        &ctx,
+        &dir.join(instances::FILE_NAME),
+        Request::Restart(RestartRequest {
+            name: "p".to_string(),
+            grace: None,
+            timeout: None,
+        }),
+    );
+    assert!(!dirty, "restart 自己做了 down + up，不该再触发收敛");
+    let v: Value = serde_json::from_str(&resp.to_line()).expect("响应应为 JSON");
+    assert_eq!(v["ok"], json!(false));
+    assert_eq!(
+        v["code"],
+        json!("bad_workspace"),
+        "应进入 restart 的 up 阶段：{v}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
