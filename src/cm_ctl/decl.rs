@@ -97,6 +97,9 @@ pub(crate) fn add(path: &Path, spec: AddSpec) -> Result<AddOutcome, CtlError> {
         port: spec.port,
         enabled: spec.enabled,
         env: BTreeMap::new(),
+        // 凭据文件只能由人手写 TOML 给出：`add` 不接 `env_file`，
+        // 否则 socket/CLI 就成了「按任意路径读凭据」的入口（与拒绝 `config` 同源）。
+        env_file: None,
     };
     reject_bad_workspace(&decl)?;
     if instances::load_optional(path)?.instances.contains_key(&spec.name) {

@@ -57,6 +57,12 @@ pub struct Declaration {
     /// 显式环境（敏感名由 [`super::spawn::build_env`] 拒绝，绝不静默透传）。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// 凭据文件：`KEY=VALUE` 逐行，必须 `0600` 且属主是当前用户。
+    ///
+    /// 与 `env` 的分工是硬边界：`env` 拒绝 `API_KEY` / `*_TOKEN` / `*_SECRET`，
+    /// 凭据只能经这里进来（见 [`super::env_file`]）。同键时**声明优先**。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_file: Option<String>,
 }
 
 fn default_enabled() -> bool {
@@ -76,22 +82,17 @@ impl Declaration {
         let Some(raw) = self.workspace.as_deref() else {
             return Ok(None);
         };
-        Ok(Some(paths::absolutize(&expand_tilde(raw.trim()))?))
+        Ok(Some(paths::absolutize(&paths::expand_tilde(raw.trim()))?))
     }
-}
 
-fn expand_tilde(raw: &str) -> String {
-    if raw != "~" && !raw.starts_with("~/") {
-        return raw.to_string();
+    /// 凭据文件 → 绝对路径。口径与 `workspace` / `config` 一致：
+    /// 先展开 `~`，相对路径按 **ctl 的 cwd** 绝对化（子进程 cwd 是实例目录）。
+    pub fn env_file_path(&self) -> Result<Option<PathBuf>, CtlError> {
+        let Some(raw) = self.env_file.as_deref() else {
+            return Ok(None);
+        };
+        Ok(Some(paths::absolutize(&paths::expand_tilde(raw.trim()))?))
     }
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
-        return raw.to_string();
-    };
-    if raw == "~" {
-        return home.display().to_string();
-    }
-    // `~/` 是纯 ASCII 前缀，`[2..]` 一定落在字符边界上
-    home.join(&raw[2..]).display().to_string()
 }
 
 /// 读取并校验声明文件。
@@ -253,6 +254,17 @@ fn validate(file: &InstancesFile) -> Result<(), CtlError> {
                 ),
             ));
         }
+        // 与 `workspace` 同款：省略 = 没有凭据文件；显式空串是书写错误。
+        if decl
+            .env_file
+            .as_deref()
+            .is_some_and(|f| f.trim().is_empty())
+        {
+            return Err(CtlError::usage(
+                "bad_instances_entry",
+                format!("声明项 `{name}` 的 env_file 为空串：不需要凭据文件请**省略该键**"),
+            ));
+        }
     }
     Ok(())
 }
@@ -412,6 +424,7 @@ port = 8080
             port: None,
             enabled: true,
             env: BTreeMap::new(),
+            env_file: None,
         };
         let p = d
             .workspace_path()
@@ -432,6 +445,7 @@ port = 8080
             port: None,
             enabled: true,
             env: BTreeMap::new(),
+            env_file: None,
         };
         assert!(
             d.workspace_path().expect("省略不应报错").is_none(),

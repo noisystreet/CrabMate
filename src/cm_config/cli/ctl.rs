@@ -153,6 +153,12 @@ pub struct UpCmd {
     #[arg(long)]
     pub yes: bool,
 
+    /// 凭据文件：`KEY=VALUE` 逐行，必须 `0600`（`API_KEY` / `*_TOKEN` / `*_SECRET` 只能从这里进）
+    ///
+    /// 与 `[instances.<name>.env]` 的分工：`env` 拒绝敏感名，凭据走本文件；同键时 `env` 优先。
+    #[arg(long = "env-file", value_name = "FILE")]
+    pub env_file: Option<String>,
+
     /// 等待 TCP 就绪的秒数
     #[arg(long = "timeout", value_name = "SECS", default_value_t = 10)]
     pub timeout_secs: u64,
@@ -209,6 +215,10 @@ pub struct RunCmd {
     /// 跳过子 serve 的命令白名单
     #[arg(long)]
     pub yes: bool,
+
+    /// 凭据文件（`KEY=VALUE` 逐行，必须 `0600`）；与 `up --env-file` 同一套校验
+    #[arg(long = "env-file", value_name = "FILE")]
+    pub env_file: Option<String>,
 }
 
 /// 列出实例。

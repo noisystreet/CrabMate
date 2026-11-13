@@ -371,6 +371,7 @@ fn decl_with_manual_fields(dir: &Path) -> (PathBuf, PathBuf) {
             port: None,
             enabled: true,
             env,
+            env_file: None,
         },
     );
     instances::write_atomic(&decl, &file).expect("写声明");

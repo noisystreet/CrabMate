@@ -314,6 +314,7 @@ mod tests {
                     port: None,
                     enabled: true,
                     env: BTreeMap::new(),
+                    env_file: None,
                 },
             );
         }

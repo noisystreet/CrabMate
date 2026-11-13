@@ -12,6 +12,7 @@
 
 pub(crate) mod control;
 pub(crate) mod decl;
+pub(crate) mod env_file;
 pub(crate) mod gc;
 pub(crate) mod guard;
 pub(crate) mod identity;

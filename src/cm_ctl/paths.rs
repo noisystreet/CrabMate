@@ -286,6 +286,25 @@ pub fn absolutize(p: &str) -> Result<PathBuf, CtlError> {
         .map_err(|e| CtlError::usage("bad_path", format!("无法解析路径 {trimmed}：{e}")))
 }
 
+/// 展开用户手写的 `~` / `~/…`。
+///
+/// `Path::absolutize` 只补 cwd，不认 shell 的波浪号；而声明文件与人手敲的 `--env-file`
+/// 都是人写的，不展开会把 `~/k.env` 解析成 `<cwd>/~/k.env`。拿不到 `HOME` 时原样返回
+/// （宁可在后面报「不存在」，也不要猜一个目录）。
+pub(crate) fn expand_tilde(raw: &str) -> String {
+    if raw != "~" && !raw.starts_with("~/") {
+        return raw.to_string();
+    }
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return raw.to_string();
+    };
+    if raw == "~" {
+        return home.display().to_string();
+    }
+    // `~/` 是纯 ASCII 前缀，`[2..]` 一定落在字符边界上
+    home.join(&raw[2..]).display().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -22,6 +22,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   handler budget (`restart_budget_exceeded` otherwise): past it the client would only see `handle_timeout`
   while the instance may already be down. No CLI behaviour changed; client-side `CtlRequest` sync lives in the
   client repository.
+- **`env_file` gives supervised instances a credential channel (#1355 A).** `API_KEY` / `*_TOKEN` /
+  `*_SECRET` stay rejected in declaration `env` and `profiles.toml` (that is the isolation gate), so
+  "resident instance + cloud model" did not actually work: every request had to carry
+  `client_llm.api_key`. A declaration — or `crabmatectl up --env-file` — may now point at a
+  `KEY=VALUE` file that must be `0600` and owned by the current user. It is parsed without shell
+  semantics; `CM_*` plus every key the spawn whitelist owns (`PATH` / `HOME` / `XDG_*` / proxies /
+  `SSL_CERT_*`) and injection keys (`LD_PRELOAD` …) stay rejected; values never reach the state
+  record (only names land in `env_keys`) and are never echoed in errors. Credentials travel in
+  their own `SpawnSpec.env_file_env` channel (`CredEnv`, whose `Debug` prints a key count only),
+  so declaration `env` keeps rejecting them, and on a key clash the declaration wins.
+  `crabmatectl up --env-file` and `run --env-file` take the same path; editing the file needs
+  `crabmatectl restart` — the `--watch` fingerprint covers `instances.toml` only.
 
 ### Fixed
 

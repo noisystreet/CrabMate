@@ -14,13 +14,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::CtlError;
+use super::env_file::CredEnv;
 use super::logio;
 use super::paths;
 
 /// 默认透传的环境变量（进程运行必需 + 代理/CA 这类高频漏项）。
 ///
 /// 只列**名**；是否真的存在于 ctl 环境中由 [`build_env`] 决定。
-const BASE_ENV_KEYS: &[&str] = &[
+pub(crate) const BASE_ENV_KEYS: &[&str] = &[
     "PATH",
     "HOME",
     "XDG_CONFIG_HOME",
@@ -65,12 +66,22 @@ fn is_forbidden(key: &str) -> bool {
         || key.ends_with("_SECRET")
 }
 
-/// 构造子进程环境：白名单 ∩ 当前环境 + 声明值（声明值优先）。
+/// 构造子进程环境：白名单 ∩ 当前环境 + 凭据通道 + 声明值（声明值优先）。
+///
+/// 两条通道的判定不同，这是刻意的：
+///
+/// - `declared`（`instances.toml` 的 `[instances.x.env]` 与 `profiles.toml`）走
+///   [`is_forbidden`]：`API_KEY` / `CM_*` / `*_TOKEN` / `*_SECRET` 一律拒绝；
+/// - `credentials`（`env_file`，[`CredEnv`]）允许凭据类，只拒 `CM_*` / 注入型键 / 白名单继承键
+///   （权限与键白名单已由 [`super::env_file`] 校验）。
+///
+/// 合并顺序：**凭据先、声明后** —— 声明里显式写下的值最高优先。
 ///
 /// 返回 `(环境变量, 实际注入的变量名)`；变量名落进状态文件的 `env_keys`，
-/// 供用户核对「有没有发生隐式继承」。
+/// 供用户核对「有没有发生隐式继承」——**只有名，永远没有值**。
 pub fn build_env(
     declared: &BTreeMap<String, String>,
+    credentials: &CredEnv,
 ) -> Result<(BTreeMap<String, String>, Vec<String>), CtlError> {
     let mut env = BTreeMap::new();
 
@@ -78,6 +89,11 @@ pub fn build_env(
         if let Ok(val) = std::env::var(key) {
             env.insert((*key).to_string(), val);
         }
+    }
+
+    // 凭据先铺底：`env_file` 只提供「子进程需要但声明不该携带」的那批键
+    for (key, val) in credentials.iter() {
+        env.insert(key.clone(), val.clone());
     }
 
     for (key, val) in declared {
@@ -111,6 +127,12 @@ pub struct SpawnSpec {
     /// `--no-tools`（禁用全部工具）：来自 profile 的 `no_tools`
     pub no_tools: bool,
     pub env: BTreeMap<String, String>,
+    /// 凭据通道（来自 `env_file`）：允许 `API_KEY` / `*_TOKEN` / `*_SECRET`，
+    /// 键与权限由 [`super::env_file`] 校验；与 `env` 同键时 **`env` 优先**。
+    ///
+    /// 用 [`CredEnv`] 而不是裸 `BTreeMap`：它的 `Debug` 只打键数，于是本结构体的
+    /// `Debug`（以及包含它的 `Step`）不可能把凭据打进日志。
+    pub env_file_env: CredEnv,
     pub log_path: PathBuf,
     /// 子进程 cwd（实例专属目录）。
     pub home: PathBuf,
@@ -270,7 +292,7 @@ fn resolve_serve_config(spec: &SpawnSpec) -> Result<Option<PathBuf>, CtlError> {
 /// 启动一个 `serve` 子进程（脱管：ctl 退出后继续运行）。
 pub fn spawn_serve(spec: &SpawnSpec) -> Result<Spawned, CtlError> {
     let exe = resolve_serve_binary()?;
-    let (env, env_keys) = build_env(&spec.env)?;
+    let (env, env_keys) = build_env(&spec.env, &spec.env_file_env)?;
     let serve_config = resolve_serve_config(spec)?;
     let (stdout, stderr) = open_stdio(spec)?;
 
@@ -370,6 +392,7 @@ mod tests {
             yes: true,
             no_tools: true,
             env: BTreeMap::new(),
+            env_file_env: CredEnv::default(),
             log_path: PathBuf::from("/tmp/x.log"),
             home: PathBuf::from("/tmp/x"),
             ready_json: true,
@@ -397,6 +420,7 @@ mod tests {
             yes: false,
             no_tools: false,
             env: BTreeMap::new(),
+            env_file_env: CredEnv::default(),
             log_path: PathBuf::from("/tmp/x.log"),
             home: PathBuf::from("/tmp/x"),
             ready_json: false,
@@ -413,7 +437,7 @@ mod tests {
     fn env_never_inherits_ctl_secrets() {
         // 白名单里根本没有 API_KEY / CM_*，因此构造结果不可能含它们。
         // （不修改进程环境：那既需 unsafe，也会与并行测试互相干扰）
-        let (env, keys) = build_env(&BTreeMap::new()).expect("构造环境应成功");
+        let (env, keys) = build_env(&BTreeMap::new(), &CredEnv::default()).expect("构造环境应成功");
         assert!(!env.contains_key("API_KEY"), "API_KEY 不得透传");
         assert!(!env.contains_key("CM_LLM_MODEL"), "CM_* 不得透传");
         assert!(
@@ -421,6 +445,39 @@ mod tests {
             "env_keys 不得出现 CM_*：{keys:?}"
         );
         assert!(!keys.iter().any(|k| k == "API_KEY"));
+    }
+
+    /// 两条通道的判定必须不同：同一个 `API_KEY`，走 `env_file` 允许，
+    /// 走声明仍是 `forbidden_env`（否则隔离闸门就被自己人绕开了）。
+    #[test]
+    fn credentials_channel_allows_api_key_but_declared_env_does_not() {
+        let mut creds = CredEnv::default();
+        creds.insert("API_KEY".to_string(), "sk-fake-from-file".to_string());
+        let (env, keys) = build_env(&BTreeMap::new(), &creds).expect("凭据应可注入");
+        assert_eq!(
+            env.get("API_KEY").map(String::as_str),
+            Some("sk-fake-from-file")
+        );
+        assert!(keys.iter().any(|k| k == "API_KEY"));
+
+        let mut declared = BTreeMap::new();
+        declared.insert("API_KEY".to_string(), "sk-fake-from-decl".to_string());
+        let err = build_env(&declared, &CredEnv::default()).expect_err("声明里的 API_KEY 仍应被拒");
+        assert_eq!(err.error_code, "forbidden_env");
+    }
+
+    /// 同键时声明优先：凭据通道只铺底，不覆盖显式声明。
+    #[test]
+    fn declared_env_wins_over_credentials() {
+        let mut creds = CredEnv::default();
+        creds.insert("GIT_SSH_COMMAND".to_string(), "from-file".to_string());
+        let mut declared = BTreeMap::new();
+        declared.insert("GIT_SSH_COMMAND".to_string(), "from-decl".to_string());
+        let (env, _keys) = build_env(&declared, &creds).expect("应成功");
+        assert_eq!(
+            env.get("GIT_SSH_COMMAND").map(String::as_str),
+            Some("from-decl")
+        );
     }
 
     #[test]
@@ -455,7 +512,7 @@ mod tests {
         // `profiles.toml` 的预设就靠这条通道落地（allowed_commands / permission_level / llm_*）
         let mut declared = BTreeMap::new();
         declared.insert("CM_LLM_MODEL".to_string(), "deepseek-chat".to_string());
-        let (env, keys) = build_env(&declared).expect("受控 CM_ 键应允许");
+        let (env, keys) = build_env(&declared, &CredEnv::default()).expect("受控 CM_ 键应允许");
         assert_eq!(
             env.get("CM_LLM_MODEL").map(String::as_str),
             Some("deepseek-chat")
@@ -468,7 +525,7 @@ mod tests {
         // 白名单**外**的 CM_ 键仍必须拒绝：前缀放行会打开实例隔离的缺口
         let mut declared = BTreeMap::new();
         declared.insert("CM_WEB_WORKSPACE_POOL".to_string(), "/".to_string());
-        let err = build_env(&declared).expect_err("白名单外的 CM_ 键应拒绝");
+        let err = build_env(&declared, &CredEnv::default()).expect_err("白名单外的 CM_ 键应拒绝");
         assert_eq!(err.error_code, "forbidden_env");
     }
 
@@ -476,7 +533,7 @@ mod tests {
     fn declared_non_sensitive_env_passes() {
         let mut declared = BTreeMap::new();
         declared.insert("GIT_SSH_COMMAND".to_string(), "ssh -i k".to_string());
-        let (env, keys) = build_env(&declared).expect("普通变量应允许");
+        let (env, keys) = build_env(&declared, &CredEnv::default()).expect("普通变量应允许");
         assert_eq!(env.get("GIT_SSH_COMMAND").map(String::as_str), Some("ssh -i k"));
         assert!(keys.iter().any(|k| k == "GIT_SSH_COMMAND"));
     }
@@ -486,7 +543,7 @@ mod tests {
         for k in ["GITHUB_TOKEN", "MY_SECRET"] {
             let mut d = BTreeMap::new();
             d.insert(k.to_string(), "v".to_string());
-            let err = build_env(&d).expect_err("应拒绝敏感后缀");
+            let err = build_env(&d, &CredEnv::default()).expect_err("应拒绝敏感后缀");
             assert_eq!(err.error_code, "forbidden_env");
         }
     }
@@ -496,6 +553,6 @@ mod tests {
         // 绕过 serve 实例锁会让两个实例并发写同一 SQLite
         let mut d = BTreeMap::new();
         d.insert("CM_SERVE_DISABLE_INSTANCE_LOCK".to_string(), "1".to_string());
-        assert!(build_env(&d).is_err());
+        assert!(build_env(&d, &CredEnv::default()).is_err());
     }
 }
