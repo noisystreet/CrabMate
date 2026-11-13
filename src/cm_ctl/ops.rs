@@ -574,6 +574,35 @@ fn finish_stopped(path: &Path, rec: &mut InstanceRecord) -> Result<(), CtlError>
     record::write_atomic(path, rec)
 }
 
+/// `down` 之后等端口真正归还的上限。
+///
+/// SIGKILL 只表示「信号已投递」：进程退出、内核关闭监听套接字都是异步的，双核 CI
+/// runner 上这一段能拖到几十~几百毫秒（`tests/ctl_process.rs` 的 restart 用例曾因此
+/// 偶发 `port_in_use`）。而 [`select_port`] 对显式端口是**硬**检查（被占即失败、
+/// 不顺延，见那里的注释），于是合法重启会被自己上一代还没消失的进程挡下。
+const PORT_RELEASE_BUDGET: Duration = Duration::from_secs(5);
+
+/// 等到 `port` 真的可绑定；超时才报 `port_in_use`。
+fn wait_port_released(name: &str, port: u16, budget: Duration) -> Result<(), CtlError> {
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        if PortPool::is_free(port) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(CtlError::conflict(
+                "port_in_use",
+                format!(
+                    "实例 {name} 已停止，但端口 {port}（127.0.0.1）在 {}s 内仍未释放；\
+                     请稍后重试 `crabmatectl restart {name}`",
+                    budget.as_secs()
+                ),
+            ));
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
 /// 重启：**优先按声明**重建启动规格，记录只作未声明实例的回落；先 down 再 up。
 ///
 /// 规格为什么必须按声明重建、以及记录这一路的 env 为什么恢复不了，见
@@ -602,6 +631,11 @@ pub fn restart(
     )?;
 
     down(ctx, name, grace)?;
+    // 端口不随 `down` 同步归还（见 [`PORT_RELEASE_BUDGET`]）：这里必须先等到它真的空闲，
+    // 否则 `up` 的显式端口预检会把刚停掉的自己判成 `port_in_use`。
+    if let Some(port) = plan.args.port {
+        wait_port_released(name, port, PORT_RELEASE_BUDGET)?;
+    }
     let mut out = up(ctx, &plan.args)?;
     out.warnings.extend(plan.notes);
     Ok(out)
@@ -742,6 +776,32 @@ mod tests {
             "错误信息应点出端口号，便于定位：{}",
             err.message
         );
+        drop(held);
+    }
+
+    /// `down` 之后端口未必立刻归还（SIGKILL 与内核关 socket 是异步的）：必须*等*，
+    /// 而不是探一次就放弃。CI 上 `socket_status_and_restart_drive_a_lane` 曾因此偶发
+    /// `port_in_use`。
+    #[test]
+    fn wait_port_released_waits_for_the_holder_to_vanish() {
+        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("绑定随机端口");
+        let port = held.local_addr().expect("取本地地址").port();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(250));
+            drop(held);
+        });
+        wait_port_released("x", port, Duration::from_secs(5)).expect("占用解除后应等到空闲");
+    }
+
+    /// 占用一直不解除：等满预算后仍要给出 `port_in_use`（带端口号，便于定位）。
+    #[test]
+    fn wait_port_released_times_out_with_port_in_use() {
+        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("绑定随机端口");
+        let port = held.local_addr().expect("取本地地址").port();
+        let err = wait_port_released("x", port, Duration::from_millis(200))
+            .expect_err("占用一直不解除应报错");
+        assert_eq!(err.error_code, "port_in_use");
+        assert!(err.message.contains(&port.to_string()), "{}", err.message);
         drop(held);
     }
 
