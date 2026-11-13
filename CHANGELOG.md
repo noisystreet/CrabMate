@@ -25,6 +25,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **`crabmatectl restart` no longer trips over its own previous process's port.** A lane whose `down` ended in
+  `SIGKILL` could be judged `port_in_use` on the immediate `up`: the signal only means "delivered", so the old
+  listener may still own the address for a few hundred milliseconds (this surfaced as a flaky `ctl_process`
+  failure on a 2-core runner). `restart` now waits until the port is genuinely bindable (5s cap) before
+  re-spawning, and otherwise fails with `port_in_use` that names the instance and suggests a retry.
 - **The `.deb`'s user-level supervisor unit no longer ships a dead `ExecStart`.** The packaged
   `/usr/lib/systemd/user/crabmate-supervise.service` inherits the source-install path
   `%h/.local/bin/crabmatectl`, which does not exist on a deb install; `postinst` now writes the corrected
