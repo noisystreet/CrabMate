@@ -36,6 +36,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `ExecStart` into `/etc/systemd/user/crabmate-supervise.service.d/10-deb-binary-path.conf`
   (removed on `purge`). Previously `systemctl --user enable --now` failed with `203/EXEC`.
 
+### Security
+
+- **`quinn-udp` bumped to 0.5.16 for RUSTSEC-2026-0538.** The affected 0.5.14
+  ("receive loop can spin after a truncated datagram") came in transitively through `reqwest 0.12` (pulled by
+  `hf-hub` on the `fastembed` path, not the workspace's own `reqwest 0.13`); `cargo audit` failed the
+  `Dependency security` job on it. The lockfile now resolves 0.5.16 (advisory's `>=0.5.16, <0.6.0`); the only
+  other lockfile delta is four Windows-only `windows-sys` references that cargo corrected from a stale 0.52.0
+  to 0.61.2.
+
 ## [0.8.1] - 2026-11-12
 
 **Git pre-release `v0.8.1-beta.1`** (fourth pre-release of the `0.8.1` line, after `v0.8.1-alpha.0`,
