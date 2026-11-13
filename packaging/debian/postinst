@@ -1,6 +1,30 @@
 #!/bin/sh
 set -e
 
+# 用户级 supervise unit 的 ExecStart 在仓库里按源码安装写成 %h/.local/bin/crabmatectl；
+# deb 把 crabmatectl 装到 /usr/bin，而 systemd 不查 PATH —— 原样启用就是 203/EXEC。
+# 纠正放在 /etc/systemd/user（管理员覆盖层，优先级高于包内 /usr/lib/systemd/user），
+# 既不 sed 改包内文件，也不在仓库里维护第二份 unit。
+fix_user_unit_execstart() {
+	[ -x /usr/bin/crabmatectl ] || return 0
+	dropin_dir=/etc/systemd/user/crabmate-supervise.service.d
+	dropin=$dropin_dir/10-deb-binary-path.conf
+	mkdir -p "$dropin_dir"
+	# 已存在（含管理员改过）就不覆盖。
+	if [ -e "$dropin" ]; then
+		return 0
+	fi
+	cat >"$dropin" <<'EOF'
+# 由 crabmate 包的 postinst 生成；purge 时由 postrm 删除。
+[Service]
+ExecStart=
+ExecStart=/usr/bin/crabmatectl supervise --from-config --watch --restart on-failure --socket %t/crabmate/ctl.sock
+EOF
+	chmod 644 "$dropin"
+	echo "crabmate: user 级 unit 的 ExecStart 已纠正为 /usr/bin/crabmatectl（$dropin）" >&2
+	echo "crabmate: 启用前请以目标用户执行 systemctl --user daemon-reload" >&2
+}
+
 case "$1" in
 configure)
 	if ! getent group crabmate >/dev/null; then
@@ -12,6 +36,7 @@ configure)
 	fi
 	mkdir -p /var/lib/crabmate
 	chown crabmate:crabmate /var/lib/crabmate
+	fix_user_unit_execstart
 	;;
 esac
 
