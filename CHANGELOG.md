@@ -10,6 +10,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **The control-plane socket gained `restart` and `status` (#1355 B).** `supervise --socket` could only
+  `add` / `remove` / `list` / `disable` / `enable`, so a client could neither restart a single lane nor read one
+  instance's detail without pulling the whole list. `{"op":"restart","name":"x","grace":10,"timeout":30}` runs the
+  same `ops::restart` the CLI uses and answers with the **result** — the `status --json` row plus
+  `restarted` / `notes` — because a failed restart leaves the instance stopped, so `ok` must not be a mere
+  acknowledgement. `{"op":"status","name":"x"}` answers with that same row plus `ok`, reusing
+  `render::status_json` instead of minting a second shape. `grace + timeout` must stay within 50s of the 60s
+  handler budget (`restart_budget_exceeded` otherwise): past it the client would only see `handle_timeout`
+  while the instance may already be down. No CLI behaviour changed; client-side `CtlRequest` sync lives in the
+  client repository.
+
 ### Fixed
 
 - **The `.deb`'s user-level supervisor unit no longer ships a dead `ExecStart`.** The packaged

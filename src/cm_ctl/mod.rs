@@ -121,7 +121,10 @@ mod tests {
     }
 
     /// 读 `fixtures/ctl_contract.json` 的一组字段（已排序）。
-    fn expected_keys(field: &str) -> Vec<String> {
+    ///
+    /// `pub(crate)` 是为了让控制面（`control::tests`）能直接比对 `status` op 的形状：
+    /// 那条 op 承诺「就是 `status --json`」，两边读同一份 golden 才是真的同一个形状。
+    pub(crate) fn expected_keys(field: &str) -> Vec<String> {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ctl_contract.json");
         let raw = std::fs::read_to_string(&path)
