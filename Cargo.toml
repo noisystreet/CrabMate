@@ -55,7 +55,6 @@ toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false }
 unicodeit = "0.2"
-urlencoding = "2.1"
 walkdir = "2"
 # 联网搜索默认后端：本机浏览器 SERP（库路径；关闭 mcp 以免拉入 rmcp；≥0.2.2 含质量信号/抓取 API）
 # tls-aws-lc：显式选择 rustls provider，与 reqwest(aws-lc-rs) 对齐，避免 ring/aws-lc-rs 双套编译并拖入 cmake
@@ -84,7 +83,6 @@ rust-version = "1.88"
 license = "Apache-2.0"
 description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, HTTP serve, ops CLI"
 repository = "https://github.com/noisystreet/CrabMate"
-homepage = "https://github.com/noisystreet/CrabMate"
 readme = "README.md"
 # 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
 default-run = "crabmate"
@@ -200,7 +198,6 @@ server = [
     "dep:diffy",
     "dep:walkdir",
     "dep:worbrow",
-    "dep:urlencoding",
     "dep:jsonschema",
     "dep:rusqlite",
     "dep:nix",
@@ -304,7 +301,6 @@ path-absolutize = { workspace = true, optional = true }
 diffy = { workspace = true, optional = true }
 walkdir = { workspace = true, optional = true }
 worbrow = { workspace = true, optional = true }
-urlencoding = { workspace = true, optional = true }
 jsonschema = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 # 仅启用实际用到的子特性，缩短编译图（form/matched-path/original-uri/tower-log 无代码引用）。

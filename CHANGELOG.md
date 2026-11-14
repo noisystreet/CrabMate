@@ -54,6 +54,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `crabmatectl up --env-file` and `run --env-file` take the same path; editing the file needs
   `crabmatectl restart` — the `--watch` fingerprint covers `instances.toml` only.
 
+### Changed
+
+- **`make package-deb` is warning-free again (#1363).** The packaging script and `cargo-deb` were clean; the noise
+  came from two **manifest lints** cargo prints on every `cargo build` / `cargo deb`: `cargo::redundant_homepage`
+  (`[package] homepage` only repeated `repository`) and `cargo::unused_dependencies` (`urlencoding` was declared but
+  never referenced in `src/`). Both are gone — the field is dropped, and the dependency is removed from
+  `[workspace.dependencies]`, the `server` feature and the crate's `[dependencies]`, so `Cargo.lock` loses only
+  `urlencoding 2.1.3`. The `.deb` layout, assets and maintainer scripts are untouched.
+
 ### Fixed
 
 - **`crabmatectl restart` no longer trips over its own previous process's port.** A lane whose `down` ended in
