@@ -12,6 +12,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **The user-level systemd unit is now `Type=notify` (#1355 F).** `systemctl --user start` used to return as soon
+  as the `crabmatectl` process existed; it now blocks until the **first reconcile round** finished, i.e. until every
+  planned instance is TCP-reachable or has timed out. `crabmatectl` sends `READY=1` plus a `STATUS=` line
+  ("N 个实例就绪" / which ones are not) itself: a small `NOTIFY_SOCKET` sender in `src/cm_ctl/notify.rs`, written
+  against the `libc` dependency the crate already had, so **no new crate**. It handles systemd's
+  abstract-namespace address (`@/…/notify`, `sun_path[0] = 0`), which `std::os::unix::net` cannot express.
+  Three deliberate boundaries: with `NOTIFY_SOCKET` unset (running `supervise --watch` in a terminal) every send
+  is a silent no-op, so no `--no-notify` flag is needed and `man/crabmatectl.1` is unchanged; a **partially
+  failed** first round still reports `READY=1`, with the failure names in `STATUS=`, because staying silent
+  would let systemd hit its start timeout and restart the whole unit; and the unit pins `TimeoutStartSec=300`,
+  since the first round is serial and each step may wait `--timeout` (10s), so eight lanes can approach
+  systemd's 90s default. `STOPPING=1` and `WatchdogSec` stay out of scope (both need signal handling, which is
+  a separate decision).
 - **The model is now told when compaction silently dropped history (#1233).** Pure group removal
   (`removed_turn_groups > 0` without an LLM summary) was invisible: the dropped turns simply were absent, so the
   model re-read the same large file believing it had never seen it. `finalize_token_budget_compaction` now appends

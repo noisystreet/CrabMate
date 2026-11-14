@@ -433,6 +433,37 @@ pub fn supervise_refused(reason: &str) {
     eprintln!("WARN: 声明文件当前不可用，已暂停收敛（不启动、不回收）：{reason}");
 }
 
+/// 首轮收敛后写给 systemd 的 `STATUS=` 文案。
+///
+/// 与终端那份动作流水刻意不同：那里是逐条列出「对谁做了什么」（人读），
+/// 这里只要一句能让 `systemctl --user status` 一眼看懂「成了没有、差谁」的话。
+///
+/// 回收（`Stop` / `Stopped`）与跳过（`Skipped`）都不计入失败：
+/// 它们不是「该跑却没能跑起来」（`Skipped` 甚至是用户显式停的）。
+pub fn readiness_status(steps: &[Step]) -> String {
+    if steps.is_empty() {
+        return "声明为空，无实例需要收敛".to_string();
+    }
+    let mut ready = 0usize;
+    let mut failed: Vec<&str> = Vec::new();
+    for step in steps {
+        match step {
+            Step::Running { .. } | Step::Started { .. } => ready += 1,
+            Step::Failed { name, .. } => failed.push(name),
+            Step::Start { .. } | Step::Stop { .. } | Step::Stopped { .. } => {}
+            Step::Skipped { .. } => {}
+        }
+    }
+    if failed.is_empty() {
+        return format!("{ready} 个实例就绪");
+    }
+    format!(
+        "{ready} 个实例就绪，{} 个未就绪：{}",
+        failed.len(),
+        failed.join(", ")
+    )
+}
+
 /// 健康巡检的结果：**只在真有动作时输出**。
 ///
 /// 被退避挡下的尝试刻意静默（`ctl status` 里能看到 `next_restart_at`）：

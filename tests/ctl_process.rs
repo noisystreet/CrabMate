@@ -567,3 +567,115 @@ fn socket_status_and_restart_drive_a_lane() {
     let _ = sup.kill();
     let _ = sup.wait();
 }
+
+/// 收一条 `READY=1`（中间那些 `STATUS=` 跳过：真实 systemd 也只认 `READY`）。
+fn recv_ready(receiver: &std::os::unix::net::UnixDatagram, budget: Duration) -> Option<String> {
+    let mut buf = [0u8; 512];
+    let deadline = std::time::Instant::now() + budget;
+    while std::time::Instant::now() < deadline {
+        // 读超时（1s）之后继续等：`serve` 冷启动要几秒，`READY` 之前不会有数据报
+        let Ok(got) = receiver.recv(&mut buf) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&buf[..got]).into_owned();
+        if text.lines().any(|l| l.trim() == "READY=1") {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// `Type=notify` 的核心承诺：`READY=1` **不早于**首轮收敛完成。
+///
+/// 非走真进程不可：要证的是「发出 READY 的那一刻实例已经 TCP 可连」这条**时序**，
+/// 而 `Type=simple` 缺的正是它。单测只能证明编码正确、以及「发了没」。
+#[test]
+fn supervise_notifies_ready_after_first_round() {
+    let sb = Sandbox::new();
+    let ws = sb.workspace("proj-notify");
+    let port = 18151u16;
+    let name = "n";
+    sb.write_declaration(&format!(
+        "[instances.{name}]\nworkspace = \"{}\"\nport = {port}\n",
+        ws.display()
+    ));
+
+    // 接收端就是 systemd 侧那个 socket 的等价物：一个普通的 Unix datagram
+    let sock = sb.root().join("notify.sock");
+    let receiver = std::os::unix::net::UnixDatagram::bind(&sock).expect("绑定 notify socket");
+    receiver
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("设读超时");
+
+    let mut sup = sb
+        .command(&[
+            "supervise",
+            "--from-config",
+            "--watch",
+            "--interval",
+            "1",
+            "--timeout",
+            "30",
+        ])
+        .env("NOTIFY_SOCKET", &sock)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("启动 supervise");
+
+    let text = recv_ready(&receiver, Duration::from_secs(120))
+        .expect("首轮收敛后应收到 READY=1（stderr 已丢弃）");
+    assert!(
+        tcp_ok(port),
+        "READY=1 到达时实例必须已可连 —— 这正是 `Type=simple` 表达不了的那件事：{text}"
+    );
+    assert!(
+        text.contains("STATUS="),
+        "READY 必须带一行 STATUS，否则 `systemctl --user status` 看不到收敛结果：{text}"
+    );
+
+    let _ = sup.kill();
+    let _ = sup.wait();
+}
+
+/// `NOTIFY_SOCKET` 指向没人监听的路径：通知全程失败，但**收敛照常**。
+///
+/// 这是刻意的边界——notify 是「告诉别人我好了」，不是启动的前提条件。
+/// 若把它当硬依赖，一个残留的环境变量就能让整个 supervisor 起不来。
+#[test]
+fn notify_failure_does_not_block_reconciliation() {
+    let sb = Sandbox::new();
+    let ws = sb.workspace("proj-notify-fail");
+    let port = 18152u16;
+    let name = "f";
+    sb.write_declaration(&format!(
+        "[instances.{name}]\nworkspace = \"{}\"\nport = {port}\n",
+        ws.display()
+    ));
+
+    let mut sup = sb
+        .command(&[
+            "supervise",
+            "--from-config",
+            "--watch",
+            "--interval",
+            "1",
+            "--timeout",
+            "30",
+        ])
+        // 不 bind 这个路径：每次发送都会失败
+        .env("NOTIFY_SOCKET", sb.root().join("nobody-listens.sock"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("启动 supervise");
+
+    wait_until(
+        "notify 发不出去也要照常收敛到 ready",
+        Duration::from_secs(120),
+        || sb.record_opt(name).is_some_and(|r| r["state"] == "ready") && tcp_ok(port),
+    );
+
+    let _ = sup.kill();
+    let _ = sup.wait();
+}
