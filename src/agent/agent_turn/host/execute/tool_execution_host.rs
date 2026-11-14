@@ -9,7 +9,7 @@ use crate::agent::agent_turn::execute::tool_dispatch::ToolDispatch;
 use crate::agent::agent_turn::execute::tool_execution_trait::{
     ParallelPrefetchFailures, ParallelPrefetchParams, ToolExecutionHost,
 };
-use crate::tool_host::tool_registry::{self, DispatchToolParams, HandlerId};
+use crate::tool_host::tool_registry::{self, DispatchToolParams, HandlerId, HandlerLookupTable};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;
@@ -60,6 +60,35 @@ pub struct CrabmateToolExecutionHost<'a> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CrabmateParallelToolDispatch;
 
+/// agent 层自己调度的工具类别（`HandlerId` 在 agent 层的投影）。
+///
+/// 封闭枚举：新增一类必须同时让两个宿主处理，漏一处就是编译错误——这是本表存在的意义，
+/// 而不是省几行 `if`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentLayerHandler {
+    /// `workflow_execute`：需要 `PerCoordinator` 与本回合 trace，不能落到工具层自带的分发。
+    Workflow,
+}
+
+/// agent 层接管的 handler 清单；**未登记 = 回落 `InternalToolDispatch`**。
+///
+/// 集中登记，取代原先两个宿主里各写一遍的 `if id_for(name) == HandlerId::Workflow`：
+/// 再加一个「必须 agent 层调度」的工具（例如 #839 的 `delegate_task`）只加一行，
+/// 且「哪些工具不经 `InternalToolDispatch`」从此是一份可枚举、可测试的清单。
+const AGENT_LAYER_HANDLERS: &[(HandlerId, AgentLayerHandler)] = &[(
+    HandlerId::Workflow,
+    AgentLayerHandler::Workflow,
+)];
+
+/// 该工具是否必须由 agent 层调度；`None` 表示交给 `InternalToolDispatch`。
+fn agent_layer_handler(name: &str, lookup: &HandlerLookupTable) -> Option<AgentLayerHandler> {
+    let id = lookup.id_for(name);
+    AGENT_LAYER_HANDLERS
+        .iter()
+        .find(|(handler, _)| *handler == id)
+        .map(|(_, kind)| *kind)
+}
+
 #[async_trait]
 impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
     async fn dispatch_tool_call(
@@ -67,21 +96,22 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
         name: &str,
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>) {
-        if p.policy.handler_lookup.id_for(name) == HandlerId::Workflow {
-            let permission = p.policy.permission;
-            workflow_tool_dispatch::dispatch_workflow_execute_tool(
-                p.runtime,
-                self.per_coord,
-                p.policy.cfg,
-                p.workspace.effective_working_dir,
-                p.workspace.workspace_is_set,
-                p.call.args,
-                self.request_chrome_trace.clone(),
-                permission,
-            )
-            .await
-        } else {
-            InternalToolDispatch.dispatch(p).await
+        match agent_layer_handler(name, p.policy.handler_lookup) {
+            Some(AgentLayerHandler::Workflow) => {
+                let permission = p.policy.permission;
+                workflow_tool_dispatch::dispatch_workflow_execute_tool(
+                    p.runtime,
+                    self.per_coord,
+                    p.policy.cfg,
+                    p.workspace.effective_working_dir,
+                    p.workspace.workspace_is_set,
+                    p.call.args,
+                    self.request_chrome_trace.clone(),
+                    permission,
+                )
+                .await
+            }
+            None => InternalToolDispatch.dispatch(p).await,
         }
     }
 
@@ -100,13 +130,13 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
         name: &str,
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>) {
-        if p.policy.handler_lookup.id_for(name) == HandlerId::Workflow {
-            return (
+        match agent_layer_handler(name, p.policy.handler_lookup) {
+            Some(AgentLayerHandler::Workflow) => (
                 "错误：并行只读批不支持 workflow_execute。".to_string(),
                 None,
-            );
+            ),
+            None => InternalToolDispatch.dispatch(p).await,
         }
-        InternalToolDispatch.dispatch(p).await
     }
 
     async fn prefetch_parallel_approval_failures(
@@ -171,5 +201,39 @@ impl CrabmateParallelToolDispatch {
         })
         .await
         .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 「哪些工具不经 `InternalToolDispatch`」是**一份可枚举清单**：当前只有 `workflow_execute`。
+    ///
+    /// 新增登记会打挂这条，这是有意的——逼你确认表与「两个宿主都处理」同步。
+    #[test]
+    fn agent_layer_handlers_are_workflow_only() {
+        let lookup = HandlerLookupTable::default_dispatch();
+        assert_eq!(
+            agent_layer_handler(tool_names::WORKFLOW_EXECUTE, &lookup),
+            Some(AgentLayerHandler::Workflow)
+        );
+        for name in [
+            tool_names::READ_FILE,
+            tool_names::RUN_COMMAND,
+            tool_names::HTTP_FETCH,
+        ] {
+            assert_eq!(
+                agent_layer_handler(name, &lookup),
+                None,
+                "`{name}` 应回落 `InternalToolDispatch`"
+            );
+        }
+        assert_eq!(
+            agent_layer_handler("unknown_xyz", &lookup),
+            None,
+            "未注册的工具名同样回落"
+        );
+        assert_eq!(AGENT_LAYER_HANDLERS.len(), 1, "登记表新增了项：请同步两个宿主");
     }
 }
