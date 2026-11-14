@@ -433,34 +433,57 @@ pub fn builtin_tool_descriptors() -> Vec<BuiltinToolDescriptor> {
 /// 执行本地工具并返回结果字符串。
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。
 pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
+    let (spec, args_eff) = match prepare_builtin_dispatch(name, args_json) {
+        Ok(v) => v,
+        Err(e) => return render_string_face_error(&e),
+    };
+    match spec.runner {
+        // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
+        // 显式 `ok` 头，供下游 `parse_tool_output` 复用（见 `typed_outcome_output`）。
+        ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
+            Ok(output) => typed_outcome_output(name, true, None, output),
+            Err(e) => typed_outcome_output(name, false, Some(e.code.as_str()), e.message),
+        },
+        ToolRunner::AsyncOnly => async_only_sync_error(name),
+    }
+}
+
+/// [`prepare_builtin_dispatch`] 失败时，**String 面**的历史渲染。
+///
+/// 与改造前逐字一致：普通前置失败拼 `错误：` 前缀；`未知工具：…` 的正文自带前缀，
+/// 不再叠加（[`ToolError::unknown_tool`] 的 `message` 就是那句正文）。
+fn render_string_face_error(e: &ToolError) -> String {
+    if e.code == "unknown_tool" {
+        e.message.clone()
+    } else {
+        format!("错误：{}", e.message)
+    }
+}
+
+/// 执行前置：`fastembed` 特性门 → 注册表查找 → 入参宽容化 → schema 校验。
+///
+/// [`run_tool`]（String 面）与 [`run_tool_dispatch`]（`Result` 面）**共用本函数**，
+/// 两者只在「错误如何渲染」上不同 —— 否则前置判定会有两份，漏改一处只表现为
+/// 某个入面静默少了一项校验。
+#[allow(clippy::result_large_err)]
+fn prepare_builtin_dispatch<'a>(
+    name: &str,
+    args_json: &'a str,
+) -> Result<(&'static ToolSpec, std::borrow::Cow<'a, str>), ToolError> {
     if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(name) {
-        return "错误：codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。".to_string(),
+        ));
     }
-    match find_spec(name) {
-        Some(spec) => {
-            let args_eff =
-                match tool_args_validate::effective_builtin_tool_args_json(name, args_json) {
-                    Ok(c) => c,
-                    Err(e) => return format!("错误：{e}"),
-                };
-            if let Some(Err(e)) =
-                tool_args_validate::validate_parsed_str_for_builtin(name, args_eff.as_ref())
-            {
-                return format!("错误：{e}");
-            }
-            match spec.runner {
-                // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
-                // 显式 `ok` 头，供下游 `parse_tool_output` 复用（见 `typed_outcome_output`）。
-                ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
-                    Ok(output) => typed_outcome_output(name, true, None, output),
-                    Err(e) => typed_outcome_output(name, false, Some(e.code.as_str()), e.message),
-                },
-                ToolRunner::AsyncOnly => async_only_sync_error(name),
-            }
-        }
-        None => format!("未知工具：{}", name),
+    let spec = find_spec(name).ok_or_else(|| ToolError::unknown_tool(name))?;
+    let args_eff = tool_args_validate::effective_builtin_tool_args_json(name, args_json)
+        .map_err(ToolError::invalid_args)?;
+    if let Some(Err(e)) =
+        tool_args_validate::validate_parsed_str_for_builtin(name, args_eff.as_ref())
+    {
+        return Err(ToolError::invalid_args(e));
     }
+    Ok((spec, args_eff))
 }
 
 /// 按 `spec.runner` 执行：[`ToolRunner::Typed`] 显式透传 [`ToolError`]；
@@ -474,22 +497,8 @@ fn run_tool_dispatch(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
-    if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(name) {
-        return Err(ToolError::invalid_args(
-            "codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。".to_string(),
-        ));
-    }
-    let spec = match find_spec(name) {
-        Some(s) => s,
-        None => return Err(ToolError::unknown_tool(name)),
-    };
-    let args_eff = tool_args_validate::effective_builtin_tool_args_json(name, args_json)
-        .map_err(ToolError::invalid_args)?;
-    let args_ref = args_eff.as_ref();
-    if let Some(Err(e)) = tool_args_validate::validate_parsed_str_for_builtin(name, args_ref) {
-        return Err(ToolError::invalid_args(e));
-    }
-    run_tool_dispatch_fallback(name, args_ref, spec, ctx)
+    let (spec, args_eff) = prepare_builtin_dispatch(name, args_json)?;
+    run_tool_dispatch_fallback(name, args_eff.as_ref(), spec, ctx)
 }
 
 /// dispatch 兜底：按 `spec.runner` 执行。
@@ -612,30 +621,40 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
 /// `run_command` 实现体基于 [`tokio::process`] 事件驱动等待（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存），
 /// 不再占用阻塞线程。
 pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
-    if name == tool_names::RUN_COMMAND {
-        match run_command_dispatch_async(name, args_json, ctx).await {
-            Ok((output, _)) => output,
-            Err(e) => e.message,
-        }
-    } else {
-        run_tool(name, args_json, ctx)
+    match try_run_command_dispatch_async(name, args_json, ctx).await {
+        Some(Ok((output, _))) => output,
+        Some(Err(e)) => e.message,
+        None => run_tool(name, args_json, ctx),
     }
 }
 
-/// 异步版 [`run_tool_result`]：`run_command` 走 `run_command_dispatch_async`，其余委派同步路径。
+/// 异步版 [`run_tool_result`]：`run_command` 走 [`run_command_dispatch_async`]，其余委派同步路径。
 pub async fn run_tool_result_async(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> ToolResult {
-    if name == tool_names::RUN_COMMAND {
-        match run_command_dispatch_async(name, args_json, ctx).await {
-            Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
-            Err(e) => ToolResult::from_parsed(e.message, e.parsed),
-        }
-    } else {
-        run_tool_result(name, args_json, ctx)
+    match try_run_command_dispatch_async(name, args_json, ctx).await {
+        Some(Ok((output, parsed))) => ToolResult::from_parsed(output, parsed),
+        Some(Err(e)) => ToolResult::from_parsed(e.message, e.parsed),
+        None => run_tool_result(name, args_json, ctx),
     }
+}
+
+/// `run_command` 的异步分派：`Some(..)` 表示工具名命中、已由 [`run_command_dispatch_async`] 处理。
+///
+/// [`run_tool_async`] 与 [`run_tool_result_async`] 共用本函数、各自只做结果投影，
+/// 因此 `RUN_COMMAND` 这条特判在文件内**只有一处**（此前两份，改一处漏一处的典型位置）。
+#[allow(clippy::result_large_err)]
+async fn try_run_command_dispatch_async(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Option<Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError>> {
+    if name != tool_names::RUN_COMMAND {
+        return None;
+    }
+    Some(run_command_dispatch_async(name, args_json, ctx).await)
 }
 
 /// 新的异步 `run_command` 实现（解析一次 `CommandSpec`，再以 [`command::run_async`] 异步等待）。

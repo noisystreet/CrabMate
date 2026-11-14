@@ -96,6 +96,24 @@ fn test_run_tool_try_schema_rejects_wrong_type() {
     assert!(e.message.contains("JSON Schema"), "{}", e.message);
 }
 
+/// 前置判定两侧同源（#1378）：`run_tool`（String 面）与 `run_tool_try`/`run_tool_result`
+/// （`Result` 面）对同一入参走同一份判定，**只在渲染上不同** ——
+/// `未知工具：…` 正文自带前缀不再叠 `错误：`，其余前置失败叠一层 `错误：`。
+#[test]
+fn string_and_result_faces_share_the_same_pre_dispatch_verdict() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+
+    let unknown_str = run_tool("unknown_tool", "{}", &ctx);
+    let unknown_err = run_tool_try("unknown_tool", "{}", &ctx).expect_err("unknown tool");
+    assert_eq!(unknown_str, unknown_err.message);
+    assert_eq!(unknown_err.code, "unknown_tool");
+
+    let schema_str = run_tool("json_format", r#"{"text":1}"#, &ctx);
+    let schema_err = run_tool_try("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
+    assert_eq!(schema_str, format!("错误：{}", schema_err.message));
+    assert_eq!(schema_err.code, "invalid_args");
+}
 
 #[tokio::test]
 async fn test_run_tool_run_command_pwd() {
