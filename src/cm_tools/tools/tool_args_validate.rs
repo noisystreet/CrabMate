@@ -612,6 +612,34 @@ mod tests {
         assert!(msg.contains("参数与工具 JSON Schema"), "{}", msg);
     }
 
+    /// 数值越界要**直接给出可用值**，而不只是指出违规。
+    ///
+    /// 回放实测：`search_in_files.context_after`（上限 10）在多个仓库 / 实例 / 会话里被反复传 12/14/40，
+    /// 因为原本文案只说「greater than the maximum of 10」，读完还得自己回忆上限。
+    #[test]
+    fn numeric_bound_violation_suggests_the_usable_value() {
+        let r = validate_parsed_value_if_known(
+            "search_in_files",
+            &json!({ "pattern": "x", "context_after": 14 }),
+        )
+        .expect("known");
+        let msg = r.expect_err("context_after=14 应越界");
+        assert!(msg.contains("maximum"), "{}", msg);
+        assert!(
+            msg.contains("maximum = 10"),
+            "越界提示应附上可用值：{msg}"
+        );
+        assert!(msg.contains("改为此值或更小"), "{}", msg);
+    }
+
+    /// 非数值类错误不该被塞进界值提示（文案保持原样）。
+    #[test]
+    fn non_numeric_violation_has_no_bound_hint() {
+        let r = validate_parsed_value_if_known("json_format", &json!({ "text": 1 })).expect("known");
+        let msg = r.expect_err("类型错应被拒");
+        assert!(!msg.contains("改为此值"), "{}", msg);
+    }
+
     #[test]
     fn read_file_coerce_string_line_numbers_passes_schema() {
         let mut v = json!({
