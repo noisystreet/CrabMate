@@ -344,5 +344,12 @@ sudo systemctl status crabmate.service
     must be **`0600`** — ctl refuses wider permissions by design. It lives outside **`systemd/`** on purpose:
     that directory is globbed into **system** units,
   where a `%h` / `default.target` unit would be wrong.
+- The user unit is **`Type=notify`**: `crabmatectl` sends **`READY=1`** — plus a `STATUS=` line naming the
+  instances that came up, or the ones that did not — only **after the first reconcile round**, so
+  `systemctl --user start` returns when instances are actually reachable rather than when the ctl process
+  merely exists. With **`NOTIFY_SOCKET` unset** (running `supervise --watch` by hand) every send is a silent
+  no-op, so nothing changes outside systemd; systemd's abstract-namespace address (`@/…/notify`) is supported.
+  The unit also pins **`TimeoutStartSec=300`**, because the first round is serial and each step may wait
+  `--timeout` (10s by default).
 
 Preview from tree: `man -l man/crabmate.1` / `man -l man/crabmatectl.1` (paths relative to repo root).

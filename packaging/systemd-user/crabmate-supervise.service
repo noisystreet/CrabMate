@@ -45,7 +45,18 @@ Documentation=man:crabmatectl(1)
 After=network.target
 
 [Service]
-Type=simple
+# `Type=notify`：ctl 在**首轮收敛完成后**才发 `READY=1`，所以 `systemctl --user start`
+# 阻塞到「实例真的可连」为止，而不是「ctl 进程起来了」。这正是 `Type=simple` 表达不了的
+# 那件事（也让 `Restart=on-failure` 与「真的可用了」对齐）。
+# 未设 `NOTIFY_SOCKET` 时 ctl 静默跳过通知 —— 同一份二进制在终端里手工跑行为不变。
+Type=notify
+# 只有主进程（ctl 自己）发通知；子实例是脱管进程，不该也不会参与
+NotifyAccess=main
+# 首轮收敛是**串行**的，单步最长等 `--timeout`（默认 10s）：8 条 lane 最坏约 80s，
+# 已逼近 systemd 默认的 90s。给足余量，避免「启动慢」被误判成「启动失败」进而触发
+# `Restart=on-failure` 的重启循环。收敛期间 ctl 会发 `STATUS=首轮收敛中…`，
+# 结果（「N 个实例就绪」/「差谁」）写在 `READY=1` 的 `STATUS=` 里。
+TimeoutStartSec=300
 # ctl 自己会建 `0700` 目录并 chmod socket（`paths::prepare_control_socket`），
 # 但对 `$XDG_RUNTIME_DIR` 下的目录交给 systemd 更干净：`systemctl --user stop` 之后
 # socket 与目录一起消失，残留只在 ctl 被 SIGKILL 时出现，那种情况由 `clear_stale()` 兜住。

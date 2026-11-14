@@ -16,6 +16,7 @@ use super::env_file::{self, CredEnv};
 use super::gc;
 use super::identity;
 use super::instances;
+use super::notify;
 use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
 use super::paths;
 use super::preflight;
@@ -320,7 +321,29 @@ fn watch_mode(
         path.display(),
         interval.as_secs()
     );
-    supervise::watch(ctx, path, opts, interval)
+    let notifier = notify::Notifier::from_env();
+    if notifier.is_enabled() {
+        println!("已就绪通知：首轮收敛完成后向 systemd 发 READY=1");
+        // 首轮最坏要等到 `--timeout` × 实例数：先给一条进度，`systemctl --user status`
+        // 才不必在 `Activating` 里干等。逐条 i/N 要穿透 apply/tick/execute 三层，本期不做。
+        notifier.status("首轮收敛中…");
+    }
+    supervise::watch(ctx, path, opts, interval, &|steps: &[supervise::Step]| {
+        announce_ready(&notifier, true, steps);
+    })
+}
+
+/// 常驻模式报就绪：`--watch` 用首轮收敛结果，纯控制面（无 `--watch`）用「控制面已可连」。
+///
+/// `NOTIFY_SOCKET` 未设置时 `Notifier` 自身即 no-op，故这里不再判「是不是在 systemd 里」：
+/// 手工在终端跑 `supervise --watch` 的可见行为一字不变。
+fn announce_ready(notifier: &notify::Notifier, watched: bool, steps: &[supervise::Step]) {
+    let status = if watched {
+        render::readiness_status(steps)
+    } else {
+        "控制面就绪（未启用 --watch，仅在收到请求后收敛）".to_string()
+    };
+    notifier.ready(&status);
 }
 
 /// `--from-config` 是当前唯一模式（`--watch` 仍需它）。
@@ -390,6 +413,18 @@ fn socket_mode(
     // 与 `--watch` 同一套节流：socket 模式下即使没有 `--watch`，只要开了
     // `--restart on-failure`，崩溃的实例也会被巡检拉起来。
     let mut health = restart::Health::new(opts.health);
+    let notifier = notify::Notifier::from_env();
+    // 首轮收敛提到循环外，只为那条顺序约束：`READY=1` 必须在它之后发。配了 `--watch`
+    // 才有「收敛完成」这回事；纯控制面（socket bind 已成功）以「控制面已可连」为依据。
+    // 循环体第一轮因此不再收敛，但指纹已由这次 tick 同步，那一轮本就是 `Unchanged`。
+    let first = if c.watch {
+        // 同 `--watch`：先报进度，再收敛，最后才 `READY`
+        notifier.status("首轮收敛中…");
+        cursor.tick(ctx, path, opts).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    announce_ready(&notifier, c.watch, &first);
     loop {
         let mut changed = false;
         while let Some(incoming) = server.try_next() {
@@ -405,7 +440,7 @@ fn socket_mode(
             // 同步指纹：否则 `--watch` 会把本进程刚写的变化再收敛一遍
             cursor.sync(path);
         } else if c.watch {
-            cursor.tick(ctx, path, opts);
+            let _ = cursor.tick(ctx, path, opts);
         }
         health.tick(ctx, path, opts);
         std::thread::sleep(interval);

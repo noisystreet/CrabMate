@@ -525,20 +525,31 @@ pub fn poll_once(path: &Path, last: Option<&Fingerprint>) -> (Poll, Fingerprint)
 /// 按一份已加载的声明收敛。
 ///
 /// 计划失败只告警不退出：常驻进程为一个半截 TOML 死去，比暂停收敛更糟。
-fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) {
+///
+/// 返回本轮的执行结果：`--watch` / `--socket` 的首轮要拿它写 `READY=1` 之后的
+/// `STATUS=`（「几个起成了、差谁」）。计划失败时返回空——那条路径已单独告警过。
+fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) -> Vec<Step> {
     match scoped_plan(ctx, file, opts) {
         Ok(steps) => {
             let done = execute(ctx, steps, opts);
             super::render::supervise(&done, false, false);
+            done
         }
-        Err(e) => super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code)),
+        Err(e) => {
+            super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code));
+            Vec::new()
+        }
     }
 }
 
 /// 读一次声明并收敛（控制面收到 `add` / `remove` / `disable` / `enable` 后立即调用）。
 pub fn reconcile_once(ctx: &Ctx, path: &Path, opts: &Opts) {
     match instances::load(path) {
-        Ok(file) => apply(ctx, &file, opts),
+        // 控制面请求触发的收敛不需要回传结果：`READY` 只对首轮有意义，
+        // 之后的进度由 `ls` / `status` 表达。
+        Ok(file) => {
+            let _ = apply(ctx, &file, opts);
+        }
         Err(e) => {
             super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code));
         }
@@ -557,20 +568,20 @@ impl Cursor {
         Self::default()
     }
 
-    /// 推进一轮：指纹变了就收敛。返回是否真的收敛过。
-    pub fn tick(&mut self, ctx: &Ctx, path: &Path, opts: &Opts) -> bool {
+    /// 推进一轮：指纹变了就收敛。返回本轮的执行结果。
+    ///
+    /// `None` = 声明没变（`Unchanged`）或当前不可用（`Refused`，已单独告警）：
+    /// 这两种情况都没有「收敛结果」可报，首轮据此写 `STATUS=` 时按空处理。
+    pub fn tick(&mut self, ctx: &Ctx, path: &Path, opts: &Opts) -> Option<Vec<Step>> {
         let (poll, fingerprint) = poll_once(path, self.0.as_ref());
         self.0 = Some(fingerprint);
         match poll {
-            Poll::Unchanged => false,
+            Poll::Unchanged => None,
             Poll::Refused(reason) => {
                 super::render::supervise_refused(&reason);
-                false
+                None
             }
-            Poll::Reconcile(file) => {
-                apply(ctx, &file, opts);
-                true
-            }
+            Poll::Reconcile(file) => Some(apply(ctx, &file, opts)),
         }
     }
 
@@ -584,15 +595,27 @@ impl Cursor {
 ///
 /// 声明损坏时**暂停收敛并保留现场**（不 `exit`）：用户正在编辑的文件经常短暂失效，
 /// 为一个半截 TOML 退出常驻进程比暂停更糟。修好之后指纹变化，自然恢复。
-pub fn watch(ctx: &Ctx, path: &Path, opts: &Opts, interval: Duration) -> ! {
+///
+/// `on_first_round` 在**首轮收敛之后**调用（`Type=notify` 的 `READY=1` 就挂在这里）。
+/// 顺序反了就退化成「进程起来了就报就绪」，也就是 `Type=simple` 的老问题换个写法。
+pub fn watch(
+    ctx: &Ctx,
+    path: &Path,
+    opts: &Opts,
+    interval: Duration,
+    on_first_round: &dyn Fn(&[Step]),
+) -> ! {
     let mut cursor = Cursor::new();
     // 声明指纹轮询（轻，每秒一次）与健康巡检（重，要发 TCP）共用这个循环，
     // 但节拍不同：巡检自己按 `--health-interval` 节流，策略为 `Never` 时直接返回。
     let mut health = restart::Health::new(opts.health);
+    // 首轮单独提出来只为那条顺序约束；循环体仍是 tick → health → sleep，与原实现一致。
+    let first = cursor.tick(ctx, path, opts).unwrap_or_default();
+    on_first_round(&first);
     loop {
-        cursor.tick(ctx, path, opts);
         health.tick(ctx, path, opts);
         std::thread::sleep(interval);
+        let _ = cursor.tick(ctx, path, opts);
     }
 }
 
