@@ -294,3 +294,39 @@ mod web_search_wall_tests {
         );
     }
 }
+
+/// 只读判定是**单一真源**的 golden：全部工具名都要被分类，且两个口径不许各判一套。
+#[cfg(test)]
+mod readonly_single_source_tests {
+    use super::*;
+
+    #[test]
+    fn readonly_classification_covers_every_tool_name() {
+        let cfg = crate::cm_config::load_config(None).expect("embed default");
+        let writes = builtin_write_effect_tools();
+        for name in tool_names::ALL {
+            let exec = is_readonly_tool(&cfg, name);
+            assert_eq!(
+                exec,
+                !writes.contains(*name),
+                "`{name}` 的执行口径与写效应名单不一致"
+            );
+            assert_eq!(
+                is_readonly_tool_for_permission(name),
+                exec,
+                "`{name}` 的权限口径与执行口径不能各判一套"
+            );
+        }
+    }
+
+    #[test]
+    fn non_builtin_origins_are_never_readonly() {
+        let cfg = crate::cm_config::load_config(None).expect("embed default");
+        // 外部工具前缀只有 `mcp__`（MCP 代理）与 `dyn__`（`plugins/*.json` 动态工具）；
+        // `tool_` 曾是旧实现里的误写，不是真实前缀，故不在此列。
+        for name in ["mcp__srv__read", "dyn__plugin_tool"] {
+            assert!(!is_readonly_tool(&cfg, name), "`{name}` 不得判为只读");
+            assert!(!is_readonly_tool_for_permission(name), "`{name}` 同上（权限口径）");
+        }
+    }
+}
