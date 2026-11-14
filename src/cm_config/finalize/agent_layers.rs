@@ -169,7 +169,7 @@ fn load_required_system_prompt_for_finalize(
     run_command_working_dir: &Path,
 ) -> Result<String, String> {
     let system_prompt = if let Some(ref path) = b.roles_prompts.system_prompt_file {
-        read_system_prompt_file_resolved(
+        super::prompts::read_system_prompt_file_resolved(
             path,
             system_prompt_search_bases,
             run_command_working_dir,

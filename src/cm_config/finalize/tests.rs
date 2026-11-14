@@ -8,7 +8,7 @@ mod background_job_defaults_tests {
 
     #[test]
     fn background_job_fields_default_and_clamp() {
-        let tr = derive_tool_registry_fields(&ConfigBuilder::default());
+        let tr = super::derived::derive_tool_registry_fields(&ConfigBuilder::default());
         assert!(tr.tool_registry_background_jobs_enabled);
         assert_eq!(
             tr.tool_registry_background_job_async_tools
@@ -30,7 +30,7 @@ mod background_job_defaults_tests {
         b.tool_registry_policy.tool_registry_background_job_max_concurrent = Some(999);
         b.tool_registry_policy.tool_registry_background_job_ttl_secs = Some(1_000_000);
         b.tool_registry_policy.tool_registry_background_job_output_buffer_bytes = Some(30_000_000);
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 256);
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 604_800);
@@ -43,7 +43,7 @@ mod background_job_defaults_tests {
         // 白名单清洗：trim + 滤空串。
         b.tool_registry_policy.tool_registry_background_job_async_tools =
             Some(vec![" cargo_test ".to_string(), String::new()]);
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert_eq!(
             tr.tool_registry_background_job_async_tools
                 .iter()
@@ -54,7 +54,7 @@ mod background_job_defaults_tests {
 
         // 显式空数组 = 全部禁用（区别于 `None` 落默认白名单）。
         b.tool_registry_policy.tool_registry_background_job_async_tools = Some(Vec::new());
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_job_async_tools.is_empty());
     }
 
@@ -88,7 +88,7 @@ background_job_output_buffer_bytes = 524288
 
         let mut b = ConfigBuilder::default();
         b.apply_tool_registry(sec);
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
         assert!(
             tr.tool_registry_background_job_async_tools.contains("cargo_test")
@@ -105,13 +105,13 @@ background_job_output_buffer_bytes = 524288
 
     #[test]
     fn tool_retry_fields_default_and_clamp() {
-        let tr = derive_tool_registry_fields(&ConfigBuilder::default());
+        let tr = super::derived::derive_tool_registry_fields(&ConfigBuilder::default());
         assert!(!tr.tool_registry_tool_retry_enabled);
         assert_eq!(tr.tool_registry_tool_retry_max_attempts, 2);
         assert_eq!(tr.tool_registry_tool_retry_backoff_ms, 250);
         assert_eq!(
             tr.tool_registry_tool_retry_error_codes.as_ref(),
-            &default_tool_retry_error_codes()
+            &super::derived::default_tool_retry_error_codes()
                 .into_iter()
                 .collect::<HashSet<_>>()
         );
@@ -123,7 +123,7 @@ background_job_output_buffer_bytes = 524288
         b.tool_registry_policy.tool_registry_tool_retry_backoff_ms = Some(20_000);
         b.tool_registry_policy.tool_registry_tool_retry_error_codes =
             Some(vec!["timeout".into(), " custom ".into()]);
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_tool_retry_enabled);
         assert_eq!(tr.tool_registry_tool_retry_max_attempts, 5);
         assert_eq!(tr.tool_registry_tool_retry_backoff_ms, 10_000);
@@ -162,7 +162,7 @@ tool_retry_denied_tools = ["http_fetch"]
 
         let mut b = ConfigBuilder::default();
         b.apply_tool_registry(sec);
-        let tr = derive_tool_registry_fields(&b);
+        let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_tool_retry_enabled);
         assert_eq!(tr.tool_registry_tool_retry_max_attempts, 3);
         assert_eq!(tr.tool_registry_tool_retry_backoff_ms, 500);

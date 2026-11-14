@@ -161,7 +161,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         .unwrap_or(0.65)
         .clamp(0.0, 1.0);
     let thinking_avoid_echo_system_prompt = b.thinking_echo.thinking_avoid_echo_system_prompt.unwrap_or(true);
-    let thinking_avoid_echo_appendix = resolve_thinking_avoid_echo_appendix(
+    let thinking_avoid_echo_appendix = super::prompts::resolve_thinking_avoid_echo_appendix(
         thinking_avoid_echo_system_prompt,
         b.thinking_echo.thinking_avoid_echo_appendix.as_deref(),
         b.thinking_echo.thinking_avoid_echo_appendix_file.as_deref(),
@@ -375,7 +375,7 @@ fn derive_tail_sandbox_web_scalars(
                 .as_deref()
                 .unwrap_or(""),
         );
-    validate_docker_sandbox_image(
+    super::checks::validate_docker_sandbox_image(
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image.as_str(),
     )?;
@@ -784,7 +784,7 @@ pub(super) fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<F
 pub(super) fn derive_session_policy(
     b: &ConfigBuilder,
 ) -> Result<(crate::cm_types::SessionMode, types::PermissionConfig), String> {
-    let session_mode = parse_builder_default_session_mode(b)?;
+    let session_mode = super::checks::parse_builder_default_session_mode(b)?;
     let permission = super::super::permission::derive_permission_config(b)?;
     Ok((session_mode, permission))
 }

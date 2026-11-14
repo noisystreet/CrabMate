@@ -1,5 +1,3 @@
-//! 将 [`super::builder::ConfigBuilder`] 校验、clamp 并组装为 [`super::types::AgentConfig`]。
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,255 +15,23 @@ use super::workspace_roots;
 use crate::cm_names as tool_names;
 
 mod agent_layers;
+mod checks;
+mod derived;
+mod prompts;
+
+pub use self::prompts::{
+    embedded_context_summary_system, embedded_context_summary_user_template,
+    embedded_session_mode_appendix, embedded_thinking_avoid_echo_appendix,
+};
+pub(crate) use self::prompts::{resolve_coding_workbench_increment, resolve_context_summary_prompts};
 mod build;
 mod tail;
 
 pub(in crate::cm_config) use self::build::finalize;
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests;
-
-/// 读取 `system_prompt_file`：绝对路径直接读；否则依次尝试 cwd、各配置目录（后加载的优先）、`run_command_working_dir`。
-fn read_system_prompt_file_resolved(
-    raw: &str,
-    config_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-) -> Result<String, String> {
-    let raw = raw.trim();
-    let path = Path::new(raw);
-    if path.is_absolute() {
-        return std::fs::read_to_string(path)
-            .map_err(|e| format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e));
-    }
-
-    let mut tried: Vec<String> = Vec::new();
-
-    if let Ok(s) = std::fs::read_to_string(path) {
-        return Ok(s);
-    }
-    tried.push(
-        std::env::current_dir()
-            .map(|cwd| cwd.join(path).display().to_string())
-            .unwrap_or_else(|_| path.display().to_string()),
-    );
-
-    for base in config_bases.iter().rev() {
-        let candidate = base.join(path);
-        if let Ok(s) = std::fs::read_to_string(&candidate) {
-            return Ok(s);
-        }
-        tried.push(candidate.display().to_string());
-    }
-
-    let work_candidate = run_command_working_dir.join(path);
-    if let Ok(s) = std::fs::read_to_string(&work_candidate) {
-        return Ok(s);
-    }
-    tried.push(work_candidate.display().to_string());
-
-    Err(format!(
-        "无法读取 system_prompt_file \"{}\"（相对路径）。已尝试: {}",
-        raw,
-        tried.join(" | ")
-    ))
-}
-
-/// 内置默认附录（与仓库 **`config/prompts/thinking_avoid_echo_appendix.md`** 一致；未配置路径或读盘失败时采用）。
-const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
-    include_str!("../../../config/prompts/thinking_avoid_echo_appendix.md");
-
-/// 编程工作台增量（与 **`config/prompts/coding_workbench_increment.md`** 一致）。
-const EMBEDDED_CODING_WORKBENCH_INCREMENT: &str =
-    include_str!("../../../config/prompts/coding_workbench_increment.md");
-
-const EMBEDDED_MODE_ASK: &str = include_str!("../../../config/prompts/mode_ask.md");
-const EMBEDDED_MODE_PLAN: &str = include_str!("../../../config/prompts/mode_plan.md");
-const EMBEDDED_MODE_ACT: &str = include_str!("../../../config/prompts/mode_act.md");
-
-/// 上下文 LLM 摘要 system（与 **`config/prompts/context_summary_system.md`** 一致）。
-const EMBEDDED_CONTEXT_SUMMARY_SYSTEM: &str =
-    include_str!("../../../config/prompts/context_summary_system.md");
-
-/// 上下文 LLM 摘要 user 模板（占位符 `{max_tokens}` / `{transcript}`；`{max_chars}` 为别名）。
-const EMBEDDED_CONTEXT_SUMMARY_USER: &str =
-    include_str!("../../../config/prompts/context_summary_user.md");
-
-/// 与 `resolve_thinking_avoid_echo_appendix` 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
-pub fn embedded_thinking_avoid_echo_appendix() -> &'static str {
-    EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
-}
-
-/// 内置上下文摘要 system；读盘失败或空文件时回退。
-pub fn embedded_context_summary_system() -> &'static str {
-    EMBEDDED_CONTEXT_SUMMARY_SYSTEM.trim()
-}
-
-/// 内置上下文摘要 user 模板；读盘失败或空文件时回退。
-pub fn embedded_context_summary_user_template() -> &'static str {
-    EMBEDDED_CONTEXT_SUMMARY_USER.trim()
-}
-
-/// 会话模式附录（Ask / Plan / Act）；供首条 system 组装。
-pub fn embedded_session_mode_appendix(mode: crate::cm_types::SessionMode) -> &'static str {
-    match mode {
-        crate::cm_types::SessionMode::Ask => EMBEDDED_MODE_ASK.trim(),
-        crate::cm_types::SessionMode::Plan => EMBEDDED_MODE_PLAN.trim(),
-        crate::cm_types::SessionMode::Act => EMBEDDED_MODE_ACT.trim(),
-    }
-}
-
-/// 默认全局会话与工程向角色共用的编程层增量正文。
-pub(crate) fn embedded_coding_workbench_increment() -> &'static str {
-    EMBEDDED_CODING_WORKBENCH_INCREMENT.trim()
-}
-
-/// 读盘解析编程工作台增量；禁用时或读盘失败（回退嵌入默认）返回空或默认正文。
-pub(crate) fn resolve_coding_workbench_increment(
-    enabled: bool,
-    file: &str,
-    config_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-) -> Result<String, String> {
-    if !enabled {
-        return Ok(String::new());
-    }
-    let file = file.trim();
-    let path = if file.is_empty() {
-        "config/prompts/coding_workbench_increment.md"
-    } else {
-        file
-    };
-    match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
-        Ok(raw) => {
-            let t = raw.trim().to_string();
-            if t.is_empty() {
-                Ok(embedded_coding_workbench_increment().to_string())
-            } else {
-                Ok(t)
-            }
-        }
-        Err(_) => Ok(embedded_coding_workbench_increment().to_string()),
-    }
-}
-
-const DEFAULT_CONTEXT_SUMMARY_SYSTEM_FILE: &str = "config/prompts/context_summary_system.md";
-const DEFAULT_CONTEXT_SUMMARY_USER_FILE: &str = "config/prompts/context_summary_user.md";
-const CONTEXT_SUMMARY_PROMPT_MAX_CHARS: usize = 32_768;
-
-fn resolve_prompt_file_or_embedded(
-    file: Option<&str>,
-    default_file: &str,
-    embedded: &str,
-    label: &str,
-    config_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-) -> String {
-    let path = file
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(default_file);
-    let body = match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
-        Ok(raw) => {
-            let t = raw.trim().to_string();
-            if t.is_empty() {
-                log::warn!(
-                    target: "crabmate",
-                    "{label} 读盘为空（{path}），使用内置正文"
-                );
-                embedded.to_string()
-            } else {
-                t
-            }
-        }
-        Err(e) => {
-            log::warn!(
-                target: "crabmate",
-                "{e}，使用内置 {label}"
-            );
-            embedded.to_string()
-        }
-    };
-    if body.chars().count() > CONTEXT_SUMMARY_PROMPT_MAX_CHARS {
-        log::warn!(
-            target: "crabmate",
-            "{label} 超过 {CONTEXT_SUMMARY_PROMPT_MAX_CHARS} 字符，改用内置正文"
-        );
-        return embedded.to_string();
-    }
-    body
-}
-
-/// 解析上下文摘要 system / user 模板（读盘优先，失败回退嵌入）。
-pub(crate) fn resolve_context_summary_prompts(
-    system_file: Option<&str>,
-    user_file: Option<&str>,
-    config_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-) -> (String, String) {
-    let system = resolve_prompt_file_or_embedded(
-        system_file,
-        DEFAULT_CONTEXT_SUMMARY_SYSTEM_FILE,
-        embedded_context_summary_system(),
-        "context_summary_system",
-        config_bases,
-        run_command_working_dir,
-    );
-    let user = resolve_prompt_file_or_embedded(
-        user_file,
-        DEFAULT_CONTEXT_SUMMARY_USER_FILE,
-        embedded_context_summary_user_template(),
-        "context_summary_user",
-        config_bases,
-        run_command_working_dir,
-    );
-    (system, user)
-}
-
-fn resolve_thinking_avoid_echo_appendix(
-    enabled: bool,
-    inline: Option<&str>,
-    file: Option<&str>,
-    config_bases: &[PathBuf],
-    run_command_working_dir: &Path,
-) -> Result<String, String> {
-    const MAX_CHARS: usize = 32_768;
-    if !enabled {
-        return Ok(String::new());
-    }
-    let body = if let Some(path) = file.map(str::trim).filter(|s| !s.is_empty()) {
-        match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
-            Ok(raw) => {
-                let t = raw.trim().to_string();
-                if t.is_empty() {
-                    log::warn!(
-                        target: "crabmate",
-                        "thinking_avoid_echo_appendix_file 读盘为空，使用内置附录"
-                    );
-                    EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
-                } else {
-                    t
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    target: "crabmate",
-                    "{e}，使用内置 thinking_avoid_echo 附录"
-                );
-                EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
-            }
-        }
-    } else if let Some(s) = inline.map(str::trim).filter(|s| !s.is_empty()) {
-        s.to_string()
-    } else {
-        EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
-    };
-    if body.chars().count() > MAX_CHARS {
-        return Err(format!(
-            "配置错误：thinking_avoid_echo 附录正文超过 {MAX_CHARS} 字符"
-        ));
-    }
-    Ok(body)
-}
 
 /// `context_char_budget > 0` 且 `context_min_messages_after_system >= max_message_history` 时，按字符删旧消息往往难以生效（条数裁剪已收紧窗口）。
 pub(crate) fn context_budget_vs_history_suspicious(
@@ -274,35 +40,6 @@ pub(crate) fn context_budget_vs_history_suspicious(
     context_min_messages_after_system: usize,
 ) -> bool {
     context_char_budget > 0 && context_min_messages_after_system >= max_message_history
-}
-
-fn validate_ltm_backend_when_enabled(
-    enabled: bool,
-    backend: LongTermMemoryVectorBackend,
-) -> Result<(), String> {
-    if !enabled {
-        return Ok(());
-    }
-    match backend {
-        LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector => Err(
-            "配置错误：长期记忆向量后端 qdrant / pgvector 尚未接入；请使用 disabled 或 fastembed，或关闭 long_term_memory_enabled"
-                .to_string(),
-        ),
-        LongTermMemoryVectorBackend::Disabled | LongTermMemoryVectorBackend::Fastembed => Ok(()),
-    }
-}
-
-fn validate_docker_sandbox_image(
-    mode: types::SyncDefaultToolSandboxMode,
-    image: &str,
-) -> Result<(), String> {
-    if mode == types::SyncDefaultToolSandboxMode::Docker && image.trim().is_empty() {
-        return Err(
-            "配置错误：sync_default_tool_sandbox_mode=docker 时必须设置非空的 sync_default_tool_sandbox_docker_image"
-                .to_string(),
-        );
-    }
-    Ok(())
 }
 
 struct ToolRegistryDerived {
@@ -333,219 +70,9 @@ struct ToolRegistryDerived {
     tool_registry_disabled_tool_prefixes: Option<Arc<[String]>>,
 }
 
-fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
-    let tr = &b.tool_registry_policy;
-    ToolRegistryDerived {
-        tool_registry_http_fetch_wall_timeout_secs: tr
-            .tool_registry_http_fetch_wall_timeout_secs
-            .map(|s| s.clamp(1, 86_400)),
-        tool_registry_http_request_wall_timeout_secs: tr
-            .tool_registry_http_request_wall_timeout_secs
-            .map(|s| s.clamp(1, 86_400)),
-        tool_registry_parallel_wall_timeout_secs: Arc::new(
-            tr.tool_registry_parallel_wall_timeout_secs
-                .iter()
-                .map(|(k, v)| (k.clone(), (*v).clamp(1, 86_400)))
-                .collect::<HashMap<_, _>>(),
-        ),
-        tool_registry_parallel_sync_denied_tools: tr
-            .tool_registry_parallel_sync_denied_tools
-            .as_ref()
-            .map(|v| {
-                Arc::new(
-                    v.iter()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect::<HashSet<_>>(),
-                )
-            }),
-        tool_registry_parallel_sync_denied_prefixes: tr
-            .tool_registry_parallel_sync_denied_prefixes
-            .as_ref()
-            .map(|v| {
-                let cleaned: Vec<String> = v
-                    .iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                Arc::from(cleaned.into_boxed_slice())
-            }),
-        tool_registry_sync_default_inline_tools: tr
-            .tool_registry_sync_default_inline_tools
-            .as_ref()
-            .map(|v| {
-                Arc::new(
-                    v.iter()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect::<HashSet<_>>(),
-                )
-            }),
-        tool_registry_write_effect_tools: tr.tool_registry_write_effect_tools.as_ref().map(|v| {
-            Arc::new(
-                v.iter()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect::<HashSet<_>>(),
-            )
-        }),
-        tool_registry_sub_agent_patch_write_extra_tools: tr
-            .tool_registry_sub_agent_patch_write_extra_tools
-            .as_ref()
-            .map(|v| {
-                Arc::new(
-                    v.iter()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect::<HashSet<_>>(),
-                )
-            }),
-        tool_registry_sub_agent_test_runner_extra_tools: tr
-            .tool_registry_sub_agent_test_runner_extra_tools
-            .as_ref()
-            .map(|v| {
-                Arc::new(
-                    v.iter()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect::<HashSet<_>>(),
-                )
-            }),
-        tool_registry_sub_agent_review_readonly_deny_tools: tr
-            .tool_registry_sub_agent_review_readonly_deny_tools
-            .as_ref()
-            .map(|v| {
-                Arc::new(
-                    v.iter()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect::<HashSet<_>>(),
-                )
-            }),
-        // 后台工具任务：默认值/范围见 `docs/design/background_tool_jobs_contract.md` §6；
-        // validate.rs 先拒绝越界，此处 clamp 仅作兜底。
-        // 总开关默认 `true`（模型仍须显式传 `async=true` 才走后台；白名单默认仅 `run_command`）。
-        tool_registry_background_jobs_enabled: tr
-            .tool_registry_background_jobs_enabled
-            .unwrap_or(true),
-        tool_registry_background_job_async_tools: Arc::new(
-            tr.tool_registry_background_job_async_tools
-                .clone()
-                .unwrap_or_else(default_background_job_async_tools)
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<HashSet<_>>(),
-        ),
-        tool_registry_background_job_max_concurrent: tr
-            .tool_registry_background_job_max_concurrent
-            .unwrap_or(4)
-            .clamp(1, 256),
-        tool_registry_background_job_max_queued: tr
-            .tool_registry_background_job_max_queued
-            .unwrap_or(32)
-            .clamp(0, 10_000),
-        tool_registry_background_job_ttl_secs: tr
-            .tool_registry_background_job_ttl_secs
-            .unwrap_or(86_400)
-            .clamp(1, 604_800),
-        tool_registry_background_job_result_grace_secs: tr
-            .tool_registry_background_job_result_grace_secs
-            .unwrap_or(300)
-            .clamp(0, 86_400),
-        tool_registry_background_job_max_entries: tr
-            .tool_registry_background_job_max_entries
-            .unwrap_or(128)
-            .clamp(1, 10_000),
-        tool_registry_background_job_output_buffer_bytes: tr
-            .tool_registry_background_job_output_buffer_bytes
-            .unwrap_or(262_144)
-            .clamp(4096, 16_777_216),
-        // 工具失败透明重试（默认关闭；默认码集为瞬时可重试类，validate 拒绝越界，此处仅兜底）。
-        tool_registry_tool_retry_enabled: tr
-            .tool_registry_tool_retry_enabled
-            .unwrap_or(false),
-        tool_registry_tool_retry_max_attempts: tr
-            .tool_registry_tool_retry_max_attempts
-            .unwrap_or(2)
-            .clamp(1, 5),
-        tool_registry_tool_retry_backoff_ms: tr
-            .tool_registry_tool_retry_backoff_ms
-            .unwrap_or(250)
-            .clamp(0, 10_000),
-        tool_registry_tool_retry_error_codes: Arc::new(
-            tr.tool_registry_tool_retry_error_codes
-                .clone()
-                .unwrap_or_else(default_tool_retry_error_codes)
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<HashSet<_>>(),
-        ),
-        tool_registry_tool_retry_denied_tools: Arc::new(
-            tr.tool_registry_tool_retry_denied_tools
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<HashSet<_>>(),
-        ),
-        // 工具启停：名单/前缀去空白、剔除空串；`None` 保持 `None`（= 不按名单禁用）。
-        tool_registry_disabled_tools: tr
-            .tool_registry_disabled_tools
-            .as_ref()
-            .map(|v| Arc::new(clean_str_list(v).into_iter().collect::<HashSet<_>>())),
-        tool_registry_disabled_tool_prefixes: tr
-            .tool_registry_disabled_tool_prefixes
-            .as_ref()
-            .map(|v| Arc::from(clean_str_list(v).into_boxed_slice())),
-    }
-}
-
-/// 去空白、剔除空串（工具启停名单/前缀类字段共用）。
-fn clean_str_list(v: &[String]) -> Vec<String> {
-    v.iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// 允许 `async=true` 的内建工具默认白名单（用户可用 `background_job_async_tools` 覆盖；空数组 = 全部禁用）。
-fn default_background_job_async_tools() -> Vec<String> {
-    vec![tool_names::RUN_COMMAND.to_string()]
-}
-
-/// 工具失败透明重试的默认可重试错误码（瞬时可重试类；用户可用 `tool_retry_error_codes` 覆盖）。
-fn default_tool_retry_error_codes() -> Vec<String> {
-    [
-        "timeout",
-        "http_timeout",
-        "rate_limited",
-        "http_network_error",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
-}
-
 struct IntentDerived {
     llm_http_auth_mode: types::LlmHttpAuthMode,
     llm_reasoning_split: bool,
-}
-
-fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
-    let llm_http_auth_mode = match b.llm.llm_http_auth_mode_str.as_deref() {
-        Some(s) => types::LlmHttpAuthMode::parse(s)?,
-        None => types::LlmHttpAuthMode::default(),
-    };
-    let llm_reasoning_split = b.llm_vendor.llm_reasoning_split.unwrap_or_else(|| {
-        crate::cm_config::gateway_hints::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
-    });
-    Ok(IntentDerived {
-        llm_http_auth_mode,
-        llm_reasoning_split,
-    })
 }
 
 struct LtmDerived {
@@ -564,82 +91,6 @@ struct LtmDerived {
     long_term_memory_default_ttl_secs: u64,
 }
 
-fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
-    let long_term_memory_enabled = b.long_term_memory.long_term_memory_enabled.unwrap_or(true);
-    let long_term_memory_vector_backend = match b
-        .long_term_memory
-        .long_term_memory_vector_backend_str
-        .as_deref()
-    {
-        Some(s) => LongTermMemoryVectorBackend::parse(s)?,
-        None => LongTermMemoryVectorBackend::default(),
-    };
-    #[cfg(not(feature = "fastembed"))]
-    let long_term_memory_vector_backend = if long_term_memory_enabled
-        && long_term_memory_vector_backend == LongTermMemoryVectorBackend::Fastembed
-    {
-        LongTermMemoryVectorBackend::Disabled
-    } else {
-        long_term_memory_vector_backend
-    };
-    validate_ltm_backend_when_enabled(long_term_memory_enabled, long_term_memory_vector_backend)?;
-    Ok(LtmDerived {
-        long_term_memory_enabled,
-        long_term_memory_vector_backend,
-        long_term_memory_max_entries: b
-            .long_term_memory
-            .long_term_memory_max_entries
-            .unwrap_or(256)
-            .clamp(1, 100_000) as usize,
-        long_term_memory_inject_max_chars: b
-            .long_term_memory
-            .long_term_memory_inject_max_chars
-            .unwrap_or(8000)
-            .clamp(256, 500_000) as usize,
-        long_term_memory_store_sqlite_path: b
-            .long_term_memory
-            .long_term_memory_store_sqlite_path
-            .clone()
-            .unwrap_or_default(),
-        long_term_memory_top_k: b
-            .long_term_memory
-            .long_term_memory_top_k
-            .unwrap_or(8)
-            .clamp(1, 64) as usize,
-        long_term_memory_max_chars_per_chunk: b
-            .long_term_memory
-            .long_term_memory_max_chars_per_chunk
-            .unwrap_or(1024)
-            .clamp(256, 32_000) as usize,
-        long_term_memory_min_chars_to_index: b
-            .long_term_memory
-            .long_term_memory_min_chars_to_index
-            .unwrap_or(8)
-            .clamp(0, 4096) as usize,
-        long_term_memory_async_index: b
-            .long_term_memory
-            .long_term_memory_async_index
-            .unwrap_or(true),
-        long_term_memory_auto_index_turns: b
-            .long_term_memory
-            .long_term_memory_auto_index_turns
-            .unwrap_or(true),
-        long_term_memory_auto_summarize_experience: b
-            .long_term_memory
-            .long_term_memory_auto_summarize_experience
-            .unwrap_or(true),
-        long_term_memory_prioritize_experience_recall: b
-            .long_term_memory
-            .long_term_memory_prioritize_experience_recall
-            .unwrap_or(true),
-        long_term_memory_default_ttl_secs: b
-            .long_term_memory
-            .long_term_memory_default_ttl_secs
-            .unwrap_or(0)
-            .clamp(0, 365 * 86400 * 10),
-    })
-}
-
 struct CodebaseSemanticDerived {
     codebase_semantic_search_enabled: bool,
     codebase_semantic_invalidate_on_workspace_change: bool,
@@ -653,76 +104,6 @@ struct CodebaseSemanticDerived {
     codebase_semantic_hybrid_alpha: f32,
     codebase_semantic_fts_top_n: usize,
     codebase_semantic_hybrid_semantic_pool: usize,
-}
-
-fn derive_codebase_semantic(b: &ConfigBuilder) -> CodebaseSemanticDerived {
-    #[cfg(feature = "fastembed")]
-    let codebase_semantic_search_enabled = b
-        .codebase_semantic
-        .codebase_semantic_search_enabled
-        .unwrap_or(true);
-    #[cfg(not(feature = "fastembed"))]
-    let codebase_semantic_search_enabled = false;
-    let mut codebase_semantic_hybrid_alpha = b
-        .codebase_semantic
-        .codebase_semantic_hybrid_alpha
-        .unwrap_or(0.55_f64) as f32;
-    if !codebase_semantic_hybrid_alpha.is_finite() {
-        codebase_semantic_hybrid_alpha = 0.55;
-    }
-    codebase_semantic_hybrid_alpha = codebase_semantic_hybrid_alpha.clamp(0.0, 1.0);
-    CodebaseSemanticDerived {
-        codebase_semantic_search_enabled,
-        codebase_semantic_invalidate_on_workspace_change: b
-            .codebase_semantic
-            .codebase_semantic_invalidate_on_workspace_change
-            .unwrap_or(true),
-        codebase_semantic_index_sqlite_path: b
-            .codebase_semantic
-            .codebase_semantic_index_sqlite_path
-            .clone()
-            .unwrap_or_default(),
-        codebase_semantic_max_file_bytes: b
-            .codebase_semantic
-            .codebase_semantic_max_file_bytes
-            .unwrap_or(512 * 1024)
-            .clamp(4096, 4 * 1024 * 1024) as usize,
-        codebase_semantic_chunk_max_chars: b
-            .codebase_semantic
-            .codebase_semantic_chunk_max_chars
-            .unwrap_or(1200)
-            .clamp(256, 16_000) as usize,
-        codebase_semantic_top_k: b
-            .codebase_semantic
-            .codebase_semantic_top_k
-            .unwrap_or(8)
-            .clamp(1, 64) as usize,
-        codebase_semantic_query_max_chunks: b
-            .codebase_semantic
-            .codebase_semantic_query_max_chunks
-            .unwrap_or(50_000)
-            .clamp(0, 2_000_000) as usize,
-        codebase_semantic_rebuild_max_files: b
-            .codebase_semantic
-            .codebase_semantic_rebuild_max_files
-            .unwrap_or(2000)
-            .clamp(1, 100_000) as usize,
-        codebase_semantic_rebuild_incremental: b
-            .codebase_semantic
-            .codebase_semantic_rebuild_incremental
-            .unwrap_or(true),
-        codebase_semantic_hybrid_alpha,
-        codebase_semantic_fts_top_n: b
-            .codebase_semantic
-            .codebase_semantic_fts_top_n
-            .unwrap_or(400)
-            .clamp(1, 10_000) as usize,
-        codebase_semantic_hybrid_semantic_pool: b
-            .codebase_semantic
-            .codebase_semantic_hybrid_semantic_pool
-            .unwrap_or(256)
-            .clamp(1, 10_000) as usize,
-    }
 }
 
 /// `finalize_agent_config` 在角色目录就绪后的后半段（降低单函数 CCN）。
@@ -760,93 +141,22 @@ struct FinalizeAfterRoles {
     permission: types::PermissionConfig,
 }
 
-fn validate_required_llm_endpoints(b: &ConfigBuilder) -> Result<(), String> {
-    if b.llm.api_base.is_empty() {
-        return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_API_BASE 中设置）".to_string());
-    }
-    if b.llm.model.is_empty() {
-        return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_MODEL 中设置）".to_string());
-    }
-    Ok(())
-}
-
-fn canonical_run_command_working_dir(b: &ConfigBuilder) -> Result<PathBuf, String> {
-    let raw = b
-        .command_exec
-        .run_command_working_dir
-        .clone()
-        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 CM_RUN_COMMAND_WORKING_DIR 中设置）")?;
-    let p = Path::new(&raw);
-    let p = match p.canonicalize() {
-        Ok(path) => path,
-        Err(e) => {
-            return Err(format!(
-                "配置错误：run_command_working_dir \"{}\" 不存在或无法解析: {}",
-                p.display(),
-                e
-            ));
-        }
-    };
-    if !p.is_dir() {
-        return Err(format!(
-            "配置错误：run_command_working_dir \"{}\" 不是目录",
-            p.display()
-        ));
-    }
-    Ok(p)
-}
-
-fn parse_builder_default_session_mode(
-    b: &ConfigBuilder,
-) -> Result<crate::cm_types::SessionMode, String> {
-    match b
-        .roles_prompts
-        .default_session_mode
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        None => Ok(crate::cm_types::SessionMode::Act),
-        Some(s) => crate::cm_types::parse_session_mode(s)
-            .map_err(|e| format!("配置错误：default_session_mode：{e}")),
-    }
-}
-
-fn resolve_finalize_workspace_paths(
-    b: &ConfigBuilder,
-) -> Result<(PathBuf, Vec<PathBuf>, Option<PathBuf>), String> {
-    let run_command_working_dir = canonical_run_command_working_dir(b)?;
-    let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
-        b.workspace_roots.workspace_allowed_roots.clone(),
-        run_command_working_dir.as_path(),
-    )?;
-    let web_workspace_pool = workspace_roots::resolve_web_workspace_pool(
-        b.workspace_roots.web_workspace_pool.clone(),
-        workspace_allowed_roots.as_slice(),
-    )?;
-    Ok((
-        run_command_working_dir,
-        workspace_allowed_roots,
-        web_workspace_pool,
-    ))
-}
-
 /// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
 fn finalize_agent_config(
     mut b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
     validate::validate_builder_numeric_ranges(&b)?;
-    validate_required_llm_endpoints(&b)?;
-    let tr = derive_tool_registry_fields(&b);
-    let intent = derive_intent_fields(&b)?;
-    let ltm = derive_ltm(&b)?;
-    let sem = derive_codebase_semantic(&b);
+    checks::validate_required_llm_endpoints(&b)?;
+    let tr = derived::derive_tool_registry_fields(&b);
+    let intent = derived::derive_intent_fields(&b)?;
+    let ltm = derived::derive_ltm(&b)?;
+    let sem = derived::derive_codebase_semantic(&b);
     let mid = agent_layers::clamp_finalize_mid_layer_scalars(&b);
     let allowed_commands = agent_layers::allowed_commands_arc_from_builder(&b);
 
     let (run_command_working_dir, workspace_allowed_roots, web_workspace_pool) =
-        resolve_finalize_workspace_paths(&b)?;
+        checks::resolve_finalize_workspace_paths(&b)?;
 
     let pm = agent_layers::merge_system_prompt_layers_for_finalize(
         &mut b,
