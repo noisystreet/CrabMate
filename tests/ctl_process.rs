@@ -188,6 +188,57 @@ fn up_reaches_ready_and_ls_reports_matching_base_url() {
     );
 }
 
+/// `supervise --dry-run --json` 的计划是对外契约，且**不含 env 值**。
+#[test]
+fn supervise_dry_run_json_reports_the_plan() {
+    let sb = Sandbox::new();
+    let ws = sb.workspace("proj-a");
+    sb.write_declaration(&format!(
+        "[instances.a]\nworkspace = \"{}\"\nport = 18141\n\n[instances.a.env]\nRUST_LOG = \"debug\"\n",
+        ws.display()
+    ));
+
+    // `--json` 不配 `--dry-run` 必须被 clap 拦下：一次性收敛的**结果态**不在契约里，
+    // 放行只会让脚本以为拿到的是同一份形状。
+    let bare = sb.run(&["supervise", "--from-config", "--json"]);
+    assert!(!bare.status.success(), "`--json` 未配 `--dry-run` 应报错");
+    assert!(
+        String::from_utf8_lossy(&bare.stderr).contains("dry-run"),
+        "错误信息应指向缺失的 `--dry-run`：{}",
+        String::from_utf8_lossy(&bare.stderr)
+    );
+
+    let out = sb.run(&["supervise", "--from-config", "--dry-run", "--json"]);
+    assert!(
+        out.status.success(),
+        "supervise --dry-run --json 失败：\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let steps: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("计划应是合法 JSON 数组");
+    let first = &steps[0];
+    assert_eq!(first["name"], "a");
+    assert_eq!(first["action"], "start");
+    assert_eq!(first["port"], 18141);
+    // 与 `ls --json` 同一理由：字段集是契约。单元层已钉 `step_json`，
+    // 这里再钉**真实输出**，防止有人给 `--json` 换一条序列化路径。
+    assert_eq!(
+        sorted_keys(first),
+        contract_keys("supervise_step"),
+        "supervise --dry-run --json 的字段集与 fixtures/ctl_contract.json 不一致"
+    );
+    // 值不进输出（只有键名）：dry-run 的输出经常被贴进 issue 或写进脚本日志。
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("\"debug\""),
+        "env 值不得出现在计划输出里：{stdout}"
+    );
+    assert!(
+        stdout.contains("RUST_LOG"),
+        "env 的**名**应当可见，否则用户不知道计划里带了哪些变量：{stdout}"
+    );
+}
+
 /// 读 `fixtures/ctl_contract.json` 里的一组字段（已排序）；与单元测试读同一份 golden。
 fn contract_keys(field: &str) -> Vec<String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ctl_contract.json");

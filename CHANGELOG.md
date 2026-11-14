@@ -12,6 +12,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **`supervise --dry-run --json` exposes the convergence plan as JSON (#1355 D).** `ls` and `status` had
+  `--json`, but the reconcile plan — the thing a client wants to show as "what will this round do" — was only
+  available as a Chinese table. Each step now serialises with a **fixed key set** (`name` / `action` / `reason`,
+  plus `restart` / `port` / `workspace` / `profile` / `no_tools` / `env_keys` / `cred_keys` with `null` where
+  unused), so a client parses one shape instead of branching per action. `--json` **requires** `--dry-run`
+  (enforced by clap): the result state (`started` / `stopped` / `failed`) stays out of the JSON contract, where
+  the conclusion belongs to exit codes and `ls` / `status`. Env **values** never appear — only key names, in
+  `env_keys` (declaration / profile) and `cred_keys` (`env_file`), pinned by `step_json_hides_secret_values`.
+  New golden group `supervise_step` in `fixtures/ctl_contract.json`; the client repository needs no change
+  until it wants to render plans.
 - **The control-plane socket gained `restart` and `status` (#1355 B).** `supervise --socket` could only
   `add` / `remove` / `list` / `disable` / `enable`, so a client could neither restart a single lane nor read one
   instance's detail without pulling the whole list. `{"op":"restart","name":"x","grace":10,"timeout":30}` runs the

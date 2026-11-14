@@ -406,7 +406,16 @@ pub fn decl_toggle(out: &decl::ToggleOutcome, path: &Path) {
 }
 
 /// `supervise` 输出：一行一个实例，先给动作再给原因。
-pub fn supervise(steps: &[Step], dry_run: bool) {
+///
+/// `as_json` 只由 `--dry-run --json` 走到（CLI 侧用 `requires = "dry_run"` 钉死）。
+/// 执行结果态（`started` / `stopped` / `failed`）**不走** JSON 面：一次性收敛的结论
+/// 该由退出码与 `ls` / `status` 表达，再开一条形状只会多一份要维护的契约。
+pub fn supervise(steps: &[Step], dry_run: bool, as_json: bool) {
+    if as_json {
+        let arr: Vec<serde_json::Value> = steps.iter().map(step_json).collect();
+        println!("{}", serde_json::to_string_pretty(&arr).unwrap_or_default());
+        return;
+    }
     if dry_run {
         println!("（dry-run：只打印计划，不启动也不回收）");
     }
@@ -432,6 +441,82 @@ pub fn restart(steps: &[Step]) {
     for step in steps {
         println!("{}", supervise_line(step, false));
     }
+}
+
+/// JSON 面的动作名（小写，客户端直接 `switch`；与 `ls --json` 的 `state` 同一风格）。
+fn step_action(step: &Step) -> &'static str {
+    match step {
+        Step::Start { .. } => "start",
+        Step::Stop { .. } => "stop",
+        Step::Running { .. } => "running",
+        Step::Started { .. } => "started",
+        Step::Stopped { .. } => "stopped",
+        Step::Skipped { .. } => "skipped",
+        Step::Failed { .. } => "failed",
+    }
+}
+
+/// `supervise --dry-run --json` 的单条计划。
+///
+/// 两条刻意的约束：
+///
+/// 1. **键集恒定** —— 每个 action 都带同样的键，用不到的为 `null`。客户端只需一处解析，
+///    不必按 action 判断「这个字段在不在」；键集本身是对外契约，由
+///    `fixtures/ctl_contract.json` 的 `supervise_step` 与 `cm_ctl::tests` 双向钉住。
+/// 2. **只暴露 env 的键名** —— `StartSpec.env` 的值是配置、`env_file_env` 的值是凭据，
+///    任一份落进 stdout 就等于「看一眼终端就拿到密码」。这与 `ls --json` 的 `env_keys`
+///    是同一条边界，`step_json_hides_secret_values` 钉住它。
+pub fn step_json(step: &Step) -> serde_json::Value {
+    // 先铺满恒定键集（`null` 占位），再按 action 覆盖。刻意不先造 `json!({...})`
+    // 再 `as_object_mut()`：那需要一次 `expect`，而生产路径的 unwrap/expect 有棘轮
+    // （#1152）。直接用 `Map` 就没有这个口子。
+    let mut obj = serde_json::Map::new();
+    obj.insert("name".to_string(), json!(step.name()));
+    obj.insert("action".to_string(), json!(step_action(step)));
+    for key in [
+        "reason",
+        "restart",
+        "port",
+        "workspace",
+        "profile",
+        "no_tools",
+        "env_keys",
+        "cred_keys",
+    ] {
+        obj.insert(key.to_string(), serde_json::Value::Null);
+    }
+    match step {
+        Step::Start {
+            spec,
+            restart,
+            reason,
+            ..
+        } => {
+            let env_keys: Vec<&String> = spec.env.keys().collect();
+            // 凭据只取名字：`CredEnv` 的 `iter` 是唯一出口，值从不参与渲染。
+            let cred_keys: Vec<&String> = spec.env_file_env.iter().map(|(k, _)| k).collect();
+            obj.insert("reason".to_string(), json!(reason));
+            obj.insert("restart".to_string(), json!(restart));
+            obj.insert("port".to_string(), json!(spec.port));
+            obj.insert("workspace".to_string(), json!(spec.workspace));
+            obj.insert("profile".to_string(), json!(spec.profile));
+            obj.insert("no_tools".to_string(), json!(spec.no_tools));
+            obj.insert("env_keys".to_string(), json!(env_keys));
+            obj.insert("cred_keys".to_string(), json!(cred_keys));
+        }
+        Step::Stop { reason, .. }
+        | Step::Started { reason, .. }
+        | Step::Skipped { reason, .. } => {
+            obj.insert("reason".to_string(), json!(reason));
+        }
+        // `--json` 目前只在 dry-run 下暴露（计划态），下面是完整匹配，不留 `_` 兜底：
+        // 将来若给结果态也开 JSON 面，得显式决定这些字段怎么落。
+        Step::Failed { error, .. } => {
+            obj.insert("reason".to_string(), json!(error));
+        }
+        Step::Running { .. } | Step::Stopped { .. } => {}
+    }
+    serde_json::Value::Object(obj)
 }
 
 fn supervise_line(step: &Step, dry_run: bool) -> String {
@@ -480,7 +565,7 @@ mod tests {
     use crate::cm_ctl::env_file::CredEnv;
     use crate::cm_ctl::supervise::{StartSpec, Step};
 
-    use super::supervise_line;
+    use super::{step_json, supervise_line};
 
     /// 计划行对待绑定实例必须显示「待绑定」，不能借 `run_command_working_dir`
     /// 或任何占位路径把它伪装成已选目录（#1183 §2 ②：`ls` / `status` / `--dry-run`
@@ -542,5 +627,43 @@ mod tests {
             !line.contains("待绑定"),
             "已绑定的实例不应显示待绑定：{line}"
         );
+    }
+
+    /// `--json` 计划里只能出现 env 的**名**。
+    ///
+    /// 值一旦进 stdout，`supervise --dry-run --json` 就成了「一条打印凭据的命令」——
+    /// 而它的典型用途恰恰是把输出贴进 issue、交给客户端或写进脚本日志。
+    #[test]
+    fn step_json_hides_secret_values() {
+        let mut env = BTreeMap::new();
+        env.insert("RUST_LOG".to_string(), "debug".to_string());
+        let mut cred = CredEnv::default();
+        cred.insert("API_KEY".to_string(), "sk-fake-not-a-real-key".to_string());
+        let spec = StartSpec {
+            workspace: None,
+            serve_config: None,
+            port: None,
+            env,
+            env_file_env: cred,
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+        let v = step_json(&Step::Start {
+            name: "alpha".to_string(),
+            spec,
+            restart: false,
+            reason: "声明新增".to_string(),
+        });
+
+        let text = v.to_string();
+        assert!(!text.contains("debug"), "env 值不得进 JSON：{text}");
+        assert!(
+            !text.contains("sk-fake-not-a-real-key"),
+            "凭据值不得进 JSON：{text}"
+        );
+        assert_eq!(v["action"], "start");
+        assert_eq!(v["env_keys"], serde_json::json!(["RUST_LOG"]));
+        assert_eq!(v["cred_keys"], serde_json::json!(["API_KEY"]));
     }
 }

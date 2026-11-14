@@ -529,7 +529,7 @@ fn apply(ctx: &Ctx, file: &InstancesFile, opts: &Opts) {
     match scoped_plan(ctx, file, opts) {
         Ok(steps) => {
             let done = execute(ctx, steps, opts);
-            super::render::supervise(&done, false);
+            super::render::supervise(&done, false, false);
         }
         Err(e) => super::render::supervise_refused(&format!("{}（{}）", e.message, e.error_code)),
     }
