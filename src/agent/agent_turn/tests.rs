@@ -1,7 +1,7 @@
 mod push_assistant_merge_tests {
     use crate::types::{Message, message_content_as_str};
 
-    use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
+    use crate::agent::agent_turn::policy::messages::push_assistant_merging_trailing_empty_placeholder;
 
     fn empty_assistant() -> Message {
         Message::assistant_only(String::new())

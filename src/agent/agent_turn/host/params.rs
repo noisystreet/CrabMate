@@ -32,7 +32,7 @@ use super::errors::AgentTurnSubPhase;
 use super::turn_sink::TurnControlSink;
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
-use crate::agent::agent_turn::messages::{
+use crate::agent::agent_turn::policy::messages::{
     insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
 };
 use crate::agent::plan_artifact::PlanStepExecutorKind;

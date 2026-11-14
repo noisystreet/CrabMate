@@ -20,9 +20,11 @@ use crate::types::{
 };
 
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
-use super::outer_loop_driver::OuterLoopDriver;
-use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
-use super::outer_loop_iteration_reduce::{
+use crate::agent::agent_turn::policy::outer_loop_driver::OuterLoopDriver;
+use crate::agent::agent_turn::policy::outer_loop_fsm::{
+    OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl,
+};
+use crate::agent::agent_turn::policy::outer_loop_iteration_reduce::{
     outer_loop_iteration_exit_from_reflect_reduce,
     reduce_outer_loop_post_tools_exit_with_truncation,
 };
