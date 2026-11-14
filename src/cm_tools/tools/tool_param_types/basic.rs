@@ -1,4 +1,9 @@
-/// [`super::weather::run_try`] 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。
+//! `basic` 族入参：weather / web_search / regex / date / json / env / background jobs / markdown / code_stats / dependency_graph / coverage。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+/// `weather::run_try` 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GetWeatherArgs {
@@ -6,7 +11,7 @@ pub struct GetWeatherArgs {
     pub location: Option<String>,
 }
 
-/// [`super::web_search::run_try`] 入参。
+/// `web_search::run_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WebSearchArgs {
@@ -18,8 +23,7 @@ pub struct WebSearchArgs {
     pub proxy: Option<String>,
 }
 
-
-/// [`super::regex_test::run`] 入参。
+/// `regex_test::run` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RegexTestArgs {
@@ -27,7 +31,7 @@ pub struct RegexTestArgs {
     pub test_strings: Vec<String>,
 }
 
-/// [`super::date_calc::run`] 的 `mode`。
+/// `date_calc::run` 的 `mode`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DateCalcMode {
@@ -36,7 +40,7 @@ pub enum DateCalcMode {
     Diff,
 }
 
-/// [`super::date_calc::run`] 入参。
+/// `date_calc::run` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DateCalcArgs {
@@ -48,7 +52,7 @@ pub struct DateCalcArgs {
     pub offset: Option<String>,
 }
 
-/// [`super::json_format::run`] 的 `mode`。
+/// `json_format::run` 的 `mode`。
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JsonFormatMode {
@@ -58,7 +62,7 @@ pub enum JsonFormatMode {
     JsonToYaml,
 }
 
-/// [`super::json_format::run`] 入参。
+/// `json_format::run` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JsonFormatArgs {
@@ -67,7 +71,7 @@ pub struct JsonFormatArgs {
     pub mode: Option<JsonFormatMode>,
 }
 
-/// [`super::env_var_check::run`] 入参。
+/// `env_var_check::run` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EnvVarCheckArgs {
@@ -75,10 +79,6 @@ pub struct EnvVarCheckArgs {
     #[serde(default)]
     pub show_length: Option<bool>,
     pub show_prefix_chars: Option<u64>,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// `background_job` 的 action 取值；与 `background_job_tools` 的三个只读查询一一对应。
@@ -93,7 +93,7 @@ pub enum BackgroundJobAction {
     Output,
 }
 
-/// [`super::background_job_tools::background_job`] 入参：`action` 选择器 + 字段并集。
+/// `background_job_tools::background_job` 入参：`action` 选择器 + 字段并集。
 ///
 /// 合并自原 `background_job_status` / `background_job_list` / `background_job_output` 三个只读
 /// 工具。`background_job_cancel` 会改变任务状态（写副作用），**保持独立工具名**，避免把这三个
@@ -116,7 +116,7 @@ pub struct BackgroundJobArgs {
     pub limit: Option<u32>,
 }
 
-/// [`super::background_job_tools::background_job_cancel`] 入参。
+/// `background_job_tools::background_job_cancel` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BackgroundJobCancelArgs {
@@ -140,7 +140,7 @@ pub enum BackgroundJobWaitUntil {
     OutputMatches,
 }
 
-/// [`super::background_job_tools::background_job_wait_try`] 入参。
+/// `background_job_tools::background_job_wait_try` 入参。
 ///
 /// **独立工具**，不并入 `background_job`：阻塞等待会同时破坏该工具的
 /// 并行只读批身份与同轮 `(name, args)` 去重缓存（见 `docs/design/background_tool_jobs_contract.md` §9）。
@@ -161,7 +161,7 @@ pub struct BackgroundJobWaitArgs {
     pub timeout_secs: Option<u64>,
 }
 
-/// [`super::markdown_links::markdown_check_links_try`] 的 `output_format`。
+/// `markdown_links::markdown_check_links_try` 的 `output_format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum MarkdownCheckLinksOutputFormat {
@@ -174,7 +174,7 @@ pub enum MarkdownCheckLinksOutputFormat {
     Sarif,
 }
 
-/// [`super::markdown_links::markdown_check_links_try`] 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。
+/// `markdown_links::markdown_check_links_try` 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MarkdownCheckLinksArgs {
@@ -195,14 +195,14 @@ pub struct MarkdownCheckLinksArgs {
     #[schemars(range(min = 1, max = 60))]
     pub external_timeout_secs: Option<u32>,
     /// 是否校验 Markdown 锚点（`#fragment`），默认 true
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub check_fragments: bool,
     /// 输出格式：text（默认）/ json / sarif
     #[serde(default)]
     pub output_format: Option<MarkdownCheckLinksOutputFormat>,
 }
 
-/// [`super::code_metrics::code_stats_try`] 的 `format`。
+/// `code_metrics::code_stats_try` 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CodeStatsFormat {
@@ -211,7 +211,7 @@ pub enum CodeStatsFormat {
     Json,
 }
 
-/// [`super::code_metrics::code_stats_try`] 入参。
+/// `code_metrics::code_stats_try` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct CodeStatsArgs {
@@ -221,7 +221,7 @@ pub struct CodeStatsArgs {
     pub format: Option<CodeStatsFormat>,
 }
 
-/// [`super::code_metrics::dependency_graph_try`] 的 `format`。
+/// `code_metrics::dependency_graph_try` 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGraphFormat {
@@ -231,7 +231,7 @@ pub enum DependencyGraphFormat {
     Tree,
 }
 
-/// [`super::code_metrics::dependency_graph_try`] 的 `kind`。
+/// `code_metrics::dependency_graph_try` 的 `kind`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGraphKind {
@@ -244,7 +244,7 @@ pub enum DependencyGraphKind {
     Node,
 }
 
-/// [`super::code_metrics::dependency_graph_try`] 入参。
+/// `code_metrics::dependency_graph_try` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DependencyGraphArgs {
@@ -258,7 +258,7 @@ pub struct DependencyGraphArgs {
     pub kind: Option<DependencyGraphKind>,
 }
 
-/// [`super::code_metrics::coverage_report_try`] 的 `format`。
+/// `code_metrics::coverage_report_try` 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageReportFormat {
@@ -270,7 +270,7 @@ pub enum CoverageReportFormat {
     Cobertura,
 }
 
-/// [`super::code_metrics::coverage_report_try`] 入参。
+/// `code_metrics::coverage_report_try` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct CoverageReportArgs {

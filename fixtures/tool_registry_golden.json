@@ -639,7 +639,7 @@
       "description": "在工作区内文件末尾追加内容。默认文件须已存在；create_if_missing=true 时不存在则创建。不覆盖已有内容。支持 dry_run 预览；**dry_run 默认 true 只预览**，显式 dry_run=false 才写盘。默认 ensure_leading_newline=true，会在原文件非空且末尾无换行时先补一个换行，避免新内容接在旧末行后。`content` 可用 body/text/code 等别名。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "[`super::file::mutate::append_file`] 入参。",
+        "description": "`file::mutate::append_file` 入参。",
         "properties": {
           "content": {
             "default": "",
@@ -725,7 +725,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::archive::archive_list`] 入参。",
+        "description": "`archive::archive_list` 入参。",
         "properties": {
           "archive": {
             "type": "string"
@@ -776,7 +776,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::archive::archive_pack`] 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。",
+        "description": "`archive::archive_pack` 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。",
         "properties": {
           "exclude": {
             "default": [],
@@ -823,7 +823,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::archive::archive_unpack`] 入参。",
+        "description": "`archive::archive_unpack` 入参。",
         "properties": {
           "archive": {
             "type": "string"
@@ -888,7 +888,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::background_job_tools::background_job`] 入参：`action` 选择器 + 字段并集。\n\n合并自原 `background_job_status` / `background_job_list` / `background_job_output` 三个只读\n工具。`background_job_cancel` 会改变任务状态（写副作用），**保持独立工具名**，避免把这三个\n只读查询一并拖出并行只读批 / 只读重试 / `Ask`·`Plan` 门控 / TTL 缓存\n（见 `registry_policy::builtin_write_effect_tools`）。",
+        "description": "`background_job_tools::background_job` 入参：`action` 选择器 + 字段并集。\n\n合并自原 `background_job_status` / `background_job_list` / `background_job_output` 三个只读\n工具。`background_job_cancel` 会改变任务状态（写副作用），**保持独立工具名**，避免把这三个\n只读查询一并拖出并行只读批 / 只读重试 / `Ask`·`Plan` 门控 / TTL 缓存\n（见 `registry_policy::builtin_write_effect_tools`）。",
         "properties": {
           "action": {
             "$ref": "#/$defs/BackgroundJobAction",
@@ -938,7 +938,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::background_job_tools::background_job_cancel`] 入参。",
+        "description": "`background_job_tools::background_job_cancel` 入参。",
         "properties": {
           "tool_job_id": {
             "description": "后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）",
@@ -979,7 +979,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::background_job_tools::background_job_wait_try`] 入参。\n\n**独立工具**，不并入 `background_job`：阻塞等待会同时破坏该工具的\n并行只读批身份与同轮 `(name, args)` 去重缓存（见 `docs/design/background_tool_jobs_contract.md` §9）。",
+        "description": "`background_job_tools::background_job_wait_try` 入参。\n\n**独立工具**，不并入 `background_job`：阻塞等待会同时破坏该工具的\n并行只读批身份与同轮 `(name, args)` 去重缓存（见 `docs/design/background_tool_jobs_contract.md` §9）。",
         "properties": {
           "output_matches": {
             "default": null,
@@ -1267,7 +1267,7 @@
       "parameters": {
         "$defs": {
           "CodeNavAction": {
-            "description": "[`super::code_nav_dispatch::dispatch`]（`code_nav`）的动作选择器。",
+            "description": "`code_nav_dispatch::dispatch`（`code_nav`）的动作选择器。",
             "oneOf": [
               {
                 "const": "find_symbol",
@@ -1431,7 +1431,7 @@
       "parameters": {
         "$defs": {
           "CodeStatsFormat": {
-            "description": "[`super::code_metrics::code_stats_try`] 的 `format`。",
+            "description": "`code_metrics::code_stats_try` 的 `format`。",
             "enum": [
               "table",
               "json"
@@ -1441,7 +1441,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::code_metrics::code_stats_try`] 入参。",
+        "description": "`code_metrics::code_stats_try` 入参。",
         "properties": {
           "format": {
             "anyOf": [
@@ -1624,7 +1624,7 @@
       "parameters": {
         "$defs": {
           "CoverageReportFormat": {
-            "description": "[`super::code_metrics::coverage_report_try`] 的 `format`。",
+            "description": "`code_metrics::coverage_report_try` 的 `format`。",
             "enum": [
               "auto",
               "lcov",
@@ -1637,7 +1637,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::code_metrics::coverage_report_try`] 入参。",
+        "description": "`code_metrics::coverage_report_try` 入参。",
         "properties": {
           "format": {
             "anyOf": [
@@ -1736,7 +1736,7 @@
       "description": "在工作区内创建目录。默认 parents=true（递归创建父目录，类似 mkdir -p）。目录已存在时不报错。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "[`super::file::mutate::create_dir`] 入参。",
+        "description": "`file::mutate::create_dir` 入参。",
         "properties": {
           "parents": {
             "default": true,
@@ -1789,7 +1789,7 @@
       "parameters": {
         "$defs": {
           "DateCalcMode": {
-            "description": "[`super::date_calc::run`] 的 `mode`。",
+            "description": "`date_calc::run` 的 `mode`。",
             "enum": [
               "offset",
               "diff"
@@ -1799,7 +1799,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::date_calc::run`] 入参。",
+        "description": "`date_calc::run` 入参。",
         "properties": {
           "base": {
             "default": null,
@@ -1852,7 +1852,7 @@
       "description": "删除工作区内的目录（受控写入，需 confirm=true）。默认仅删除空目录；recursive=true 时递归删除含子目录和文件。不能删除工作区根目录。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "[`super::file::mutate::delete_dir`] 入参。",
+        "description": "`file::mutate::delete_dir` 入参。",
         "properties": {
           "confirm": {
             "type": [
@@ -1884,7 +1884,7 @@
       "description": "删除工作区内一个或多个文件（受控写入，需 confirm=true）。`paths` 为相对路径列表（最多 32 个，同路径去重）；任一路径非法则整批拒绝、不产生部分删除；不能删除目录（请用 delete_dir）。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "[`super::file::mutate::delete_files`] 入参。",
+        "description": "`file::mutate::delete_files` 入参。",
         "properties": {
           "confirm": {
             "description": "破坏性操作确认门：必须为 `true`。",
@@ -1918,7 +1918,7 @@
       "parameters": {
         "$defs": {
           "DependencyGraphFormat": {
-            "description": "[`super::code_metrics::dependency_graph_try`] 的 `format`。",
+            "description": "`code_metrics::dependency_graph_try` 的 `format`。",
             "enum": [
               "mermaid",
               "dot",
@@ -1927,7 +1927,7 @@
             "type": "string"
           },
           "DependencyGraphKind": {
-            "description": "[`super::code_metrics::dependency_graph_try`] 的 `kind`。",
+            "description": "`code_metrics::dependency_graph_try` 的 `kind`。",
             "enum": [
               "auto",
               "rust",
@@ -1941,7 +1941,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::code_metrics::dependency_graph_try`] 入参。",
+        "description": "`code_metrics::dependency_graph_try` 入参。",
         "properties": {
           "depth": {
             "default": null,
@@ -2043,7 +2043,7 @@
       "parameters": {
         "$defs": {
           "MarkdownCheckLinksOutputFormat": {
-            "description": "[`super::markdown_links::markdown_check_links_try`] 的 `output_format`。",
+            "description": "`markdown_links::markdown_check_links_try` 的 `output_format`。",
             "enum": [
               "text",
               "json",
@@ -2208,7 +2208,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::env_var_check::run`] 入参。",
+        "description": "`env_var_check::run` 入参。",
         "properties": {
           "names": {
             "items": {
@@ -2247,7 +2247,7 @@
       "parameters": {
         "$defs": {
           "EventAction": {
-            "description": "[`super::schedule_dispatch::event`] 的 `action`。",
+            "description": "`schedule_dispatch::event` 的 `action`。",
             "oneOf": [
               {
                 "const": "list",
@@ -2274,7 +2274,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::schedule_dispatch::event`] 入参：`action` 选择器 + 字段并集。\n\n`list` 只读；`add` / `update` / `delete` 写 `.crabmate/events.json`。",
+        "description": "`schedule_dispatch::event` 入参：`action` 选择器 + 字段并集。\n\n`list` 只读；`add` / `update` / `delete` 写 `.crabmate/events.json`。",
         "properties": {
           "action": {
             "$ref": "#/$defs/EventAction",
@@ -2374,7 +2374,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::weather::run_try`] 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。",
+        "description": "`weather::run_try` 入参（`city` 与 `location` 二选一，至少 2 字符由 runner 校验）。",
         "properties": {
           "city": {
             "default": null,
@@ -2538,7 +2538,7 @@
       "parameters": {
         "$defs": {
           "GhPrAction": {
-            "description": "[`super::github_cli::gh_pr`] 的动作选择器。",
+            "description": "`github_cli::gh_pr` 的动作选择器。",
             "enum": [
               "checks",
               "create",
@@ -2569,7 +2569,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::github_cli::gh_pr`] 入参：动作 + 各动作字段的并集。\n\n只取用 `action` 对应动作的字段，其余字段被忽略；`deny_unknown_fields` 仍拦住拼错的键。",
+        "description": "`github_cli::gh_pr` 入参：动作 + 各动作字段的并集。\n\n只取用 `action` 对应动作的字段，其余字段被忽略；`deny_unknown_fields` 仍拦住拼错的键。",
         "properties": {
           "action": {
             "$ref": "#/$defs/GhPrAction"
@@ -2893,7 +2893,7 @@
       "parameters": {
         "$defs": {
           "GhRunAction": {
-            "description": "[`super::github_cli::gh_run`] 的动作选择器。",
+            "description": "`github_cli::gh_run` 的动作选择器。",
             "enum": [
               "rerun",
               "failure_summary"
@@ -2903,7 +2903,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::github_cli::gh_run`] 入参。",
+        "description": "`github_cli::gh_run` 入参。",
         "properties": {
           "action": {
             "$ref": "#/$defs/GhRunAction"
@@ -3301,7 +3301,7 @@
       "parameters": {
         "$defs": {
           "JsonFormatMode": {
-            "description": "[`super::json_format::run`] 的 `mode`。",
+            "description": "`json_format::run` 的 `mode`。",
             "enum": [
               "pretty",
               "compact",
@@ -3313,7 +3313,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::json_format::run`] 入参。",
+        "description": "`json_format::run` 入参。",
         "properties": {
           "mode": {
             "anyOf": [
@@ -3500,7 +3500,7 @@
       "parameters": {
         "$defs": {
           "MarkdownCheckLinksOutputFormat": {
-            "description": "[`super::markdown_links::markdown_check_links_try`] 的 `output_format`。",
+            "description": "`markdown_links::markdown_check_links_try` 的 `output_format`。",
             "enum": [
               "text",
               "json",
@@ -3511,7 +3511,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::markdown_links::markdown_check_links_try`] 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。",
+        "description": "`markdown_links::markdown_check_links_try` 入参（字段缺省与 runner 内 `parse_markdown_check_args` 一致）。",
         "properties": {
           "allowed_external_prefixes": {
             "description": "仅对这些前缀匹配的 http(s) 或 `//` 外链发起 HEAD；为空则外链仅计数、不联网",
@@ -4255,7 +4255,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::regex_test::run`] 入参。",
+        "description": "`regex_test::run` 入参。",
         "properties": {
           "pattern": {
             "type": "string"
@@ -4283,7 +4283,7 @@
       "parameters": {
         "$defs": {
           "ReminderAction": {
-            "description": "[`super::schedule_dispatch::reminder`] 的 `action`。",
+            "description": "`schedule_dispatch::reminder` 的 `action`。",
             "oneOf": [
               {
                 "const": "list",
@@ -4315,7 +4315,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::schedule_dispatch::reminder`] 入参：`action` 选择器 + 字段并集。\n\n`list` 只读；`add` / `update` / `delete` / `complete` 写 `.crabmate/reminders.json`。",
+        "description": "`schedule_dispatch::reminder` 入参：`action` 选择器 + 字段并集。\n\n`list` 只读；`add` / `update` / `delete` / `complete` 写 `.crabmate/reminders.json`。",
         "properties": {
           "action": {
             "$ref": "#/$defs/ReminderAction",
@@ -4794,7 +4794,7 @@
       "description": "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 search 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "[`super::file::mutate::search_replace`] 入参。",
+        "description": "`file::mutate::search_replace` 入参。",
         "properties": {
           "allow_stale_revision": {
             "default": null,
@@ -5087,7 +5087,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::structured_dispatch::structured_try`] 入参。\n\n字段是四个子动作的**并集**：只有本 `action` 用到的键会被转发给子实现，\n其余键静默忽略（与 `code_nav` 同一约定）。必填项按 `action` 在分发层校验。",
+        "description": "`structured_dispatch::structured_try` 入参。\n\n字段是四个子动作的**并集**：只有本 `action` 用到的键会被转发给子实现，\n其余键静默忽略（与 `code_nav` 同一约定）。必填项按 `action` 在分发层校验。",
         "properties": {
           "action": {
             "$ref": "#/$defs/StructuredAction",
@@ -5291,7 +5291,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::table_text::run_try`] 入参（按 `action` 分支校验由 runner 完成）。",
+        "description": "`table_text::run_try` 入参（按 `action` 分支校验由 runner 完成）。",
         "properties": {
           "action": {
             "$ref": "#/$defs/TableTextAction"
@@ -5506,7 +5506,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::text_diff::run_try`] 入参。",
+        "description": "`text_diff::run_try` 入参。",
         "properties": {
           "context_lines": {
             "default": 3,
@@ -5575,7 +5575,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::web_search::run_try`] 入参。",
+        "description": "`web_search::run_try` 入参。",
         "properties": {
           "max_results": {
             "description": "1～20；省略时用配置默认",
@@ -5612,7 +5612,7 @@
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "[`super::runners::runner_workflow_execute`] 对应 parameters（DAG 由运行时解析）。",
+        "description": "`runners::runner_workflow_execute` 对应 parameters（DAG 由运行时解析）。",
         "properties": {
           "workflow": {
             "description": "内联 DAG / `steps` / `workflow_template`（与 `workflow_file` 二选一或叠加覆盖）。"

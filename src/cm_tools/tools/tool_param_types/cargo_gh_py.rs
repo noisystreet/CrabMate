@@ -1,4 +1,8 @@
-// Cargo/Rust、GitHub CLI、前端/Python 工具参数。
+//! Cargo/Rust、GitHub CLI、前端/Python 工具参数。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 // ── Cargo / Rust ─────────────────────────────────────────────────
 
@@ -201,7 +205,7 @@ pub struct PythonSnippetRunArgs {
 
 // ── 合并后的动作分发工具（`gh_pr` / `gh_run`）─────────────────────
 
-/// [`super::github_cli::gh_pr`] 的动作选择器。
+/// `github_cli::gh_pr` 的动作选择器。
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GhPrAction {
@@ -214,7 +218,7 @@ pub enum GhPrAction {
     BodyDraft,
 }
 
-/// [`super::github_cli::gh_pr`] 入参：动作 + 各动作字段的并集。
+/// `github_cli::gh_pr` 入参：动作 + 各动作字段的并集。
 ///
 /// 只取用 `action` 对应动作的字段，其余字段被忽略；`deny_unknown_fields` 仍拦住拼错的键。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -262,7 +266,7 @@ pub struct GhPrArgs {
     pub extra_args: Option<Vec<String>>,
 }
 
-/// [`super::github_cli::gh_run`] 的动作选择器。
+/// `github_cli::gh_run` 的动作选择器。
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GhRunAction {
@@ -270,7 +274,7 @@ pub enum GhRunAction {
     FailureSummary,
 }
 
-/// [`super::github_cli::gh_run`] 入参。
+/// `github_cli::gh_run` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GhRunArgs {

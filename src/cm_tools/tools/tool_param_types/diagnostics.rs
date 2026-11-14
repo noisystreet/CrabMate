@@ -1,4 +1,7 @@
-// `diagnostics` 工具参数（原 `tool_params/diagnostics.rs`）。
+//! `diagnostics` 工具参数（原 `tool_params/diagnostics.rs`）。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
