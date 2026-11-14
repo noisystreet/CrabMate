@@ -40,7 +40,7 @@
 
 **已知风险（接受并显式记录，不以「以后再说」掩盖）**：
 
-- 预算**不含工具调用次数**（[turn_budget.rs](file:///home/gzz/crabmate/server/src/cm_agent/turn_budget.rs#L95-L142)
+- 预算**不含工具调用次数**（[turn_budget.rs](../../src/cm_agent/turn_budget.rs)
   仅 `llm_calls` / `estimated_tokens` / 墙钟），首版**以墙钟兜底**。
 - 与 A2A 的映射**有损**：首版不支持 `auth-required`、推送通知、流式状态事件（§8）。
 - 长任务**不能**转后台：与既有 `background_tool_jobs` 的关系尚未定，首版不做（§8）。

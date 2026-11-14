@@ -2,7 +2,7 @@
 
 **状态**：设计备忘 / 路线图（**未**承诺实现顺序与版本日期）。**受众**：计划增强「对话 ↔ 编辑器」体验的维护者与产品评审。  
 **语言**：中文。  
-**存放位置**：`docs/design/`（与 **`vscode_extension.md`**、**`web_ui_todo.md`** 同级）。
+**存放位置**：`docs/design/`（与 **`vscode_extension.md`** 同级；Web UI 规划见 `archive/web_ui_todo.md`）。
 
 **关联**：
 
