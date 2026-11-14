@@ -1,3 +1,5 @@
+use super::*;
+
 // `finalize_agent_config` 拆分：`embedded allowed_commands`、中层 clamp、system_prompt + Cursor Rules + Skills。
 
 fn embedded_default_allowed_command_names() -> Vec<String> {
@@ -89,7 +91,7 @@ fn embedded_default_allowed_command_names() -> Vec<String> {
     ]
 }
 
-fn allowed_commands_arc_from_builder(b: &ConfigBuilder) -> Arc<[String]> {
+pub(super) fn allowed_commands_arc_from_builder(b: &ConfigBuilder) -> Arc<[String]> {
     b.command_exec
         .allowed_commands
         .clone()
@@ -97,22 +99,22 @@ fn allowed_commands_arc_from_builder(b: &ConfigBuilder) -> Arc<[String]> {
         .into()
 }
 
-struct FinalizeMidLayerScalars {
-    max_message_history: usize,
-    command_timeout_secs: u64,
-    command_max_output_len: usize,
-    allow_external_path_with_approval: bool,
-    max_tokens: u32,
-    llm_context_tokens: u32,
-    temperature: f32,
-    api_timeout_secs: u64,
-    api_max_retries: u32,
-    api_retry_delay_secs: u64,
-    weather_timeout_secs: u64,
-    reflection_default_max_rounds: usize,
+pub(super) struct FinalizeMidLayerScalars {
+    pub(super) max_message_history: usize,
+    pub(super) command_timeout_secs: u64,
+    pub(super) command_max_output_len: usize,
+    pub(super) allow_external_path_with_approval: bool,
+    pub(super) max_tokens: u32,
+    pub(super) llm_context_tokens: u32,
+    pub(super) temperature: f32,
+    pub(super) api_timeout_secs: u64,
+    pub(super) api_max_retries: u32,
+    pub(super) api_retry_delay_secs: u64,
+    pub(super) weather_timeout_secs: u64,
+    pub(super) reflection_default_max_rounds: usize,
 }
 
-fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalars {
+pub(super) fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalars {
     FinalizeMidLayerScalars {
         max_message_history: b
             .session_ui
@@ -152,13 +154,13 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
 ///
 /// 项目规则 `AGENTS.md` 不再于 finalize 读盘（原 `.cursor/rules` 兼容已移除）：
 /// 它按**会话工作区根**在首条 `system` 组装时追加，见 `context_bootstrap::prompt_compose`。
-struct PromptMergeForRoles {
+pub(super) struct PromptMergeForRoles {
     /// 通用 L0（`base_system_prompt.md` 等），未叠加编程层 / skills。
-    universal_l0_system_prompt: String,
-    coding_workbench_enabled: bool,
-    coding_workbench_increment_file: String,
-    coding_workbench_increment: String,
-    system_prompt: String,
+    pub(super) universal_l0_system_prompt: String,
+    pub(super) coding_workbench_enabled: bool,
+    pub(super) coding_workbench_increment_file: String,
+    pub(super) coding_workbench_increment: String,
+    pub(super) system_prompt: String,
 }
 
 fn load_required_system_prompt_for_finalize(
@@ -193,7 +195,7 @@ fn stack_l0_with_coding_workbench(l0: &str, increment: &str) -> String {
     }
 }
 
-fn merge_system_prompt_layers_for_finalize(
+pub(super) fn merge_system_prompt_layers_for_finalize(
     b: &mut ConfigBuilder,
     system_prompt_search_bases: &[PathBuf],
     run_command_working_dir: &Path,
