@@ -79,7 +79,7 @@ impl Sandbox {
     /// `ctl up <name>`，就绪失败时把实例日志一起带进 panic，避免只看到「退出码 1」。
     fn up(&self, name: &str, ws: &Path, port: u16) {
         let out = self.run(&[
-            "up",
+            "start",
             name,
             "--workspace",
             &ws.display().to_string(),
@@ -122,7 +122,7 @@ impl Sandbox {
     }
 
     fn down_all(&self) {
-        let _ = self.run(&["down", "--all", "--timeout", "1"]);
+        let _ = self.run(&["stop", "--all", "--timeout", "1"]);
     }
 }
 
@@ -170,7 +170,7 @@ fn up_reaches_ready_and_ls_reports_matching_base_url() {
     assert_eq!(rec["base_url"], format!("http://127.0.0.1:{port}/"));
     assert!(tcp_ok(port), "up 后端口 {port} 应可连");
 
-    let out = sb.run(&["ls", "--json"]);
+    let out = sb.run(&["list", "--json"]);
     assert!(out.status.success(), "ls --json 失败");
     let rows: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("ls --json 输出应是合法 JSON");
@@ -183,7 +183,7 @@ fn up_reaches_ready_and_ls_reports_matching_base_url() {
     // `row_json`，这里再钉一次**真实输出**，防止有人给 `ls` 换一条序列化路径。
     assert_eq!(
         sorted_keys(first),
-        contract_keys("ls_row"),
+        contract_keys("list_row"),
         "ls --json 的字段集与 fixtures/ctl_contract.json 不一致"
     );
 }
@@ -279,7 +279,7 @@ fn up_on_taken_port_fails_instead_of_faking_ready() {
     sb.up("a", &ws_a, port);
 
     let out = sb.run(&[
-        "up",
+        "start",
         "b",
         "--workspace",
         &ws_b.display().to_string(),
@@ -336,7 +336,7 @@ fn duplicate_up_is_idempotent() {
     assert_eq!(sb.record("a")["pid"], pid_first, "重复 up 不应换进程");
 
     let out = sb.run(&[
-        "up",
+        "start",
         "a",
         "--workspace",
         &ws.display().to_string(),
@@ -363,7 +363,7 @@ fn down_all_stops_instances_and_ctl_leaves_serve_running() {
     // 此时两次 `ctl up` 进程都已退出，端口仍可连 ⇒ 子 serve 未被 ctl 带走
     assert!(tcp_ok(pa) && tcp_ok(pb), "ctl 退出后 serve 应继续运行");
 
-    let out = sb.run(&["down", "--all", "--timeout", "1"]);
+    let out = sb.run(&["stop", "--all", "--timeout", "1"]);
     assert!(
         out.status.success(),
         "down --all 失败：\nstdout:\n{}\nstderr:\n{}",

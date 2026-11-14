@@ -328,7 +328,7 @@ fn list_include_unmanaged_lists_record_without_declaration() {
     let dir = tempdir("list3");
     let decl = dir.join(instances::FILE_NAME);
     let ctx = ctx_at(&dir);
-    // 命令行 `up` 起的实例：有状态记录、没有声明
+    // 命令行 `start` 起的实例：有状态记录、没有声明
     let mut rec = crate::cm_ctl::record::InstanceRecord::new("cli-one");
     rec.state = crate::cm_ctl::record::InstanceState::Stopped;
     rec.managed_by = Some("cli".to_string());
@@ -461,7 +461,7 @@ fn disable_unknown_name_is_ok() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `enable` 必须收回 `down` 留下的 `desired_state = stopped`：
+/// `enable` 必须收回 `stop` 留下的 `desired_state = stopped`：
 /// 否则收敛会一直 `Skipped`，声明写着 `enabled = true` 实例却永远起不来。
 #[test]
 fn enable_clears_down_marker() {
@@ -478,7 +478,7 @@ fn enable_clears_down_marker() {
             name: "p".to_string(),
         }),
     );
-    // 再模拟 `down` 留下的「用户显式停止」标记
+    // 再模拟 `stop` 留下的「用户显式停止」标记
     let rec_path = ctx.paths.record_path("p").expect("记录路径");
     let mut rec = crate::cm_ctl::record::InstanceRecord::new("p");
     rec.desired_state = crate::cm_ctl::record::DesiredState::Stopped;
@@ -511,7 +511,7 @@ fn enable_clears_down_marker() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 声明本就 `enabled = true`、记录却被 `down` 标成 `stopped` 时，`enable` 必须
+/// 声明本就 `enabled = true`、记录却被 `stop` 标成 `stopped` 时，`enable` 必须
 /// **立刻收敛**：`changed` 只反映 `enabled` 字段变没变，清标记是另一次写盘；只认
 /// `changed` 会回一个 `ok` 却什么都不做（默认 `--restart never`，`--watch` 又只跟
 /// 声明指纹，实例于是永远停着 —— 客户端拿到的却是成功）。
@@ -522,7 +522,7 @@ fn enable_on_already_enabled_but_downed_instance_reconverges() {
     let ctx = ctx_at(&dir);
     ctx.paths.ensure_dirs().expect("建状态目录");
 
-    // 只留下 `down` 的标记，`enabled` 仍是 true（客户端重试 enable 的场景）
+    // 只留下 `stop` 的标记，`enabled` 仍是 true（客户端重试 enable 的场景）
     let rec_path = ctx.paths.record_path("p").expect("记录路径");
     let mut rec = crate::cm_ctl::record::InstanceRecord::new("p");
     rec.desired_state = crate::cm_ctl::record::DesiredState::Stopped;
@@ -650,7 +650,7 @@ fn restart_op_reports_missing_instance() {
 }
 
 /// 预算超限时**拒绝**：让客户端等到 `handle_timeout` 会把「实例到底重启了没有」
-/// 变成未知（那时 `down` 可能已经执行）。
+/// 变成未知（那时 `stop` 可能已经执行）。
 #[test]
 fn restart_op_refuses_budget_beyond_handler_window() {
     let dir = tempdir("rs_budget");
@@ -688,7 +688,7 @@ fn restart_op_reaches_ops_restart_with_cli_defaults() {
             timeout: None,
         }),
     );
-    assert!(!dirty, "restart 自己做了 down + up，不该再触发收敛");
+    assert!(!dirty, "restart 自己做了 stop + start，不该再触发收敛");
     let v: Value = serde_json::from_str(&resp.to_line()).expect("响应应为 JSON");
     assert_eq!(v["ok"], json!(false));
     assert_eq!(

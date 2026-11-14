@@ -58,18 +58,18 @@ pub(crate) fn ensure_not_live(ctx: &Ctx, name: &str) -> Result<(), CtlError> {
 
 /// 拒绝之后该做什么。
 ///
-/// 按观测态分开，因为 `starting` 是**进行中**而不是「该被清掉的东西」：并发 `up` 或
+/// 按观测态分开，因为 `starting` 是**进行中**而不是「该被清掉的东西」：并发 `start` 或
 /// 上一个 ctl 刚被 Ctrl-C 时，正确动作是等它就绪；此时提示「先 `down`」会让人把一个
 /// 正在正常启动的实例白杀一遍。
 fn next_step(name: &str, observed: Observed) -> String {
     if observed == Observed::Starting {
         return format!(
-            "它看起来正在启动中（并发 `up`，或上一个 ctl 没等到就绪就退出了）；\
-             先 `crabmatectl status {name}` 看进展，要重来再 `crabmatectl down {name}`"
+            "它看起来正在启动中（并发 `start`，或上一个 ctl 没等到就绪就退出了）；\
+             先 `crabmatectl status {name}` 看进展，要重来再 `crabmatectl stop {name}`"
         );
     }
     format!(
-        "请先 `crabmatectl down {name}`（serve 优雅关停较慢时用 `--timeout <SECS>` 放宽宽限），\
+        "请先 `crabmatectl stop {name}`（serve 优雅关停较慢时用 `--timeout <SECS>` 放宽宽限），\
          确认进程已退出后重试"
     )
 }
@@ -318,7 +318,7 @@ mod tests {
             "与 `port_in_use` 同类：重试 `up` 没有意义，脚本据此判断「别重试」"
         );
         assert!(
-            err.message.contains("仍在运行") && err.message.contains("down"),
+            err.message.contains("仍在运行") && err.message.contains("stop"),
             "错误信息要既说清现状又给出下一步：{}",
             err.message
         );
@@ -362,14 +362,14 @@ mod tests {
             "starting 应建议先看进展：{starting}"
         );
         assert!(
-            !starting.contains("`crabmatectl down a`（serve"),
-            "starting 不该把 down 当成首选动作：{starting}"
+            !starting.contains("`crabmatectl stop a`（serve"),
+            "starting 不该把 stop 当成首选动作：{starting}"
         );
 
         let stale = next_step("a", Observed::Stale);
         assert!(
-            stale.contains("down") && !stale.contains("status a"),
-            "非 starting 应直接指向 down：{stale}"
+            stale.contains("stop") && !stale.contains("status a"),
+            "非 starting 应直接指向 stop：{stale}"
         );
     }
 

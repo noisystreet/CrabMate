@@ -109,7 +109,7 @@ pub struct InstanceRecord {
     /// 谁负责这个实例：`cli`（人工 `up` / `run`）或 `supervise`（声明式收敛）。
     ///
     /// 必须存在而不是靠「声明里有没有」反推：`supervise` 回收「声明已删掉」的实例时，
-    /// 只能回收自己拉起的那批。否则一旦有人手工 `crabmatectl up` 过某个实例，
+    /// 只能回收自己拉起的那批。否则一旦有人手工 `crabmatectl start` 过某个实例，
     /// 收敛就会把它当成「多余声明」杀掉 —— 那是不可接受的破坏。
     #[serde(default)]
     pub managed_by: Option<String>,

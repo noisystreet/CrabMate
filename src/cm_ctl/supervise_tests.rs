@@ -127,7 +127,7 @@ fn down_marked_instance_is_not_resurrected() {
 }
 
 /// #1187：`disable` 的语义是「这条声明别再跑了」，**不是**「杀掉同名进程」。
-/// 手工 `crabmatectl up` 起的实例不归声明管，不得代为停止。
+/// 手工 `crabmatectl start` 起的实例不归声明管，不得代为停止。
 #[test]
 fn disabled_decl_does_not_stop_cli_origin_instance() {
     let tmp = tempdir("disabled_cli");

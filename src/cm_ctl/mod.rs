@@ -166,10 +166,10 @@ mod tests {
     /// 编译期或运行期信号；新增字段 → 内部结构被泄漏成契约、以后删不掉。两个方向都
     /// 必须显式改 `fixtures/ctl_contract.json`，那一步就是审阅点。
     #[test]
-    fn ls_row_json_matches_the_contract() {
+    fn list_row_json_matches_the_contract() {
         let rec = record::InstanceRecord::default();
         let v = render::row_json(&rec, &sample_probe());
-        assert_eq!(sorted_keys(&v), expected_keys("ls_row"));
+        assert_eq!(sorted_keys(&v), expected_keys("list_row"));
     }
 
     /// `status --json` = `ls` 的一行 + 进程身份三项。

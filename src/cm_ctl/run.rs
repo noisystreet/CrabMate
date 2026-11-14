@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::config::cli::ctl::{
-    CtlCmd, CtlSubCmd, DownCmd, GcCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, UpCmd,
+    CtlCmd, CtlSubCmd, StopCmd, GcCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, StartCmd,
 };
 
 use super::control;
@@ -32,8 +32,8 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
     ensure_platform()?;
     let ctx = Ctx::resolve()?;
     match &cmd.sub {
-        CtlSubCmd::Up(c) => up_cmd(&ctx, c, workspace_cli),
-        CtlSubCmd::Down(c) => down_cmd(&ctx, c),
+        CtlSubCmd::Start(c) => start_cmd(&ctx, c, workspace_cli),
+        CtlSubCmd::Stop(c) => stop_cmd(&ctx, c),
         CtlSubCmd::Restart(c) => {
             let out = ops::restart(
                 &ctx,
@@ -47,7 +47,7 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
             Ok(())
         }
         CtlSubCmd::Run(c) => run_foreground(&ctx, c, workspace_cli),
-        CtlSubCmd::Ls(c) => {
+        CtlSubCmd::List(c) => {
             let rows = query::ls(&ctx)?;
             render::ls(&rows, c.json);
             Ok(())
@@ -77,7 +77,7 @@ pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
 /// 平台闸门：必须在**任何**子命令动作之前执行。
 ///
 /// 非 Linux 上进程事实读不到（没有 procfs），而 `identity` / `probe` 把「读不到」
-/// 表达成 `pid_alive = false`。若放行，`down` 会清掉记录却不杀进程、`ls` 会把每个
+/// 表达成 `pid_alive = false`。若放行，`stop` 会清掉记录却不杀进程、`list` 会把每个
 /// 实例都报成 `stopped`——这类静默误判比「明确说不能用」危险得多。
 fn ensure_platform() -> Result<(), CtlError> {
     if super::PLATFORM_SUPPORTED {
@@ -86,7 +86,7 @@ fn ensure_platform() -> Result<(), CtlError> {
     Err(CtlError::general(
         "platform_unsupported",
         "crabmatectl 目前仅支持 Linux：进程身份校验与存活判定依赖 procfs（/proc），\
-         在其它平台上这些事实读不到，`down` / `ls` 会给出与实际进程不符的结果",
+         在其它平台上这些事实读不到，`stop` / `list` 会给出与实际进程不符的结果",
     ))
 }
 
@@ -99,7 +99,7 @@ fn require_workspace(workspace_cli: Option<&str>, what: &str) -> Result<String, 
     })
 }
 
-fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
+fn start_args(c: &StartCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
     let name = c.name.clone().ok_or_else(|| {
         CtlError::usage(
             "missing_name",
@@ -108,7 +108,7 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
     })?;
     Ok(UpArgs {
         name,
-        // 人工 `up` 仍要求显式工作区：待绑定只用于「声明里省略 workspace」的无人值守实例，
+        // 人工 `start` 仍要求显式工作区：待绑定只用于「声明里省略 workspace」的无人值守实例，
         // 人手敲命令时静默进入待绑定态只会让人以为实例坏了（#1183 §2 ④）。
         workspace: Some(require_workspace(workspace_cli, "ctl up")?),
         serve_config: c.serve_config.clone(),
@@ -119,19 +119,19 @@ fn up_args(c: &UpCmd, workspace_cli: Option<&str>) -> Result<UpArgs, CtlError> {
         env_file_env: CredEnv::default(),
         timeout: Duration::from_secs(c.timeout_secs),
         origin: Origin::Cli,
-        // 人工 `up` 不走 profile：预设只由声明式收敛（`supervise`）解析
+        // 人工 `start` 不走 profile：预设只由声明式收敛（`supervise`）解析
         profile: None,
         profile_fingerprint: None,
         no_tools: false,
     })
 }
 
-/// `up`：单实例，或 `--all` 按声明批量启动。
-fn up_cmd(ctx: &Ctx, c: &UpCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
+/// `start`：单实例，或 `--all` 按声明批量启动。
+fn start_cmd(ctx: &Ctx, c: &StartCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
     if c.all {
-        return up_all(ctx, c);
+        return start_all(ctx, c);
     }
-    let out = ops::up(ctx, &up_args(c, workspace_cli)?)?;
+    let out = ops::up(ctx, &start_args(c, workspace_cli)?)?;
     render::up(&out);
     Ok(())
 }
@@ -139,10 +139,10 @@ fn up_cmd(ctx: &Ctx, c: &UpCmd, workspace_cli: Option<&str>) -> Result<(), CtlEr
 /// `up --all`：**复用** `supervise` 的计划，只执行其中的 `Start`。
 ///
 /// 回收语义仍归 `supervise` 独占——这里不执行 `Stop` / `Skipped`，否则「批量起」会变成
-/// 「顺手停掉用户自己 `up` 起来的实例」。`Running` 不进入执行集合，所以重复执行是幂等的。
+/// 「顺手停掉用户自己 `start` 起来的实例」。`Running` 不进入执行集合，所以重复执行是幂等的。
 /// 另写一条「什么算需要起」才是这里最该避免的东西：声明解析、profile 指纹、端口池、
 /// workspace 预检都只该有一份，第二份迟早与第一份漂移。
-fn up_all(ctx: &Ctx, c: &UpCmd) -> Result<(), CtlError> {
+fn start_all(ctx: &Ctx, c: &StartCmd) -> Result<(), CtlError> {
     reject_name_with_all(c)?;
     reject_single_instance_flags(c)?;
     let path = decl::target_path(ctx, c.instances_file.as_deref())?;
@@ -173,7 +173,7 @@ fn starts_only(steps: Vec<supervise::Step>) -> Vec<supervise::Step> {
 }
 
 /// `up --all` 的收敛参数：一次性执行，不巡检、不重启。
-fn one_shot_opts(c: &UpCmd) -> supervise::Opts {
+fn one_shot_opts(c: &StartCmd) -> supervise::Opts {
     supervise::Opts {
         timeout: Duration::from_secs(c.timeout_secs),
         grace: DEFAULT_GRACE,
@@ -186,8 +186,8 @@ fn one_shot_opts(c: &UpCmd) -> supervise::Opts {
     }
 }
 
-/// `--all` 与实例名二选一（缺名字由 `up_args` 负责，这里负责「两个都给」那种）。
-fn reject_name_with_all(c: &UpCmd) -> Result<(), CtlError> {
+/// `--all` 与实例名二选一（缺名字由 `start_args` 负责，这里负责「两个都给」那种）。
+fn reject_name_with_all(c: &StartCmd) -> Result<(), CtlError> {
     if c.name.is_none() {
         return Ok(());
     }
@@ -198,7 +198,7 @@ fn reject_name_with_all(c: &UpCmd) -> Result<(), CtlError> {
 }
 
 /// `--all` 不接受单实例参数：它们在声明（或 profile）里，静默忽略会让人以为生效。
-fn reject_single_instance_flags(c: &UpCmd) -> Result<(), CtlError> {
+fn reject_single_instance_flags(c: &StartCmd) -> Result<(), CtlError> {
     let mut used = Vec::new();
     if c.serve_config.is_some() {
         used.push("--serve-config");
@@ -338,7 +338,7 @@ fn require_from_config(c: &SuperviseCmd) -> Result<(), CtlError> {
 ///
 /// **记录里只存 `env_keys`、不存 env 值**（刻意的安全边界），从记录重建启动规格会在
 /// 重启后静默丢掉手工 `up -e FOO=bar` 给的变量 —— 一个「配置悄悄变了」的守护进程比
-/// 没有更糟。所以这里拒绝：要么写进声明，要么用 `up` 自己管。
+/// 没有更糟。所以这里拒绝：要么写进声明，要么用 `start` 自己管。
 fn ensure_declared(path: &std::path::Path, name: Option<&str>) -> Result<(), CtlError> {
     let Some(name) = name else {
         return Ok(());
@@ -428,7 +428,7 @@ fn resolve_socket_path(ctx: &Ctx, spec: &str) -> Result<PathBuf, CtlError> {
     }
 }
 
-fn down_cmd(ctx: &Ctx, c: &DownCmd) -> Result<(), CtlError> {
+fn stop_cmd(ctx: &Ctx, c: &StopCmd) -> Result<(), CtlError> {
     let grace = Duration::from_secs(c.timeout_secs);
     if c.all {
         let rows = query::ls(ctx)?;
@@ -491,7 +491,7 @@ fn prepare_run(
         None => ctx.pool.first_free()?,
     };
     let credentials = run_credentials(c)?;
-    // 与 `up` 同一套友好预检（越界才阻断）；`run` 是前台模式，预检同样适用。
+    // 与 `start` 同一套友好预检（越界才阻断）；`run` 是前台模式，预检同样适用。
     let pf = preflight::check(c.serve_config.as_deref(), &workspace)?;
     Ok((workspace, port, credentials, pf.warnings))
 }
@@ -562,7 +562,7 @@ fn mark_run_stopped(path: &std::path::Path) -> Result<(), CtlError> {
     record::write_atomic(path, &rec)
 }
 
-/// 前台运行：与 `up` 的区别是**不脱管**——ctl 阻塞到子进程退出。
+/// 前台运行：与 `start` 的区别是**不脱管**——ctl 阻塞到子进程退出。
 fn run_foreground(ctx: &Ctx, c: &RunCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
     let (workspace, port, credentials, warnings) = prepare_run(ctx, c, workspace_cli)?;
     render::warn(&warnings);

@@ -20,15 +20,15 @@ pub struct CtlCmd {
 #[derive(Subcommand, Debug, Clone)]
 pub enum CtlSubCmd {
     /// 启动一个 serve 实例（脱管：ctl 退出后继续运行）
-    Up(UpCmd),
+    Start(StartCmd),
     /// 停止实例（对整组发 SIGTERM → 宽限 → SIGKILL）
-    Down(DownCmd),
-    /// 重启实例（down + up，复用原端口与配置）
+    Stop(StopCmd),
+    /// 重启实例（stop + start，复用原端口与配置）
     Restart(RestartCmd),
     /// 前台运行（阻塞；便于 systemd Type=simple / docker CMD 直接托管）
     Run(RunCmd),
     /// 列出全部实例
-    Ls(LsCmd),
+    List(ListCmd),
     /// 显示单个实例详情
     Status(StatusCmd),
     /// 查看实例日志
@@ -43,7 +43,7 @@ pub enum CtlSubCmd {
     Remove(RemoveCmd),
     /// 软删：保留声明（`env` / `config` 原样），但不让它运行
     Disable(ToggleCmd),
-    /// 撤销 disable（并收回 `down` 留下的「用户显式停止」标记）
+    /// 撤销 disable（并收回 `stop` 留下的「用户显式停止」标记）
     Enable(ToggleCmd),
     /// 按 `instances.toml` 声明收敛实例（起该起的、停该停的）
     Supervise(SuperviseCmd),
@@ -131,7 +131,7 @@ pub struct SuperviseCmd {
 
 /// 启动实例。
 #[derive(Parser, Debug, Clone)]
-pub struct UpCmd {
+pub struct StartCmd {
     /// 实例名；与 `--all` 二选一
     pub name: Option<String>,
 
@@ -172,7 +172,7 @@ pub struct UpCmd {
 
 /// 停止实例。
 #[derive(Parser, Debug, Clone)]
-pub struct DownCmd {
+pub struct StopCmd {
     /// 实例名；与 `--all` 二选一
     pub name: Option<String>,
 
@@ -229,7 +229,7 @@ pub struct RunCmd {
 
 /// 列出实例。
 #[derive(Parser, Debug, Clone)]
-pub struct LsCmd {
+pub struct ListCmd {
     /// 输出 JSON（字段稳定，供脚本与客户端消费）
     #[arg(long)]
     pub json: bool,
@@ -271,7 +271,7 @@ pub struct PruneCmd {
     /// 连「记录指向的进程仍在运行」的条目一起清掉
     ///
     /// 默认拒绝这类条目：状态文件是 ctl 找到那个进程的唯一地址，删掉之后就再也
-    /// `down` 不到它了。只有 `down` 也停不掉那个进程、且你确认放弃它时才用 ——
+    /// `stop` 不到它了。只有 `stop` 也停不掉那个进程、且你确认放弃它时才用 ——
     /// 它会变成连 ctl 都找不到的孤儿进程。
     #[arg(long)]
     pub force: bool,
@@ -356,11 +356,11 @@ pub struct ToggleCmd {
 /// 而不是生成器里，是因为「新增子命令却忘了进 man 页」不会编译失败，只会留下一条
 /// 虚假的 `crabmatectl\-xxx(1)` 交叉引用。
 pub const SUBCOMMAND_NAMES: &[&str] = &[
-    "up",
-    "down",
+    "start",
+    "stop",
     "restart",
     "run",
-    "ls",
+    "list",
     "status",
     "logs",
     "prune",
@@ -385,7 +385,7 @@ pub const SUBCOMMAND_NAMES: &[&str] = &[
     long_about = None
 )]
 pub struct CtlCli {
-    /// 实例 workspace 路径（`up` / `run` 必填；其余子命令忽略）
+    /// 实例 workspace 路径（`start` / `run` 必填；其余子命令忽略）
     #[arg(long, global = true, value_name = "PATH")]
     pub workspace: Option<String>,
 

@@ -24,7 +24,7 @@ Help: `crabmate --help`, `crabmate help`,
   rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` and both man pages,
   and prints the `CHANGELOG.md` heading skeleton; `scripts/check-version-sync.sh` (pre-commit + `ci.yml`) asserts all four stay equal (#1269).
 - **Granularity (important)**: these are **single pages** — top-level options and subcommand names only (**not** each subcommand's own flags;
-  use `crabmatectl up --help`,
+  use `crabmatectl start --help`,
   since `-h` is always newer than the man page). Changing a subcommand's flags therefore needs **no** regeneration and produces **no** diff;
   only top-level options or subcommand additions/removals change the output.
 - **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default **`server`**; git tag **`v0.8.0`** matches this package):
