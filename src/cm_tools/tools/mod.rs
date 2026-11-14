@@ -450,10 +450,17 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
 
 /// [`prepare_builtin_dispatch`] 失败时，**String 面**的历史渲染。
 ///
-/// 与改造前逐字一致：普通前置失败拼 `错误：` 前缀；`未知工具：…` 的正文自带前缀，
-/// 不再叠加（[`ToolError::unknown_tool`] 的 `message` 就是那句正文）。
+/// 判定的是「`message` 是否自带用户可见前缀」，**不是**错误码语义：目前前置失败里
+/// 只有 [`ToolError::unknown_tool`] 的正文自带 `未知工具：…`，其余一律要补 `错误：`。
+///
+/// **加新的前置错误时必须核对**：若新错误的 `message` 已自带 `错误：`
+/// （[`ToolError::path_resolve_failed`] 的正文就是这样，见其构造器注释），要把它加进
+/// `SELF_PREFIXED`，否则会输出 `错误：错误：…`。这是运行期字符串问题，编译期抓不到
+/// —— 白名单写死在这里，就是为了让「新增一种前置错误」必须在此处过一遍。
 fn render_string_face_error(e: &ToolError) -> String {
-    if e.code == "unknown_tool" {
+    /// 正文**自带**用户可见前缀、因此不能再叠 `错误：` 的错误码。
+    const SELF_PREFIXED: &[&str] = &["unknown_tool"];
+    if SELF_PREFIXED.contains(&e.code.as_str()) {
         e.message.clone()
     } else {
         format!("错误：{}", e.message)
@@ -620,6 +627,13 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
 ///
 /// `run_command` 实现体基于 [`tokio::process`] 事件驱动等待（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存），
 /// 不再占用阻塞线程。
+///
+/// **与 [`run_tool_result_async`] 的不对称是既有事实**（不是本函数引入）：非 `run_command`
+/// 工具这里委派 **String 面** [`run_tool`]（不加工作区图片提示、不修正 `parsed.ok`），而
+/// [`run_tool_result_async`] 委派 [`run_tool_result`] —— 后者经 `finish_dispatch_typed_ok`
+/// **会**附加提示并修正。两侧消费者已分叉（`tool_sandbox/runner.rs` 用本函数，
+/// `cm_workflow/execute/node.rs` 用 Result 面）。统一语义属 #1378 第二步；此处**不**擅自
+/// 抹平，因为那会改变沙盒内拿到的正文。
 pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     match try_run_command_dispatch_async(name, args_json, ctx).await {
         Some(Ok((output, _))) => output,
@@ -629,6 +643,8 @@ pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) 
 }
 
 /// 异步版 [`run_tool_result`]：`run_command` 走 [`run_command_dispatch_async`]，其余委派同步路径。
+///
+/// 与 [`run_tool_async`] 的差异（Result 面 vs String 面）是**故意的**，理由见那边的说明。
 pub async fn run_tool_result_async(
     name: &str,
     args_json: &str,

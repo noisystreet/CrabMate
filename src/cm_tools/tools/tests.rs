@@ -115,6 +115,33 @@ fn string_and_result_faces_share_the_same_pre_dispatch_verdict() {
     assert_eq!(schema_err.code, "invalid_args");
 }
 
+/// async 入口的三分支里，`None`（非 `run_command`）这条此前只有编译期保证。
+/// 这里钉住它「委派给**各自**的同步面」：String 面对 [`run_tool`]，Result 面对
+/// [`run_tool_result`]。两侧本就不等价，见 [`run_tool_async`] 的文档说明。
+#[tokio::test]
+async fn non_run_command_async_entries_delegate_to_their_own_sync_faces() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let args = r#"{"text":"{\"a\":1}"}"#;
+
+    assert_eq!(
+        run_tool_async("json_format", args, &ctx).await,
+        run_tool("json_format", args, &ctx)
+    );
+
+    let from_async = run_tool_result_async("json_format", args, &ctx).await;
+    let from_sync = run_tool_result("json_format", args, &ctx);
+    assert_eq!(from_async.message, from_sync.message);
+    assert_eq!(from_async.ok, from_sync.ok);
+    assert_eq!(from_async.error_code, from_sync.error_code);
+
+    // 未知工具同样落在 `None` 分支（名字 != RUN_COMMAND），String 面不叠 `错误：`。
+    assert_eq!(
+        run_tool_async("unknown_tool", "{}", &ctx).await,
+        "未知工具：unknown_tool"
+    );
+}
+
 #[tokio::test]
 async fn test_run_tool_run_command_pwd() {
     crate::cm_tools::tools::command::reset_run_command_rate_limit_for_tests();
