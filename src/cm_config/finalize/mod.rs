@@ -20,7 +20,7 @@ mod agent_layers;
 mod build;
 mod tail;
 
-pub(crate) use self::build::finalize;
+pub(in crate::cm_config) use self::build::finalize;
 
 #[cfg(test)]
 mod tests;

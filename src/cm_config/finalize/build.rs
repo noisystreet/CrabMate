@@ -442,7 +442,7 @@ pub(super) fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<Agen
     Ok(build_agent_config_from_finalize(mid, tail))
 }
 
-pub(crate) fn finalize(
+pub(in crate::cm_config) fn finalize(
     b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
