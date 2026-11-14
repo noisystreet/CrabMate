@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use log::info;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::mpsc;
@@ -12,11 +11,12 @@ static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
+use crate::agent::agent_turn::host::params::LoopEnv;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SseEncoder, SsePayload, encode_message};
 use crate::tool_result::ToolEnvelopeContext;
-use crate::types::{Message, Tool, ToolCall};
+use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 use crate::agent::agent_turn::policy::{
     ToolBatchExecutionMode, ToolBatchModeParams, replay_force_serial_from_env,
@@ -58,9 +58,8 @@ fn trace_parallel_tool_child_span(
 }
 
 pub(crate) struct WebExecuteCtx<'a> {
-    pub cfg: &'a Arc<AgentConfig>,
-    pub effective_working_dir: &'a Path,
-    pub workspace_is_set: bool,
+    /// 整场不变的环级输入（cfg / 工作目录 / 完整工具定义）。
+    pub env: LoopEnv<'a>,
     /// 单轮 `read_file` 缓存；`None` 表示关闭。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// SSE 控制面 / 钩子（与 [`crate::agent::agent_turn::RunLoopIo::control`] 同源）。
@@ -75,8 +74,6 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 分阶段规划当前步子代理约束；与 `RunLoopTurnState::turn_planner_hints.step_executor_constraint` 同步。
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
-    /// 本会话完整工具定义（未按步收窄）；用于子代理越权提示中的允许工具名列表。
-    pub tools_defs_full: &'a [Tool],
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
     /// 本回合权限能力快照（可见性已在规划侧生效，这里供 early-deny 与执行期判定）。
@@ -148,9 +145,8 @@ struct ExecuteToolsCommonCtx<'a> {
     tool_calls: &'a [ToolCall],
     per_coord: &'a mut PerCoordinator,
     messages: &'a mut Vec<Message>,
-    cfg: &'a Arc<AgentConfig>,
-    effective_working_dir: &'a Path,
-    workspace_is_set: bool,
+    /// 整场不变的环级输入（cfg / 工作目录 / 完整工具定义）。
+    env: LoopEnv<'a>,
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
@@ -160,7 +156,6 @@ struct ExecuteToolsCommonCtx<'a> {
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,
-    tools_defs_full: &'a [Tool],
     turn_allow: Option<&'a HashSet<String>>,
     permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
@@ -190,9 +185,9 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
     .await;
     let batch_mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
         force_serial,
-        workspace_is_set: ctx.workspace_is_set,
+        workspace_is_set: ctx.env.workspace_is_set,
         handler_lookup: &ctx.handler_lookup,
-        cfg: ctx.cfg.as_ref(),
+        cfg: ctx.env.cfg.as_ref(),
         tool_calls: ctx.tool_calls,
         turn_allow: ctx.turn_allow,
     });
@@ -206,7 +201,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 "当前批次满足只读并行条件，采用并行只读批执行以提升吞吐",
                 serde_json::json!({
                     "force_serial": force_serial,
-                    "workspace_is_set": ctx.workspace_is_set,
+                    "workspace_is_set": ctx.env.workspace_is_set,
                     "tool_call_count": ctx.tool_calls.len(),
                 }),
                 "current_tool_batch",
@@ -237,7 +232,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 },
                 serde_json::json!({
                     "force_serial": force_serial,
-                    "workspace_is_set": ctx.workspace_is_set,
+                    "workspace_is_set": ctx.env.workspace_is_set,
                     "tool_call_count": ctx.tool_calls.len(),
                 }),
                 "current_tool_batch",
@@ -309,9 +304,7 @@ pub(crate) async fn per_execute_tools_web(
     ctx: WebExecuteCtx<'_>,
 ) -> ExecuteToolsBatchOutcome {
     let WebExecuteCtx {
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
+        env,
         read_file_turn_cache,
         control,
         cancel,
@@ -320,7 +313,6 @@ pub(crate) async fn per_execute_tools_web(
         workspace_changelist,
         request_chrome_trace,
         step_executor_constraint,
-        tools_defs_full,
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
@@ -342,19 +334,16 @@ pub(crate) async fn per_execute_tools_web(
         tool_calls,
         per_coord,
         messages,
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
+        env,
         read_file_turn_cache,
         workspace_changelist,
         control,
         cancel,
-        tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
+        tool_result_envelope_v1: env.cfg.tool_transcript.tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn,
         request_chrome_trace,
         step_executor_constraint,
-        tools_defs_full,
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,

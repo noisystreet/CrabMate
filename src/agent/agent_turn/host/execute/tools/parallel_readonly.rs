@@ -427,9 +427,7 @@ pub(super) async fn execute_tools_parallel(
         tool_calls,
         per_coord,
         messages,
-        cfg,
-        effective_working_dir,
-        workspace_is_set: _,
+        env,
         read_file_turn_cache,
             workspace_changelist,
             control,
@@ -439,7 +437,6 @@ pub(super) async fn execute_tools_parallel(
         mcp_turn: _,
         request_chrome_trace: _,
         step_executor_constraint,
-        tools_defs_full,
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
@@ -455,10 +452,10 @@ pub(super) async fn execute_tools_parallel(
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
 
-    let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
+    let tools_defs_hint = Arc::new(env.tools_defs.to_vec());
 
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
-    let parallel_max = cfg.chat_queues_cache.parallel_readonly_tools_max.max(1);
+    let parallel_max = env.cfg.chat_queues_cache.parallel_readonly_tools_max.max(1);
     parallel_readonly_log_batch_start(tool_calls, dedup_count, parallel_max);
 
     let parallel_batch_id = format!(
@@ -474,7 +471,7 @@ pub(super) async fn execute_tools_parallel(
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
     if matches!(
-        parallel_emit_tool_starts(tool_calls, cfg.as_ref(), messages, &control, Some(permission)).await,
+        parallel_emit_tool_starts(tool_calls, env.cfg.as_ref(), messages, &control, Some(permission)).await,
         ExecuteToolsBatchOutcome::AbortedSse
     ) {
         return ExecuteToolsBatchOutcome::AbortedSse;
@@ -482,7 +479,7 @@ pub(super) async fn execute_tools_parallel(
 
     let prefetch_failures = parallel_prefetch_approval_failures(
         tool_calls,
-        cfg,
+        env.cfg,
         web_tool_ctx,
         &handler_lookup,
         Some(permission),
@@ -492,8 +489,8 @@ pub(super) async fn execute_tools_parallel(
     let result_by_name_args = parallel_collect_unique_results(
         ParallelUniqueBatchParts {
             tool_calls,
-            cfg,
-            effective_working_dir,
+            cfg: env.cfg,
+            effective_working_dir: env.effective_working_dir,
             read_file_turn_cache,
             workspace_changelist,
             web_tool_ctx,
@@ -519,7 +516,7 @@ pub(super) async fn execute_tools_parallel(
         parallel_batch_id_ref,
         per_coord,
         messages,
-        cfg,
+        cfg: env.cfg,
         tool_outcome_recorder: &tool_outcome_recorder,
         control,
         tool_result_envelope_v1,
