@@ -80,7 +80,7 @@
 | [summarize_experience_todo.md](summarize_experience_todo.md) | `summarize_experience` 待实现功能 |
 | [conversation_management_api.md](conversation_management_api.md) | 设计草案：会话（conversation）管理 API 补齐 |
 
-## 7. Web / UI 宿主（6）
+## 7. Web / UI 宿主（5）
 
 | 文档 | 说明 |
 |---|---|
@@ -89,7 +89,6 @@
 | [web_api_integration.md](web_api_integration.md) | Web API 第三方集成：架构备忘与增强方向 |
 | [web_theme_presets.md](web_theme_presets.md) | Web 前端：多套预设主题（扩展 `data-theme`） |
 | [web_tui_stream_to_opencode_style.md](web_tui_stream_to_opencode_style.md) | Web 聊天：OpenCode / OpenClaw 式流式跟底演进 |
-| [web_ui_todo.md](web_ui_todo.md) | Web UI 未来功能规划 |
 
 ## 8. 工程 / 基础设施（7）
 
@@ -126,4 +125,4 @@
 | [orchestration_decision_engine.md](archive/orchestration_decision_engine.md) | 编排决策引擎：从二元门控到多因子评分 | **已废弃**：`staged_planning_gate` 未作为现行路径保留 |
 | [Web界面美化设计.md](archive/Web界面美化设计.md) | Web 界面美化（Leptos 前端） | **已被取代**：UI 源码在 Client 仓 `frontend/`；样式契约见 [web_theme_presets.md](web_theme_presets.md) |
 | [代码库索引方案.md](archive/代码库索引方案.md) | 工作区统一代码索引与增量缓存 | **已采纳**：已实现，权威见 [工具说明](../工具说明.md) 的 `codebase_semantic_search` 与 [配置说明](../配置说明.md) 的 `codebase_semantic_*` |
-| [CODEBASE_INDEX_PLAN.md](archive/CODEBASE_INDEX_PLAN.md) | 上者英文镜像 | **已采纳**：同上 |
+| [web_ui_todo.md](archive/web_ui_todo.md) | Web UI 未来功能规划（设置页路由化、移动端适配等） | **已被取代**：Web UI 源码与实现计划在 Client 仓 `frontend/`；未落地条目（消息编辑重发 · 会话分支 · Reactions · Toast 等）随 UI 归 Client 仓跟踪 |

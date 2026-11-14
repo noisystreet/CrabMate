@@ -217,7 +217,7 @@
   错误码写入 [error_codes.rs](../../src/cm_api_contract/error_codes.rs) 并对齐 `docs/命令行契约.md`——P0 需要 `INVALID_MEMORY_ID`、
     `INVALID_MEMORY_KIND` 与 `LONG_TERM_MEMORY_DISABLED`；`MEMORY_NOT_FOUND` 仅 D4（P1）的 `PUT` 未命中使用（`DELETE` 已定为 204 幂等，见 §7.1 Q4）。
 - **禁用态语义**：
-  `long_term_memory_enabled=false` **或** `AppState.long_term_memory` 为 `None` 时（[cli_run_serve.rs](../../src/cli_run_serve.rs#L34-L70)
+  `long_term_memory_enabled=false` **或** `AppState.long_term_memory` 为 `None` 时（[`cm_cli/serve/paths.rs`](../../src/cm_cli/serve/paths.rs)
   在内存后端且未配 `long_term_memory_store_sqlite_path` 时会跳过 runtime），三个路由统一回 **503 `LONG_TERM_MEMORY_DISABLED`**（§7.1 Q2 已定），
   响应体带 `enabled: false` 便于 UI 直接展示原因。
 - **不改变既有行为**：`DELETE /conversation/{id}` 仍**不**清理 LTM（§1.4）；模型侧四个工具的行为与输出格式不变；`/status` 既有字段不变。
