@@ -40,11 +40,8 @@ pub(crate) use host::{
 pub(crate) use plan_reflect::{intent, plan, reflect};
 #[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
 pub(crate) use turn_loop::turn_completion;
-pub(crate) use turn_loop::{orchestration_entry, run_dispatch};
-
-pub(crate) mod messages {
-    pub(crate) use crate::agent::agent_turn::policy::messages::*;
-}
+pub(crate) use policy::orchestration_entry;
+pub(crate) use turn_loop::run_dispatch;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};
@@ -58,7 +55,7 @@ pub(crate) use execute_tools::{
 };
 pub(crate) use intent::intent_at_turn_start;
 #[allow(unused_imports)]
-pub(crate) use messages::push_assistant_merging_trailing_empty_placeholder;
+pub(crate) use policy::messages::push_assistant_merging_trailing_empty_placeholder;
 pub(crate) use params::{
     RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams, RunLoopTurnState,
     TurnPlannerHints,

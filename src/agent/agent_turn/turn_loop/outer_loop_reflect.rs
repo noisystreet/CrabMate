@@ -14,8 +14,8 @@ use super::outer_loop_build_idle::{
     outer_loop_assistant_is_build_idle_without_tools, outer_loop_build_idle_feedback_if_needed,
     outer_loop_window_has_build_progress_since_last_user,
 };
-use super::outer_loop_fsm::ReflectBranchCtl;
-use super::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
+use crate::agent::agent_turn::policy::outer_loop_fsm::ReflectBranchCtl;
+use crate::agent::agent_turn::policy::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use super::turn_completion::{
     outer_loop_missing_final_answer_feedback_if_needed, outer_loop_truncated_feedback_if_needed,
 };
