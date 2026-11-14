@@ -196,10 +196,10 @@ pub enum Request {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListRequest {
-    /// 为真时并入「有状态记录但没有声明」的实例（命令行 `up` 起的）。
+    /// 为真时并入「有状态记录但没有声明」的实例（命令行 `start` 起的）。
     ///
     /// 缺省 `false`：`list` 的视野仍是「声明里有什么」，与引入本字段前逐字一致；
-    /// 客户端要做全量总览时才显式打开，避免与 `ctl ls` 的语义搅在一起。
+    /// 客户端要做全量总览时才显式打开，避免与 `ctl list` 的语义搅在一起。
     #[serde(default)]
     pub include_unmanaged: bool,
 }
@@ -335,7 +335,7 @@ pub fn handle(ctx: &Ctx, path: &Path, request: Request) -> (Response, bool) {
         Request::Remove(r) => remove(path, r),
         Request::Disable(t) => set_decl_enabled(path, ctx, t.name, false),
         Request::Enable(t) => set_decl_enabled(path, ctx, t.name, true),
-        // `restart` 自己做了 down + up，不需要主循环再收敛一遍
+        // `restart` 自己做了 stop + start，不需要主循环再收敛一遍
         Request::Restart(r) => (restart(ctx, r), false),
     }
 }
@@ -378,11 +378,11 @@ fn remove(path: &Path, r: RemoveRequest) -> (Response, bool) {
 /// 适配 [`decl::set_enabled`]：`disable` / `enable` 只翻声明里的 `enabled`。
 ///
 /// 三条约定（与 `remove` 对齐，客户端可无脑重试）：**幂等**（值未变时 `changed: false`
-/// 且不触发收敛）、**目标不存在也成功**（`note` 说明）、`enable` 顺手收回 `down`
+/// 且不触发收敛）、**目标不存在也成功**（`note` 说明）、`enable` 顺手收回 `stop`
 /// 留下的 `desired_state = stopped`（否则收敛会一直 `Skipped`，声明明明 `enabled = true`）。
 ///
 /// 返回值第二项即 [`handle`] 的「需要立刻收敛」，判据是
-/// [`decl::ToggleOutcome::needs_reconcile`] 而**不是** `changed`：清 `down` 标记同样
+/// [`decl::ToggleOutcome::needs_reconcile`] 而**不是** `changed`：清 `stop` 标记同样
 /// 是一次写盘，只认 `changed` 会回一个「成功却不收敛」。
 fn set_decl_enabled(path: &Path, ctx: &Ctx, name: String, enabled: bool) -> (Response, bool) {
     match decl::set_enabled(path, ctx, &name, enabled) {
@@ -474,7 +474,7 @@ fn restart_budget(r: &RestartRequest) -> Result<(Duration, Duration), Response> 
 
 /// 列出声明的实例及其状态记录。
 ///
-/// 默认只列**声明中**的实例：人工 `up` 起的不在声明里，那是 `ctl ls` 的视野；
+/// 默认只列**声明中**的实例：人工 `start` 起的不在声明里，那是 `ctl list` 的视野；
 /// `include_unmanaged` 打开时才并入它们，并以 `declared` / `managed_by` 区分来源。
 /// 缺记录时 `state` 给 `starting` —— 客户端要能立刻画出「已请求、尚未就绪」的 lane。
 ///

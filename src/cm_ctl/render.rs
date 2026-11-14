@@ -340,7 +340,7 @@ pub fn decl_add(out: &decl::AddOutcome, path: &Path) {
     if out.created {
         println!("已在声明中新增实例 {}（{}）", out.name, path.display());
         println!(
-            "  提示：只写了声明，进程还没起 —— 用 `crabmatectl up {}`，或让常驻 `supervise --watch` 收敛",
+            "  提示：只写了声明，进程还没起 —— 用 `crabmatectl start {}`，或让常驻 `supervise --watch` 收敛",
             out.name
         );
         return;
@@ -400,7 +400,7 @@ pub fn decl_toggle(out: &decl::ToggleOutcome, path: &Path) {
         if out.enabled {
             "拉起"
         } else {
-            "停掉（要立即停止请用 `crabmatectl down`）"
+            "停掉（要立即停止请用 `crabmatectl stop`）"
         }
     );
 }

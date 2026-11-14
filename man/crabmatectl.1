@@ -10,7 +10,7 @@ crabmatectl \- 本地多实例 crabmate serve 进程管理（Linux\-only）
 .SH OPTIONS
 .TP
 \fB\-\-workspace\fR \fI<PATH>\fR
-实例 workspace 路径（`up` / `run` 必填；其余子命令忽略）
+实例 workspace 路径（`start` / `run` 必填；其余子命令忽略）
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
@@ -19,19 +19,19 @@ Print help
 Print version
 .SH SUBCOMMANDS
 .TP
-\fBup\fR
+\fBstart\fR
 启动一个 serve 实例（脱管：ctl 退出后继续运行）
 .TP
-\fBdown\fR
+\fBstop\fR
 停止实例（对整组发 SIGTERM → 宽限 → SIGKILL）
 .TP
 \fBrestart\fR
-重启实例（down + up，复用原端口与配置）
+重启实例（stop + start，复用原端口与配置）
 .TP
 \fBrun\fR
 前台运行（阻塞；便于 systemd Type=simple / docker CMD 直接托管）
 .TP
-\fBls\fR
+\fBlist\fR
 列出全部实例
 .TP
 \fBstatus\fR
@@ -56,7 +56,7 @@ Print version
 软删：保留声明（`env` / `config` 原样），但不让它运行
 .TP
 \fBenable\fR
-撤销 disable（并收回 `down` 留下的「用户显式停止」标记）
+撤销 disable（并收回 `stop` 留下的「用户显式停止」标记）
 .TP
 \fBsupervise\fR
 按 `instances.toml` 声明收敛实例（起该起的、停该停的）

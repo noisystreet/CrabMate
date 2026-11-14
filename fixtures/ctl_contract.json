@@ -1,6 +1,6 @@
 {
-  "_note": "crabmatectl 对外 JSON 与状态文件的字段契约。crabmate-client 直接消费这些字段名，改名的后果是客户端静默读到 null（表现为 lane 一直「未知」），删字段同理；新增字段则会把内部结构泄漏成契约、以后删不掉。所以字段集与这里双向绑定：任何增删改都必须显式改一次本文件——那一步就是审阅点。生成来源：ls_row/status_row = src/cm_ctl/render.rs，record_fields = src/cm_ctl/record.rs，supervise_step = src/cm_ctl/render.rs 的 step_json（`supervise --dry-run --json` 的一条计划）。",
-  "ls_row": [
+  "_note": "crabmatectl 对外 JSON 与状态文件的字段契约。crabmate-client 直接消费这些字段名，改名的后果是客户端静默读到 null（表现为 lane 一直「未知」），删字段同理；新增字段则会把内部结构泄漏成契约、以后删不掉。所以字段集与这里双向绑定：任何增删改都必须显式改一次本文件——那一步就是审阅点。生成来源：list_row/status_row = src/cm_ctl/render.rs，record_fields = src/cm_ctl/record.rs，supervise_step = src/cm_ctl/render.rs 的 step_json（`supervise --dry-run --json` 的一条计划）。",
+  "list_row": [
     "base_url",
     "config_in_use",
     "desired_state",

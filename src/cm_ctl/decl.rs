@@ -6,10 +6,10 @@
 //! - CLI 子命令（[`cli_add`] 等）：原语 → [`super::render`] 的人读输出。
 //!
 //! 为什么必须共用：这些语义**都不是显然的**，各写一遍必然漂移——`add` 幂等且
-//! 不覆盖手工写的 `env`、`remove` 对不存在的实例也成功、`enable` 顺手清掉 `down`
+//! 不覆盖手工写的 `env`、`remove` 对不存在的实例也成功、`enable` 顺手清掉 `stop`
 //! 留下的标记。任何一条在两个入口上不一致，都会变成「同一条命令两条通道两种行为」。
 //!
-//! 本模块**只写声明，不碰进程**：`add` 之后实例要等 `up` 或常驻 `supervise` 收敛才
+//! 本模块**只写声明，不碰进程**：`add` 之后实例要等 `start` 或常驻 `supervise` 收敛才
 //! 会起来；`disable` 之后进程要等 `supervise --watch` 那一轮才停。一次性命令里顺手
 //! 杀进程是这套设计一直刻意避开的事（回收语义只属于收敛）。
 //!
@@ -30,7 +30,7 @@ use super::CtlError;
 pub(crate) struct AddSpec {
     pub name: String,
     /// 写进声明的工作区。与 socket 一样**必填**：交互式入口不放行「待绑定」，
-    /// 那条路径属于无人值守的声明文件（见 `crabmatectl up <name>` 的 `missing_workspace`）。
+    /// 那条路径属于无人值守的声明文件（见 `crabmatectl start <name>` 的 `missing_workspace`）。
     pub workspace: String,
     pub profile: Option<String>,
     pub port: Option<u16>,
@@ -69,7 +69,7 @@ pub(crate) struct ToggleOutcome {
     pub missing: bool,
     /// `enabled` 字段是否真的变了（值本就一致时为 `false`，且**没有写盘**）。
     pub changed: bool,
-    /// `enable` 是否顺手收回了 `down` 留下的 `desired_state = stopped`。
+    /// `enable` 是否顺手收回了 `stop` 留下的 `desired_state = stopped`。
     pub cleared_down: bool,
     /// 清标记失败时的告警：声明已经写成 `enabled = true`，但不该让人以为整件事都成了。
     pub warning: Option<String>,
@@ -78,8 +78,8 @@ pub(crate) struct ToggleOutcome {
 impl ToggleOutcome {
     /// 是否需要立刻收敛。
     ///
-    /// **不能只看 `changed`**：它只说明 `enabled` 变没变，而清 `down` 标记同样是一次
-    /// 写盘。声明本就 `enabled = true`、记录却被 `down` 标成 `stopped` 时（客户端重试
+    /// **不能只看 `changed`**：它只说明 `enabled` 变没变，而清 `stop` 标记同样是一次
+    /// 写盘。声明本就 `enabled = true`、记录却被 `stop` 标成 `stopped` 时（客户端重试
     /// `enable`），只认 `changed` 会回一个「成功却不收敛」，实例于是永远不启动。
     pub(crate) fn needs_reconcile(&self) -> bool {
         self.changed || self.cleared_down
@@ -450,7 +450,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `enable` 必须收回 `down` 留下的「用户显式停止」标记 —— 否则声明写着
+    /// `enable` 必须收回 `stop` 留下的「用户显式停止」标记 —— 否则声明写着
     /// `enabled = true`，收敛却永远 `Skipped`，实例再也起不来。这条把 CLI 与
     /// socket 的同一条语义钉在一起。
     #[test]
@@ -467,7 +467,7 @@ mod tests {
         add(&path, spec("a", &ws)).expect("add");
         set_enabled(&path, &ctx, "a", false).expect("先 disable");
 
-        // 模拟 `down` 写下的标记
+        // 模拟 `stop` 写下的标记
         let rec_path = ctx.paths.record_path("a").expect("记录路径");
         let mut rec = InstanceRecord::new("a");
         rec.desired_state = DesiredState::Stopped;

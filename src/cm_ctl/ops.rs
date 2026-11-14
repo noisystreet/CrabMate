@@ -412,7 +412,7 @@ fn select_port(ctx: &Ctx, args: &UpArgs) -> Result<u16, CtlError> {
                 return Err(CtlError::conflict(
                     "port_in_use",
                     format!(
-                        "端口 {p} 已被占用（127.0.0.1）；换一个 `--port`，或先 `crabmatectl down` 掉占用它的实例"
+                        "端口 {p} 已被占用（127.0.0.1）；换一个 `--port`，或先 `crabmatectl stop` 掉占用它的实例"
                     ),
                 ));
             }
@@ -657,7 +657,7 @@ pub fn restart(
     let Some(rec) = record::read_optional(&path)? else {
         return Err(CtlError::general(
             "instance_not_found",
-            format!("实例 {name} 不存在；请先 `crabmatectl up {name} ...`"),
+            format!("实例 {name} 不存在；请先 `crabmatectl start {name} ...`"),
         ));
     };
     // 规格必须在 `down` **之前**算完：声明里若出现敏感 env 或坏 profile 名，宁可这次

@@ -297,7 +297,7 @@ fn start_step(
 fn disabled_step(name: &str, current: Option<&(InstanceRecord, Probe)>) -> Step {
     match current {
         // 与 `step_for_orphan` 同一条边界。软删除的语义是「这条声明别再跑了」，
-        // **不是**「杀掉同名进程」：手工 `crabmatectl up` 起的同名实例不归声明管。
+        // **不是**「杀掉同名进程」：手工 `crabmatectl start` 起的同名实例不归声明管。
         // 控制面 `disable` 让这条路径从「手写 TOML」变成「一键触发」，不设这道闸
         // 就会点一下杀掉用户正在用的实例。
         Some((rec, p)) if p.pid_alive && Origin::from_record(rec) == Origin::Supervise => {

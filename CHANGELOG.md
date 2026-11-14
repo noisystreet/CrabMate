@@ -56,6 +56,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **`crabmatectl` subcommands are now `start` / `stop` / `list` (#1353 follow-up).** `up` borrowed
+  docker-compose's "create and start the declared set" reading, but here it only starts *one* named instance —
+  reconciling a declared set is `supervise --from-config` — so `start` / `stop` (matching `systemctl`) say what
+  the command does. `ls` → `list` removes the last place where one thing carried two names: the control-plane
+  socket has always spoken `{"op":"list"}`, only the CLI said `ls`. **No aliases** — this lands pre-1.0, so the
+  old spellings stop parsing immediately. Touch points: `--help`, `man/crabmatectl.1` (regenerated),
+  `docs/命令行与路由.md` / `docs/命令行契约.md` / `docs/en/CLI.md` / `README.md`, and the integration tests that
+  spawn the binary; guard error strings now point at `crabmatectl stop`. The wire protocol is untouched
+  (`start` / `stop` / `ls` were never socket ops), so the client repository only needs three user-facing
+  strings updated — no contract pin bump.
+
+  BREAKING CHANGE: `crabmatectl up|down|ls` no longer parse; use `crabmatectl start|stop|list`.
 - **`make package-deb` is warning-free again (#1363).** The packaging script and `cargo-deb` were clean; the noise
   came from two **manifest lints** cargo prints on every `cargo build` / `cargo deb`: `cargo::redundant_homepage`
   (`[package] homepage` only repeated `repository`) and `cargo::unused_dependencies` (`urlencoding` was declared but

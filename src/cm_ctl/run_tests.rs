@@ -9,8 +9,8 @@
     use crate::cm_ctl::supervise::{StartSpec, Step, plan};
     use std::collections::BTreeMap;
 
-    fn cmd(name: Option<&str>) -> UpCmd {
-        UpCmd {
+    fn cmd(name: Option<&str>) -> StartCmd {
+        StartCmd {
             name: name.map(str::to_string),
             all: false,
             instances_file: None,
@@ -52,7 +52,7 @@
     /// 既没给名字、也没给 `--all`：必须是用法错误，而不是「起了一个空名字的实例」。
     #[test]
     fn up_without_name_or_all_is_missing_name() {
-        let e = up_args(&cmd(None), None).expect_err("应报错");
+        let e = start_args(&cmd(None), None).expect_err("应报错");
         assert_eq!(e.error_code, "missing_name");
     }
 
