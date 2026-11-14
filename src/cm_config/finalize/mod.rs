@@ -16,6 +16,15 @@ use super::validate;
 use super::workspace_roots;
 use crate::cm_names as tool_names;
 
+mod agent_layers;
+mod build;
+mod tail;
+
+pub(crate) use self::build::finalize;
+
+#[cfg(test)]
+mod tests;
+
 /// 读取 `system_prompt_file`：绝对路径直接读；否则依次尝试 cwd、各配置目录（后加载的优先）、`run_command_working_dir`。
 fn read_system_prompt_file_resolved(
     raw: &str,
@@ -63,23 +72,23 @@ fn read_system_prompt_file_resolved(
 
 /// 内置默认附录（与仓库 **`config/prompts/thinking_avoid_echo_appendix.md`** 一致；未配置路径或读盘失败时采用）。
 const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
-    include_str!("../../config/prompts/thinking_avoid_echo_appendix.md");
+    include_str!("../../../config/prompts/thinking_avoid_echo_appendix.md");
 
 /// 编程工作台增量（与 **`config/prompts/coding_workbench_increment.md`** 一致）。
 const EMBEDDED_CODING_WORKBENCH_INCREMENT: &str =
-    include_str!("../../config/prompts/coding_workbench_increment.md");
+    include_str!("../../../config/prompts/coding_workbench_increment.md");
 
-const EMBEDDED_MODE_ASK: &str = include_str!("../../config/prompts/mode_ask.md");
-const EMBEDDED_MODE_PLAN: &str = include_str!("../../config/prompts/mode_plan.md");
-const EMBEDDED_MODE_ACT: &str = include_str!("../../config/prompts/mode_act.md");
+const EMBEDDED_MODE_ASK: &str = include_str!("../../../config/prompts/mode_ask.md");
+const EMBEDDED_MODE_PLAN: &str = include_str!("../../../config/prompts/mode_plan.md");
+const EMBEDDED_MODE_ACT: &str = include_str!("../../../config/prompts/mode_act.md");
 
 /// 上下文 LLM 摘要 system（与 **`config/prompts/context_summary_system.md`** 一致）。
 const EMBEDDED_CONTEXT_SUMMARY_SYSTEM: &str =
-    include_str!("../../config/prompts/context_summary_system.md");
+    include_str!("../../../config/prompts/context_summary_system.md");
 
 /// 上下文 LLM 摘要 user 模板（占位符 `{max_tokens}` / `{transcript}`；`{max_chars}` 为别名）。
 const EMBEDDED_CONTEXT_SUMMARY_USER: &str =
-    include_str!("../../config/prompts/context_summary_user.md");
+    include_str!("../../../config/prompts/context_summary_user.md");
 
 /// 与 `resolve_thinking_avoid_echo_appendix` 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
 pub fn embedded_thinking_avoid_echo_appendix() -> &'static str {
@@ -787,8 +796,6 @@ fn canonical_run_command_working_dir(b: &ConfigBuilder) -> Result<PathBuf, Strin
     Ok(p)
 }
 
-include!("finalize_parts/finalize_agent_layers.inc.rs");
-
 fn parse_builder_default_session_mode(
     b: &ConfigBuilder,
 ) -> Result<crate::cm_types::SessionMode, String> {
@@ -835,13 +842,13 @@ fn finalize_agent_config(
     let intent = derive_intent_fields(&b)?;
     let ltm = derive_ltm(&b)?;
     let sem = derive_codebase_semantic(&b);
-    let mid = clamp_finalize_mid_layer_scalars(&b);
-    let allowed_commands = allowed_commands_arc_from_builder(&b);
+    let mid = agent_layers::clamp_finalize_mid_layer_scalars(&b);
+    let allowed_commands = agent_layers::allowed_commands_arc_from_builder(&b);
 
     let (run_command_working_dir, workspace_allowed_roots, web_workspace_pool) =
         resolve_finalize_workspace_paths(&b)?;
 
-    let pm = merge_system_prompt_layers_for_finalize(
+    let pm = agent_layers::merge_system_prompt_layers_for_finalize(
         &mut b,
         &system_prompt_search_bases,
         run_command_working_dir.as_path(),
@@ -865,14 +872,14 @@ fn finalize_agent_config(
             run_command_working_dir: run_command_working_dir.as_path(),
         })?;
 
-    let (default_session_mode, permission) = derive_session_policy(&b)?;
+    let (default_session_mode, permission) = tail::derive_session_policy(&b)?;
 
     let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
         std::mem::take(&mut b.scheduled_agent_task_rows),
         agent_roles.as_ref(),
     )?;
 
-    finalize_agent_config_tail(FinalizeAfterRoles {
+    build::finalize_agent_config_tail(FinalizeAfterRoles {
         b,
         tr,
         intent,
@@ -906,8 +913,3 @@ fn finalize_agent_config(
     })
 }
 
-include!("finalize_parts/finalize_tail.rs");
-include!("finalize_parts/finalize_build.rs");
-
-#[cfg(test)]
-include!("finalize_parts/finalize_tests.rs");

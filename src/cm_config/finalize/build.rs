@@ -1,3 +1,6 @@
+use super::*;
+use super::tail::FinalizeTailScalars;
+
 fn build_agent_config_from_finalize(mid: FinalizeAfterRoles, tail: FinalizeTailScalars) -> AgentConfig {
     assemble_agent_config_from_finalize(&mid, &tail)
 }
@@ -434,12 +437,12 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     cfg
 }
 
-fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, String> {
-    let tail = derive_finalize_tail_scalars(&mid)?;
+pub(super) fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, String> {
+    let tail = tail::derive_finalize_tail_scalars(&mid)?;
     Ok(build_agent_config_from_finalize(mid, tail))
 }
 
-pub(super) fn finalize(
+pub(crate) fn finalize(
     b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {

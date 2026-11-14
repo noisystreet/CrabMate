@@ -1,3 +1,5 @@
+use super::*;
+
 // `finalize.rs` 的派生字段测试（include! 内联到 `finalize` 模块，可访问私有函数与 `use super::*`）。
 // 独立成文件以保持 `finalize.rs` 行数在 fn-nloc 限值内。
 
