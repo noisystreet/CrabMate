@@ -1,10 +1,15 @@
 # 后台工具任务：实施计划（todo）
 
+> **状态：已归档（已采纳）**。核心链路（Slice 0–2、4）与 Slice 3 首项 `tool_job_finished` 终态补发均已落地
+> （后者计入 [`待办清单`](../../待办清单.md) `tools/` 章）；本文件仅作**修订记录**，不是实现索引。
+> 现行权威是 ADR [`background_tool_jobs.md`](../background_tool_jobs.md) 与字段级契约
+> [`background_tool_jobs_contract.md`](../background_tool_jobs_contract.md)。
+
 > **状态**：核心链路实施完成；#873/#874/#875 与 Client `crabmate-client#67` 均已合入；Slice 4（模型侧只读查询工具 P0）已落地；
 > Slice 3 首项（SSE `tool_job_finished` 补发）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、
 > Client `parser_v2` 的开发者。
-> **依据**：决策见 [`background_tool_jobs.md`](./background_tool_jobs.md)（ADR）；
-> 字段级接口见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（**实现照此编码**）。
+> **依据**：决策见 [`background_tool_jobs.md`](../background_tool_jobs.md)（ADR）；
+> 字段级接口见 [`background_tool_jobs_contract.md`](../background_tool_jobs_contract.md)（**实现照此编码**）。
 > **跟踪**：Slice 0–2、4 已完成并合入，逐条实现细节见 ADR 与代码；本文件保留为**修订记录 + 未完成项跟踪**。剩余待办（Slice 3）
 > 同步维护于 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」分项）。
 

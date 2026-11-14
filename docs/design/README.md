@@ -20,18 +20,15 @@
 | [client_turn_smoke_runbook.md](client_turn_smoke_runbook.md) | 三端真实回合冒烟（B3 Runbook） |
 | [vscode_extension.md](vscode_extension.md) | 官方 VS Code 扩展：设计备忘与路线图 |
 
-## 2. 后台工具任务（8）
+## 2. 后台工具任务（5）
 
 | 文档 | 说明 |
 |---|---|
 | [background_tool_jobs.md](background_tool_jobs.md) | ADR：后台工具任务（background tool jobs） |
 | [background_tool_jobs_contract.md](background_tool_jobs_contract.md) | 后台工具任务：字段级接口规格 |
-| [background_tool_jobs_todo.md](background_tool_jobs_todo.md) | 后台工具任务：实施计划 |
 | [background_tool_jobs_output_streaming.md](background_tool_jobs_output_streaming.md) | ADR：后台工具任务实时输出流 |
 | [background_tool_jobs_output_streaming_contract.md](background_tool_jobs_output_streaming_contract.md) | 实时输出流：字段级接口规格 |
-| [background_tool_jobs_output_streaming_todo.md](background_tool_jobs_output_streaming_todo.md) | 实时输出流：实施计划 |
-| [long_running_tool_execution_todo.md](long_running_tool_execution_todo.md) | 长耗时工具执行：待办 |
-| [subprocess_session_tokio_migration_todo.md](subprocess_session_tokio_migration_todo.md) | 子进程会话 tokio 化迁移：实施计划 |
+| [long_running_tool_execution_todo.md](long_running_tool_execution_todo.md) | 长耗时工具执行：待办（文末「仍开放」为现行口径） |
 
 ## 3. 工具系统（6）
 
@@ -44,7 +41,7 @@
 | [tool_management_api.md](tool_management_api.md) | 设计草案：工具管理 API 补齐 |
 | [permission_levels.md](permission_levels.md) | 工具权限等级（L0–L4）：S1–S6 已落地；**S7 `AllowedRoots`、沙盒两轴、Client S5d 未做**（见该文头部状态与 §12） |
 
-## 4. 回合 / Agent 运行时（9）
+## 4. 回合 / Agent 运行时（10）
 
 | 文档 | 说明 |
 |---|---|
@@ -57,8 +54,9 @@
 | [per_state_machine_consolidation.md](per_state_machine_consolidation.md) | PER 编排：用显式状态机收拢分支 |
 | [audience_critic_role.md](audience_critic_role.md) | 观众角色（侧向点评）：设计草案 |
 | [multi_agent_collaboration.md](multi_agent_collaboration.md) | 多 Agent 协作：分层演进设计草案（L0–L4 与 A2A 定位） |
+| [subagent_delegation.md](subagent_delegation.md) | 隔离上下文的子 Agent 委托（#839）：**设计定稿、实现未开始**；P0 前置重构见该文 §12 |
 
-## 5. 上下文 / 提示词（7）
+## 5. 上下文 / 提示词（8）
 
 | 文档 | 说明 |
 |---|---|
@@ -69,6 +67,7 @@
 | [context_timeline_detail.md](context_timeline_detail.md) | 上下文时间线事件类型化（#1347 S4）：**S4a 已实施**（wire 字节不变）；**S4b 已决策不做**（见该文 §2.2） |
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
+| [tool_body_compression_staging.md](tool_body_compression_staging.md) | 工具正文压缩分档（#1327）：**方案待评审**；最新一条也被压、且不看窗口余量 |
 
 ## 6. 记忆 / 会话（5）
 
@@ -90,17 +89,18 @@
 | [web_theme_presets.md](web_theme_presets.md) | Web 前端：多套预设主题（扩展 `data-theme`） |
 | [web_tui_stream_to_opencode_style.md](web_tui_stream_to_opencode_style.md) | Web 聊天：OpenCode / OpenClaw 式流式跟底演进 |
 
-## 8. 工程 / 基础设施（7）
+## 8. 工程 / 基础设施（8）
 
 | 文档 | 说明 |
 |---|---|
 | [crate_dep_policy.md](crate_dep_policy.md) | Crate 依赖策略（降低耦合） |
 | [crates_io_single_package.md](crates_io_single_package.md) | ADR：单包 `crabmate` 发布到 crates.io |
-| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**草案；S5-a（#1274/#1275）、S1-a + S1-b 的 feature 解绑（#1279）、S1-b 的 `SessionStore` 端口（#1284/#1286）、S3-a 的审批端口（#1280）、S3-b 的 `PolicyEngine` 端口（#1282）与端口收窄（5 → 4）、S2-0 / S2-1（#1288）/ S2-2（#1291）/ S2-4（#1290）、S5（#1295）、S4（#1300，已收官并删除 `cm_internal`）、S6-a/b/c（#1297）已实施；S6-d（#1298，`TurnEngine` / `PolicyEngine` / `ApprovalBroker` / `SessionStore` 上根，`prelude` 不做）已实施**。根级 owned 类型（不用 `sdk::` 伞形前缀）+ `ports` + `internal` 收口；Q1–Q6 已决（§11），原三条「实施前必查」已核销（§10.3）。**S1–S6 六条线闭环，设计进入维护态** |
+| [sdk_facade.md](sdk_facade.md) | SDK 面与命令薄封装：**已实施完毕（S1–S6 六条线闭环，设计转入维护态）**；逐条切片与现状证据见该文 §2 / §10.1，Q1–Q6 已决（§11） |
 | [user_data_dir.md](user_data_dir.md) | 本机用户数据目录（`~/.local/share/crabmate`）设计 |
 | [e2e_real_llm_testing_architecture.md](e2e_real_llm_testing_architecture.md) | E2E 真实 LLM 自动化测试架构 |
 | [ide_mode_roadmap.md](ide_mode_roadmap.md) | Web / 桌面内置 IDE 模式：完善规划 |
 | [server_api_completeness.md](server_api_completeness.md) | ADR：Server API 完备度边界与演进基线 |
+| [src_layout_shim_cleanup.md](src_layout_shim_cleanup.md) | `src/` 布局 shim 清理：**P0 已实施；P1–P3 待办** |
 
 ## 9. CLI / 运维（1）
 
@@ -126,3 +126,6 @@
 | [Web界面美化设计.md](archive/Web界面美化设计.md) | Web 界面美化（Leptos 前端） | **已被取代**：UI 源码在 Client 仓 `frontend/`；样式契约见 [web_theme_presets.md](web_theme_presets.md) |
 | [代码库索引方案.md](archive/代码库索引方案.md) | 工作区统一代码索引与增量缓存 | **已采纳**：已实现，权威见 [工具说明](../工具说明.md) 的 `codebase_semantic_search` 与 [配置说明](../配置说明.md) 的 `codebase_semantic_*` |
 | [web_ui_todo.md](archive/web_ui_todo.md) | Web UI 未来功能规划（设置页路由化、移动端适配等） | **已被取代**：Web UI 源码与实现计划在 Client 仓 `frontend/`；未落地条目（消息编辑重发 · 会话分支 · Reactions · Toast 等）随 UI 归 Client 仓跟踪 |
+| [subprocess_session_tokio_migration_todo.md](archive/subprocess_session_tokio_migration_todo.md) | 子进程会话 tokio 化迁移：实施计划 | **已采纳**：PR0–PR4 已实施完成，权威是代码与该文「仍开放」 |
+| [background_tool_jobs_todo.md](archive/background_tool_jobs_todo.md) | 后台工具任务：实施计划 | **已采纳**：核心链路 + `tool_job_finished` 补发已落地，权威是 ADR 与字段级契约 |
+| [background_tool_jobs_output_streaming_todo.md](archive/background_tool_jobs_output_streaming_todo.md) | 实时输出流：实施计划 | **已采纳**：环形缓冲 + 输出端点已实现，权威是 ADR 与字段级契约 |

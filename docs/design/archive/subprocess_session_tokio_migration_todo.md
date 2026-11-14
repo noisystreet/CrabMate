@@ -1,21 +1,26 @@
 # 子进程会话 tokio 化迁移：实施计划（todo）
 
+> **状态：已归档（已采纳）**。PR0–PR4 已全部落地，本文件仅记录**设计来源与实施切片**，不是实现索引；
+> 现行权威是代码，以及 [`background_tool_jobs_contract.md`](../background_tool_jobs_contract.md)（字段级契约）与
+> [`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md)（仍开放项）。
+> 文中「待办 / 计划」措辞反映当时快照，勿据此判断当前能力。
+
 > **状态**：设计定稿，**已实施完成**（PR0 调用面收敛、PR1 原语 + chat 同步宿主、PR2 后台 job + workflow、PR3 其余 `run_and_capture` 调用方、
-> PR4 收尾与文档）。本文件回应 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)
+> PR4 收尾与文档）。本文件回应 [`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md)
 > §共享原语 L102 与 §仍开放 L211–214 的开放项。
 > **受众**：维护 `cm_tools::subprocess_session`、`run_command`（`cm_tools/tools/command.rs`）、`tool_registry/execute_run_command*`、
 > `cm_internal/tool_jobs`、`cm_workflow/execute/node.rs` 的开发者。
 > **语言**：中文。  
-> **依据**：决策口径见 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（§共享原语 / §仍开放）；
-> 字段级契约见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（本迁移**不得**改动其外部行为）。
+> **依据**：决策口径见 [`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md)（§共享原语 / §仍开放）；
+> 字段级契约见 [`background_tool_jobs_contract.md`](../background_tool_jobs_contract.md)（本迁移**不得**改动其外部行为）。
 > **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」）删除对应条目，
-> 并在 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §仍开放划掉对应行。
+> 并在 [`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md) §仍开放划掉对应行。
 
 **关联**：
 
-- 长耗时工具执行总纲：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)
-- 后台工具任务 ADR / 契约：[`background_tool_jobs.md`](./background_tool_jobs.md) / [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)
-- 实时输出流：[`background_tool_jobs_output_streaming.md`](./background_tool_jobs_output_streaming.md)
+- 长耗时工具执行总纲：[`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md)
+- 后台工具任务 ADR / 契约：[`background_tool_jobs.md`](../background_tool_jobs.md) / [`background_tool_jobs_contract.md`](../background_tool_jobs_contract.md)
+- 实时输出流：[`background_tool_jobs_output_streaming.md`](../background_tool_jobs_output_streaming.md)
 - 工具契约与信封：`docs/工具说明.md`；超时与 `[tool_registry]`：`docs/配置说明.md`
 - SSE `tool_output_chunk` / `error_code`：`docs/SSE协议.md`
 - 安全面：`AGENTS.md` → Repository engineering rules → Security-sensitive surfaces（`run_command` 白名单、路径、审批）
@@ -201,29 +206,29 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 ### 调用面收敛（前置 PR0，迁移主要阻碍）
 
 **事实核对（先去掉误判）**：
-  chat 的 `run_command` 走 `HandlerId::RunCommand` → `execute_run_command_impl`（[dispatch.rs](../../src/tool_host/tool_registry/execute/dispatch.rs)
+  chat 的 `run_command` 走 `HandlerId::RunCommand` → `execute_run_command_impl`（[dispatch.rs](../../../src/tool_host/tool_registry/execute/dispatch.rs)
   ），**不**经过 `run_tool*`。`run_tool_dispatch` 里的 `"run_command"` 特判只服务**非 chat** 的同步消费点。因此收敛面**有限且可枚举**：
 
 | # | 同步消费点 | 定义位置 | 可命中 `run_command` | 收敛动作 | 成本 |
 |---|---|---|---|---|---|
-| S1 | `run_tool_dispatch` 的 `"run_command"` 特判（`run_try_wait`） | [mod.rs](../../src/cm_tools/tools/mod.rs#L441-L462) | 是 | 消费点全部 re-route 后**删除特判** | 低 |
-| S2 | Legacy `runner_run_command`（当时为 `ToolRunner::Legacy`，该变体已于 2026-10-28 整个删除） | [runners.rs](../../src/cm_tools/tools/runners.rs) | 是（`run_tool` fallback） | 置提示性 stub（spec 注册占位，不再执行命令；stub 后续已删除，改由 `ToolRunner::AsyncOnly` 表达） | 低 |
-| S3 | `tool-replay` CLI | [commands.rs](../../src/runtime/cli/commands.rs#L14-L18)，调用点 [cli_run.rs](../../src/cli_run.rs#L145) | 是（fixture 步骤名） | `run_tool_replay_command` 改 `async fn`，调用点 `await`（宿主 [main.rs](../../src/main.rs#L32) 已 `block_on`） | 低 |
-| S4 | MCP `tools/call` 回调 | [cli_mcp.rs](../../src/runtime/cli_mcp.rs#L38)；契约 [server.rs](../../src/mcp/mcp_impl/server.rs#L31-L32)，调用 [server.rs](../../src/mcp/mcp_impl/server.rs#L151) | 是（客户端可传 `run_command`） | `ToolCallbacks::run_tool` 签名改返回 `Future`；`call_tool` 内 `await` | 中（改 MCP 契约） |
-| S5 | workflow 节点 | [node.rs](../../src/cm_workflow/execute/node.rs#L58-L95) | 是 | `run_command` 节点走 async 直连；其余工具仍可保留 `spawn_blocking` | 低 |
-| S6 | 沙盒容器 runner | [runner.rs](../../src/tool_sandbox/runner.rs#L181-L186)，入口 [main.rs](../../src/main.rs#L7-L13) | 是 | 见下「容器 runner」 | 中 |
-| S7 | chat `SyncDefault` 兜底（inline / `spawn_blocking` 两处 `run_tool`） | [dispatch.rs](../../src/tool_host/tool_registry/execute/dispatch.rs)、[同文件](../../src/tool_host/tool_registry/execute/dispatch.rs) | **否**（已被 `HandlerId` 分流） | 本次无需为 `run_command` 改动 | — |
+| S1 | `run_tool_dispatch` 的 `"run_command"` 特判（`run_try_wait`） | [mod.rs](../../../src/cm_tools/tools/mod.rs) | 是 | 消费点全部 re-route 后**删除特判** | 低 |
+| S2 | Legacy `runner_run_command`（当时为 `ToolRunner::Legacy`，该变体已于 2026-10-28 整个删除） | [runners.rs](../../../src/cm_tools/tools/runners.rs) | 是（`run_tool` fallback） | 置提示性 stub（spec 注册占位，不再执行命令；stub 后续已删除，改由 `ToolRunner::AsyncOnly` 表达） | 低 |
+| S3 | `tool-replay` CLI | [commands.rs](../../../src/runtime/cli/commands.rs)，调用点 [cli_run.rs](../../../src/cli_run.rs) | 是（fixture 步骤名） | `run_tool_replay_command` 改 `async fn`，调用点 `await`（宿主 [main.rs](../../../src/main.rs) 已 `block_on`） | 低 |
+| S4 | MCP `tools/call` 回调 | [cli_mcp.rs](../../../src/runtime/cli_mcp.rs)；契约 [server.rs](../../../src/mcp/mcp_impl/server.rs)，调用 [server.rs](../../../src/mcp/mcp_impl/server.rs) | 是（客户端可传 `run_command`） | `ToolCallbacks::run_tool` 签名改返回 `Future`；`call_tool` 内 `await` | 中（改 MCP 契约） |
+| S5 | workflow 节点 | [node.rs](../../../src/cm_workflow/execute/node.rs) | 是 | `run_command` 节点走 async 直连；其余工具仍可保留 `spawn_blocking` | 低 |
+| S6 | 沙盒容器 runner | [runner.rs](../../../src/tool_sandbox/runner.rs)，入口 [main.rs](../../../src/main.rs) | 是 | 见下「容器 runner」 | 中 |
+| S7 | chat `SyncDefault` 兜底（inline / `spawn_blocking` 两处 `run_tool`） | [dispatch.rs](../../../src/tool_host/tool_registry/execute/dispatch.rs)、[同文件](../../../src/tool_host/tool_registry/execute/dispatch.rs) | **否**（已被 `HandlerId` 分流） | 本次无需为 `run_command` 改动 | — |
 
 > `sync_default_runs_inline` 的内联集合原为 `get_current_time` / `convert_units`，二者已于 2026-10-24 移除、
-> 现默认为空集（见 [registry_policy.rs](../../src/cm_tools/registry_policy.rs#L292-L300)），不涉及子进程工具。
+> 现默认为空集（见 [registry_policy.rs](../../../src/cm_tools/registry_policy.rs)），不涉及子进程工具。
 
 **这不是 `run_command` 独有问题**——下列同步子进程工具同样挂在 `run_tool` 面上，共同决定「`run_tool` 是否要整体 async 化」的边界：
 
 | 工具 | 位置 | 现状 |
 |---|---|---|
-| `python_snippet_run` | [python_tools.rs](../../src/cm_tools/tools/python_tools.rs#L357-L372) | 同步 `prepare_piped_process_group` + `wait_child_session` |
-| `pytest_run` | [python_tools.rs](../../src/cm_tools/tools/python_tools.rs#L471) | `run_and_capture` |
-| `cargo_test` 等 | [cargo_subcommand.rs](../../src/cm_tools/tools/cargo_subcommand.rs#L182) | `run_and_capture` |
+| `python_snippet_run` | [python_tools.rs](../../../src/cm_tools/tools/python_tools.rs) | 同步 `prepare_piped_process_group` + `wait_child_session` |
+| `pytest_run` | [python_tools.rs](../../../src/cm_tools/tools/python_tools.rs) | `run_and_capture` |
+| `cargo_test` 等 | [cargo_subcommand.rs](../../../src/cm_tools/tools/cargo_subcommand.rs) | `run_and_capture` |
 
 **路线决策（PR0 二选一，须写进 PR 描述）**：
 
@@ -233,15 +238,15 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
     的有限让步**——sync 入口须设计为**薄封装**（复用同一 `DrainEvent`/`live` 队列与 kill/drain 逻辑，
     仅 `try_wait`+`sleep` 与 `child.wait().await`+`select!` 不同），PR 描述注明过渡性质。
 - **路线 B（彻底）**：`run_tool*` 整体 async 化，连带所有 runner / 上表工具 / 容器 runner 一并改造。
-  - 与 D1「一次到位」一致，但 PR1 体积大、`run_tool` 契约变更波及面广（含 [web/workspace/handlers.rs](../../src/web/workspace/handlers.rs#L419)、
-    [http/tools.rs](../../src/tool_host/tool_registry/execute/http/tools.rs) 等同步调用点）。
+  - 与 D1「一次到位」一致，但 PR1 体积大、`run_tool` 契约变更波及面广（含 [web/workspace/handlers.rs](../../../src/web/workspace/handlers.rs)、
+    [http/tools.rs](../../../src/tool_host/tool_registry/execute/http/tools.rs) 等同步调用点）。
 
 ### 路线 A 落地形式：`run_tool_async` 专用入口（两阶段 strangler）
 
 **已实施（PR0 完成）**。路线 A 的具体化：不改 `run_tool*` 整体契约，而是在 `cm_tools/tools` 新建**通用 async 入口**，
   把非 chat 消费点整体迁移过去——`run_command` 与历史同步面彻底解耦，消费点不再散落 `if name == "run_command"` 分支。
 
-- **接口**（[mod.rs](../../src/cm_tools/tools/mod.rs#L539-L564)）：新增
+- **接口**（[mod.rs](../../../src/cm_tools/tools/mod.rs)）：新增
   - `pub async fn run_tool_async(name, args_json, ctx) -> String`
   - `pub async fn run_tool_result_async(name, args_json, ctx) -> ToolResult`
   - 两入口内部：`name == "run_command"` 走新实现 `run_command_dispatch_async`；**其余工具直接委派**既有同步 `run_tool` / `run_tool_result`，行为逐字节不变。
@@ -255,18 +260,18 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
     风险小、可回滚。
   - **阶段 2（后续 PR1）**：仅把 `run_command_dispatch_async` 实现体换为 `tokio::process` 事件驱动版本，**接口契约不变**，S3–S6 消费点零改动。
 - **消费点迁移落点**：
-  S3 [tool_replay.rs](../../src/runtime/tool_replay.rs) + [commands.rs](../../src/runtime/cli/commands.rs) + [cli_run.rs](../../src/cli_run.rs)；
-  S4 [cli_mcp.rs](../../src/runtime/cli_mcp.rs)
-  （`ToolCallbacks::run_tool` 改 `BoxFuture<'static, _>`）+ [server.rs](../../src/mcp/mcp_impl/server.rs)；
-    S5 [node.rs](../../src/cm_workflow/execute/node.rs)；S6 [runner.rs](../../src/tool_sandbox/runner.rs) + [main.rs](../../src/main.rs)。
+  S3 [tool_replay.rs](../../../src/runtime/tool_replay.rs) + [commands.rs](../../../src/runtime/cli/commands.rs) + [cli_run.rs](../../../src/cli_run.rs)；
+  S4 [cli_mcp.rs](../../../src/runtime/cli_mcp.rs)
+  （`ToolCallbacks::run_tool` 改 `BoxFuture<'static, _>`）+ [server.rs](../../../src/mcp/mcp_impl/server.rs)；
+    S5 [node.rs](../../../src/cm_workflow/execute/node.rs)；S6 [runner.rs](../../../src/tool_sandbox/runner.rs) + [main.rs](../../../src/main.rs)。
 
 **容器 runner（S6）与 D1 的冲突（必须在 PR0 定路线）**：
 
-[main.rs](../../src/main.rs#L5-L13) 在**构建 tokio runtime 之前**处理 `tool-runner-internal`，
+[main.rs](../../../src/main.rs) 在**构建 tokio runtime 之前**处理 `tool-runner-internal`，
   容器内走同步 `tool_runner_internal_main()` → `run_tool("run_command")` → `command.rs` 同步 API。因此「`command.rs` 全 async」
   与清单 #12 的「容器 runner 保留原样」**不能同时成立**。二选一：
 
-- **(a) 推荐**：把 [main.rs](../../src/main.rs#L15-L24) 的 runtime 构建提到 `tool-runner-internal` 分支之前，
+- **(a) 推荐**：把 [main.rs](../../../src/main.rs) 的 runtime 构建提到 `tool-runner-internal` 分支之前，
   `tool_runner_internal_main` 改 `async` 并以 `block_on` 驱动（影响面仅该二进制内的一次性调用）。
 - **(b)** 容器 runner 保留同步 `command.rs`（仅此一处），即依赖**路线 A** 的 sync 入口。
 
@@ -351,7 +356,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 ## 文档同步
 
 - **已完成（PR1）**：`subprocess_session.rs` 模块头注释删「当前实现走 `std::process` + 阻塞轮询」，改述 tokio 模型（sync + async 双入口）。
-- **已完成（PR4）**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §仍开放 L211–214：
+- **已完成（PR4）**：[`long_running_tool_execution_todo.md`](../long_running_tool_execution_todo.md) §仍开放 L211–214：
   已划掉「是否 `tokio::process` 一次到位」一行。
 - **已核对（PR4）**：**`docs/开发文档.md`** 未描述执行类别 / `spawn_blocking` 策略 / 线程模型，无需同步（若后续新增相关描述，
   按 `AGENTS.md` → Repository engineering rules → Architecture & documentation sync 同步）。
@@ -365,9 +370,9 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 - **`kill_on_drop` 与显式 kill 的关系**：避免重复 kill 造成的 `ESRCH` 噪声；约定显式 kill 后再置 `kill_on_drop` 无害化（或 kill 成功后由 reap 接管）。
 - **同步 `run_tool*` 面的最终形态**：**已定稿（PR0）**：取 **路线 A**（推荐）保留「非 `run_command` 同步入口 + `run_command` 走 async 直连」，
   代价是 `subprocess_session` 短期并存 sync/async 两个 wait 入口（薄封装，D2 的有限让步），已由 PR0–PR3 落地；**路线 B** 将 `run_tool*` 整体 async 化，
-  波及 [web/workspace/handlers.rs](../../src/web/workspace/handlers.rs#L419)、
-    [http/tools.rs](../../src/tool_host/tool_registry/execute/http/tools.rs) 等同步调用点，本次**未**采用。
-- **容器 runner（S6）与 D1 的时序冲突**：[main.rs](../../src/main.rs#L5-L13) 在 runtime 构建前处理 `tool-runner-internal`，故「`command.rs` 全 async」
+  波及 [web/workspace/handlers.rs](../../../src/web/workspace/handlers.rs)、
+    [http/tools.rs](../../../src/tool_host/tool_registry/execute/http/tools.rs) 等同步调用点，本次**未**采用。
+- **容器 runner（S6）与 D1 的时序冲突**：[main.rs](../../../src/main.rs) 在 runtime 构建前处理 `tool-runner-internal`，故「`command.rs` 全 async」
   与「容器 runner 保留原样」不能并存；**已定稿（PR0）**：取路线 **(a)** runtime 提前 + `block_on`。
 - **`extra_stop` 是否升级为 `Future`**：PR1 先保留 `Fn` 轮询（`sleep` 退避），`Future`（SSE `Sender::closed()`）作为后续增强切片；
   需评估对 workflow 只传超时场景的接口影响。

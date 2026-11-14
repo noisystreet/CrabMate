@@ -1,11 +1,16 @@
 # 后台工具任务实时输出流：实施计划（todo）
 
+> **状态：已归档（已采纳）**。`uncapped_live` + job 环形输出缓冲 + `GET /tools/jobs/{id}/output` +
+> `background_job_output_buffer_bytes` 均已实现；本文件仅记录**实施切片**，不是实现索引。
+> 现行权威是 ADR [`background_tool_jobs_output_streaming.md`](../background_tool_jobs_output_streaming.md)
+> 与字段级契约 [`background_tool_jobs_output_streaming_contract.md`](../background_tool_jobs_output_streaming_contract.md)。
+
 > **状态**：Accepted（已落地；
 > `uncapped_live` + job 环形输出缓冲 + `GET /tools/jobs/{id}/output` 端点 + `background_job_output_buffer_bytes` 配置均已实现；
 > Client 气泡实时输出在外部仓）。**受众**：维护 `cm_tools/subprocess_session`、`cm_internal/tool_jobs`、web 路由、`cm_config`、
 > Client 后台任务气泡的开发者。
-> **依据**：决策见 [`background_tool_jobs_output_streaming.md`](./background_tool_jobs_output_streaming.md)（ADR）；
-> 字段级接口见 [`background_tool_jobs_output_streaming_contract.md`](./background_tool_jobs_output_streaming_contract.md)（**实现照此编码**）。
+> **依据**：决策见 [`background_tool_jobs_output_streaming.md`](../background_tool_jobs_output_streaming.md)（ADR）；
+> 字段级接口见 [`background_tool_jobs_output_streaming_contract.md`](../background_tool_jobs_output_streaming_contract.md)（**实现照此编码**）。
 > **跟踪**：落地后从本仓库 `docs/待办清单.md`（`tools/` 章「长耗时工具执行」分项，若新增了对应行）删除；本文件可改为修订记录或删节。
 
 ---

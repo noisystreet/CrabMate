@@ -208,8 +208,8 @@
   （`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；
   实现按该 ADR 切片，不与其它条目混 PR。**已落地**：后端 + Client 核心链路（ADR §1–§7）
     与模型侧只读查询工具 `background_job_status` / `background_job_list`（ADR §9，P0）；
-    实施计划见 [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**仍待**：可选 `tool_job_finished` SSE 补发（Phase 2）
-  、job 级观测扩展、多副本持久化（另立项）。
+    实施计划见 [`background_tool_jobs_todo.md`](./archive/background_tool_jobs_todo.md)（**已归档**）。
+  **已落地**：可选 `tool_job_finished` 终态补发（见 `background_tool_jobs_contract.md` §5）。**仍待**：job 级观测扩展、多副本持久化（另立项）。
 
 与路线图「可观测与执行轨迹」、`tool_calling_evolution.md`「长任务进度事件」同向，落地时合并拆解。
 
@@ -243,6 +243,6 @@ P0 可先合入，但**整条待办**删除须满足：
 ## 仍开放（实现时写入 PR，不必再改目标）
 
 - ~~共享模块的精确路径与是否 `tokio::process` 一次到位，还是先 blocking `try_wait` 再迁。~~ **已落地（PR0–PR4）**：`tokio::process` 一次到位，
-  方案与实施见 [`subprocess_session_tokio_migration_todo.md`](./subprocess_session_tokio_migration_todo.md)。
+  方案与实施见 [`subprocess_session_tokio_migration_todo.md`](./archive/subprocess_session_tokio_migration_todo.md)（**已归档**）。
 - `timeout_secs` 对 `run_command` 的 Schema 字段名是否与 snippet 完全一致。
 - 无输出「已耗时」是否做产品（默认不做新 SSE 键）。
