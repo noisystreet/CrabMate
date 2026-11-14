@@ -618,3 +618,165 @@ async fn readonly_entry_uses_the_same_compaction_plan_as_main_path() {
     );
     assert_eq!(main, readonly, "压完之后的模型视图也应逐条相同");
 }
+
+/// #1233 v3：纯删组（未做 LLM 摘要）时注入一条临时 `system`；摘要路径与无事件都不注入。
+#[test]
+fn context_notice_reports_group_removal_but_not_summary_path() {
+    let mut cfg = crate::config::load_config(None).expect("embed default");
+    cfg.llm_sampling.llm_context_tokens = 4_096;
+    cfg.llm_sampling.max_tokens = 512;
+    // 让同步字符 / 条数裁剪不先行兜底，真实走 token 预算的删组路径。
+    cfg.session_ui.max_message_history = 1_000;
+    cfg.context_pipeline.context_char_budget = 1_000_000;
+    cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+    cfg.context_pipeline.context_summary_trigger_chars = 0;
+
+    let build = || {
+        let mut messages = vec![Message::system_only("sys")];
+        for turn in 0..30 {
+            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+            messages.push(Message::assistant_only(format!("a{turn}")));
+        }
+        messages
+    };
+    let system_text = |m: &[Message]| -> String {
+        m.iter()
+            .find(|x| x.role == "system")
+            .and_then(|x| match &x.content {
+                Some(crate::cm_types::MessageContent::Text(t)) => Some(t.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+
+    // ① 纯删组 → 注入一条，且 `system.name` 可识别
+    let mut messages = build();
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &messages, &[], None);
+    let report = finalize_token_budget_compaction(
+        &cfg,
+        &mut messages,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
+    assert!(report.removed_turn_groups > 0, "夹具应触发删组");
+    let body = system_text(&messages);
+    assert!(body.contains("已压缩"), "纯删组应在 system 留一行提示：{body}");
+    assert!(
+        body.contains(&report.removed_turn_groups.to_string()),
+        "{body}"
+    );
+    // 提示写进已有 system，**不新增消息**：视图必须仍是「canonical 的删减」
+    assert_eq!(
+        messages.iter().filter(|m| m.role == "system").count(),
+        1,
+        "不得新增 system 消息"
+    );
+
+    // ② 幂等：再压一轮，旧提示被剔除，不累积
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &messages, &[], None);
+    finalize_token_budget_compaction(
+        &cfg,
+        &mut messages,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
+    assert_eq!(
+        system_text(&messages).matches("context: 已压缩").count(),
+        1,
+        "提示不得跨轮累积：{}",
+        system_text(&messages)
+    );
+
+    // ③ 摘要路径不重复提示：`[较早对话已摘要…]` 已经告诉过模型
+    let mut summarized = build();
+    let before = crate::agent::context_compaction::estimate_final_request_tokens(
+        &cfg,
+        &summarized,
+        &[],
+        None,
+    );
+    let report = finalize_token_budget_compaction(
+        &cfg,
+        &mut summarized,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: true,
+            summary_tail_kept: None,
+        },
+    );
+    assert!(report.removed_turn_groups > 0, "夹具应触发删组");
+    assert!(
+        !system_text(&summarized).contains("已压缩"),
+        "摘要路径不应再注入提示：{}",
+        system_text(&summarized)
+    );
+
+    // ④ 无事件 → 什么都不注入（否则每轮改 system 会废前缀缓存）
+    let mut small = vec![Message::system_only("sys"), Message::user_only("u")];
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &small, &[], None);
+    let report = finalize_token_budget_compaction(
+        &cfg,
+        &mut small,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
+    assert_eq!(report.removed_turn_groups, 0, "小上下文不该删组");
+    assert_eq!(small.len(), 2, "无压缩时不得注入任何消息");
+}
+
+/// 预算提示只在**跨档**那一次出现（70% → 90%），同档内不重复。
+#[test]
+fn budget_notice_tier_fires_only_on_crossing() {
+    let mut cfg = crate::config::load_config(None).expect("embed default");
+    cfg.turn_budget.max_turn_tokens = 100;
+    let budget = crate::agent::turn_budget::TurnBudgetCounter::new_shared();
+
+    budget.record_estimated_tokens(50);
+    assert_eq!(
+        budget.claim_budget_notice_tier(&cfg.turn_budget),
+        None,
+        "50% 不该提示"
+    );
+    budget.record_estimated_tokens(25); // 75%
+    assert_eq!(
+        budget.claim_budget_notice_tier(&cfg.turn_budget),
+        Some(70),
+        "跨 70% 应提示一次"
+    );
+    assert_eq!(
+        budget.claim_budget_notice_tier(&cfg.turn_budget),
+        None,
+        "同档内不重复提示"
+    );
+    budget.record_estimated_tokens(20); // 95%
+    assert_eq!(
+        budget.claim_budget_notice_tier(&cfg.turn_budget),
+        Some(90),
+        "跨 90% 应再提示一次"
+    );
+    assert_eq!(
+        budget.claim_budget_notice_tier(&cfg.turn_budget),
+        None,
+        "90% 档内不重复"
+    );
+}

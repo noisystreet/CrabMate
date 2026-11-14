@@ -98,6 +98,9 @@ pub struct TurnBudgetCounter {
     outer_loop_iterations: AtomicU32,
     estimated_tokens: AtomicUsize,
     degradation_active: AtomicBool,
+    /// 已向模型提示过的预算档位（`0` / `70` / `90`）。**跨档才再提示**：同一档内每轮重发
+    /// 会让每轮 `system` 都变，白废一次 prompt cache（#1326 方向的反向操作）。
+    notice_tier: std::sync::atomic::AtomicU8,
 }
 
 impl TurnBudgetCounter {
@@ -109,6 +112,7 @@ impl TurnBudgetCounter {
             outer_loop_iterations: AtomicU32::new(0),
             estimated_tokens: AtomicUsize::new(0),
             degradation_active: AtomicBool::new(false),
+            notice_tier: std::sync::atomic::AtomicU8::new(0),
         })
     }
 
@@ -192,6 +196,30 @@ impl TurnBudgetCounter {
             0
         };
         llm_pct.max(token_pct)
+    }
+
+    /// 预算跨档时返回新档位（`70` / `90`），并把档位记为已提示；同档或更低返回 `None`。
+    ///
+    /// 档位阈值与 [`crate::cm_agent::context_budget_pressure`] 的收紧阈值**同一组**
+    /// （70 / 90）：那边收紧裁剪策略、这边告诉模型，两处不能各写一套数字。
+    ///
+    /// 只提示一次是因为提示行会进 `system`：同一档内每轮重发会让每轮前缀都变，
+    /// 白废一次 prompt cache。用 `fetch_max` 而不是 `store`，并发调用下不会把
+    /// 已提示的更高档位写低。
+    #[inline]
+    pub fn claim_budget_notice_tier(&self, cfg: &TurnBudgetConfig) -> Option<u8> {
+        let pct = self.budget_usage_percent(cfg);
+        let tier = if pct >= 90 {
+            90
+        } else if pct >= 70 {
+            70
+        } else {
+            return None;
+        };
+        if self.notice_tier.fetch_max(tier, Ordering::Relaxed) >= tier {
+            return None;
+        }
+        Some(tier)
     }
 
     /// 是否已进入预算降级模式（跳过分层非关键验收等）。

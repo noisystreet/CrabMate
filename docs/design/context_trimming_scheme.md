@@ -117,6 +117,25 @@
 
 入口：**`prepare_messages_before_model_call_sync_with_budget`**、**`prepare_session_messages_shared`**（主路径；分层 Operator 入口已移除）。
 
+### 5.2 模型可见的运行态提示（#1233）
+
+压缩对模型**不能是静默的**：被删的历史不留痕迹，模型会把「没读到」当成「不存在」，于是重复读同一个大文件。
+因此 `finalize_token_budget_compaction` 在两种**事件**发生时各追加一行：
+
+| 事件 | 提示 |
+|---|---|
+| 纯删组（`removed_turn_groups > 0` 且未做 LLM 摘要） | `context: 已压缩 N 组历史（before … → after …）；原文可用归档回灌` |
+| 预算跨档（70% / 90%，`TurnBudgetCounter::claim_budget_notice_tier`） | `context: 本回合预算已用 …%` |
+
+两条硬约束：
+
+- **不新增消息**：提示写进已有 `system` 正文末尾（段落头 `[运行态提示]`）。视图必须保持「canonical 的删减」——
+  `RemovedPrefix` 按 canonical 坐标归档，`归档 ∪ canonical[1..] == 完整历史` 也依赖它；插一条消息会同时破坏两者。
+- **无事件不注入**：`system` 逐字不变，前缀缓存可复用。摘要路径不重复提示，因为
+  `[较早对话已摘要，以下为压缩要点]` 已经说过。
+
+提示幂等：每次先按段落头切出基线与已有行再重建，跨轮不累积。
+
 ---
 
 ## 6. 设计要点清单（评审用）
