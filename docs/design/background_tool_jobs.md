@@ -2,7 +2,7 @@
 
 > **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：
 > [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：
-> [`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：
+> [`background_tool_jobs_todo.md`](./archive/background_tool_jobs_todo.md)（**已归档**：已落地）。**关联**：
 > [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、
 > [`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、
 > [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：

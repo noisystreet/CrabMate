@@ -1,8 +1,8 @@
 # ADR: 后台工具任务的实时输出流（background tool jobs output streaming）
 
-> **状态**：Proposed（待评审）。**接口规格**（字段级，实现照此编码）：
+> **状态**：Accepted（已落地；`uncapped_live` + job 环形输出缓冲 + `GET /tools/jobs/{id}/output` 已实现）。**接口规格**（字段级，实现照此编码）：
 > [`background_tool_jobs_output_streaming_contract.md`](./background_tool_jobs_output_streaming_contract.md)。**实施计划**：
-> [`background_tool_jobs_output_streaming_todo.md`](./background_tool_jobs_output_streaming_todo.md)。
+> [`background_tool_jobs_output_streaming_todo.md`](./archive/background_tool_jobs_output_streaming_todo.md)（**已归档**：已落地）。
 > **父决策**：[`background_tool_jobs.md`](./background_tool_jobs.md)（后台工具任务已合入：#873/#874）。**人读协议**：
 > [`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。
 
