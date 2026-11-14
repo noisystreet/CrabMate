@@ -46,9 +46,8 @@ struct SerialToolLoopState<'a> {
     tool_calls: &'a [ToolCall],
     per_coord: &'a mut crate::agent::per_coord::PerCoordinator,
     messages: &'a mut Vec<crate::types::Message>,
-    cfg: &'a std::sync::Arc<crate::config::AgentConfig>,
-    effective_working_dir: &'a std::path::Path,
-    workspace_is_set: bool,
+    /// 整场不变的环级输入（cfg / 工作目录 / 完整工具定义）。
+    env: crate::agent::agent_turn::host::params::LoopEnv<'a>,
     read_file_turn_cache: Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist:
         Option<&'a std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
@@ -59,7 +58,6 @@ struct SerialToolLoopState<'a> {
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
-    tools_defs_full: &'a [crate::types::Tool],
     turn_allow: Option<&'a std::collections::HashSet<String>>,
     /// 本回合权限能力快照（early-deny / 可见性共用判据）。
     permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
@@ -83,9 +81,7 @@ impl<'a> SerialToolLoopState<'a> {
             tool_calls,
             per_coord,
             messages,
-            cfg,
-            effective_working_dir,
-            workspace_is_set,
+            env,
             read_file_turn_cache,
             workspace_changelist,
             control,
@@ -95,7 +91,6 @@ impl<'a> SerialToolLoopState<'a> {
             mcp_turn,
             request_chrome_trace,
             step_executor_constraint,
-            tools_defs_full,
             turn_allow,
             permission,
             long_term_memory,
@@ -112,9 +107,7 @@ impl<'a> SerialToolLoopState<'a> {
             tool_calls,
             per_coord,
             messages,
-            cfg,
-            effective_working_dir,
-            workspace_is_set,
+            env,
             read_file_turn_cache,
             workspace_changelist,
             control,
@@ -124,7 +117,6 @@ impl<'a> SerialToolLoopState<'a> {
             mcp_turn,
             request_chrome_trace,
             step_executor_constraint,
-            tools_defs_full,
             turn_allow,
             permission,
             long_term_memory,
@@ -163,7 +155,7 @@ async fn serial_execute_one_tool_call(
 
     serial_tool_iteration_sse_preface(SerialToolIterationSsePreface {
         control: st.control.clone(),
-        cfg: st.cfg,
+        cfg: st.env.cfg,
         tracing_chat_turn: st.tracing_chat_turn.as_ref(),
         id: id.as_str(),
         name: &name,
@@ -176,16 +168,16 @@ async fn serial_execute_one_tool_call(
     if serial_emit_early_without_dispatch(SerialEmitEarlyWithoutDispatchParams {
         messages: st.messages,
         per_coord: st.per_coord,
-        cfg: st.cfg,
+        cfg: st.env.cfg,
         tool_outcome_recorder: &st.tool_outcome_recorder,
         control: st.control.clone(),
         tool_result_envelope_v1: st.tool_result_envelope_v1,
-        effective_working_dir: st.effective_working_dir,
+        effective_working_dir: st.env.effective_working_dir,
         name: name.as_str(),
         args: args.as_str(),
         id: id.as_str(),
         step_executor_constraint: st.step_executor_constraint,
-        tools_defs_full: st.tools_defs_full,
+        tools_defs_full: st.env.tools_defs,
         turn_allow: st.turn_allow,
         permission: Some(st.permission),
         readonly_cache,
@@ -196,9 +188,9 @@ async fn serial_execute_one_tool_call(
         return false;
     }
 
-    let is_readonly = tool_registry::is_readonly_tool(st.cfg.as_ref(), name.as_str());
+    let is_readonly = tool_registry::is_readonly_tool(st.env.cfg.as_ref(), name.as_str());
     let dedup_cache_eligible =
-        tool_registry::tool_output_dedup_cache_eligible(st.cfg.as_ref(), name.as_str());
+        tool_registry::tool_output_dedup_cache_eligible(st.env.cfg.as_ref(), name.as_str());
     let cache_key = (name.clone(), args.clone());
     let t_tool = Instant::now();
     let runtime = ToolRuntime {
@@ -220,12 +212,12 @@ async fn serial_execute_one_tool_call(
                     tc,
                 },
                 workspace: tool_registry::DispatchToolWorkspace {
-                    effective_working_dir: st.effective_working_dir,
-                    workspace_is_set: st.workspace_is_set,
+                    effective_working_dir: st.env.effective_working_dir,
+                    workspace_is_set: st.env.workspace_is_set,
                     workspace_changelist: st.workspace_changelist.cloned(),
                 },
                 policy: tool_registry::DispatchToolPolicy {
-                    cfg: st.cfg,
+                    cfg: st.env.cfg,
                     turn_allow: st.turn_allow,
                     handler_lookup: &st.handler_lookup,
                     sync_default_sandbox_backend: &st.sync_default_sandbox_backend,
@@ -257,7 +249,7 @@ async fn serial_execute_one_tool_call(
     );
 
     serial_log_web_audit_write_tool_if_needed(
-        st.cfg.as_ref(),
+        st.env.cfg.as_ref(),
         is_readonly,
         st.request_audit.as_ref(),
         st.tracing_chat_turn.as_ref(),
@@ -268,7 +260,7 @@ async fn serial_execute_one_tool_call(
 
     serial_bookkeep_run_command_failure(
         st.per_coord,
-        st.effective_working_dir,
+        st.env.effective_working_dir,
         name.as_str(),
         args.as_str(),
         result.as_str(),
@@ -276,7 +268,7 @@ async fn serial_execute_one_tool_call(
 
     serial_clear_run_command_failures_after_workspace_mutation(
         st.per_coord,
-        st.cfg.as_ref(),
+        st.env.cfg.as_ref(),
         is_readonly,
         *st.workspace_changed,
         name.as_str(),
@@ -284,8 +276,8 @@ async fn serial_execute_one_tool_call(
     );
 
     serial_maybe_invalidate_codebase_semantic_index(
-        st.cfg,
-        st.effective_working_dir,
+        st.env.cfg,
+        st.env.effective_working_dir,
         st.workspace_changed,
         is_readonly,
         name.as_str(),
@@ -294,8 +286,8 @@ async fn serial_execute_one_tool_call(
     );
 
     serial_bookkeep_readonly_tool_ttl_cache_after_tool(SerialTtlAfterDispatchParams {
-        cfg: st.cfg.as_ref(),
-        effective_working_dir: st.effective_working_dir,
+        cfg: st.env.cfg.as_ref(),
+        effective_working_dir: st.env.effective_working_dir,
         readonly_tool_ttl_cache: &st.readonly_tool_ttl_cache,
         name: name.as_str(),
         args: args.as_str(),
@@ -318,7 +310,7 @@ async fn serial_execute_one_tool_call(
     emit_serial_tool_result(SerialEmitToolResultParams {
         messages: st.messages,
         per_coord: st.per_coord,
-        cfg: st.cfg,
+        cfg: st.env.cfg,
         tool_outcome_recorder: &st.tool_outcome_recorder,
         control: st.control.clone(),
         tool_result_envelope_v1: st.tool_result_envelope_v1,

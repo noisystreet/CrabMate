@@ -198,9 +198,7 @@ async fn outer_loop_execute_tools_round(
         per_coord,
         p.turn.messages_buffer_mut(),
         WebExecuteCtx {
-            cfg: p.ctx.core.cfg,
-            effective_working_dir: p.ctx.core.effective_working_dir,
-            workspace_is_set: p.ctx.core.workspace_is_set,
+            env: p.ctx.core.env(),
             read_file_turn_cache: p.ctx.attach.read_file_turn_cache.clone(),
             control: p.ctx.io.control.clone(),
             cancel: p.ctx.io.cancel.clone(),
@@ -209,7 +207,6 @@ async fn outer_loop_execute_tools_round(
             workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
             step_executor_constraint,
-            tools_defs_full: p.ctx.core.tools_defs,
             turn_allow: p
                 .ctx
                 .attach

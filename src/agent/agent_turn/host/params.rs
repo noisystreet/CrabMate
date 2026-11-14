@@ -51,6 +51,35 @@ pub(crate) struct RunLoopCore<'a> {
     pub workspace_is_set: bool,
 }
 
+/// 环内**整场不变**的输入，供执行层逐层透传。
+///
+/// 这几个字段原先从 [`RunLoopCore`] 起，每过一层（`WebExecuteCtx` → `ExecuteToolsCommonCtx` →
+/// `SerialToolLoopState`）就逐字段复制一遍。收成一个结构后，下游只持**一个** `Copy` 的引用集合：
+/// 将来任何环级能力只需在这里加一处，不必改三份字段表。
+///
+/// 只放**当前真被执行层读**的字段：`llm_backend` / `client` / `api_key` 仍留在 [`RunLoopCore`]，
+/// 等真正有用到它们的环级能力（如 #839 P1 的 delegator）时再加进来，避免先堆前瞻字段。
+#[derive(Clone, Copy)]
+pub(crate) struct LoopEnv<'a> {
+    pub cfg: &'a Arc<AgentConfig>,
+    /// 本会话完整工具定义（未按步收窄）；模型可见工具与越权提示共用这一份。
+    pub tools_defs: &'a [crate::types::Tool],
+    pub effective_working_dir: &'a Path,
+    pub workspace_is_set: bool,
+}
+
+impl<'a> RunLoopCore<'a> {
+    /// 把整场不变的输入投影为 [`LoopEnv`]。
+    pub(crate) fn env(&self) -> LoopEnv<'a> {
+        LoopEnv {
+            cfg: self.cfg,
+            tools_defs: self.tools_defs,
+            effective_working_dir: self.effective_working_dir,
+            workspace_is_set: self.workspace_is_set,
+        }
+    }
+}
+
 /// SSE/流式、取消与 CLI/TUI 侧回调（传输语义）。
 ///
 /// 控制面见 [`TurnControlSink`]（`turn_sink`）。
