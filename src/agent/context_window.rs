@@ -340,7 +340,99 @@ fn finalize_token_budget_compaction(
             over.context_window_tokens
         );
     }
+    // 纯删组（未做 LLM 摘要）对模型完全静默：补一行告知，让它知道「这段不是我漏读，
+    // 是被压缩移出了」。摘要路径不重复提示——`[较早对话已摘要，以下为压缩要点]` 已说过。
+    if compaction.removed_turn_groups > 0 && !compaction.summarized_for_token_budget {
+        let line = format!(
+            "context: 已压缩 {} 组历史（before {} → after {} tokens）；原文可用归档回灌",
+            compaction.removed_turn_groups,
+            compaction.before.used_input_tokens,
+            compaction.after.used_input_tokens
+        );
+        append_context_notice_line(
+            cfg,
+            messages,
+            &mut compaction,
+            params.tools,
+            params.model_override,
+            &line,
+        );
+    }
     compaction
+}
+
+/// 运行态提示的段落头：写进**已有 `system` 正文**的末尾，**不新增消息**。
+///
+/// 为什么不新增一条 `system`：视图必须保持「canonical 的删减」这一关系——
+/// `RemovedPrefix` 要按 canonical 坐标归档，`归档 ∪ canonical[1..] == 完整历史` 也依赖它。
+/// 插一条消息会把视图变成「删减 + 插入」，两条不变量同时破（#1233 v3 实测踩到）。
+const CONTEXT_NOTICE_HEADER: &str = "\n\n[运行态提示]\n";
+
+/// 把一行提示写进第一条 `system` 正文末尾；已有内容保留、重复行跳过，写后重估 `after`
+/// （提示行本身也占输入 Token，不重估会让 `context_trim` 偏小）。
+///
+/// 幂等：每次先按 [`CONTEXT_NOTICE_HEADER`] 切出基线与已有提示行再重建，跨轮不累积。
+fn append_context_notice_line(
+    cfg: &AgentConfig,
+    messages: &mut [Message],
+    compaction: &mut crate::agent::context_compaction::ContextCompactionReport,
+    tools: &[Tool],
+    model_override: Option<&str>,
+    line: &str,
+) {
+    let Some(system) = messages.iter_mut().find(|m| m.role == "system") else {
+        return;
+    };
+    let Some(crate::cm_types::MessageContent::Text(text)) = system.content.as_mut() else {
+        return;
+    };
+    let (base, mut lines) = match text.split_once(CONTEXT_NOTICE_HEADER) {
+        Some((base, tail)) => (
+            base.to_string(),
+            tail.lines()
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        ),
+        None => (text.clone(), Vec::new()),
+    };
+    if lines.iter().any(|l| l == line) {
+        return;
+    }
+    lines.push(line.to_string());
+    *text = format!("{base}{CONTEXT_NOTICE_HEADER}{}", lines.join("\n"));
+
+    compaction.after = crate::agent::context_compaction::estimate_final_request_tokens(
+        cfg,
+        messages,
+        tools,
+        model_override,
+    );
+}
+
+/// 预算跨档才追加一行（`70%` / `90%` 各一次）；同档内不重复，避免每轮改 `system` 白废前缀缓存。
+///
+/// 只读路径（旁路提问）没有 `TurnBudgetCounter`，因此不调本函数——压缩提示仍由
+/// `finalize_token_budget_compaction` 统一注入，两入口的压缩视图保持一致。
+fn push_budget_notice_if_crossing(
+    cfg: &AgentConfig,
+    messages: &mut [Message],
+    compaction: &mut crate::agent::context_compaction::ContextCompactionReport,
+    tools: &[Tool],
+    model_override: Option<&str>,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) {
+    let Some(tier) = turn_budget.and_then(|b| b.claim_budget_notice_tier(&cfg.turn_budget)) else {
+        return;
+    };
+    append_context_notice_line(
+        cfg,
+        messages,
+        compaction,
+        tools,
+        model_override,
+        &format!("context: 本回合预算已用 {tier}%（墙钟 / 调用数 / Token 取最高档）；必要时收窄范围"),
+    );
 }
 
 /// 一行 debug 撮要：主路径与只读路径共用，避免两处字段各自漂移。
@@ -674,6 +766,14 @@ pub async fn prepare_messages_for_model(
             summarized_for_token_budget: delta.compaction.summarized_for_token_budget,
             summary_tail_kept: delta.summary_tail_kept,
         },
+    );
+    push_budget_notice_if_crossing(
+        cfg,
+        messages,
+        &mut delta.compaction,
+        hooks.tools,
+        hooks.model_override,
+        hooks.turn_budget,
     );
     log_compaction_report("session", &delta.compaction);
     if let Some(p) = hooks.per_coord_layer_cache {

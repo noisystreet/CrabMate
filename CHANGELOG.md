@@ -12,6 +12,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **The model is now told when compaction silently dropped history (#1233).** Pure group removal
+  (`removed_turn_groups > 0` without an LLM summary) was invisible: the dropped turns simply were absent, so the
+  model re-read the same large file believing it had never seen it. `finalize_token_budget_compaction` now appends
+  one line to the **existing** `system` body (`context: 已压缩 N 组历史（before … → after …）；原文可用归档回灌`), and
+  `TurnBudgetCounter::claim_budget_notice_tier` adds a second line when usage **crosses** 70% / 90%
+  (`context: 本回合预算已用 …%`). Two constraints are deliberate: **no new message** — the view must stay
+  "canonical minus removed" because `RemovedPrefix` archives by canonical coordinates — and **no notice when
+  nothing happened**, so an unchanged `system` keeps the prompt cache warm. The LLM-summary path stays silent
+  because `[较早对话已摘要，以下为压缩要点]` already tells the model.
 - **`supervise --dry-run --json` exposes the convergence plan as JSON (#1355 D).** `ls` and `status` had
   `--json`, but the reconcile plan — the thing a client wants to show as "what will this round do" — was only
   available as a Chinese table. Each step now serialises with a **fixed key set** (`name` / `action` / `reason`,
