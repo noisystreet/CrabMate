@@ -311,10 +311,13 @@ mod readonly_single_source_tests {
                 !writes.contains(*name),
                 "`{name}` 的执行口径与写效应名单不一致"
             );
+            // 默认配置下两者一致；**一旦有覆盖就必须不同**（见下一条测试与
+            // `permission_levels.md` §4.2 / §7.2）。
             assert_eq!(
                 is_readonly_tool_for_permission(name),
                 exec,
-                "`{name}` 的权限口径与执行口径不能各判一套"
+                "`{name}`：默认配置下两个口径应一致。若这里失败，先确认你不是把「权限口径」\
+                 也接到了 `tool_registry_write_effect_tools` 这个性能开关上"
             );
         }
     }
@@ -328,5 +331,28 @@ mod readonly_single_source_tests {
             assert!(!is_readonly_tool(&cfg, name), "`{name}` 不得判为只读");
             assert!(!is_readonly_tool_for_permission(name), "`{name}` 同上（权限口径）");
         }
+    }
+
+    /// 反向钉住：`tool_registry_write_effect_tools` 是**整体替换式的性能开关**，权限口径必须无视它。
+    ///
+    /// 两者一旦被改成一致，运维为调并行顺手漏配 `run_command` 就会让 L1 放行子进程
+    /// （`docs/design/permission_levels.md` §4.2 / §7.2）。这条测试的作用是让那次「顺手统一」
+    /// 立刻变红，而不是等安全评审发现。
+    #[test]
+    fn permission_view_ignores_write_effect_override_on_purpose() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+        let mut writes = HashSet::new();
+        writes.insert(tool_names::READ_FILE.to_string());
+        cfg.tool_registry_policy.tool_registry_write_effect_tools =
+            Some(std::sync::Arc::new(writes));
+
+        assert!(
+            !is_readonly_tool(&cfg, tool_names::READ_FILE),
+            "执行口径应跟随覆盖（read_file 被算作写）"
+        );
+        assert!(
+            is_readonly_tool_for_permission(tool_names::READ_FILE),
+            "权限口径不得跟随覆盖：那样等于把安全边界交给性能开关"
+        );
     }
 }
