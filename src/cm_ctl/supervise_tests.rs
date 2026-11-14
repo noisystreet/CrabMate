@@ -458,3 +458,57 @@ fn good_env_file_reaches_start_spec_credentials() {
     }
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn declared_env_addition_plans_restart() {
+    // 这条正是 #1355 之外实测撞到的坑：只改了 `[instances.x.env]`，实例 Ready，
+    // 收敛一直「已就绪（无动作）」，声明与运行时静默不一致。
+    let mut d = decl("/tmp/a", true, Some(8080));
+    d.env
+        .insert("CM_ALLOWED_COMMANDS".to_string(), "*".to_string());
+    let mut rec = InstanceRecord::new("a");
+    rec.env_keys = vec![
+        "HOME".to_string(),
+        "PATH".to_string(),
+        "XDG_RUNTIME_DIR".to_string(),
+    ];
+
+    let reason = env_change_reason(&d, &rec, None).expect("声明新增 env 键应要求重启");
+    assert!(
+        reason.contains("CM_ALLOWED_COMMANDS"),
+        "原因里要点名缺的键，否则用户不知道为什么被重启：{reason}"
+    );
+    assert!(
+        !reason.contains("*"),
+        "原因里不该回显 env 的**值**（这里是通配符也不回显，免得养成习惯）：{reason}"
+    );
+}
+
+#[test]
+fn declared_env_already_present_needs_no_restart() {
+    let mut d = decl("/tmp/a", true, Some(8080));
+    d.env.insert("RUST_LOG".to_string(), "debug".to_string());
+    let mut rec = InstanceRecord::new("a");
+    rec.env_keys = vec!["HOME".to_string(), "RUST_LOG".to_string()];
+
+    assert!(
+        env_change_reason(&d, &rec, None).is_none(),
+        "键已在记录里就不该反复重启，否则每轮收敛都会抖一次"
+    );
+}
+
+#[test]
+fn changed_env_value_is_not_detected_by_design() {
+    // 边界钉子：状态记录只存 `env_keys`（名），值永不落盘（#1355 A 项）。
+    // 没有值就没有比较对象，所以「改值」检不出来——显式 `crabmatectl restart` 才生效。
+    // 哪天有人想在这里「顺手比对值」，先改那条安全边界并同步文档。
+    let mut d = decl("/tmp/a", true, Some(8080));
+    d.env.insert("RUST_LOG".to_string(), "trace".to_string());
+    let mut rec = InstanceRecord::new("a");
+    rec.env_keys = vec!["RUST_LOG".to_string()];
+
+    assert!(
+        env_change_reason(&d, &rec, None).is_none(),
+        "只改值不该被判成需要重启（判据里没有值）"
+    );
+}

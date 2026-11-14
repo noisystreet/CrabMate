@@ -90,6 +90,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **`supervise` now restarts an instance when the declaration gains env keys.** Editing `[instances.x.env]`
+  while a lane was `ready` produced「已就绪（无动作）」forever: `step_for_decl` only restarted for "no record /
+  profile change / observed state != ready", so the declaration and the running process could disagree with
+  nothing in the output saying so. `restart_reason` (profile change) now also consults `env_change_reason`,
+  which compares the env keys the start spec would use (profile merge when a profile is set, `decl.env`
+  otherwise) against the record's `env_keys` and asks for a restart naming the missing keys.
+  **Only additions are detected, by design**: the record keeps key names and never values (#1355 A), so a
+  changed value still needs an explicit `crabmatectl restart` — pinned by
+  `changed_env_value_is_not_detected_by_design`. `env_file` keys do not participate (the credentials file is
+  not part of the declaration fingerprint).
 - **The `.deb`'s `copyright` file no longer carries the whole README (#1363).** `[package.metadata.deb]` pointed
   `license-file` at `README.md`, so `cargo-deb` wrote the 15 KB README in as the license body of
   `/usr/share/doc/crabmate/copyright`, under a `Comment: Copyright information missing` header — a DEP-5 file whose
