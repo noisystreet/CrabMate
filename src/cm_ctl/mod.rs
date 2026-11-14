@@ -187,4 +187,48 @@ mod tests {
         let v = serde_json::to_value(record::InstanceRecord::default()).expect("序列化记录");
         assert_eq!(sorted_keys(&v), expected_keys("record_fields"));
     }
+
+    /// `supervise --dry-run --json` 的步骤键集同样是契约：客户端要按它展示
+    /// 「这一轮收敛会做什么」。
+    ///
+    /// 键集**恒定**（用不到的键给 `null`），所以几种 action 必须给出同一组键——
+    /// 只比一种的话，哪天给某个 action 少写一个键也照样绿。
+    #[test]
+    fn supervise_step_json_matches_the_contract() {
+        let spec = supervise::StartSpec {
+            workspace: None,
+            serve_config: None,
+            port: Some(8080),
+            env: std::collections::BTreeMap::new(),
+            env_file_env: env_file::CredEnv::default(),
+            profile: None,
+            profile_fingerprint: None,
+            no_tools: false,
+        };
+        let steps = [
+            supervise::Step::Start {
+                name: "alpha".to_string(),
+                spec,
+                restart: false,
+                reason: "声明新增".to_string(),
+            },
+            supervise::Step::Stop {
+                name: "alpha".to_string(),
+                reason: "声明已删除".to_string(),
+            },
+            supervise::Step::Skipped {
+                name: "alpha".to_string(),
+                reason: "disabled".to_string(),
+            },
+        ];
+        for step in &steps {
+            let v = render::step_json(step);
+            assert_eq!(
+                sorted_keys(&v),
+                expected_keys("supervise_step"),
+                "`{}` 步骤的键集与 golden 不一致",
+                step.name()
+            );
+        }
+    }
 }

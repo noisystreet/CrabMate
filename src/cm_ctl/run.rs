@@ -149,11 +149,11 @@ fn up_all(ctx: &Ctx, c: &UpCmd) -> Result<(), CtlError> {
     let file = instances::load(&path)?;
     let starts = starts_only(supervise::plan(ctx, &file)?);
     if c.dry_run {
-        render::supervise(&starts, true);
+        render::supervise(&starts, true, false);
         return Ok(());
     }
     let done = supervise::execute(ctx, starts, &one_shot_opts(c));
-    render::supervise(&done, false);
+    render::supervise(&done, false, false);
     let failed = failed_count(&done);
     if failed == 0 {
         return Ok(());
@@ -241,7 +241,9 @@ fn supervise_cmd(ctx: &Ctx, c: &SuperviseCmd) -> Result<(), CtlError> {
     }
     let file = instances::load(&path)?;
     let steps = supervise::execute(ctx, supervise::scoped_plan(ctx, &file, &opts)?, &opts);
-    render::supervise(&steps, c.dry_run);
+    // `--json` 已由 clap 的 `requires = "dry_run"` 约束到 dry-run 那一支；
+    // 走到这里若是常驻模式早就 return 了，所以 `c.json` 只会与计划态一起出现。
+    render::supervise(&steps, c.dry_run, c.json);
 
     let failed = failed_count(&steps);
     if failed == 0 {

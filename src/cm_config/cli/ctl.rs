@@ -77,6 +77,12 @@ pub struct SuperviseCmd {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// 以 JSON 输出收敛计划（供脚本 / 客户端消费；**必须**与 `--dry-run` 一起用）
+    ///
+    /// 计划里的环境变量只出**键名**：值属凭据面，不落进任何输出。
+    #[arg(long, requires = "dry_run")]
+    pub json: bool,
+
     /// 监听声明变化并热生效（常驻；Ctrl-C 退出）
     #[arg(long)]
     pub watch: bool,
