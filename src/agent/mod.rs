@@ -11,6 +11,8 @@ pub mod context_compaction;
 pub mod context_window;
 /// 完整规范历史派生出的单轮模型上下文视图与持久化配方。
 pub mod model_context_view;
+/// 子回合装配（#839 P0-4）：`SubTurnSpec` → 隔离的 `TurnRequest`。
+pub mod sub_turn;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crate::cm_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（领域核在 `cm_agent`）。
