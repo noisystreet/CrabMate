@@ -99,7 +99,10 @@ include = [
 
 [package.metadata.deb]
 maintainer = "CrabMate <adustofsnow@163.com>"
-license-file = "README.md"
+# 指向真正的许可正文：此前是 "README.md"，cargo-deb 因此把整份 README 当作 License 正文
+# 写进 /usr/share/doc/crabmate/copyright（并附 "Copyright information missing"）。
+license-file = "LICENSE"
+copyright = "CrabMate contributors"
 extended-description = """\
 CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reach LLM backends \
 (e.g. DeepSeek, MiniMax, local Ollama). It supports function calling, workspace-oriented command \

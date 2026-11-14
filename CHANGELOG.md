@@ -65,6 +65,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **The `.deb`'s `copyright` file no longer carries the whole README (#1363).** `[package.metadata.deb]` pointed
+  `license-file` at `README.md`, so `cargo-deb` wrote the 15 KB README in as the license body of
+  `/usr/share/doc/crabmate/copyright`, under a `Comment: Copyright information missing` header — a DEP-5 file whose
+  only license text was prose. It now points at `LICENSE` (the real Apache-2.0 text) and declares
+  `copyright = "CrabMate contributors"`, so the file opens with `Copyright:` / `License: Apache-2.0` and the comment
+  is gone. Nothing else moved: `README.md` still ships under `/usr/share/doc/crabmate/`.
 - **`crabmatectl restart` no longer trips over its own previous process's port.** A lane whose `down` ended in
   `SIGKILL` could be judged `port_in_use` on the immediate `up`: the signal only means "delivered", so the old
   listener may still own the address for a few hundred milliseconds (this surfaced as a flaky `ctl_process`
