@@ -1,4 +1,7 @@
-// `git` 的入参：单一 `action` 选择器 + 各只读子命令的字段并集（见下方 `GitArgs`）。
+//! `git` 的入参：单一 `action` 选择器 + 各只读子命令的字段并集（见下方 `GitArgs`）。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 // ── git read ────────────────────────────────────────────────────
 

@@ -1,4 +1,7 @@
-// `exec_package` 与 `file_core` 手写 JSON Schema 迁移。
+//! `exec_package` 与 `file_core` 手写 JSON Schema 迁移。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -205,7 +208,6 @@ pub struct ReadBinaryMetaArgs {
     #[schemars(range(min = 0, max = 262144))]
     pub prefix_hash_bytes: Option<u32>,
 }
-
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]

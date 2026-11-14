@@ -1,4 +1,10 @@
-// ── 结构化数据（`structured_data`）────────────────────────────
+//! ── 结构化数据（`structured_data`）────────────────────────────
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
+use super::basic::MarkdownCheckLinksOutputFormat;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 pub enum StructuredDataFormat {
@@ -69,26 +75,26 @@ fn default_structured_patch_action() -> StructuredPatchAction {
     StructuredPatchAction::Set
 }
 
-/// [`super::structured_data::structured_validate_try`] 入参。
+/// `structured_data::structured_validate_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredValidateArgs {
     pub path: String,
     pub format: Option<StructuredDataFormat>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub has_header: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub summarize: bool,
 }
 
-/// [`super::structured_data::structured_query_try`] 入参。
+/// `structured_data::structured_query_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredQueryArgs {
     pub path: String,
     pub query: String,
     pub format: Option<StructuredDataFormat>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub has_header: bool,
 }
 
@@ -96,21 +102,21 @@ fn default_structured_diff_max_lines() -> Option<u64> {
     Some(200)
 }
 
-/// [`super::structured_data::structured_diff_try`] 入参。
+/// `structured_data::structured_diff_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredDiffArgs {
     pub path_a: String,
     pub path_b: String,
     pub format: Option<StructuredDataFormat>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub has_header: bool,
     #[serde(default = "default_structured_diff_max_lines")]
     #[schemars(range(min = 1, max = 2000))]
     pub max_diff_lines: Option<u64>,
 }
 
-/// [`super::structured_data::structured_patch_try`] 入参。
+/// `structured_data::structured_patch_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StructuredPatchArgs {
@@ -120,9 +126,9 @@ pub struct StructuredPatchArgs {
     pub action: StructuredPatchAction,
     pub value: Option<JsonValue>,
     pub format: Option<StructuredPatchFormat>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub create_missing: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub dry_run: bool,
     /// **已废弃**：写盘只需 `dry_run=false`，本字段不再被校验；仅为兼容既有调用保留。
     #[serde(default)]
@@ -151,7 +157,7 @@ pub enum StructuredAction {
     Patch,
 }
 
-/// [`super::structured_dispatch::structured_try`] 入参。
+/// `structured_dispatch::structured_try` 入参。
 ///
 /// 字段是四个子动作的**并集**：只有本 `action` 用到的键会被转发给子实现，
 /// 其余键静默忽略（与 `code_nav` 同一约定）。必填项按 `action` 在分发层校验。
@@ -208,7 +214,7 @@ pub struct StructuredArgs {
 
 // ── 工作流执行（`workflow_execute` 占位 runner）───────────────
 
-/// [`super::runners::runner_workflow_execute`] 对应 parameters（DAG 由运行时解析）。
+/// `runners::runner_workflow_execute` 对应 parameters（DAG 由运行时解析）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowExecuteArgs {
@@ -246,18 +252,18 @@ pub struct CodespellCheckArgs {
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DocsHealthSweepArgs {
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub run_doc_preview: bool,
     #[serde(default)]
     pub doc_paths: Vec<String>,
     #[serde(default = "default_doc_preview_max_lines")]
     #[schemars(range(min = 10, max = 200))]
     pub doc_preview_max_lines: Option<u64>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub run_typos: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub run_codespell: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub run_markdown_links: bool,
     #[serde(default)]
     pub spell_paths: Vec<String>,
@@ -329,7 +335,7 @@ pub enum TableTextAggregateOp {
     Max,
 }
 
-/// [`super::table_text::run_try`] 入参（按 `action` 分支校验由 runner 完成）。
+/// `table_text::run_try` 入参（按 `action` 分支校验由 runner 完成）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TableTextArgs {
@@ -338,7 +344,7 @@ pub struct TableTextArgs {
     pub text: Option<String>,
     #[serde(default)]
     pub delimiter: Option<TableTextDelimiter>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub has_header: bool,
     #[serde(default)]
     #[schemars(range(min = 1, max = 200))]
@@ -378,7 +384,7 @@ fn default_text_diff_max_output_bytes() -> Option<u64> {
     Some(50_000)
 }
 
-/// [`super::text_diff::run_try`] 入参。
+/// `text_diff::run_try` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct TextDiffArgs {
@@ -412,7 +418,7 @@ impl Default for TextDiffArgs {
 
 // ── 文件额外写操作（`file::mutate` / `perm` / `symlink`）────────
 
-/// [`super::file::mutate::delete_files`] 入参。
+/// `file::mutate::delete_files` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DeleteFilesArgs {
     /// 待删除的相对路径列表（1..=32；同路径去重；不能是目录）。
@@ -421,7 +427,7 @@ pub struct DeleteFilesArgs {
     pub confirm: Option<bool>,
 }
 
-/// [`super::file::mutate::delete_dir`] 入参。
+/// `file::mutate::delete_dir` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DeleteDirArgs {
     pub path: String,
@@ -430,7 +436,7 @@ pub struct DeleteDirArgs {
     pub confirm: Option<bool>,
 }
 
-/// [`super::file::mutate::append_file`] 入参。
+/// `file::mutate::append_file` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct AppendFileArgs {
     pub path: String,
@@ -439,25 +445,25 @@ pub struct AppendFileArgs {
     #[serde(default)]
     pub create_if_missing: bool,
     /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入。
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub dry_run: bool,
     /// 原文件非空且末尾无换行时，追加前自动补一个 `\n`，避免把新内容接在旧末行后。
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub ensure_leading_newline: bool,
     /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。
     #[serde(default)]
     pub skip_precheck: bool,
 }
 
-/// [`super::file::mutate::create_dir`] 入参。
+/// `file::mutate::create_dir` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateDirArgs {
     pub path: String,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub parents: bool,
 }
 
-/// [`super::file::mutate::search_replace`] 入参。
+/// `file::mutate::search_replace` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SearchReplaceArgs {
     pub path: String,
@@ -475,7 +481,7 @@ pub struct SearchReplaceArgs {
     /// 给非 0 值时冲突报错。
     #[serde(default)]
     pub replace_all: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub dry_run: bool,
     /// 可选写前 CAS：最近一次 `read_file` 成功输出头里的 `revision`；与当前内容不一致时
     /// **拒写**（`错误[stale_revision]`）。显式传入时始终校验。

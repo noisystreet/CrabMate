@@ -1,4 +1,9 @@
-/// [`super::schedule::add_reminder`] 入参。
+//! `schedule` 族入参：reminders / events / archive / code_nav（含 call_graph_sketch）。
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+/// `schedule::add_reminder` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddReminderArgs {
@@ -6,7 +11,7 @@ pub struct AddReminderArgs {
     pub due_at: Option<String>,
 }
 
-/// [`super::schedule::list_reminders`] 入参。
+/// `schedule::list_reminders` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct ListRemindersArgs {
@@ -17,7 +22,7 @@ pub struct ListRemindersArgs {
     pub future_days: Option<u64>,
 }
 
-/// [`super::schedule::update_reminder`] 入参。
+/// `schedule::update_reminder` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateReminderArgs {
@@ -34,7 +39,7 @@ pub struct IdOnlyArgs {
     pub id: String,
 }
 
-/// [`super::schedule::add_event`] 入参。
+/// `schedule::add_event` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddEventArgs {
@@ -45,7 +50,7 @@ pub struct AddEventArgs {
     pub notes: Option<String>,
 }
 
-/// [`super::schedule::list_events`] 入参。
+/// `schedule::list_events` 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct ListEventsArgs {
@@ -58,7 +63,7 @@ pub struct ListEventsArgs {
     pub future_days: Option<u64>,
 }
 
-/// [`super::schedule::update_event`] 入参。
+/// `schedule::update_event` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateEventArgs {
@@ -76,7 +81,7 @@ pub struct UpdateEventArgs {
 // 内部 DTO —— `schedule.rs` 的既有实现仍按它们解析，分派层负责把 union 拆回旧形状，
 // 这样合并的是对外 schema，而不是重写已验证的读写流程。
 
-/// [`super::schedule_dispatch::reminder`] 的 `action`。
+/// `schedule_dispatch::reminder` 的 `action`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ReminderAction {
@@ -92,7 +97,7 @@ pub enum ReminderAction {
     Complete,
 }
 
-/// [`super::schedule_dispatch::reminder`] 入参：`action` 选择器 + 字段并集。
+/// `schedule_dispatch::reminder` 入参：`action` 选择器 + 字段并集。
 ///
 /// `list` 只读；`add` / `update` / `delete` / `complete` 写 `.crabmate/reminders.json`。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -121,7 +126,7 @@ pub struct ReminderArgs {
     pub done: Option<bool>,
 }
 
-/// [`super::schedule_dispatch::event`] 的 `action`。
+/// `schedule_dispatch::event` 的 `action`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum EventAction {
@@ -135,7 +140,7 @@ pub enum EventAction {
     Delete,
 }
 
-/// [`super::schedule_dispatch::event`] 入参：`action` 选择器 + 字段并集。
+/// `schedule_dispatch::event` 入参：`action` 选择器 + 字段并集。
 ///
 /// `list` 只读；`add` / `update` / `delete` 写 `.crabmate/events.json`。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -197,7 +202,7 @@ pub enum ArchivePackFormat {
     TarXz,
 }
 
-/// [`super::archive::archive_pack`] 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。
+/// `archive::archive_pack` 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。
 #[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -209,7 +214,7 @@ pub struct ArchivePackArgs {
     pub format: Option<ArchivePackFormat>,
 }
 
-/// [`super::archive::archive_unpack`] 入参。
+/// `archive::archive_unpack` 入参。
 #[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -229,7 +234,7 @@ fn default_dot_str() -> String {
     ".".to_string()
 }
 
-/// [`super::archive::archive_list`] 入参。
+/// `archive::archive_list` 入参。
 #[cfg(feature = "archive-tools")]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -245,7 +250,7 @@ pub struct ArchiveListArgs {
 
 // ── 代码导航（`symbol` / `code_nav` / `call_graph_sketch`）──────
 
-/// [`super::symbol::run`]（`find_symbol`）入参。
+/// `symbol::run`（`find_symbol`）入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FindSymbolArgs {
@@ -258,7 +263,7 @@ pub struct FindSymbolArgs {
     #[serde(default = "default_context_lines")]
     #[schemars(range(min = 0))]
     pub context_lines: Option<u64>,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub case_insensitive: bool,
     #[serde(default)]
     pub include_hidden: bool,
@@ -272,7 +277,7 @@ fn default_context_lines() -> Option<u64> {
     Some(2)
 }
 
-/// [`super::code_nav::find_references`] 入参。
+/// `code_nav::find_references` 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FindReferencesArgs {
@@ -283,7 +288,7 @@ pub struct FindReferencesArgs {
     pub max_results: Option<u64>,
     #[serde(default)]
     pub case_sensitive: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "super::defaults::default_true")]
     pub exclude_definitions: bool,
     #[serde(default)]
     pub include_hidden: bool,
@@ -293,7 +298,7 @@ fn default_find_refs_max_results() -> Option<u64> {
     Some(80)
 }
 
-/// [`super::call_graph_sketch::run`] 入参（`symbol` 与 `symbols` 至少其一由 runner 校验）。
+/// `call_graph_sketch::run` 入参（`symbol` 与 `symbols` 至少其一由 runner 校验）。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct CallGraphSketchArgs {
@@ -326,7 +331,7 @@ fn default_call_graph_max_files() -> Option<u64> {
 // 在 `code_nav_dispatch` 里校验，因为 union 结构体表达不了「`find_symbol` 必须有 `symbol`、
 // `file_outline` 必须有 `path`」这类条件约束。
 
-/// [`super::code_nav_dispatch::dispatch`]（`code_nav`）的动作选择器。
+/// `code_nav_dispatch::dispatch`（`code_nav`）的动作选择器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CodeNavAction {
