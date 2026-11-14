@@ -4,7 +4,6 @@ use std::path::Path;
 
 use rusqlite::params;
 
-use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
 use crate::cm_names as tool_names;
 
 use crate::cm_memory::memory::codebase_semantic_index::{
@@ -12,30 +11,18 @@ use crate::cm_memory::memory::codebase_semantic_index::{
     sqlite_like_escape,
 };
 use crate::cm_config::AgentConfig;
+use crate::cm_tools::registry_policy::is_readonly_tool;
 use crate::cm_types::path_utils::canonical_workspace_root;
 
 use crate::cm_memory::tool_check;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
-// 写效应名单的唯一来源在 [`crate::cm_config::tool_write_effect`]：本模块曾自带一份副本，
-// 结果长期停留在已删除的工具名上（`apply_diff` / `write_file` / `mkdir` …），同时漏掉
-// `structured` / `reminder` / `event` / `archive_*`——语义索引因此对真正写盘的工具不作废。
-// 现在两处共用同一份，写工具一增一删不再需要改两个地方。
-
-/// 判断工具是否为只读（不修改工作区文件系统），供失效决策使用。
-/// 写操作工具及未知语义工具（MCP 代理、动态工具）返回 false。
-fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
-    let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
-        None => builtin_write_effect_tools(),
-        Some(arc) => arc.as_ref(),
-    };
-    // MCP 代理工具与动态工具语义不可静态证明，默认按写副作用处理。
-    if name.starts_with("mcp__") || name.starts_with("tool_") {
-        return false;
-    }
-    !writes.contains(name)
-}
+// 只读判定只认策略层那**一份**实现（[`crate::cm_tools::registry_policy::is_readonly_tool`]），
+// 写效应名单也只有一份（[`crate::cm_config::tool_write_effect`]）。本模块曾自带副本，两处先后漂移过：
+// 名单停在已删除的工具名上（`apply_diff` / `write_file` / `mkdir`…），漏 `structured` / `reminder` /
+// `event` / `archive_*`；前缀判定又写成 `tool_`（动态工具的实际前缀是 `dyn__`），使 `dyn__*` 被当成
+// 只读、真正写盘也不作废索引。复用策略层后，新增工具只需在那里归类一次。
 
 /// 相对工作区路径（POSIX，`/`）；`is_dir` 为 true 时删除该路径及其子路径下所有块。
 #[derive(Debug, Clone)]
@@ -431,5 +418,18 @@ mod tests {
         };
         let paths: Vec<&str> = sc.iter().map(|s| s.path.as_str()).collect();
         assert_eq!(paths, vec!["src/a.rs", "src/b.rs"]);
+    }
+
+    #[test]
+    fn non_builtin_origins_are_never_readonly() {
+        // 回归：前缀判定曾写成 `tool_`，而动态工具的实际前缀是 `dyn__`，
+        // 导致 `dyn__*` 被当成只读、真正写盘也不作废索引。
+        let cfg = default_cfg();
+        for name in ["dyn__plugin_tool", "mcp__srv__write_thing"] {
+            assert!(
+                invalidation_for_tool_call(&cfg, name, r#"{}"#).is_some(),
+                "`{name}` 语义不可静态证明，必须按写副作用处理"
+            );
+        }
     }
 }
