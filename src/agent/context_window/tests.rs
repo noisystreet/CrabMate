@@ -780,3 +780,44 @@ fn budget_notice_tier_fires_only_on_crossing() {
         "90% 档内不重复"
     );
 }
+
+/// #1233 v3 一致性地板：提示行写完后，`after` 仍是「本回合用了多少」的唯一来源
+/// （`ContextCompactionReport::input_usage().estimated` 取的就是它，`context_trim` 与
+/// `GET /status` 同源），且必须等于对注入后 `messages` 的重新估算——否则用量会与实际请求脱节。
+#[test]
+fn notice_keeps_turn_input_usage_as_the_single_source() {
+    let cfg = crate::config::load_config(None).expect("embed default");
+    let mut messages = vec![Message::system_only("sys"), Message::user_only("u")];
+    let mut compaction = crate::agent::context_compaction::ContextCompactionReport {
+        after: crate::agent::context_compaction::estimate_final_request_tokens(
+            &cfg, &messages, &[], None,
+        ),
+        ..Default::default()
+    };
+    let before_notice = compaction.after.used_input_tokens;
+
+    append_context_notice_line(
+        &cfg,
+        &mut messages,
+        &mut compaction,
+        &[],
+        None,
+        "context: 测试提示行（仅占位）",
+    );
+
+    assert_eq!(
+        compaction.after,
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &messages, &[], None),
+        "注入后 after 必须等于对注入后 messages 的重新估算，否则 context_trim 会偏小"
+    );
+    assert_eq!(
+        compaction.after,
+        compaction.input_usage().estimated,
+        "TurnInputUsage.estimated 必须直接取自 after（单一来源，不得各自重算）"
+    );
+    assert!(
+        compaction.after.used_input_tokens >= before_notice,
+        "提示行本身占 token，after 不应变小：{before_notice} → {}",
+        compaction.after.used_input_tokens
+    );
+}
