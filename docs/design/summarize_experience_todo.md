@@ -48,7 +48,7 @@
 - 检索时可按置信度过滤或排序
 
 **关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/tool_host/long_term_memory_tools.rs`、
-  `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+  `src/cm_tools/tools/tool_param_types/diagnostics.rs`
 
 ---
 
@@ -75,7 +75,7 @@
 - 鼓励模型在记录涉及版本相关踩坑时标注
 - 未来可支持基于当前项目依赖版本过滤经验（与 `Cargo.lock` / `package.json` 比对）
 
-**关联文件**：`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、`src/cm_memory/memory/long_term_memory_store.rs`
+**关联文件**：`src/cm_tools/tools/tool_param_types/diagnostics.rs`、`src/cm_memory/memory/long_term_memory_store.rs`
 
 ---
 
@@ -90,7 +90,7 @@
 - 单次工具调用批量写入多条经验，减少工具调用次数
 - 错误处理：部分成功时回滚全部或记录失败列表
 
-**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`、
+**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/diagnostics.rs`、
   `src/cm_tools/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
 
 ---
@@ -205,7 +205,7 @@
 - 低置信度经验默认设置短 TTL，自动淘汰
 
 **关联文件**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、
-  `src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+  `src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/diagnostics.rs`
 
 ---
 
@@ -254,7 +254,7 @@
 - 模型在规划阶段（plan + execute 之前）可主动查询 anti-pattern 作为排除列表
 - 与 `summarize_experience` 共用 `explicit_remember_blocking` 写入路径，共用 embedding 检索，存储层完全复用
 
-**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+**关联文件**：`src/tool_host/long_term_memory_tools.rs`、`src/cm_tools/tools/tool_param_types/diagnostics.rs`
 
 ---
 

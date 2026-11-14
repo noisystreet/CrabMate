@@ -10,7 +10,7 @@
 
 ### 1.1 Schema（`RunCommandArgs`）
 
-现有字段（`src/cm_tools/tools/tool_param_types/part_tool_params_exec_file.inc.rs`，`#[serde(deny_unknown_fields)]`）：
+现有字段（`src/cm_tools/tools/tool_param_types/exec_file.rs`，`#[serde(deny_unknown_fields)]`）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|

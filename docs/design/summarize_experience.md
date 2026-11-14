@@ -168,7 +168,7 @@ VALUES
 
 ### Step 2: 定义参数 Schema
 
-**文件**: `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
+**文件**: `src/cm_tools/tools/tool_param_types/diagnostics.rs`
 
 定义派生 `schemars::JsonSchema` 的 `SummarizeExperienceArgs`；`ToolSpec.parameters` 由 `schema_of::<args::SummarizeExperienceArgs>` 直接生成，
   不再维护手写的 `ParamBuilder` 构建器（该层已删除）。

@@ -44,8 +44,8 @@ Token 分级在另一处、更晚执行（`compact_messages_to_token_budget`，`
 
 | 键 | 默认 | 位置 |
 |---|---|---|
-| `command_max_output_len` | **8192**（clamp 1024..8MiB） | `finalize_parts/finalize_agent_layers.inc.rs:123` |
-| `tool_message_max_chars` | **32768**（clamp 1024..1MiB） | `finalize_parts/finalize_tail.rs:138` |
+| `command_max_output_len` | **8192**（clamp 1024..8MiB） | `src/cm_config/finalize/agent_layers.rs:125` |
+| `tool_message_max_chars` | **32768**（clamp 1024..1MiB） | `src/cm_config/finalize/tail.rs:140` |
 | `llm_context_tokens` | 262144 | `config/default_config.toml:14` |
 | `context_token_trigger_percent` / `target` / `safety` | 85 / 70 / 2048 | `config/default_config.toml:37-39` |
 
