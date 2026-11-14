@@ -237,8 +237,15 @@ fn step_for_decl(
         });
     }
 
-    // profile 变更**不热改**运行中实例（#1165）：重启才生效，且必须先说清原因
-    if let Some(reason) = profile_change_reason(decl, rec, probe.pid_alive, decl_fingerprint.as_deref()) {
+    // profile 变更与**声明新增 env 键**都**不热改**运行中实例：重启才生效，且必须先说清原因。
+    // 两者合进一个判定是刻意的：本函数的分支数已经贴着 CCN 10 的上限（`scripts/lizard-rust.sh`）。
+    if let Some(reason) = restart_reason(
+        decl,
+        rec,
+        probe.pid_alive,
+        decl_fingerprint.as_deref(),
+        resolved.as_ref(),
+    ) {
         return start_step(
             name,
             decl,
@@ -382,6 +389,59 @@ fn profile_change_reason(
         ));
     }
     None
+}
+
+/// 「需要重启才生效」的统一判定：profile 变更，或声明新增了 env 键。
+///
+/// 进程不在时返回 `None`：那种情况由后面的「观测态非 Ready」分支给出重启原因，
+/// 在这里抢答只会让 `reason` 失真。
+fn restart_reason(
+    decl: &Declaration,
+    rec: &InstanceRecord,
+    pid_alive: bool,
+    decl_fingerprint: Option<&str>,
+    resolved: Option<&profiles::Resolved>,
+) -> Option<String> {
+    if !pid_alive {
+        return None;
+    }
+    profile_change_reason(decl, rec, pid_alive, decl_fingerprint)
+        .or_else(|| env_change_reason(decl, rec, resolved))
+}
+
+/// 声明里出现的 env 键，运行中的实例却没带上 ⇒ 需要重启。
+///
+/// **只判「新增」，判不了「改值」**，这是刻意的边界而非偷懒：
+///
+/// - 状态记录里只有 `env_keys`（键名），配置与凭据的**值永不落盘**（`#1355` A 项的安全边界）。
+///   没有值就没有比较对象，「值变了」根本无法判定；
+/// - `env_keys` 是**合并后**的键集，混着 `HOME` / `PATH` / `XDG_*` 这类继承键，
+///   所以也分不清某个键是继承来的还是声明给的 —— 于是「声明键 ⊆ 记录键」是唯一可靠的判据。
+///
+/// 后果要明说：改了 env 的**值**（键名不变）不会触发重启，得显式 `crabmatectl restart`；
+/// 拿不准时用 `crabmatectl status <name> --json`，它输出的 `env_keys` 就是判据本身。
+fn env_change_reason(
+    decl: &Declaration,
+    rec: &InstanceRecord,
+    resolved: Option<&profiles::Resolved>,
+) -> Option<String> {
+    // 与 `start_spec` 同一个来源：有 profile 时用的是 profile 合并后的 env
+    let wanted = match resolved {
+        Some(r) => &r.env,
+        None => &decl.env,
+    };
+    let missing: Vec<&str> = wanted
+        .keys()
+        .filter(|key| !rec.env_keys.iter().any(|seen| seen == *key))
+        .map(String::as_str)
+        .collect();
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "声明新增环境变量（{}）；需重启才生效",
+        missing.join(", ")
+    ))
 }
 
 /// 声明里已不存在的实例：仅当它由 `supervise` 拉起**且**进程还活着时才回收。
