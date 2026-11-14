@@ -516,22 +516,55 @@ fn format_instance_errors(validator: &Validator, instance: &Value) -> String {
     let Some(e1) = iter.next() else {
         return "参数与 JSON Schema 不一致。".to_string();
     };
+    let e1_text = e1.to_string();
     let mut s = if e1.instance_path().as_str().is_empty() {
-        e1.to_string()
+        e1_text.clone()
     } else {
-        format!("在路径 {}: {}", e1.instance_path(), e1)
+        format!("在路径 {}: {}", e1.instance_path(), e1_text)
     };
+    s.push_str(&numeric_bound_hint(&e1_text));
     for (i, e) in iter.enumerate() {
         if i >= 2 {
             s.push_str(" …");
             break;
         }
+        let t = e.to_string();
         s.push('；');
-        s.push_str(&e.to_string());
+        s.push_str(&t);
+        s.push_str(&numeric_bound_hint(&t));
     }
     format!(
         "参数与工具 JSON Schema 不一致：{s}（可对照本工具 parameters 的 required/类型/enum 等修正后重试。）"
     )
+}
+
+/// 数值越界时把**可用的值**摊进错误文案，而不只是指出违规。
+///
+/// `jsonschema` 的原文是 `14 is greater than the maximum of 10`——读完之后仍要自己回忆上限是多少，
+/// 于是下一刀照样撞（实测 `search_in_files.context_after` 在多个仓库/实例/会话里被反复传 12/14/40）。
+/// 这里直接附上界值，把"再撞一次"换成"改这个数"。
+fn numeric_bound_hint(err_text: &str) -> String {
+    let toks: Vec<&str> = err_text.split_whitespace().collect();
+    let Some(pos) = toks.iter().position(|t| *t == "maximum" || *t == "minimum") else {
+        return String::new();
+    };
+    // 形如 `… greater than the maximum of 10`：界值在关键字后第二个 token。
+    let Some(raw) = toks.get(pos + 2) else {
+        return String::new();
+    };
+    let limit: String = raw
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect();
+    if limit.is_empty() {
+        return String::new();
+    }
+    let advice = if toks[pos] == "maximum" {
+        "改为此值或更小"
+    } else {
+        "改为此值或更大"
+    };
+    format!("（{} = {limit}，请{advice}）", toks[pos])
 }
 
 /// 对已成功解析的 JSON 入参做 Schema 校验。仅内置工具有定义；`None` 表示无对应验证器（如未知 / MCP 名）。
