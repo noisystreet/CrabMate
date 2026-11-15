@@ -107,6 +107,11 @@ pub struct LlmConfig {
 // ---------------------------------------------------------------------------
 
 /// **MiniMax** 常见 OpenAI 兼容 **`model`**：`MiniMax-…`（大小写不敏感）；兼容部分 **`abab`** 前缀旧 ID。
+///
+/// ⚠️ 这一族（含下面两个 `*_for_gateway`）是 **`config/llm_vendors.toml`** 目录的**本地副本**，
+/// 生产路径零调用、只剩自测。本仓依赖方向 `cm_config → cm_llm → cm_types`，本层够不到目录，
+/// 所以既删不掉也无法委托；两边口径由 `cm_config::gateway_hints` 的
+/// `catalog_matches_the_legacy_cm_types_hints` 钉住。**生产请用 `cm_config::gateway_hints`。**
 #[inline]
 fn is_minimax_family_model_id(model: &str) -> bool {
     let b = model.as_bytes();
