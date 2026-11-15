@@ -23,7 +23,8 @@ completion_judge_model = ""
 # 默认关：关 = `delegate_task` 不注入给模型（不是「注入后拒绝」）。
 # 子任务只用只读工具子集，权限取父的 min 链结果，故本开关不改变任何权限面。
 subagent_enabled = false
-# 递归深度上限；1 = 子任务不能再派。
+# 递归深度上限。**当前只接受 1**（1 = 禁止嵌套）：首版派生子任务时会显式排除
+# delegate_task，嵌套不可能发生；配 > 1 会在启动时报错而不是静默无效。
 subagent_max_depth = 1
 subagent_max_llm_calls = 8
 subagent_max_wall_secs = 300

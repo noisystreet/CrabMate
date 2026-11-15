@@ -29,6 +29,34 @@ pub(super) fn validate_docker_sandbox_image(
     Ok(())
 }
 
+/// `subagent_max_depth` 目前只支持 `1`（禁止嵌套）。
+///
+/// **为什么不是静默忽略**：这个键名（「深度上限」）暗示可以配 > 1，但首版没有嵌套实现
+/// ——派生子任务时会**显式排除 `delegate_task` 自己**（`readonly_subset_for_subturn`），
+/// 子任务根本无法再派。留着「配了不生效」比报错更糟：用户会以为已开启嵌套，
+/// 实际直到发现子任务看不到该工具才察觉。
+///
+/// 将来实现真嵌套时，这里的上限与派生逻辑（`max_depth > 1` 时保留本工具）需一起放宽。
+pub(super) fn validate_subagent_depth(b: &ConfigBuilder) -> Result<(), String> {
+    if let Some(d) = b.subagent.max_depth
+        && d != 1
+    {
+        return Err(format!(
+            "配置错误：subagent_max_depth = {d} 暂不支持（首版只允许 1 = 禁止嵌套）。             子任务会被显式排除 `delegate_task`，配置 > 1 不会生效。"
+        ));
+    }
+    Ok(())
+}
+
+/// finalize 前的多项校验合并入口。
+///
+/// 收成一个函数是为了 `finalize_agent_config` 的 CCN：逐条 `?` 会让它超过 ≤10 的门禁。
+pub(super) fn validate_pre_finalize(b: &ConfigBuilder) -> Result<(), String> {
+    validate_required_llm_endpoints(b)?;
+    validate_subagent_depth(b)?;
+    Ok(())
+}
+
 pub(super) fn validate_required_llm_endpoints(b: &ConfigBuilder) -> Result<(), String> {
     if b.llm.api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 CM_API_BASE 中设置）".to_string());
