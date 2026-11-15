@@ -330,6 +330,9 @@ pub(crate) async fn per_execute_tools_web(
         .as_ref()
         .map(|t| t.enter_section("agent.tools_batch"));
 
+    // 先取值再 move `env`：`LoopEnv` 自 #839 P1 起持 `Arc`，不再 `Copy`。
+    let tool_result_envelope_v1 = env.cfg.tool_transcript.tool_result_envelope_v1;
+
     per_execute_tools_common(ExecuteToolsCommonCtx {
         tool_calls,
         per_coord,
@@ -339,7 +342,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_changelist,
         control,
         cancel,
-        tool_result_envelope_v1: env.cfg.tool_transcript.tool_result_envelope_v1,
+        tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn,
         request_chrome_trace,

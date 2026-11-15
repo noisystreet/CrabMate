@@ -377,12 +377,13 @@ fn assemble_run_loop_params<'a>(
 
     // #839 P1：在**持有凭据的一侧**装配 delegator，只把能力对象交出去。
     //
-    // 生命周期：`assemble_run_loop_params` 返回的 `RunLoopParams<'a>` 要活到整回合结束，
-    // 而局部 `Arc` 活不到。这里用 `Arc::leak` 换取 `'a` —— 与 `run_agent_turn` 单回合
-    // 作用域的生命周期一致（回合结束即整个 `RunLoopParams` 释放）。
+    // 所有权跟着 `RunLoopParams`（`Arc`），随回合结束释放。**不要**用 `Box::leak`
+    // 换取 `'a` —— 那是每回合永久泄漏。
     //
     // 仅在 `subagent_enabled = true` 时构造；默认关闭 → 零分配、零行为变化。
-    let delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator> =
+    let delegator: Option<
+        std::sync::Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
+    > =
         if cfg.subagent.enabled {
             let readonly_tools: Vec<crate::types::Tool> = tools_defs
                 .iter()
@@ -416,7 +417,7 @@ fn assemble_run_loop_params<'a>(
                 },
             );
             // `readonly_tools` 只在这一支里用：delegator 已 `to_vec()` 复制，可以安全丢弃。
-            Some(&*Box::leak(Box::new(d)))
+            Some(std::sync::Arc::new(d))
         } else {
             None
         };

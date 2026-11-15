@@ -51,9 +51,13 @@ pub(crate) struct RunLoopCore<'a> {
     pub workspace_is_set: bool,
     /// 子 Agent 委托能力（#839 P1）；`None` = `subagent_enabled = false`（默认）或未接线。
     ///
-    /// 由 `run_agent_turn` 在持有凭据的一侧装配后交出引用；工具层拿到的只是这个能力对象，
+    /// 由 `run_agent_turn` 在持有凭据的一侧装配；工具层拿到的只是这个能力对象，
     /// **看不到 `client` / `api_key`**。
-    pub delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
+    ///
+    /// **持有 `Arc` 而非引用**：回合级所有权必须跟着 `RunLoopParams` 走。早先版本用
+    /// `Box::leak` 换取 `'a`，那是**每回合永久泄漏**一个 delegator（它含只读工具全集与
+    /// `system_prompt`），长期运行会持续增长。
+    pub delegator: Option<Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>>,
 }
 
 /// 环内**整场不变**的输入，供执行层逐层透传。
@@ -64,7 +68,7 @@ pub(crate) struct RunLoopCore<'a> {
 ///
 /// 只放**当前真被执行层读**的字段：`llm_backend` / `client` / `api_key` 仍留在 [`RunLoopCore`]，
 /// 等真正有用到它们的环级能力（如 #839 P1 的 delegator）时再加进来，避免先堆前瞻字段。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct LoopEnv<'a> {
     pub cfg: &'a Arc<AgentConfig>,
     /// 本会话完整工具定义（未按步收窄）；模型可见工具与越权提示共用这一份。
@@ -75,7 +79,10 @@ pub(crate) struct LoopEnv<'a> {
     ///
     /// 正是本结构文档里预留的「真正有用到它们的环级能力」：执行层要把这个能力对象
     /// 透到 `DispatchToolParams.delegation`，而它**不含**任何凭据。
-    pub delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
+    ///
+    /// 用 `Arc` 而非引用：`env()` 只能从 `&self` 取字段，借不到 `'a`；
+    /// `Arc` clone 是常数开销，且不引入任何生命周期把戏。
+    pub delegator: Option<Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>>,
 }
 
 impl<'a> RunLoopCore<'a> {
@@ -86,7 +93,7 @@ impl<'a> RunLoopCore<'a> {
             tools_defs: self.tools_defs,
             effective_working_dir: self.effective_working_dir,
             workspace_is_set: self.workspace_is_set,
-            delegator: self.delegator,
+            delegator: self.delegator.clone(),
         }
     }
 }
