@@ -12,9 +12,8 @@ use crate::cm_memory::memory::codebase_semantic_index::{
 };
 use crate::cm_config::AgentConfig;
 use crate::cm_tools::registry_policy::is_readonly_tool;
+use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
 use crate::cm_types::path_utils::canonical_workspace_root;
-
-use crate::cm_memory::tool_check;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
@@ -336,14 +335,14 @@ fn apply_rel_scope_invalidation(
 
 
 
-/// `run_tool` 成功语义：`crabmate_tool` 信封的 `ok`，或旧式解析的 `ok`。
-pub fn tool_output_semantic_success(_tool_name: &str, output: &str) -> bool {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(output)
-        && let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object())
-    {
-        return ct.get("ok").and_then(|x| x.as_bool()) != Some(false);
-    }
-    tool_check::tool_output_is_ok(output)
+/// 这次工具调用是否**可视为改动了工作区**（决定要不要失效语义索引缓存）。
+///
+/// 判据统一走 [`crate::cm_tools::tool_result::tool_output_status`]，这里只把三态拍成 `bool`：
+/// **只有确定失败才跳过失效**。`Unknown` 按「可能改过」处理——宁可多算一次索引，也别留
+/// 陈旧缓存。旧实现三套口径各挑一个默认值（信封缺 `ok` 放行、纯文本找不到 `退出码：0` 就
+/// 判失败），同一份输出在不同路径上结论相反（#1401 P1）。
+pub fn tool_output_semantic_success(tool_name: &str, output: &str) -> bool {
+    tool_output_status(tool_name, output) != ToolStatus::Failed
 }
 
 #[cfg(test)]
@@ -352,6 +351,38 @@ mod tests {
 
     fn default_cfg() -> AgentConfig {
         crate::cm_config::load_config(None).expect("embed default")
+    }
+
+    /// 三态 → 失效决策：**只有确定失败才跳过失效**，`Unknown` 按「可能改过」保守失效。
+    ///
+    /// 这个函数决定「写类工具跑完后语义索引要不要作废」。误判成成功 → 索引陈旧（读到旧代码）；
+    /// 误判成失败 → 多算一次索引（只是浪费）。所以判不出来时宁可失效。
+    #[test]
+    fn semantic_success_only_skips_on_confirmed_failure() {
+        // 确定成功（退出码 0）→ 失效
+        assert!(tool_output_semantic_success(
+            "run_command",
+            "命令：pwd\n退出码：0\n标准输出：\n/\n"
+        ));
+        // 确定失败（退出码非 0）→ 不失效
+        assert!(!tool_output_semantic_success(
+            "run_command",
+            "命令：false\n退出码：1\n"
+        ));
+        // 判不出来（无任何结构化信号）→ 保守失效
+        assert!(tool_output_semantic_success(
+            "some_tool",
+            "一段没有任何结构化信息的正文"
+        ));
+        // 信封显式 `ok` 优先于正文
+        assert!(tool_output_semantic_success(
+            "run_command",
+            r#"{"crabmate_tool":{"v":1,"name":"run_command","summary":"s","output":"x","ok":true}}"#
+        ));
+        assert!(!tool_output_semantic_success(
+            "run_command",
+            r#"{"crabmate_tool":{"v":1,"name":"run_command","summary":"s","output":"x","ok":false}}"#
+        ));
     }
 
     #[test]

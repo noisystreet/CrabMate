@@ -16,10 +16,16 @@
 pub(crate) mod error_text;
 mod normalize;
 mod output_header;
+pub(crate) mod retry;
 mod run_command;
+pub(crate) mod status;
 mod tool_error;
 
 pub use normalize::{NormalizedToolEnvelope, normalize_tool_message_content};
+/// 三态判定只服务 crate 内的消费侧（`cm_memory`），**不**进 crates.io 承诺面：
+/// `root public API list` 门禁只扫 `src/lib.rs` 顶格 `pub`，嵌套模块的 `pub` 它拦不住，
+/// 所以这里显式收窄（#1401 P1 review）。
+pub(crate) use status::{ToolStatus, tool_output_status};
 pub use output_header::{
     CrabmateToolOutputEnvelope,
     CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
@@ -152,18 +158,11 @@ impl ToolResult {
 
 /// 与 `error_code` 配套的**启发式**：是否值得由编排层自动重试（超时、工作流汇合类）；多数业务失败为 `false`。
 /// 前端/模型仅作提示，**不**替代各工具的真实语义。
+///
+/// 口径本身在 [`retry::error_code_retry_scope`] 的单一表里；本函数只是历史名字的薄包装，
+/// 免得本模块与 `cm_workflow::execute::retry` 各自维护一份白名单（#1401 P1）。
 pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
-    matches!(
-        error_code,
-        Some(
-            "timeout"
-                | "http_timeout"
-                | "rate_limited"
-                | "workflow_tool_join_error"
-                | "workflow_semaphore_closed"
-                | "workflow_node_missing_result"
-        )
-    )
+    retry::tool_error_retryable(error_code)
 }
 
 /// 从正文首行提取**显式错误码标记**（形如 `错误[http_timeout]：…`），由网络类工具在错误文本中主动嵌入，
