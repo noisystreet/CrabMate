@@ -90,6 +90,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **`docs_health_sweep` no longer reads its own rendered text to decide whether a phase failed.** Its two verdict
+  helpers were string lookups on output it had just formatted: `spell_tool_failed` scanned for `(exit=` /
+  「无法启动」, `markdown_links_failed` for `结论: 发现`. Both break silently when the rendering changes — and the
+  second one was already broken: `md_output_format: "json"` renders no 「结论:」 line at all, so **every broken link
+  came back as `passed`** whenever the caller asked for JSON. The phases now return real state
+  (`ProcessRunReport.exit_code` / `SpellCheckStatus` / `MarkdownLinkVerdict.problem_count`), so pass-fail no longer
+  depends on a glyph. Two adjacent swallows went with it: a malformed `paths`, a missing `config_path` or a missing
+  dictionary file used to be reported as **`passed`** (the message matched neither `(exit=` nor 「无法启动」); it is
+  now `invalid_args`, which is what the module's own doc comment already promised — only argument errors and
+  execution faults return `Err`. `json_output_format_still_reports_findings` pins the format-independent verdict.
+- **The error-text literals that `classify_error_code` reverse-looks-up now live in one place**
+  (`cm_tools::tool_result::error_text`). The classifier matches **substrings**, so renaming a producer's wording
+  silently degraded the code to `{tool}_failed` — no compile error, no failing test. Producers that can share a
+  constant now do (`parse_args`, `write_precheck`, the two `run_command` short-circuit messages,
+  `ToolError::unknown_tool`, `output_util`'s 「执行失败」); `RunCommandError`'s `thiserror` attributes cannot
+  reference constants, so a unit test asserts their `Display` prefix instead. Also fixes a real miss:
+  「参数 JSON 无效:」 was never classified and fell through to `{tool}_failed` rather than `invalid_args`.
+  That one **does** widen the substring surface — a body that merely quotes 「参数 JSON 无效:」 now maps to
+  `invalid_args`. Accepted because the branch only runs on the legacy path (no `ok` header, no exit code),
+  where the alternative was `{tool}_failed`: equally wrong, just differently. The reverse-lookup table is
+  now pinned by literal snapshots (`historical_error_text_reverse_maps_to_its_code`), so renaming a producer
+  without updating the classifier turns the suite red instead of silently degrading the code.
 - **`supervise` now restarts an instance when the declaration gains env keys.** Editing `[instances.x.env]`
   while a lane was `ready` produced「已就绪（无动作）」forever: `step_for_decl` only restarted for "no record /
   profile change / observed state != ready", so the declaration and the running process could disagree with

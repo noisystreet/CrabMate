@@ -13,6 +13,7 @@
 //!
 //! 读路径请优先经 [`normalize::NormalizedToolEnvelope`]（[`normalize_tool_message_content`]），避免在展示层重复解析 `crabmate_tool` 字段。
 
+pub(crate) mod error_text;
 mod normalize;
 mod output_header;
 mod run_command;
@@ -169,7 +170,7 @@ pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
 /// 供 `classify_error_code` 精确归类而非依赖关键词推断。仅接受小写字母、数字与下划线组成的码。
 /// **该格式为服务端保留协议**：其他工具的错误正文请勿以 `错误[小写码]` 开头，以免被误提取。
 fn extract_error_code_marker(first_line: &str) -> Option<String> {
-    let rest = first_line.strip_prefix("错误[")?;
+    let rest = first_line.strip_prefix(error_text::ERROR_CODE_MARKER_PREFIX)?;
     let end = rest.find(']')?;
     let code = &rest[..end];
     if code.is_empty()
@@ -182,38 +183,52 @@ fn extract_error_code_marker(first_line: &str) -> Option<String> {
     Some(code.to_string())
 }
 
+/// 正文首行 → `error_code` 的反查（兜底路径；能从产生处带码的不要走这里）。
+///
+/// 所有字面量都换成 [`error_text`] 的常量：分类器按子串匹配，文案与常量分家的写法则
+/// 会在改文案时静默退化成 `{tool}_failed`。
 fn classify_error_code(first_line: &str, tool_name: &str) -> String {
     if let Some(code) = extract_error_code_marker(first_line) {
         return code;
     }
-    if first_line.contains("检测到同命令重复失败") {
+    if first_line.contains(error_text::REPEATED_SAME_COMMAND_PREFIX) {
         return "repeated_tool_failure_short_circuit".to_string();
     }
-    if first_line.contains("检测到同类失败已发生") {
+    if first_line.contains(error_text::REPEATED_FAILURE_FAMILY_PREFIX) {
         return "repeated_tool_family_failure_short_circuit".to_string();
     }
-    if first_line.contains("参数解析错误") {
+    // 两种入参文案（「参数解析错误」与「参数 JSON 无效:」）都归 `invalid_args`：
+    // 只认前者会让 `parse_args_json` 的失败退化成 `{tool}_failed`。
+    if first_line.contains(error_text::INVALID_ARGS_PREFIX)
+        || first_line.contains(error_text::INVALID_ARGS_JSON_PREFIX)
+    {
         return "invalid_args".to_string();
     }
-    if first_line.contains("校验失败（") {
+    if first_line.contains(error_text::WRITE_PRECHECK_FAILED_PREFIX) {
         return "write_precheck_failed".to_string();
     }
-    if first_line.contains("参数与工具 JSON Schema") {
+    if first_line.contains(error_text::ARGS_SCHEMA_MISMATCH_PREFIX) {
         return "invalid_args".to_string();
     }
-    if first_line.contains("不允许的命令") {
+    if first_line.contains(error_text::COMMAND_NOT_ALLOWED_PREFIX) {
         return "command_not_allowed".to_string();
     }
-    if first_line.contains("未设置工作区") {
+    if first_line.contains(error_text::WORKSPACE_NOT_SET_PREFIX) {
         return "workspace_not_set".to_string();
     }
-    if first_line.contains("超时") {
+    if first_line.contains(error_text::TIMEOUT_MARKER) {
         return "timeout".to_string();
     }
-    if first_line.starts_with("未知工具") {
+    if first_line.starts_with(error_text::UNKNOWN_TOOL_PREFIX) {
         return "unknown_tool".to_string();
     }
     format!("{}_failed", tool_name)
+}
+
+/// 仅供 [`error_text`] 的回归测试：把上面那张反查表钉住。
+#[cfg(test)]
+pub(crate) fn classify_error_code_fixture(first_line: &str, tool_name: &str) -> String {
+    classify_error_code(first_line, tool_name)
 }
 
 /// 供 **`crabmate_tool.structured_payload`** 与 SSE 合并路径使用：对已格式化命令输出生成稳定 JSON（**不含** stdout/stderr 全文）。

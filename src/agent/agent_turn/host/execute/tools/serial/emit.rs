@@ -9,6 +9,7 @@ use crate::agent::agent_turn::run_command_dedupe::{
 };
 use crate::agent::per_coord::PerCoordinator;
 use crate::cm_names as tool_names;
+use crate::cm_tools::tool_result::error_text;
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
 use crate::tool_result::parse_tool_output;
@@ -276,7 +277,9 @@ async fn serial_emit_run_command_failure_short_circuits(
     } = p;
     if let Some(prev_error) = per_coord.repeated_tool_failure_error_marker(name, args) {
         let short_circuit = format!(
-            "错误：检测到同命令重复失败，已短路本次调用（error={prev_error}）。请切换策略（例如调整工作目录、改用 --manifest-path、或先做目录/文件探测）。"
+            "{}：{}，已短路本次调用（error={prev_error}）。请切换策略（例如调整工作目录、改用 --manifest-path、或先做目录/文件探测）。",
+            error_text::ERROR_PREFIX,
+            error_text::REPEATED_SAME_COMMAND_PREFIX
         );
         warn!(
             target: super::super::LOG_TARGET,
@@ -305,7 +308,9 @@ async fn serial_emit_run_command_failure_short_circuits(
         && let Some(prev_error) = per_coord.repeated_tool_failure_family_marker(name, family)
     {
         let short_circuit = format!(
-            "错误：检测到同类失败已发生（family={family}, prev_error={prev_error}），已短路本次调用。请直接切换策略，避免继续同类试探。"
+            "{}：{}（family={family}, prev_error={prev_error}），已短路本次调用。请直接切换策略，避免继续同类试探。",
+            error_text::ERROR_PREFIX,
+            error_text::REPEATED_FAILURE_FAMILY_PREFIX
         );
         warn!(
             target: super::super::LOG_TARGET,

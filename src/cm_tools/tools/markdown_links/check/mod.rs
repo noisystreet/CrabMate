@@ -6,6 +6,7 @@ use crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksOutputFormat;
 use reqwest::blocking::Client;
 
 use super::core::*;
+use super::MarkdownCheckReport;
 
 mod links_collect;
 mod links_format;
@@ -414,6 +415,18 @@ pub fn markdown_check_links_try(
     args_json: &str,
     working_dir: &Path,
 ) -> Result<String, ToolError> {
+    markdown_check_links_report_try(args_json, working_dir).map(|r| r.output)
+}
+
+/// 同 [`markdown_check_links_try`]，但**保留结构化结论**（供 `docs_health_sweep` 判定阶段成败）。
+///
+/// `Err` 只表示**执行故障**（入参不合法 / 工作区解析失败 / 扫描 IO）；「检查出坏链接」
+/// 走 `Ok` + `verdict.problem_count > 0`——工具确实跑完了，要不要紧由调用方判断。
+#[allow(clippy::result_large_err)]
+pub fn markdown_check_links_report_try(
+    args_json: &str,
+    working_dir: &Path,
+) -> Result<MarkdownCheckReport, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let args: crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksArgs =
         serde_json::from_value(v).map_err(|e| {

@@ -1,9 +1,15 @@
 //! 工具调用入参 JSON（`args_json`）的公共解析，统一错误文案。
+//!
+//! 文案取自 [`error_text`] 的常量，与 `tool_result::classify_error_code` 的反查表同源：
+//! 两边各写一份字面量时，改文案会让 `error_code` 静默退化成 `{tool}_failed`。
+
+use crate::cm_tools::tool_result::error_text;
 
 /// 将工具入参 JSON 解析为 [`serde_json::Value`]；失败时返回与用户可见 runner 一致的中文说明。
 #[inline]
 pub fn parse_args_json(args_json: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))
+    serde_json::from_str(args_json)
+        .map_err(|e| format!("{} {e}", error_text::INVALID_ARGS_JSON_PREFIX))
 }
 
 /// 将工具入参 JSON 直接反序列化为目标类型（`parse_args_json` + `serde_json::from_value` 一步到位）。
@@ -18,7 +24,8 @@ pub fn parse_args_typed<T: serde::de::DeserializeOwned>(args_json: &str) -> Resu
 pub fn parse_args_from_value<T: serde::de::DeserializeOwned>(
     v: serde_json::Value,
 ) -> Result<T, String> {
-    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+    serde_json::from_value(v)
+        .map_err(|e| format!("{}: {e}", error_text::INVALID_ARGS_PREFIX))
 }
 
 /// 仅用于 `run_command`：尝试修复常见的裸 token 数组写法（如 `args:[-la]`、`args:[CMakeLists.txt]`）。

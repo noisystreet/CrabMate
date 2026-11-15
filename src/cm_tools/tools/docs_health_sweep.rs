@@ -26,23 +26,50 @@ fn default_doc_preview_paths() -> Vec<String> {
     repo_overview::default_health_sweep_doc_paths()
 }
 
-fn spell_tool_failed(block: &str) -> bool {
-    if block.contains("无法启动") {
-        return false;
-    }
-    let Some(first) = block.lines().next() else {
-        return false;
-    };
-    if first.contains("(exit=0)") {
-        return false;
-    }
-    first.contains("(exit=")
+/// 聚合步骤的状态。
+///
+/// 用枚举而不是 `"passed"` / `"failed"` 字符串：原先各阶段先把状态压成字符串塞进
+/// `summary`，末尾再用 `any(|(_, s)| s == "failed")` 把字符串解析回成败——那正是本次
+/// 要消灭的「拿渲染产物做判定」。展示词只在 [`StageVerdict::label`] 一处产生。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StageVerdict {
+    /// 跑完且无问题。
+    Passed,
+    /// 跑完并发现问题（内容发现，非工具故障）。
+    Failed,
+    /// 本阶段未运行（参数关掉 / 前置阶段 `fail_fast`）。
+    Skipped,
+    /// 跑起来了但没有结论（被信号终止）。
+    Aborted,
+    /// 只读预览类：有产出，无成败概念。
+    Done,
 }
 
-fn markdown_links_failed(block: &str) -> bool {
-    block.contains("结论: 发现")
+impl StageVerdict {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Aborted => "aborted",
+            Self::Done => "done",
+        }
+    }
+
+    fn is_failure(self) -> bool {
+        matches!(self, Self::Failed)
+    }
 }
 
+/// [`spell_tools::SpellCheckStatus`] → 聚合状态（展示词与 `fail_fast` 口径都在这里定）。
+fn spell_stage_verdict(status: spell_tools::SpellCheckStatus) -> StageVerdict {
+    match status {
+        spell_tools::SpellCheckStatus::Clean => StageVerdict::Passed,
+        spell_tools::SpellCheckStatus::FoundIssues => StageVerdict::Failed,
+        spell_tools::SpellCheckStatus::Unavailable => StageVerdict::Skipped,
+        spell_tools::SpellCheckStatus::Aborted => StageVerdict::Aborted,
+    }
+}
 
 /// `docs_health_sweep` 各阶段共用的 JSON / 路径 / 输出上限（避免 phase 函数长参数列表）。
 struct DocsSweepPhaseEnv<'a> {
@@ -55,7 +82,7 @@ struct DocsSweepPhaseEnv<'a> {
 
 struct DocsSweepPhaseIo<'a> {
     sections: &'a mut Vec<String>,
-    summary: &'a mut Vec<(String, String)>,
+    summary: &'a mut Vec<(String, StageVerdict)>,
 }
 
 struct TyposPhaseCtx<'a> {
@@ -74,15 +101,18 @@ struct CodespellPhaseCtx<'a> {
 }
 
 fn push_skipped_after_typos(
-    summary: &mut Vec<(String, String)>,
+    summary: &mut Vec<(String, StageVerdict)>,
     run_codespell: bool,
     run_markdown_links: bool,
 ) {
     if run_codespell {
-        summary.push(("codespell_check".to_string(), "skipped".to_string()));
+        summary.push(("codespell_check".to_string(), StageVerdict::Skipped));
     }
     if run_markdown_links {
-        summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
+        summary.push((
+            tool_names::MARKDOWN_CHECK_LINKS.to_string(),
+            StageVerdict::Skipped,
+        ));
     }
 }
 
@@ -93,7 +123,7 @@ fn append_doc_preview_section(
     run_doc_preview: bool,
     summary_only: bool,
     sections: &mut Vec<String>,
-    summary: &mut Vec<(String, String)>,
+    summary: &mut Vec<(String, StageVerdict)>,
 ) {
     let doc_preview_max_lines = v
         .get("doc_preview_max_lines")
@@ -141,9 +171,9 @@ fn append_doc_preview_section(
                 sections.push("\n---\n".to_string());
             }
         }
-        summary.push(("doc_preview".to_string(), "done".to_string()));
+        summary.push(("doc_preview".to_string(), StageVerdict::Done));
     } else {
-        summary.push(("doc_preview".to_string(), "skipped".to_string()));
+        summary.push(("doc_preview".to_string(), StageVerdict::Skipped));
     }
 }
 
@@ -175,25 +205,17 @@ fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Result<Option<String>, ToolError> 
     } = ctx;
     let DocsSweepPhaseIo { sections, summary } = io;
     if !run_typos {
-        summary.push(("typos_check".to_string(), "skipped".to_string()));
+        summary.push(("typos_check".to_string(), StageVerdict::Skipped));
         return Ok(None);
     }
     let typos_args = typos_args_json(env.v)?;
-    let r = spell_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len);
-    let failed = spell_tool_failed(&r);
-    summary.push((
-        "typos_check".to_string(),
-        if r.contains("无法启动") {
-            "skipped".to_string()
-        } else if failed {
-            "failed".to_string()
-        } else {
-            "passed".to_string()
-        },
-    ));
+    let report = spell_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len)?;
+    let verdict = spell_stage_verdict(report.status);
+    let failed = verdict.is_failure();
+    summary.push(("typos_check".to_string(), verdict));
     if !env.summary_only {
         sections.push("## 2) typos_check\n\n".to_string());
-        sections.push(r);
+        sections.push(report.output);
         sections.push("\n\n".to_string());
     }
     if env.fail_fast && failed {
@@ -203,7 +225,6 @@ fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Result<Option<String>, ToolError> 
             sections,
             env.summary_only,
             env.max_output_len,
-            true,
         )));
     }
     Ok(None)
@@ -251,41 +272,35 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Result<Option<String>, Too
     } = ctx;
     let DocsSweepPhaseIo { sections, summary } = io;
     if !run_codespell {
-        summary.push(("codespell_check".to_string(), "skipped".to_string()));
+        summary.push(("codespell_check".to_string(), StageVerdict::Skipped));
         return Ok(None);
     }
     let codespell_args = codespell_args_json(env.v)?;
-    let r = spell_tools::codespell_check(
+    let report = spell_tools::codespell_check(
         &codespell_args,
         env.workspace_root,
         env.max_output_len,
-    );
-    let failed = spell_tool_failed(&r);
-    summary.push((
-        "codespell_check".to_string(),
-        if r.contains("无法启动") {
-            "skipped".to_string()
-        } else if failed {
-            "failed".to_string()
-        } else {
-            "passed".to_string()
-        },
-    ));
+    )?;
+    let verdict = spell_stage_verdict(report.status);
+    let failed = verdict.is_failure();
+    summary.push(("codespell_check".to_string(), verdict));
     if !env.summary_only {
         sections.push("## 3) codespell_check\n\n".to_string());
-        sections.push(r);
+        sections.push(report.output);
         sections.push("\n\n".to_string());
     }
     if env.fail_fast && failed {
         if run_markdown_links {
-            summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
+            summary.push((
+                tool_names::MARKDOWN_CHECK_LINKS.to_string(),
+                StageVerdict::Skipped,
+            ));
         }
         return Ok(Some(build_output(
             summary,
             sections,
             env.summary_only,
             env.max_output_len,
-            true,
         )));
     }
     Ok(None)
@@ -335,9 +350,12 @@ fn markdown_check_links_args_json(v: &serde_json::Value) -> Result<String, ToolE
 
 /// 运行 Markdown 链接检查阶段。
 ///
-/// 两种「失败」必须分开：`markdown_check_links_try` 返回 `Err` 是**执行故障**
-/// （工作区解析 / 扫描 IO），上抛给调用方；正文里的「结论: 发现 N 处问题」是
+/// 两种「失败」必须分开：`markdown_check_links_report_try` 返回 `Err` 是**执行故障**
+/// （入参不合法 / 工作区解析 / 扫描 IO），上抛给调用方；`verdict.problem_count > 0` 是
 /// **内容发现**，只记进汇总，整体仍是 `Ok`——工具确实跑完了。
+///
+/// 判据取结构化 `verdict`，**不**扫正文：`output_format=json` / `sarif` 时正文里
+/// 根本没有「结论: 发现 N 处问题」这句话，按正文判会恒为「通过」。
 #[allow(clippy::result_large_err)]
 fn run_markdown_links_phase(
     v: &serde_json::Value,
@@ -345,26 +363,29 @@ fn run_markdown_links_phase(
     run_markdown_links: bool,
     summary_only: bool,
     sections: &mut Vec<String>,
-    summary: &mut Vec<(String, String)>,
+    summary: &mut Vec<(String, StageVerdict)>,
 ) -> Result<(), ToolError> {
     if !run_markdown_links {
-        summary.push((tool_names::MARKDOWN_CHECK_LINKS.to_string(), "skipped".to_string()));
+        summary.push((
+            tool_names::MARKDOWN_CHECK_LINKS.to_string(),
+            StageVerdict::Skipped,
+        ));
         return Ok(());
     }
     let md_args = markdown_check_links_args_json(v)?;
-    let r = super::markdown_links::markdown_check_links_try(&md_args, workspace_root)?;
-    let failed = markdown_links_failed(&r);
+    let report =
+        super::markdown_links::markdown_check_links_report_try(&md_args, workspace_root)?;
     summary.push((
         tool_names::MARKDOWN_CHECK_LINKS.to_string(),
-        if failed {
-            "failed".to_string()
+        if report.verdict.is_clean() {
+            StageVerdict::Passed
         } else {
-            "passed".to_string()
+            StageVerdict::Failed
         },
     ));
     if !summary_only {
         sections.push("## 4) markdown_check_links\n\n".to_string());
-        sections.push(r);
+        sections.push(report.output);
         sections.push("\n".to_string());
     }
     Ok(())
@@ -414,7 +435,7 @@ pub fn docs_health_sweep_try(
     let ctx = ToolContext::stub(workspace_root, max_output_len);
 
     let mut sections: Vec<String> = Vec::new();
-    let mut summary: Vec<(String, String)> = Vec::new();
+    let mut summary: Vec<(String, StageVerdict)> = Vec::new();
 
     sections.push(
         "=== docs_health_sweep（只读）===\n\
@@ -475,34 +496,33 @@ pub fn docs_health_sweep_try(
         &mut summary,
     )?;
 
-    let any_failed = summary.iter().any(|(_, s)| s == "failed");
     Ok(build_output(
         &summary,
         &sections,
         summary_only,
         max_output_len,
-        any_failed,
     ))
 }
 
 fn build_output(
-    summary: &[(String, String)],
+    summary: &[(String, StageVerdict)],
     sections: &[String],
     summary_only: bool,
     max_output_len: usize,
-    any_failed: bool,
 ) -> String {
+    // 成败从枚举读，不再从「刚写进去的显示词」里反解析回来。
+    let any_failed = summary.iter().any(|(_, v)| v.is_failure());
     let mut out = String::new();
     out.push_str("### 步骤汇总\n");
-    for (name, st) in summary {
-        out.push_str(&format!("- {}: {}\n", name, st));
+    for (name, verdict) in summary {
+        out.push_str(&format!("- {}: {}\n", name, verdict.label()));
     }
     out.push_str(&format!(
         "\n整体: {}\n\n",
         if any_failed {
             "存在失败项（见上）"
         } else {
-            "未发现失败项（CLI 未安装的步骤记为 skipped）"
+            "未发现失败项（CLI 未安装记为 skipped，被中断记为 aborted）"
         }
     ));
     if !summary_only {
@@ -517,6 +537,46 @@ fn build_output(
 mod tests {
     use super::*;
     use std::fs;
+
+    /// 展示词与「算不算失败」是输出契约：改它们等于改 `### 步骤汇总` 的内容。
+    #[test]
+    fn stage_verdict_labels_and_failure_flag() {
+        assert_eq!(StageVerdict::Passed.label(), "passed");
+        assert_eq!(StageVerdict::Failed.label(), "failed");
+        assert_eq!(StageVerdict::Skipped.label(), "skipped");
+        assert_eq!(StageVerdict::Aborted.label(), "aborted");
+        assert_eq!(StageVerdict::Done.label(), "done");
+        assert!(StageVerdict::Failed.is_failure());
+        assert!(!StageVerdict::Passed.is_failure());
+        assert!(!StageVerdict::Skipped.is_failure());
+        assert!(
+            !StageVerdict::Aborted.is_failure(),
+            "被信号终止是本阶段没结论，不该让整体报「存在失败项」"
+        );
+        assert!(!StageVerdict::Done.is_failure());
+    }
+
+    /// 拼写检查四态 → 聚合状态。
+    #[test]
+    fn spell_status_maps_to_stage_verdict() {
+        use super::spell_tools::SpellCheckStatus;
+        assert_eq!(
+            spell_stage_verdict(SpellCheckStatus::Clean),
+            StageVerdict::Passed
+        );
+        assert_eq!(
+            spell_stage_verdict(SpellCheckStatus::FoundIssues),
+            StageVerdict::Failed
+        );
+        assert_eq!(
+            spell_stage_verdict(SpellCheckStatus::Unavailable),
+            StageVerdict::Skipped
+        );
+        assert_eq!(
+            spell_stage_verdict(SpellCheckStatus::Aborted),
+            StageVerdict::Aborted
+        );
+    }
 
     /// 每个用例独立临时根（并行跑测试时不会互相删目录）。
     fn temp_root(tag: &str) -> std::path::PathBuf {
@@ -558,6 +618,25 @@ mod tests {
             .expect("发现坏链接是内容问题，不是工具故障");
         let _ = fs::remove_dir_all(&root);
 
+        assert!(out.contains("markdown_check_links: failed"), "{out}");
+        assert!(out.contains("存在失败项"), "{out}");
+    }
+
+    /// `md_output_format=json` 时正文里**没有**「结论: 发现 N 处问题」这句话。
+    ///
+    /// 旧实现按 `block.contains("结论: 发现")` 判失败，于是只要调用方把输出格式换成
+    /// json / sarif，坏链接就会被报成 `passed`——判定依赖渲染排版，是静默失效的典型。
+    /// 现在判据是结构化 `verdict`，与输出格式无关。
+    #[test]
+    fn json_output_format_still_reports_findings() {
+        const JSON_ONLY: &str = r#"{"run_doc_preview":false,"run_typos":false,"run_codespell":false,"run_markdown_links":true,"md_roots":["README.md"],"md_output_format":"json"}"#;
+        let root = temp_root("json_findings");
+        fs::write(root.join("README.md"), "# Hi\n\n[gone](./missing.md)\n").expect("w");
+
+        let out = docs_health_sweep_try(JSON_ONLY, &root, 80_000).expect("内容发现不是工具故障");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(!out.contains("结论: 发现"), "json 正文不该有 text 报告文案：{out}");
         assert!(out.contains("markdown_check_links: failed"), "{out}");
         assert!(out.contains("存在失败项"), "{out}");
     }

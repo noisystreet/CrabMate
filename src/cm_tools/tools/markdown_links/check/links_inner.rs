@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::cm_tools::tool_result::ToolError;
 
+use super::super::{MarkdownCheckReport, MarkdownLinkVerdict};
 use super::MarkdownCheckParsed;
 use super::links_collect::markdown_check_collect_files;
 use super::links_format::markdown_check_format_output;
@@ -15,7 +16,7 @@ use super::links_scan::{MarkdownCheckScanState, markdown_check_scan_all_files};
 pub(super) fn markdown_check_links_inner_try(
     parsed: MarkdownCheckParsed,
     working_dir: &Path,
-) -> Result<String, ToolError> {
+) -> Result<MarkdownCheckReport, ToolError> {
     let collected = markdown_check_collect_files(&parsed, working_dir).map_err(|e| {
         ToolError::external_code("markdown_check_links_workspace_failed", format!("错误：{e}"))
     })?;
@@ -33,16 +34,20 @@ pub(super) fn markdown_check_links_inner_try(
         return Err(ToolError::external_code("markdown_check_links_failed", err));
     }
 
-    Ok(markdown_check_format_output(
-        super::links_format::MarkdownCheckFormatInput {
-            output_format: parsed.output_format,
-            ws_canonical: &collected.ws_canonical,
-            roots: &parsed.roots,
-            md_files_len: collected.md_files.len(),
-            allowed_prefixes: &parsed.allowed_prefixes,
-            stats: state.stats,
-            local_issues: &state.local_issues,
-            external_issues: &state.external_issues,
-        },
-    ))
+    // 在渲染**之前**数清楚：结论不能来自正文（见 `MarkdownLinkVerdict` 的注释）。
+    let problem_count = state.local_issues.len() + state.external_issues.len();
+    let output = markdown_check_format_output(super::links_format::MarkdownCheckFormatInput {
+        output_format: parsed.output_format,
+        ws_canonical: &collected.ws_canonical,
+        roots: &parsed.roots,
+        md_files_len: collected.md_files.len(),
+        allowed_prefixes: &parsed.allowed_prefixes,
+        stats: state.stats,
+        local_issues: &state.local_issues,
+        external_issues: &state.external_issues,
+    });
+    Ok(MarkdownCheckReport {
+        output,
+        verdict: MarkdownLinkVerdict { problem_count },
+    })
 }

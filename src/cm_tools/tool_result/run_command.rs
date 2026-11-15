@@ -8,6 +8,8 @@
 use serde_json::Value;
 use crate::cm_names as tool_names;
 
+use super::error_text;
+
 /// 分隔 stdout / stderr 的固定标记行，由 `run_command` 输出格式化端写入。
 const STREAM_MARKERS: [&str; 2] = ["标准输出：", "标准错误："];
 const STDOUT_MARKER: &str = "标准输出：\n";
@@ -65,12 +67,12 @@ pub(super) fn looks_like_failure(first_line: &str) -> bool {
     if first_line.is_empty() {
         return false;
     }
-    first_line.starts_with("错误")
-        || first_line.starts_with("未知工具")
-        || first_line.starts_with("参数解析错误")
-        || first_line.starts_with("执行失败")
-        || first_line.contains("失败")
-        || first_line.contains("超时")
+    first_line.starts_with(error_text::ERROR_PREFIX)
+        || first_line.starts_with(error_text::UNKNOWN_TOOL_PREFIX)
+        || first_line.starts_with(error_text::INVALID_ARGS_PREFIX)
+        || first_line.starts_with(error_text::EXECUTE_FAILED_PREFIX)
+        || first_line.contains(error_text::FAILURE_MARKER)
+        || first_line.contains(error_text::TIMEOUT_MARKER)
 }
 
 pub(super) fn extract_streams(output: &str) -> (String, String) {

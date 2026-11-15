@@ -120,7 +120,10 @@ pub fn format_spawn_error_with_program(
             format!("{title}: 无法启动（{err}）。请确认已安装对应 CLI 且在 PATH 中。")
         }
         CommandSpawnErrorStyle::ExecuteFailed => {
-            format!("{title}: 执行失败（{err}）")
+            format!(
+                "{title}: {}（{err}）",
+                crate::cm_tools::tool_result::error_text::EXECUTE_FAILED_PREFIX
+            )
         }
     };
     if err.kind() == ErrorKind::NotFound
@@ -328,26 +331,49 @@ fn cli_missing_install_hint_for_base_name(key: &str) -> Option<&'static str> {
         .map(|(_, hint)| *hint)
 }
 
-/// 执行 **`cmd.output()`**，合并输出并格式化为工具返回字符串；启动失败时按 **`spawn_style`** 生成说明。
+/// 一次子进程执行的**结构化**结果：正文 + 退出码。
+///
+/// `exit_code == None` 表示**子进程没能启动**（`cmd.output()` 返回 `Err`），此时
+/// [`Self::output`] 是启动失败说明。
+#[derive(Debug, Clone)]
+pub struct ProcessRunReport {
+    pub output: String,
+    pub exit_code: Option<i32>,
+}
+
+/// 执行 **`cmd.output()`**，合并输出并格式化为工具返回字符串，同时**保留退出码与「是否启动成功」**。
+///
+/// 给「非零退出算内容发现（而非工具故障）」的调用方用（如 `docs_health_sweep` 的
+/// `typos` / `codespell` 阶段）。不保留这两个字段时，调用方只能回扫 `(exit=N)` /
+/// 「无法启动」字样来判断成败——那些字样是渲染产物，改一次文案判定就静默失效。
 #[must_use]
-pub fn run_command_output_formatted(
+pub fn run_command_output_report(
     mut cmd: std::process::Command,
     title: &str,
     max_bytes: usize,
     max_lines: usize,
     merge: ProcessOutputMerge,
     spawn_style: CommandSpawnErrorStyle,
-) -> String {
+) -> ProcessRunReport {
     let program_hint = spawn_program_display_name(&cmd);
     match cmd.output() {
-        Ok(output) => render_process_output(output, title, max_bytes, max_lines, merge).0,
-        Err(e) => format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref()),
+        Ok(output) => {
+            let (text, code) = render_process_output(output, title, max_bytes, max_lines, merge);
+            ProcessRunReport {
+                output: text,
+                exit_code: Some(code),
+            }
+        }
+        Err(e) => ProcessRunReport {
+            output: format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref()),
+            exit_code: None,
+        },
     }
 }
 
 /// 一次子进程输出 → （`title (exit=N):` 正文块, 退出码）。
 ///
-/// 抽出来是为了让 [`run_command_output_formatted`] 与 [`run_command_output_try`] 共用同一套
+/// 抽出来是为了让 [`run_command_output_report`] 与 [`run_command_output_try`] 共用同一套
 /// 渲染，不会出现「一个截断、另一个不截断」这类漂移。
 fn render_process_output(
     output: Output,
@@ -364,11 +390,11 @@ fn render_process_output(
     )
 }
 
-/// 同 [`run_command_output_formatted`]，但**非零退出即失败**（`error_code = failure_code`）。
+/// 同 [`run_command_output_report`]，但**非零退出即失败**（`error_code = failure_code`）。
 ///
-/// 为什么要这个孪生：`run_command_output_formatted` 把退出码写进正文（`title (exit=N)`）之后
-/// 就丢掉了，调用方只能靠 [`crate::cm_tools::tool_result::parse_tool_output`] 从文本里回捞
-/// 退出码——正文一换形态就可能被读成成功。这里在渲染前读出 `status.code()`，
+/// 为什么要这个孪生：正文里的退出码（`title (exit=N)`）只是渲染结果，调用方若只能靠
+/// [`crate::cm_tools::tool_result::parse_tool_output`] 从文本里回捞，正文一换形态就可能
+/// 被读成成功。这里在渲染前读出 `status.code()`，
 /// `Ok`（退出 0）与 `Err` 的正文都与前者逐字一致，只多一层成败判定。
 ///
 /// 启动失败按 `err.kind()` 分类：`NotFound` → `command_not_found`，其余 → `spawn_failed`。

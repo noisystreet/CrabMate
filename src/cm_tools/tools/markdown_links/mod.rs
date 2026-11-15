@@ -5,7 +5,32 @@
 mod check;
 mod core;
 
-pub use check::markdown_check_links_try;
+pub use check::{markdown_check_links_report_try, markdown_check_links_try};
+
+/// 内容层面发现了多少处问题（本地路径 / 锚点 + 外链探测失败）。
+///
+/// 刻意**不**从正文里 grep「结论: 发现 N 处问题」：那是 `render_text_report` 的排版，
+/// 换成 `output_format=json` / `sarif` 时正文里根本没有这句话，按正文判会静默变成
+/// 「全部通过」。数量在扫描结果上数，与渲染格式无关。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkdownLinkVerdict {
+    pub problem_count: usize,
+}
+
+impl MarkdownLinkVerdict {
+    #[must_use]
+    pub fn is_clean(self) -> bool {
+        self.problem_count == 0
+    }
+}
+
+/// 一次链接检查：渲染正文 + 结构化结论（两者互不推导）。
+#[derive(Debug, Clone)]
+pub struct MarkdownCheckReport {
+    /// 按 `output_format` 渲染的正文（text / json / sarif）。
+    pub output: String,
+    pub verdict: MarkdownLinkVerdict,
+}
 
 #[cfg(test)]
 mod tests;

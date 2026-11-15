@@ -16,6 +16,7 @@ use log::error;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
+use crate::cm_tools::tool_result::error_text;
 use crate::cm_tools::tools;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_types::ToolCall;
@@ -147,7 +148,12 @@ async fn try_dispatch_dynamic_tool(
     }
     let def = match crate::tool_host::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
         Ok(Some(d)) => d,
-        Ok(None) => return Some((format!("未知工具：{}", name), None)),
+        Ok(None) => {
+            return Some((
+                format!("{}：{}", error_text::UNKNOWN_TOOL_PREFIX, name),
+                None,
+            ));
+        }
         Err(e) => return Some((format!("错误：动态工具加载失败：{}", e), None)),
     };
     let args_owned = args.to_string();

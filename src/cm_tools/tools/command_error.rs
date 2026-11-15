@@ -243,3 +243,37 @@ pub(super) fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> Ru
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RunCommandError;
+    use crate::cm_tools::tool_result::error_text;
+
+    /// `thiserror` 的 `#[error("…")]` 只接受字面量格式串，无法直接引用 [`error_text`] 常量。
+    ///
+    /// 用断言把两者绑死：改了属性里的文案而没同步常量，`classify_error_code` 对这两类
+    /// 错误的反查就会静默失效（退化成 `run_command_failed`）——这里先红。
+    #[test]
+    fn display_text_starts_with_error_text_constants() {
+        let json = RunCommandError::JsonParse(
+            serde_json::from_str::<serde_json::Value>("{").expect_err("不是合法 JSON"),
+        );
+        assert!(
+            json.to_string().starts_with(error_text::INVALID_ARGS_PREFIX),
+            "{}",
+            json
+        );
+
+        let denied = RunCommandError::DisallowedCommand {
+            attempted: "rm".to_string(),
+            allowed: "ls".to_string(),
+        };
+        assert!(
+            denied
+                .to_string()
+                .starts_with(error_text::COMMAND_NOT_ALLOWED_PREFIX),
+            "{}",
+            denied
+        );
+    }
+}
