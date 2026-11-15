@@ -191,6 +191,13 @@ pub(super) struct AgentSection {
     pub(super) completion_judge_enabled: Option<bool>,
     pub(super) completion_judge_max_tokens: Option<u64>,
     pub(super) completion_judge_model: Option<String>,
+    /// 子 Agent 委托（#839 P1）。默认关；关 = `delegate_task` 不注入给模型。
+    pub(super) subagent_enabled: Option<bool>,
+    /// 递归深度上限；`1` = 子任务不能再派。
+    pub(super) subagent_max_depth: Option<u64>,
+    pub(super) subagent_max_llm_calls: Option<u64>,
+    pub(super) subagent_max_wall_secs: Option<u64>,
+    pub(super) subagent_max_report_chars: Option<u64>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

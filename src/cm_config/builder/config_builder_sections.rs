@@ -98,6 +98,16 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) completion_judge_model: Option<String>,
 }
 
+/// `[agent]` 段的子 Agent 委托开关（#839 P1）。
+#[derive(Default)]
+pub(crate) struct ConfigBuilderSubagent {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) max_depth: Option<u64>,
+    pub(crate) max_llm_calls: Option<u64>,
+    pub(crate) max_wall_secs: Option<u64>,
+    pub(crate) max_report_chars: Option<u64>,
+}
+
 #[derive(Default)]
 pub(crate) struct ConfigBuilderAgentsMd {
     pub(crate) agents_md_enabled: Option<bool>,
@@ -330,6 +340,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) web_search: ConfigBuilderWebSearch,
     pub(crate) http_fetch: ConfigBuilderHttpFetch,
     pub(crate) per_plan_policy: ConfigBuilderPerPlanPolicy,
+    pub(crate) subagent: ConfigBuilderSubagent,
     pub(crate) agents_md: ConfigBuilderAgentsMd,
     pub(crate) skills: ConfigBuilderSkills,
     pub(crate) tool_transcript: ConfigBuilderToolTranscript,
