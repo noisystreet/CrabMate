@@ -137,6 +137,9 @@ pub const SEARCH_REPLACE: &str = "search_replace";
 /// `workflow_execute`
 pub const WORKFLOW_EXECUTE: &str = "workflow_execute";
 
+/// `delegate_task`（#839 P1）：派一个有界只读子任务，父回合只收有界 report。
+pub const DELEGATE_TASK: &str = "delegate_task";
+
 // --- `specs/frontend_python.inc.rs` ---
 /// `pytest_run`
 pub const PYTEST_RUN: &str = "pytest_run";
@@ -267,6 +270,7 @@ pub static ALL: &[&str] = &[
     CREATE_DIR,
     SEARCH_REPLACE,
     WORKFLOW_EXECUTE,
+    DELEGATE_TASK,
     PYTEST_RUN,
     PYTHON_SNIPPET_RUN,
     GH_PR,

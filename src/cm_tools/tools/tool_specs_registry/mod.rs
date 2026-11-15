@@ -31,6 +31,7 @@ static SPECS_PROCESS: &[ToolSpec] = &include!("specs/process.inc.rs");
 static SPECS_METRICS: &[ToolSpec] = &include!("specs/metrics.inc.rs");
 static SPECS_FILE_EXTRA: &[ToolSpec] = &include!("specs/file_extra.inc.rs");
 static SPECS_MISC_BASIC: &[ToolSpec] = &include!("specs/misc_basic.inc.rs");
+static SPECS_DELEGATION: &[ToolSpec] = &include!("specs/delegation.inc.rs");
 static SPECS_SELF_CONFIG: &[ToolSpec] = &include!("specs/self_config_info.inc.rs");
 
 static ALL_TOOL_SPECS: OnceLock<&'static [ToolSpec]> = OnceLock::new();
@@ -55,7 +56,8 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_METRICS.len()
             + SPECS_FILE_EXTRA.len()
             + SPECS_MISC_BASIC.len()
-            + SPECS_SELF_CONFIG.len();
+            + SPECS_SELF_CONFIG.len()
+            + SPECS_DELEGATION.len();
         let mut v = Vec::with_capacity(cap);
         v.extend_from_slice(SPECS_ARCHIVE);
         v.extend_from_slice(SPECS_BASIC_NETWORK);
@@ -76,6 +78,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_FILE_EXTRA);
         v.extend_from_slice(SPECS_MISC_BASIC);
         v.extend_from_slice(SPECS_SELF_CONFIG);
+        v.extend_from_slice(SPECS_DELEGATION);
         Box::leak(v.into_boxed_slice())
     })
 }

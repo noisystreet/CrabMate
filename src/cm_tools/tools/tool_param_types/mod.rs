@@ -8,12 +8,14 @@
 mod basic;
 mod cargo_gh_py;
 mod defaults;
+mod delegation;
 mod diagnostics;
 mod exec_file;
 mod git;
 mod schedule;
 mod structured;
 
+pub use self::delegation::DelegateTaskArgs;
 pub use self::basic::{
     GetWeatherArgs, WebSearchArgs, RegexTestArgs, DateCalcMode,
     DateCalcArgs, JsonFormatMode, JsonFormatArgs, EnvVarCheckArgs,

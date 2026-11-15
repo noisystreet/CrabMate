@@ -231,6 +231,22 @@ pub fn runner_workflow_execute_try(
     ))
 }
 
+/// `delegate_task` 的 Typed runner（#839 P1）。
+///
+/// 与 `workflow_execute` 同款：**正常路径由 agent 层调度**（它需要 `SubAgentDelegator`
+/// 能力对象，而工具层刻意不持 LLM 凭据）。落到同步路径即内部缺陷。
+#[allow(clippy::result_large_err)]
+pub fn runner_delegate_task_try(
+    _args: &str,
+    _ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    Err(ToolError::internal_code(
+        "delegate_task_not_intercepted",
+        "delegate_task 由 agent 层在对话回合中调度；同步工具路径未拦截（内部缺陷，请报告）。"
+            .to_string(),
+    ))
+}
+
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
 #[allow(clippy::result_large_err)]
 pub fn runner_cargo_check_try(

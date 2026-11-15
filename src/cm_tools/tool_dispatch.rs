@@ -27,6 +27,8 @@ pub struct ToolDispatchMeta {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HandlerId {
     Workflow,
+    /// #839 P1：`delegate_task` 必须由 agent 层调度（要能力对象，工具层不持凭据）。
+    Delegate,
     RunCommand,
     TerminalSession,
     GetWeather,
@@ -62,6 +64,7 @@ macro_rules! tool_dispatch_registry {
 
 tool_dispatch_registry! {
     (tool_names::WORKFLOW_EXECUTE, false, Workflow, Workflow),
+    (tool_names::DELEGATE_TASK, true, Workflow, Delegate),
     (tool_names::RUN_COMMAND, true, CommandSpawnTimeout, RunCommand),
     (tool_names::TERMINAL_SESSION, true, CommandSpawnTimeout, TerminalSession),
     (tool_names::GET_WEATHER, false, WeatherSpawnTimeout, GetWeather),

@@ -378,6 +378,7 @@ fn test_build_tools_dev_tags_rust_excludes_pure_vcs() {
     let tools = build_tools_with_options(ToolsBuildOptions {
         categories: Some(&[ToolCategory::Development]),
         dev_tags: Some(rust_only.as_slice()),
+        subagent_enabled: false,
     });
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
     assert!(names.contains(&"cargo_check"));
@@ -607,6 +608,7 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
     let tools = build_tools_with_options(ToolsBuildOptions {
         categories: Some(&[ToolCategory::Basic, ToolCategory::Development]),
         dev_tags: Some(rust_only.as_slice()),
+        subagent_enabled: false,
     });
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
     assert!(names.contains(&"env_var_check"));

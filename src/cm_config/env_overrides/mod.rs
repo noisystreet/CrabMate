@@ -19,6 +19,7 @@ mod run_command;
 mod session_changelist;
 mod session_ui;
 mod skills;
+mod subagent;
 mod tool_runtime;
 mod tool_sandbox;
 mod tools_network;
@@ -36,6 +37,7 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     workspace::apply(b);
     tools_network::apply(b);
     per_plan_policy::apply(b);
+    subagent::apply(b);
     roles::apply(b);
     agents_md::apply(b);
     skills::apply(b);

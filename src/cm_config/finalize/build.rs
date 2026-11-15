@@ -17,6 +17,13 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         web_search: finalize_section_web_search(tail),
         http_fetch: finalize_section_http_fetch(tail),
         per_plan_policy: finalize_section_per_plan_policy(mid, tail),
+        subagent: types::SubagentConfig {
+            enabled: tail.subagent_enabled,
+            max_depth: tail.subagent_max_depth,
+            max_llm_calls: tail.subagent_max_llm_calls,
+            max_wall_secs: tail.subagent_max_wall_secs,
+            max_report_chars: tail.subagent_max_report_chars,
+        },
         roles_prompts: finalize_section_roles_prompts(mid),
         agents_md: finalize_section_agents_md(tail),
         skills: finalize_section_skills(tail),

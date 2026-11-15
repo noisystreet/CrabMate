@@ -68,6 +68,8 @@ pub struct CrabmateParallelToolDispatch;
 enum AgentLayerHandler {
     /// `workflow_execute`：需要 `PerCoordinator` 与本回合 trace，不能落到工具层自带的分发。
     Workflow,
+    /// `delegate_task`（#839）：需要 `SubAgentDelegator` 能力对象，而工具层刻意不持 LLM 凭据。
+    Delegate,
 }
 
 /// agent 层接管的 handler 清单；**未登记 = 回落 `InternalToolDispatch`**。
@@ -75,10 +77,10 @@ enum AgentLayerHandler {
 /// 集中登记，取代原先两个宿主里各写一遍的 `if id_for(name) == HandlerId::Workflow`：
 /// 再加一个「必须 agent 层调度」的工具（例如 #839 的 `delegate_task`）只加一行，
 /// 且「哪些工具不经 `InternalToolDispatch`」从此是一份可枚举、可测试的清单。
-const AGENT_LAYER_HANDLERS: &[(HandlerId, AgentLayerHandler)] = &[(
-    HandlerId::Workflow,
-    AgentLayerHandler::Workflow,
-)];
+const AGENT_LAYER_HANDLERS: &[(HandlerId, AgentLayerHandler)] = &[
+    (HandlerId::Workflow, AgentLayerHandler::Workflow),
+    (HandlerId::Delegate, AgentLayerHandler::Delegate),
+];
 
 /// 该工具是否必须由 agent 层调度；`None` 表示交给 `InternalToolDispatch`。
 fn agent_layer_handler(name: &str, lookup: &HandlerLookupTable) -> Option<AgentLayerHandler> {
@@ -111,6 +113,14 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                 )
                 .await
             }
+            // #839 P1：`delegate_task` 的工具面已注册（模型可见性由 `subagent_enabled` 控制），
+            // 但 agent 层调度**尚未接线**（需要给 `DispatchToolParams` 加能力对象分组）。
+            // 返回显式错误而不是静默失败：万一有人提前开了开关，也能立刻看出原因。
+            Some(AgentLayerHandler::Delegate) => (
+                "错误：delegate_task 尚未接线到 agent 层调度（#839 P1 下一步）。                 请保持 subagent_enabled = false。"
+                    .to_string(),
+                None,
+            ),
             None => InternalToolDispatch.dispatch(p).await,
         }
     }
@@ -133,6 +143,12 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
         match agent_layer_handler(name, p.policy.handler_lookup) {
             Some(AgentLayerHandler::Workflow) => (
                 "错误：并行只读批不支持 workflow_execute。".to_string(),
+                None,
+            ),
+            // 只读并行批的前提是「无副作用」，而子回合会跑工具、发 LLM 请求。
+            // 这是永久规则，不随接线进度改变（设计 §6 第 4 项）。
+            Some(AgentLayerHandler::Delegate) => (
+                "错误：并行只读批不支持 delegate_task（子回合不是无副作用操作）。".to_string(),
                 None,
             ),
             None => InternalToolDispatch.dispatch(p).await,
@@ -212,11 +228,18 @@ mod tests {
     ///
     /// 新增登记会打挂这条，这是有意的——逼你确认表与「两个宿主都处理」同步。
     #[test]
-    fn agent_layer_handlers_are_workflow_only() {
+    fn agent_layer_handlers_are_exactly_workflow_and_delegate() {
         let lookup = HandlerLookupTable::default_dispatch();
         assert_eq!(
             agent_layer_handler(tool_names::WORKFLOW_EXECUTE, &lookup),
             Some(AgentLayerHandler::Workflow)
+        );
+        // #839 P1：`delegate_task` 也要 agent 层调度——它需要 `SubAgentDelegator` 能力对象，
+        // 而工具层刻意不持 LLM 凭据。
+        assert_eq!(
+            agent_layer_handler(tool_names::DELEGATE_TASK, &lookup),
+            Some(AgentLayerHandler::Delegate),
+            "delegate_task 必须登记在 AGENT_LAYER_HANDLERS"
         );
         for name in [
             tool_names::READ_FILE,
@@ -234,6 +257,10 @@ mod tests {
             None,
             "未注册的工具名同样回落"
         );
-        assert_eq!(AGENT_LAYER_HANDLERS.len(), 1, "登记表新增了项：请同步两个宿主");
+        assert_eq!(
+            AGENT_LAYER_HANDLERS.len(),
+            2,
+            "登记表新增/删除项：请同步 `CrabmateToolExecutionHost` 与 `CrabmateParallelToolDispatch` 两个宿主"
+        );
     }
 }

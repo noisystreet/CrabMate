@@ -19,6 +19,17 @@ completion_judge_max_tokens = 512
 # 空 = 走默认模型；不强制与执行模型分离（单模型部署须可用）。
 completion_judge_model = ""
 
+# 子 Agent 委托（#839 P1，见 docs/design/subagent_delegation.md）。
+# 默认关：关 = `delegate_task` 不注入给模型（不是「注入后拒绝」）。
+# 子任务只用只读工具子集，权限取父的 min 链结果，故本开关不改变任何权限面。
+subagent_enabled = false
+# 递归深度上限；1 = 子任务不能再派。
+subagent_max_depth = 1
+subagent_max_llm_calls = 8
+subagent_max_wall_secs = 300
+# 回传正文长度上限（字符）；0 = 不截断。
+subagent_max_report_chars = 4000
+
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、
 # intent_l0_routing_boost_enabled、intent_mode_bias_enabled；CM_INTENT_AT_TURN_START_ENABLED 亦已移除。

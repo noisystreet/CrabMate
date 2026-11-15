@@ -75,6 +75,26 @@ pub struct PerPlanPolicyConfig {
     pub completion_judge_model: Option<String>,
 }
 
+/// 子 Agent 委托（#839 P1）。见 `docs/design/subagent_delegation.md`。
+///
+/// **刻意不含 `max_tool_calls` 与 `allowed_tools`**：
+/// - 前者施加不了——`TurnBudgetCounter` 只有 LLM 次数 / Token / 墙钟三个维度，
+///   工具账本是进程级累计；配一个不生效的上限只会误导。
+/// - 后者首版恒按 `is_readonly_tool` 派生全集，等 P2 再做「收窄」的配置化。
+#[derive(Debug, Clone)]
+pub struct SubagentConfig {
+    /// 总开关。**关闭时 `delegate_task` 不注入给模型**（不是「注入后拒绝」）。
+    pub enabled: bool,
+    /// 递归深度上限；`1` = 子任务不能再派。
+    pub max_depth: u8,
+    /// 子回合 LLM 调用次数上限。
+    pub max_llm_calls: u32,
+    /// 子回合墙钟上限（秒）。
+    pub max_wall_secs: u64,
+    /// 回传正文长度上限（字符）；`0` = 不截断。
+    pub max_report_chars: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct RolesPromptsConfig {
     pub system_prompt: String,

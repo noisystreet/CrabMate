@@ -530,6 +530,14 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
                 None,
             )
         }
+        HandlerId::Delegate => {
+            // `delegate_task` 同理：它要 `SubAgentDelegator` 能力对象，而工具层**刻意不持 LLM 凭据**
+            // （`agent_turn/host/execute/**` 中 `api_key` 零命中）。见 `docs/design/subagent_delegation.md` §3。
+            (
+                "内部错误：delegate_task 须由 agent 层调度，不应进入 dispatch_tool".to_string(),
+                None,
+            )
+        }
         HandlerId::RunCommand => {
             let ToolRuntime {
                 workspace_changed,

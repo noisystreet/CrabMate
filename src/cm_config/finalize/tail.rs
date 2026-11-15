@@ -19,6 +19,11 @@ pub(super) struct FinalizeTailScalars {
     pub(super) completion_judge_enabled: bool,
     pub(super) completion_judge_max_tokens: u32,
     pub(super) completion_judge_model: Option<String>,
+    pub(super) subagent_enabled: bool,
+    pub(super) subagent_max_depth: u8,
+    pub(super) subagent_max_llm_calls: u32,
+    pub(super) subagent_max_wall_secs: u64,
+    pub(super) subagent_max_report_chars: usize,
     pub(super) tool_message_max_chars: usize,
     pub(super) tool_result_envelope_v1: bool,
     pub(super) sse_tool_call_include_arguments: bool,
@@ -108,6 +113,11 @@ struct TailPlanToolThinkingScalars {
     completion_judge_enabled: bool,
     completion_judge_max_tokens: u32,
     completion_judge_model: Option<String>,
+    subagent_enabled: bool,
+    subagent_max_depth: u8,
+    subagent_max_llm_calls: u32,
+    subagent_max_wall_secs: u64,
+    subagent_max_report_chars: usize,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -157,6 +167,16 @@ fn derive_tail_plan_tool_thinking_scalars(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
+    // 子 Agent 委托（#839 P1，设计 §10）。默认关；关 = 工具不注入。
+    let subagent_enabled = b.subagent.enabled.unwrap_or(false);
+    let subagent_max_depth = b.subagent.max_depth.unwrap_or(1).min(8) as u8;
+    let subagent_max_llm_calls = b.subagent.max_llm_calls.unwrap_or(8).clamp(1, 64) as u32;
+    let subagent_max_wall_secs = b.subagent.max_wall_secs.unwrap_or(300).clamp(1, 3600);
+    let subagent_max_report_chars = b
+        .subagent
+        .max_report_chars
+        .unwrap_or(4000)
+        .min(1_000_000) as usize;
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -198,6 +218,11 @@ fn derive_tail_plan_tool_thinking_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        subagent_enabled,
+        subagent_max_depth,
+        subagent_max_llm_calls,
+        subagent_max_wall_secs,
+        subagent_max_report_chars,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -653,6 +678,11 @@ fn assemble_finalize_tail_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        subagent_enabled,
+        subagent_max_depth,
+        subagent_max_llm_calls,
+        subagent_max_wall_secs,
+        subagent_max_report_chars,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -707,6 +737,11 @@ fn assemble_finalize_tail_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        subagent_enabled,
+        subagent_max_depth,
+        subagent_max_llm_calls,
+        subagent_max_wall_secs,
+        subagent_max_report_chars,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
