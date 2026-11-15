@@ -85,7 +85,11 @@ pub struct PerPlanPolicyConfig {
 pub struct SubagentConfig {
     /// 总开关。**关闭时 `delegate_task` 不注入给模型**（不是「注入后拒绝」）。
     pub enabled: bool,
-    /// 递归深度上限；`1` = 子任务不能再派。
+    /// 递归深度上限。**当前只接受 `1`**（禁止嵌套）。
+    ///
+    /// 首版派生子任务时显式排除 `delegate_task`（防自递归），嵌套不可能发生。
+    /// 配 `> 1` 由 `finalize::checks::validate_subagent_depth` 在加载期拒绝——
+    /// 留着「配了不生效」比报错更糟：用户会以为已开启嵌套。
     pub max_depth: u8,
     /// 子回合 LLM 调用次数上限。
     pub max_llm_calls: u32,

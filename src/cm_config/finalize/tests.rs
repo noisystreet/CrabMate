@@ -174,3 +174,29 @@ tool_retry_denied_tools = ["http_fetch"]
             .contains("http_fetch"));
     }
 }
+
+mod subagent_depth_tests {
+    use super::*;
+
+    /// 省略或配 `1` 都通过（`1` = 禁止嵌套，与当前实现一致）。
+    #[test]
+    fn depth_one_or_unset_passes() {
+        let mut b = ConfigBuilder::default();
+        assert!(super::checks::validate_subagent_depth(&b).is_ok());
+        b.subagent.max_depth = Some(1);
+        assert!(super::checks::validate_subagent_depth(&b).is_ok());
+    }
+
+    /// 配 `> 1` 必须**明确报错**，不能静默无效。
+    ///
+    /// 首版子任务被显式排除 `delegate_task`，nesting 根本不可能发生；
+    /// 若静默接受 `2`，用户会以为已开启嵌套。
+    #[test]
+    fn depth_greater_than_one_is_rejected() {
+        let mut b = ConfigBuilder::default();
+        b.subagent.max_depth = Some(2);
+        let err = super::checks::validate_subagent_depth(&b).expect_err("应拒绝");
+        assert!(err.contains("subagent_max_depth"), "{err}");
+        assert!(err.contains("禁止嵌套"), "{err}");
+    }
+}

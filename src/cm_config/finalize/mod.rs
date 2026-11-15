@@ -147,7 +147,7 @@ fn finalize_agent_config(
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
     validate::validate_builder_numeric_ranges(&b)?;
-    checks::validate_required_llm_endpoints(&b)?;
+    checks::validate_pre_finalize(&b)?;
     let tr = derived::derive_tool_registry_fields(&b);
     let intent = derived::derive_intent_fields(&b)?;
     let ltm = derived::derive_ltm(&b)?;
