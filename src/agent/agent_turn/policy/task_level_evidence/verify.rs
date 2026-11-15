@@ -32,17 +32,8 @@ struct ProgramBuildRunEvidence {
 #[derive(Debug, Default)]
 struct GenericTaskIntent {
     build_or_test: bool,
-    write_change: bool,
-    readonly_analysis: bool,
 }
 
-#[derive(Debug, Default)]
-struct GenericToolEvidence {
-    any_success: bool,
-    build_or_test_success: bool,
-    write_success: bool,
-    readonly_success: bool,
-}
 
 fn history_contains_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
@@ -238,22 +229,6 @@ fn check_program_build_run_messages(
     }
 }
 
-fn tool_message_has_success_evidence(raw: &str) -> bool {
-    if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
-        return env.ok || env.exit_code == Some(0);
-    }
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("generic_tool", raw);
-    if parsed.ok || parsed.exit_code == Some(0) {
-        return true;
-    }
-    let lower = raw.to_lowercase();
-    lower.contains("file exists")
-        || lower.contains("已创建文件")
-        || lower.contains("已解压")
-        || lower.contains("成功")
-        || lower.contains("completed")
-        || lower.contains("succeeded")
-}
 
 /// 用户任务是否像编译/构建/测试类（供外循环门控与完成证据抑制共用）。
 pub fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
@@ -299,146 +274,37 @@ fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
     ]
     .iter()
     .any(|k| t.contains(k));
-    let write_change = [
-        "编写",
-        "实现",
-        "修改",
-        "创建",
-        "新增",
-        "删除",
-        "修复",
-        "write",
-        "implement",
-        "modify",
-        "create",
-        "add",
-        "delete",
-        "fix",
-    ]
-    .iter()
-    .any(|k| t.contains(k));
-    let readonly_analysis = [
-        "分析", "查看", "看看", "列出", "梳理", "介绍", "read", "inspect", "analyze", "list",
-        "show", "explain",
-    ]
-    .iter()
-    .any(|k| t.contains(k));
-    GenericTaskIntent {
-        build_or_test,
-        write_change,
-        readonly_analysis,
-    }
+    GenericTaskIntent { build_or_test }
 }
 
-fn generic_tool_is_write_success(tool_name: &str, lower: &str) -> bool {
-    matches!(
-        tool_name,
-        tool_names::CREATE_FILE | tool_names::APPLY_PATCH | tool_names::MODIFY_FILE
-    ) || ["已创建文件", "created file", "apply_patch"]
-        .iter()
-        .any(|marker| lower.contains(marker))
-}
-
-fn generic_tool_is_build_or_test_success(tool_name: &str, lower: &str) -> bool {
-    tool_name == tool_names::RUN_COMMAND
-        && [
-            "cmake",
-            "make",
-            "cargo test",
-            "cargo check",
-            "pytest",
-            "built target",
-            "test result: ok",
-            "tests passed",
-        ]
-        .iter()
-        .any(|marker| lower.contains(marker))
-}
-
-fn generic_tool_is_readonly_success(tool_name: &str, lower: &str) -> bool {
-    matches!(
-        tool_name,
-        tool_names::READ_FILE
-            | tool_names::READ_DIR
-            | tool_names::LIST_TREE
-            | tool_names::REPO_OVERVIEW_SWEEP
-    ) || ["read file:", "read dir:", "list tree:"]
-        .iter()
-        .any(|marker| lower.contains(marker))
-}
-
-fn update_generic_tool_evidence_from_tool_text(
-    evidence: &mut GenericToolEvidence,
-    tool_name: &str,
-    text: &str,
-    ok: bool,
-) {
-    if !ok {
-        return;
-    }
-    evidence.any_success = true;
-    let lower = text.to_lowercase();
-    if generic_tool_is_write_success(tool_name, &lower) {
-        evidence.write_success = true;
-    }
-    if generic_tool_is_build_or_test_success(tool_name, &lower) {
-        evidence.build_or_test_success = true;
-    }
-    if generic_tool_is_readonly_success(tool_name, &lower) {
-        evidence.readonly_success = true;
-    }
-}
-
-fn update_generic_tool_evidence_from_raw(evidence: &mut GenericToolEvidence, raw: &str) {
-    if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
-        let text = normalized_tool_text(&env);
-        let ok = env.ok || env.exit_code == Some(0);
-        update_generic_tool_evidence_from_tool_text(evidence, env.name.as_str(), &text, ok);
-        return;
-    }
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("generic_tool", raw);
-    let ok = parsed.ok || parsed.exit_code == Some(0) || tool_message_has_success_evidence(raw);
-    update_generic_tool_evidence_from_tool_text(evidence, "generic_tool", raw, ok);
-}
-
-fn recent_generic_tool_evidence(messages: &[Message]) -> GenericToolEvidence {
-    let mut evidence = GenericToolEvidence::default();
-    for m in messages.iter().rev().take(24) {
-        let Some(raw) = message_content_as_str(&m.content) else {
-            continue;
-        };
-        if m.role == "tool" || m.tool_call_id.is_some() || m.name.is_some() {
-            update_generic_tool_evidence_from_raw(&mut evidence, raw);
+/// 只读分析类任务：assistant 是否已给出結论式回答。
+///
+/// **这是本文中唯一保留的自述依赖**，旧路径同样靠它。理由：结构化证据只能证明
+/// 「读过文件」，无法区分「刚开始看」与「已给出分析」——两者属于第 ② 层
+/// （LLM 语义判定，#1387）的职责。在那一层落地前保留旧判定，机制上不让该场景
+/// 的早停能力回退。
+fn assistant_gave_conclusion(messages: &[Message]) -> bool {
+    messages.iter().rev().take(12).any(|m| {
+        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+            return false;
         }
-    }
-    evidence
+        let Some(raw) = message_content_as_str(&m.content) else {
+            return false;
+        };
+        assistant_completion_claim(raw) || assistant_substantive_answer(raw)
+    })
 }
 
 fn assistant_completion_claim(text: &str) -> bool {
-    let t = text.trim();
-    if t.is_empty() {
+    let lower = text.trim().to_lowercase();
+    if lower.is_empty() {
         return false;
     }
-    let lower = t.to_lowercase();
-    let has_completion_marker = [
-        "完成",
-        "成功",
-        "就绪",
-        "通过",
-        "结果如下",
-        "总结如下",
-        "done",
-        "completed",
-        "succeeded",
-        "success",
-        "ready",
-    ]
-    .iter()
-    .any(|marker| lower.contains(marker));
-    if !has_completion_marker {
-        return false;
-    }
-    let has_hard_blocker = [
+    const MARKERS: &[&str] = &[
+        "完成", "成功", "就绪", "通过", "结果如下", "总结如下", "done", "completed", "succeeded",
+        "success", "ready",
+    ];
+    const BLOCKERS: &[&str] = &[
         "未完成",
         "没有完成",
         "失败",
@@ -447,10 +313,8 @@ fn assistant_completion_claim(text: &str) -> bool {
         "error",
         "failed",
         "not completed",
-    ]
-    .iter()
-    .any(|marker| lower.contains(marker));
-    !has_hard_blocker
+    ];
+    MARKERS.iter().any(|m| lower.contains(m)) && !BLOCKERS.iter().any(|m| lower.contains(m))
 }
 
 fn assistant_substantive_answer(text: &str) -> bool {
@@ -459,7 +323,7 @@ fn assistant_substantive_answer(text: &str) -> bool {
         return false;
     }
     let lower = t.to_lowercase();
-    let has_answer_shape = [
+    const SHAPES: &[&str] = &[
         "当前",
         "结果",
         "包含",
@@ -473,65 +337,51 @@ fn assistant_substantive_answer(text: &str) -> bool {
         "contains",
         "directory",
         "files",
-    ]
-    .iter()
-    .any(|k| lower.contains(k));
+    ];
+    let has_shape = SHAPES.iter().any(|k| lower.contains(k));
     let just_question = t.ends_with('？') || t.ends_with('?');
-    has_answer_shape && !just_question
+    has_shape && !just_question
 }
 
-fn last_assistant_completion_claim(messages: &[Message]) -> bool {
-    messages.iter().rev().take(12).any(|m| {
-        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
-            return false;
-        }
-        message_content_as_str(&m.content).is_some_and(assistant_completion_claim)
-    })
-}
-
-fn last_assistant_substantive_answer(messages: &[Message]) -> bool {
-    messages.iter().rev().take(12).any(|m| {
-        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
-            return false;
-        }
-        message_content_as_str(&m.content).is_some_and(assistant_substantive_answer)
-    })
-}
-
-fn generic_impl_intent_satisfied(
-    intent: &GenericTaskIntent,
-    evidence: &GenericToolEvidence,
-    completion: bool,
-) -> bool {
-    let build_ok = !intent.build_or_test || (evidence.build_or_test_success && completion);
-    let write_ok = !intent.write_change || (evidence.write_success && completion);
-    build_ok && write_ok
-}
-
-fn generic_intent_satisfied(
-    intent: &GenericTaskIntent,
-    evidence: &GenericToolEvidence,
-    completion: bool,
-    substantive: bool,
-) -> bool {
-    if intent.build_or_test || intent.write_change {
-        return generic_impl_intent_satisfied(intent, evidence, completion);
-    }
-    if intent.readonly_analysis {
-        return evidence.readonly_success && (completion || substantive);
-    }
-    evidence.any_success && completion
-}
-
+/// 通用兜底：按**结构化证据**判定（#1387 S0.5 第 ① 层）。
+///
+/// 与旧实现的关键差异：
+///
+/// 1. **构建/测试路径不再靠工具名猜**：旧 `generic_tool_is_build_or_test_success` 前置
+///    `tool_name == run_command`，于是用规范的 `cargo_test` / `cargo_check` 反而判不出；
+/// 2. **纯写任务无验证证据时返回 `NotApplicable`**（旧实现返回 `Satisfied`，即零验证放行）。
+///    结构化层只能确认「写过了」，「改对了没有」属第 ② 层（LLM 语义判定）职责；
+/// 3. **构建/测试路径不再把自述当必要条件**：旧路径要求工具成功 **AND** 正文含「完成」，
+///    导致「修复 xx 失败」类任务成功后复述原文即判不完成。
+///
+/// 仍保留的自述依赖只有只读分析一条，理由见 [`assistant_gave_conclusion`]。
 fn check_generic_successful_tool_then_completion(
     task: &str,
     messages: &[Message],
 ) -> GoalCompletionEvidenceCheck {
     let intent = generic_task_intent_from_task(task);
-    let evidence = recent_generic_tool_evidence(messages);
-    let completion = last_assistant_completion_claim(messages);
-    let substantive = last_assistant_substantive_answer(messages);
-    if generic_intent_satisfied(&intent, &evidence, completion, substantive) {
+    let ev = super::evidence::EvidenceSet::collect(messages);
+
+    // 判定顺序刻意是「证据优先、意图兜底」：意图靠关键词表，天然漏词
+    // （例如「把常量**改成** 42」不含「修改」，`write_change` 不会命中）。
+    // 若让关键词在前，这类任务就会掉进兜底分支并被旧的自述规则放行。
+
+    // ① 任务明说要构建/测试，却没有成功的验证性执行 → 不下结论。
+    if intent.build_or_test && !ev.has_any_verify_success() {
+        return GoalCompletionEvidenceCheck::NotApplicable;
+    }
+    // ② 有任何成功的验证性执行（专用工具结构化退出码 / run_command 构建测试特征）
+    //    → 结构化层足以确认「验证过了」。
+    if ev.has_any_verify_success() {
+        return GoalCompletionEvidenceCheck::Satisfied;
+    }
+    // ③ 改过工作区但没有验证证据 → 只能确认「写过了」，不下结论（第 ② 层职责）。
+    if ev.has_write_success() {
+        return GoalCompletionEvidenceCheck::NotApplicable;
+    }
+    // ④ 只读分析 / 其他：需工具成功 + 已给出结论式回答
+    //    （自述依赖仅保留在此，理由见 [`assistant_gave_conclusion`]）。
+    if ev.has_any_success() && assistant_gave_conclusion(messages) {
         GoalCompletionEvidenceCheck::Satisfied
     } else {
         GoalCompletionEvidenceCheck::NotApplicable
@@ -818,6 +668,73 @@ mod tests {
         assert_eq!(
             check_goal_completion_evidence_from_messages("解释一下 Rust 所有权", &messages),
             GoalCompletionEvidenceCheck::NotApplicable
+        );
+    }
+
+    /// #1387 实测缺陷 ①：旧实现前置 `tool_name == run_command`，
+    /// 于是用规范的 `cargo_test` 反而判不出（同一事实、仅工具名不同、结论相反）。
+    #[test]
+    fn dedicated_cargo_test_satisfies_build_task() {
+        let messages = vec![
+            msg("user", "修复 bug 并跑通全部测试"),
+            tool_env(
+                tool_names::MODIFY_FILE,
+                "修改 src/x.rs",
+                "已修改文件: src/x.rs",
+            ),
+            tool_env(
+                tool_names::CARGO_TEST,
+                "cargo test",
+                "退出码：0\n标准输出：\ntest result: ok. 100 passed; 0 failed",
+            ),
+            msg("assistant", "已修复该 bug，全部测试通过，任务完成。"),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("修复 bug 并跑通全部测试", &messages),
+            GoalCompletionEvidenceCheck::Satisfied,
+            "专用 cargo_test 的结构化退出码应被采信"
+        );
+    }
+
+    /// #1387 实测缺陷 ②：旧实现把「改文件 + assistant 说完成」直接判 `Satisfied`，
+    /// 零验证放行。结构化层只能确认「写过了」，因此应不下结论。
+    #[test]
+    fn pure_write_without_verification_is_not_satisfied() {
+        let messages = vec![
+            msg("user", "把常量改成 42"),
+            tool_env(
+                tool_names::MODIFY_FILE,
+                "修改 src/x.rs",
+                "已修改文件: src/x.rs",
+            ),
+            msg("assistant", "已完成修改，任务完成。"),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("把常量改成 42", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable,
+            "纯写任务无验证证据时不应判完成"
+        );
+    }
+
+    /// 对照：同一纯写任务若顺手跑了测试（有验证证据），则可以判完成。
+    #[test]
+    fn pure_write_with_verification_is_satisfied() {
+        let messages = vec![
+            msg("user", "把常量改成 42"),
+            tool_env(
+                tool_names::MODIFY_FILE,
+                "修改 src/x.rs",
+                "已修改文件: src/x.rs",
+            ),
+            tool_env(
+                tool_names::CARGO_TEST,
+                "cargo test",
+                "退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed",
+            ),
+        ];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("把常量改成 42", &messages),
+            GoalCompletionEvidenceCheck::Satisfied
         );
     }
 }

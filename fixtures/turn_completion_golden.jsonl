@@ -4,6 +4,7 @@
 # 注：suppress_replanning 仍由金样覆盖；生产 outer_loop 尚未接线。
 {"id":"readonly_early_stop","case":"early_stop","fixture":"readonly_satisfied","expect":"allow"}
 {"id":"build_early_stop","case":"early_stop","fixture":"build_satisfied","expect":"deny","deny_reason":"build_or_test_intent"}
+{"id":"cargo_test_strong_early_stop","case":"early_stop","fixture":"cargo_test_strong","expect":"allow"}
 {"id":"readonly_suppress_replan","case":"suppress_replanning","fixture":"readonly_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"allow"}
 {"id":"build_no_suppress_replan","case":"suppress_replanning","fixture":"build_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"deny","deny_reason":"early_stop_not_allowed"}
 {"id":"readonly_redundant_tools","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"list_tree_probe","expect":"allow"}
