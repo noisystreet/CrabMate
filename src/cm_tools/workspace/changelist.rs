@@ -77,6 +77,20 @@ impl WorkspaceChangelist {
         );
     }
 
+    /// 本变更集已触碰的**工作区相对路径**（按首次写入顺序）。
+    ///
+    /// #839 P1 用它在子回合前后取差集，得到「这次子任务改动了哪些文件」——
+    /// 这是唯一**通用**的路径来源：不依赖各工具的 `Args` 形状（按参数名解析每加一个工具
+    /// 就要同步一次提取器），而是复用工具层写盘时本就会调用的 `record_mutation`。
+    ///
+    /// **只含写路径**：只读探索不会产生条目，此时返回空——语义上正确
+    /// （「关键路径」= 被改动的文件），见 [`crate::cm_tools::delegation_host::SubTaskReport`]。
+    #[must_use]
+    pub fn touched_paths(&self) -> Vec<String> {
+        let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        g.order.clone()
+    }
+
     fn snapshot_revision_and_format(&self, max_total_chars: usize) -> (u64, Option<String>) {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let rev = g.revision;
