@@ -14,10 +14,6 @@ pub mod model_context_view;
 /// 子回合装配（#839 P0-4）：`SubTurnSpec` → 隔离的 `TurnRequest`。
 pub mod sub_turn;
 /// 完成判定第 ② 层的 LLM 实现（#1387 S0.5）。契约在 `cm_agent::completion_judge`。
-///
-/// **`allow(dead_code)` 是暂时的**：本步只交付实现与配置面，接线（候选终止点调用）
-/// 是下一个增量。接线落地后**必须删掉这行**，否则一个真正死掉的判定器会被静默留着。
-#[allow(dead_code)]
 pub mod completion_judge_llm;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crate::cm_agent::message_pipeline;
