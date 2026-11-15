@@ -18,6 +18,7 @@ pub const SECTION_NAMES: &[&str] = &[
     "web_search",
     "http_fetch",
     "per_plan_policy",
+    "subagent",
     "roles",
     "workspace",
     "web_api",
@@ -59,6 +60,7 @@ fn section_body(cfg: &AgentConfig, name: &str) -> Option<String> {
         "web_search" => Some(web_search_section(cfg)),
         "http_fetch" => Some(http_fetch_section(cfg)),
         "per_plan_policy" => Some(per_plan_policy_section(cfg)),
+        "subagent" => Some(subagent_section(cfg)),
         "roles" => Some(roles_section(cfg)),
         "workspace" => Some(workspace_section(cfg)),
         "web_api" => Some(web_api_section(cfg)),
@@ -168,6 +170,18 @@ fn per_plan_policy_section(cfg: &AgentConfig) -> String {
         p.reflection_default_max_rounds,
         p.final_plan_requirement,
         p.plan_rewrite_max_attempts,
+    )
+}
+
+/// 子 Agent 委托（#839 P1）。
+///
+/// 刻意不打印 `max_tool_calls`——该键不存在（`TurnBudgetCounter` 无工具调用维度），
+/// 打印一个不存在的键会误导排查。
+fn subagent_section(cfg: &AgentConfig) -> String {
+    let s = &cfg.subagent;
+    format!(
+        "enabled = {}\nmax_depth = {}\nmax_llm_calls = {}\nmax_wall_secs = {}\nmax_report_chars = {}\n",
+        s.enabled, s.max_depth, s.max_llm_calls, s.max_wall_secs, s.max_report_chars,
     )
 }
 
