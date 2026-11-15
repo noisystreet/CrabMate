@@ -346,4 +346,74 @@ mod tests {
         );
         assert!(v.missing[0].ends_with('…'));
     }
+
+    /// 固定输出的 mock 判定器：用于验证 `judge_and_validate` 的组合行为
+    /// （锚点统一施加 + fail-open），不碰真模型。
+    struct FixedJudge(Result<CompletionVerdict, ()>);
+
+    #[async_trait]
+    impl CompletionJudge for FixedJudge {
+        async fn judge(&self, _input: CompletionJudgeInput) -> Result<CompletionVerdict, ToolError> {
+            match &self.0 {
+                Ok(v) => Ok(v.clone()),
+                Err(()) => Err(ToolError {
+                    category: crate::cm_tools::tool_result::ToolFailureCategory::Internal,
+                    code: "mock_unavailable".to_string(),
+                    message: "mock 判定不可用".to_string(),
+                    retryable: false,
+                    parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                        ok: false,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        error_code: None,
+                    },
+                }),
+            }
+        }
+    }
+
+    fn judge_input() -> CompletionJudgeInput {
+        CompletionJudgeInput {
+            task: "跑通全部测试".to_string(),
+            evidence: vec![JudgedEvidence {
+                id: "ev_1".to_string(),
+                kind: "verify".to_string(),
+                strength: "strong".to_string(),
+                tool: "cargo_test".to_string(),
+                ok: true,
+                exit_code: Some(0),
+                detail: "test result: ok".to_string(),
+            }],
+        }
+    }
+
+    /// 设计 §9 验收①：mock 说完成并引用了硬证据 → 原样通过。
+    #[tokio::test]
+    async fn judge_and_validate_passes_anchored_satisfied() {
+        let judge = FixedJudge(Ok(satisfied(&["ev_1"])));
+        let out = judge_and_validate(&judge, judge_input()).await.expect("some");
+        assert_eq!(out.status, CompletionStatus::Satisfied);
+    }
+
+    /// 设计 §9 验收②：mock 说完成但 `evidence_refs` 为空 → **降级**。
+    ///
+    /// 这条是整条链路最关键的护栏：即使判定器（含未来任何实现）给出 satisfied，
+    /// 只要拿不出锚点，也不得据此早停。
+    #[tokio::test]
+    async fn judge_and_validate_degrades_unanchored_satisfied() {
+        let judge = FixedJudge(Ok(satisfied(&[])));
+        let out = judge_and_validate(&judge, judge_input()).await.expect("some");
+        assert_eq!(out.status, CompletionStatus::Unsatisfied);
+        assert!(out.missing.iter().any(|m| m.contains("evidence_refs")));
+    }
+
+    /// 设计 §9 验收③：判定器失败 → 返回 `None`（fail-open）。
+    ///
+    /// 调用方拿到 `None` 时必须维持第 ① 层结论；**绝不能**据此早停。
+    #[tokio::test]
+    async fn judge_and_validate_returns_none_on_error() {
+        let judge = FixedJudge(Err(()));
+        assert!(judge_and_validate(&judge, judge_input()).await.is_none());
+    }
 }
