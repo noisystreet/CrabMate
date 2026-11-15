@@ -36,7 +36,7 @@ pub(crate) fn build_app(
         .merge(protected_api)
         .route("/openapi.json", get(super::openapi::openapi_json_handler))
         .merge(super::routes::system::router());
-    if let Some(e2e) = super::routes::e2e_fixtures::router() {
+    if let Some(e2e) = super::routes::e2e_fixtures::router_from_env() {
         app = app.merge(e2e);
     }
     let cors_layer = crate::cm_web_host::try_cors_layer(&cors_allowed_origins);
