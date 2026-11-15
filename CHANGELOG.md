@@ -14,8 +14,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 **First stable tag since `v0.8.0`.** The `0.8.1` line only ever shipped as **pre-releases** (`v0.8.1-alpha.0` →
   `v0.8.1-alpha.1` → `v0.8.1-beta.0` → `v0.8.1-beta.1`), so this is the first artifact set on the release track after
-  **`v0.8.0`**. crates.io remains **`0.8.0`** (`cargo install crabmate` does not pick this up); install from the
-  GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag.
+  **`v0.8.0`**. Unlike the `0.8.1` pre-releases it is **also published to crates.io**, so `cargo install crabmate`
+  picks it up (default feature `server`); the GitHub Release tarball / `.deb`, and `cargo install --path .` /
+  `--git` at this tag, remain available.
 
 One entry below is **BREAKING**, and it is the reason this is a minor bump rather than another `0.8.x` pre-release:
   `crabmatectl up|down|ls` no longer parse — the subcommands are `start` / `stop` / `list`, with **no aliases** (this
