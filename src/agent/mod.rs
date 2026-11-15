@@ -15,6 +15,9 @@ pub mod model_context_view;
 pub mod sub_turn;
 /// 完成判定第 ② 层的 LLM 实现（#1387 S0.5）。契约在 `cm_agent::completion_judge`。
 pub mod completion_judge_llm;
+/// 子 Agent 委托实现（#839 P1）：契约在 `cm_tools::delegation_host`。
+#[allow(dead_code)]
+pub mod delegation;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crate::cm_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（领域核在 `cm_agent`）。
