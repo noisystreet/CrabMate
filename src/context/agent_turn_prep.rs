@@ -86,6 +86,15 @@ pub async fn prepare_tools_for_turn(
             )
         });
     }
+    // 子 Agent 委托（#839 P1）：`enabled = false`（默认）时**不注入**给模型。
+    //
+    // 放在这里而不是 `build_tools`：工具表在 Web 是**进程级**（serve 启动时建一次），
+    // 而 `subagent_enabled` 是**配置级**（可 `/config/reload`）。放在 `build_tools` 里
+    // 会让热重载不生效，且 CLI（每回合建表）与 Web（一次建表）行为不一致。
+    // 本函数是所有面（CLI / Web / bench / e2e）的**唯一汇合点**，每回合按 cfg 快照判定。
+    if !cfg.subagent.enabled {
+        tools_for_turn.retain(|t| t.function.name != tool_names::DELEGATE_TASK);
+    }
     if let Some(allow) = turn_allowed_tool_names {
         tools_for_turn.retain(|t| {
             crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist(
@@ -113,5 +122,57 @@ pub async fn prepare_tools_for_turn(
         tools_for_turn,
         mcp_turn,
         mcp_skipped,
+    }
+}
+
+#[cfg(test)]
+mod subagent_visibility_tests {
+    use super::*;
+
+    fn tool(name: &str) -> Tool {
+        Tool {
+            typ: "function".to_string(),
+            function: crate::cm_types::FunctionDef {
+                name: name.to_string(),
+                description: String::new(),
+                parameters: serde_json::json!({"type": "object"}),
+            },
+        }
+    }
+
+    async fn prepared_names(enabled: bool) -> Vec<String> {
+        let mut cfg = crate::cm_config::load_config(None).expect("嵌入默认配置应可加载");
+        cfg.subagent.enabled = enabled;
+        let cfg = std::sync::Arc::new(cfg);
+        let tools = vec![
+            tool(tool_names::DELEGATE_TASK),
+            tool(tool_names::READ_FILE),
+        ];
+        let out = prepare_tools_for_turn(&cfg, &tools, Path::new("."), None).await;
+        out.tools_for_turn
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect()
+    }
+
+    /// **默认关闭时 `delegate_task` 不注入**——这是 #839 P1 的核心可见性保证。
+    #[tokio::test]
+    async fn delegate_task_hidden_when_disabled() {
+        let names = prepared_names(false).await;
+        assert!(
+            !names.contains(&tool_names::DELEGATE_TASK.to_string()),
+            "关闭时必须不注入：{names:?}"
+        );
+        assert!(names.contains(&tool_names::READ_FILE.to_string()), "其它工具不受影响");
+    }
+
+    /// 开启时注入。
+    #[tokio::test]
+    async fn delegate_task_visible_when_enabled() {
+        let names = prepared_names(true).await;
+        assert!(
+            names.contains(&tool_names::DELEGATE_TASK.to_string()),
+            "开启时必须注入：{names:?}"
+        );
     }
 }
