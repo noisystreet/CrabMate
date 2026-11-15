@@ -45,6 +45,10 @@ pub(crate) struct DelegatorParts<'a> {
     pub api_key: &'a str,
     pub cfg: &'a Arc<AgentConfig>,
     /// 父回合已按只读性收窄后的工具定义。
+    ///
+    /// **调用方必须先过 `registry_policy::is_readonly_tool`**：本结构不做二次校验，
+    /// 传全量工具进来就等于让子任务拥有写权限。收窄是接线点（`tool_execution_host`）
+    /// 的责任——那里同时持有 `cfg` 与工具表，是唯一能正确派生只读子集的地方。
     pub tools: &'a [Tool],
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
@@ -108,12 +112,39 @@ impl CrabmateDelegator {
 
     /// 把父配置收窄成子回合预算：**只能减不能加**。
     ///
+    /// 取「更严的一侧」而不是直接覆盖：若父回合本身配得更紧（例如父 `max_llm_calls_per_turn = 5`
+    /// 而子任务默认 8），覆盖会**放宽**子任务预算，等于给了子任务父没有的额度——与
+    /// 「不可提权」冲突。`0` 在本仓语义是「不限制」，故不能参与 `min`：
+    /// 父不限（0）时用子的值；子写 0 时仍用父的值（不放宽）。
+    ///
     /// `max_tool_calls` 在此无处施加（见模块头说明），故只收窄 LLM 次数与墙钟。
     fn narrowed_cfg(&self, limits: &SubTaskLimits) -> AgentConfig {
         let mut cfg = (*self.cfg).clone();
-        cfg.turn_budget.max_llm_calls_per_turn = limits.max_llm_calls;
-        cfg.turn_budget.max_turn_duration_seconds = limits.max_wall_secs;
+        cfg.turn_budget.max_llm_calls_per_turn = tighter(
+            self.cfg.turn_budget.max_llm_calls_per_turn,
+            limits.max_llm_calls,
+        );
+        cfg.turn_budget.max_turn_duration_seconds = tighter(
+            self.cfg.turn_budget.max_turn_duration_seconds,
+            limits.max_wall_secs,
+        );
         cfg
+    }
+}
+
+/// 两个上限里更严的一个，`0` 视为「不限制」。
+///
+/// - 父不限（0）→ 用子的值；
+/// - 子写 0（不限制）→ 仍用父的值，**不放宽**；
+/// - 其余取较小者。
+fn tighter<T: Copy + Default + Ord>(parent: T, child: T) -> T {
+    let zero = T::default();
+    if parent == zero {
+        child
+    } else if child == zero {
+        parent
+    } else {
+        parent.min(child)
     }
 }
 
@@ -436,18 +467,42 @@ mod tests {
         assert_eq!(report.stats.llm_calls, 0, "不应发起任何 LLM 调用");
     }
 
-    /// 子回合预算只收窄、不放宽。
+    /// **父回合配得更紧时，子任务必须跟父走**——这是「不可提权」的关键一条。
+    ///
+    /// 首版此处直接覆盖成 `limits`，等于给子任务父没有的额度。
     #[test]
-    fn narrowed_cfg_never_widens_budget() {
+    fn narrowed_cfg_respects_tighter_parent_budget() {
         let engine = Arc::new(FixedEngine(Ok(ok_outcome())));
-        let d = CrabmateDelegator::new(parts_with(engine));
-        let limits = SubTaskLimits {
+        let mut p = parts_with(engine);
+        // 父回合故意配得比子任务默认值更紧。
+        let mut parent_cfg = (**p.cfg).clone();
+        parent_cfg.turn_budget.max_llm_calls_per_turn = 5;
+        parent_cfg.turn_budget.max_turn_duration_seconds = 60;
+        p.cfg = Box::leak(Box::new(Arc::new(parent_cfg)));
+
+        let d = CrabmateDelegator::new(p);
+        let narrowed = d.narrowed_cfg(&SubTaskLimits {
             max_llm_calls: 8,
             max_tool_calls: 16,
             max_wall_secs: 300,
-        };
-        let narrowed = d.narrowed_cfg(&limits);
-        assert_eq!(narrowed.turn_budget.max_llm_calls_per_turn, 8);
-        assert_eq!(narrowed.turn_budget.max_turn_duration_seconds, 300);
+        });
+        assert_eq!(
+            narrowed.turn_budget.max_llm_calls_per_turn, 5,
+            "父更紧时必须跟父，不能放宽到 8"
+        );
+        assert_eq!(
+            narrowed.turn_budget.max_turn_duration_seconds, 60,
+            "父更紧时必须跟父，不能放宽到 300"
+        );
+    }
+
+    /// `0` 表示「不限制」，不能参与 `min`：父不限→用子的；子写 0→仍用父的。
+    #[test]
+    fn tighter_handles_zero_as_unlimited() {
+        assert_eq!(tighter(0, 8), 8, "父不限 → 用子的");
+        assert_eq!(tighter(5, 0), 5, "子写 0 也不能放宽到不限");
+        assert_eq!(tighter(5, 8), 5, "取更严");
+        assert_eq!(tighter(8, 5), 5, "取更严（对称）");
+        assert_eq!(tighter(0, 0), 0, "两者都不限");
     }
 }
