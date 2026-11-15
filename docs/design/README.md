@@ -41,11 +41,12 @@
 | [tool_management_api.md](tool_management_api.md) | 设计草案：工具管理 API 补齐 |
 | [permission_levels.md](permission_levels.md) | 工具权限等级（L0–L4）：S1–S6 已落地；**S7 `AllowedRoots`、沙盒两轴、Client S5d 未做**（见该文头部状态与 §12） |
 
-## 4. 回合 / Agent 运行时（10）
+## 4. 回合 / Agent 运行时（11）
 
 | 文档 | 说明 |
 |---|---|
 | [agent_state_management.md](agent_state_management.md) | CrabMate Agent 状态管理设计 |
+| [agent_autonomy_enhancement.md](agent_autonomy_enhancement.md) | Agent 自主能力增强路线：跨回合续航、证据化完成判定、子任务隔离、审批策略包 |
 | [agent_turn_split.md](agent_turn_split.md) | Agent turn 拆分 |
 | [agent_self_evolution_roadmap.md](agent_self_evolution_roadmap.md) | Server Agent 自进化能力增强路线 |
 | [turn_host_decouple.md](turn_host_decouple.md) | 回合宿主解耦（Turn Host Decouple） |
