@@ -93,10 +93,14 @@ pub fn fold_system_into_user_for_config(model: &str, api_base: &str) -> bool {
 
 /// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
 ///
-/// 仅用 URL 判断、**不**用 `model` ID：避免在 MiniMax 等网关误配 `deepseek-chat` 时下发 `response_format`。
+/// **只按 `api_base` 匹配目录里的 `deepseek` 条目**（`api_base_contains`），**不**看 `model` ID：
+/// 避免在 MiniMax 等网关误配 `deepseek-chat` 时下发 `response_format`（model 传空串即不参与前缀匹配）。
+///
+/// 曾写死 `api_base.contains("deepseek")`，与 [`crate::cm_llm::vendor_catalog`] 双轨：改目录
+/// （比如收紧成具体域名）不会影响这里，反之亦然（#1401 #16）。
 #[inline]
 pub fn deepseek_json_output_eligible(api_base: &str) -> bool {
-    api_base.to_ascii_lowercase().contains("deepseek")
+    crate::cm_llm::vendor_catalog::matched_vendor_id("", api_base) == Some("deepseek")
 }
 
 /// DeepSeek 官方 **`api_base`** 时，是否在出站 JSON 中带显式 **`thinking`** / **`reasoning_effort`**（与 [`deepseek_json_output_eligible`] 同源 URL 判定）。
@@ -450,6 +454,27 @@ mod tests {
             "MiniMax-M2.7",
             "https://api.deepseek.com/v1"
         ));
+    }
+
+    /// `deepseek_json_output_eligible` 现在查目录而非写死 `contains("deepseek")`。
+    /// 正例走目录的 `api_base_contains`，反例确认「别的网关 + deepseek 模型名」不会误开 JSON Output。
+    #[test]
+    fn deepseek_json_output_eligibility_follows_the_catalog() {
+        assert!(super::deepseek_json_output_eligible(
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(super::deepseek_json_output_eligible("https://API.DeepSeek.com"));
+        // 目录里 minimax / moonshot 的条目排在 deepseek 之前，命中它们就不该算 deepseek。
+        assert!(!super::deepseek_json_output_eligible(
+            "https://api.minimaxi.com/v1"
+        ));
+        assert!(!super::deepseek_json_output_eligible(
+            "https://api.moonshot.cn/v1"
+        ));
+        assert!(!super::deepseek_json_output_eligible(
+            "https://open.bigmodel.cn/api/paas/v4"
+        ));
+        assert!(!super::deepseek_json_output_eligible("http://127.0.0.1:11434/v1"));
     }
 
     #[test]
