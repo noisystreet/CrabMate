@@ -9,7 +9,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use crabmate::{
@@ -588,5 +588,153 @@ async fn completion_judge_call_count_tracks_new_evidence() {
     assert_eq!(
         calls, 3,
         "应恰好停在每回合上限 3（rounds={rounds}），got {calls}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #839 P1 金样：子任务超预算被掐断，父回合仍正常结束。
+// ---------------------------------------------------------------------------
+
+/// 按「父 / 子」分流：子回合（system 含「只读探索子任务」）恒返回 tool_calls 以撞 LLM 次数上限；
+/// 父回合按序返回预设响应。
+struct ParentChildAwareBackend {
+    parent_responses: Vec<Message>,
+    parent_seq: AtomicUsize,
+    child_calls: AtomicUsize,
+    /// 父回合是否在**后续请求**里看到了 `tool` 消息（即子任务的 report）。
+    ///
+    /// 断言这个而不是最终 `messages`：回合收尾会重写 canonical history，
+    /// 而「父回合实际看到什么」以送进模型的请求为准。
+    parent_saw_tool_result: AtomicBool,
+}
+
+impl ParentChildAwareBackend {
+    fn new(parent_responses: Vec<Message>) -> Self {
+        Self {
+            parent_responses,
+            parent_seq: AtomicUsize::new(0),
+            child_calls: AtomicUsize::new(0),
+            parent_saw_tool_result: AtomicBool::new(false),
+        }
+    }
+}
+
+fn is_child_request(req: &ChatRequest) -> bool {
+    req.messages
+        .first()
+        .and_then(|m| message_content_as_str(&m.content))
+        .is_some_and(|s| s.contains("只读探索子任务"))
+}
+
+#[async_trait]
+impl ChatCompletionsBackend for ParentChildAwareBackend {
+    async fn stream_chat(
+        &self,
+        _params: &StreamChatParams<'_>,
+        req: &mut ChatRequest,
+    ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+        if is_child_request(req) {
+            self.child_calls.fetch_add(1, Ordering::SeqCst);
+            // 子回合永远「继续探索」→ 父配额（`subagent_max_llm_calls = 1`）被撞满。
+            let tc = Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "child_call".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "list_tree".to_string(),
+                        arguments: "{\"path\": \".\"}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            };
+            return Ok((tc, "tool_calls".to_string()));
+        }
+        if req.messages.iter().any(|m| m.role == "tool") {
+            self.parent_saw_tool_result.store(true, Ordering::SeqCst);
+        }
+        let idx = self.parent_seq.fetch_add(1, Ordering::SeqCst);
+        let msg = self
+            .parent_responses
+            .get(idx)
+            .or_else(|| self.parent_responses.last())
+            .cloned()
+            .ok_or_else(|| "ParentChildAwareBackend: empty responses".to_string())?;
+        let finish = if msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+            "tool_calls"
+        } else {
+            "stop"
+        };
+        Ok((msg, finish.to_string()))
+    }
+}
+
+/// **金样**：子任务超预算被掐断，父回合仍能正常结束（#839「第一刀」验收）。
+///
+/// 与单测 `budget_exhausted_does_not_propagate_to_parent` 的区别：那条只测 `delegator.run()`
+/// 返回 `Ok(report)`；这条走**真实的父回合编排**——模型看到 `delegate_task` → 分发 →
+/// 子回合真的跑起来并撞 LLM 次数上限 → 父回合收到 report 后**继续**跑出终答。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn subagent_budget_exhausted_parent_turn_still_finishes() {
+    let mut cfg = (*cfg_freeform_turn()).clone();
+    cfg.subagent.enabled = true;
+    // 子回合只允许 1 次 LLM 调用 → 它第 2 次就会被掐断。
+    cfg.subagent.max_llm_calls = 1;
+    cfg.subagent.max_wall_secs = 300;
+    let cfg = Arc::new(cfg);
+
+    let delegate_round = Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: "parent_delegate".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "delegate_task".to_string(),
+                arguments: "{\"prompt\":\"看看 src 下有什么\"}".to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    };
+    let final_msg =
+        Message::assistant_only("子任务已返回（可能被掐断），本轮结论如下：项目结构可读。");
+
+    let backend: &'static ParentChildAwareBackend =
+        Box::leak(Box::new(ParentChildAwareBackend::new(vec![
+            delegate_round,
+            final_msg,
+        ])));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("看看这个项目的目录结构".to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+
+    // 1) 子回合确实跑过（否则本金样什么都没验到）。
+    assert!(
+        backend.child_calls.load(Ordering::SeqCst) >= 1,
+        "子任务应真的跑起来（否则金样没驗到东西）"
+    );
+
+    // 2) 父回合**正常结束**：最后一条是 assistant 正文，不是错误。
+    let last = messages.last().expect("父回合应产出终答");
+    assert_eq!(last.role, "assistant", "最后一条应是 assistant 终答");
+    let body = message_content_as_str(&last.content).unwrap_or("");
+    assert!(
+        body.contains("本轮结论如下"),
+        "父回合应跑出终答，实际正文：{body}"
+    );
+
+    // 3) 父回合**实际看到**了子任务的 report（以送进模型的请求为准）。
+    assert!(
+        backend.parent_saw_tool_result.load(Ordering::SeqCst),
+        "父回合后续请求里应出现 tool 消息（子任务的 report）"
     );
 }

@@ -410,6 +410,7 @@ fn assemble_run_loop_params<'a>(
                     long_term_memory_scope_id: long_term_memory_scope_id.clone(),
                     tracing_chat_turn: tracing_chat_turn.clone(),
                     request_audit: request_audit.clone(),
+                    llm_backend: Some(crate::cm_llm::shared_chat_backend(llm_backend)),
                 },
             );
             // `readonly_tools` 只在这一支里用：delegator 已 `to_vec()` 复制，可以安全丢弃。
