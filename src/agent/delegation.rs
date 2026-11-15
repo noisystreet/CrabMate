@@ -63,8 +63,6 @@ pub(crate) struct DelegatorParts<'a> {
     /// 用来在子回合前后取差集得到 `key_paths`——见 [`crate::cm_tools::workspace::changelist::WorkspaceChangelist::touched_paths`]。
     pub workspace_changelist:
         Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
-    /// 子回合的 system：父按需给「收窄版」，**不是**父 system 的副本。
-    pub system_prompt: &'a str,
     pub cancel: Option<Arc<AtomicBool>>,
     pub long_term_memory:
         Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -72,6 +70,28 @@ pub(crate) struct DelegatorParts<'a> {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     pub request_audit: Option<Arc<crate::WebRequestAudit>>,
 }
+
+/// 子回合的 system：**收窄版，不是父 system 的副本**（设计 §5 / §135）。
+///
+/// 父的 system 含大量针对**父回合**的规则（角色、工作台增量、规划约束），把它们灌进子回合
+/// 既浪费上下文，也会让子任务误以为自己要交付终答 / 写规划。
+///
+/// 同时**显式写清审批限制**：首版不给子回合审批通道（`web_tool_ctx: None`），需审批的工具
+/// 会直接失败。让子 Agent **知道**这一点，它才可能换用无需审批的工具而不是反复撞墙。
+const SUBAGENT_SYSTEM_PROMPT: &str = "你是父 Agent 派出的**只读探索子任务**。
+
+职责：按用户给的目标，用**只读工具**调查并把结论回传给父 Agent。
+- 只能使用只读工具子集（读文件、列目录、搜索、只读查询）；写工具不在你的工具列表里。
+- 没有交互式审批通道：**需要审批的工具调用会直接失败**。遇到失败不要重试同一方式，
+  换用无需审批的只读工具，或直接在结论里说明「该目标需要审批，未能完成」。
+- 预算与时长由父回合限定；收到预算耗尽的提示就停止探索，把已有发现写进结论。
+- 你没有父回合的对话历史，**只能依据本次任务描述与工具结果**作答；不要臆测未观察到的内容。
+
+输出要求：
+- 正文直接给结论，供父 Agent 直接采用，不要客套与过程复述。
+- 末尾用一行列出你**实际读到 / 检索到的关键相对路径**（形如 `关键路径：a.rs, b.rs`）；
+  没有则写「关键路径：无」。
+";
 
 /// 生产实现的子 Agent 委托器。
 pub(crate) struct CrabmateDelegator {
@@ -87,7 +107,6 @@ pub(crate) struct CrabmateDelegator {
     process_handles: Arc<TurnProcessHandles>,
     read_file_turn_cache: Option<Arc<ReadFileTurnCache>>,
     workspace_changelist: Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
-    system_prompt: String,
     cancel: Option<Arc<AtomicBool>>,
     long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
@@ -147,7 +166,6 @@ impl CrabmateDelegator {
             process_handles: parts.process_handles,
             read_file_turn_cache: parts.read_file_turn_cache,
             workspace_changelist: parts.workspace_changelist,
-            system_prompt: parts.system_prompt.to_string(),
             cancel: parts.cancel,
             long_term_memory: parts.long_term_memory,
             long_term_memory_scope_id: parts.long_term_memory_scope_id,
@@ -297,7 +315,7 @@ impl SubAgentDelegator for CrabmateDelegator {
             client: &self.client,
             api_key: &self.api_key,
             cfg: &sub_cfg,
-            system_prompt: &self.system_prompt,
+            system_prompt: SUBAGENT_SYSTEM_PROMPT,
             prompt: &req.prompt,
             effective_working_dir: &self.effective_working_dir,
             workspace_is_set: self.workspace_is_set,
@@ -423,7 +441,6 @@ mod tests {
             process_handles: TurnProcessHandles::default_arc(),
             read_file_turn_cache: None,
             workspace_changelist: None,
-            system_prompt: "你是子 Agent",
             cancel: None,
             long_term_memory: None,
             long_term_memory_scope_id: None,
