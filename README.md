@@ -38,7 +38,8 @@ This repo is the **Server**: HTTP **`serve`** (always API-only — it never host
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace file tools, **`run_command`** (allowlist only), HTTP,
   **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily),
-  and workspace **code search** (keyword + optional semantic). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+  and workspace **code search** (keyword + optional semantic). Optional **`delegate_task`** dispatches a bounded read-only sub-agent
+  (off by default; `subagent_enabled`). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
 - **Sessions**: **`serve`** persists conversations under **`<workspace>/.crabmate/conversations.db`** by default; retention, deletion,
   and export are configurable — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/CLI.md](docs/en/CLI.md).
 - **Client UI**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; browser UIs connect over CORS. Sessions,
