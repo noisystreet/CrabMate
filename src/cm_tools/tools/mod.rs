@@ -328,18 +328,9 @@ pub struct ToolsBuildOptions<'a> {
     /// `None` 或 `Some(&[])`：不按标签过滤。`Some(non-empty)`：仅保留 **Development** 工具中
     /// [`dev_tag::tags_for_tool_name`] 与列表 **有交集** 者；`Basic` 仍只受 `categories` 约束。
     pub dev_tags: Option<&'a [&'a str]>,
-    /// 是否把 `delegate_task` 纳入工具列表（#839 P1）。
-    ///
-    /// 默认 `false`：**不注入给模型**。这与「注入后拒绝」是两回事——后者会让模型
-    /// 反复尝试一个注定失败的工具（设计 §7「关 = 工具不可见」）。
-    pub subagent_enabled: bool,
 }
 
 fn tool_passes_filters(spec: &ToolSpec, opts: ToolsBuildOptions<'_>) -> bool {
-    // #839 P1：子 Agent 委托默认关闭，且**关闭时不注入**（不是「注入后拒绝」）。
-    if spec.name == tool_names::DELEGATE_TASK && !opts.subagent_enabled {
-        return false;
-    }
     if !cfg!(feature = "fastembed") && tool_spec_requires_fastembed(spec.name) {
         return false;
     }
@@ -368,7 +359,6 @@ pub fn build_tools_filtered(allowed: Option<&[ToolCategory]>) -> Vec<Tool> {
     build_tools_with_options(ToolsBuildOptions {
         categories: allowed,
         dev_tags: None,
-        subagent_enabled: false,
     })
 }
 
