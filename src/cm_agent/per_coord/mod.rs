@@ -114,6 +114,16 @@ pub struct PerCoordinator {
     pub(crate) successful_run_commands: per_turn_state::SuccessfulRunCommandDedupeMemo,
 }
 
+impl PerCoordinator {
+    /// 本次该不该询问完成判定第 ② 层（LLM）。
+    ///
+    /// 早停门在每个工具批之后都会走一次，而第 ① 层对综合任务恒为 `NotApplicable`；
+    /// 因此用「证据指纹是否变化」去重，避免长任务每轮发一次判定请求。
+    pub(crate) fn take_completion_judge_slot(&mut self, fingerprint: u64) -> bool {
+        self.counters.take_completion_judge_slot(fingerprint)
+    }
+}
+
 mod coordinator_impl;
 
 #[cfg(test)]

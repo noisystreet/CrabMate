@@ -358,7 +358,7 @@ async fn outer_loop_post_tools_exit(
     // 工具结果回到下一轮模型前补注入续写纠偏，并强制继续外循环以消费之。
     let truncated_feedback_injected =
         outer_loop_inject_truncated_feedback_after_tools(p, per_coord);
-    let task_level_early_stop = turn_early_stop_allowed_with_judge(p).await;
+    let task_level_early_stop = turn_early_stop_allowed_with_judge(p, per_coord).await;
     if task_level_early_stop && !truncated_feedback_injected {
         tracing::info!(
             target: "crabmate::agent_turn",

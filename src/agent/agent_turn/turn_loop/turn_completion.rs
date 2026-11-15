@@ -59,12 +59,21 @@ pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
 /// - `NotApplicable`：结构化层判不出（综合任务 / 只读分析），交第 ② 层语义判定；
 /// - 第 ② 层不可用（配置关闭 / LLM 失败 / 回复无法解析）：维持第 ① 层结论，此处即「不早停」
 ///   （fail-open，**绝不因判定失败而早停**）。
-pub(crate) async fn turn_early_stop_allowed_with_judge(p: &RunLoopParams<'_>) -> bool {
+pub(crate) async fn turn_early_stop_allowed_with_judge(
+    p: &RunLoopParams<'_>,
+    per_coord: &mut crate::agent::per_coord::PerCoordinator,
+) -> bool {
     let messages = p.turn.messages();
     match check_active_user_goal_completion_evidence(messages) {
         GoalCompletionEvidenceCheck::Satisfied => return turn_early_stop_allowed(messages),
         GoalCompletionEvidenceCheck::Missing(_) => return false,
         GoalCompletionEvidenceCheck::NotApplicable => {}
+    }
+    let ev = EvidenceSet::collect(messages);
+    // 去重：本门在**每个工具批之后**都会走一次，而综合任务的第 ① 层恒为 `NotApplicable`。
+    // 用证据指纹判断「是否有新事实」——有新证据才值得再问一次，否则同一份事实重复问纯属浪费。
+    if !per_coord.take_completion_judge_slot(evidence_fingerprint(&ev)) {
+        return false;
     }
     let Some(judge) = LlmCompletionJudge::from_config(
         p.ctx.core.cfg,
@@ -76,17 +85,31 @@ pub(crate) async fn turn_early_stop_allowed_with_judge(p: &RunLoopParams<'_>) ->
     ) else {
         return false;
     };
-    match judge_and_validate(&judge, build_completion_judge_input(messages)).await {
+    match judge_and_validate(&judge, build_judge_input_from(messages, &ev)).await {
         Some(v) => v.status == CompletionStatus::Satisfied,
         None => false,
     }
 }
 
+/// 证据指纹：条目数 + 最后一条的 id/成败。
+///
+/// 只求「是否有新事实」的粗判，不做内容哈希——判定输入本就截断，逐字节比对既贵又无意义。
+fn evidence_fingerprint(ev: &EvidenceSet) -> u64 {
+    let mut acc: u64 = ev.items().len() as u64;
+    if let Some(last) = ev.items().last() {
+        acc = acc
+            .wrapping_mul(31)
+            .wrapping_add(last.id.len() as u64)
+            .wrapping_mul(31)
+            .wrapping_add(u64::from(last.ok));
+    }
+    acc
+}
+
 /// 把第 ① 层证据投影成判定输入。
 ///
 /// 只传任务原文 + 结构化证据，**不传 assistant 自述**——这是第 ② 层锚点机制成立的前提。
-fn build_completion_judge_input(messages: &[Message]) -> CompletionJudgeInput {
-    let ev = EvidenceSet::collect(messages);
+fn build_judge_input_from(messages: &[Message], ev: &EvidenceSet) -> CompletionJudgeInput {
     CompletionJudgeInput {
         task: crate::cm_types::last_real_user_task_content(messages, false)
             .unwrap_or_default()
@@ -105,6 +128,11 @@ fn build_completion_judge_input(messages: &[Message]) -> CompletionJudgeInput {
             })
             .collect(),
     }
+}
+
+#[cfg(test)]
+fn build_completion_judge_input(messages: &[Message]) -> CompletionJudgeInput {
+    build_judge_input_from(messages, &EvidenceSet::collect(messages))
 }
 
 /// 活跃目标已有完成证据且允许早停时，是否应静默丢弃本轮探针类 / 重复 `run_command` 工具调用。
@@ -256,6 +284,23 @@ mod tests {
         let input = build_completion_judge_input(&messages);
         assert!(input.task.is_empty());
         assert!(input.evidence.is_empty());
+    }
+
+    /// 证据增长时指纹必须变化——否则「有新事实」永远检测不到。
+    #[test]
+    fn evidence_fingerprint_changes_with_new_evidence() {
+        let one = vec![
+            msg("user", "分析项目"),
+            tool_env("list_tree", "list tree: .", "list tree: ."),
+        ];
+        let two = vec![
+            msg("user", "分析项目"),
+            tool_env("list_tree", "list tree: .", "list tree: ."),
+            tool_env("read_file", "read file: a", "read file: a"),
+        ];
+        let fp1 = evidence_fingerprint(&EvidenceSet::collect(&one));
+        let fp2 = evidence_fingerprint(&EvidenceSet::collect(&two));
+        assert_ne!(fp1, fp2);
     }
 
     #[test]
