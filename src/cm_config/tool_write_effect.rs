@@ -72,6 +72,11 @@ pub fn builtin_write_effect_tools() -> &'static HashSet<String> {
             tool_names::LONG_TERM_REMEMBER,
             tool_names::LONG_TERM_FORGET,
             tool_names::SUMMARIZE_EXPERIENCE,
+            // #839 P1：`delegate_task` 会跑**整个子回合**（内部调工具、发 LLM 请求），
+            // 不是只读操作。不列入的后果不是「少算一次写」，而是：
+            // 派生子任务时按 `is_readonly_tool` 取只读子集会把 `delegate_task` 自己
+            // 算进去 → 子任务能再派子任务 → **无限递归**（`depth` 恒 0，无实际深度限制）。
+            tool_names::DELEGATE_TASK,
             tool_names::RUN_COMMAND,
             tool_names::TERMINAL_SESSION,
             tool_names::PYTHON_SNIPPET_RUN,

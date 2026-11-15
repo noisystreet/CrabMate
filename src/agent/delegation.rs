@@ -22,6 +22,8 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
+use crate::cm_names as tool_names;
+
 use crate::agent::agent_turn::host::errors::{RunAgentTurnError, TurnAbortReason};
 use crate::agent::sub_turn::{SubTurnMessages, SubTurnSpec};
 use crate::cm_agent::permission::TurnPermissionStages;
@@ -85,6 +87,26 @@ pub(crate) struct CrabmateDelegator {
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     request_audit: Option<Arc<crate::WebRequestAudit>>,
+}
+
+/// 派生交给子回合的工具集：**只读子集，且显式排除 `delegate_task` 自己**。
+///
+/// 两道保险：
+/// 1. `is_readonly_tool` 过滤（`delegate_task` 已列入写效应名单，本就会落选）；
+/// 2. **显式排除本工具名**——即便将来名单出错，也不会让子任务再派子任务。
+///
+/// 首版不支持嵌套（`depth` 恒 0，没有运行期深度计数），所以这条排除是**递归的唯一防线**，
+/// 不能只依赖名单正确。
+pub(crate) fn readonly_subset_for_subturn(
+    cfg: &AgentConfig,
+    tools: &[Tool],
+) -> Vec<Tool> {
+    tools
+        .iter()
+        .filter(|t| t.function.name != tool_names::DELEGATE_TASK)
+        .filter(|t| crate::cm_tools::registry_policy::is_readonly_tool(cfg, &t.function.name))
+        .cloned()
+        .collect()
 }
 
 /// 由父回合**已生效**的能力快照反推子回合的四档输入。
@@ -482,6 +504,46 @@ mod tests {
         let report = d.run(request()).await.expect("Ok");
         assert_eq!(report.status, SubTaskStatus::Cancelled);
         assert_eq!(report.stats.llm_calls, 0, "不应发起任何 LLM 调用");
+    }
+
+    /// **递归防线**：子任务的工具集绝不能包含 `delegate_task` 自己。
+    ///
+    /// 首版没有运行期深度计数（`depth` 恒 0），所以这条是唯一防线。
+    /// 两道保险都要验：显式排除 + 写效应名单。
+    #[test]
+    fn subturn_toolset_never_contains_delegate_task() {
+        let cfg = crate::cm_config::load_config(None).expect("嵌入默认配置应可加载");
+        let mk = |name: &str| crate::cm_types::Tool {
+            typ: "function".to_string(),
+            function: crate::cm_types::FunctionDef {
+                name: name.to_string(),
+                description: String::new(),
+                parameters: serde_json::json!({"type": "object"}),
+            },
+        };
+        let parent = vec![
+            mk(tool_names::DELEGATE_TASK),
+            mk(tool_names::READ_FILE),
+            mk(tool_names::RUN_COMMAND),
+        ];
+        let subset = self::readonly_subset_for_subturn(&cfg, &parent);
+        let names: Vec<&str> = subset.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(
+            !names.contains(&tool_names::DELEGATE_TASK),
+            "子任务工具集不得含 delegate_task（否则无限递归）：{names:?}"
+        );
+        assert!(names.contains(&tool_names::READ_FILE), "只读工具应保留");
+        assert!(!names.contains(&tool_names::RUN_COMMAND), "写/执行类应排除");
+    }
+
+    /// 写效应名单必须含 `delegate_task`（第一道保险）。
+    #[test]
+    fn delegate_task_is_write_effect() {
+        assert!(
+            crate::cm_config::tool_write_effect::builtin_write_effect_tools()
+                .contains(tool_names::DELEGATE_TASK),
+            "delegate_task 会跑整个子回合，不是只读操作"
+        );
     }
 
     /// **父回合配得更紧时，子任务必须跟父走**——这是「不可提权」的关键一条。

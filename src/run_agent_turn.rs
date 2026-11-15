@@ -385,13 +385,9 @@ fn assemble_run_loop_params<'a>(
         std::sync::Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
     > =
         if cfg.subagent.enabled {
-            let readonly_tools: Vec<crate::types::Tool> = tools_defs
-                .iter()
-                .filter(|t| {
-                    crate::cm_tools::registry_policy::is_readonly_tool(cfg, &t.function.name)
-                })
-                .cloned()
-                .collect();
+            let readonly_tools = crate::agent::delegation::readonly_subset_for_subturn(
+                cfg, tools_defs,
+            );
             let d = crate::agent::delegation::CrabmateDelegator::new(
                 crate::agent::delegation::DelegatorParts {
                     engine: crate::turn_runner::default_turn_engine(),
