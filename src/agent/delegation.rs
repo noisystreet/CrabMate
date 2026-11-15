@@ -58,6 +58,11 @@ pub(crate) struct DelegatorParts<'a> {
     pub allowed_tool_names: Option<Arc<std::collections::HashSet<String>>>,
     pub process_handles: Arc<TurnProcessHandles>,
     pub read_file_turn_cache: Option<Arc<ReadFileTurnCache>>,
+    /// 会话工作区变更集（父/子按 scope 共享同一份）；`None` = 该功能关闭。
+    ///
+    /// 用来在子回合前后取差集得到 `key_paths`——见 [`crate::cm_tools::workspace::changelist::WorkspaceChangelist::touched_paths`]。
+    pub workspace_changelist:
+        Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
     /// 子回合的 system：父按需给「收窄版」，**不是**父 system 的副本。
     pub system_prompt: &'a str,
     pub cancel: Option<Arc<AtomicBool>>,
@@ -81,6 +86,7 @@ pub(crate) struct CrabmateDelegator {
     allowed_tool_names: Option<Arc<std::collections::HashSet<String>>>,
     process_handles: Arc<TurnProcessHandles>,
     read_file_turn_cache: Option<Arc<ReadFileTurnCache>>,
+    workspace_changelist: Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
     system_prompt: String,
     cancel: Option<Arc<AtomicBool>>,
     long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -140,6 +146,7 @@ impl CrabmateDelegator {
             allowed_tool_names: parts.allowed_tool_names,
             process_handles: parts.process_handles,
             read_file_turn_cache: parts.read_file_turn_cache,
+            workspace_changelist: parts.workspace_changelist,
             system_prompt: parts.system_prompt.to_string(),
             cancel: parts.cancel,
             long_term_memory: parts.long_term_memory,
@@ -276,6 +283,14 @@ impl SubAgentDelegator for CrabmateDelegator {
         }
 
         let started = Instant::now();
+        // 子回合**前**的已触碰路径；跑完取差集即得「这次子任务改动了哪些文件」。
+        // 父子共享同一 changelist（按 scope 从 registry 取），而 `run()` 是 await 串行的，
+        // 父回合在子任务期间不会并发写盘，所以差集准确。
+        let paths_before: std::collections::HashSet<String> = self
+            .workspace_changelist
+            .as_ref()
+            .map(|c| c.touched_paths().into_iter().collect())
+            .unwrap_or_default();
         let sub_cfg = Arc::new(self.narrowed_cfg(&req.limits));
         let mut window = SubTurnMessages::new();
         let turn_req = SubTurnSpec {
@@ -323,10 +338,21 @@ impl SubAgentDelegator for CrabmateDelegator {
         };
 
         // **父回合照常结束**：无论子任务成败，本方法都返回 Ok(report)。
+        // 只取**本次子任务新增**的写路径；只读探索不会有新增 → 空（语义正确）。
+        let key_paths: Vec<String> = self
+            .workspace_changelist
+            .as_ref()
+            .map(|c| {
+                c.touched_paths()
+                    .into_iter()
+                    .filter(|p| !paths_before.contains(p))
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut report = SubTaskReport::bounded(
             status,
             summary,
-            Vec::new(),
+            key_paths,
             stats,
             req.max_report_chars,
         );
@@ -396,6 +422,7 @@ mod tests {
             allowed_tool_names: None,
             process_handles: TurnProcessHandles::default_arc(),
             read_file_turn_cache: None,
+            workspace_changelist: None,
             system_prompt: "你是子 Agent",
             cancel: None,
             long_term_memory: None,
@@ -504,6 +531,51 @@ mod tests {
         let report = d.run(request()).await.expect("Ok");
         assert_eq!(report.status, SubTaskStatus::Cancelled);
         assert_eq!(report.stats.llm_calls, 0, "不应发起任何 LLM 调用");
+    }
+
+    /// **`key_paths` 来自 changelist 前后差集**，且只含本次新增。
+    ///
+    /// 首版该字段恒为 `Vec::new()`（验收第 2 条只做了「摘要」一半）。
+    #[tokio::test]
+    async fn key_paths_are_the_delta_of_this_subturn() {
+        use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
+
+        let cl = Arc::new(WorkspaceChangelist::default());
+        // 父回合先改过一个文件——它**不该**出现在子任务的 key_paths 里。
+        cl.record_mutation("already/by-parent.rs", None, Some("x".into()));
+
+        struct MutatingEngine(Arc<WorkspaceChangelist>);
+        #[async_trait]
+        impl crate::turn_runner::TurnEngine for MutatingEngine {
+            async fn run(
+                &self,
+                _p: crate::TurnRequest<'_>,
+            ) -> Result<crate::turn_runner::TurnOutcome, RunAgentTurnError> {
+                // 模拟子回合写盘。
+                self.0.record_mutation("sub/new.rs", None, Some("y".into()));
+                Ok(ok_outcome())
+            }
+        }
+
+        let mut p = parts_with(Arc::new(MutatingEngine(Arc::clone(&cl))));
+        p.workspace_changelist = Some(Arc::clone(&cl));
+        let d = CrabmateDelegator::new(p);
+        let report = d.run(request()).await.expect("Ok");
+
+        assert_eq!(
+            report.key_paths,
+            vec!["sub/new.rs".to_string()],
+            "只应包含本次子任务新增的路径，不含父回合先前的写入"
+        );
+    }
+
+    /// 没有 changelist（功能关闭）→ `key_paths` 为空，不 panic。
+    #[tokio::test]
+    async fn key_paths_empty_without_changelist() {
+        let engine = Arc::new(FixedEngine(Ok(ok_outcome())));
+        let d = CrabmateDelegator::new(parts_with(engine));
+        let report = d.run(request()).await.expect("Ok");
+        assert!(report.key_paths.is_empty());
     }
 
     /// **递归防线**：子任务的工具集绝不能包含 `delegate_task` 自己。

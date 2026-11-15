@@ -404,6 +404,7 @@ fn assemble_run_loop_params<'a>(
                     allowed_tool_names: turn_allowed_tool_names.clone(),
                     process_handles: process_handles.clone(),
                     read_file_turn_cache: read_file_turn_cache.clone(),
+                    workspace_changelist: workspace_changelist.clone(),
                     system_prompt: &cfg.roles_prompts.system_prompt,
                     cancel: cancel.clone(),
                     long_term_memory: long_term_memory.clone(),
