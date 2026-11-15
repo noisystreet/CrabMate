@@ -425,6 +425,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         policy,
         obs,
         memory,
+        delegation: _,
     } = p;
     let DispatchToolCall { name, args, tc } = call;
     let DispatchToolWorkspace {

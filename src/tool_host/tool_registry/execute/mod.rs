@@ -118,6 +118,20 @@ pub struct DispatchToolParams<'a> {
     pub policy: DispatchToolPolicy<'a>,
     pub obs: DispatchToolObs<'a>,
     pub memory: DispatchToolMemory<'a>,
+    pub delegation: DispatchToolDelegation<'a>,
+}
+
+/// 子 Agent 委托能力（#839 P1）。
+///
+/// **为什么是能力对象而不是凭据**：子回合要调 LLM，而 `client` / `api_key` 在工具执行层
+/// **刻意不存在**（`agent_turn/host/execute/**` 中 `api_key` 零命中）。把凭据塞进本结构
+/// 等于让所有工具都能读到 LLM 密钥；因此注入的是已装配好的 [`SubAgentDelegator`]，
+/// 由 agent 层（持有凭据的那一侧）构造。见 `docs/design/subagent_delegation.md` §3。
+///
+/// `None` = 本回合未开启子 Agent 委托（`subagent_enabled = false`，默认）或调用方尚未接线。
+#[derive(Clone, Copy, Default)]
+pub struct DispatchToolDelegation<'a> {
+    pub delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
 }
 
 /// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。

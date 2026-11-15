@@ -36,6 +36,7 @@ mod date_calc;
 mod diagnostics;
 mod docs_health_sweep;
 pub use diagnostics::capture_trimmed;
+pub use tool_param_types::DelegateTaskArgs;
 pub use parse_args::parse_args_from_value;
 pub use parse_args::parse_args_json;
 pub use parse_args::parse_args_typed;

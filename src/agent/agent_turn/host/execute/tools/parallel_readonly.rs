@@ -224,6 +224,8 @@ async fn parallel_collect_unique_results(
                         host.dispatch_tool_call(
                             name.as_str(),
                             tool_registry::DispatchToolParams {
+                                // 并行只读批：子 Agent 委托**永久拒绝**（子回合不是无副作用操作）。
+                                delegation: Default::default(),
                                 runtime,
                                 call: tool_registry::DispatchToolCall {
                                     name: &name,

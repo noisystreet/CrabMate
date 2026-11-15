@@ -113,14 +113,23 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                 )
                 .await
             }
-            // #839 P1：`delegate_task` 的工具面已注册（模型可见性由 `subagent_enabled` 控制），
-            // 但 agent 层调度**尚未接线**（需要给 `DispatchToolParams` 加能力对象分组）。
-            // 返回显式错误而不是静默失败：万一有人提前开了开关，也能立刻看出原因。
-            Some(AgentLayerHandler::Delegate) => (
-                "错误：delegate_task 尚未接线到 agent 层调度（#839 P1 下一步）。                 请保持 subagent_enabled = false。"
-                    .to_string(),
-                None,
-            ),
+            // #839 P1：`delegate_task` 由 agent 层调度——delegator 在此由持有凭据的一侧
+            // 预先装配并注入（工具层刻意不持 `client` / `api_key`）。
+            Some(AgentLayerHandler::Delegate) => {
+                let sub = &p.policy.cfg.subagent;
+                crate::agent::delegation_dispatch::dispatch_delegate_task_tool(
+                    p.delegation.delegator,
+                    crate::cm_tools::delegation_host::SubTaskLimits {
+                        max_llm_calls: sub.max_llm_calls,
+                        // 施加不了（`TurnBudgetCounter` 无工具调用维度），传 MAX 表示不限制。
+                        max_tool_calls: u32::MAX,
+                        max_wall_secs: sub.max_wall_secs,
+                    },
+                    sub.max_report_chars,
+                    p.call.args,
+                )
+                .await
+            }
             None => InternalToolDispatch.dispatch(p).await,
         }
     }

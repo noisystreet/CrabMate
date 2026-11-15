@@ -143,6 +143,7 @@ mod per_reflect_tests {
                     tools_defs: &[],
                     effective_working_dir: Path::new("."),
                     workspace_is_set: false,
+                    delegator: None,
                 },
                 io: RunLoopIo {
                     no_stream: true,
