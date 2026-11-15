@@ -159,7 +159,7 @@ fn split_invocation_and_body(raw_output: &str) -> (String, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_code_in_header_region, run_command_structured_payload};
+    use super::{exit_code_in_header_region, looks_like_failure, run_command_structured_payload};
 
     /// 回归守卫：`命令：` 回显含真实换行（多行 `-m`）时仍须取到退出码，
     /// 不得退化成「正文含『失败』即失败」。旧实现的 `structured_payload` 里
@@ -230,5 +230,22 @@ mod tests {
         let payload = run_command_structured_payload(raw);
         assert_eq!(payload["invocation"], serde_json::json!("sleep 30"));
         assert_eq!(payload["exit_code"], serde_json::json!(-1));
+    }
+
+    /// **双向误判的现状快照**（#1401 P1 记录在案，尚未修）。
+    ///
+    /// `looks_like_failure` 只认中文 / 英文失败词，于是两个方向都会错：
+    /// ① 成功正文里出现「失败」二字 → 判失败；
+    /// ② 真实失败但文案是 `not found` / `permission denied` → 判成功。
+    ///
+    /// 本用例**钉住现状**而不是钉住期望行为：修这两条时它会变红，那正是提醒
+    /// 「有人动了启发式，去看 P1 的三步走（补信号 → 删兜底）走到哪了」。
+    #[test]
+    fn looks_like_failure_both_directions_are_known_gaps() {
+        // ① 往失败偏：提交信息 / diff 正文里带「失败」。
+        assert!(looks_like_failure("fix: 修复失败重试"));
+        // ② 往成功偏：真实失败，但没有任何中文失败词。
+        assert!(!looks_like_failure("bash: foo: command not found"));
+        assert!(!looks_like_failure("permission denied"));
     }
 }

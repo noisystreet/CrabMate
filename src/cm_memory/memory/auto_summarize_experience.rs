@@ -1,7 +1,7 @@
 //! 回合结束后启发式检测「由失败到成功」的构建/验证类工具调用，自动写入长期记忆（`source_role=auto_summarize_experience`）。
 
 use crate::cm_names as tool_names;
-use crate::cm_memory::tool_check;
+use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
 use crate::cm_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。
@@ -74,10 +74,15 @@ fn detect_build_recovery_in_slice(turn: &[Message]) -> Option<BuildRecovery> {
         if tool_name == tool_names::RUN_COMMAND && !run_command_looks_like_build(content) {
             continue;
         }
-        let ok = tool_check::tool_output_is_ok(content);
-        if !ok {
-            saw_build_failure = true;
-            continue;
+        match tool_output_status(tool_name, content) {
+            // 判不出来（无结构化信号、正文也不像失败）：既不算失败也不算恢复。
+            // 旧实现此处判 `false` 并设 `saw_build_failure`，会凭空造出「失败→成功恢复」经验。
+            ToolStatus::Unknown => continue,
+            ToolStatus::Failed => {
+                saw_build_failure = true;
+                continue;
+            }
+            ToolStatus::Ok => {}
         }
         if saw_build_failure {
             recovery_tool = Some(tool_name.to_string());
@@ -157,15 +162,16 @@ mod tests {
         Message::assistant_only(text)
     }
 
+    /// fixture 用**真实**形状：`cargo_*` 工具输出首行是 `{title} (exit=N):`
+    /// （见 `cm_tools::tool_result` 的 `subprocess_exit_v1` 用例），不是 `退出码：N`。
+    /// 早期这里写的是 `cargo check 完成\n退出码：0`——那种形状现实里不存在，
+    /// 于是「这条到底算成功还是判不出来」从来没被真正问过。
     #[test]
     fn detects_cargo_check_recovery() {
         let messages = vec![
             user_msg("请修复 cargo check 编译错误"),
-            tool_msg(
-                "cargo_check",
-                "cargo check 失败\n退出码：101\nstderr: error[E0425]",
-            ),
-            tool_msg("cargo_check", "cargo check 完成\n退出码：0\n"),
+            tool_msg("cargo_check", "cargo check (exit=101):\nstderr: error[E0425]"),
+            tool_msg("cargo_check", "cargo check (exit=0):\n(check output)"),
             asst_final("已修复未使用的导入，cargo check 通过。"),
         ];
         let draft = draft_auto_experience_from_turn(&messages);
@@ -180,7 +186,7 @@ mod tests {
     fn skips_without_prior_failure() {
         let messages = vec![
             user_msg("运行 cargo test 确认一下"),
-            tool_msg("cargo_test", "退出码：0\n全部通过"),
+            tool_msg("cargo_test", "cargo test (exit=0):\n全部通过"),
             asst_final("测试已通过。"),
         ];
         assert!(draft_auto_experience_from_turn(&messages).is_none());
