@@ -64,6 +64,15 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
+    /// 完成判定第 ② 层（LLM 语义判定）总开关；默认关，关 = 不产生任何额外 LLM 调用。
+    ///
+    /// 与 `final_plan_semantic_check_*` **刻意分开**：两者是不同消费者（规划一致性 vs 完成判定），
+    /// 共用开关会导致「想开一个必须开两个」。见 `docs/design/completion_judge.md` §7。
+    pub completion_judge_enabled: bool,
+    /// 判定器单次输出上限（钳制 `32..=1024`）。
+    pub completion_judge_max_tokens: u32,
+    /// 判定模型覆盖；`None` = 走默认（**不**强制与执行模型分离，见设计 §10）。
+    pub completion_judge_model: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -238,6 +238,16 @@ impl ConfigBuilder {
         pp.final_plan_semantic_check_max_tokens = agent
             .final_plan_semantic_check_max_tokens
             .or(pp.final_plan_semantic_check_max_tokens);
+        pp.completion_judge_enabled = agent
+            .completion_judge_enabled
+            .or(pp.completion_judge_enabled);
+        pp.completion_judge_max_tokens = agent
+            .completion_judge_max_tokens
+            .or(pp.completion_judge_max_tokens);
+        pp.completion_judge_model = agent
+            .completion_judge_model
+            .clone()
+            .or_else(|| pp.completion_judge_model.clone());
         let am = &mut self.agents_md;
         am.agents_md_enabled = agent.agents_md_enabled.or(am.agents_md_enabled);
         am.agents_md_max_chars = agent.agents_md_max_chars.or(am.agents_md_max_chars);

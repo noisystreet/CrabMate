@@ -16,6 +16,9 @@ pub(super) struct FinalizeTailScalars {
     pub(super) final_plan_semantic_check_enabled: bool,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: usize,
     pub(super) final_plan_semantic_check_max_tokens: u32,
+    pub(super) completion_judge_enabled: bool,
+    pub(super) completion_judge_max_tokens: u32,
+    pub(super) completion_judge_model: Option<String>,
     pub(super) tool_message_max_chars: usize,
     pub(super) tool_result_envelope_v1: bool,
     pub(super) sse_tool_call_include_arguments: bool,
@@ -102,6 +105,9 @@ struct TailPlanToolThinkingScalars {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
+    completion_judge_enabled: bool,
+    completion_judge_max_tokens: u32,
+    completion_judge_model: Option<String>,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -137,6 +143,20 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_semantic_check_max_tokens
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
+    // 完成判定第 ② 层（`docs/design/completion_judge.md` §7）：默认关，关 = 零额外 LLM 调用。
+    let completion_judge_enabled = b.per_plan_policy.completion_judge_enabled.unwrap_or(false);
+    let completion_judge_max_tokens = b
+        .per_plan_policy
+        .completion_judge_max_tokens
+        .unwrap_or(512)
+        .clamp(32, 1024) as u32;
+    let completion_judge_model = b
+        .per_plan_policy
+        .completion_judge_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -175,6 +195,9 @@ fn derive_tail_plan_tool_thinking_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
+        completion_judge_enabled,
+        completion_judge_max_tokens,
+        completion_judge_model,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -627,6 +650,9 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
+        completion_judge_enabled,
+        completion_judge_max_tokens,
+        completion_judge_model,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -678,6 +704,9 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
+        completion_judge_enabled,
+        completion_judge_max_tokens,
+        completion_judge_model,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,

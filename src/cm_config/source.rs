@@ -188,6 +188,9 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
+    pub(super) completion_judge_enabled: Option<bool>,
+    pub(super) completion_judge_max_tokens: Option<u64>,
+    pub(super) completion_judge_model: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

@@ -134,6 +134,9 @@ fn finalize_section_per_plan_policy(
         final_plan_semantic_check_max_non_readonly_tools: tail
             .final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens: tail.final_plan_semantic_check_max_tokens,
+        completion_judge_enabled: tail.completion_judge_enabled,
+        completion_judge_max_tokens: tail.completion_judge_max_tokens,
+        completion_judge_model: tail.completion_judge_model.clone(),
     }
 }
 

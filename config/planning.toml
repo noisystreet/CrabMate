@@ -11,6 +11,14 @@ final_plan_semantic_check_enabled = false
 final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 
+# 完成判定第 ② 层（LLM 语义判定，见 docs/design/completion_judge.md）。
+# 默认关：关 = 不产生任何额外的 LLM 调用；第 ① 层结构化证据仍照常工作。
+# 开启后只在「第 ① 层判不出」的候选终止点调用一次，且 fail-open。
+completion_judge_enabled = false
+completion_judge_max_tokens = 512
+# 空 = 走默认模型；不强制与执行模型分离（单模型部署须可用）。
+completion_judge_model = ""
+
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、
 # intent_l0_routing_boost_enabled、intent_mode_bias_enabled；CM_INTENT_AT_TURN_START_ENABLED 亦已移除。
