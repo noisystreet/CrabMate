@@ -139,14 +139,25 @@ pub trait CompletionJudge: Send + Sync {
 
 ## 6. 调用点与 fail-open
 
-**只在候选终止点调用**，一回合各一次（不按工具批）：
+**已接线**（`turn_completion::turn_early_stop_allowed_with_judge`，由 `outer_loop` 在工具批后 `await`）。
 
-1. 模型给出终答（无 `tool_calls`）时 —— `per_reflect_after_assistant` 同一时刻。
+**只在候选终止点调用**，一回合一次（不按工具批）：
+
+1. 模型给出终答（无 `tool_calls`）时 —— 与 `per_reflect_after_assistant` 同一时刻。
 2. 预算阈值处 —— 决定「带半成品停」还是「再给一轮」。
 
-**触发前置（省成本）**：只在第 ① 层给出 `NotApplicable` 时调 LLM。第 ① 层已能确定的场景（有验证证据 / 只写未验证）不调。
+**触发前置（省成本）**：按第 ① 层的三态分级，**只有 `NotApplicable` 才调 LLM**：
+
+| 第 ① 层结论 | 是否问第 ② 层 |
+|---|---|
+| `Satisfied` | **不问**（沿用 `build_or_test_intent` 强度分级） |
+| `Missing` | **不问**——证据明确缺失，升级等于替模型找台阶 |
+| `NotApplicable` | 问（综合任务 / 只读分析） |
 
 **fail-open**：LLM 失败 / 超时 / JSON 解析失败 → 维持第 ① 层结论，**绝不因此早停**。
+
+**处置由编排层负责**（§3）：判定层只回 `status`，本接线点当前只把 `satisfied` 映射为「允许早停」，
+其余一律「继续」。预算耗尽时的「带半成品停」由 `turn_budget` 的既有中止路径处理，不在早停门内做。
 
 ---
 

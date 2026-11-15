@@ -32,7 +32,7 @@ use super::outer_loop_reflect::{
     map_reflect_outcome_to_branch_ctl, outer_loop_inject_truncated_feedback_after_tools,
 };
 use super::turn_completion::{
-    redundant_tool_names_for_log, turn_early_stop_allowed,
+    redundant_tool_names_for_log, turn_early_stop_allowed_with_judge,
     turn_redundant_tools_after_completion_allowed,
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
@@ -358,7 +358,7 @@ async fn outer_loop_post_tools_exit(
     // 工具结果回到下一轮模型前补注入续写纠偏，并强制继续外循环以消费之。
     let truncated_feedback_injected =
         outer_loop_inject_truncated_feedback_after_tools(p, per_coord);
-    let task_level_early_stop = turn_early_stop_allowed(p.turn.messages());
+    let task_level_early_stop = turn_early_stop_allowed_with_judge(p).await;
     if task_level_early_stop && !truncated_feedback_injected {
         tracing::info!(
             target: "crabmate::agent_turn",

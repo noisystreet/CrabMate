@@ -27,6 +27,15 @@ pub(crate) use crate::agent::agent_turn::policy::completion_suppression::{
 
 use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
+use crate::agent::agent_turn::params::RunLoopParams;
+use crate::agent::agent_turn::policy::task_level_evidence::{
+    EvidenceSet, GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
+};
+use crate::agent::completion_judge_llm::LlmCompletionJudge;
+use crate::cm_agent::completion_judge::{
+    CompletionJudgeInput, CompletionStatus, JudgedEvidence, judge_and_validate,
+};
+
 /// 最多注入次数，避免与外层迭代上限死磕。
 pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX: u32 = 2;
 
@@ -39,6 +48,63 @@ pub(crate) const OUTER_LOOP_TRUNCATED_FEEDBACK_MAX: u32 = 2;
 /// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
 pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
     evaluate_turn_early_stop(messages).is_allow()
+}
+
+/// 早停门的**完整判定**：第 ① 层结构化证据 → 仅在「判不出」时才问第 ② 层 LLM（#1387 S0.5）。
+///
+/// 分级刻意如此，不是「第 ① 层 false 就问 LLM」：
+///
+/// - `Satisfied`：沿用第 ① 层的强度分级（弱证据仍可能被 `build_or_test_intent` 拒绝），**不问 LLM**；
+/// - `Missing`：证据**明确缺失**，不升级——升级等于替模型找台阶；
+/// - `NotApplicable`：结构化层判不出（综合任务 / 只读分析），交第 ② 层语义判定；
+/// - 第 ② 层不可用（配置关闭 / LLM 失败 / 回复无法解析）：维持第 ① 层结论，此处即「不早停」
+///   （fail-open，**绝不因判定失败而早停**）。
+pub(crate) async fn turn_early_stop_allowed_with_judge(p: &RunLoopParams<'_>) -> bool {
+    let messages = p.turn.messages();
+    match check_active_user_goal_completion_evidence(messages) {
+        GoalCompletionEvidenceCheck::Satisfied => return turn_early_stop_allowed(messages),
+        GoalCompletionEvidenceCheck::Missing(_) => return false,
+        GoalCompletionEvidenceCheck::NotApplicable => {}
+    }
+    let Some(judge) = LlmCompletionJudge::from_config(
+        p.ctx.core.cfg,
+        p.ctx.core.llm_backend,
+        p.ctx.core.client,
+        p.ctx.core.api_key,
+        p.ctx.io.cancel.as_deref(),
+        Some(&p.turn.turn_budget),
+    ) else {
+        return false;
+    };
+    match judge_and_validate(&judge, build_completion_judge_input(messages)).await {
+        Some(v) => v.status == CompletionStatus::Satisfied,
+        None => false,
+    }
+}
+
+/// 把第 ① 层证据投影成判定输入。
+///
+/// 只传任务原文 + 结构化证据，**不传 assistant 自述**——这是第 ② 层锚点机制成立的前提。
+fn build_completion_judge_input(messages: &[Message]) -> CompletionJudgeInput {
+    let ev = EvidenceSet::collect(messages);
+    CompletionJudgeInput {
+        task: crate::cm_types::last_real_user_task_content(messages, false)
+            .unwrap_or_default()
+            .to_string(),
+        evidence: ev
+            .items()
+            .iter()
+            .map(|i| JudgedEvidence {
+                id: i.id.clone(),
+                kind: i.kind.as_str().to_string(),
+                strength: i.strength.as_str().to_string(),
+                tool: i.tool.clone(),
+                ok: i.ok,
+                exit_code: i.exit_code,
+                detail: i.detail.clone(),
+            })
+            .collect(),
+    }
 }
 
 /// 活跃目标已有完成证据且允许早停时，是否应静默丢弃本轮探针类 / 重复 `run_command` 工具调用。
@@ -155,6 +221,42 @@ mod tests {
     use crate::types::Message;
 
     use crate::test_fixtures::{msg, step, tool_env};
+
+    /// 第 ② 层输入只含「任务原文 + 结构化证据」，**不得含 assistant 自述**。
+    ///
+    /// 这条是锚点机制成立的前提：一旦把自述喂给判定器，它就会顺着执行者自己的
+    /// 结论点头，`evidence_refs` 校验也就失去意义。
+    #[test]
+    fn judge_input_excludes_assistant_claim() {
+        let messages = vec![
+            msg("user", "跑通全部测试"),
+            tool_env(
+                "cargo_test",
+                "cargo test",
+                "退出码：0\n标准输出：\ntest result: ok. 100 passed; 0 failed",
+            ),
+            msg("assistant", "我已经全部改完并通过了所有测试"),
+        ];
+        let input = build_completion_judge_input(&messages);
+        assert_eq!(input.task, "跑通全部测试");
+        assert_eq!(input.evidence.len(), 1);
+        assert_eq!(input.evidence[0].id, "ev_1");
+        assert_eq!(input.evidence[0].kind, "verify");
+        assert_eq!(input.evidence[0].strength, "strong");
+        assert!(input.evidence[0].ok);
+        // 自述文本不得出现在判定输入的任何字段里。
+        let dumped = format!("{input:?}");
+        assert!(!dumped.contains("我已经全部改完"));
+    }
+
+    /// 无 user 任务 / 无工具消息时仍返回结构完整的空输入（不 panic）。
+    #[test]
+    fn judge_input_is_empty_safe() {
+        let messages = vec![msg("assistant", "你好")];
+        let input = build_completion_judge_input(&messages);
+        assert!(input.task.is_empty());
+        assert!(input.evidence.is_empty());
+    }
 
     #[test]
     fn build_task_heuristic_satisfied_does_not_allow_staged_early_exit() {
