@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use super::{ParsedToolOutput, tool_error_retryable_heuristic};
+use super::{ParsedToolOutput, error_text, tool_error_retryable_heuristic};
 
 /// 粗粒度失败分类（便于指标、重试策略与日志聚合；**不**保证与上游 HTTP 码一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -183,6 +183,9 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "search_in_files_workspace_outside_root"
         | "search_in_files_path_absolute_not_allowed"
         | "markdown_check_links_workspace_failed"
+        // `docs_health_sweep` 的两个阶段共用「工作区根不可解析」语义，须归同一档；
+        // 漏登记会落到 `ends_with("_failed")` 兜底 → `External`，与 markdown 侧不一致。
+        | "spell_workspace_failed"
         | "structured_diff_path_a_resolve_failed"
         | "structured_diff_path_b_resolve_failed"
         // `ToolContext` 未注入该工具所需运行时（如 `cfg` / semantic host / 长期记忆 host）；
@@ -303,7 +306,7 @@ impl ToolError {
 
     /// 未知工具名（与历史「未知工具：…」正文一致）。
     pub fn unknown_tool(name: &str) -> Self {
-        let message = format!("未知工具：{}", name);
+        let message = format!("{}：{}", error_text::UNKNOWN_TOOL_PREFIX, name);
         let parsed = super::parse_tool_output(name, &message);
         Self::from_parsed(name, &parsed, message)
     }

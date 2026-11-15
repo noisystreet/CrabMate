@@ -10,6 +10,8 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cm_tools::tool_result::error_text;
+
 /// 写盘未发生（校验失败 / 守卫拒绝 / I/O 失败）时统一追加的提示：目标文件保持原样（等价于回滚）。
 ///
 /// 各文件写盘工具（`modify_file` 各模式、`create_file`、`append_file`、`search_replace`）失败路径共享，
@@ -46,8 +48,11 @@ impl PrecheckFailure {
             None => rel_path.to_string(),
         };
         format!(
-            "校验失败（{}）：{}: {}\n{NOT_WRITTEN_HINT}（如需跳过校验写入，可设 skip_precheck=true）。",
-            self.code, loc, self.message
+            "{}{}）：{}: {}\n{NOT_WRITTEN_HINT}（如需跳过校验写入，可设 skip_precheck=true）。",
+            error_text::WRITE_PRECHECK_FAILED_PREFIX,
+            self.code,
+            loc,
+            self.message
         )
     }
 }
