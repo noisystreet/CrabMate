@@ -190,6 +190,31 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     out
 }
 
+/// 跑一次判定并**统一施加锚点校验**。
+///
+/// 返回 `None` 表示「判定不可用」（LLM 失败 / 超时 / 回复无法解析）——调用方据此
+/// 维持第 ① 层结论，**绝不因此早停**（fail-open，见设计 §6）。
+///
+/// 把校验放在这里而不是各实现内部，是为了让 mock 实现也无法绕过
+/// 「`satisfied` 必须引用硬证据」。
+pub async fn judge_and_validate(
+    judge: &dyn CompletionJudge,
+    input: CompletionJudgeInput,
+) -> Option<CompletionVerdict> {
+    let evidence = input.evidence.clone();
+    match judge.judge(input).await {
+        Ok(verdict) => Some(verdict.validate_against(&evidence)),
+        Err(e) => {
+            log::debug!(
+                target: "crabmate::completion_judge",
+                "completion_judge unavailable code={} (fail-open, keep tier-1 verdict)",
+                e.code
+            );
+            None
+        }
+    }
+}
+
 /// 完成判定器：生产实现调 LLM，测试用 mock。
 ///
 /// 之所以是 trait 而非直接函数：LLM 判定天生不确定。若嵌进判定路径，金样会随模型波动，

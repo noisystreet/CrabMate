@@ -93,6 +93,9 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) final_plan_semantic_check_enabled: Option<bool>,
     pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
+    pub(crate) completion_judge_enabled: Option<bool>,
+    pub(crate) completion_judge_max_tokens: Option<u64>,
+    pub(crate) completion_judge_model: Option<String>,
 }
 
 #[derive(Default)]

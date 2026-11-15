@@ -46,4 +46,21 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
         &mut b.per_plan_policy.final_plan_semantic_check_max_tokens,
         "CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS",
     );
+    env_override_completion_judge(b);
+}
+
+/// 完成判定第 ② 层（`docs/design/completion_judge.md` §7）。默认关。
+fn env_override_completion_judge(b: &mut ConfigBuilder) {
+    apply_bool(
+        &mut b.per_plan_policy.completion_judge_enabled,
+        "CM_COMPLETION_JUDGE_ENABLED",
+    );
+    apply_parse(
+        &mut b.per_plan_policy.completion_judge_max_tokens,
+        "CM_COMPLETION_JUDGE_MAX_TOKENS",
+    );
+    apply_nonempty_opt(
+        &mut b.per_plan_policy.completion_judge_model,
+        "CM_COMPLETION_JUDGE_MODEL",
+    );
 }
