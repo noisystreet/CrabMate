@@ -69,6 +69,11 @@ pub(crate) struct DelegatorParts<'a> {
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     pub request_audit: Option<Arc<crate::WebRequestAudit>>,
+    /// 父回合的 LLM 后端；`None` = 由子回合按 `cfg` 自建。
+    ///
+    /// 用 [`crate::cm_llm::shared_chat_backend`] 把父的引用包成 `Arc`（其契约正是「单轮内有效」）。
+    /// **必须透传**：否则测试 / e2e 注入的 mock backend 到不了子回合，子任务只能打真 HTTP。
+    pub llm_backend: Option<Arc<dyn crate::llm::ChatCompletionsBackend>>,
 }
 
 /// 子回合的 system：**收窄版，不是父 system 的副本**（设计 §5 / §135）。
@@ -112,6 +117,7 @@ pub(crate) struct CrabmateDelegator {
     long_term_memory_scope_id: Option<String>,
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     request_audit: Option<Arc<crate::WebRequestAudit>>,
+    llm_backend: Option<Arc<dyn crate::llm::ChatCompletionsBackend>>,
 }
 
 /// 派生交给子回合的工具集：**只读子集，且显式排除 `delegate_task` 自己**。
@@ -171,6 +177,7 @@ impl CrabmateDelegator {
             long_term_memory_scope_id: parts.long_term_memory_scope_id,
             tracing_chat_turn: parts.tracing_chat_turn,
             request_audit: parts.request_audit,
+            llm_backend: parts.llm_backend,
         }
     }
 
@@ -332,10 +339,9 @@ impl SubAgentDelegator for CrabmateDelegator {
             // 设计 §8 要求子回合走同一条 `dispatch_tool`，审批因此自动沿用。
             // P1 首版不给审批通道：需审批的调用会直接失败（比「静默放行」安全）。
             web_tool_ctx: None,
-            // 首版不透传父的 llm_backend：默认 `TurnEngine` 会按同一 `cfg` 自建后端。
-            // 透传需要 `&'static` 后端，与委托器的 `Send + Sync` 长期持有相冲突；
-            // 若将来要「子回合复用父的具体后端实例」，应改为持 `Arc<dyn ChatCompletionsBackend>`。
-            llm_backend: None,
+            // 透传父的后端（`shared_chat_backend` 包的 `Arc`，单轮内有效）。
+            // 不透传的话，测试 / e2e 注入的 mock backend 到不了子回合，子任务只能打真 HTTP。
+            llm_backend: self.llm_backend.as_deref(),
         }
         .into_turn_request(&mut window);
 
@@ -446,6 +452,7 @@ mod tests {
             long_term_memory_scope_id: None,
             tracing_chat_turn: None,
             request_audit: None,
+            llm_backend: None,
         }
     }
 
