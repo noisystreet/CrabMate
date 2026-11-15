@@ -86,8 +86,15 @@ pub struct SubTurnSpec<'a> {
     /// 那就必须真的把父的 broker 传进来。传 `None` 等于子任务失去 SSE 审批通道，
     /// 而 §8 并未就「子任务遇到需审批的工具怎么办」表态。
     ///
-    /// **P1 待决策**：填父 broker，还是 `None` 并让需审批的调用直接失败？
-    /// 这里显式要求调用方给值，而不是由装配器替产品决策。
+    /// **P1 已决策：填 `None`**（需审批的调用直接失败）。理由：
+    ///
+    /// 1. 子任务在父回合**阻塞期间**后台执行，审批请求只能推到父的 SSE 流——用户会看到
+    ///    「父回合卡住时突然弹审批」，且上下文里看不出是子任务发起的；
+    /// 2. 透传需把 `AgentTurnTransport.web_tool_ctx` 的引用类型改成 `Arc`（公开 API 变更）；
+    /// 3. 子 Agent 是 LLM，能让它在失败后换用无需审批的工具——`SUBAGENT_SYSTEM_PROMPT`
+    ///    已明确告知这条限制。
+    ///
+    /// 若将来要做真正的审批透传，需先解决「审批 UI 如何呈现子任务上下文」，单独评估。
     pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub llm_backend: Option<&'a (dyn crate::llm::ChatCompletionsBackend + 'static)>,
 }
