@@ -50,6 +50,16 @@ fn fixture_messages(name: &str) -> Vec<Message> {
             ),
             msg("assistant", "HPCG 编译完成成功。"),
         ],
+        // 专用 `cargo_test`：带结构化 `exit_code`，属**强**证据（#1387）。
+        "cargo_test_strong" => vec![
+            msg("user", "跑通全部测试"),
+            tool_env(
+                tool_names::CARGO_TEST,
+                "cargo test",
+                "退出码：0\n标准输出：\ntest result: ok. 100 passed; 0 failed",
+            ),
+            msg("assistant", "全部测试通过。"),
+        ],
         other => panic!("unknown fixture: {other}"),
     }
 }

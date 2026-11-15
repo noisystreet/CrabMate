@@ -80,6 +80,14 @@ pub fn log_turn_completion_decision(decision: TurnCompletionDecision, check: &'s
     );
 }
 
+/// 消息历史里是否存在**强**验证证据（专用工具 + 结构化退出码）。
+///
+/// 只用于「构建/测试类任务的早停该不该放行」这一处判断；采集逻辑在
+/// [`super::task_level_evidence::EvidenceSet`]，本函数只是取一个视图。
+fn has_strong_verify_evidence(messages: &[Message]) -> bool {
+    super::task_level_evidence::EvidenceSet::collect(messages).has_strong_verify_success()
+}
+
 fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision {
     if !matches!(
         check_active_user_goal_completion_evidence(messages),
@@ -94,7 +102,12 @@ fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision 
             reason: "no_active_user_task",
         };
     };
-    if generic_task_intent_implies_build_or_test(task) {
+    // 「任务像构建/测试」曾是无条件拒绝早停的保守闸。它的本意是对的——构建类任务的
+    // 完成最易误判——但它把**证据强度**一起忽略了：`run_command` 跑 `make` 只能靠
+    // `built target` 之类文本特征（弱证据），保守拒绝合理；而 `cargo_test` 带结构化
+    // `exit_code`（强证据）不该同等对待，否则「越规范地用专用工具，越判不出完成」。
+    // 因此：**弱证据维持拒绝，强证据放行**。
+    if generic_task_intent_implies_build_or_test(task) && !has_strong_verify_evidence(messages) {
         TurnCompletionDecision::DenyEarlyStop {
             reason: "build_or_test_intent",
         }
