@@ -375,6 +375,52 @@ fn assemble_run_loop_params<'a>(
         seed_override,
     } = asm;
 
+    // #839 P1：在**持有凭据的一侧**装配 delegator，只把能力对象交出去。
+    //
+    // 生命周期：`assemble_run_loop_params` 返回的 `RunLoopParams<'a>` 要活到整回合结束，
+    // 而局部 `Arc` 活不到。这里用 `Arc::leak` 换取 `'a` —— 与 `run_agent_turn` 单回合
+    // 作用域的生命周期一致（回合结束即整个 `RunLoopParams` 释放）。
+    //
+    // 仅在 `subagent_enabled = true` 时构造；默认关闭 → 零分配、零行为变化。
+    let delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator> =
+        if cfg.subagent.enabled {
+            let readonly_tools: Vec<crate::types::Tool> = tools_defs
+                .iter()
+                .filter(|t| {
+                    crate::cm_tools::registry_policy::is_readonly_tool(cfg, &t.function.name)
+                })
+                .cloned()
+                .collect();
+            let d = crate::agent::delegation::CrabmateDelegator::new(
+                crate::agent::delegation::DelegatorParts {
+                    engine: crate::turn_runner::default_turn_engine(),
+                    client,
+                    api_key,
+                    cfg,
+                    tools: &readonly_tools,
+                    effective_working_dir,
+                    workspace_is_set,
+                    permission: crate::agent::delegation::stages_from_parent_caps(
+                        &permission,
+                        session_mode,
+                    ),
+                    allowed_tool_names: turn_allowed_tool_names.clone(),
+                    process_handles: process_handles.clone(),
+                    read_file_turn_cache: read_file_turn_cache.clone(),
+                    system_prompt: &cfg.roles_prompts.system_prompt,
+                    cancel: cancel.clone(),
+                    long_term_memory: long_term_memory.clone(),
+                    long_term_memory_scope_id: long_term_memory_scope_id.clone(),
+                    tracing_chat_turn: tracing_chat_turn.clone(),
+                    request_audit: request_audit.clone(),
+                },
+            );
+            // `readonly_tools` 只在这一支里用：delegator 已 `to_vec()` 复制，可以安全丢弃。
+            Some(&*Box::leak(Box::new(d)))
+        } else {
+            None
+        };
+
     RunLoopParams {
         ctx: RunLoopCtx {
             core: RunLoopCore {
@@ -385,6 +431,7 @@ fn assemble_run_loop_params<'a>(
                 tools_defs,
                 effective_working_dir,
                 workspace_is_set,
+                delegator,
             },
             io: RunLoopIo {
                 no_stream,

@@ -205,6 +205,10 @@ async fn serial_execute_one_tool_call(
         host.dispatch_tool_call(
             name.as_str(),
             tool_registry::DispatchToolParams {
+                // #839 P1：能力对象来自 agent 层装配的 delegator（`None` = 未启用）。
+                delegation: tool_registry::DispatchToolDelegation {
+                    delegator: st.env.delegator,
+                },
                 runtime,
                 call: tool_registry::DispatchToolCall {
                     name: &name,

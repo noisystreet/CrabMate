@@ -79,6 +79,7 @@ mod tests {
         };
         let (out, inject) = mock
             .dispatch(DispatchToolParams {
+                delegation: Default::default(),
                 runtime,
                 call: DispatchToolCall {
                     name: "json_format",

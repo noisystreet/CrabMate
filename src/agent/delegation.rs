@@ -87,6 +87,23 @@ pub(crate) struct CrabmateDelegator {
     request_audit: Option<Arc<crate::WebRequestAudit>>,
 }
 
+/// 由父回合**已生效**的能力快照反推子回合的四档输入。
+///
+/// 父的 `caps.level()` 已经过完整 `min` 链（角色上限 / 会话模式 / 请求 / 持久意图），
+/// 因此子回合用 `(None, session_mode, Some(父级别), None)` 再跑一次 `min` 链，
+/// 结果必然 **≤ 父的生效等级** —— 这就是「不可提权」，且不依赖把 stages 逐层透传。
+pub(crate) fn stages_from_parent_caps(
+    caps: &dyn crate::cm_agent::permission::PolicyEngine,
+    session_mode: crate::cm_types::SessionMode,
+) -> TurnPermissionStages {
+    TurnPermissionStages {
+        role_max: None,
+        session_mode,
+        requested: Some(caps.level()),
+        persisted: None,
+    }
+}
+
 impl CrabmateDelegator {
     pub(crate) fn new(parts: DelegatorParts<'_>) -> Self {
         Self {

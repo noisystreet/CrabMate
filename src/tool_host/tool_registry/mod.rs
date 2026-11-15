@@ -17,7 +17,8 @@ mod policy;
 mod runtime;
 
 pub use execute::{
-    DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams, DispatchToolPolicy,
+    DispatchToolCall, DispatchToolDelegation, DispatchToolMemory, DispatchToolObs,
+    DispatchToolParams, DispatchToolPolicy,
     DispatchToolWorkspace, dispatch_tool,
 };
 pub use execute::{

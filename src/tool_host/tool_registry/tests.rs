@@ -179,6 +179,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, payload) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
             name: "json_format",
@@ -233,6 +234,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, _) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
             name: "json_format",
@@ -288,6 +290,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
     let (out, _) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
             name: "http_fetch",
@@ -347,6 +350,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     };
     let mut wc_start = false;
     let (start_out, start_payload) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_start,
             ctx: None,
@@ -418,6 +422,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     };
     let mut wc_status = false;
     let (status_out, status_payload) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_status,
             ctx: None,
@@ -467,6 +472,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     };
     let mut wc_list = false;
     let (list_out, _) = dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_list,
             ctx: None,
@@ -526,6 +532,7 @@ async fn dispatch_json_format_with_workspace(
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
     dispatch_tool(DispatchToolParams {
+        delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut workspace_changed,
             ctx: None,

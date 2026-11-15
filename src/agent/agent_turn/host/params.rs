@@ -49,6 +49,11 @@ pub(crate) struct RunLoopCore<'a> {
     pub tools_defs: &'a [crate::types::Tool],
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
+    /// 子 Agent 委托能力（#839 P1）；`None` = `subagent_enabled = false`（默认）或未接线。
+    ///
+    /// 由 `run_agent_turn` 在持有凭据的一侧装配后交出引用；工具层拿到的只是这个能力对象，
+    /// **看不到 `client` / `api_key`**。
+    pub delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
 }
 
 /// 环内**整场不变**的输入，供执行层逐层透传。
@@ -66,6 +71,11 @@ pub(crate) struct LoopEnv<'a> {
     pub tools_defs: &'a [crate::types::Tool],
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
+    /// 子 Agent 委托能力（#839 P1）。
+    ///
+    /// 正是本结构文档里预留的「真正有用到它们的环级能力」：执行层要把这个能力对象
+    /// 透到 `DispatchToolParams.delegation`，而它**不含**任何凭据。
+    pub delegator: Option<&'a dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
 }
 
 impl<'a> RunLoopCore<'a> {
@@ -76,6 +86,7 @@ impl<'a> RunLoopCore<'a> {
             tools_defs: self.tools_defs,
             effective_working_dir: self.effective_working_dir,
             workspace_is_set: self.workspace_is_set,
+            delegator: self.delegator,
         }
     }
 }
