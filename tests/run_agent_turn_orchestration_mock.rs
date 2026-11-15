@@ -167,11 +167,13 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
     );
 }
 
-async fn run_mock_agent_turn(
+async fn run_mock_agent_turn<B>(
     cfg: Arc<AgentConfig>,
     messages: &mut Vec<Message>,
-    backend: &'static SequencedMockBackend,
-) {
+    backend: &'static B,
+) where
+    B: ChatCompletionsBackend + 'static,
+{
     let client = reqwest::Client::new();
     let tools = build_tools();
     let work_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -460,5 +462,131 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
         tool_msg_count >= 1,
         "at least one tool round should execute; roles: {:?}",
         messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
+    );
+}
+
+/// 按「judge / 主循环」分流计数的 mock 后端。
+///
+/// judge 的 system 以「任务完成度审计员」开头，据此与主循环 planner 调用区分。
+#[derive(Debug)]
+struct JudgeCountingBackend {
+    main_responses: Vec<Message>,
+    main_seq: AtomicUsize,
+    judge_calls: AtomicUsize,
+    main_calls: AtomicUsize,
+}
+
+impl JudgeCountingBackend {
+    fn new(main_responses: Vec<Message>) -> Self {
+        Self {
+            main_responses,
+            main_seq: AtomicUsize::new(0),
+            judge_calls: AtomicUsize::new(0),
+            main_calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn judge_calls(&self) -> usize {
+        self.judge_calls.load(Ordering::SeqCst)
+    }
+}
+
+fn is_judge_request(req: &ChatRequest) -> bool {
+    req.messages
+        .first()
+        .and_then(|m| message_content_as_str(&m.content))
+        .is_some_and(|s| s.contains("审计员"))
+}
+
+#[async_trait]
+impl ChatCompletionsBackend for JudgeCountingBackend {
+    async fn stream_chat(
+        &self,
+        _params: &StreamChatParams<'_>,
+        req: &mut ChatRequest,
+    ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+        if is_judge_request(req) {
+            self.judge_calls.fetch_add(1, Ordering::SeqCst);
+            // 恒判 unsatisfied：不触发早停，好让外循环继续跑到预设轮数。
+            return Ok((
+                Message::assistant_only(r#"{"status":"unsatisfied"}"#),
+                "stop".to_string(),
+            ));
+        }
+        self.main_calls.fetch_add(1, Ordering::SeqCst);
+        let idx = self.main_seq.fetch_add(1, Ordering::SeqCst);
+        let msg = self
+            .main_responses
+            .get(idx)
+            .or_else(|| self.main_responses.last())
+            .cloned()
+            .ok_or_else(|| "JudgeCountingBackend: empty response sequence".to_string())?;
+        let finish = if msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
+            "tool_calls"
+        } else {
+            "stop"
+        };
+        Ok((msg, finish.to_string()))
+    }
+}
+
+fn readonly_tool_round(id: &str) -> Message {
+    Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: id.to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "text_transform".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    }
+}
+
+/// **量化 judge 的实际触发次数**（不是「理论上」）。
+///
+/// 场景：只读分析任务（第 ① 层恒 `NotApplicable`）+ N 轮工具批，judge 恒判 unsatisfied
+/// 使轮次跑满。
+///
+/// 期望行为：**每轮产生新证据才问一次**。因此 N 轮 → N 次。若某轮没有新工具，
+/// 指纹不变，不再问。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completion_judge_call_count_tracks_new_evidence() {
+    let mut cfg = (*cfg_freeform_turn()).clone();
+    cfg.per_plan_policy.completion_judge_enabled = true;
+    let cfg = Arc::new(cfg);
+
+    let rounds = 5usize;
+    let mut responses: Vec<Message> = (0..rounds)
+        .map(|i| readonly_tool_round(&format!("call_judge_{i}")))
+        .collect();
+    responses.push(Message::assistant_only(
+        "分析完成，当前项目包含若干目录，总结如上。".to_string(),
+    ));
+
+    let backend: &'static JudgeCountingBackend =
+        Box::leak(Box::new(JudgeCountingBackend::new(responses)));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("分析当前项目的目录结构".to_string()),
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+
+    let calls = backend.judge_calls();
+    eprintln!(
+        "PROBE completion_judge_calls={calls} (rounds={rounds}, main_calls={})",
+        backend.main_calls.load(Ordering::SeqCst)
+    );
+    assert!(calls >= 1, "开启后至少应问一次（否则说明接线未生效）");
+    // 每回合硬上限 3：即使 5 轮都有新证据（5 个不同指纹），也只允许问 3 次。
+    assert_eq!(
+        calls, 3,
+        "应恰好停在每回合上限 3（rounds={rounds}），got {calls}"
     );
 }
