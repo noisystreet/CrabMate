@@ -279,6 +279,108 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use crate::cm_llm::StreamChatParams;
+    use crate::cm_types::ChatRequest;
+
+    /// 测试用 stub 后端：固定返回一次响应（或固定失败）。
+    ///
+    /// 经 `complete_chat_retrying` 间接调用，所以**不需要**自己构造
+    /// `StreamChatParams`（那要 25+ 方法的 `StreamChatHost`）。
+    struct StubBackend(Result<(Message, String), String>);
+
+    #[async_trait]
+    impl ChatCompletionsBackend for StubBackend {
+        async fn stream_chat(
+            &self,
+            _params: &StreamChatParams<'_>,
+            _req: &mut ChatRequest,
+        ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+            match &self.0 {
+                Ok((m, f)) => Ok((m.clone(), f.clone())),
+                Err(e) => Err(e.clone().into()),
+            }
+        }
+    }
+
+    fn judge_input() -> CompletionJudgeInput {
+        CompletionJudgeInput {
+            task: "跑通全部测试".to_string(),
+            evidence: vec![JudgedEvidence {
+                id: "ev_1".to_string(),
+                kind: "verify".to_string(),
+                strength: "strong".to_string(),
+                tool: "cargo_test".to_string(),
+                ok: true,
+                exit_code: Some(0),
+                detail: "test result: ok".to_string(),
+            }],
+        }
+    }
+
+    /// 跑一次真实 `judge()`（LLM 侧走 stub），失败时返回分类码。
+    async fn run_judge(
+        backend: &StubBackend,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<CompletionVerdict, String> {
+        let cfg = Arc::new(crate::cm_config::load_config(None).expect("嵌入默认配置应可加载"));
+        let client = reqwest::Client::new();
+        let judge = LlmCompletionJudge::new(LlmJudgeCtx {
+            llm_backend: backend,
+            client: &client,
+            api_key: "test-key",
+            cfg: &cfg,
+            cancel,
+            turn_budget: None,
+            model_override: None,
+            max_tokens: 512,
+        });
+        judge.judge(judge_input()).await.map_err(|e| e.code)
+    }
+
+    /// 正常路径：模型按约定 JSON 回答 → 解析成 `Satisfied`。
+    #[tokio::test]
+    async fn judge_returns_parsed_verdict_on_good_reply() {
+        let backend = StubBackend(Ok((
+            Message::assistant_only(r#"{"status":"satisfied","evidence_refs":["ev_1"]}"#),
+            "stop".to_string(),
+        )));
+        let v = run_judge(&backend, None).await.expect("应成功");
+        assert_eq!(v.status, CompletionStatus::Satisfied);
+        assert_eq!(v.evidence_refs, vec!["ev_1".to_string()]);
+    }
+
+    /// 取消已置位 → 直接返回取消码，**不发起 LLM 调用**。
+    ///
+    /// backend 故意给「不该被用到」的失败响应：若代码真去调它，错误码会不同。
+    #[tokio::test]
+    async fn judge_short_circuits_when_cancelled() {
+        let cancel = AtomicBool::new(true);
+        let backend = StubBackend(Err("不应被调用".to_string()));
+        let code = run_judge(&backend, Some(&cancel)).await.expect_err("应失败");
+        assert_eq!(code, "completion_judge_cancelled");
+    }
+
+    /// LLM 调用失败 → 返回可识别码（调用方据此 fail-open）。
+    #[tokio::test]
+    async fn judge_reports_llm_failure() {
+        let backend = StubBackend(Err("boom".to_string()));
+        let code = run_judge(&backend, None).await.expect_err("应失败");
+        assert_eq!(code, "completion_judge_llm_failed");
+    }
+
+    /// 模型答非约定 JSON → 返回 bad_reply 码（调用方据此 fail-open，绝不早停）。
+    #[tokio::test]
+    async fn judge_reports_bad_reply() {
+        let backend = StubBackend(Ok((
+            Message::assistant_only("我觉得差不多完成了"),
+            "stop".to_string(),
+        )));
+        let code = run_judge(&backend, None).await.expect_err("应失败");
+        assert_eq!(code, "completion_judge_bad_reply");
+    }
 
     fn ev(id: &str, kind: &str, ok: bool) -> JudgedEvidence {
         JudgedEvidence {
