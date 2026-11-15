@@ -82,7 +82,20 @@ pub(crate) struct PerTurnCounters {
     /// 50 次判定请求。用「证据是否变化」而不是「是否问过」来判断：有新证据才值得再问，
     /// 同一份事实重复问没有意义。
     pub(crate) completion_judge_evidence_fingerprint: Option<u64>,
+    /// 本回合已询问完成判定第 ② 层的次数。
+    ///
+    /// 光靠指纹去重不够：**每轮新工具调用都会改变指纹**，实测 5 轮工具批 = 5 次调用。
+    /// 早停门的价值在于省下**后续**轮次，而任务刚开始时即使判出完成也只省一两轮——
+    /// 收益远小于一次 LLM 往返。因此加每回合硬上限，默认
+    /// [`MAX_COMPLETION_JUDGE_CALLS_PER_TURN`]。
+    pub(crate) completion_judge_calls: u32,
 }
+
+/// 每回合最多询问完成判定第 ② 层的次数。
+///
+/// 取 3 的理由：早停若真有价值，通常在前几轮就能判出来；再多问已属边际收益递减。
+/// 需要更大额度时再升为配置键（届时同步 `docs/配置说明.md`）。
+pub(crate) const MAX_COMPLETION_JUDGE_CALLS_PER_TURN: u32 = 3;
 
 impl PerTurnCounters {
     pub(crate) fn new() -> Self {
@@ -90,15 +103,23 @@ impl PerTurnCounters {
             plan_rewrite_attempts: 0,
             outer_loop_reflect: OuterLoopReflectMemo::new(),
             completion_judge_evidence_fingerprint: None,
+            completion_judge_calls: 0,
         }
     }
 
-    /// 本次该不该问第 ② 层：证据指纹与上次相同则跳过，否则记录下来并放行。
+    /// 本次该不该问第 ② 层。
+    ///
+    /// 两道闸：① 每回合总次数不超过 [`MAX_COMPLETION_JUDGE_CALLS_PER_TURN`]（成本上限）；
+    /// ② 证据指纹与上次相同则跳过（同一份事实重复问没意义）。任一不满足即不调用 LLM。
     pub(crate) fn take_completion_judge_slot(&mut self, fingerprint: u64) -> bool {
+        if self.completion_judge_calls >= MAX_COMPLETION_JUDGE_CALLS_PER_TURN {
+            return false;
+        }
         if self.completion_judge_evidence_fingerprint == Some(fingerprint) {
             return false;
         }
         self.completion_judge_evidence_fingerprint = Some(fingerprint);
+        self.completion_judge_calls = self.completion_judge_calls.saturating_add(1);
         true
     }
 
@@ -321,5 +342,25 @@ mod completion_judge_slot_tests {
     fn fresh_counters_allow_first_slot() {
         let mut c = PerTurnCounters::new();
         assert!(c.take_completion_judge_slot(0));
+    }
+
+    /// **每回合硬上限**：即使每轮都有新证据，调用次数也不得超过上限。
+    ///
+    /// 这条是成本护栏——实测 5 轮工具批会产生 5 个不同指纹，
+    /// 只靠指纹去重挡不住，必须叠加次数上限。
+    #[test]
+    fn slot_is_capped_per_turn_even_with_changing_evidence() {
+        let mut c = PerTurnCounters::new();
+        let mut allowed = 0u32;
+        for i in 0..50u64 {
+            if c.take_completion_judge_slot(i) {
+                allowed += 1;
+            }
+        }
+        assert_eq!(
+            allowed,
+            super::MAX_COMPLETION_JUDGE_CALLS_PER_TURN,
+            "证据持续变化时也必须停在每回合上限"
+        );
     }
 }
