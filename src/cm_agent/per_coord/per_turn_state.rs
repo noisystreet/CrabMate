@@ -75,6 +75,13 @@ impl OuterLoopReflectMemo {
 pub(crate) struct PerTurnCounters {
     pub(crate) plan_rewrite_attempts: usize,
     pub(crate) outer_loop_reflect: OuterLoopReflectMemo,
+    /// 上次询问完成判定第 ② 层（LLM）时的**证据指纹**；`None` = 本回合尚未问过。
+    ///
+    /// 存在的理由：早停门在**每个工具批之后**都会走一次（`outer_loop` 的外循环内），
+    /// 而第 ① 层对综合任务恒为 `NotApplicable`。若不做去重，一个 50 轮的长任务会发
+    /// 50 次判定请求。用「证据是否变化」而不是「是否问过」来判断：有新证据才值得再问，
+    /// 同一份事实重复问没有意义。
+    pub(crate) completion_judge_evidence_fingerprint: Option<u64>,
 }
 
 impl PerTurnCounters {
@@ -82,7 +89,17 @@ impl PerTurnCounters {
         Self {
             plan_rewrite_attempts: 0,
             outer_loop_reflect: OuterLoopReflectMemo::new(),
+            completion_judge_evidence_fingerprint: None,
         }
+    }
+
+    /// 本次该不该问第 ② 层：证据指纹与上次相同则跳过，否则记录下来并放行。
+    pub(crate) fn take_completion_judge_slot(&mut self, fingerprint: u64) -> bool {
+        if self.completion_judge_evidence_fingerprint == Some(fingerprint) {
+            return false;
+        }
+        self.completion_judge_evidence_fingerprint = Some(fingerprint);
+        true
     }
 
     pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
@@ -277,5 +294,32 @@ impl SuccessfulRunCommandDedupeMemo {
 
     pub(crate) fn clear_all(&mut self) {
         self.outputs.clear();
+    }
+}
+
+#[cfg(test)]
+mod completion_judge_slot_tests {
+    use super::PerTurnCounters;
+
+    /// **同一份证据不得重复放行**：早停门在每个工具批之后都会走一次，
+    /// 不去重则长任务每轮发一次判定请求。
+    #[test]
+    fn slot_is_taken_once_per_fingerprint() {
+        let mut c = PerTurnCounters::new();
+        let fp = 42u64;
+        assert!(c.take_completion_judge_slot(fp), "首次应放行");
+        assert!(!c.take_completion_judge_slot(fp), "同一指纹第二次必须跳过");
+        assert!(!c.take_completion_judge_slot(fp), "仍然跳过");
+        assert!(
+            c.take_completion_judge_slot(fp + 1),
+            "证据变化后应重新放行"
+        );
+    }
+
+    /// 新回合从「未问过」开始。
+    #[test]
+    fn fresh_counters_allow_first_slot() {
+        let mut c = PerTurnCounters::new();
+        assert!(c.take_completion_judge_slot(0));
     }
 }
