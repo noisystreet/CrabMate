@@ -48,4 +48,6 @@ pub(crate) use workspace_changelog::workspace_changelog_handler;
 #[cfg(test)]
 mod conversation_delete_http_tests;
 #[cfg(test)]
+mod conversation_messages_http_tests;
+#[cfg(test)]
 mod upload_http_tests;

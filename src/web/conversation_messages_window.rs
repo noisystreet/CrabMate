@@ -97,4 +97,25 @@ mod tests {
         assert!(w.meta.has_older);
         assert_eq!(w.meta.window_start_index, 4);
     }
+
+    #[test]
+    fn zero_limit_returns_full() {
+        // 契约写的是「省略或 `0` → 过滤后的全量」；`0` 不能退化成空窗口。
+        let all = vec![user_msg("a"), user_msg("b")];
+        let w = slice_messages_for_client_window(&all, Some(0), None);
+        assert_eq!(w.messages.len(), 2);
+        assert!(!w.meta.has_older);
+        assert_eq!(w.meta.window_start_index, 0);
+    }
+
+    #[test]
+    fn before_index_past_end_clamps_to_tail_page() {
+        // 客户端拿着过期游标（会话被分支截短等）：钳到尾部一页，既不 panic 也不返回空窗口。
+        let all: Vec<_> = (0..10).map(|i| user_msg(&format!("m{i}"))).collect();
+        let w = slice_messages_for_client_window(&all, Some(3), Some(99));
+        assert_eq!(w.messages.len(), 3);
+        assert!(w.meta.has_older);
+        assert_eq!(w.meta.window_start_index, 7);
+        assert_eq!(w.meta.total_count, 10);
+    }
 }
