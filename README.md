@@ -147,7 +147,7 @@ Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Debug / **`GET /w
 
 | Method | Command / notes |
 | --- | --- |
-| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.8.0`**, default feature **`server`**; git tag **`v0.8.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)** manually if needed. |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **latest stable**, default feature **`server`**; released as git tag **`vX.Y.Z`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** / **[man/crabmatectl.1](man/crabmatectl.1)** manually if needed. |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, **`man/`** (`crabmate.1` + `crabmatectl.1`), **`systemd/`** (system-level), **`systemd-user/`** (user-unit example), **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
 | **Bump version** | **`make set-version VERSION=X.Y.Z[-pre]`** — rewrites `[package] version`, re-resolves `Cargo.lock`, regenerates `docs/openapi.json` and both `man/*.1`, then prints the `CHANGELOG.md` heading + link-reference skeleton (prose stays manual). Writes files only: no commit, no tag, no push. Guarded by `scripts/check-version-sync.sh` in pre-commit and CI. |
