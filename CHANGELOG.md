@@ -10,8 +10,58 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-15
+
+**First stable tag since `v0.8.0`.** The `0.8.1` line only ever shipped as **pre-releases** (`v0.8.1-alpha.0` →
+  `v0.8.1-alpha.1` → `v0.8.1-beta.0` → `v0.8.1-beta.1`), so this is the first artifact set on the release track after
+  **`v0.8.0`**. crates.io remains **`0.8.0`** (`cargo install crabmate` does not pick this up); install from the
+  GitHub Release tarball / `.deb`, or `cargo install --path .` / `--git` at this tag.
+
+One entry below is **BREAKING**, and it is the reason this is a minor bump rather than another `0.8.x` pre-release:
+  `crabmatectl up|down|ls` no longer parse — the subcommands are `start` / `stop` / `list`, with **no aliases** (this
+  lands pre-1.0, so the old spellings stop immediately). Everything else is additive and **default-off**, so an
+  untouched deployment behaves as before: `delegate_task` (`subagent_enabled`) and the completion judge
+  (`completion_judge_enabled`) change nothing until switched on, the control-plane `restart` / `status` ops and
+  `supervise --dry-run --json` are new surfaces only, and the `env_file` credential channel is opt-in per
+  declaration. **No SSE / HTTP wire change in this round** — `SSE_PROTOCOL_VERSION` stays **v2**.
+
 ### Added
 
+- **`delegate_task` lets the model hand a bounded read-only sub-task to a child agent (default off).** With
+  `subagent_enabled = true` the tool is injected and the model can delegate the work whose exploration surface is
+  large, or whose tool log should not land in this turn: the child runs in its **own message window and budget** and
+  returns a bounded report (`subagent_max_report_chars`, default 4000) instead of flushing its transcript into the
+  parent. Three boundaries are deliberate. **Off means not injected**, not "injected then refused", so the model
+  cannot loop on a call that is bound to fail. **The child only reaches the read-only subset** (derived from
+  `is_readonly_tool`) at the parent turn's `min` permission, and `delegate_task` is excluded from the child's own
+  tool set, so nesting cannot recurse — `subagent_max_depth` accepts **only `1`** and a larger value fails config
+  load instead of silently doing nothing. **A busted child is not contagious**: budget exhaustion, cancellation or
+  failure surfaces as a report status (`budget_exhausted`, …) and the parent turn keeps going.
+  `subagent_max_llm_calls` (8) and `subagent_max_wall_secs` (300) are clamped against the parent quota — stricter
+  only, never looser — and there is deliberately no `max_tool_calls` key, since the turn budget has LLM-count /
+  token / wall-clock axes and nothing to apply a tool cap to. `self_config_info` gained a `subagent` section.
+  Design: `docs/design/subagent_delegation.md`.
+- **Turn completion is now a two-layer verdict: structured evidence first, an optional LLM judge second (default
+  off).** The old evidence check read as objective but was a keyword / exit-code heuristic, and §3.2 of
+  `docs/design/agent_autonomy_enhancement.md` measured the three ways it failed: the **same** fact came out
+  `Satisfied` through `run_command cargo test` and `NotApplicable` through the dedicated `cargo_test` tool, a
+  write-only turn was `Satisfied` with **zero** verification, and the assistant's own narration was part of the
+  decision. Layer ① now only **collects** typed evidence — exit codes (dedicated `cargo_test` / `cargo_check` /
+  `cargo_clippy` included), file writes, test pass/fail counts, diff excerpts — carrying a `strong` / `weak`
+  strength; it states what happened and never claims completion, stays LLM-free, and is golden-testable, so the
+  tool-name asymmetry cannot come back. Layer ② (`completion_judge_enabled`, default `false`) answers the part layer
+  ① cannot — whether those facts are **enough** for a composite task ("refactor X without changing behaviour") or a
+  read-only analysis. Its input is the task plus the evidence and **deliberately not the transcript**; a `satisfied`
+  answer must cite non-empty `evidence_refs` with at least one successful `verify` / `write` record or it is
+  downgraded to `unsatisfied`; and an API failure or unparsable answer keeps layer ①'s verdict — fail-open, so it
+  can promote `NotApplicable` but **never vetoes** a certain conclusion and never early-stops on its own failure.
+  Cost is bounded twice: at most **3** judge calls per turn (`MAX_COMPLETION_JUDGE_CALLS_PER_TURN`) plus an
+  evidence-fingerprint dedupe, so a tool-heavy turn cannot mint one LLM call per batch.
+  `completion_judge_max_tokens` (512) and `completion_judge_model` (empty = the default model) size the request, and
+  the judge model is **not** required to differ from the executor — single-model deployments (local Ollama,
+  one-model gateway) must stay usable, so self-report bias is answered mechanically ("no narration + mandatory
+  anchors") rather than by swapping models. The switch is separate from `final_plan_semantic_check_*` on purpose:
+  different consumers, and one shared switch would mean "want one, enable two".
 - **The user-level systemd unit is now `Type=notify` (#1355 F).** `systemctl --user start` used to return as soon
   as the `crabmatectl` process existed; it now blocks until the **first reconcile round** finished, i.e. until every
   planned instance is TCP-reachable or has timed out. `crabmatectl` sends `READY=1` plus a `STATUS=` line
@@ -3061,7 +3111,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.1...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.1...v0.9.0
 [0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.1
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
