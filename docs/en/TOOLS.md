@@ -113,6 +113,17 @@ This document describes built-in tools, common function-calling JSON examples, a
 
 ## Built-in tools (model-callable)
 
+**`delegate_task` sub-agent delegation (off by default):** With `subagent_enabled = true` the model can dispatch a **bounded read-only
+  sub-task** that runs in its **own message window and budget** and returns only a bounded summary — tool logs never flow back into the
+  parent turn. **When off, the tool is not injected at all** (the model cannot see it).
+  **Use it for:** broad exploration, context isolation, or "what is this directory/code roughly about". **Do not use it for** reading a
+  single file or running one search — that just turns one call into a whole sub-turn at higher cost.
+  Sub-tasks can only use the **read-only tool subset** (derived from `is_readonly_tool`; write tools cannot be injected) and inherit the
+  parent's `min` permission chain. Exhausted budget / cancel / failure surface as a single report with status such as
+  `budget_exhausted` and **never abort the parent turn**.
+  The only argument is `prompt` — depth, budget, toolset and report caps are all decided server-side from the parent turn state and
+  cannot be widened by the model.
+
 **Choosing `run_command` vs `terminal_session`:** Prefer **`run_command`** for non-interactive, one-shot commands (builds, queries,
   scripts that exit when done). Use **`terminal_session`** only when the program needs a **TTY** (full-screen interaction, raw terminal control,
   or multiple rounds of input/output in the **same** pseudo-terminal). **`terminal_session`** is **Linux PTY only** and is unavailable when
