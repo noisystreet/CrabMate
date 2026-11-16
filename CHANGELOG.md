@@ -10,6 +10,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tool-batch early stop no longer ends a turn without a final answer (#1414).** The gate runs after every
+  tool batch and used to stop the loop even when that round's assistant produced only `tool_calls` — the user
+  saw tool output, no answer, and `stream_ended: completed`, because the terminal fallback could only replay a
+  reasoning fragment. It now requires a visible final answer for the turn, and otherwise injects the existing
+  "missing final answer" nudge and continues one more round.
+- **A successful verify run only counts as done when the task asks for build/test.** The generic evidence
+  fallback treated any successful `cargo_check` / `cargo_test` as proof the goal was met, so an unrelated or
+  mixed task was marked complete mid-flight (measured: a turn whose user message was just `1+2` was stopped
+  right after a passing `cargo_check`). Non-build tasks now fall through to the semantic layer instead.
+- **Only a text-only assistant turn counts as the final answer before early stop (#1414).** Counting any
+  assistant body ≥24 chars let a "here is my plan, now I will run the tests" narration satisfy the gate, so a
+  turn could still stop before the user saw a conclusion. Narration that carries `tool_calls` no longer counts.
+- **A turn ending with tools but no answer now gets a deterministic closing summary.** The missing-final-answer
+  nudge has a 2-injection budget; once exhausted the terminal fallback had nothing to emit and the turn ended
+  with tool output only. It now falls back to a single-line, truncated digest of the last tool result
+  (`stream_ended: fallback`).
+
 ## [0.9.0] - 2026-11-15
 
 **First stable tag since `v0.8.0`.** The `0.8.1` line only ever shipped as **pre-releases** (`v0.8.1-alpha.0` →

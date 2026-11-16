@@ -17,6 +17,8 @@ use super::outer_loop_build_idle::{
 use crate::agent::agent_turn::policy::outer_loop_fsm::ReflectBranchCtl;
 use crate::agent::agent_turn::policy::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use super::turn_completion::{
+    OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX,
+    outer_loop_has_visible_final_answer_since_last_user, outer_loop_missing_final_answer_feedback_body,
     outer_loop_missing_final_answer_feedback_if_needed, outer_loop_truncated_feedback_if_needed,
 };
 use crate::agent::agent_turn::errors::sse_plan_rewrite_exhausted_body;
@@ -131,6 +133,36 @@ pub(super) fn outer_loop_inject_truncated_feedback_after_tools(
     );
     push_pre_gate_user_feedback(p, feedback);
     per_coord.record_outer_loop_truncated_feedback_injected();
+    sync_per_flight_from_coord(p, per_coord);
+    true
+}
+
+/// 早停门放行、但本轮**尚无可见终答**时的纠偏注入（#1414）；返回 `true` 表示已注入、
+/// 调用方必须继续外循环以消费它。
+///
+/// 与 [`outer_loop_inject_truncated_feedback_after_tools`] 同构（同层、同副作用顺序），
+/// 差别只在触发条件：这里问的是「消费者拿到答案了吗」，而不是「上游是否截断」。
+/// 预算与 stop-turn 路径共享
+/// [`OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX`]，因此天然有界，不会与外循环上限死磕。
+pub(super) fn outer_loop_inject_missing_final_answer_feedback_after_tools(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> bool {
+    if outer_loop_has_visible_final_answer_since_last_user(p.turn.messages()) {
+        return false;
+    }
+    if per_coord.outer_loop_missing_final_answer_feedback_injected()
+        >= OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX
+    {
+        return false;
+    }
+    info!(
+        target: "crabmate::agent_turn",
+        "outer loop pre-gate after tools: {}",
+        OuterLoopReflectPreGateReason::MissingFinalAnswerFeedback.as_str(),
+    );
+    push_pre_gate_user_feedback(p, outer_loop_missing_final_answer_feedback_body());
+    per_coord.record_outer_loop_missing_final_answer_feedback_injected();
     sync_per_flight_from_coord(p, per_coord);
     true
 }

@@ -92,6 +92,10 @@
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`）。**`truncated`**：上游 `finish_reason == "length"`（token 上限）或流在 `[DONE]` 前被切断（无正常收尾）；层 1 截断识别，优先级高于 `fallback` / `completed` / `no_output` | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
+**`reason == "fallback"`**：本轮没有任何 `final_response` 时间线，服务端已合成终答补发。来源可能是末条助手的思维链，
+也可能是**最后一次工具结果摘要**（早停门的「终答缺失」纠偏预算耗尽后仍无正文时，见 #1414）。客户端按普通终答渲染，
+不要据此断定模型「正常作答」。
+
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
   未知 kind 应忽略）。

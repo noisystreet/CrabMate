@@ -245,6 +245,75 @@ async fn fallback_truncates_overlong_reasoning() {
     );
 }
 
+// 层 4b（#1414）：末条助手无正文、也无可回填思维链时，用**最后一次工具结果摘要**兜底终答。
+// 场景即早停门的终答纠偏预算耗尽后仍以 tool-only 收尾，必须让消费者拿到「跑了什么、结果如何」。
+// 摘要须单行化并截断，避免把整段工具输出搬进终答。
+#[tokio::test]
+async fn fallback_uses_last_tool_result_when_no_body_or_reasoning() {
+    let flight = PerTurnFlight::default();
+    let job_id = 48_u64;
+    let (tx, mut rx) = mpsc::channel::<String>(8);
+
+    let mut tool_only = Message::assistant_only("");
+    tool_only.content = None;
+    tool_only.tool_calls = Some(vec![ToolCall {
+        id: "call_1".to_string(),
+        typ: "function".to_string(),
+        function: FunctionCall {
+            name: "cargo_test".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+    let mut long_output = String::from("退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed\n");
+    long_output.push_str(&"日志".repeat(1200));
+    let messages = vec![
+        Message::user_only("跑通全部测试，然后回报结果"),
+        tool_only,
+        Message {
+            role: "tool".to_string(),
+            content: Some(long_output.into()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("cargo_test".to_string()),
+            tool_call_id: Some("call_1".to_string()),
+        },
+    ];
+
+    assert!(emit_missing_final_response_fallback_if_needed(&flight, &tx, job_id, &messages).await);
+
+    let _reasoning_end = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv reasoning_end")
+        .expect("reasoning_end payload");
+    let _text_start = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv text_start")
+        .expect("text_start payload");
+    let frame = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv final_response frame")
+        .expect("final_response payload");
+
+    assert!(
+        frame.contains("（本轮模型未输出终答，以下为最后一次工具执行的结果摘要）"),
+        "工具摘要兜底须带来源前缀: {frame}"
+    );
+    assert!(
+        frame.contains("cargo_test"),
+        "工具摘要兜底须标明工具名: {frame}"
+    );
+    assert!(
+        frame.contains("退出码：0 标准输出： test result"),
+        "多行工具输出应压成单行: {frame}"
+    );
+    assert!(
+        !frame.contains(&"日志".repeat(1000)),
+        "超长工具输出不得整段搬进终答: {frame}"
+    );
+    assert!(frame.contains('…'), "截断后应追加省略号: {frame}");
+}
+
 // 层 2 收尾终态判定：`completed_turn_end_reason` 的单一事实来源行为固化。
 #[test]
 fn turn_end_reason_fallback_wins_over_visible_output() {
