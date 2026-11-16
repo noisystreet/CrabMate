@@ -24,7 +24,7 @@ use crate::types::Message;
 const JUDGE_SYSTEM_PROMPT: &str = "\
 你是 CrabMate 的**回合执行约束判定员**。只判断一件事：用户本轮任务是否**要求本轮只读**\
 （不得改动文件、不得执行命令/构建/测试），还是**授权改动或执行**。\n\
-只输出一个 JSON 对象（不要代码围栏、不要任何说明文字）：\n\
+只输出一个 JSON 对象（不要代码围栏、不要说明文字、不要先写思考过程或推理）：\n\
 - 只读：{\"review_readonly\":true}\n\
 - 其它（含无法确定）：{\"review_readonly\":false}\n\
 判断要点：\n\
@@ -34,7 +34,12 @@ const JUDGE_SYSTEM_PROMPT: &str = "\
 - 无法确定时一律 false。";
 
 /// 判定器输出上限：只需要一个布尔。
-const JUDGE_MAX_TOKENS: u32 = 128;
+///
+/// **不要压到 128**：`planner_model` 可能是思考模型（如 `deepseek-reasoner`），输出预算会
+/// 先被 `reasoning_content` 吃掉，正文为空 → `parse_judge_reply` 得 `None` → 判定**静默**
+/// fail-open（保护在所有回合失效且不报错）。512 与 `completion_judge_max_tokens` 默认同档，
+/// 配合提示词「不要先写思考过程」足够。
+const JUDGE_MAX_TOKENS: u32 = 512;
 
 /// 任务文本送判定器前的截断上限（避免超长任务占满 token 预算）。
 const JUDGE_TASK_MAX_CHARS: usize = 4000;
@@ -146,14 +151,25 @@ async fn judge_review_readonly(p: &RunLoopParams<'_>, task: &str) -> Option<bool
 
     // 刻意**不**挂 `with_turn_budget`：本判定是回合基建，不该从任务本身的
     // `max_llm_calls` 配额里拿走一次——配得紧的用户会因此在任务开始前就少一次调用机会。
+    //
+    // 传输上必须**静默**（`out: None` + `no_stream: true`）：判定是纯内部调用，正文不得
+    // 写进主回合 SSE。否则 Web 流式（`io.no_stream == false`）下它会被当作 assistant 正文增量下发
+    // ——`sse_parser` 在首段 content 前就发 `text_message_start` / `assistant_answer_phase`，
+    // 用户会先看到一段裸 `{"review_readonly":true}`，且该 phase 位是粘性的（无 false 版本）。
+    // 与 `completion_judge_llm`、子回合「不写父 SSE 流」（`sub_turn`）取同一做法；
+    // `cancel` 仍共享主回合，取消照旧生效。
+    //
+    // 也**不**挂 `with_provider_usage_sink`：`p.turn.provider_usage` 在每次 planner 调用前都会被
+    // 清空（`outer_loop`），接上去既不会被任何消费者上报、又平添一次清空竞争。故本次判定的
+    // token **不进** `/[usage]` 汇总——成本只能按本模块 `debug!` 的日志条数 × `JUDGE_MAX_TOKENS` 估算。
     let cc = crate::llm::CompleteChatRetryingParams::new(
         p.ctx.core.llm_backend,
         p.ctx.core.client,
         p.ctx.core.api_key,
         cfg,
         crate::llm::LlmRetryingTransportOpts {
-            out: p.ctx.io.control.out,
-            no_stream: p.ctx.io.no_stream,
+            out: None,
+            no_stream: true,
             cancel: p.ctx.io.cancel.as_deref(),
         },
         p.ctx.obs.request_chrome_trace.clone(),
@@ -180,9 +196,13 @@ async fn judge_review_readonly(p: &RunLoopParams<'_>, task: &str) -> Option<bool
         .trim()
         .to_string();
     let verdict = parse_judge_reply(&text);
+    // `finish == "length"` 且 `verdict == None` ＝ 输出预算被思维链吃光（见 `JUDGE_MAX_TOKENS`）。
+    // 这是除了「没配 `API_KEY`」之外，唯一能暴露「判定静默失效」的观测点：合并前请在有钥匙的
+    // 环境抽查时把 `RUST_LOG` 开到 debug 看这条。
     tracing::debug!(
         target: "crabmate::agent_turn",
         verdict = ?verdict,
+        finish = %finish,
         preview = %crate::redact::preview_chars(&text, 120),
         "turn_execution_constraint_judge"
     );

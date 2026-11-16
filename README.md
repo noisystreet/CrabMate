@@ -40,6 +40,11 @@ This repo is the **Server**: HTTP **`serve`** (always API-only — it never host
   **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily),
   and workspace **code search** (keyword + optional semantic). Optional **`delegate_task`** dispatches a bounded read-only sub-agent
   (off by default; `subagent_enabled`). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Act turn constraints**: each Act turn starts with one short tool-less call that decides whether the user asked for **read-only**
+  this turn (e.g. 「别动代码，先分析」). A `true` verdict narrows the whole turn to `review_readonly` — the tool list is filtered
+  and writes / command execution are denied at execution time. **Fail-open**: disabled / call error / cancelled / unparsable →
+  no constraint. Toggle **`CM_TURN_EXECUTION_CONSTRAINT_JUDGE_ENABLED`** / `turn_execution_constraint_judge_enabled` (default on);
+  Ask/Plan skip it. One extra LLM call per Act turn — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Sessions**: **`serve`** persists conversations under **`<workspace>/.crabmate/conversations.db`** by default; retention, deletion,
   and export are configurable — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/CLI.md](docs/en/CLI.md).
 - **Client UI**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; browser UIs connect over CORS. Sessions,

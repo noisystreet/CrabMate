@@ -20,6 +20,15 @@ completion_judge_max_tokens = 512
 # 空 = 走默认模型；不强制与执行模型分离（单模型部署须可用）。
 completion_judge_model = ""
 
+# 回合起点「本轮是否只读」的语义判定（#1401 #12，见 docs/配置说明.md）。
+# 默认**开**：它替代了原先 `at_turn_start` 的关键词启发式（三组子串表已整段删除）。
+# 每个 **Act** 回合起点发一次无工具短请求；判为只读则整轮收窄为 `review_readonly`
+# （工具表过滤 + 执行期 early-deny）。Ask/Plan 跳过（只读由 session_mode 挂载）。
+# 成本：每回合多**一次**调用（`max_tokens` 512）；**不**计入 `turn_budget` 与 `/usage` 汇总。
+# fail-open：关掉 / 调用失败 / 被取消 / 答复解析不出布尔 → 不挂约束（= 无回合级约束）。
+# 与 `completion_judge_enabled` 刻意分开：不同消费者，关它不影响本键。
+turn_execution_constraint_judge_enabled = true
+
 # 子 Agent 委托（#839 P1，见 docs/design/subagent_delegation.md）。
 # 默认关：关 = `delegate_task` 不注入给模型（不是「注入后拒绝」）。
 # 子任务只用只读工具子集，权限取父的 min 链结果，故本开关不改变任何权限面。

@@ -38,6 +38,11 @@
 
 - **对话与工具**：OpenAI 兼容 `chat/completions`；内置工作区文件工具、**`run_command`**（仅白名单）、HTTP、**联网搜索**（默认本机 **worbrow** 浏览器，
   免 API Key；可选 Brave/Tavily）、工作区**代码检索**（关键字 + 可选语义）。完整列表与语义见 [docs/工具说明.md](docs/工具说明.md)。
+- **回合执行约束**：每个 **Act** 回合起点发一次无工具短请求，判定「本轮是否要求只读」（如「别动代码，先分析」）；
+  判为是则整轮收窄为 `review_readonly`——过滤工具表，并在执行期拒绝写文件 / 跑命令。**fail-open**：关掉 / 调用失败 /
+  被取消 / 答复解析不出 → 一律不挂约束。开关 **`CM_TURN_EXECUTION_CONSTRAINT_JUDGE_ENABLED`** /
+  `turn_execution_constraint_judge_enabled`（默认开）；Ask/Plan 跳过。代价是每个 Act 回合多一次模型调用——见
+  [docs/配置说明.md](docs/配置说明.md)。
 - **会话**：**`serve`** 默认在 **`<workspace>/.crabmate/conversations.db`** 持久化对话；保留策略、
   删除与导出可配置——见 [docs/配置说明.md](docs/配置说明.md)、[docs/命令行与路由.md](docs/命令行与路由.md)。
 - **Client UI**：由 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** 构建并托管；浏览器 UI 经 CORS 接入。含会话、

@@ -52,7 +52,7 @@
 | 能力面 | 现状 | 锚点 |
 |---|---|---|
 | 编排 | 只有 ReAct 一条路；`TurnRouteDriver` 仅 `ReAct` 一个变体 | `src/agent/agent_turn/policy/turn_route_decision.rs` |
-| 路由 | Act 句**关键词**启发式（可挂只读收窄）；Ask/Plan 跳过 | `TurnStartSnapshot::ActHeuristics` |
+| 路由 | Act 回合起点的**执行约束语义判定**（一次无工具短请求，可挂只读收窄）；Ask/Plan 跳过 | `TurnStartSnapshot::ActHeuristics` |
 | 预算 | 墙钟 / Token 粗估 / LLM 次数 + 迭代硬上限；耗尽即报错中止 | `src/cm_agent/turn_budget.rs`、`turn_loop/outer_loop.rs` |
 | 上下文 | 分级压缩：压旧工具正文 → 删最旧完整交互组，保工具链完整 | `src/agent/context_compaction/policy.rs` |
 | 验收内核 | **两套实现并存**：结构化 `AcceptanceSpec` + `verify_against_spec`（退出码 / 输出 / 文件 / JSON / HTTP），仅 workflow 与分阶段步消费 | `src/cm_agent/acceptance/` |
