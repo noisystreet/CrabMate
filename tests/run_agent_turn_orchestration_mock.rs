@@ -474,37 +474,14 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
 ///
 /// 期望：注入终答缺失纠偏 → `ContinueNextIteration` → 第二次模型调用产出正文后才停。
 /// 修复前这条路径只调用一次模型就 `stop_outer_loop`，回合没有任何终答。
+///
+/// #1415 删掉第 ① 层后，早停只能由 judge 放行，故这里用 judge 返 `satisfied` 触发，
+/// 而不是预置结构化证据（C++ 三件套那条路径已不存在）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_post_tools_early_stop_without_body_asks_for_final_answer_mock() {
-    let cfg = cfg_freeform_turn();
-    // 预置「已有完成证据」。第 ① 层现在只有 C++ 检测器（写源码 → 编译 → 运行三件套）
-    // 能给出 `Satisfied`——其余场景一律交第 ② 层语义判定（#1415），而本测试要走的正是
-    // 「早停**放行**但 assistant 没正文」这条路径。
-    let cpp_evidence: Vec<Message> = [
-        (
-            "create_file",
-            "create file: hello.cpp\n已创建文件: hello.cpp",
-        ),
-        (
-            "run_command",
-            "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
-        ),
-        (
-            "run_command",
-            "命令：./build/hello\n退出码：0\n标准输出：\nHello, World!",
-        ),
-    ]
-    .iter()
-    .map(|(name, body)| Message {
-        role: "tool".to_string(),
-        content: Some(body.to_string().into()),
-        reasoning_content: None,
-        reasoning_details: None,
-        tool_calls: None,
-        name: Some(name.to_string()),
-        tool_call_id: Some("call_mock_prev".to_string()),
-    })
-    .collect();
+    let mut cfg = (*cfg_freeform_turn()).clone();
+    cfg.per_plan_policy.completion_judge_enabled = true;
+    let cfg = Arc::new(cfg);
     // 关键：正文为空，只有 `tool_calls`。
     let tool_round = Message {
         role: "assistant".to_string(),
@@ -525,23 +502,34 @@ async fn run_agent_turn_post_tools_early_stop_without_body_asks_for_final_answer
     let final_msg = Message::assistant_only(
         "已跑通全部测试（12 passed），无回归，以下为完整终答摘要。".to_string(),
     );
-    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
-        vec![tool_round, final_msg],
-        "stop",
-    )));
+    let backend: &'static JudgeCountingBackend =
+        Box::leak(Box::new(JudgeCountingBackend::new_with_verdict(
+            vec![tool_round, final_msg],
+            r#"{"status":"satisfied","evidence_refs":["ev_1"]}"#,
+        )));
     let mut messages = vec![
         Message::system_only("test system".to_string()),
-        Message::user_only("编写一个 c++ 程序，用 cmake 编译执行，然后回报结果".to_string()),
+        Message::user_only("跑通全部测试，然后回报结果".to_string()),
+        // 锚点校验要求 `satisfied` 至少引用一条 verify / write 成功证据。
+        Message {
+            role: "tool".to_string(),
+            content: Some("已修改文件: src/x.rs".to_string().into()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("modify_file".to_string()),
+            tool_call_id: Some("call_seed".to_string()),
+        },
     ];
-    messages.extend(cpp_evidence);
     run_mock_agent_turn(cfg, &mut messages, backend).await;
 
     assert_eq!(
-        backend.call_seq.load(Ordering::SeqCst),
+        backend.main_calls.load(Ordering::SeqCst),
         2,
         "早停门放行但无终答时应再要一轮而不是停轮：roles={:?}",
         messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
     );
+    assert!(backend.judge_calls() >= 1, "早停门必须真的问过判定层");
     let last_assistant = messages
         .iter()
         .rev()

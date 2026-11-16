@@ -12,8 +12,8 @@ final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 
 # 完成判定第 ② 层（LLM 语义判定，见 docs/design/completion_judge.md）。
-# 默认**开**（#1415）：第 ① 层只认领域检测器（C++ 写-编译-运行）与结构化事实，
-# 构建/测试、综合任务、只读分析的「够不够算完成」都由这一层判定；关掉 = 这些场景不早停。
+# 默认**开**（#1415）：第 ① 层与 C++ 领域检测器已删除，本开关是早停的**唯一判定源**。
+# 关掉 = 任何任务都不早停（回合跑到迭代上限）；缺 API_KEY 或判定失败同理。
 # 成本有界：每回合 ≤3 次调用、证据指纹去重、max_tokens 512、fail-open（判定失败绝不早停）。
 completion_judge_enabled = true
 completion_judge_max_tokens = 512
