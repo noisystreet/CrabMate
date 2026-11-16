@@ -17,10 +17,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   saw tool output, no answer, and `stream_ended: completed`, because the terminal fallback could only replay a
   reasoning fragment. It now requires a visible final answer for the turn, and otherwise injects the existing
   "missing final answer" nudge and continues one more round.
-- **A successful verify run only counts as done when the task asks for build/test.** The generic evidence
-  fallback treated any successful `cargo_check` / `cargo_test` as proof the goal was met, so an unrelated or
-  mixed task was marked complete mid-flight (measured: a turn whose user message was just `1+2` was stopped
-  right after a passing `cargo_check`). Non-build tasks now fall through to the semantic layer instead.
+- **A successful verify run no longer marks a task done by itself.** The generic evidence fallback treated any
+  successful `cargo_check` / `cargo_test` as proof the goal was met, so an unrelated or mixed task was marked
+  complete mid-flight (measured: a turn whose user message was just `1+2` was stopped right after a passing
+  `cargo_check`). Layer ① now only reports facts; whether those facts are **enough** is layer ②'s call.
 - **Only a text-only assistant turn counts as the final answer before early stop (#1414).** Counting any
   assistant body ≥24 chars let a "here is my plan, now I will run the tests" narration satisfy the gate, so a
   turn could still stop before the user saw a conclusion. Narration that carries `tool_calls` no longer counts.
@@ -28,6 +28,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   nudge has a 2-injection budget; once exhausted the terminal fallback had nothing to emit and the turn ended
   with tool output only. It now falls back to a single-line, truncated digest of the last tool result
   (`stream_ended: fallback`).
+
+### Changed
+
+- **The completion judge is now on by default (`completion_judge_enabled = true`).** With the removals below,
+  layer ① no longer decides completion from task wording, so build/test and read-only turns depend on layer ②.
+  Cost stays bounded: at most **3** judge calls per turn, an evidence-fingerprint dedupe, `max_tokens` 512, and
+  fail-open (a failed or unparsable judgement never yields an early stop). **Turning it off means those turns no
+  longer stop early** — only the domain detector (the C++ write → compile → run triple) can still allow it.
+- **Judge input is windowed, and its verdict is shared with the synchronous gates.** Two follow-ups made the
+  removal above safe: the judge now receives only the evidence since the last real user message (it used to get
+  the whole history, so a *previous* task's passing `cargo_test` could be cited to complete the current one —
+  the anchor check only asks whether a `verify`/`write` success exists, not whose), and the verdict is cached
+  per turn so the redundant-probe gate, which is synchronous and cannot call the judge, reaches the same
+  conclusion as the early-stop gate instead of diverging.
+
+### Removed
+
+- **Keyword heuristics are gone from the completion-evidence layer (#1415).** Two paths were removed rather than
+  extended: `build_or_test_intent` (13 substring matches — `"test"` hit `greatest`, `"make"` hit `make sure`,
+  while a composite task like "refactor X without changing behaviour" matched nothing) and
+  `assistant_gave_conclusion` (treating a "done / completed" self-report as completion evidence). The same facts
+  no longer flip verdicts on wording. `turn_completion_golden.jsonl` now has an `allow_early_stop` case for the
+  C++ detector and `deny` for everything else.
 
 ## [0.9.0] - 2026-11-15
 

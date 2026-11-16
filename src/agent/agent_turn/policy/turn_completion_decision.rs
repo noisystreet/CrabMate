@@ -9,7 +9,6 @@ use super::completion_suppression::{
 };
 use super::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    generic_task_intent_implies_build_or_test,
 };
 
 /// 完成判定结果（结构化日志与金样对齐）。
@@ -80,44 +79,36 @@ pub fn log_turn_completion_decision(decision: TurnCompletionDecision, check: &'s
     );
 }
 
-/// 消息历史里是否存在**强**验证证据（专用工具 + 结构化退出码）。
+/// 完成判定门：`Satisfied` 或**已缓存确认**放行，其余一律拒绝。
 ///
-/// 只用于「构建/测试类任务的早停该不该放行」这一处判断；采集逻辑在
-/// [`super::task_level_evidence::EvidenceSet`]，本函数只是取一个视图。
-fn has_strong_verify_evidence(messages: &[Message]) -> bool {
-    super::task_level_evidence::EvidenceSet::collect(messages).has_strong_verify_success()
-}
-
-fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision {
-    if !matches!(
-        check_active_user_goal_completion_evidence(messages),
-        GoalCompletionEvidenceCheck::Satisfied
-    ) {
-        return TurnCompletionDecision::DenyEarlyStop {
-            reason: "evidence_not_satisfied",
-        };
-    }
-    let Some(task) = crate::cm_types::last_real_user_task_content(messages, false) else {
-        return TurnCompletionDecision::DenyEarlyStop {
-            reason: "no_active_user_task",
-        };
-    };
-    // 「任务像构建/测试」曾是无条件拒绝早停的保守闸。它的本意是对的——构建类任务的
-    // 完成最易误判——但它把**证据强度**一起忽略了：`run_command` 跑 `make` 只能靠
-    // `built target` 之类文本特征（弱证据），保守拒绝合理；而 `cargo_test` 带结构化
-    // `exit_code`（强证据）不该同等对待，否则「越规范地用专用工具，越判不出完成」。
-    // 因此：**弱证据维持拒绝，强证据放行**。
-    if generic_task_intent_implies_build_or_test(task) && !has_strong_verify_evidence(messages) {
-        TurnCompletionDecision::DenyEarlyStop {
-            reason: "build_or_test_intent",
-        }
-    } else {
+/// 这里**没有**第二道「任务像构建/测试就拒绝」的闸。那道闸靠 `build_or_test_intent`
+/// 关键词表判断（13 个子串，`"test"` 会命中 `greatest`），#1415 已把它连同第 ① 层的
+/// 同类关键词路径一起移除：判定不再看任务措辞，只看结构化证据 + 语义判定。
+///
+/// `completion_confirmed` 是本回合**早停门**（可问 LLM）已写下的结论。冗余探针抑制与
+/// 步后抑规划是同步路径、拿不到 judge，通过它复用同一结论；否则同一批证据会出现
+/// 「早停门放行、抑制门不放行」的分裂。
+fn turn_early_stop_allowed_core(
+    messages: &[Message],
+    completion_confirmed: bool,
+) -> TurnCompletionDecision {
+    if completion_confirmed
+        || matches!(
+            check_active_user_goal_completion_evidence(messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        )
+    {
         TurnCompletionDecision::AllowEarlyStop
+    } else {
+        TurnCompletionDecision::DenyEarlyStop {
+            reason: "evidence_not_satisfied",
+        }
     }
 }
 
+/// 同步入口（金样 / 未接线路径）：只看第 ① 层，`completion_confirmed` 视为 `false`。
 pub fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDecision {
-    let decision = turn_early_stop_allowed_core(messages);
+    let decision = turn_early_stop_allowed_core(messages, false);
     log_turn_completion_decision(decision, "early_stop");
     decision
 }
@@ -142,7 +133,7 @@ pub fn evaluate_turn_suppress_replanning(
         TurnCompletionDecision::DenySuppressReplanning {
             reason: "formal_execution_required",
         }
-    } else if !turn_early_stop_allowed_core(messages).is_allow() {
+    } else if !turn_early_stop_allowed_core(messages, false).is_allow() {
         TurnCompletionDecision::DenySuppressReplanning {
             reason: "early_stop_not_allowed",
         }
@@ -157,15 +148,20 @@ pub fn evaluate_turn_suppress_replanning(
     decision
 }
 
+/// 本轮工具调用是否应被静默丢弃：目标已完成 + 调用均为探针 / 重复 `run_command`。
+///
+/// `completion_confirmed` 由 `PerCoordinator` 传入——语义判定（judge）的结论缓存在那里，
+/// 同步门据此与早停门保持同一口径（#1415）。
 pub fn evaluate_turn_redundant_tools(
     tool_calls: &[ToolCall],
     messages: &[Message],
+    completion_confirmed: bool,
 ) -> TurnCompletionDecision {
     let decision = if !tool_calls_are_redundant_when_goal_satisfied(tool_calls, messages) {
         TurnCompletionDecision::DenyRedundantTools {
             reason: "tools_not_redundant",
         }
-    } else if !turn_early_stop_allowed_core(messages).is_allow() {
+    } else if !turn_early_stop_allowed_core(messages, completion_confirmed).is_allow() {
         TurnCompletionDecision::DenyRedundantTools {
             reason: "early_stop_not_allowed",
         }

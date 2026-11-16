@@ -12,9 +12,10 @@ final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 
 # 完成判定第 ② 层（LLM 语义判定，见 docs/design/completion_judge.md）。
-# 默认关：关 = 不产生任何额外的 LLM 调用；第 ① 层结构化证据仍照常工作。
-# 开启后只在「第 ① 层判不出」的候选终止点调用一次，且 fail-open。
-completion_judge_enabled = false
+# 默认**开**（#1415）：第 ① 层只认领域检测器（C++ 写-编译-运行）与结构化事实，
+# 构建/测试、综合任务、只读分析的「够不够算完成」都由这一层判定；关掉 = 这些场景不早停。
+# 成本有界：每回合 ≤3 次调用、证据指纹去重、max_tokens 512、fail-open（判定失败绝不早停）。
+completion_judge_enabled = true
 completion_judge_max_tokens = 512
 # 空 = 走默认模型；不强制与执行模型分离（单模型部署须可用）。
 completion_judge_model = ""

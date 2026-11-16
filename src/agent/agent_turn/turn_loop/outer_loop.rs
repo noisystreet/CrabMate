@@ -243,11 +243,20 @@ async fn outer_loop_execute_tools_round(
     Ok(())
 }
 
-fn completed_goal_with_redundant_tool_calls(p: &mut RunLoopParams<'_>, msg: &Message) -> bool {
+fn completed_goal_with_redundant_tool_calls(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &PerCoordinator,
+    msg: &Message,
+) -> bool {
     let Some(tool_calls) = msg.tool_calls.as_ref().filter(|calls| !calls.is_empty()) else {
         return false;
     };
-    turn_redundant_tools_after_completion_allowed(tool_calls, p.turn.messages())
+    // 复用早停门写下的结论：本门是同步路径、拿不到 judge，自判会与早停门给出相反结果（#1415）。
+    turn_redundant_tools_after_completion_allowed(
+        tool_calls,
+        p.turn.messages(),
+        per_coord.completion_confirmed(),
+    )
 }
 
 fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'_>, msg: &Message) {
@@ -310,9 +319,10 @@ async fn outer_loop_emit_answer_segment_transition(p: &RunLoopParams<'_>, iterat
 /// 目标已完成且本轮工具均为冗余探针时：丢弃工具调用并停外循环。
 fn try_stop_on_completed_goal_redundant_tools(
     p: &mut RunLoopParams<'_>,
+    per_coord: &PerCoordinator,
     msg: &Message,
 ) -> Option<OuterLoopIterationExit> {
-    if !completed_goal_with_redundant_tool_calls(p, msg) {
+    if !completed_goal_with_redundant_tool_calls(p, per_coord, msg) {
         return None;
     }
     let messages = p.turn.messages();
@@ -549,7 +559,7 @@ async fn run_outer_loop_single_iteration(
         return Ok(exit);
     }
 
-    if let Some(exit) = try_stop_on_completed_goal_redundant_tools(p, &msg) {
+    if let Some(exit) = try_stop_on_completed_goal_redundant_tools(p, per_coord, &msg) {
         driver.record_iteration_exit(exit);
         return Ok(exit);
     }

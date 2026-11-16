@@ -49,7 +49,7 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
     env_override_completion_judge(b);
 }
 
-/// 完成判定第 ② 层（`docs/design/completion_judge.md` §7）。默认关。
+/// 完成判定第 ② 层（`docs/design/completion_judge.md` §7）。默认开（#1415）。
 fn env_override_completion_judge(b: &mut ConfigBuilder) {
     apply_bool(
         &mut b.per_plan_policy.completion_judge_enabled,

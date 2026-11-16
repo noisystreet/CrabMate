@@ -89,6 +89,15 @@ pub(crate) struct PerTurnCounters {
     /// 收益远小于一次 LLM 往返。因此加每回合硬上限，默认
     /// [`MAX_COMPLETION_JUDGE_CALLS_PER_TURN`]。
     pub(crate) completion_judge_calls: u32,
+    /// 本回合是否已确认「活跃用户目标完成」（#1415）。
+    ///
+    /// **为什么需要缓存**：完成判定的两个消费者不在同一位置、也不都是 async——
+    /// 早停门 `turn_early_stop_allowed_with_judge` 在**工具执行之后**、且能问 LLM；
+    /// 而冗余探针抑制 `try_stop_on_completed_goal_redundant_tools` 在**下一次模型给出
+    /// `tool_calls` 之后**、且是同步纯逻辑。同一批证据如果各判一次，就会出现
+    /// 「早停门放行、抑制门不放行」的分裂（#1415 删掉关键词门后尤其明显）。
+    /// 结论由判定方写入，同步方只读，两边口径因此天然一致。
+    pub(crate) completion_confirmed: bool,
 }
 
 /// 每回合最多询问完成判定第 ② 层的次数。
@@ -104,7 +113,19 @@ impl PerTurnCounters {
             outer_loop_reflect: OuterLoopReflectMemo::new(),
             completion_judge_evidence_fingerprint: None,
             completion_judge_calls: 0,
+            completion_confirmed: false,
         }
+    }
+
+    /// 记录「活跃用户目标已完成」。只由判定方（早停门）写入；同步消费者只读，
+    /// 避免同一批证据被两道门各判一次而给出相反结论。
+    pub(crate) fn mark_completion_confirmed(&mut self) {
+        self.completion_confirmed = true;
+    }
+
+    /// 本回合是否已确认完成（供同步门读取判定方写入的结论）。
+    pub(crate) fn completion_confirmed(&self) -> bool {
+        self.completion_confirmed
     }
 
     /// 本次该不该问第 ② 层。

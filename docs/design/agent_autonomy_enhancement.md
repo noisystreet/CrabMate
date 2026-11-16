@@ -57,8 +57,8 @@
 | 上下文 | 分级压缩：压旧工具正文 → 删最旧完整交互组，保工具链完整 | `src/agent/context_compaction/policy.rs` |
 | 验收内核 | **两套实现并存**：结构化 `AcceptanceSpec` + `verify_against_spec`（退出码 / 输出 / 文件 / JSON / HTTP），仅 workflow 与分阶段步消费 | `src/cm_agent/acceptance/` |
 | 完成证据（主路径） | **已接线**：`turn_early_stop_allowed` → `check_active_user_goal_completion_evidence`；冗余工具抑制同源。**非**「靠模型自述」 | `policy/task_level_evidence/verify.rs`、`turn_loop/outer_loop.rs` |
-| 证据检测器覆盖 | 检测器仅 1 个（C++）；通用兜底**排除专用 cargo 工具**，且**纯写任务零验证即判完成**（§3.2 实测） | `policy/task_level_evidence/verify.rs` |
-| 早停门 | 证据 `Satisfied` 后仍被 `build_or_test_intent` 拒绝；金样中 `allow_early_stop` **零条** | `policy/turn_completion_decision.rs` |
+| 证据检测器覆盖 | 检测器仅 1 个（C++）；其余场景一律 `NotApplicable`，交第 ② 层语义判定（#1415 已删通用关键词兜底） | `policy/task_level_evidence/verify.rs` |
+| 早停门 | 关键词门已移除（#1415）：`Satisfied` 直接放行，`NotApplicable` 交第 ② 层语义判定；金样 `allow_early_stop` 只剩领域检测器命中 | `policy/turn_completion_decision.rs` |
 | 步后抑规划 | `evaluate_turn_suppress_replanning` **注释自述生产未接线**（仅金样与单测） | `turn_completion.rs`、`turn_completion_decision.rs` |
 | 子 Agent | `HandlerId::Delegate` 未注册；agent 层 handler 清单只有 `Workflow` | `host/execute/tool_execution_host.rs` |
 | 跨回合状态 | plan artifact 只在回合内；跨回合仅 `reminder` / `event` 与 cron 定时任务 | `src/cm_config/scheduled_agent_task.rs` |
@@ -220,8 +220,8 @@ L6（读三态），且当前实现双向误判（§3.2 实测）。**判定层�
 #### 落点
 
 `policy/task_level_evidence/`（重写为证据采集 + 判定两层）、`cm_agent/acceptance/`（复用 `AcceptanceSpec`
-做 ① 的字段归一）、`policy/turn_completion_decision.rs`（消费新三态，删除 `build_or_test_intent` 冲突门）、
-新增一个 `*_semantic_check` 风格的侧向调用模块。
+做 ① 的字段归一）、`policy/turn_completion_decision.rs`（消费新三态；`build_or_test_intent` 冲突门
+已于 #1415 删除）、新增一个 `*_semantic_check` 风格的侧向调用模块。
 
 #### 风险与缓解
 

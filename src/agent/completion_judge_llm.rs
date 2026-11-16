@@ -73,7 +73,7 @@ impl<'a> LlmCompletionJudge<'a> {
         Self { ctx }
     }
 
-    /// 按配置构造判定器；`completion_judge_enabled = false`（默认）时返回 `None`，
+    /// 按配置构造判定器；`completion_judge_enabled = false` 时返回 `None`（**默认开**，#1415），
     /// 调用方据此**完全不产生额外 LLM 调用**。
     ///
     /// 这是三个 `completion_judge_*` 配置键的消费者；接线点只需调本函数。

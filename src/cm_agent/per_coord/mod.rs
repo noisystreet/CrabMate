@@ -122,6 +122,16 @@ impl PerCoordinator {
     pub(crate) fn take_completion_judge_slot(&mut self, fingerprint: u64) -> bool {
         self.counters.take_completion_judge_slot(fingerprint)
     }
+
+    /// 记录「活跃用户目标已完成」（#1415）：判定方写入，同步门读取。
+    pub(crate) fn mark_completion_confirmed(&mut self) {
+        self.counters.mark_completion_confirmed();
+    }
+
+    /// 本回合是否已确认完成（供冗余探针抑制等同步门读取）。
+    pub(crate) fn completion_confirmed(&self) -> bool {
+        self.counters.completion_confirmed()
+    }
 }
 
 mod coordinator_impl;
