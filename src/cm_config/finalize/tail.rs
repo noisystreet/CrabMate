@@ -19,6 +19,7 @@ pub(super) struct FinalizeTailScalars {
     pub(super) completion_judge_enabled: bool,
     pub(super) completion_judge_max_tokens: u32,
     pub(super) completion_judge_model: Option<String>,
+    pub(super) turn_execution_constraint_judge_enabled: bool,
     pub(super) subagent_enabled: bool,
     pub(super) subagent_max_depth: u8,
     pub(super) subagent_max_llm_calls: u32,
@@ -113,6 +114,7 @@ struct TailPlanToolThinkingScalars {
     completion_judge_enabled: bool,
     completion_judge_max_tokens: u32,
     completion_judge_model: Option<String>,
+    turn_execution_constraint_judge_enabled: bool,
     subagent_enabled: bool,
     subagent_max_depth: u8,
     subagent_max_llm_calls: u32,
@@ -157,6 +159,12 @@ fn derive_tail_plan_tool_thinking_scalars(
     // 第 ① 层已不再做任务关键词判断，构建/测试与只读分析都得靠这一层下结论；关掉等于
     // 这些场景一律不早停。成本有界：每回合 ≤3 次、`max_tokens` 默认 512、证据指纹去重、fail-open。
     let completion_judge_enabled = b.per_plan_policy.completion_judge_enabled.unwrap_or(true);
+    // 回合起点「本轮是否只读」语义判定（#1401 #12）：**默认开**——它替代原先的关键词启发式，
+    // 关掉等于 Act 模式下不再有任何回合级执行约束（Ask/Plan 仍由 `session_mode` 挂只读）。
+    let turn_execution_constraint_judge_enabled = b
+        .per_plan_policy
+        .turn_execution_constraint_judge_enabled
+        .unwrap_or(true);
     let completion_judge_max_tokens = b
         .per_plan_policy
         .completion_judge_max_tokens
@@ -220,6 +228,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        turn_execution_constraint_judge_enabled,
         subagent_enabled,
         subagent_max_depth,
         subagent_max_llm_calls,
@@ -680,6 +689,7 @@ fn assemble_finalize_tail_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        turn_execution_constraint_judge_enabled,
         subagent_enabled,
         subagent_max_depth,
         subagent_max_llm_calls,
@@ -739,6 +749,7 @@ fn assemble_finalize_tail_scalars(
         completion_judge_enabled,
         completion_judge_max_tokens,
         completion_judge_model,
+        turn_execution_constraint_judge_enabled,
         subagent_enabled,
         subagent_max_depth,
         subagent_max_llm_calls,

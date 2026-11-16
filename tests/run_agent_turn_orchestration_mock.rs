@@ -56,13 +56,66 @@ impl ChatCompletionsBackend for SequencedMockBackend {
     }
 }
 
+/// 记录每轮请求可见工具名的 mock：用于验证回合执行约束判定确实收窄了工具表。
+#[derive(Debug)]
+struct ToolCapturingBackend {
+    responses: Vec<Message>,
+    call_seq: AtomicUsize,
+    seen_tool_names: std::sync::Mutex<Vec<Vec<String>>>,
+}
+
+impl ToolCapturingBackend {
+    fn new(responses: Vec<Message>) -> Self {
+        Self {
+            responses,
+            call_seq: AtomicUsize::new(0),
+            seen_tool_names: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn seen_tool_names(&self) -> Vec<Vec<String>> {
+        self.seen_tool_names
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+}
+
+#[async_trait]
+impl ChatCompletionsBackend for ToolCapturingBackend {
+    async fn stream_chat(
+        &self,
+        _params: &StreamChatParams<'_>,
+        req: &mut ChatRequest,
+    ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+        let names = req
+            .tools
+            .as_ref()
+            .map(|ts| ts.iter().map(|t| t.function.name.clone()).collect())
+            .unwrap_or_default();
+        if let Ok(mut seen) = self.seen_tool_names.lock() {
+            seen.push(names);
+        }
+        let idx = self.call_seq.fetch_add(1, Ordering::SeqCst);
+        let msg = self
+            .responses
+            .get(idx)
+            .or_else(|| self.responses.last())
+            .cloned()
+            .ok_or_else(|| "ToolCapturingBackend: empty response sequence".to_string())?;
+        Ok((msg, "stop".to_string()))
+    }
+}
+
 fn cfg_freeform_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
-    // 本文件用一个**共享的 sequenced backend** 同时服务执行路径与完成判定（judge），
-    // 而 `call_seq` 无法区分两者——判定层默认开启（#1415）会给每个工具批额外加一次调用，
-    // 直接打乱预设响应序列。故这里显式关掉判定：本文件测的是外层编排，不是判定。
-    // 判定本身的覆盖见 `completion_judge_call_count_tracks_new_evidence`（那里显式开启）。
+    // 本文件用一个**共享的 sequenced backend** 同时服务执行路径与各语义判定，而 `call_seq`
+    // 无法区分它们——任何一个默认开启的判定层都会给回合额外加调用、直接打乱预设响应序列。
+    // 故这里显式关掉两者：本文件测的是外层编排，不是判定。
+    // 判定本身的覆盖见 `completion_judge_call_count_tracks_new_evidence`（显式开启）与
+    // `at_turn_start::tests`（回合约束判定的解析与 fail-open）。
     cfg.per_plan_policy.completion_judge_enabled = false;
+    cfg.per_plan_policy.turn_execution_constraint_judge_enabled = false;
     Arc::new(cfg)
 }
 
@@ -822,4 +875,53 @@ async fn subagent_budget_exhausted_parent_turn_still_finishes() {
         backend.parent_saw_tool_result.load(Ordering::SeqCst),
         "父回合后续请求里应出现 tool 消息（子任务的 report）"
     );
+}
+
+/// 回合起点执行约束判定（#1401 #12）：判定为只读时，planner 请求的工具表必须被收窄。
+///
+/// 这条路径此前**零覆盖**——`cfg_freeform_turn` 关掉了开关，单测只测 `parse_judge_reply`。
+/// 而它正是替代关键词启发式的落点：判定为 `true` 后 `step_executor_constraint` 是否真的生效，
+/// 只能靠「planner 拿到的工具表里没有写工具」来验证。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turn_constraint_judge_narrows_planner_tools_when_readonly() {
+    let mut cfg = load_config(None).expect("embedded default config must load");
+    cfg.per_plan_policy.completion_judge_enabled = false;
+    cfg.per_plan_policy.turn_execution_constraint_judge_enabled = true;
+    // 第 0 次 = 回合起点判定；第 1 次 = planner 终答。
+    let backend: &'static ToolCapturingBackend =
+        Box::leak(Box::new(ToolCapturingBackend::new(vec![
+            Message::assistant_only(r#"{"review_readonly":true}"#.to_string()),
+            Message::assistant_only("这是一段足够长的终答摘要，用于结束本轮。".to_string()),
+        ])));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("别动代码，先分析一下这个报错。".to_string()),
+    ];
+    run_mock_agent_turn(Arc::new(cfg), &mut messages, backend).await;
+
+    let seen = backend.seen_tool_names();
+    assert_eq!(
+        seen.len(),
+        2,
+        "应有判定期 + planner 期各一次请求，实际 {seen:?}"
+    );
+    assert!(
+        seen[0].is_empty(),
+        "判定请求不应携带 tools，实际 {:?}",
+        seen[0]
+    );
+    let planner_tools = &seen[1];
+    assert!(!planner_tools.is_empty(), "planner 工具表不应为空");
+    for write_tool in [
+        "apply_patch",
+        "create_file",
+        "modify_file",
+        "append_file",
+        "search_replace",
+    ] {
+        assert!(
+            !planner_tools.iter().any(|n| n == write_tool),
+            "ReviewReadonly 下不应暴露写工具 {write_tool}：{planner_tools:?}"
+        );
+    }
 }

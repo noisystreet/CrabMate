@@ -1,4 +1,4 @@
-//! ReAct 回合入口：session_mode + Act 句启发式 → **`assess_turn_routing`** → 外循环。
+//! ReAct 回合入口：session_mode + Act 回合起点判定 → **`assess_turn_routing`** → 外循环。
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 
@@ -26,25 +26,25 @@ fn turn_start_snapshot_or_unknown(p: &RunLoopParams<'_>) -> TurnStartSnapshot {
         .unwrap_or(TurnStartSnapshot::Disabled)
 }
 
-/// Act 句启发式 → [`assess_turn_routing`] → ReAct 外循环。
+/// Act 回合起点判定 → [`assess_turn_routing`] → ReAct 外循环。
 pub(crate) async fn dispatch_react_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    // L0（`permission_level = chat`）：本回合没有任何工具可下发，Act 句启发式只会产出
+    // L0（`permission_level = chat`）：本回合没有任何工具可下发，Act 回合起点判定只会产出
     // 「打算改代码」的空工具调用，只读挂载也无对象可过滤——两条都跳过（设计 §8.2 的最小短路）。
     let tools_visible = p.ctx.attach.permission.tool_visibility
         != crate::cm_agent::permission::ToolVisibility::None;
     if tools_visible {
-        intent_at_turn_start::run_act_turn_start_heuristics(p);
-        // 会话 Ask/Plan：须在启发式之后挂只读（Ask/Plan 跳过 Act 句启发式；只读由本处 mode 挂载）。
+        intent_at_turn_start::run_act_turn_start_judge(p).await;
+        // 会话 Ask/Plan：须在判定之后挂只读（Ask/Plan 跳过 Act 回合起点判定；只读由本处 mode 挂载）。
         if p.ctx.attach.session_mode.requires_readonly_tools() {
             p.turn.turn_planner_hints.step_executor_constraint =
                 Some(crate::cm_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
             tracing::info!(
                 target: "crabmate::agent_turn",
                 session_mode = %p.ctx.attach.session_mode,
-                "session_mode applied ReviewReadonly after act heuristics"
+                "session_mode applied ReviewReadonly after act turn-start judge"
             );
         }
     }
