@@ -30,6 +30,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   (`stream_ended: fallback`).
 
 ### Changed
+- **Act turn-start read-only narrowing is now a semantic judgement, not keyword matching (#1401).**
+  The old `at_turn_start` heuristics matched three substring tables: they missed explicit prohibitions
+  such as 「别动代码」 while misfiring on `explainer` / `show token`. They are deleted and replaced by one
+  short tool-less call at turn start that answers a single yes/no question; a `true` verdict narrows the
+  turn to `review_readonly` exactly as before (tool-list filtering + execution-time early-deny).
+  **Fail-open**: disabled / call failure / cancelled / unparsable → **no constraint**. Note this means
+  the protection is absent when no `API_KEY` is configured or the gateway is unreachable — the old
+  heuristics worked fully offline.
+  New key `turn_execution_constraint_judge_enabled` (`CM_TURN_EXECUTION_CONSTRAINT_JUDGE_ENABLED`,
+  default `true`) costs **one extra LLM call per Act turn**; it is independent of
+  `completion_judge_enabled` (different consumer, so turning that one off does not disable this).
+  The `先问我 / 先确认` hint (`ask_before_mutation`) is removed together with the heuristics.
 
 - **The completion judge is now on by default (`completion_judge_enabled = true`).** With the removals below,
   layer ① no longer decides completion from task wording, so build/test and read-only turns depend on layer ②.

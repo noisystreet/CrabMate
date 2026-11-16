@@ -144,6 +144,7 @@ fn finalize_section_per_plan_policy(
         completion_judge_enabled: tail.completion_judge_enabled,
         completion_judge_max_tokens: tail.completion_judge_max_tokens,
         completion_judge_model: tail.completion_judge_model.clone(),
+        turn_execution_constraint_judge_enabled: tail.turn_execution_constraint_judge_enabled,
     }
 }
 

@@ -74,6 +74,12 @@ pub struct PerPlanPolicyConfig {
     pub completion_judge_max_tokens: u32,
     /// 判定模型覆盖；`None` = 走默认（**不**强制与执行模型分离，见设计 §10）。
     pub completion_judge_model: Option<String>,
+    /// 回合起点「本轮是否只读」的**语义判定**开关（#1401 #12）；**默认开**。
+    ///
+    /// 替代原先 `at_turn_start` 里的 Act 句关键词启发式（#1401 #12）：
+    /// 一次极短无工具调用判定「用户是否要求本轮只读」，失败 fail-open（不挂约束）。
+    /// 与 `completion_judge_*` 刻意分开：两者是不同消费者（回合约束 vs 完成判定）。
+    pub turn_execution_constraint_judge_enabled: bool,
 }
 
 /// 子 Agent 委托（#839 P1）。见 `docs/design/subagent_delegation.md`。

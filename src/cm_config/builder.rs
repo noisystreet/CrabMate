@@ -248,6 +248,9 @@ impl ConfigBuilder {
             .completion_judge_model
             .clone()
             .or_else(|| pp.completion_judge_model.clone());
+        pp.turn_execution_constraint_judge_enabled = agent
+            .turn_execution_constraint_judge_enabled
+            .or(pp.turn_execution_constraint_judge_enabled);
         let sa = &mut self.subagent;
         sa.enabled = agent.subagent_enabled.or(sa.enabled);
         sa.max_depth = agent.subagent_max_depth.or(sa.max_depth);

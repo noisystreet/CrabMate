@@ -106,12 +106,31 @@ pub fn parse_tool_output(tool_name: &str, output: &str) -> ParsedToolOutput {
 
     let header = CrabmateToolOutputMeta::parse_line(first);
     let ok = if let Some(header) = header.as_ref() {
+        if header.ok.is_none() && !header.is_workspace_write_diff() {
+            // ② 级：有头但没显式 `ok`，按「错误路径不带头」的隐式约定判成功。
+            // 属于 #1401 #6 三步走要消灭的分支之一——先埋点统计命中率，归零后再补 `ok`。
+            tracing::debug!(
+                target: "crabmate::tool_result",
+                tool = tool_name,
+                "tool status from header without explicit ok"
+            );
+        }
         structured_header_output_ok(header, body)
     } else if is_tool_output_header(first) {
         !body_after_header_looks_like_failure(body)
     } else if let Some(code) = exit_code {
         code == 0
     } else {
+        // ④ 级：无头、无退出码，**纯靠文案启发式**（`looks_like_failure`）。
+        //
+        // 这是 #1401 #6 三步走的第 1 步：先量出这条分支的命中率，再在产生侧补头 / 补退出码，
+        // **归零之前不要删** `looks_like_failure`——否则无信号输出会失去唯一的失败识别。
+        tracing::debug!(
+            target: "crabmate::tool_result",
+            tool = tool_name,
+            first_line = %crate::redact::preview_chars(first, 80),
+            "tool status fell back to text heuristics (no header, no exit_code)"
+        );
         !looks_like_failure(first)
     };
     // 生产者显式声明的 `error_code` 优先于正文启发式，避免精确码（如 `invalid_args`）

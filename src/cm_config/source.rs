@@ -191,6 +191,9 @@ pub(super) struct AgentSection {
     pub(super) completion_judge_enabled: Option<bool>,
     pub(super) completion_judge_max_tokens: Option<u64>,
     pub(super) completion_judge_model: Option<String>,
+    /// 回合起点「本轮是否只读」的**语义判定**开关（#1401 #12）。默认开：
+    /// 它是关键词启发式的替代者，关掉等于不再有任何回合级执行约束。
+    pub(super) turn_execution_constraint_judge_enabled: Option<bool>,
     /// 子 Agent 委托（#839 P1）。默认关；关 = `delegate_task` 不注入给模型。
     pub(super) subagent_enabled: Option<bool>,
     /// 递归深度上限；`1` = 子任务不能再派。

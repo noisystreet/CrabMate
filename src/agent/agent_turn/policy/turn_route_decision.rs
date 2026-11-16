@@ -28,10 +28,10 @@ pub struct TurnRouteDecisionV1 {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum TurnStartSnapshot {
-    /// Ask/Plan：不跑 Act 句启发式（只读由 session_mode 挂载）。
+    /// Ask/Plan：不跑 Act 回合起点的执行约束判定（只读由 session_mode 挂载）。
     Disabled,
     EmptyTask,
-    /// Act：已跑关键词启发式（`review_readonly` 表示是否收窄工具）。
+    /// Act：已跑**执行约束语义判定**（`review_readonly` 表示是否收窄工具）。
     ActHeuristics {
         review_readonly: bool,
     },

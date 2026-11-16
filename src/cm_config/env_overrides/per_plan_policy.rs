@@ -47,6 +47,15 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
         "CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS",
     );
     env_override_completion_judge(b);
+    env_override_turn_execution_constraint_judge(b);
+}
+
+/// 回合起点「本轮是否只读」语义判定（#1401 #12）。默认开。
+fn env_override_turn_execution_constraint_judge(b: &mut ConfigBuilder) {
+    apply_bool(
+        &mut b.per_plan_policy.turn_execution_constraint_judge_enabled,
+        "CM_TURN_EXECUTION_CONSTRAINT_JUDGE_ENABLED",
+    );
 }
 
 /// 完成判定第 ② 层（`docs/design/completion_judge.md` §7）。默认开（#1415）。
