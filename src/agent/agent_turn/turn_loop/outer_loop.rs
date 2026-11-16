@@ -26,10 +26,11 @@ use crate::agent::agent_turn::policy::outer_loop_fsm::{
 };
 use crate::agent::agent_turn::policy::outer_loop_iteration_reduce::{
     outer_loop_iteration_exit_from_reflect_reduce,
-    reduce_outer_loop_post_tools_exit_with_truncation,
+    reduce_outer_loop_post_tools_exit_with_feedback,
 };
 use super::outer_loop_reflect::{
-    map_reflect_outcome_to_branch_ctl, outer_loop_inject_truncated_feedback_after_tools,
+    map_reflect_outcome_to_branch_ctl, outer_loop_inject_missing_final_answer_feedback_after_tools,
+    outer_loop_inject_truncated_feedback_after_tools,
 };
 use super::turn_completion::{
     redundant_tool_names_for_log, turn_early_stop_allowed_with_judge,
@@ -359,14 +360,23 @@ async fn outer_loop_post_tools_exit(
     let truncated_feedback_injected =
         outer_loop_inject_truncated_feedback_after_tools(p, per_coord);
     let task_level_early_stop = turn_early_stop_allowed_with_judge(p, per_coord).await;
-    if task_level_early_stop && !truncated_feedback_injected {
+    // #1414：早停放行 ≠ 可以停轮。工具轮的 assistant 往往只带 `tool_calls`、正文为空，
+    // 此时 `StopOuterLoop` 会让回合静默结束（收尾层只能回退思维链片段）。先要终答。
+    let missing_final_answer_feedback_injected = task_level_early_stop
+        && !truncated_feedback_injected
+        && outer_loop_inject_missing_final_answer_feedback_after_tools(p, per_coord);
+    if task_level_early_stop
+        && !truncated_feedback_injected
+        && !missing_final_answer_feedback_injected
+    {
         tracing::info!(
             target: "crabmate::agent_turn",
             "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
         );
     }
-    Ok(reduce_outer_loop_post_tools_exit_with_truncation(
+    Ok(reduce_outer_loop_post_tools_exit_with_feedback(
         truncated_feedback_injected,
+        missing_final_answer_feedback_injected,
         task_level_early_stop,
     ))
 }

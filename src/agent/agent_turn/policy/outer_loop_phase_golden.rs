@@ -6,7 +6,7 @@ use serde_json::Value;
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
 use super::outer_loop_iteration_reduce::{
-    reduce_outer_loop_post_tools_exit, reduce_outer_loop_post_tools_exit_with_truncation,
+    reduce_outer_loop_post_tools_exit, reduce_outer_loop_post_tools_exit_with_feedback,
 };
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 
@@ -75,7 +75,11 @@ fn apply_step(driver: &mut OuterLoopDriver, step: &Value, last_reduce: &mut Opti
             .get("post_tools_early_stop")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let exit = reduce_outer_loop_post_tools_exit_with_truncation(trunc, early);
+        let missing = step
+            .get("post_tools_missing_final_answer_feedback")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let exit = reduce_outer_loop_post_tools_exit_with_feedback(trunc, missing, early);
         driver.record_iteration_exit(exit);
         return;
     }

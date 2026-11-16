@@ -174,6 +174,29 @@ fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
     })
 }
 
+/// 自本轮 user 起，是否已有一条**可见终答**的 assistant 正文（#1414）。
+///
+/// 早停门的必要条件：**有完成证据 ≠ 消费者拿到了答案**。工具轮的 assistant 通常只带
+/// `tool_calls`、正文为空，此时直接停轮会让回合静默结束（收尾层只能回退思维链片段）。
+///
+/// 判据只认**纯文本轮**：带 `tool_calls` 的 assistant 即便写了正文，也只是「打算做什么」
+/// 的过程叙述（#1414 复盘：模型先写「我先看实现、再跑测试」，随后又发一批工具调用；把
+/// 这条算成终答，早停门照样会在用户拿到结论之前放行）。不看 `tool_calls` 的写法见
+/// [`outer_loop_assistant_lacks_visible_final_answer`]——那是 stop-turn 分支的反向语义，
+/// 两者不可互换。
+pub(crate) fn outer_loop_has_visible_final_answer_since_last_user(messages: &[Message]) -> bool {
+    let Some(user_idx) = last_real_user_message_index(messages, false) else {
+        return false;
+    };
+    messages[user_idx.saturating_add(1)..].iter().any(|m| {
+        m.role == "assistant"
+            && m.tool_calls.as_ref().is_none_or(|c| c.is_empty())
+            && message_content_as_str(&m.content).is_some_and(|s| {
+                s.trim().chars().count() >= OUTER_LOOP_MISSING_FINAL_ANSWER_MIN_CHARS
+            })
+    })
+}
+
 pub(crate) fn outer_loop_assistant_lacks_visible_final_answer(msg: &Message) -> bool {
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         return false;
@@ -249,6 +272,76 @@ mod tests {
     use crate::types::Message;
 
     use crate::test_fixtures::{msg, step, tool_env};
+
+    /// #1414：工具轮的 assistant 只有 `tool_calls`、正文为空 → 视为「尚无可见终答」。
+    ///
+    /// 这是早停门的必要条件：有完成证据不等于消费者拿到了答案。
+    #[test]
+    fn visible_final_answer_absent_for_tool_only_assistant() {
+        let messages = vec![
+            msg("user", "分析这个 issue 怎么修"),
+            Message {
+                role: "assistant".into(),
+                content: None,
+                reasoning_content: Some("先跑一下编译".into()),
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_1".into(),
+                    typ: "function".into(),
+                    function: crate::types::FunctionCall {
+                        name: "cargo_check".into(),
+                        arguments: "{}".into(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            tool_env("cargo_check", "cargo check", "退出码：0\n标准输出：\nFinished"),
+        ];
+        assert!(
+            !outer_loop_has_visible_final_answer_since_last_user(&messages),
+            "只有 tool_calls 的 assistant 不应算作可见终答"
+        );
+    }
+
+    /// 同一判据在 assistant 给出足够长的正文时必须放行（否则会一直要求终答）。
+    #[test]
+    fn visible_final_answer_detected_from_assistant_body() {
+        let messages = vec![
+            msg("user", "分析这个 issue 怎么修"),
+            msg("assistant", "结论：早停门缺终答条件，按方案 A 落地并补测试即可。"),
+        ];
+        assert!(outer_loop_has_visible_final_answer_since_last_user(&messages));
+    }
+
+    /// #1414 复盘：夹带 `tool_calls` 的长正文只是「打算做什么」的过程叙述，**不算**可见终答。
+    ///
+    /// 模型常见形态是先写「我先看实现、再跑测试」再发工具调用。若把这条算成终答，早停门
+    /// 依旧会在用户拿到结论之前放行——这正是首轮修复（只看正文长度）漏掉的那一半。
+    #[test]
+    fn visible_final_answer_ignores_narration_that_carries_tool_calls() {
+        let mut narration = msg(
+            "assistant",
+            "我先看下相关实现，再跑一遍编译与测试，最后把完整结论写给你，请稍等。",
+        );
+        narration.tool_calls = Some(vec![ToolCall {
+            id: "call_1".into(),
+            typ: "function".into(),
+            function: crate::types::FunctionCall {
+                name: "cargo_check".into(),
+                arguments: "{}".into(),
+            },
+        }]);
+        let messages = vec![
+            msg("user", "分析这个 issue 怎么修"),
+            narration,
+            tool_env("cargo_check", "cargo check", "退出码：0"),
+        ];
+        assert!(
+            !outer_loop_has_visible_final_answer_since_last_user(&messages),
+            "夹带 tool_calls 的叙述不得当作可见终答"
+        );
+    }
 
     /// 第 ② 层输入只含「任务原文 + 结构化证据」，**不得含 assistant 自述**。
     ///

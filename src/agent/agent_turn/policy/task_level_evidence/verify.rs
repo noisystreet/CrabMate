@@ -352,7 +352,9 @@ fn assistant_substantive_answer(text: &str) -> bool {
 /// 2. **纯写任务无验证证据时返回 `NotApplicable`**（旧实现返回 `Satisfied`，即零验证放行）。
 ///    结构化层只能确认「写过了」，「改对了没有」属第 ② 层（LLM 语义判定）职责；
 /// 3. **构建/测试路径不再把自述当必要条件**：旧路径要求工具成功 **AND** 正文含「完成」，
-///    导致「修复 xx 失败」类任务成功后复述原文即判不完成。
+///    导致「修复 xx 失败」类任务成功后复述原文即判不完成；
+/// 4. **验证成功只在 build/test 意图下算完成**：否则「跑过一次 `cargo_check`」会把任何任务
+///    都判成完成（#1414）。
 ///
 /// 仍保留的自述依赖只有只读分析一条，理由见 [`assistant_gave_conclusion`]。
 fn check_generic_successful_tool_then_completion(
@@ -370,10 +372,18 @@ fn check_generic_successful_tool_then_completion(
     if intent.build_or_test && !ev.has_any_verify_success() {
         return GoalCompletionEvidenceCheck::NotApplicable;
     }
-    // ② 有任何成功的验证性执行（专用工具结构化退出码 / run_command 构建测试特征）
-    //    → 结构化层足以确认「验证过了」。
+    // ② 有成功的验证性执行（专用工具结构化退出码 / run_command 构建测试特征）。
+    //    但**只在任务确实要构建/测试时**才足以确认完成：一次 `cargo_check` 通过只证明
+    //    「当前代码能编译」，不构成「用户要我做的事已做完」的证据。#1414 实测：任务
+    //    「1+2」也在 `cargo_check` 通过后被判 `Satisfied`，下一批工具之后立刻早停停轮，
+    //    回合没有任何终答。非 build/test 意图退回 `NotApplicable`——「够不够算完成」交
+    //    第 ② 层语义判定，或干脆不早停。
     if ev.has_any_verify_success() {
-        return GoalCompletionEvidenceCheck::Satisfied;
+        return if intent.build_or_test {
+            GoalCompletionEvidenceCheck::Satisfied
+        } else {
+            GoalCompletionEvidenceCheck::NotApplicable
+        };
     }
     // ③ 改过工作区但没有验证证据 → 只能确认「写过了」，不下结论（第 ② 层职责）。
     if ev.has_write_success() {
@@ -599,6 +609,38 @@ mod tests {
         );
     }
 
+    /// #1414：成功的验证性执行**只在 build/test 意图下**才算出「目标完成」。
+    ///
+    /// 任务与构建无关时，一次 `cargo_check` 通过只证明「当前代码能编译」，不构成
+    /// 「用户要我做的事已做完」的证据——否则综合任务跑到编译通过就被早停门掐断，
+    /// 回合没有任何终答（实测见 #1414）。
+    #[test]
+    fn verify_success_outside_build_intent_is_not_applicable() {
+        let messages = vec![tool_env(
+            tool_names::CARGO_CHECK,
+            "cargo check",
+            "退出码：0\n标准输出：\nFinished `dev` profile",
+        )];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("分析这个 issue 怎么修", &messages),
+            GoalCompletionEvidenceCheck::NotApplicable
+        );
+    }
+
+    /// 同一份证据在 build/test 意图下仍判完成（不因 #1414 收紧而丢掉早停能力）。
+    #[test]
+    fn verify_success_inside_build_intent_is_satisfied() {
+        let messages = vec![tool_env(
+            tool_names::CARGO_CHECK,
+            "cargo check",
+            "退出码：0\n标准输出：\nFinished `dev` profile",
+        )];
+        assert_eq!(
+            check_goal_completion_evidence_from_messages("编译检查这个项目", &messages),
+            GoalCompletionEvidenceCheck::Satisfied
+        );
+    }
+
     #[test]
     fn generic_completion_claim_without_tool_success_is_not_applicable() {
         let messages = vec![msg("assistant", "任务已完成。")];
@@ -716,9 +758,13 @@ mod tests {
         );
     }
 
-    /// 对照：同一纯写任务若顺手跑了测试（有验证证据），则可以判完成。
+    /// 对照：纯写任务顺手跑了测试，**但任务本身与构建/测试无关** → 仍不下结论（#1414）。
+    ///
+    /// 旧实现这里判 `Satisfied`；实测表明它会让综合任务在「改完代码 + 一次 `cargo_check`
+    /// 通过」后立刻早停停轮，而此刻模型还没写终答。收紧后交给第 ② 层语义判定，
+    /// 或干脆不早停——消费者最终一定能拿到答案（方案 A 兜底）。
     #[test]
-    fn pure_write_with_verification_is_satisfied() {
+    fn pure_write_with_verification_outside_build_intent_is_not_applicable() {
         let messages = vec![
             msg("user", "把常量改成 42"),
             tool_env(
@@ -734,7 +780,7 @@ mod tests {
         ];
         assert_eq!(
             check_goal_completion_evidence_from_messages("把常量改成 42", &messages),
-            GoalCompletionEvidenceCheck::Satisfied
+            GoalCompletionEvidenceCheck::NotApplicable
         );
     }
 }

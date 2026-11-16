@@ -465,6 +465,76 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
     );
 }
 
+/// #1414：早停门放行、但本轮 assistant 只带 `tool_calls`（无正文）时**不能**直接停轮。
+///
+/// 期望：注入终答缺失纠偏 → `ContinueNextIteration` → 第二次模型调用产出正文后才停。
+/// 修复前这条路径只调用一次模型就 `stop_outer_loop`，回合没有任何终答。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_post_tools_early_stop_without_body_asks_for_final_answer_mock() {
+    let cfg = cfg_freeform_turn();
+    // 预置「已有完成证据」：任务明说要跑测试 + 一次成功的 cargo_test（强证据）。
+    let done_evidence = Message {
+        role: "tool".to_string(),
+        content: Some(
+            "退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed"
+                .to_string()
+                .into(),
+        ),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: Some("cargo_test".to_string()),
+        tool_call_id: Some("call_mock_prev".to_string()),
+    };
+    // 关键：正文为空，只有 `tool_calls`。
+    let tool_round = Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: "call_mock_1".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "text_transform".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    };
+    let final_msg = Message::assistant_only(
+        "已跑通全部测试（12 passed），无回归，以下为完整终答摘要。".to_string(),
+    );
+    let backend: &'static SequencedMockBackend = Box::leak(Box::new(SequencedMockBackend::new(
+        vec![tool_round, final_msg],
+        "stop",
+    )));
+    let mut messages = vec![
+        Message::system_only("test system".to_string()),
+        Message::user_only("跑通全部测试，然后回报结果".to_string()),
+        done_evidence,
+    ];
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+
+    assert_eq!(
+        backend.call_seq.load(Ordering::SeqCst),
+        2,
+        "早停门放行但无终答时应再要一轮而不是停轮：roles={:?}",
+        messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
+    );
+    let last_assistant = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant")
+        .expect("回合应留下 assistant 消息");
+    let body = message_content_as_str(&last_assistant.content).unwrap_or_default();
+    assert!(
+        body.trim().chars().count() >= 24,
+        "末条 assistant 必须是可见终答，实际: {body:?}"
+    );
+}
+
 /// 按「judge / 主循环」分流计数的 mock 后端。
 ///
 /// judge 的 system 以「任务完成度审计员」开头，据此与主循环 planner 调用区分。

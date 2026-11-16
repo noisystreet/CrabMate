@@ -331,6 +331,38 @@ fn reasoning_fallback_text(reasoning: &str) -> String {
     out
 }
 
+/// 层 4b（#1414）：本轮无可见正文、也无可回填思维链时，用**最后一次工具结果摘要**兜底。
+///
+/// 早停门的「终答缺失」纠偏自带注入预算（`OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX`），
+/// 预算耗尽或模型始终不写正文时，回合仍会以「工具跑完、用户没拿到话」收场。这里给一句确定性
+/// 文案 + 工具名 + 单行截断摘要，至少让消费者知道「跑了什么、结果如何」。
+const TOOL_RESULT_FALLBACK_PREFIX: &str =
+    "（本轮模型未输出终答，以下为最后一次工具执行的结果摘要）\n\n";
+/// 兜底摘要的字符上限：单行化后截断，避免把整段工具输出（可能含路径、凭据形态串）搬进终答。
+const TOOL_RESULT_FALLBACK_MAX_CHARS: usize = 800;
+
+fn tool_result_fallback_text(messages: &[Message], range_start: usize) -> Option<String> {
+    let last_tool = messages
+        .iter()
+        .skip(range_start)
+        .rev()
+        .find(|m| m.role == "tool")?;
+    let raw = message_content_as_str(&last_tool.content)?;
+    // 压成单行：终答是一段自然语言，多行原始输出塞进来既难读，截断点也会落在奇怪的位置。
+    let one_line = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.is_empty() {
+        return None;
+    }
+    let tool = last_tool.name.as_deref().unwrap_or("tool");
+    let mut out = format!("{TOOL_RESULT_FALLBACK_PREFIX}工具 `{tool}`：");
+    let mut chars = one_line.chars();
+    out.extend(chars.by_ref().take(TOOL_RESULT_FALLBACK_MAX_CHARS));
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    Some(out)
+}
+
 fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
     let range_start = messages
         .iter()
@@ -351,11 +383,17 @@ fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
     // 层 4：末条助手仅有思维链（`ReasoningOnly`，无正文 / 无工具调用）时，用思维链作为兜底
     // 终答，避免「`completed` + 无 `assistant_answer_phase` + 无 `final_response`」矛盾收尾。
     // 加来源前缀并截断：思维链已随流式下发，直接复用会重复展示且外泄 CoT。
-    last.reasoning_content
+    if let Some(text) = last
+        .reasoning_content
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(reasoning_fallback_text)
+    {
+        return Some(reasoning_fallback_text(text));
+    }
+    // 层 4b（#1414）：连思维链都没有时，用最后一次工具结果摘要兜底。早停门的终答纠偏有注入
+    // 预算，耗尽后仍可能走到这里——收尾层必须能自己产出一段可读文本，而不是让回合静默结束。
+    tool_result_fallback_text(messages, range_start)
 }
 
 fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
