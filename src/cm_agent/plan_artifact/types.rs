@@ -325,16 +325,28 @@ pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
         strip_build_only_acceptance_fields(acc);
     } else if !build_execution
         && step.executor_kind != Some(PlanStepExecutorKind::TestRunner)
-        && (step.executor_kind.is_none()
-            || plan_step_description_implies_readonly_setup_phase(step.description.as_str()))
         && plan_step_acceptance_implies_build_progress(acc)
     {
-        debug!(
-            target: "crabmate::plan_artifact",
-            "strip build acceptance on non-build step step_id={}",
-            step.id.as_str(),
-        );
-        strip_build_only_acceptance_fields(acc);
+        // 只剥「**明确**是只读准备阶段」的步（#1401 #4）。
+        //
+        // 原条件还带 `executor_kind.is_none()`，于是「模型没指定 executor + 描述漏词」也会剥——
+        // 而漏词方向正是本 issue 反复出现的隐患：描述没命中关键词，并不等于这一步不需要验证。
+        if plan_step_description_implies_readonly_setup_phase(step.description.as_str()) {
+            debug!(
+                target: "crabmate::plan_artifact",
+                "strip build acceptance on readonly-setup step step_id={}",
+                step.id.as_str(),
+            );
+            strip_build_only_acceptance_fields(acc);
+        } else {
+            // 对称日志：中性描述（漏词）**保留**验收。两条日志成对存在，才能观测
+            // 「漏词步」有多少、这次规则变更的影响面有多大。
+            debug!(
+                target: "crabmate::plan_artifact",
+                "keep build acceptance on neutral-description step (keyword miss) step_id={}",
+                step.id.as_str(),
+            );
+        }
     }
     if plan_step_description_implies_unpack(step.description.as_str()) {
         strip_command_stream_acceptance_fields(acc);
