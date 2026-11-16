@@ -146,17 +146,19 @@ pub trait CompletionJudge: Send + Sync {
 1. 模型给出终答（无 `tool_calls`）时 —— 与 `per_reflect_after_assistant` 同一时刻。
 2. 预算阈值处 —— 决定「带半成品停」还是「再给一轮」。
 
-**触发前置（省成本）**：按第 ① 层的三态分级，**只有 `NotApplicable` 才调 LLM**：
+**不再有「第 ① 层触发前置」（#1415 已删第 ① 层）**：原先的分级是「结构化证据先给
+`Satisfied` / `Missing` / `NotApplicable`，只有最后一个才问 LLM」。领域检测器（只有 C++ 一个、
+本身也是文本启发式）与通用关键词兜底一并移除后，**早停门只有一个判定源**：
 
-| 第 ① 层结论 | 是否问第 ② 层 |
-|---|---|
-| `Satisfied` | **不问**（领域检测器已给确定性结论；#1415 后第 ① 层无任务关键词判断） |
-| `Missing` | **不问**——证据明确缺失，升级等于替模型找台阶 |
-| `NotApplicable` | 问（综合任务 / 只读分析） |
+- `completion_judge_enabled` 且未超调用上限 → 直接问第 ② 层；
+- 判定层不可用（开关关 / 无 `API_KEY` / LLM 失败 / 回复无法解析 / 无可用窗口）→ **不早停**。
+- `satisfied` 但锚点校验未过 → `judge_and_validate` 已降级为 `unsatisfied`，同样不早停。
+
+**代价（有意接受）**：早停能力现在**完全依赖 LLM 可用性**；关掉开关时任何任务都不会提前停轮。
 
 **成本护栏（两道，缺一不可）**：
 
-早停门在**每个工具批之后**都会走一次，而综合任务的第 ① 层恒为 `NotApplicable`。实测：5 轮工具批
+早停门在**每个工具批之后**都会走一次，每次都有新证据（指纹变化）。实测：5 轮工具批
 会产生 **5 个不同指纹**，所以只做指纹去重仍会 5 次调用。
 
 1. **每回合硬上限** `MAX_COMPLETION_JUDGE_CALLS_PER_TURN = 3`（`PerTurnCounters`，随回合重置）；
@@ -167,7 +169,7 @@ pub trait CompletionJudge: Send + Sync {
 取 3 的理由：早停若真有价值，通常前几轮就能判出；任务刚开始时即使判出完成也只省一两轮，
 收益远小于一次 LLM 往返。需要更大额度时再升为配置键。
 
-**fail-open**：LLM 失败 / 超时 / JSON 解析失败 → 维持第 ① 层结论，**绝不因此早停**。
+**fail-open**：LLM 失败 / 超时 / JSON 解析失败 → **不早停**（绝不因判定失败而早停）。
 
 **处置由编排层负责**（§3）：判定层只回 `status`，本接线点当前只把 `satisfied` 映射为「允许早停」，
 其余一律「继续」。预算耗尽时的「带半成品停」由 `turn_budget` 的既有中止路径处理，不在早停门内做。
@@ -195,9 +197,10 @@ completion_judge_model = ""             # 空 = 继承默认；仅覆盖，不�
 |---|---|
 | 假阳性（判完成但没完成）→ 提前终止交半成品 | §4 锚点硬约束 + fail-open 只退不放 + 金样覆盖三类任务 |
 | 判定模型顺同偏差 | 输入剔除 assistant 自述；`completion_judge_model` 可选覆盖（非强制） |
-| 成本 / 延迟 | 仅候选终止点 + 仅第 ① 层 `NotApplicable` 时 + `max_tokens ≤ 1024` + 每回合 ≤3 次 |
+| 成本 / 延迟 | 仅候选终止点 + `max_tokens ≤ 1024` + 每回合 ≤3 次 |
 | 金样随模型漂移 | §5 可注入 trait，单测金样用 mock |
-| 与第 ① 层结论冲突 | 第 ② 层**只能把 `NotApplicable` 提升**，不能否决第 ① 层已给出的 `Satisfied` |
+| 早停完全依赖 LLM 可用性（#1415 删第 ① 层后） | 无确定性短路：关掉开关 / 无 `API_KEY` / 判定失败时**任何任务都不早停**，回合跑到迭代上限 |
+| fail-open 只退不放 | 判定失败绝不导致早停；不需要「与第 ① 层结论冲突」的仲裁（已无第 ① 层） |
 
 ---
 
@@ -205,8 +208,8 @@ completion_judge_model = ""             # 空 = 继承默认；仅覆盖，不�
 
 - 综合任务：「重构 X 并保证行为不变」+ `cargo_test` 通过 → `satisfied` 且 `evidence_refs` 指向该验证证据。
 - 锚点约束：mock 返回 `satisfied` 但 `evidence_refs` 为空 / 只引 `other` → **降级为 `unsatisfied`**。
-- fail-open：mock 返回错误 → 维持第 ① 层结论，早停门行为不变。
-- 关闭时：`completion_judge_enabled = false` 时**零 LLM 调用**，早停门退回「只有领域检测器能放行」（#1415）。
+- fail-open：mock 返回错误 → **不早停**（不存在「第 ① 层结论」可维持了）。
+- 关闭时：`completion_judge_enabled = false` 时**零 LLM 调用**，且**任何任务都不早停**（#1415：已无检测器兜底）。
 - `pre-commit run --all-files` 全绿；`cargo test -p crabmate --lib` 全绿。
 
 ---

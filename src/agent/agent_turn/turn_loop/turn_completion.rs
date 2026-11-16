@@ -10,8 +10,7 @@ mod turn_completion_golden;
 #[cfg(test)]
 pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::evaluate_turn_suppress_replanning;
 pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::{
-    TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
-    log_turn_completion_decision,
+    TurnCompletionDecision, evaluate_turn_redundant_tools, log_turn_completion_decision,
 };
 
 pub(crate) use crate::agent::agent_turn::policy::completion_suppression::redundant_tool_names_for_log;
@@ -28,9 +27,7 @@ pub(crate) use crate::agent::agent_turn::policy::completion_suppression::{
 use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
 use crate::agent::agent_turn::params::RunLoopParams;
-use crate::agent::agent_turn::policy::task_level_evidence::{
-    EvidenceSet, GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-};
+use crate::agent::agent_turn::policy::task_level_evidence::EvidenceSet;
 use crate::agent::completion_judge_llm::LlmCompletionJudge;
 use crate::cm_agent::completion_judge::{
     CompletionJudgeInput, CompletionStatus, JudgedEvidence, judge_and_validate,
@@ -45,56 +42,32 @@ pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_MIN_CHARS: usize = 24;
 /// 截断纠偏最多注入次数，避免长输出反复触发与外层迭代上限死磕。
 pub(crate) const OUTER_LOOP_TRUNCATED_FEEDBACK_MAX: u32 = 2;
 
-/// 任务级证据已 Satisfied 时是否允许**提前停轮**。
+/// 早停门的**唯一判定**：问第 ② 层 LLM 语义判定（#1387 S0.5 / #1415）。
 ///
-/// 同步、只看第 ① 层；生产早停走 [`turn_early_stop_allowed_with_judge`]（能问第 ② 层），
-/// 这里只服务于同步消费者与测试。
-pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
-    evaluate_turn_early_stop(messages).is_allow()
-}
-
-/// 早停门的**完整判定**：第 ① 层结构化证据 → 判不出时问第 ② 层 LLM（#1387 S0.5 / #1415）。
+/// 第 ① 层（结构化证据 + 领域检测器）已删除：检测器只有 C++ 一个、且它本身就是文本启发式，
+/// 保留它意味着同一事实存在两条判定路径。现在结构化证据只作为 **judge 的输入**，不自下结论。
 ///
-/// 分级刻意如此，不是「第 ① 层 false 就问 LLM」：
+/// - 判 `satisfied` 且锚点校验通过 → 放行，并把结论缓存到 `PerCoordinator`（同步门复用）；
+/// - `satisfied` 但锚点不过 → `judge_and_validate` 已降级为 `unsatisfied`，放行不了；
+/// - 判定层不可用（`completion_judge_enabled = false` / LLM 失败 / 回复无法解析 / 无可用窗口）
+///   → **不早停**（fail-open，绝不因判定失败而早停）。
 ///
-/// - `Satisfied`：**领域检测器**给出确定性结论（当前只有「写源码 → 编译 → 运行」三件套
-///   齐全的 C++ 任务），**不问 LLM**。这不是「关键词强度分级」——第 ① 层已无任务文本判断；
-/// - `Missing`：证据**明确缺失**，不升级——升级等于替模型找台阶；
-/// - `NotApplicable`：第 ① 层不下结论（构建/测试、综合任务、只读分析都在此列），
-///   交第 ② 层语义判定；
-/// - 第 ② 层不可用（`completion_judge_enabled = false` / LLM 失败 / 回复无法解析）：
-///   维持第 ① 层结论，此处即「不早停」（fail-open，**绝不因判定失败而早停**）。
+/// **代价（有意接受）**：早停能力现在**完全依赖 LLM 可用性**。关掉 `completion_judge_enabled`
+/// 或缺 `API_KEY` 时，任何任务都不会提前停轮，回合会跑到迭代上限。
 pub(crate) async fn turn_early_stop_allowed_with_judge(
     p: &RunLoopParams<'_>,
     per_coord: &mut crate::agent::per_coord::PerCoordinator,
 ) -> bool {
     let messages = p.turn.messages();
-    match check_active_user_goal_completion_evidence(messages) {
-        GoalCompletionEvidenceCheck::Satisfied => {
-            // 领域检测器已给出确定性结论。仍调 `turn_early_stop_allowed` 只为保留
-            // `log_turn_completion_decision` 的 trace——core 现在只剩 `Satisfied ? Allow : Deny`，此处恒真。
-            let allowed = turn_early_stop_allowed(messages);
-            if allowed {
-                per_coord.mark_completion_confirmed();
-            }
-            return allowed;
-        }
-        GoalCompletionEvidenceCheck::Missing(_) => return false,
-        GoalCompletionEvidenceCheck::NotApplicable => {}
-    }
-    // 证据必须与第 ① 层**同一窗口**。`check_active_user_goal_completion_evidence` 只看
-    // 自最后一个真实 user 起的消息；这里若用全量历史，上一任务跑通的 `cargo_test` 就会进入
-    // 本轮判定输入，而锚点校验只要求「有一条 verify/write 成功」、不问它属不属于本窗口 →
-    // judge 会拿旧证据判当前任务完成。
+    // 证据必须按「最后一个真实 user」窗口裁剪：全量历史会把上一任务跑通的 `cargo_test`
+    // 带进本轮判定输入，而锚点校验只问「有没有 verify/write 成功」、不问属不属于本窗口。
     let Some(window) = crate::cm_types::messages_slice_since_last_real_user(messages, false) else {
         return false;
     };
     let ev = EvidenceSet::collect(window);
-    // 去重：本门在**每个工具批之后**都会走一次，而综合任务的第 ① 层恒为 `NotApplicable`。
-    // 用证据指纹判断「是否有新事实」——有新证据才值得再问一次，否则同一份事实重复问纯属浪费。
-    if !per_coord.take_completion_judge_slot(evidence_fingerprint(&ev)) {
-        return false;
-    }
+    // 先构造判定器：开关关时直接返回 `None`，此时**不应消耗配额**也不该写指纹。
+    // 顺序颠倒会让「关掉 judge」的部署在每个工具批白涨 `completion_judge_calls`，
+    // 把那个计数器变成假指标。
     let Some(judge) = LlmCompletionJudge::from_config(
         p.ctx.core.cfg,
         p.ctx.core.llm_backend,
@@ -105,6 +78,10 @@ pub(crate) async fn turn_early_stop_allowed_with_judge(
     ) else {
         return false;
     };
+    // 去重：本门在**每个工具批之后**都会走一次。指纹不变 = 没有新事实，重复问纯属浪费。
+    if !per_coord.take_completion_judge_slot(evidence_fingerprint(&ev)) {
+        return false;
+    }
     let satisfied = match judge_and_validate(&judge, build_judge_input_from(window, &ev)).await {
         Some(v) => v.status == CompletionStatus::Satisfied,
         None => false,
@@ -177,11 +154,16 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
 /// 生产 outer_loop 尚未接线；仅单测与金样使用。
 #[cfg(test)]
 pub(crate) fn turn_suppress_completed_replanning(
-    messages: &[Message],
     entered_from_step_execution_round: bool,
     steps: &[crate::agent::plan_artifact::PlanStepV1],
+    completion_confirmed: bool,
 ) -> bool {
-    evaluate_turn_suppress_replanning(messages, entered_from_step_execution_round, steps).is_allow()
+    evaluate_turn_suppress_replanning(
+        entered_from_step_execution_round,
+        steps,
+        completion_confirmed,
+    )
+    .is_allow()
 }
 
 fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
@@ -425,51 +407,18 @@ mod tests {
         assert_ne!(fp1, fp2);
     }
 
-    /// 弱验证证据（`run_command` 跑 `make`）+ 自述「编译完成」不再由第 ① 层放行。
-    ///
-    /// 同步入口只表达「第 ① 层没给出 `Satisfied`」，不替语义层下结论（#1415）。
+    /// 未确认完成时，步后抑规划不得放行。
     #[test]
-    fn build_task_weak_evidence_does_not_allow_staged_early_exit() {
-        let messages = vec![
-            msg("user", "编译 hpcg"),
-            tool_env(
-                "run_command",
-                "make -C hpcg",
-                "命令：make -C hpcg\n退出码：0\n标准输出：\nBuilt",
-            ),
-            msg("assistant", "HPCG 编译完成成功。"),
-        ];
-        assert!(!turn_early_stop_allowed(&messages));
-        assert_eq!(
-            evaluate_turn_early_stop(&messages).deny_reason(),
-            Some("evidence_not_satisfied")
-        );
-    }
-
-    /// 只读分析同样交第 ② 层：**读过文件**不等于**分析完并答出来**（#1415）。
-    #[test]
-    fn readonly_task_defers_to_semantic_judge() {
-        let messages = vec![
-            msg("user", "分析当前目录"),
-            tool_env("list_tree", "list tree", "list tree: ."),
-            msg(
-                "assistant",
-                "当前目录包含三个压缩包，分析结果如下，总结完成。",
-            ),
-        ];
-        assert!(!turn_early_stop_allowed(&messages));
-    }
-
-    /// 早停未放行时，步后抑规划也不得放行（两道门同源）。
-    #[test]
-    fn probe_only_replan_not_suppressed_when_layer1_defers() {
-        let messages = vec![
-            msg("user", "分析当前目录"),
-            tool_env("list_tree", "list tree", "list tree: ."),
-            msg("assistant", "分析完成，总结如下。"),
-        ];
+    fn probe_only_replan_not_suppressed_when_not_confirmed() {
         let steps = vec![step("summary", Some("summary"), "最终汇报")];
-        assert!(!turn_suppress_completed_replanning(&messages, true, &steps));
+        assert!(!turn_suppress_completed_replanning(true, &steps, false));
+    }
+
+    /// 已确认完成时，仅探针/总结类的新规划应被抑制（保住正向覆盖）。
+    #[test]
+    fn probe_only_replan_suppressed_when_confirmed() {
+        let steps = vec![step("summary", Some("summary"), "最终汇报")];
+        assert!(turn_suppress_completed_replanning(true, &steps, true));
     }
 
     fn list_tree_probe() -> ToolCall {

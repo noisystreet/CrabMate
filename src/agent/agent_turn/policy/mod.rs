@@ -38,17 +38,14 @@ pub use phase_vocabulary::{
     OUTER_LOOP_STEP_PREPARE_CONTEXT_DONE, OUTER_LOOP_STEP_REFLECT_DECIDED,
     OUTER_LOOP_STEP_TOOLS_EXECUTE, TURN_ORCHESTRATION_MODE_REACT,
 };
-pub use task_level_evidence::{
-    GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-};
 pub use tool_execution::{
     ExecuteToolsBatchOutcome, ToolBatchExecutionMode, ToolBatchModeParams,
     ToolPolicyEarlyDenyParams, dedup_readonly_tool_calls_count, replay_force_serial_from_env,
     resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_completion_decision::{
-    TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
-    evaluate_turn_suppress_replanning, log_turn_completion_decision,
+    TurnCompletionDecision, evaluate_turn_redundant_tools, evaluate_turn_suppress_replanning,
+    log_turn_completion_decision,
 };
 pub use turn_orchestration::{ReActBecause, TurnOrchestrationMode, TurnResolution};
 pub use turn_route_decision::{

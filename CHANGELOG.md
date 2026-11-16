@@ -42,6 +42,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the anchor check only asks whether a `verify`/`write` success exists, not whose), and the verdict is cached
   per turn so the redundant-probe gate, which is synchronous and cannot call the judge, reaches the same
   conclusion as the early-stop gate instead of diverging.
+- **Early stop now depends entirely on the judge.** With layer ① gone there is no deterministic short-circuit:
+  when `completion_judge_enabled` is off, `API_KEY` is absent, or the judge fails, **no turn stops early** and it
+  runs to the iteration cap. That is the accepted cost of a single verdict path. Golden coverage moved to
+  `confirmed: true` / `false` rows on the `suppress_replanning` and `redundant_tools` cases.
 
 ### Removed
 
@@ -49,8 +53,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   extended: `build_or_test_intent` (13 substring matches — `"test"` hit `greatest`, `"make"` hit `make sure`,
   while a composite task like "refactor X without changing behaviour" matched nothing) and
   `assistant_gave_conclusion` (treating a "done / completed" self-report as completion evidence). The same facts
-  no longer flip verdicts on wording. `turn_completion_golden.jsonl` now has an `allow_early_stop` case for the
-  C++ detector and `deny` for everything else.
+  no longer flip verdicts on wording.
+- **Layer ① and its domain detector are deleted (#1415).** `GOAL_EVIDENCE_DETECTORS` had exactly one entry — the
+  C++ write → compile → run triple — and `is_program_build_run_request` was itself substring matching, so keeping
+  it meant two verdict paths over the same facts. `task_level_evidence/` now only collects structured evidence:
+  `GoalCompletionEvidenceCheck`, `common.rs` and the whole of `verify.rs` are gone, together with the
+  `AllowEarlyStop` / `DenyEarlyStop` decision variants and the golden `early_stop` case type. The
+  `turn_completion_deny_reason` value emitted when a gate blocks also changed: `early_stop_not_allowed` is now
+  `completion_not_confirmed` (the gate no longer has an evidence layer to name) — update any log filter or
+  dashboard keyed on the old string.
 
 ## [0.9.0] - 2026-11-15
 

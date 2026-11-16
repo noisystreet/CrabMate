@@ -56,17 +56,18 @@
 | 预算 | 墙钟 / Token 粗估 / LLM 次数 + 迭代硬上限；耗尽即报错中止 | `src/cm_agent/turn_budget.rs`、`turn_loop/outer_loop.rs` |
 | 上下文 | 分级压缩：压旧工具正文 → 删最旧完整交互组，保工具链完整 | `src/agent/context_compaction/policy.rs` |
 | 验收内核 | **两套实现并存**：结构化 `AcceptanceSpec` + `verify_against_spec`（退出码 / 输出 / 文件 / JSON / HTTP），仅 workflow 与分阶段步消费 | `src/cm_agent/acceptance/` |
-| 完成证据（主路径） | **已接线**：`turn_early_stop_allowed` → `check_active_user_goal_completion_evidence`；冗余工具抑制同源。**非**「靠模型自述」 | `policy/task_level_evidence/verify.rs`、`turn_loop/outer_loop.rs` |
-| 证据检测器覆盖 | 检测器仅 1 个（C++）；其余场景一律 `NotApplicable`，交第 ② 层语义判定（#1415 已删通用关键词兜底） | `policy/task_level_evidence/verify.rs` |
-| 早停门 | 关键词门已移除（#1415）：`Satisfied` 直接放行，`NotApplicable` 交第 ② 层语义判定；金样 `allow_early_stop` 只剩领域检测器命中 | `policy/turn_completion_decision.rs` |
+| 完成证据（主路径） | **已接线**：`outer_loop` → `turn_early_stop_allowed_with_judge`（第 ② 层语义判定）；冗余工具抑制读 `PerCoordinator` 缓存的同一结论，两道门同源。**非**「靠模型自述」 | `turn_loop/turn_completion.rs`、`turn_loop/outer_loop.rs` |
+| 证据检测器覆盖 | **检测器已整层删除**（#1415）：第 ① 层不再自下结论，只剩 `evidence.rs` 的结构化事实采集供 judge 消费 | `policy/task_level_evidence/evidence.rs` |
+| 早停门 | 只有一个判定源：第 ② 层语义判定（`completion_judge_enabled`）；判定不可用即不早停，**无确定性短路** | `policy/turn_completion_decision.rs`、`turn_loop/turn_completion.rs` |
 | 步后抑规划 | `evaluate_turn_suppress_replanning` **注释自述生产未接线**（仅金样与单测） | `turn_completion.rs`、`turn_completion_decision.rs` |
 | 子 Agent | `HandlerId::Delegate` 未注册；agent 层 handler 清单只有 `Workflow` | `host/execute/tool_execution_host.rs` |
 | 跨回合状态 | plan artifact 只在回合内；跨回合仅 `reminder` / `event` 与 cron 定时任务 | `src/cm_config/scheduled_agent_task.rs` |
 | 记忆 | scope **固定 `conversation_id`**；自动沉淀只覆盖 build/test 失败→成功 | `config/memory.toml`、`auto_memory` 系 |
 | 工具续航 | 后台 job（`async=true`）、只读并行批、失败透明重试（**默认关**） | `TurnBudgetConfig` 同文件工具段 |
 
-**一句话概括**：门禁强、续航弱、证据窄。安全边界与预算约束做得扎实；完成证据的**机制已接线但覆盖极窄**
-（单一 C++ 检测器 + 与证据冲突的早停门），「做完一件事」的半径仍被压在一轮内。
+**一句话概括**：门禁强、续航弱、判定无确定性兜底。安全边界与预算约束做得扎实；完成证据的**机制已接线**
+（第 ② 层语义判定 + 结构化事实输入，#1415 后检测器与关键词路径均已删除），但**早停现在完全依赖 LLM 可用性**，
+「做完一件事」的半径仍被压在一轮内。
 
 ---
 
@@ -217,6 +218,10 @@ L6（读三态），且当前实现双向误判（§3.2 实测）。**判定层�
 及其 C++ 检测器）在 ①② 落地并覆盖后应**整体移除**，不要保留为 fallback——否则会与新层并存，
 重演「两套实现语义不对齐」的老问题（§3.2 现状的成因）。
 
+**✅ 已于 #1415 完成**：上述三处全部删除，`policy/task_level_evidence/` 只剩 `evidence.rs`
+（结构化事实采集）。**代价**：早停现在完全依赖 LLM 可用性——关掉 `completion_judge_enabled`
+或缺 `API_KEY` 时任何任务都不早停，回合会跑到迭代上限。这一取舍是有意接受的。
+
 #### 落点
 
 `policy/task_level_evidence/`（重写为证据采集 + 判定两层）、`cm_agent/acceptance/`（复用 `AcceptanceSpec`
@@ -234,7 +239,8 @@ L6（读三态），且当前实现双向误判（§3.2 实测）。**判定层�
 
 - §3.2 三个实测探针全部按预期改变：`cargo_test` 专用工具 → 不再 `NotApplicable`；
   纯写无验证 → 不再 `Satisfied`。
-- `fixtures/turn_completion_golden.jsonl` 首次出现 `allow_early_stop` 用例（当前零条）。
+- `fixtures/turn_completion_golden.jsonl` 的 `suppress_replanning` / `redundant_tools` 两档各有
+  `confirmed: true → allow` 与 `confirmed: false → deny` 用例（`early_stop` 档随第 ① 层一并删除，#1415）。
 - 综合任务场景：分解释义下子项判定可独立回归。
 - 关闭该功能时行为逐字不变。
 
