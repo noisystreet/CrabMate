@@ -102,64 +102,103 @@ impl TurnExecutionConstraints {
     }
 }
 
+/// 明确要求「不要改文件」的说法。
+const NO_WRITE_MARKERS: &[&str] = &[
+    "取消修复",
+    "不用修复",
+    "不要修复",
+    "别修复",
+    "不要修改",
+    "别修改",
+    "先别改",
+    "先不要改",
+    "不改代码",
+    "不改动",
+    "别动代码",
+    "不要动代码",
+    "without modifying",
+    "do not modify",
+    "don't modify",
+    "no patch",
+];
+
+/// 明确要求「不要执行命令 / 编译 / 跑测试」的说法。
+const NO_COMMAND_MARKERS: &[&str] = &[
+    "不要运行",
+    "别运行",
+    "不要执行",
+    "别执行",
+    "不要编译",
+    "别编译",
+    "不要跑",
+    "别跑",
+    "do not run",
+    "don't run",
+    "without running",
+];
+
+/// 「只要分析 / 解释」的措辞。
+///
+/// **只作辅助判据**：单靠它不收窄（见 `requires_review_readonly`）。其中「分析」「说明」
+/// 「解释」都是中性词——用户说「改完说明一下」也会命中，所以不能单独当作只读意图。
+const ANALYSIS_MARKERS: &[&str] = &[
+    "分析",
+    "诊断",
+    "说明",
+    "解释",
+    "只解释",
+    "仅解释",
+    "怎么编译",
+    "如何编译",
+    "怎么做",
+    "只读",
+    "只分析",
+    "analyze",
+    "diagnose",
+    "explain",
+    "how to",
+    "readonly",
+    "read-only",
+];
+
+/// 任务文本按**非字母数字**切成词（供英文标记做整词匹配）。
+fn split_ascii_words(lower: &str) -> Vec<&str> {
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// 标记是否命中任务文本（#1401 #12）。
+///
+/// - **中文**标记：子串匹配——中文没有词边界概念；
+/// - **英文**标记：按词边界整词匹配，支持 `how to` / `read-only` / `don't modify` 这类
+///   多词与带撇号、连字符的短语。旧实现是整串 `contains`，于是 `explain` 命中 `explainer`、
+///   `how to` 命中 `show token`。
+fn marker_matches(lower: &str, words: &[&str], marker: &str) -> bool {
+    if !marker.is_ascii() {
+        return lower.contains(marker);
+    }
+    let needle: Vec<&str> = marker
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if needle.is_empty() || needle.len() > words.len() {
+        return false;
+    }
+    words.windows(needle.len()).any(|w| w == needle.as_slice())
+}
+
 fn infer_turn_execution_constraints(task: &str) -> Option<TurnExecutionConstraints> {
     let t = task.trim().to_lowercase();
     if t.is_empty() {
         return None;
     }
-    let no_write = [
-        "取消修复",
-        "不用修复",
-        "不要修复",
-        "别修复",
-        "不要修改",
-        "别修改",
-        "先别改",
-        "先不要改",
-        "不改代码",
-        "without modifying",
-        "do not modify",
-        "don't modify",
-        "no patch",
-    ]
-    .iter()
-    .any(|marker| t.contains(marker));
-    let no_command_execution = [
-        "不要运行",
-        "别运行",
-        "不要执行",
-        "别执行",
-        "不要编译",
-        "别编译",
-        "不要跑",
-        "别跑",
-        "do not run",
-        "don't run",
-        "without running",
-    ]
-    .iter()
-    .any(|marker| t.contains(marker));
-    let analysis_only = [
-        "分析",
-        "诊断",
-        "说明",
-        "解释",
-        "只解释",
-        "仅解释",
-        "怎么编译",
-        "如何编译",
-        "怎么做",
-        "只读",
-        "只分析",
-        "analyze",
-        "diagnose",
-        "explain",
-        "how to",
-        "readonly",
-        "read-only",
-    ]
-    .iter()
-    .any(|marker| t.contains(marker));
+    let words = split_ascii_words(&t);
+    let hit = |markers: &[&str]| markers.iter().any(|m| marker_matches(&t, &words, m));
+    let no_write = hit(NO_WRITE_MARKERS);
+    let no_command_execution = hit(NO_COMMAND_MARKERS);
+    let analysis_only = hit(ANALYSIS_MARKERS);
     let ask_before_mutation = no_write || t.contains("先问我") || t.contains("先确认");
     let constraints = TurnExecutionConstraints {
         no_write,
@@ -229,6 +268,56 @@ mod tests {
                 !readonly,
                 "Act heuristics must not blanket-narrow for task={task:?}"
             );
+        }
+    }
+
+    /// `marker_matches` 的整词语义（#1401 #12）。
+    fn marker_hits(text: &str, marker: &str) -> bool {
+        let lower = text.to_lowercase();
+        let words = super::split_ascii_words(&lower);
+        super::marker_matches(&lower, &words, marker)
+    }
+
+    #[test]
+    fn english_marker_needs_word_boundary() {
+        assert!(marker_hits("please explain it", "explain"));
+        assert!(
+            !marker_hits("the explainer is broken", "explain"),
+            "`explainer` 不得算作 `explain`"
+        );
+        assert!(
+            !marker_hits("show token value", "how to"),
+            "`show to` 不得算作 `how to`"
+        );
+    }
+
+    #[test]
+    fn multi_word_and_punctuated_markers_still_match() {
+        assert!(marker_hits("how to build this", "how to"));
+        assert!(marker_hits("expose read-only mode", "read-only"));
+        assert!(marker_hits("please don't modify it", "don't modify"));
+        assert!(marker_hits("no patch needed", "no patch"));
+    }
+
+    #[test]
+    fn chinese_marker_uses_substring() {
+        assert!(marker_hits("先分析一下再决定", "分析"));
+        assert!(!marker_hits("先分析一下", "不要修改"));
+    }
+
+    /// #1401 #12：新收录的「别动代码 / 不改动」这类**明确禁令**也要能收窄成只读。
+    ///
+    /// 补的是禁令的同义说法（显式指令），不是拿词表去猜任务意图——后者正是本 issue 反对的。
+    #[test]
+    fn new_negative_markers_narrow_to_review_readonly() {
+        for task in [
+            "不要动代码，先分析一下失败原因",
+            "别动代码，只解释这个报错",
+            "这次不改动，先诊断一下",
+        ] {
+            let c = infer_turn_execution_constraints(task)
+                .unwrap_or_else(|| panic!("应识别出约束：{task}"));
+            assert!(c.requires_review_readonly(), "应收窄为只读：{task}");
         }
     }
 
