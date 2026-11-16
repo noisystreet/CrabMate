@@ -129,37 +129,6 @@ impl EvidenceSet {
         self.items.is_empty()
     }
 
-    /// 是否存在**强**验证证据（专用工具 + 结构化退出码）。
-    #[must_use]
-    pub fn has_strong_verify_success(&self) -> bool {
-        self.items.iter().any(|i| {
-            i.kind == EvidenceKind::Verify
-                && i.strength == EvidenceStrength::Strong
-                && i.ok
-        })
-    }
-
-    /// 是否存在任一验证证据（含弱）。
-    #[must_use]
-    pub fn has_any_verify_success(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| i.kind == EvidenceKind::Verify && i.ok)
-    }
-
-    /// 是否改过工作区。
-    #[must_use]
-    pub fn has_write_success(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| i.kind == EvidenceKind::Write && i.ok)
-    }
-
-    /// 是否有任何成功证据（含只读探查）。
-    #[must_use]
-    pub fn has_any_success(&self) -> bool {
-        self.items.iter().any(|i| i.ok)
-    }
 }
 
 /// 验证性执行的**专用**工具：自身输出带结构化退出码，无需文本推断。
@@ -314,7 +283,6 @@ mod tests {
             ),
         ];
         let ev = EvidenceSet::collect(&messages);
-        assert!(ev.has_strong_verify_success(), "专用 cargo_test 应为强验证证据");
         let item = &ev.items()[0];
         assert_eq!(item.kind, EvidenceKind::Verify);
         assert_eq!(item.strength, EvidenceStrength::Strong);
@@ -333,9 +301,11 @@ mod tests {
             ),
         ];
         let ev = EvidenceSet::collect(&messages);
-        assert!(ev.has_any_verify_success());
-        assert!(
-            !ev.has_strong_verify_success(),
+        let item = &ev.items()[0];
+        assert_eq!(item.kind, EvidenceKind::Verify);
+        assert_eq!(
+            item.strength,
+            EvidenceStrength::Weak,
             "run_command 靠文本特征，只能是弱证据"
         );
     }
@@ -347,8 +317,9 @@ mod tests {
             tool_env(tool_names::MODIFY_FILE, "修改 src/x.rs", "已修改文件: src/x.rs"),
         ];
         let ev = EvidenceSet::collect(&messages);
-        assert!(ev.has_write_success());
-        assert!(!ev.has_any_verify_success(), "写盘不是验证证据");
+        let item = &ev.items()[0];
+        assert_eq!(item.kind, EvidenceKind::Write, "写盘不是验证证据");
+        assert_eq!(item.strength, EvidenceStrength::Strong);
     }
 
     #[test]
@@ -362,9 +333,10 @@ mod tests {
             ),
         ];
         let ev = EvidenceSet::collect(&messages);
-        assert!(!ev.has_strong_verify_success());
-        assert!(!ev.has_any_verify_success());
-        assert_eq!(ev.items()[0].exit_code, Some(101));
+        let item = &ev.items()[0];
+        assert_eq!(item.kind, EvidenceKind::Verify);
+        assert!(!item.ok, "非零退出码不得算成功证据");
+        assert_eq!(item.exit_code, Some(101));
     }
 
     #[test]
@@ -394,12 +366,25 @@ mod tests {
 
     #[test]
     fn verify_tool_without_exit_code_degrades_to_weak() {
-        // 无信封的历史行 → 解析不出退出码 → 强证据不成立。
+        // 无信封的历史行（有工具名、无 crabmate 信封）→ 解析不出退出码 → 强证据不成立。
+        //
+        // 必须给 `name`：没有工具名的 tool 消息在 `collect` 阶段就被丢弃（`tool.trim().is_empty()`），
+        // 那样断言会作用在空集合上、恒真——原写法正是这个假通过。
         let messages = vec![
             user("跑测试"),
-            msg("tool", "cargo test 完成了"),
+            Message {
+                role: "tool".to_string(),
+                content: Some("cargo test 完成了".to_string().into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some(tool_names::CARGO_TEST.to_string()),
+                tool_call_id: Some("call_1".to_string()),
+            },
         ];
         let ev = EvidenceSet::collect(&messages);
-        assert!(!ev.has_strong_verify_success());
+        let item = &ev.items()[0];
+        assert_eq!(item.strength, EvidenceStrength::Weak);
+        assert_eq!(item.exit_code, None, "无信封解析不出退出码");
     }
 }

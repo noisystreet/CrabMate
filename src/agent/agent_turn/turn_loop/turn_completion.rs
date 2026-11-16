@@ -45,31 +45,51 @@ pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_MIN_CHARS: usize = 24;
 /// 截断纠偏最多注入次数，避免长输出反复触发与外层迭代上限死磕。
 pub(crate) const OUTER_LOOP_TRUNCATED_FEEDBACK_MAX: u32 = 2;
 
-/// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
+/// 任务级证据已 Satisfied 时是否允许**提前停轮**。
+///
+/// 同步、只看第 ① 层；生产早停走 [`turn_early_stop_allowed_with_judge`]（能问第 ② 层），
+/// 这里只服务于同步消费者与测试。
 pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
     evaluate_turn_early_stop(messages).is_allow()
 }
 
-/// 早停门的**完整判定**：第 ① 层结构化证据 → 仅在「判不出」时才问第 ② 层 LLM（#1387 S0.5）。
+/// 早停门的**完整判定**：第 ① 层结构化证据 → 判不出时问第 ② 层 LLM（#1387 S0.5 / #1415）。
 ///
 /// 分级刻意如此，不是「第 ① 层 false 就问 LLM」：
 ///
-/// - `Satisfied`：沿用第 ① 层的强度分级（弱证据仍可能被 `build_or_test_intent` 拒绝），**不问 LLM**；
+/// - `Satisfied`：**领域检测器**给出确定性结论（当前只有「写源码 → 编译 → 运行」三件套
+///   齐全的 C++ 任务），**不问 LLM**。这不是「关键词强度分级」——第 ① 层已无任务文本判断；
 /// - `Missing`：证据**明确缺失**，不升级——升级等于替模型找台阶；
-/// - `NotApplicable`：结构化层判不出（综合任务 / 只读分析），交第 ② 层语义判定；
-/// - 第 ② 层不可用（配置关闭 / LLM 失败 / 回复无法解析）：维持第 ① 层结论，此处即「不早停」
-///   （fail-open，**绝不因判定失败而早停**）。
+/// - `NotApplicable`：第 ① 层不下结论（构建/测试、综合任务、只读分析都在此列），
+///   交第 ② 层语义判定；
+/// - 第 ② 层不可用（`completion_judge_enabled = false` / LLM 失败 / 回复无法解析）：
+///   维持第 ① 层结论，此处即「不早停」（fail-open，**绝不因判定失败而早停**）。
 pub(crate) async fn turn_early_stop_allowed_with_judge(
     p: &RunLoopParams<'_>,
     per_coord: &mut crate::agent::per_coord::PerCoordinator,
 ) -> bool {
     let messages = p.turn.messages();
     match check_active_user_goal_completion_evidence(messages) {
-        GoalCompletionEvidenceCheck::Satisfied => return turn_early_stop_allowed(messages),
+        GoalCompletionEvidenceCheck::Satisfied => {
+            // 领域检测器已给出确定性结论。仍调 `turn_early_stop_allowed` 只为保留
+            // `log_turn_completion_decision` 的 trace——core 现在只剩 `Satisfied ? Allow : Deny`，此处恒真。
+            let allowed = turn_early_stop_allowed(messages);
+            if allowed {
+                per_coord.mark_completion_confirmed();
+            }
+            return allowed;
+        }
         GoalCompletionEvidenceCheck::Missing(_) => return false,
         GoalCompletionEvidenceCheck::NotApplicable => {}
     }
-    let ev = EvidenceSet::collect(messages);
+    // 证据必须与第 ① 层**同一窗口**。`check_active_user_goal_completion_evidence` 只看
+    // 自最后一个真实 user 起的消息；这里若用全量历史，上一任务跑通的 `cargo_test` 就会进入
+    // 本轮判定输入，而锚点校验只要求「有一条 verify/write 成功」、不问它属不属于本窗口 →
+    // judge 会拿旧证据判当前任务完成。
+    let Some(window) = crate::cm_types::messages_slice_since_last_real_user(messages, false) else {
+        return false;
+    };
+    let ev = EvidenceSet::collect(window);
     // 去重：本门在**每个工具批之后**都会走一次，而综合任务的第 ① 层恒为 `NotApplicable`。
     // 用证据指纹判断「是否有新事实」——有新证据才值得再问一次，否则同一份事实重复问纯属浪费。
     if !per_coord.take_completion_judge_slot(evidence_fingerprint(&ev)) {
@@ -85,10 +105,15 @@ pub(crate) async fn turn_early_stop_allowed_with_judge(
     ) else {
         return false;
     };
-    match judge_and_validate(&judge, build_judge_input_from(messages, &ev)).await {
+    let satisfied = match judge_and_validate(&judge, build_judge_input_from(window, &ev)).await {
         Some(v) => v.status == CompletionStatus::Satisfied,
         None => false,
+    };
+    // 缓存结论：冗余探针抑制等同步门拿不到 judge，靠它对齐口径。
+    if satisfied {
+        per_coord.mark_completion_confirmed();
     }
+    satisfied
 }
 
 /// 证据指纹：条目数 + 最后一条的 id/成败。
@@ -136,11 +161,15 @@ fn build_completion_judge_input(messages: &[Message]) -> CompletionJudgeInput {
 }
 
 /// 活跃目标已有完成证据且允许早停时，是否应静默丢弃本轮探针类 / 重复 `run_command` 工具调用。
+///
+/// `completion_confirmed` 来自 `PerCoordinator`：语义判定的结论由早停门写入，本门只读，
+/// 使两道门对同一批证据给出一致结论（#1415）。
 pub(crate) fn turn_redundant_tools_after_completion_allowed(
     tool_calls: &[ToolCall],
     messages: &[Message],
+    completion_confirmed: bool,
 ) -> bool {
-    evaluate_turn_redundant_tools(tool_calls, messages).is_allow()
+    evaluate_turn_redundant_tools(tool_calls, messages, completion_confirmed).is_allow()
 }
 
 /// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
@@ -396,8 +425,11 @@ mod tests {
         assert_ne!(fp1, fp2);
     }
 
+    /// 弱验证证据（`run_command` 跑 `make`）+ 自述「编译完成」不再由第 ① 层放行。
+    ///
+    /// 同步入口只表达「第 ① 层没给出 `Satisfied`」，不替语义层下结论（#1415）。
     #[test]
-    fn build_task_heuristic_satisfied_does_not_allow_staged_early_exit() {
+    fn build_task_weak_evidence_does_not_allow_staged_early_exit() {
         let messages = vec![
             msg("user", "编译 hpcg"),
             tool_env(
@@ -410,12 +442,13 @@ mod tests {
         assert!(!turn_early_stop_allowed(&messages));
         assert_eq!(
             evaluate_turn_early_stop(&messages).deny_reason(),
-            Some("build_or_test_intent")
+            Some("evidence_not_satisfied")
         );
     }
 
+    /// 只读分析同样交第 ② 层：**读过文件**不等于**分析完并答出来**（#1415）。
     #[test]
-    fn readonly_task_allows_staged_early_exit_when_satisfied() {
+    fn readonly_task_defers_to_semantic_judge() {
         let messages = vec![
             msg("user", "分析当前目录"),
             tool_env("list_tree", "list tree", "list tree: ."),
@@ -424,18 +457,81 @@ mod tests {
                 "当前目录包含三个压缩包，分析结果如下，总结完成。",
             ),
         ];
-        assert!(turn_early_stop_allowed(&messages));
+        assert!(!turn_early_stop_allowed(&messages));
     }
 
+    /// 早停未放行时，步后抑规划也不得放行（两道门同源）。
     #[test]
-    fn readonly_suppresses_probe_only_replan_after_early_stop_allowed() {
+    fn probe_only_replan_not_suppressed_when_layer1_defers() {
         let messages = vec![
             msg("user", "分析当前目录"),
             tool_env("list_tree", "list tree", "list tree: ."),
             msg("assistant", "分析完成，总结如下。"),
         ];
         let steps = vec![step("summary", Some("summary"), "最终汇报")];
-        assert!(turn_suppress_completed_replanning(&messages, true, &steps));
+        assert!(!turn_suppress_completed_replanning(&messages, true, &steps));
+    }
+
+    fn list_tree_probe() -> ToolCall {
+        ToolCall {
+            id: "call_1".into(),
+            typ: "function".into(),
+            function: crate::types::FunctionCall {
+                name: crate::cm_names::LIST_TREE.into(),
+                arguments: r#"{"path":"."}"#.into(),
+            },
+        }
+    }
+
+    /// #1415：早停门（可问 judge）写入的 `completion_confirmed` 必须被**同步**的冗余探针抑制读到。
+    ///
+    /// 只读分析任务现在第 ① 层恒为 `NotApplicable`，同步门单独判会拒绝；早停门用语义判定
+    /// 确认后，抑制门必须给出同一结论——否则同一批证据两道门相反，探针照跑、轮次照烧。
+    #[test]
+    fn completion_confirmed_lets_sync_gate_agree_with_judge() {
+        let messages = vec![
+            msg("user", "分析当前目录"),
+            tool_env(
+                "read_file",
+                "read file: README.md",
+                "读取文件\n退出码：0\n标准输出：\n# Project\n",
+            ),
+            msg("assistant", "当前目录包含 README 与源码目录，分析结果如下。"),
+        ];
+        let tools = vec![list_tree_probe()];
+        // 未确认：同步路径拿不到 judge，只有第 ① 层 → 拒绝。
+        assert!(!evaluate_turn_redundant_tools(&tools, &messages, false).is_allow());
+        // 已确认（早停门写入）：同一份证据下同步门放行。
+        assert!(evaluate_turn_redundant_tools(&tools, &messages, true).is_allow());
+    }
+
+    /// #1415：judge 的输入证据必须与第 ① 层**同一窗口**。
+    ///
+    /// 否则多轮会话里上一任务跑通的 `cargo_test` 会进入本轮判定输入，而锚点校验只要求
+    /// 「有一条 verify/write 成功」、不问它属不属于本窗口 → judge 会拿旧证据判当前任务完成。
+    #[test]
+    fn judge_evidence_window_excludes_previous_task() {
+        let messages = vec![
+            msg("user", "上一轮：跑通全部测试"),
+            tool_env(
+                "cargo_test",
+                "cargo test",
+                "退出码：0\n标准输出：\ntest result: ok. 1 passed",
+            ),
+            msg("assistant", "上一轮已完成。"),
+            msg("user", "本轮：分析目录结构"),
+            tool_env("list_tree", "list tree", "list tree: ."),
+        ];
+        let window = crate::cm_types::messages_slice_since_last_real_user(&messages, false)
+            .expect("应能从最后一条真实 user 切开");
+        let ev = EvidenceSet::collect(window);
+        assert_eq!(ev.items().len(), 1, "只应采集本轮证据");
+        assert!(
+            ev.items()
+                .iter()
+                .all(|i| i.kind != crate::agent::agent_turn::policy::task_level_evidence::EvidenceKind::Verify),
+            "上一任务的 cargo_test 不得进入本轮判定输入"
+        );
     }
 
     #[test]

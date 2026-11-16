@@ -29,12 +29,6 @@ struct ProgramBuildRunEvidence {
     ran_program: bool,
 }
 
-#[derive(Debug, Default)]
-struct GenericTaskIntent {
-    build_or_test: bool,
-}
-
-
 fn history_contains_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
 }
@@ -230,11 +224,6 @@ fn check_program_build_run_messages(
 }
 
 
-/// 用户任务是否像编译/构建/测试类（供外循环门控与完成证据抑制共用）。
-pub fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
-    generic_task_intent_from_task(task).build_or_test
-}
-
 fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
     crate::cm_types::messages_slice_since_last_real_user(messages, false)
 }
@@ -255,152 +244,24 @@ pub fn check_active_user_goal_completion_evidence(
     check_goal_completion_evidence_from_messages(task, window)
 }
 
-fn generic_task_intent_from_task(task: &str) -> GenericTaskIntent {
-    let t = task.to_lowercase();
-    let build_or_test = [
-        "编译",
-        "构建",
-        "测试",
-        "运行测试",
-        "build",
-        "compile",
-        "make",
-        "cmake",
-        "test",
-        "pytest",
-        "cargo test",
-        "cargo check",
-        "clippy",
-    ]
-    .iter()
-    .any(|k| t.contains(k));
-    GenericTaskIntent { build_or_test }
-}
-
-/// 只读分析类任务：assistant 是否已给出結论式回答。
-///
-/// **这是本文中唯一保留的自述依赖**，旧路径同样靠它。理由：结构化证据只能证明
-/// 「读过文件」，无法区分「刚开始看」与「已给出分析」——两者属于第 ② 层
-/// （LLM 语义判定，#1387）的职责。在那一层落地前保留旧判定，机制上不让该场景
-/// 的早停能力回退。
-fn assistant_gave_conclusion(messages: &[Message]) -> bool {
-    messages.iter().rev().take(12).any(|m| {
-        if m.role != "assistant" || m.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
-            return false;
-        }
-        let Some(raw) = message_content_as_str(&m.content) else {
-            return false;
-        };
-        assistant_completion_claim(raw) || assistant_substantive_answer(raw)
-    })
-}
-
-fn assistant_completion_claim(text: &str) -> bool {
-    let lower = text.trim().to_lowercase();
-    if lower.is_empty() {
-        return false;
-    }
-    const MARKERS: &[&str] = &[
-        "完成", "成功", "就绪", "通过", "结果如下", "总结如下", "done", "completed", "succeeded",
-        "success", "ready",
-    ];
-    const BLOCKERS: &[&str] = &[
-        "未完成",
-        "没有完成",
-        "失败",
-        "无法完成",
-        "未成功",
-        "error",
-        "failed",
-        "not completed",
-    ];
-    MARKERS.iter().any(|m| lower.contains(m)) && !BLOCKERS.iter().any(|m| lower.contains(m))
-}
-
-fn assistant_substantive_answer(text: &str) -> bool {
-    let t = text.trim();
-    if t.chars().count() < 40 {
-        return false;
-    }
-    let lower = t.to_lowercase();
-    const SHAPES: &[&str] = &[
-        "当前",
-        "结果",
-        "包含",
-        "目录",
-        "文件",
-        "说明",
-        "总结",
-        "建议",
-        "analysis",
-        "summary",
-        "contains",
-        "directory",
-        "files",
-    ];
-    let has_shape = SHAPES.iter().any(|k| lower.contains(k));
-    let just_question = t.ends_with('？') || t.ends_with('?');
-    has_shape && !just_question
-}
-
-/// 通用兜底：按**结构化证据**判定（#1387 S0.5 第 ① 层）。
-///
-/// 与旧实现的关键差异：
-///
-/// 1. **构建/测试路径不再靠工具名猜**：旧 `generic_tool_is_build_or_test_success` 前置
-///    `tool_name == run_command`，于是用规范的 `cargo_test` / `cargo_check` 反而判不出；
-/// 2. **纯写任务无验证证据时返回 `NotApplicable`**（旧实现返回 `Satisfied`，即零验证放行）。
-///    结构化层只能确认「写过了」，「改对了没有」属第 ② 层（LLM 语义判定）职责；
-/// 3. **构建/测试路径不再把自述当必要条件**：旧路径要求工具成功 **AND** 正文含「完成」，
-///    导致「修复 xx 失败」类任务成功后复述原文即判不完成；
-/// 4. **验证成功只在 build/test 意图下算完成**：否则「跑过一次 `cargo_check`」会把任何任务
-///    都判成完成（#1414）。
-///
-/// 仍保留的自述依赖只有只读分析一条，理由见 [`assistant_gave_conclusion`]。
-fn check_generic_successful_tool_then_completion(
-    task: &str,
-    messages: &[Message],
-) -> GoalCompletionEvidenceCheck {
-    let intent = generic_task_intent_from_task(task);
-    let ev = super::evidence::EvidenceSet::collect(messages);
-
-    // 判定顺序刻意是「证据优先、意图兜底」：意图靠关键词表，天然漏词
-    // （例如「把常量**改成** 42」不含「修改」，`write_change` 不会命中）。
-    // 若让关键词在前，这类任务就会掉进兜底分支并被旧的自述规则放行。
-
-    // ① 任务明说要构建/测试，却没有成功的验证性执行 → 不下结论。
-    if intent.build_or_test && !ev.has_any_verify_success() {
-        return GoalCompletionEvidenceCheck::NotApplicable;
-    }
-    // ② 有成功的验证性执行（专用工具结构化退出码 / run_command 构建测试特征）。
-    //    但**只在任务确实要构建/测试时**才足以确认完成：一次 `cargo_check` 通过只证明
-    //    「当前代码能编译」，不构成「用户要我做的事已做完」的证据。#1414 实测：任务
-    //    「1+2」也在 `cargo_check` 通过后被判 `Satisfied`，下一批工具之后立刻早停停轮，
-    //    回合没有任何终答。非 build/test 意图退回 `NotApplicable`——「够不够算完成」交
-    //    第 ② 层语义判定，或干脆不早停。
-    if ev.has_any_verify_success() {
-        return if intent.build_or_test {
-            GoalCompletionEvidenceCheck::Satisfied
-        } else {
-            GoalCompletionEvidenceCheck::NotApplicable
-        };
-    }
-    // ③ 改过工作区但没有验证证据 → 只能确认「写过了」，不下结论（第 ② 层职责）。
-    if ev.has_write_success() {
-        return GoalCompletionEvidenceCheck::NotApplicable;
-    }
-    // ④ 只读分析 / 其他：需工具成功 + 已给出结论式回答
-    //    （自述依赖仅保留在此，理由见 [`assistant_gave_conclusion`]）。
-    if ev.has_any_success() && assistant_gave_conclusion(messages) {
-        GoalCompletionEvidenceCheck::Satisfied
-    } else {
-        GoalCompletionEvidenceCheck::NotApplicable
-    }
-}
 
 /// 对分阶段滚动执行的当前消息历史做目标完成证据核对。
 ///
-/// 编排层只消费三态结果；具体领域规则（当前先覆盖程序写入/编译/运行）在本模块内扩展。
+/// 第 ① 层只回答「**事实是什么**」：只有**领域检测器**（当前只有「写源码 → 编译 → 运行」
+/// 三件套齐全的 C++ 任务）能给出 `Satisfied` / `Missing`；其余一律 `NotApplicable`，
+/// 把「这些事实够不够算完成」交给第 ② 层语义判定
+/// （[`crate::agent::completion_judge_llm`]，#1387 S0.5 / #1415）。
+///
+/// **刻意不再有通用关键词兜底**。被删掉的两条旧路径都是
+/// `docs/design/agent_autonomy_enhancement.md` §1 明确否决的范式：
+///
+/// - `build_or_test_intent`：用 13 个子串猜任务意图。`"test"` 命中 `greatest` / `latest`、
+///   `"make"` 命中 `make sure`；而「重构 X 并保证行为不变」这类综合任务一个词都不命中，
+///   于是恰恰拿不到早停。
+/// - `assistant_gave_conclusion`：用「完成 / 成功 / 结果如下」猜回答完成度，把 assistant
+///   自述当完成证据——正是 §3.2 缺陷 ③。
+///
+/// 两者都是「同一事实因措辞不同而判成相反结论」，问题在范式不在覆盖，故整体移除而非继续补词。
 pub fn check_goal_completion_evidence_from_messages(
     task: &str,
     messages: &[Message],
@@ -410,7 +271,9 @@ pub fn check_goal_completion_evidence_from_messages(
             return (detector.check_messages)(task, messages);
         }
     }
-    check_generic_successful_tool_then_completion(task, messages)
+    // 没有检测器认领 = 本层不下结论。构建/测试、综合任务、只读分析都在此列，
+    // 由第 ② 层语义判定（`completion_judge_enabled`）回答「够不够算完成」。
+    GoalCompletionEvidenceCheck::NotApplicable
 }
 
 #[cfg(test)]
@@ -541,14 +404,31 @@ mod tests {
         );
     }
 
+    /// 多轮对话：证据只在**当前 user 起**的窗口内核对（勿用会话首条 user）。
+    ///
+    /// 第 ① 层现在只剩 C++ 检测器能出 `Satisfied`，故用它的三件套验证窗口语义；
+    /// 只读分析已交第 ② 层（见 `readonly_analysis_with_answer_is_not_applicable`）。
     #[test]
-    fn multi_turn_readonly_satisfied_only_for_active_window() {
+    fn multi_turn_cpp_evidence_counted_only_in_active_window() {
         let messages = vec![
             msg("user", "分析当前目录"),
             tool_env("list_tree", "list tree", "list tree: ."),
-            msg(
-                "assistant",
-                "当前目录包含三个压缩包与归档文件，分析结果如下。",
+            msg("assistant", "当前目录包含三个压缩包，分析结果如下。"),
+            msg("user", "编写一个 c++ 程序，用 cmake 编译执行"),
+            tool_env(
+                tool_names::CREATE_FILE,
+                "create file: hello.cpp",
+                "已创建文件: hello.cpp",
+            ),
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "cmake --build build",
+                "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+            ),
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "./build/hello",
+                "命令：./build/hello\n退出码：0\n标准输出：\nHello, World!",
             ),
         ];
         assert_eq!(
@@ -557,15 +437,27 @@ mod tests {
         );
     }
 
+    /// 编排纠偏注入的 user 消息**不得**收缩证据窗口：写源码那一步发生在注入之前，
+    /// 若窗口从注入处开始，`wrote_source` 就会丢，三件套永远凑不齐。
     #[test]
     fn orchestration_injection_does_not_shrink_evidence_window() {
         let messages = vec![
-            msg("user", "分析当前目录"),
-            tool_env("list_tree", "list tree", "list tree: ."),
+            msg("user", "编写一个 c++ 程序，用 cmake 编译执行"),
+            tool_env(
+                tool_names::CREATE_FILE,
+                "create file: hello.cpp",
+                "已创建文件: hello.cpp",
+            ),
             msg("user", "【编排纠偏】请实际执行工具，勿空口承诺"),
-            msg(
-                "assistant",
-                "当前目录包含三个压缩包与归档文件，分析结果如下。",
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "cmake --build build",
+                "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+            ),
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "./build/hello",
+                "命令：./build/hello\n退出码：0\n标准输出：\nHello, World!",
             ),
         ];
         assert_eq!(
@@ -590,8 +482,10 @@ mod tests {
         );
     }
 
+    /// `run_command` 跑 `make` 成功只是**弱**验证证据（文本特征），第 ① 层不再据此下结论；
+    /// 是否算完成交第 ② 层语义判定（#1415）。
     #[test]
-    fn generic_successful_tool_then_completion_satisfies_build_only_task() {
+    fn make_build_command_alone_is_not_applicable() {
         let messages = vec![
             tool_env(
                 "run_command",
@@ -605,17 +499,15 @@ mod tests {
         ];
         assert_eq!(
             check_goal_completion_evidence_from_messages("编译hpcg", &messages),
-            GoalCompletionEvidenceCheck::Satisfied
+            GoalCompletionEvidenceCheck::NotApplicable
         );
     }
 
-    /// #1414：成功的验证性执行**只在 build/test 意图下**才算出「目标完成」。
-    ///
-    /// 任务与构建无关时，一次 `cargo_check` 通过只证明「当前代码能编译」，不构成
+    /// #1414 / #1415：一次 `cargo_check` 通过只证明「当前代码能编译」，不构成
     /// 「用户要我做的事已做完」的证据——否则综合任务跑到编译通过就被早停门掐断，
     /// 回合没有任何终答（实测见 #1414）。
     #[test]
-    fn verify_success_outside_build_intent_is_not_applicable() {
+    fn verify_success_alone_is_not_applicable() {
         let messages = vec![tool_env(
             tool_names::CARGO_CHECK,
             "cargo check",
@@ -627,9 +519,12 @@ mod tests {
         );
     }
 
-    /// 同一份证据在 build/test 意图下仍判完成（不因 #1414 收紧而丢掉早停能力）。
+    /// 同一份证据在**明确要求编译**的任务下也不再由第 ① 层判完成。
+    ///
+    /// 判定**与任务措辞无关**是这次改动的要点：旧 `build_or_test_intent` 会让「编译检查这个项目」
+    /// 命中关键词而放行、换个说法就不放行，同一批证据得不到同一结论。
     #[test]
-    fn verify_success_inside_build_intent_is_satisfied() {
+    fn verify_success_does_not_depend_on_task_wording() {
         let messages = vec![tool_env(
             tool_names::CARGO_CHECK,
             "cargo check",
@@ -637,7 +532,7 @@ mod tests {
         )];
         assert_eq!(
             check_goal_completion_evidence_from_messages("编译检查这个项目", &messages),
-            GoalCompletionEvidenceCheck::Satisfied
+            GoalCompletionEvidenceCheck::NotApplicable
         );
     }
 
@@ -669,8 +564,10 @@ mod tests {
         );
     }
 
+    /// 只读分析任务同样不再由第 ① 层判完成：**读过了** ≠ **分析完并答出来了**。
+    /// 后者是语义判断（旧 `assistant_gave_conclusion` 靠「总结 / 结果如下」猜回答完成度）。
     #[test]
-    fn generic_readonly_analysis_with_tool_and_answer_satisfies() {
+    fn readonly_analysis_with_answer_is_not_applicable() {
         let messages = vec![
             tool_env(
                 "read_file",
@@ -684,7 +581,7 @@ mod tests {
         ];
         assert_eq!(
             check_goal_completion_evidence_from_messages("分析当前项目", &messages),
-            GoalCompletionEvidenceCheck::Satisfied
+            GoalCompletionEvidenceCheck::NotApplicable
         );
     }
 
@@ -713,10 +610,12 @@ mod tests {
         );
     }
 
-    /// #1387 实测缺陷 ①：旧实现前置 `tool_name == run_command`，
-    /// 于是用规范的 `cargo_test` 反而判不出（同一事实、仅工具名不同、结论相反）。
+    /// #1387 实测缺陷 ① 已在**证据采集层**修好：专用 `cargo_test` 带结构化退出码，
+    /// 被采集为 `verify` / `strong`（见 `evidence.rs` 的同名测试），不再因工具名不同而漏判。
+    ///
+    /// 但「证据入账」不等于「任务完成」——第 ① 层不再替语义层下这个结论（#1415）。
     #[test]
-    fn dedicated_cargo_test_satisfies_build_task() {
+    fn dedicated_cargo_test_alone_is_not_applicable() {
         let messages = vec![
             msg("user", "修复 bug 并跑通全部测试"),
             tool_env(
@@ -733,8 +632,8 @@ mod tests {
         ];
         assert_eq!(
             check_goal_completion_evidence_from_messages("修复 bug 并跑通全部测试", &messages),
-            GoalCompletionEvidenceCheck::Satisfied,
-            "专用 cargo_test 的结构化退出码应被采信"
+            GoalCompletionEvidenceCheck::NotApplicable,
+            "专用工具证据入账，但完成与否交语义判定"
         );
     }
 
@@ -758,13 +657,13 @@ mod tests {
         );
     }
 
-    /// 对照：纯写任务顺手跑了测试，**但任务本身与构建/测试无关** → 仍不下结论（#1414）。
+    /// 对照：纯写任务顺手跑了测试 → 仍不下结论。
     ///
     /// 旧实现这里判 `Satisfied`；实测表明它会让综合任务在「改完代码 + 一次 `cargo_check`
-    /// 通过」后立刻早停停轮，而此刻模型还没写终答。收紧后交给第 ② 层语义判定，
-    /// 或干脆不早停——消费者最终一定能拿到答案（方案 A 兜底）。
+    /// 通过」后立刻早停停轮，而此刻模型还没写终答（#1414）。现在交给第 ② 层语义判定，
+    /// 或干脆不早停——消费者最终一定能拿到答案（#1415 方案 A 兜底）。
     #[test]
-    fn pure_write_with_verification_outside_build_intent_is_not_applicable() {
+    fn pure_write_with_verification_is_not_applicable() {
         let messages = vec![
             msg("user", "把常量改成 42"),
             tool_env(

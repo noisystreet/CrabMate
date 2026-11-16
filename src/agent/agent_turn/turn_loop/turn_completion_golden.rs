@@ -60,6 +60,26 @@ fn fixture_messages(name: &str) -> Vec<Message> {
             ),
             msg("assistant", "全部测试通过。"),
         ],
+        // 第 ① 层**唯一**能给 `Satisfied` 的路径：领域检测器命中「写源码 → 编译 → 运行」三件套
+        // （#1415 之后没有任务关键词兜底，其余场景一律交第 ② 层语义判定）。
+        "cpp_build_run" => vec![
+            msg("user", "编写一个 c++ 程序，使用 cmake 编译执行"),
+            tool_env(
+                tool_names::CREATE_FILE,
+                "create file: hello.cpp",
+                "已创建文件: hello.cpp",
+            ),
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "cmake --build build",
+                "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+            ),
+            tool_env(
+                tool_names::RUN_COMMAND,
+                "./build/hello",
+                "命令：./build/hello\n退出码：0\n标准输出：\nHello, World!",
+            ),
+        ],
         other => panic!("unknown fixture: {other}"),
     }
 }
@@ -129,7 +149,8 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
         }
         "redundant_tools" => {
             let tools = fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_tree_probe"));
-            evaluate_turn_redundant_tools(&tools, &messages)
+            // 金样走同步路径，`completion_confirmed`（judge 写入的缓存）恒为 `false`。
+            evaluate_turn_redundant_tools(&tools, &messages, false)
         }
         other => panic!("{ctx}: unknown case {other}"),
     };

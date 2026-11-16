@@ -57,7 +57,12 @@ impl ChatCompletionsBackend for SequencedMockBackend {
 }
 
 fn cfg_freeform_turn() -> Arc<AgentConfig> {
-    let cfg = load_config(None).expect("embedded default config must load");
+    let mut cfg = load_config(None).expect("embedded default config must load");
+    // 本文件用一个**共享的 sequenced backend** 同时服务执行路径与完成判定（judge），
+    // 而 `call_seq` 无法区分两者——判定层默认开启（#1415）会给每个工具批额外加一次调用，
+    // 直接打乱预设响应序列。故这里显式关掉判定：本文件测的是外层编排，不是判定。
+    // 判定本身的覆盖见 `completion_judge_call_count_tracks_new_evidence`（那里显式开启）。
+    cfg.per_plan_policy.completion_judge_enabled = false;
     Arc::new(cfg)
 }
 
@@ -472,20 +477,34 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_post_tools_early_stop_without_body_asks_for_final_answer_mock() {
     let cfg = cfg_freeform_turn();
-    // 预置「已有完成证据」：任务明说要跑测试 + 一次成功的 cargo_test（强证据）。
-    let done_evidence = Message {
-        role: "tool".to_string(),
-        content: Some(
-            "退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed"
-                .to_string()
-                .into(),
+    // 预置「已有完成证据」。第 ① 层现在只有 C++ 检测器（写源码 → 编译 → 运行三件套）
+    // 能给出 `Satisfied`——其余场景一律交第 ② 层语义判定（#1415），而本测试要走的正是
+    // 「早停**放行**但 assistant 没正文」这条路径。
+    let cpp_evidence: Vec<Message> = [
+        (
+            "create_file",
+            "create file: hello.cpp\n已创建文件: hello.cpp",
         ),
+        (
+            "run_command",
+            "命令：cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+        ),
+        (
+            "run_command",
+            "命令：./build/hello\n退出码：0\n标准输出：\nHello, World!",
+        ),
+    ]
+    .iter()
+    .map(|(name, body)| Message {
+        role: "tool".to_string(),
+        content: Some(body.to_string().into()),
         reasoning_content: None,
         reasoning_details: None,
         tool_calls: None,
-        name: Some("cargo_test".to_string()),
+        name: Some(name.to_string()),
         tool_call_id: Some("call_mock_prev".to_string()),
-    };
+    })
+    .collect();
     // 关键：正文为空，只有 `tool_calls`。
     let tool_round = Message {
         role: "assistant".to_string(),
@@ -512,9 +531,9 @@ async fn run_agent_turn_post_tools_early_stop_without_body_asks_for_final_answer
     )));
     let mut messages = vec![
         Message::system_only("test system".to_string()),
-        Message::user_only("跑通全部测试，然后回报结果".to_string()),
-        done_evidence,
+        Message::user_only("编写一个 c++ 程序，用 cmake 编译执行，然后回报结果".to_string()),
     ];
+    messages.extend(cpp_evidence);
     run_mock_agent_turn(cfg, &mut messages, backend).await;
 
     assert_eq!(
@@ -544,15 +563,24 @@ struct JudgeCountingBackend {
     main_seq: AtomicUsize,
     judge_calls: AtomicUsize,
     main_calls: AtomicUsize,
+    /// judge 固定回的 JSON（默认 `unsatisfied`，使外循环跑满预设轮数）。
+    judge_verdict: &'static str,
 }
+
+const JUDGE_UNSATISFIED: &str = r#"{"status":"unsatisfied"}"#;
 
 impl JudgeCountingBackend {
     fn new(main_responses: Vec<Message>) -> Self {
+        Self::new_with_verdict(main_responses, JUDGE_UNSATISFIED)
+    }
+
+    fn new_with_verdict(main_responses: Vec<Message>, judge_verdict: &'static str) -> Self {
         Self {
             main_responses,
             main_seq: AtomicUsize::new(0),
             judge_calls: AtomicUsize::new(0),
             main_calls: AtomicUsize::new(0),
+            judge_verdict,
         }
     }
 
@@ -577,9 +605,8 @@ impl ChatCompletionsBackend for JudgeCountingBackend {
     ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
         if is_judge_request(req) {
             self.judge_calls.fetch_add(1, Ordering::SeqCst);
-            // 恒判 unsatisfied：不触发早停，好让外循环继续跑到预设轮数。
             return Ok((
-                Message::assistant_only(r#"{"status":"unsatisfied"}"#),
+                Message::assistant_only(self.judge_verdict),
                 "stop".to_string(),
             ));
         }

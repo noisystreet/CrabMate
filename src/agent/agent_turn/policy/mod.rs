@@ -40,7 +40,6 @@ pub use phase_vocabulary::{
 };
 pub use task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    generic_task_intent_implies_build_or_test,
 };
 pub use tool_execution::{
     ExecuteToolsBatchOutcome, ToolBatchExecutionMode, ToolBatchModeParams,

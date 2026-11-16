@@ -64,7 +64,8 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
-    /// 完成判定第 ② 层（LLM 语义判定）总开关；默认关，关 = 不产生任何额外 LLM 调用。
+    /// 完成判定第 ② 层（LLM 语义判定）总开关；**默认开**（#1415），关 = 不产生任何额外 LLM 调用，
+    /// 且构建/测试与只读分析一律不再早停（第 ① 层只剩领域检测器能放行）。
     ///
     /// 与 `final_plan_semantic_check_*` **刻意分开**：两者是不同消费者（规划一致性 vs 完成判定），
     /// 共用开关会导致「想开一个必须开两个」。见 `docs/design/completion_judge.md` §7。

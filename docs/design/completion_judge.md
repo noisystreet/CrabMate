@@ -150,7 +150,7 @@ pub trait CompletionJudge: Send + Sync {
 
 | 第 ① 层结论 | 是否问第 ② 层 |
 |---|---|
-| `Satisfied` | **不问**（沿用 `build_or_test_intent` 强度分级） |
+| `Satisfied` | **不问**（领域检测器已给确定性结论；#1415 后第 ① 层无任务关键词判断） |
 | `Missing` | **不问**——证据明确缺失，升级等于替模型找台阶 |
 | `NotApplicable` | 问（综合任务 / 只读分析） |
 
@@ -180,7 +180,7 @@ pub trait CompletionJudge: Send + Sync {
 共用开关会导致「想开一个必须开两个」。形状对齐既有组。
 
 ```toml
-completion_judge_enabled = false        # 默认关；关 = 不产生任何 LLM 调用
+completion_judge_enabled = true         # 默认开（#1415）；关 = 构建/测试与只读分析一律不早停
 completion_judge_max_tokens = 512       # 钳制 32..=1024
 completion_judge_model = ""             # 空 = 继承默认；仅覆盖，不强制与执行模型分离
 ```
@@ -195,7 +195,7 @@ completion_judge_model = ""             # 空 = 继承默认；仅覆盖，不�
 |---|---|
 | 假阳性（判完成但没完成）→ 提前终止交半成品 | §4 锚点硬约束 + fail-open 只退不放 + 金样覆盖三类任务 |
 | 判定模型顺同偏差 | 输入剔除 assistant 自述；`completion_judge_model` 可选覆盖（非强制） |
-| 成本 / 延迟 | 仅候选终止点 + 仅第 ① 层 `NotApplicable` 时 + `max_tokens ≤ 1024` + 默认关 |
+| 成本 / 延迟 | 仅候选终止点 + 仅第 ① 层 `NotApplicable` 时 + `max_tokens ≤ 1024` + 每回合 ≤3 次 |
 | 金样随模型漂移 | §5 可注入 trait，单测金样用 mock |
 | 与第 ① 层结论冲突 | 第 ② 层**只能把 `NotApplicable` 提升**，不能否决第 ① 层已给出的 `Satisfied` |
 
@@ -206,7 +206,7 @@ completion_judge_model = ""             # 空 = 继承默认；仅覆盖，不�
 - 综合任务：「重构 X 并保证行为不变」+ `cargo_test` 通过 → `satisfied` 且 `evidence_refs` 指向该验证证据。
 - 锚点约束：mock 返回 `satisfied` 但 `evidence_refs` 为空 / 只引 `other` → **降级为 `unsatisfied`**。
 - fail-open：mock 返回错误 → 维持第 ① 层结论，早停门行为不变。
-- 默认关：`completion_judge_enabled = false` 时**零 LLM 调用**，现有金样逐字不变。
+- 关闭时：`completion_judge_enabled = false` 时**零 LLM 调用**，早停门退回「只有领域检测器能放行」（#1415）。
 - `pre-commit run --all-files` 全绿；`cargo test -p crabmate --lib` 全绿。
 
 ---

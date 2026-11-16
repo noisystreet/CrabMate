@@ -153,8 +153,10 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_semantic_check_max_tokens
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
-    // 完成判定第 ② 层（`docs/design/completion_judge.md` §7）：默认关，关 = 零额外 LLM 调用。
-    let completion_judge_enabled = b.per_plan_policy.completion_judge_enabled.unwrap_or(false);
+    // 完成判定第 ② 层（`docs/design/completion_judge.md` §7）：**默认开**（#1415）。
+    // 第 ① 层已不再做任务关键词判断，构建/测试与只读分析都得靠这一层下结论；关掉等于
+    // 这些场景一律不早停。成本有界：每回合 ≤3 次、`max_tokens` 默认 512、证据指纹去重、fail-open。
+    let completion_judge_enabled = b.per_plan_policy.completion_judge_enabled.unwrap_or(true);
     let completion_judge_max_tokens = b
         .per_plan_policy
         .completion_judge_max_tokens
