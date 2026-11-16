@@ -380,6 +380,30 @@ mod tests {
         assert!(p.steps[0].acceptance.is_none());
     }
 
+    /// #1401 #4：描述**漏词**（既不像构建、也不像只读）时不下结论——保留验收，而不是静默剥掉。
+    ///
+    /// 原实现在 `executor_kind.is_none()` 时无条件进入剥离分支，于是「模型没指定 executor +
+    /// 描述没命中任何关键词」也会让 `expect_exit_code` 消失，验收变成空、这一步等于不验。
+    #[test]
+    fn neutral_description_keeps_build_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"run the suites","acceptance":{"expect_exit_code":0}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        let acc = p.steps[0].acceptance.as_ref().expect("验收应保留");
+        assert_eq!(acc.expect_exit_code, Some(0), "漏词时不得静默剥掉验收");
+    }
+
+    /// 对照：描述**明确**像只读准备阶段时，仍剥掉构建类验收（否则「看一眼目录」要退出码）。
+    #[test]
+    fn readonly_setup_description_strips_build_acceptance() {
+        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"查看目录结构","acceptance":{"expect_exit_code":0}}]}"#;
+        let p = parse_agent_reply_plan_v1(json).expect("parse");
+        assert!(
+            p.steps[0].acceptance.is_none(),
+            "只读准备步不应要求退出码"
+        );
+    }
+
+
     #[test]
     fn unpack_step_strips_stdout_acceptance_keeps_file_exists() {
         let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"unpack-hpcg","description":"解压 hpcg 压缩包","acceptance":{"expect_stdout_contains":"hpcg-HPCG","expect_file_exists":"hpcg-HPCG-release-3-1-0"}}]}"#;

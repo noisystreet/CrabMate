@@ -163,15 +163,176 @@ fn is_workspace_write_tool(name: &str) -> bool {
     )
 }
 
-/// `run_command` 输出里的构建 / 测试特征。命中即视为验证性执行，但强度只能是 `Weak`。
-fn run_command_looks_like_verify(lower: &str) -> bool {
+/// `run_command` 是否算「验证性执行」。
+///
+/// **结构化优先**：`structured_payload.invocation` 是完整命令行，按「程序名 + 子命令」判定，
+/// 不看输出文本。**文本兜底**：无信封的旧消息（没有 `invocation`）才退回看输出特征。
+///
+/// 为什么要有两段（#1401 #19）：输出文本两个方向都会错——`make` 是 `make sure …` 的子串，
+/// 而 `ninja` / `cargo nextest` / `go test` 的输出里根本没有 `built target`。命令本身是结构化
+/// 字段，「这次跑的是不是构建/测试」直接看它更准，不必从输出反推。
+fn run_command_is_verify(invocation: Option<&str>, text_lower: &str) -> bool {
+    match invocation {
+        Some(inv) if !inv.trim().is_empty() => command_line_looks_like_verify(inv),
+        _ => run_command_output_looks_like_verify(text_lower),
+    }
+}
+
+/// 命令行是否在跑构建 / 测试。
+///
+/// 按「每条子命令的首个程序名 + 紧跟的动词」判定，而不是整串 `contains`：
+/// `cd build && cargo test` 会被切段后各自判定。
+///
+/// **残余风险**：把真实命令藏在脚本文件里（`./build.sh`）识别不到，会落 `Other`——
+/// 漏词方向只损失早停机会，不产出假证据。
+fn command_line_looks_like_verify(invocation: &str) -> bool {
+    command_line_looks_like_verify_inner(invocation, 0)
+}
+
+/// shell 嵌套包装的递归深度上限（`bash -c "bash -c ..."`）。
+const MAX_SHELL_WRAP_DEPTH: usize = 3;
+
+fn command_line_looks_like_verify_inner(invocation: &str, depth: usize) -> bool {
+    if depth > MAX_SHELL_WRAP_DEPTH {
+        return false;
+    }
+    let lower = invocation.to_lowercase();
+    // 切段：`&&` / `||` / `;` / 换行，每段是一条独立命令。
+    lower
+        .split(['&', '|', ';', '\n'])
+        .map(|seg| seg.split_whitespace().collect::<Vec<_>>())
+        .filter(|tokens| !tokens.is_empty())
+        .any(|tokens| segment_runs_build_or_test(&tokens, depth))
+}
+
+/// 只剥 `"` 与 `'`。引号字符用 `char::from(34)` / `char::from(39)` 构造、**不写字面量**：
+/// 本仓 CI 的 lizard 会把 `'_'` 这类字符字面量当成 Rust **生命周期起始**（`'_` / `'a`），
+/// 字符串扫描状态错乱后连带把后续函数边界算错（曾把本文件下一个函数算成 426 行）。
+fn strip_shell_quotes(token: &str) -> &str {
+    let double_quote = char::from(34_u8);
+    let single_quote = char::from(39_u8);
+    token.trim_matches(|c: char| c == double_quote || c == single_quote)
+}
+
+/// 形式上用字节判定（`b == 95`，`95` 是下划线 `_` 的 ASCII 码）而非 `'_'` 字面量：
+/// 本仓 lizard 会把 `'_'` 当生命周期起始，进而错算本文件的函数边界。
+fn is_env_assignment(token: &str) -> bool {
+    let Some((name, _)) = token.split_once("=") else {
+        return false;
+    };
+    !name.is_empty() && !name.starts_with("-") && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == 95)
+}
+
+/// 单条命令（已切段）是否在跑构建/测试。
+fn segment_runs_build_or_test(tokens: &[&str], depth: usize) -> bool {
+    let Some(index) = first_command_index(tokens) else {
+        return false;
+    };
+    let Some(prog) = command_basename(tokens, index) else {
+        return false;
+    };
+    let rest: Vec<&str> = tokens[index.saturating_add(1)..]
+        .iter()
+        .map(|t| strip_shell_quotes(t))
+        .collect();
+    program_runs_build_or_test(prog, &rest, depth)
+}
+
+/// 跳过 `VAR=val` 赋值、`cd <dir>`（占两个 token）与 `sudo` / `env` 等包装，返回程序名下标。
+fn first_command_index(tokens: &[&str]) -> Option<usize> {
+    let mut i = 0usize;
+    while let Some(token) = tokens.get(i) {
+        let bare = strip_shell_quotes(token);
+        if is_env_assignment(bare) {
+            i += 1;
+        } else if bare == "cd" {
+            i += 2;
+        } else if matches!(bare, "sudo" | "env" | "time" | "command" | "exec") {
+            i += 1;
+        } else {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// 程序名取 basename：`/usr/bin/make` 与 `make` 同义。
+fn command_basename<'a>(tokens: &'a [&'a str], index: usize) -> Option<&'a str> {
+    let token = tokens.get(index)?;
+    let base = strip_shell_quotes(token)
+        .rsplit('/')
+        .next()
+        .unwrap_or_default();
+    (!base.is_empty()).then_some(base)
+}
+
+/// 根据程序名 + 参数判定是否在跑构建/测试。
+fn program_runs_build_or_test(prog: &str, rest: &[&str], depth: usize) -> bool {
+    /// 自身即「构建/测试」的程序，不需要再看子命令。
+    const STANDALONE: &[&str] = &[
+        "make", "cmake", "ctest", "pytest", "ninja", "meson", "mvn", "gradle",
+    ];
+    if STANDALONE.contains(&prog) {
+        return true;
+    }
+    if is_shell_wrapper(prog) {
+        return shell_wrapped_command_runs_build(rest, depth);
+    }
+    runs_build_by_program_and_verb(prog, rest)
+}
+
+/// `bash` / `sh` 等：真实命令在 `-c` 的参数里。
+fn is_shell_wrapper(prog: &str) -> bool {
+    matches!(prog, "bash" | "sh" | "zsh" | "dash")
+}
+
+fn shell_wrapped_command_runs_build(rest: &[&str], depth: usize) -> bool {
+    if depth >= MAX_SHELL_WRAP_DEPTH {
+        return false;
+    }
+    let Some(pos) = rest.iter().position(|t| *t == "-c") else {
+        return false;
+    };
+    let script = rest[pos.saturating_add(1)..].join(" ");
+    command_line_looks_like_verify_inner(&script, depth.saturating_add(1))
+}
+
+fn runs_build_by_program_and_verb(prog: &str, rest: &[&str]) -> bool {
+    /// `cargo <verb>` 里算验证的子命令。
+    const CARGO_VERBS: &[&str] = &["test", "check", "clippy", "build", "nextest"];
+    /// `npm/pnpm/yarn <verb>` 里算验证的子命令。
+    const NODE_VERBS: &[&str] = &["test", "build"];
+    // `python -m pytest` / `python3.12 -m pytest`：模块方式跑 pytest。
+    if prog.starts_with("python") {
+        return rest.windows(2).any(|w| w[0] == "-m" && w[1] == "pytest");
+    }
+    let verb = first_verb(rest);
+    match prog {
+        "cargo" => verb.is_some_and(|v| CARGO_VERBS.contains(&v)),
+        "go" => verb == Some("test"),
+        "npm" | "pnpm" | "yarn" => verb.is_some_and(|v| NODE_VERBS.contains(&v)),
+        _ => false,
+    }
+}
+
+/// 第一个「动词」：跳过 `+toolchain`（`cargo +nightly test`）与 `-` 开头的 flag。
+fn first_verb<'a>(rest: &[&'a str]) -> Option<&'a str> {
+    rest.iter()
+        .copied()
+        .find(|t| !t.is_empty() && !t.starts_with('+') && !t.starts_with('-'))
+}
+
+/// 输出文本里的构建 / 测试特征——**仅用于没有结构化 `invocation` 的旧消息**。
+///
+/// 去掉了 `make` / `cmake` 这两个短词：它们正是本函数最主要的误命中来源
+/// （`make sure …`、文档正文里的 `cmake` 都算），而真正的 `make` / `cmake` 命令
+/// 现在由 [`command_line_looks_like_verify`] 从命令行识别。
+fn run_command_output_looks_like_verify(text_lower: &str) -> bool {
     const MARKERS: &[&str] = &[
         "cargo test",
         "cargo check",
         "cargo clippy",
         "cargo build",
-        "cmake",
-        "make",
         "pytest",
         "built target",
         "linking cxx executable",
@@ -179,7 +340,7 @@ fn run_command_looks_like_verify(lower: &str) -> bool {
         "tests passed",
         "build succeeded",
     ];
-    MARKERS.iter().any(|m| lower.contains(m))
+    MARKERS.iter().any(|m| text_lower.contains(m))
 }
 
 /// 按 Unicode scalar 截断并压成单行，避免证据正文塞满上下文。
@@ -226,6 +387,12 @@ fn evidence_from_tool_message(
         return None;
     }
     let lower = format!("{output}\n{raw}").to_lowercase();
+    // 命令是结构化字段：优先按它判定「这次算不算验证性执行」，输出文本只作旧消息的兜底。
+    let invocation = env
+        .as_ref()
+        .and_then(|e| e.structured_payload.as_ref())
+        .and_then(|v| v.get("invocation"))
+        .and_then(serde_json::Value::as_str);
     let (kind, strength) = if is_dedicated_verify_tool(tool) {
         // 专用工具：有结构化退出码才算强证据。
         let strength = if exit_code.is_some() {
@@ -236,7 +403,7 @@ fn evidence_from_tool_message(
         (EvidenceKind::Verify, strength)
     } else if is_workspace_write_tool(tool) {
         (EvidenceKind::Write, EvidenceStrength::Strong)
-    } else if tool == tool_names::RUN_COMMAND && run_command_looks_like_verify(&lower) {
+    } else if tool == tool_names::RUN_COMMAND && run_command_is_verify(invocation, &lower) {
         (EvidenceKind::Verify, EvidenceStrength::Weak)
     } else {
         (EvidenceKind::Other, EvidenceStrength::Weak)
@@ -337,6 +504,145 @@ mod tests {
         assert_eq!(item.kind, EvidenceKind::Verify);
         assert!(!item.ok, "非零退出码不得算成功证据");
         assert_eq!(item.exit_code, Some(101));
+    }
+
+    /// #1401 #19：判定「这次跑的是不是构建/测试」看**命令行**，不猜输出文本。
+    #[test]
+    fn command_line_recognizes_build_and_test_programs() {
+        for inv in [
+            "cargo test",
+            "cargo nextest run",
+            "cargo check --all-targets",
+            "cargo +nightly test",
+            "cd build && make -j4",
+            "cmake --build build",
+            "/usr/bin/make -j8",
+            "pytest -q",
+            "python3 -m pytest -q",
+            "python3.12 -m pytest",
+            "go test ./...",
+            "npm test",
+            "ninja",
+            "VAR=1 cargo test",
+            "RUST_LOG=debug cargo test --locked",
+            "sudo make install",
+            "bash -c \"cargo test\"",
+            "sh -c 'cargo test'",
+            "bash -c \"cd build && make\"",
+        ] {
+            assert!(
+                command_line_looks_like_verify(inv),
+                "应判为验证性执行：{inv}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_line_rejects_non_build_commands() {
+        for inv in [
+            "git status",
+            "ls -la",
+            "cargo fmt",
+            "cargo +nightly fmt",
+            "cargo metadata",
+            "go build ./...",
+            "npm install",
+            "makefile-editor",
+            "echo make",
+            "cat README.md",
+            "python3 script.py",
+            "bash -c \"git status\"",
+        ] {
+            assert!(
+                !command_line_looks_like_verify(inv),
+                "不应判为验证性执行：{inv}"
+            );
+        }
+    }
+
+    /// 旧实现的主要误命中来源：`make` / `cmake` 作为**普通词**出现在输出正文里。
+    #[test]
+    fn output_fallback_ignores_bare_words() {
+        assert!(
+            !run_command_output_looks_like_verify("please make sure the file exists"),
+            "`make sure` 不是构建"
+        );
+        assert!(
+            !run_command_output_looks_like_verify("see the cmake docs for details"),
+            "正文提到 cmake 不是构建"
+        );
+        assert!(run_command_output_looks_like_verify("built target hpcg"));
+        assert!(run_command_output_looks_like_verify(
+            "test result: ok. 12 passed; 0 failed"
+        ));
+    }
+
+    /// 有结构化命令时**只看命令**，输出文本不参与；无命令的旧消息才退回文本。
+    #[test]
+    fn invocation_takes_precedence_over_output_text() {
+        assert!(
+            !run_command_is_verify(Some("git status"), "please make sure the file exists"),
+            "命令不是构建/测试时，输出里的 `make` 不得翻案"
+        );
+        assert!(run_command_is_verify(Some("make"), "whatever"));
+        assert!(run_command_is_verify(None, "built target hpcg"));
+        assert!(!run_command_is_verify(
+            None,
+            "please make sure the file exists"
+        ));
+    }
+
+    /// #19 全链路：从 `crabmate_tool` 信封里读 `structured_payload.invocation`。
+    ///
+    /// `test_fixtures::tool_env` 不写 `structured_payload`，所以前面几条只能测到纯函数与文本兜底。
+    /// 这条手搓信封，专门钉「提取链路」——将来 `structured_payload_for_tool` 改了形状，它会红。
+    #[test]
+    fn invocation_is_read_from_envelope_payload() {
+        fn envelope(invocation: &str, output: &str) -> Message {
+            msg(
+                "tool",
+                &serde_json::json!({
+                    "crabmate_tool": {
+                        "name": "run_command",
+                        "summary": invocation,
+                        "output": output,
+                        "ok": true,
+                        "exit_code": 0,
+                        "structured_payload": {
+                            "kind": "crabmate_structured_payload",
+                            "tool": "run_command",
+                            "version": 1,
+                            "schema": "run_command_exit_v1",
+                            "invocation": invocation,
+                            "ok": true,
+                            "exit_code": 0,
+                            "stdout_nonempty": true,
+                            "stderr_nonempty": false,
+                        }
+                    }
+                })
+                .to_string(),
+            )
+        }
+
+        // 命令是 `cargo nextest`：输出文本里没有任何构建特征，只有读命令才能判对。
+        let messages = vec![user("跑一下"), envelope("cargo nextest run", "Running tests…")];
+        assert_eq!(
+            EvidenceSet::collect(&messages).items()[0].kind,
+            EvidenceKind::Verify,
+            "应从 invocation 认出 cargo nextest"
+        );
+
+        // 命令是 `git status`：输出里出现 `make` 不得翻案。
+        let messages = vec![
+            user("看一眼"),
+            envelope("git status", "please make sure the tree is clean"),
+        ];
+        assert_eq!(
+            EvidenceSet::collect(&messages).items()[0].kind,
+            EvidenceKind::Other,
+            "命令不是构建/测试时，输出文本不得把证据翻成 Verify"
+        );
     }
 
     #[test]
