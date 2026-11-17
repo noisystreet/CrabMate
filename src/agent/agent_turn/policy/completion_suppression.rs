@@ -278,25 +278,66 @@ pub fn plan_steps_require_formal_execution(steps: &[PlanStepV1]) -> bool {
     steps.iter().any(plan_step_requires_formal_execution)
 }
 
+/// `step_kind` 是**结构字段**（枚举语义），按精确值判定，不做子串匹配（#1422 A3）。
+///
+/// 判「推进 / 写」的 kind：本步会动手改东西，即使目标已有完成证据也可能还有后续。
+const STEP_KIND_WRITE_OR_FIX: &[&str] = &[
+    "implement",
+    "implementation",
+    "fix",
+    "refactor",
+    "write",
+    "edit",
+    "create",
+    "update",
+    "migrate",
+];
+
+/// 判「只读探测」的 kind：目标已有完成证据时再跑一次不产生新信息。
+const STEP_KIND_PROBE: &[&str] = &[
+    "verify",
+    "verification",
+    "validate",
+    "validation",
+    "check",
+    "checks",
+    "review",
+    "inspect",
+    "read",
+    "summarize",
+    "report",
+];
+
 pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool {
     if plan_step_requires_formal_execution(step) {
         return false;
     }
-    let text = redundant_plan_step_text(step);
-    if text_contains_any_marker(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS) {
+    let text = step.description.to_lowercase();
+    let kind = step
+        .step_kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty());
+    // 「写 / 修」信号任一侧出现就放行——抑制是不可逆的少干活，保守方向是「可能是要动的」。
+    if kind.is_some_and(step_kind_implies_write_or_fix)
+        || text_contains_any_marker(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS)
+    {
         return false;
     }
+    if kind.is_some_and(step_kind_implies_probe) {
+        return true;
+    }
+    // `step_kind` 缺失或取值未知：它是模型自由填的字符串，不认识时回落到描述判定
+    // （与 #1422 之前一致），不额外放行也不额外抑制。
     text_contains_any_marker(&text, REDUNDANT_PROBE_TEXT_MARKERS)
 }
 
-fn redundant_plan_step_text(step: &PlanStepV1) -> String {
-    format!(
-        "{}\n{}\n{}",
-        step.id,
-        step.step_kind.as_deref().unwrap_or_default(),
-        step.description
-    )
-    .to_lowercase()
+fn step_kind_implies_write_or_fix(kind: &str) -> bool {
+    STEP_KIND_WRITE_OR_FIX.contains(&kind.to_lowercase().as_str())
+}
+
+fn step_kind_implies_probe(kind: &str) -> bool {
+    STEP_KIND_PROBE.contains(&kind.to_lowercase().as_str())
 }
 
 pub fn redundant_tool_names_for_log(tool_calls: &[ToolCall]) -> Vec<&str> {
@@ -400,6 +441,31 @@ mod tests {
             "修复失败测试并修改实现",
         )];
         assert!(!plan_steps_are_redundant_after_completion(&steps));
+    }
+
+    /// #1422 A3：`id` / `step_kind` 不再拼进文本一起匹配。
+    #[test]
+    fn step_kind_is_matched_as_structure_not_text() {
+        // `id` 里的 `implement` 不再参与判定——以前它会把这一步的错误判定「救」回来。
+        assert!(
+            plan_step_is_redundant_after_completion(&step(
+                "implement-verify",
+                None,
+                "检查编译产物是否存在"
+            )),
+            "id 是标识符，不该参与文本判定"
+        );
+        // 结构字段说 verify，但描述写着动手 —— 「写 / 修」有否决权，保守放行。
+        assert!(
+            !plan_step_is_redundant_after_completion(&step("s2", Some("verify"), "修复失败测试")),
+            "描述里的动手信号应否决抑制"
+        );
+        // 未知 step_kind 回落到描述判定，不额外放行也不额外抑制。
+        assert!(plan_step_is_redundant_after_completion(&step(
+            "s1",
+            Some("weird_kind"),
+            "检查编译产物是否存在"
+        )));
     }
 
     #[test]
