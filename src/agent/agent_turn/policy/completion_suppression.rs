@@ -1,6 +1,7 @@
 //! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
 
 use crate::cm_agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
+use crate::cm_agent::text_markers::text_matches_any;
 use crate::cm_names as tool_names;
 use crate::cm_types::{Message, ToolCall};
 
@@ -45,19 +46,33 @@ const SHELL_WRAPPER_FLAGS: &[&str] = &["-c", "-lc", "-ic", "-ec"];
 /// 剥壳深度上限，防 `timeout 5 timeout 5 …` 无限递归。
 const MAX_PROBE_WRAP_DEPTH: usize = 3;
 
+/// 命中即**放行**（不抑制）。加词方向永远保守，因此不设上限。
+///
+/// 换成 token 边界后，英文短词的误命中消失（`address` 不再靠 `add` 命中）——在这张
+/// 「命中即放行」的表上这是**反向**变激进，所以必须把被收窄掉的真实语义显式补回来
+/// （#1422 A2 补偿词：`address` / `overwrite` / `rewrite` / `rework` / `update` / `rename` …）。
 const FOLLOWUP_WRITE_OR_FIX_MARKERS: &[&str] = &[
     "implement",
     "implementation",
     "patch",
     "write",
+    "overwrite",
+    "rewrite",
     "modify",
     "edit",
     "change",
     "fix",
     "repair",
     "refactor",
+    "rework",
     "create",
     "add",
+    "address",
+    "insert",
+    "append",
+    "update",
+    "rename",
+    "move",
     "delete",
     "remove",
     "实现",
@@ -71,6 +86,11 @@ const FOLLOWUP_WRITE_OR_FIX_MARKERS: &[&str] = &[
     "调整",
 ];
 
+/// 命中即**抑制**：目标已有完成证据时，再跑一遍这类步不会带回新信息。
+///
+/// 英文标记走 token 边界（`check` 不再命中 `recheck`），因此本表的**漏词方向会变大**——
+/// 表现为抑制变少、工具调用变多（token / 耗时上升）。这是 #1422 明示的取舍：
+/// 拿成本换正确性，宁可多跑一次，也不要把「真实验证」当成重复劳动掐掉。
 const REDUNDANT_PROBE_TEXT_MARKERS: &[&str] = &[
     "verify",
     "verification",
@@ -111,10 +131,6 @@ const REDUNDANT_PROBE_TEXT_MARKERS: &[&str] = &[
     "汇报",
     "最终",
 ];
-
-fn text_contains_any_marker(text: &str, markers: &[&str]) -> bool {
-    markers.iter().any(|marker| text.contains(marker))
-}
 
 pub fn tool_calls_are_redundant_after_completion(tool_calls: &[ToolCall]) -> bool {
     tool_calls
@@ -320,7 +336,7 @@ pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool
         .filter(|k| !k.is_empty());
     // 「写 / 修」信号任一侧出现就放行——抑制是不可逆的少干活，保守方向是「可能是要动的」。
     if kind.is_some_and(step_kind_implies_write_or_fix)
-        || text_contains_any_marker(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS)
+        || text_matches_any(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS)
     {
         return false;
     }
@@ -329,7 +345,7 @@ pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool
     }
     // `step_kind` 缺失或取值未知：它是模型自由填的字符串，不认识时回落到描述判定
     // （与 #1422 之前一致），不额外放行也不额外抑制。
-    text_contains_any_marker(&text, REDUNDANT_PROBE_TEXT_MARKERS)
+    text_matches_any(&text, REDUNDANT_PROBE_TEXT_MARKERS)
 }
 
 fn step_kind_implies_write_or_fix(kind: &str) -> bool {
@@ -427,7 +443,7 @@ mod tests {
     fn plan_and_tool_share_redundant_probe_semantics() {
         let steps = vec![step("verify-build", Some("verify"), "检查编译产物是否存在")];
         assert!(plan_steps_are_redundant_after_completion(&steps));
-        assert!(text_contains_any_marker(
+        assert!(text_matches_any(
             "检查编译产物是否存在",
             REDUNDANT_PROBE_TEXT_MARKERS
         ));
@@ -465,6 +481,41 @@ mod tests {
             "s1",
             Some("weird_kind"),
             "检查编译产物是否存在"
+        )));
+    }
+
+    /// #1422 A2 误命中 golden：token 边界在两个方向上的效果。
+    #[test]
+    fn marker_boundaries_change_both_directions() {
+        // 抑制变少：`recheck` 不再靠 `check` 命中探测表 —— 宁可多跑一次。
+        assert!(
+            !plan_step_is_redundant_after_completion(&step(
+                "s3",
+                None,
+                "recheck the linker flags"
+            )),
+            "词内子串不该算探测"
+        );
+        // 「命中即放行」表靠补偿词补回语义：`address` 以前靠 `add` 命中，现在必须显式在表里。
+        assert!(
+            !plan_step_is_redundant_after_completion(&step(
+                "s4",
+                None,
+                "please address the failing checks"
+            )),
+            "动手语义必须有否决权"
+        );
+        // 纯探测描述仍然抑制。
+        assert!(plan_step_is_redundant_after_completion(&step(
+            "s5",
+            None,
+            "check the build artifacts exist"
+        )));
+        // 中文没有词边界，保留子串语义（已知误命中靠用例记录，不靠边界）。
+        assert!(plan_step_is_redundant_after_completion(&step(
+            "s6",
+            None,
+            "确认构建产物存在"
         )));
     }
 
