@@ -346,11 +346,11 @@ async fn dispatch_sync_default_tool(
                 name,
                 e
             );
-            format!("工具执行异常：{:?}", e)
+            format!("{}：工具执行异常：{:?}", error_text::ERROR_PREFIX, e)
         }
         Err(_) => {
             error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
-            format!("工具执行超时（{} 秒）", wall_secs)
+            format!("{}：工具执行超时（{} 秒）", error_text::ERROR_PREFIX, wall_secs)
         }
     };
     (result, None)
@@ -420,6 +420,17 @@ async fn wait_for_tool_cancel(
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+}
+
+/// `workflow_execute` / `delegate_task` 误入 `dispatch_tool` 时的统一错误正文。
+///
+/// 带 `错误：` 前缀是 #1430 的要求：这条正文不经 `ToolError`，没有前缀就会被
+/// ④ 级判成成功。
+fn internal_dispatch_error(tool: &str) -> String {
+    format!(
+        "{}：内部错误：{tool} 须由 agent 层调度，不应进入 dispatch_tool",
+        error_text::ERROR_PREFIX
+    )
 }
 
 /// 单次工具执行（含审批、沙盒与 handler 分发）；供 [`dispatch_tool`] 重试循环按可变借用复用。
@@ -533,7 +544,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         HandlerId::Workflow => {
             // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。
             (
-                "内部错误：workflow_execute 须由 agent 层调度，不应进入 dispatch_tool".to_string(),
+                internal_dispatch_error("workflow_execute"),
                 None,
             )
         }
@@ -541,7 +552,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
             // `delegate_task` 同理：它要 `SubAgentDelegator` 能力对象，而工具层**刻意不持 LLM 凭据**
             // （`agent_turn/host/execute/**` 中 `api_key` 零命中）。见 `docs/design/subagent_delegation.md` §3。
             (
-                "内部错误：delegate_task 须由 agent 层调度，不应进入 dispatch_tool".to_string(),
+                internal_dispatch_error("delegate_task"),
                 None,
             )
         }

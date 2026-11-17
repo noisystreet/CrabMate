@@ -194,11 +194,8 @@ fn move_file_success_with_failure_word_in_path_stays_ok() {
         &test_ctx(&dir),
     );
 
-    assert!(
-        result.message.contains("\"ok\":true"),
-        "应注入显式成功头: {}",
-        result.message
-    );
+    // #1430：④ 级已改用收紧口径（只认结构化前缀），不再因正文含「失败」误判，
+    // 因此**不需要**再注入显式 `ok` 头来压过该误判（判成功已由 `assert_run_tool_result_ok` 覆盖）。
     assert!(result.message.contains("已移动"), "{}", result.message);
     assert_eq!(read(&dir, "失败.txt"), "mv");
     let _ = std::fs::remove_dir_all(&dir);

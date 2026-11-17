@@ -62,7 +62,11 @@ pub(crate) const ERROR_PREFIX: &str = "错误";
 /// 执行失败（子进程 / 外部命令类工具）。
 pub(crate) const EXECUTE_FAILED_PREFIX: &str = "执行失败";
 
-/// 「失败」字样（[`super::run_command::looks_like_failure`] 的宽松匹配）。
+/// 「失败」字样（宽口径判定用）。
+///
+/// **#1430**：④ 级首行判定已改用 `looks_like_failure_structured`（只认前缀）；本常量仍服务
+/// `body_after_header_looks_like_failure`（写预览正文逐行扫描）、`run_command_structured_payload`
+/// 与 `status.rs` 的三态判定——这些输入的正文**没有**「产生处补前缀」的保证。
 pub(crate) const FAILURE_MARKER: &str = "失败";
 
 /// 工具在错误正文里**显式嵌入错误码**的标记前缀，形如 `错误[http_timeout]：…`。
