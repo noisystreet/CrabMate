@@ -71,6 +71,31 @@ pub(crate) const FAILURE_MARKER: &str = "失败";
 /// 请勿以 `错误[小写码]` 开头，以免被误提取成 `error_code`。
 pub(crate) const ERROR_CODE_MARKER_PREFIX: &str = "错误[";
 
+/// 错误正文首行可能带的**已知前缀**集合（`looks_like_failure` 与 `classify_error_code` 认得）。
+///
+/// **#1430**：`ToolError` 构造时用它判断「这条正文下游能不能认出是错误」——
+/// 认不出就补 [`ERROR_PREFIX`]，让 ④ 级判定只需 `starts_with`，不必依赖
+/// `contains("失败")` 的宽口径（那条会把「正文提到失败」的成功输出误判为失败）。
+pub(crate) const KNOWN_ERROR_PREFIXES: &[&str] = &[
+    ERROR_PREFIX,
+    UNKNOWN_TOOL_PREFIX,
+    INVALID_ARGS_JSON_PREFIX,
+    INVALID_ARGS_PREFIX,
+    ARGS_SCHEMA_MISMATCH_PREFIX,
+    WRITE_PRECHECK_FAILED_PREFIX,
+    COMMAND_NOT_ALLOWED_PREFIX,
+    WORKSPACE_NOT_SET_PREFIX,
+    REPEATED_SAME_COMMAND_PREFIX,
+    REPEATED_FAILURE_FAMILY_PREFIX,
+    EXECUTE_FAILED_PREFIX,
+];
+
+/// 首行是否已带 [`KNOWN_ERROR_PREFIXES`] 中的任一个（忽略前导空白）。
+pub(crate) fn has_known_error_prefix(first_line: &str) -> bool {
+    let head = first_line.trim_start();
+    KNOWN_ERROR_PREFIXES.iter().any(|p| head.starts_with(p))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cm_tools::tool_result::classify_error_code_fixture;

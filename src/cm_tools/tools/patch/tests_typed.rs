@@ -59,7 +59,7 @@ fn apply_patch_try_missing_patch_is_invalid_input() {
         let err = run_with_changelist_try(args, &test_ctx(&dir)).expect_err("缺少 patch 须失败");
         assert_invalid_input(&err);
         assert_eq!(err.message, "错误：缺少 patch 参数");
-        // String 面必须逐字节保留历史文案。
+        // 已带已知前缀的正文仍与 String 面逐字节一致；无前缀的会在构造处补 `错误：`（#1430）。
         assert_eq!(run_with_changelist(args, &test_ctx(&dir)), err.message);
     }
 
@@ -96,7 +96,8 @@ fn apply_patch_try_rejects_escaping_paths_as_invalid_input() {
         let err = run_with_changelist_try(&args, &test_ctx(&dir)).expect_err("越界路径须失败");
         assert_invalid_input(&err);
         assert!(
-            err.message.starts_with("补丁路径校验失败: "),
+            // #1430：无前缀的错误正文在 `ToolError` 构造处统一补 `错误：`。
+            err.message.starts_with("错误：补丁路径校验失败: "),
             "{}",
             err.message
         );
@@ -116,7 +117,7 @@ fn apply_patch_try_requires_unified_diff_header() {
     assert_invalid_input(&err);
     assert_eq!(
         err.message,
-        "补丁路径校验失败: 未检测到 unified diff 文件头（--- / +++）"
+        "错误：补丁路径校验失败: 未检测到 unified diff 文件头（--- / +++）"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -133,7 +134,7 @@ fn apply_patch_try_malformed_diff_is_invalid_input() {
         .expect_err("非法 hunk 须失败");
     assert_invalid_input(&err);
     assert!(
-        err.message.starts_with("解析 unified diff 失败: "),
+        err.message.starts_with("错误：解析 unified diff 失败: "),
         "{}",
         err.message
     );
