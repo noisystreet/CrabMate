@@ -363,6 +363,16 @@ pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
         // 而漏词方向正是本 issue 反复出现的隐患：描述没命中关键词，并不等于这一步不需要验证。
         // #1427 第 1 步（度量）：`executor_kind` 是结构化信号，只有它缺失时这里才真在
         // 「靠描述猜」。两类混在一起看不出关键词表的影响面，故分开记——**本 commit 不改行为**。
+        //
+        // 采集：这两条是 `debug!`，默认过滤器下**不输出**，需显式
+        // `RUST_LOG=crabmate::plan_artifact=debug`（`--log` 文件同样适用）。本文件顶部是
+        // `use log::debug`（经 `tracing-log` 桥接），**没有结构化字段**能力，因此只能把
+        // `executor_kind` 内联进消息、聚合时按文本匹配 `executor_kind=none`；
+        // `acceptance/check.rs` 那条走 `tracing::debug!` 并带真字段，两边口径不同是有意为之。
+        //
+        // 命中证明：`plan_artifact::tests` 的 `neutral_description_keeps_build_acceptance`
+        // 与 `readonly_setup_description_strips_build_acceptance` 会分别执行到下面两条日志
+        // （不是作用在空集上的恒真断言）。
         let kind = step
             .executor_kind
             .map(PlanStepExecutorKind::as_snake_case_str)
@@ -632,7 +642,9 @@ mod text_marker_tests {
     fn extensionless_artifact_magic_threshold_is_pinned() {
         // 短名 ⇒ 判为产物（也可能误判：`src` / `docs` 这类短目录名同样满足阈值）
         assert!(plan_acceptance_path_looks_like_build_artifact("xhpcg"));
-        assert!(plan_acceptance_path_looks_like_build_artifact("build/xhpcg"));
+        // 构建目录前缀：`path_contains_build_dir` 只认**带前导斜杠**的 `/build/`，
+        // 所以这里必须写 `/build/xhpcg`；写成 `build/xhpcg` 会退化成靠 basename 短名命中。
+        assert!(plan_acceptance_path_looks_like_build_artifact("/build/xhpcg"));
         // 含 `release` ⇒ 不判为产物（哪怕它其实是产物）
         assert!(!plan_acceptance_path_looks_like_build_artifact(
             "xhpcg-release"
