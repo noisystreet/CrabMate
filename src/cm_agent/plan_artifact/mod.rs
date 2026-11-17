@@ -384,6 +384,8 @@ mod tests {
     ///
     /// 原实现在 `executor_kind.is_none()` 时无条件进入剥离分支，于是「模型没指定 executor +
     /// 描述没命中任何关键词」也会让 `expect_exit_code` 消失，验收变成空、这一步等于不验。
+    ///
+    /// #1427：本用例也会执行到 `align_*` 里的 `keep …` 度量分支（埋点为 `debug`，默认过滤器下不输出）。
     #[test]
     fn neutral_description_keeps_build_acceptance() {
         let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"run the suites","acceptance":{"expect_exit_code":0}}]}"#;
@@ -393,6 +395,8 @@ mod tests {
     }
 
     /// 对照：描述**明确**像只读准备阶段时，仍剥掉构建类验收（否则「看一眼目录」要退出码）。
+    ///
+    /// #1427：本用例也会执行到 `align_*` 里的 `strip …` 度量分支（埋点为 `debug`，默认过滤器下不输出）。
     #[test]
     fn readonly_setup_description_strips_build_acceptance() {
         let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"查看目录结构","acceptance":{"expect_exit_code":0}}]}"#;

@@ -139,10 +139,10 @@ fn verify_exit_code_branch(
             // 这里只记录，不改行为——`NotApplicable` 要等这批计数落地后再引入。
             tracing::debug!(
                 target: "crabmate::acceptance",
-                "exit_code acceptance without structured exit code: tool={} expected={} policy={:?}",
-                ev.tool_name,
-                expected_code,
-                spec.exit_code_policy,
+                tool = ev.tool_name,
+                expected_exit_code = expected_code,
+                policy = ?spec.exit_code_policy,
+                "exit_code acceptance without structured exit code",
             );
             match spec.exit_code_policy {
                 ExitCodePolicy::DefaultZeroIfMissing => {
