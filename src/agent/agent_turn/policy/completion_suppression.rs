@@ -21,9 +21,29 @@ const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
     tool_names::SEARCH_IN_FILES,
 ];
 
-const RUN_COMMAND_VERIFY_MARKERS: &[&str] = &[
-    "ls ", "ls -", "stat ", "test -", "file ", "--help", "timeout ", "strace ", " 2>&1",
+/// 只读探测程序：`basename(argv[0])` **精确**匹配（#1422 A1）。
+///
+/// 历史实现把这些词拼进 `command + args` 串再 `contains`，于是 `cargo test -p x` 命中
+/// `test -`、`grep Makefile -n` 命中 `file `、`bash -c "… 2>&1"` 命中 ` 2>&1`、
+/// `timeout 300 make` 命中 `timeout `——把真实验证与真实构建判成「只读探测」而抑制掉。
+/// 命令是结构化字段，按 argv 判定，不看拼串。
+const READONLY_PROBE_PROGRAMS: &[&str] = &["ls", "stat", "file", "test", "readlink", "realpath"];
+
+/// 只问用法/版本，不产生副作用——任何程序带这些 flag 都算探测
+/// （`cargo build --help` 确实不构建）。
+const PROBE_USAGE_FLAGS: &[&str] = &["--help", "--version"];
+
+/// 包装器：自身不改变「内层命令是否只读」，必须剥壳递归判定。
+/// `timeout 300 make` 是构建，`timeout 5 ls` 才是探测。
+const PROBE_WRAPPER_PROGRAMS: &[&str] = &[
+    "timeout", "strace", "env", "nice", "nohup", "command", "exec", "sudo",
 ];
+
+/// `bash -c` 等：真实命令在 `-c` 的脚本文本里。
+const SHELL_WRAPPER_FLAGS: &[&str] = &["-c", "-lc", "-ic", "-ec"];
+
+/// 剥壳深度上限，防 `timeout 5 timeout 5 …` 无限递归。
+const MAX_PROBE_WRAP_DEPTH: usize = 3;
 
 const FOLLOWUP_WRITE_OR_FIX_MARKERS: &[&str] = &[
     "implement",
@@ -136,21 +156,110 @@ pub fn tool_call_is_redundant_after_completion(tc: &ToolCall) -> bool {
 }
 
 fn run_command_is_redundant_verification(args_json: &str) -> bool {
-    let Some(invocation) = run_command_invocation_text(args_json) else {
+    let Some((command, args)) = run_command_argv(args_json) else {
         return false;
     };
-    let lower = invocation.to_lowercase();
-    text_contains_any_marker(&lower, RUN_COMMAND_VERIFY_MARKERS)
+    argv_is_readonly_probe(&command, &args, 0)
 }
 
-fn run_command_invocation_text(args_json: &str) -> Option<String> {
+/// 取出 `command` 与 `args` 两个**结构字段**（#1422 A1：不再拼成一个串）。
+fn run_command_argv(args_json: &str) -> Option<(String, Vec<String>)> {
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
-    let command = v.get("command")?.as_str()?.trim();
-    let mut parts = vec![command.to_string()];
-    if let Some(args) = v.get("args").and_then(|x| x.as_array()) {
-        parts.extend(args.iter().filter_map(|x| x.as_str()).map(str::to_string));
+    let command = v.get("command")?.as_str()?.trim().to_lowercase();
+    if command.is_empty() {
+        return None;
     }
-    Some(parts.join(" "))
+    let args = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .map(str::to_lowercase)
+                .collect()
+        })
+        .unwrap_or_default();
+    Some((command, args))
+}
+
+/// 该次调用是否**只是**只读探测：目标已有完成证据时，再跑一次不会带回新信息。
+fn argv_is_readonly_probe(command: &str, args: &[String], depth: usize) -> bool {
+    if depth > MAX_PROBE_WRAP_DEPTH {
+        return false;
+    }
+    if args
+        .iter()
+        .any(|a| PROBE_USAGE_FLAGS.contains(&a.as_str()))
+    {
+        return true;
+    }
+    let base = program_basename(command);
+    if is_probe_shell_wrapper(base) {
+        return shell_script_argv(args)
+            .is_some_and(|(cmd, rest)| argv_is_readonly_probe(&cmd, &rest, depth.saturating_add(1)));
+    }
+    if PROBE_WRAPPER_PROGRAMS.contains(&base) {
+        return unwrap_wrapper_argv(base, args).is_some_and(|(cmd, rest)| {
+            argv_is_readonly_probe(&cmd, &rest, depth.saturating_add(1))
+        });
+    }
+    READONLY_PROBE_PROGRAMS.contains(&base)
+}
+
+/// `basename`：`/bin/ls` 与 `ls` 同义。
+fn program_basename(command: &str) -> &str {
+    command.rsplit('/').next().unwrap_or_default()
+}
+
+fn is_probe_shell_wrapper(prog: &str) -> bool {
+    matches!(prog, "bash" | "sh" | "zsh" | "dash")
+}
+
+/// `bash -c "ls -la"`：把 `-c` 之后拼回脚本再切成 argv。
+///
+/// 引号边界在这一步会丢，但判定只看 `argv[0]` 与 flag，够用；故意**不**做完整的
+/// shell 解析——那会把「只读探测」判定变成一个小 shell。
+fn shell_script_argv(args: &[String]) -> Option<(String, Vec<String>)> {
+    let pos = args
+        .iter()
+        .position(|t| SHELL_WRAPPER_FLAGS.contains(&t.as_str()))?;
+    let script = args[pos.saturating_add(1)..].join(" ");
+    let mut tokens = script.split_whitespace().map(str::to_string);
+    let cmd = tokens.next()?;
+    Some((cmd, tokens.collect()))
+}
+
+/// 剥掉包装器自身的 flag 与 `VAR=val`，返回（内层命令, 内层 args）。
+fn unwrap_wrapper_argv(prog: &str, args: &[String]) -> Option<(String, Vec<String>)> {
+    let mut i = 0usize;
+    if prog == "timeout" {
+        // `timeout` 的首个非 flag token 是时长（`60` / `5s`），必须跳过，
+        // 否则 `timeout 60 make` 会把 `60` 当成内层命令名。
+        while let Some(t) = args.get(i) {
+            i = i.saturating_add(1);
+            if !t.starts_with('-') {
+                break;
+            }
+        }
+    }
+    while let Some(t) = args.get(i) {
+        if t.starts_with('-') || is_env_assignment(t) {
+            i = i.saturating_add(1);
+        } else {
+            break;
+        }
+    }
+    let cmd = args.get(i)?.clone();
+    Some((cmd, args[i.saturating_add(1)..].to_vec()))
+}
+
+fn is_env_assignment(token: &str) -> bool {
+    let Some((name, _)) = token.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && !name.starts_with('-')
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == 95)
 }
 
 pub fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
@@ -232,6 +341,45 @@ mod tests {
         assert!(tool_call_is_redundant_after_completion(&run_command_tool(
             r#"{"command":"ls","args":["-la"]}"#
         )));
+    }
+
+    /// #1422 A1 误命中 golden：这些命令拼串后都会命中旧表 marker，被误当只读探测。
+    #[test]
+    fn real_verify_and_build_commands_are_not_readonly_probes() {
+        for args in [
+            r#"{"command":"cargo","args":["test","-p","crabmate"]}"#,
+            r#"{"command":"cargo","args":["build","--release"]}"#,
+            r#"{"command":"bash","args":["-c","cmake --build build 2>&1 | tail -50"]}"#,
+            r#"{"command":"grep","args":["Makefile","-n"]}"#,
+            r#"{"command":"timeout","args":["300","make","-j8"]}"#,
+            r#"{"command":"strace","args":["-f","make"]}"#,
+            r#"{"command":"./build/hello","args":[]}"#,
+        ] {
+            assert!(
+                !run_command_is_redundant_verification(args),
+                "真实验证/构建不应判成只读探测：{args}"
+            );
+        }
+    }
+
+    #[test]
+    fn readonly_probes_are_still_redundant() {
+        for args in [
+            r#"{"command":"ls","args":["-la"]}"#,
+            r#"{"command":"/bin/ls","args":[]}"#,
+            r#"{"command":"stat","args":["target"]}"#,
+            r#"{"command":"file","args":["a.out"]}"#,
+            r#"{"command":"test","args":["-f","a.out"]}"#,
+            r#"{"command":"cargo","args":["build","--help"]}"#,
+            r#"{"command":"bash","args":["-c","ls -la"]}"#,
+            r#"{"command":"timeout","args":["5","ls","-la"]}"#,
+            r#"{"command":"env","args":["A=1","ls"]}"#,
+        ] {
+            assert!(
+                run_command_is_redundant_verification(args),
+                "只读探测应判冗余：{args}"
+            );
+        }
     }
 
     #[test]
