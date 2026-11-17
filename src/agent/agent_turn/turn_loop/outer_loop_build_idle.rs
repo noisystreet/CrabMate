@@ -41,6 +41,10 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
 }
 
 /// 取 `crabmate_tool.structured_payload.invocation`（完整命令行）。
+///
+/// 空串等同「没有 invocation」：与 `evidence.rs::run_command_is_verify` 同口径。
+/// 少了这道过滤，信封里字段存在但解析失败的消息会走「结构化判定为假」分支而**不**回退
+/// 到输出特征，表现为这类旧消息永远「无构建进展」（#1422 review）。
 fn run_command_invocation(raw: &str) -> Option<String> {
     let env = normalize_tool_message_content(raw)?;
     env.structured_payload
@@ -48,6 +52,7 @@ fn run_command_invocation(raw: &str) -> Option<String> {
         .get("invocation")?
         .as_str()
         .map(str::to_string)
+        .filter(|invocation| !invocation.trim().is_empty())
 }
 
 /// 输出里的构建 / 测试特征——**仅用于没有 `invocation` 的旧消息**。
@@ -125,16 +130,17 @@ fn assistant_text_promises_build_or_compile(text: &str) -> bool {
         "进行编译",
     ];
     /// 「我要去做」的信号。只在与 `make` 同现时才有意义。
+    ///
+    /// 刻意不含 `先` / `现在` 这类几乎每段正文都会出现的词：它们和 `make` 同现时
+    /// 会把「先说明一下，`make` 的用法是…」判成承诺（#1422 review）。
     const INTENT_MARKERS: &[&str] = &[
         "将",
         "马上",
         "开始",
         "准备",
         "接下来",
-        "先",
         "执行",
         "运行",
-        "现在",
         "will",
         "let me",
         "going to",
@@ -261,6 +267,18 @@ mod tests {
                 0
             )
             .is_none()
+        );
+    }
+
+    /// 信封里 `invocation` 为空时**必须**回落到输出特征，否则这类消息永远「无进展」
+    /// 而反复注入纠偏（#1422 review）。
+    #[test]
+    fn empty_invocation_falls_back_to_output_text() {
+        let env = crate::test_fixtures::tool_env(tool_names::RUN_COMMAND, "", "");
+        let raw = message_content_as_str(&env.content).unwrap_or_default();
+        assert!(
+            run_command_invocation(raw).is_none(),
+            "空 invocation 等同没有 invocation"
         );
     }
 
