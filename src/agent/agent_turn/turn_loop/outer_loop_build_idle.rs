@@ -1,11 +1,19 @@
 //! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控。
 
+use crate::agent::agent_turn::policy::task_level_evidence::command_line_looks_like_verify;
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
+use crate::cm_agent::text_markers::text_matches_any;
 use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
 use crate::cm_names as tool_names;
+use crate::cm_tools::tool_result::normalize_tool_message_content;
 use crate::types::{Message, last_real_user_message_index, message_content_as_str};
 
-/// 从工具名 + 正文推断此工具结果指示了「构建类进展」（非简单退出码 0 检测）。
+/// 此工具结果是否指示了「构建类进展」（非简单退出码 0 检测）。
+///
+/// #1422 A5：`run_command` 不再读**输出正文**判构建，改读结构化字段
+/// `structured_payload.invocation`（与 `evidence.rs` 同源、同一个 `command_line_looks_like_verify`）。
+/// 读正文两个方向都会错：`make sure` 这类自然语言会误命中，而 `ninja` / `cargo nextest`
+/// 的真实输出里根本没有 `built target`。
 pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
     let Some(name) = m.name.as_deref() else {
         return false;
@@ -22,15 +30,35 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
     if name != tool_names::RUN_COMMAND {
         return false;
     }
-    let Some(content) = message_content_as_str(&m.content) else {
+    let Some(raw) = message_content_as_str(&m.content) else {
         return false;
     };
-    let lower = content.to_lowercase();
+    if let Some(invocation) = run_command_invocation(raw) {
+        return command_line_looks_like_verify(&invocation);
+    }
+    // 没有信封的旧消息只能看输出特征——兜底路径，不覆盖正常链路。
+    build_markers_in_output(&raw.to_lowercase())
+}
+
+/// 取 `crabmate_tool.structured_payload.invocation`（完整命令行）。
+fn run_command_invocation(raw: &str) -> Option<String> {
+    let env = normalize_tool_message_content(raw)?;
+    env.structured_payload
+        .as_ref()?
+        .get("invocation")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// 输出里的构建 / 测试特征——**仅用于没有 `invocation` 的旧消息**。
+///
+/// 词表只留多词特征：`make` / `cmake` 这种短词在正文里必然误命中（`make sure`），
+/// 而它们现在由结构化命令判定覆盖，兜底路径不需要再猜（#1422 A5）。
+fn build_markers_in_output(text_lower: &str) -> bool {
     const BUILD_MARKERS: &[&str] = &[
         "make ",
         "make\n",
         "cmake --build",
-        "cmake -build",
         "cargo build",
         "cargo test",
         "cargo run",
@@ -45,7 +73,7 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
         "bazel build",
         "buck build",
     ];
-    BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
+    text_matches_any(text_lower, BUILD_MARKERS)
 }
 
 /// 连续无构建进展的终答轮次达到该值后注入硬反馈（含当前轮）。
@@ -152,12 +180,42 @@ mod tests {
         Message::tool_result_named("t1".to_string(), name.to_string(), body)
     }
 
+    /// 信封版工具消息：`tool_env` 不设 `Message.name`，但本模块的判定要先看工具名。
+    fn named_env(name: &str, summary: &str, output: &str) -> Message {
+        let mut m = crate::test_fixtures::tool_env(name, summary, output);
+        m.name = Some(name.to_string());
+        m
+    }
+
     #[test]
     fn detects_build_task_and_idle_assistant() {
         assert!(outer_loop_task_implies_build_execution("编译 hpcg"));
         assert!(outer_loop_assistant_is_build_idle_without_tools(
             &assistant("接下来将查看 Makefile 并执行 make 编译")
         ));
+    }
+
+    /// #1422 A5：`run_command` 的构建进展只看结构化 `invocation`，不看输出正文。
+    #[test]
+    fn build_progress_uses_structured_invocation_not_output_text() {
+        // 结构化字段说这是 make：输出里一个构建词都没有，仍算进展。
+        let make_env = named_env(
+            tool_names::RUN_COMMAND,
+            "make",
+            "命令：make -j8\n退出码：0\n标准输出：\n(无输出)",
+        );
+        assert!(tool_message_indicates_build_progress(&make_env));
+
+        // 结构化字段说这是 cat：输出正文里出现 `make ` 也不算构建进展。
+        let cat_env = named_env(
+            tool_names::RUN_COMMAND,
+            "cat README",
+            "命令：cat README\n退出码：0\n标准输出：\nmake sure to run make\n",
+        );
+        assert!(
+            !tool_message_indicates_build_progress(&cat_env),
+            "输出正文不该再参与构建进展判定"
+        );
     }
 
     #[test]
