@@ -10,6 +10,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-17
+
+**First pre-release after `v0.9.0`.** Everything below is the completion-judgement rework (#1401 / #1414 /
+  #1415). Two of its switches land **on by default**, so an untouched deployment does notice it: the Act
+  turn-start read-only narrowing now costs **one extra LLM call per turn**, and early stop has a single verdict
+  path — with `completion_judge_enabled` off, no `API_KEY`, or a failed judge call, **no turn stops early at
+  all** (it runs to the iteration cap). The offline keyword heuristics are gone, so the narrowing is also absent
+  when the gateway is unreachable (fail-open). **No SSE / HTTP wire change** — `SSE_PROTOCOL_VERSION` stays **v2**.
+
 ### Fixed
 
 - **Tool-batch early stop no longer ends a turn without a final answer (#1414).** The gate runs after every
@@ -3177,7 +3186,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.9.1-alpha.0...HEAD
+[0.9.1]: https://github.com/noisystreet/CrabMate/compare/v0.9.0...v0.9.1-alpha.0
 [0.9.0]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.1...v0.9.0
 [0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.1
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
