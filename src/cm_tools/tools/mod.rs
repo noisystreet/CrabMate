@@ -449,6 +449,34 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
+/// 与 [`run_tool`] 同源，但**不把成败拍平**（#1430）。
+///
+/// `run_tool` 在 `Result` 与 String 面不一致时会注入 `crabmate_tool_output` 头，让下游
+/// `parse_tool_output` 再解析回来——一次往返。调用方本来就需要成败时用本函数。
+///
+/// 返回 `(正文, 成败, 错误码)`；`error_code` 为 `None` 时下游按 `{tool}_failed` 兜底。
+pub fn run_tool_outcome(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> (String, bool, Option<String>) {
+    let (spec, args_eff) = match prepare_builtin_dispatch(name, args_json) {
+        Ok(v) => v,
+        Err(e) => {
+            let output = render_string_face_error(&e);
+            return (output, false, Some(e.code));
+        }
+    };
+    match spec.runner {
+        ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
+            Ok(output) => (output, true, None),
+            Err(e) => (e.message, false, Some(e.code)),
+        },
+        // `AsyncOnly` 的同步入口本就是错误正文；错误码留给下游按 `{tool}_failed` 兜底。
+        ToolRunner::AsyncOnly => (async_only_sync_error(name), false, None),
+    }
+}
+
 /// [`prepare_builtin_dispatch`] 失败时，**String 面**的历史渲染。
 ///
 /// 判定的是「`message` 是否自带用户可见前缀」，**不是**错误码语义：目前前置失败里

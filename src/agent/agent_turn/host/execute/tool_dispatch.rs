@@ -4,12 +4,12 @@
 //! 测试可注入假实现而不走真实 `dispatch_tool`。
 
 use async_trait::async_trait;
-use crate::tool_host::tool_registry::{DispatchToolParams, dispatch_tool};
+use crate::tool_host::tool_registry::{DispatchToolParams, ToolRunOutcome, dispatch_tool};
 
 /// 单次工具调用的 registry 分发面（不含 `workflow_execute`）。
 #[async_trait]
 pub trait ToolDispatch: Send + Sync {
-    async fn dispatch(&self, p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>);
+    async fn dispatch(&self, p: DispatchToolParams<'_>) -> ToolRunOutcome;
 }
 
 /// 默认实现：转发至 [`dispatch_tool`]。
@@ -18,7 +18,7 @@ pub struct InternalToolDispatch;
 
 #[async_trait]
 impl ToolDispatch for InternalToolDispatch {
-    async fn dispatch(&self, p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+    async fn dispatch(&self, p: DispatchToolParams<'_>) -> ToolRunOutcome {
         dispatch_tool(p).await
     }
 }
@@ -45,12 +45,9 @@ mod tests {
 
     #[async_trait]
     impl ToolDispatch for CountingMockDispatch {
-        async fn dispatch(
-            &self,
-            _p: DispatchToolParams<'_>,
-        ) -> (String, Option<serde_json::Value>) {
+        async fn dispatch(&self, _p: DispatchToolParams<'_>) -> ToolRunOutcome {
             self.hits.fetch_add(1, Ordering::SeqCst);
-            (self.body.to_string(), None)
+            ToolRunOutcome::ok(self.body.to_string(), None)
         }
     }
 
@@ -111,7 +108,8 @@ mod tests {
                     mcp_turn: None,
                 },
             })
-            .await;
+            .await
+            .into_body_and_payload();
         assert_eq!(out, "mock-tool-ok");
         assert!(inject.is_none());
         assert_eq!(mock.hits.load(Ordering::SeqCst), 1);

@@ -11,6 +11,14 @@ use super::{
 };
 use super::runtime::ToolRuntime;
 
+/// #1430：`dispatch_tool` 现返回 `ToolRunOutcome`；本文件断言仍按历史 `(String, payload)`
+/// 形状书写，故在此统一转换。等断言开始消费 `ok` / `error_code` 时再逐个改。
+async fn dispatch_tool_bp(
+    p: DispatchToolParams<'_>,
+) -> (String, Option<serde_json::Value>) {
+    dispatch_tool(p).await.into_body_and_payload()
+}
+
 fn tc(name: &str) -> ToolCall {
     ToolCall {
         id: "x".to_string(),
@@ -178,7 +186,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
     };
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
-    let (out, payload) = dispatch_tool(DispatchToolParams {
+    let (out, payload) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
@@ -233,7 +241,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
     };
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
-    let (out, _) = dispatch_tool(DispatchToolParams {
+    let (out, _) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
@@ -289,7 +297,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
     };
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
-    let (out, _) = dispatch_tool(DispatchToolParams {
+    let (out, _) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime,
         call: DispatchToolCall {
@@ -349,7 +357,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
         },
     };
     let mut wc_start = false;
-    let (start_out, start_payload) = dispatch_tool(DispatchToolParams {
+    let (start_out, start_payload) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_start,
@@ -421,7 +429,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
         },
     };
     let mut wc_status = false;
-    let (status_out, status_payload) = dispatch_tool(DispatchToolParams {
+    let (status_out, status_payload) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_status,
@@ -471,7 +479,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
         },
     };
     let mut wc_list = false;
-    let (list_out, _) = dispatch_tool(DispatchToolParams {
+    let (list_out, _) = dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut wc_list,
@@ -531,7 +539,7 @@ async fn dispatch_json_format_with_workspace(
     };
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
-    dispatch_tool(DispatchToolParams {
+    dispatch_tool_bp(DispatchToolParams {
         delegation: Default::default(),
         runtime: ToolRuntime {
             workspace_changed: &mut workspace_changed,

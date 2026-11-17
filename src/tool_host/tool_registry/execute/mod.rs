@@ -26,6 +26,78 @@ use crate::cm_types::ToolCall;
 use super::meta::HandlerLookupTable;
 use super::runtime::ToolRuntime;
 
+/// 一次工具执行的**完整结果**：正文 + 结构化载荷 + 成败与错误码（#1430）。
+///
+/// 过去成败被拍平成 `String`，下游只能靠 `parse_tool_output` 从正文反推——`run_tool` 为此
+/// 还要「按需注入 `ok` 头」再让下游解析回来（一次往返）。本类型让执行层直接给出结论。
+///
+/// 与线协议无关：`output` / `payload` 仍是写回 `role: tool` 与 SSE 的那两个字段，
+/// 只是额外把 `ok` / `error_code` 带出来。
+#[derive(Debug, Clone)]
+pub struct ToolRunOutcome {
+    pub output: String,
+    pub payload: Option<serde_json::Value>,
+    /// 执行层直接给出的成败（不再靠正文反推）。
+    ///
+    /// **尚未接线**：`tool_execution_host` 仍解构历史 `(String, payload)`，故本字段目前
+    /// 没有生产消费者。接入点是 `ToolExecutionHost::dispatch_tool_call` → `record_tool_outcome`
+    /// （#1430 follow-up）；接入后删除本 `allow` 与 `into_body_and_payload`。
+    #[allow(dead_code)]
+    pub ok: bool,
+    pub error_code: Option<String>,
+}
+
+impl ToolRunOutcome {
+    /// 成功：正文 + 可选结构化载荷。
+    pub fn ok(output: String, payload: Option<serde_json::Value>) -> Self {
+        Self {
+            output,
+            payload,
+            ok: true,
+            error_code: None,
+        }
+    }
+
+    /// 失败：正文 + 错误码（`None` 时下游按 `{tool}_failed` 兜底）。
+    pub fn failed(output: String, error_code: Option<String>) -> Self {
+        Self {
+            output,
+            payload: None,
+            ok: false,
+            error_code,
+        }
+    }
+
+    /// 由正文 + 载荷构造，成败由 `parse_tool_output` 反推。
+    ///
+    /// **过渡用**：尚未改造的 `execute_*_impl` 仍返回 `(String, Option<Value>)`（如
+    /// `run_command` / HTTP / 后台任务）。它们多半自带退出码或 `crabmate_tool_output` 头，
+    /// 反推是 ①/③ 级而非 ④ 级文案兜底。等这些路径也改成返回 `ToolRunOutcome` 后可移除本函数。
+    pub fn from_body_and_payload(
+        tool: &str,
+        output: String,
+        payload: Option<serde_json::Value>,
+    ) -> Self {
+        let parsed = crate::cm_tools::tool_result::parse_tool_output(tool, &output);
+        Self {
+            output,
+            payload,
+            ok: parsed.ok,
+            error_code: parsed.error_code,
+        }
+    }
+
+    /// 丢弃结构化成败，退化为历史上的 `(String, Option<Value>)` 形状。
+    ///
+    /// 纯形状转换，**不做任何判定**（此前版本里为诊断多做了一次 `parse_tool_output`，
+    /// 那相当于把已经结构化出来的 `ok` 又用文本反推一遍，属净增开销，已移除）。
+    ///
+    /// 调用方接入 `ok` / `error_code` 后，本函数应随之删除。
+    pub fn into_body_and_payload(self) -> (String, Option<serde_json::Value>) {
+        (self.output, self.payload)
+    }
+}
+
 /// Web UI：未选择工作区时的统一提示尾句（命令类工具共用）。
 const WEB_WORKSPACE_PANEL_HINT: &str = "请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。";
 
@@ -179,3 +251,53 @@ mod run_command_gate_tests;
 #[cfg(test)]
 #[path = "execute_allowlist_scope_tests.rs"]
 mod allowlist_scope_tests;
+
+#[cfg(test)]
+mod tool_run_outcome_tests {
+    use super::ToolRunOutcome;
+
+    #[test]
+    fn ok_constructor_carries_no_error_code() {
+        let o = ToolRunOutcome::ok("done".to_string(), None);
+        assert!(o.ok);
+        assert!(o.error_code.is_none());
+    }
+
+    #[test]
+    fn failed_constructor_marks_not_ok() {
+        let o = ToolRunOutcome::failed("错误：boom".to_string(), Some("boom".to_string()));
+        assert!(!o.ok);
+        assert_eq!(o.error_code.as_deref(), Some("boom"));
+    }
+
+    /// `from_body_and_payload` 的成败**全凭首行前缀**判断（#1430 第 2 步的收紧口径）：
+    /// 带已知前缀 ⇒ 失败；无前缀 ⇒ 成功。这条同时钉住「补前缀」与「只认前缀」两件事。
+    #[test]
+    fn from_body_and_payload_infers_ok_from_prefix_only() {
+        let failed = ToolRunOutcome::from_body_and_payload(
+            "read_file",
+            "错误：读取文件失败: permission denied".to_string(),
+            None,
+        );
+        assert!(!failed.ok, "带已知前缀的错误正文应判失败");
+
+        let ok = ToolRunOutcome::from_body_and_payload("move_file", "已移动".to_string(), None);
+        assert!(ok.ok, "无前缀的成功正文应判成功");
+
+        // 正文里出现「失败」但**在前面**、不带前缀：按收紧口径判成功（旧宽口径会误判失败）。
+        let git_log = ToolRunOutcome::from_body_and_payload(
+            "run_command",
+            "fix: 修复失败重试".to_string(),
+            None,
+        );
+        assert!(git_log.ok, "正文提到失败不再误判");
+    }
+
+    #[test]
+    fn into_body_and_payload_is_a_shape_cast() {
+        let o = ToolRunOutcome::failed("错误：x".to_string(), None);
+        let (out, payload) = o.into_body_and_payload();
+        assert_eq!(out, "错误：x");
+        assert!(payload.is_none());
+    }
+}
