@@ -185,7 +185,10 @@ fn run_command_is_verify(invocation: Option<&str>, text_lower: &str) -> bool {
 ///
 /// **残余风险**：把真实命令藏在脚本文件里（`./build.sh`）识别不到，会落 `Other`——
 /// 漏词方向只损失早停机会，不产出假证据。
-fn command_line_looks_like_verify(invocation: &str) -> bool {
+///
+/// `pub(crate)`：#1422 A5 之后 `outer_loop_build_idle` 的「构建进展」判定也读同一个函数，
+/// 避免「同一语义两套实现」重新长出来。
+pub(crate) fn command_line_looks_like_verify(invocation: &str) -> bool {
     command_line_looks_like_verify_inner(invocation, 0)
 }
 

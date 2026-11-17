@@ -38,13 +38,17 @@ pub fn marker_matches(text_lower: &str, marker: &str) -> bool {
     }
     // **不 trim 尾随空格**：空格本身不是词内字符，于是 `"make "` 天然就是「make 后面必须跟空白」，
     // 这正是把 `make -j8` 与 `makefile` 区分开的唯一线索。
+    //
+    // 但尾随空格也顶替了右边界：`"make "` 在 `make arch` 里，空格之后的 `a` 是词内字符，
+    // 若照常查右边界就会把这条正确命中判掉。所以「marker 以空白结尾」时只查左边界。
+    let require_right_boundary = !marker.ends_with(' ');
     let bytes = text_lower.as_bytes();
     let mut from = 0usize;
     while let Some(rel) = text_lower.get(from..).and_then(|rest| rest.find(marker)) {
         let start = from.saturating_add(rel);
         let end = start.saturating_add(marker.len());
         let left_ok = start == 0 || !is_token_byte(bytes[start - 1]);
-        let right_ok = end >= bytes.len() || !is_token_byte(bytes[end]);
+        let right_ok = !require_right_boundary || end >= bytes.len() || !is_token_byte(bytes[end]);
         if left_ok && right_ok {
             return true;
         }
@@ -83,6 +87,15 @@ mod tests {
     fn trailing_space_marker_requires_only_left_boundary() {
         assert!(marker_matches("make -j8", "make "));
         assert!(!marker_matches("makefile", "make "));
+    }
+
+    /// 回归：空格之后的字符仍是词内字符（`make arch`），但空格已经顶替了右边界。
+    /// 漏了这条会静默判掉「`make ` 命中 `make arch=Linux`」——A5 的兜底表就靠它。
+    #[test]
+    fn trailing_space_marker_ignores_next_token_boundary() {
+        assert!(marker_matches("make arch=linux", "make "));
+        assert!(marker_matches("run make now", "make "));
+        assert!(marker_matches("命令：make -j8", "make -j8"));
     }
 
     #[test]
