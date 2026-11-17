@@ -31,7 +31,8 @@
 
 主 Agent 在**规划（P）—执行（E）—反思 / 重试（R）**链路上可能产生：规划与工具事实不一致、步间假设漂移、反思后仍遗漏风险等情况。已有能力包括：
 
-- **确定性验证**：分阶段 **`steps[].acceptance`** + **`step_verifier`**；分层 **`GoalVerifier`** 等。  
+- **确定性验证**：**本条已失效**——分阶段 `steps[].acceptance` + `step_verifier`、分层 `GoalVerifier` 均已随
+  `chore(staged-removal)` 删除；现存只有 `PlanStepAcceptance::is_effective` 供冗余抑制判定。
 - **终答形态与重写**：**`final_plan_requirement`** + **`plan_rewrite_max_attempts`**（**`per_coord::after_final_assistant`** / **`final_plan_gate`**）。  
 - **可选侧向一致性**：**`final_plan_semantic_check_*`**（**`per_plan_semantic_check`**）：在特定条件下对「终答规划 vs 近期工具摘要」
   做一次**无工具**短调用，默认 **fail-open**。
@@ -60,7 +61,7 @@
 1. **可观测**：在 tracing / 可选 SSE 中暴露「何时点评、点评结论类别、是否参与闭环」。  
 2. **有界**：每回合 / 每分步的调用次数、`max_tokens`、墙钟预算可配置且有**硬上限**。  
 3. **安全默认**：侧向请求与日志遵守脱敏与截断；**默认 fail-open**（侧向失败不阻断主循环），除非显式开启「强闸门」类实验模式并单独文档化风险。  
-4. **与现有闭环正交**：不弱化 **`acceptance`** / **`step_verifier`** 的确定性地位；观众输出为**补充信号**。
+4. **与现有闭环正交**：不弱化 `PlanStepAcceptance::is_effective`（冗余抑制判定）的现有地位；观众输出为**补充信号**。
 
 ### 3.2 非目标
 
