@@ -11,6 +11,8 @@
 //!   这是把 `make -j8` 与 `makefile` 区分开的唯一线索。
 //! - **含非 ASCII 的标记（中文）保留子串匹配**：中文没有词边界，按字符切分只会漏判。
 //!   中文的已知误命中靠用例钉住，不靠边界。
+//! - **首 / 末字节非词内字符时豁免该侧边界**：`.tar` 的左边界由 `.` 顶替、`"make\n"` 的右边界由换行顶替——
+//!   两侧对称，不再只特判尾随空格。
 //!
 //! ## 取舍（写进 #1422 验收）
 //!
@@ -26,6 +28,36 @@ fn is_token_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == 95
 }
 
+/// 标记首 / 末字节是否词内 —— 决定该侧是否还需要独立边界检查。
+///
+/// 词内字符开头（`add`）必须查左边界；非词内字符开头（`.tar`）自带分隔，豁免。
+/// 这与「尾随空格顶替右边界」是同一条对称规则：边界字符本来就已经占住了那一侧。
+fn marker_needs_left_boundary(marker: &str) -> bool {
+    marker.as_bytes().first().copied().is_some_and(is_token_byte)
+}
+
+fn marker_needs_right_boundary(marker: &str) -> bool {
+    marker.as_bytes().last().copied().is_some_and(is_token_byte)
+}
+
+/// 在 `text_lower` 里找带边界的 `marker`；两侧各自的边界按需启用。
+fn find_bounded(text_lower: &str, marker: &str, need_left: bool, need_right: bool) -> bool {
+    let bytes = text_lower.as_bytes();
+    let mut from = 0usize;
+    while let Some(rel) = text_lower.get(from..).and_then(|rest| rest.find(marker)) {
+        let start = from.saturating_add(rel);
+        let end = start.saturating_add(marker.len());
+        let left_ok = !need_left || start == 0 || !is_token_byte(bytes[start - 1]);
+        let right_ok = !need_right || end >= bytes.len() || !is_token_byte(bytes[end]);
+        if left_ok && right_ok {
+            return true;
+        }
+        // `marker` 全是 ASCII，`start + 1` 必然落在字符边界上，不会切碎多字节字符。
+        from = start.saturating_add(1);
+    }
+    false
+}
+
 /// 单个标记是否命中。`text_lower` 必须已经 `to_lowercase()`。
 #[must_use]
 pub fn marker_matches(text_lower: &str, marker: &str) -> bool {
@@ -36,26 +68,15 @@ pub fn marker_matches(text_lower: &str, marker: &str) -> bool {
         // 中文等非 ASCII 标记没有词边界可依，保留子串语义。
         return text_lower.contains(marker);
     }
-    // **不 trim 尾随空格**：空格本身不是词内字符，于是 `"make "` 天然就是「make 后面必须跟空白」，
-    // 这正是把 `make -j8` 与 `makefile` 区分开的唯一线索。
-    //
-    // 但尾随空格也顶替了右边界：`"make "` 在 `make arch` 里，空格之后的 `a` 是词内字符，
-    // 若照常查右边界就会把这条正确命中判掉。所以「marker 以空白结尾」时只查左边界。
-    let require_right_boundary = !marker.ends_with(' ');
-    let bytes = text_lower.as_bytes();
-    let mut from = 0usize;
-    while let Some(rel) = text_lower.get(from..).and_then(|rest| rest.find(marker)) {
-        let start = from.saturating_add(rel);
-        let end = start.saturating_add(marker.len());
-        let left_ok = start == 0 || !is_token_byte(bytes[start - 1]);
-        let right_ok = !require_right_boundary || end >= bytes.len() || !is_token_byte(bytes[end]);
-        if left_ok && right_ok {
-            return true;
-        }
-        // `needle` 全是 ASCII，`start + 1` 必然落在字符边界上，不会切碎多字节字符。
-        from = start.saturating_add(1);
+    // **不 trim**：`"make "` 的尾随空格就是「`make` 后面必须跟空白」这条线索本身
+    // （`make -j8` 是构建，`makefile` 不是）。
+    let need_left = marker_needs_left_boundary(marker);
+    let need_right = marker_needs_right_boundary(marker);
+    if !need_left && !need_right {
+        // 整条标记都是分隔符（如 `" - "`）：两侧都由标记自身顶替，退化为子串。
+        return text_lower.contains(marker);
     }
-    false
+    find_bounded(text_lower, marker, need_left, need_right)
 }
 
 /// 任一标记命中（与 [`marker_matches`] 同口径）。
@@ -108,6 +129,26 @@ mod tests {
     fn multiword_ascii_markers_use_outer_boundaries() {
         assert!(marker_matches("please run again", "run again"));
         assert!(!marker_matches("rerun again", "run again"));
+    }
+
+    #[test]
+    fn leading_separator_marker_needs_no_left_boundary() {
+        // 扩展名类标记以 `.` 开头：左边界由 `.` 自己顶替，`xhpcg.tar.gz` 必须命中。
+        assert!(marker_matches("xhpcg.tar.gz", ".tar"));
+        assert!(!marker_matches("notar", ".tar"));
+    }
+
+    #[test]
+    fn trailing_newline_marker_is_bounded_by_the_newline() {
+        // 回归：`"make\n"` 曾经要求右边界，于是 `make\n<内容>` 永不命中（A5 词表里就有这一条）。
+        assert!(marker_matches("make\nfoo", "make\n"));
+        assert!(!marker_matches("maker\nfoo", "make\n"));
+    }
+
+    #[test]
+    fn all_separator_marker_falls_back_to_substring() {
+        assert!(marker_matches("a - b", " - "));
+        assert!(!marker_matches("anything", " "));
     }
 
     #[test]

@@ -73,8 +73,9 @@ fn prepend_list_tree_output_header(
     lines_count: usize,
     truncated: bool,
 ) -> String {
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output(
+    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
         tool_names::LIST_TREE,
+        true,
         crate::cm_tools::tool_result::ListTreeOutputFields {
             path: root_rel.to_string(),
             max_depth,

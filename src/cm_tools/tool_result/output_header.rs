@@ -94,6 +94,11 @@ impl<T> CrabmateToolOutputEnvelope<T> {
 }
 
 /// 在正文前插入单行头。这些类型的序列化失败视为内部不变量破坏。
+///
+/// **#1422 C1 第 2 步之后 crate 内已无消费者**：`read_file` / `read_dir` / `list_tree` /
+/// `search_in_files` 四处载荷头都改成显式 `ok: true`，② 级「有头无 `ok`」分支随之归零。
+/// 本函数仍是既有 `pub use` 再导出面的一部分，删除属破坏性 API 变更，留待 0.10 窗口再清。
+#[allow(dead_code)]
 pub fn prepend_crabmate_tool_output<T: Serialize>(tool: &str, fields: T, body: &str) -> String {
     let line = serde_json::to_string(&CrabmateToolOutputEnvelope::new(tool, fields))
         .unwrap_or_else(|e| panic!("crabmate_tool_output 头序列化失败（内部错误）: {e}"));

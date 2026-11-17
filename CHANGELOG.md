@@ -10,6 +10,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- **Fewer redundant-probe suppressions once a goal is met (#1422).** Plan-step description markers
+  now go through the same token-boundary matcher as the other text heuristics, so English markers no
+  longer hit word-internal substrings (`build` no longer matches `rebuild` unless the `re-` / `-ing`
+  form is listed explicitly). Expect **more tool calls and slightly higher token cost**, not fewer:
+  the miss direction is deliberately conservative. `make ` / `cmake` and the Chinese markers are
+  unchanged.
+- **Payload tool headers now carry an explicit `ok: true`** for `read_file` / `read_dir` /
+  `list_tree` / `search_in_files`, replacing the implicit "a header means success" convention.
+  Visible to clients in SSE `structured_preview`; `SSE_PROTOCOL_VERSION` stays **v2**.
+
+### Fixed
+
+- **A `"make\n"` marker could never match in the build-progress table (#1422).** The matcher
+  required a right-hand token boundary even when the marker itself ended in a newline, so a `make`
+  line followed by more output was never counted as build progress.
+
 ## [0.9.1] - 2026-11-17
 
 **First pre-release after `v0.9.0`.** Everything below is the completion-judgement rework (#1401 / #1414 /
