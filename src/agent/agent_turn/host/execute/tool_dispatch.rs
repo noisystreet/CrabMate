@@ -74,7 +74,7 @@ mod tests {
             hits: AtomicUsize::new(0),
             body: "mock-tool-ok",
         };
-        let (out, inject) = mock
+        let (out, inject, facts) = mock
             .dispatch(DispatchToolParams {
                 delegation: Default::default(),
                 runtime,
@@ -109,9 +109,10 @@ mod tests {
                 },
             })
             .await
-            .into_body_and_payload();
+            .into_parts();
         assert_eq!(out, "mock-tool-ok");
         assert!(inject.is_none());
+        assert_eq!(facts.ok, Some(true), "mock 直给的成败应原样带出");
         assert_eq!(mock.hits.load(Ordering::SeqCst), 1);
     }
 }

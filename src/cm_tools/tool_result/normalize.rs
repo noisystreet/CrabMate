@@ -13,6 +13,35 @@ use super::{
 /// 当前实现的 `crabmate_tool.v` 值；与 `encode_tool_message_envelope_v1` 写入一致。
 pub const CRABMATE_TOOL_ENVELOPE_VERSION_V1: u32 = 1;
 
+/// 执行层直接给出的成败事实（`#1430` 接线）。
+///
+/// `None` 表示**该路径没有结构化结论**——早退短路文案、缓存命中正文、以及尚未改造
+/// `execute_*_impl` 的过渡路径；这些地方下游仍退回 `parse_tool_output` 的正文判定。
+///
+/// 唯一应用点是 [`crate::cm_tools::tool_result::ParsedToolOutput::apply_outcome_facts`]：
+/// 覆盖 parse 结果后，[`NormalizedToolEnvelope`]（SSE / stats）与 `crabmate_tool` 信封
+/// （模型可见）都从同一份 parsed 派生，不会出现两种成败结论。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolOutcomeFacts {
+    pub ok: Option<bool>,
+    pub error_code: Option<String>,
+}
+
+impl ToolOutcomeFacts {
+    /// 执行层已知成败。
+    pub fn known(ok: bool, error_code: Option<String>) -> Self {
+        Self {
+            ok: Some(ok),
+            error_code,
+        }
+    }
+
+    /// 该路径没有结构化结论，下游按正文反推。
+    pub fn unknown() -> Self {
+        Self::default()
+    }
+}
+
 /// 归一化后的工具结果（信封 v1 形状的逻辑视图）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct NormalizedToolEnvelope {
@@ -218,5 +247,54 @@ pub fn normalize_tool_message_content(content: &str) -> Option<NormalizedToolEnv
 fn insert_opt<T: Clone + Into<Value>>(ct: &mut Map<String, Value>, key: &str, v: &Option<T>) {
     if let Some(v) = v.as_ref() {
         ct.insert(key.to_string(), (*v).clone().into());
+    }
+}
+
+impl ParsedToolOutput {
+    /// 用执行层事实覆盖正文反推的 `ok` / `error_code`（`#1430` 接线）。
+    ///
+    /// `facts.ok` 为 `None`（早退文案 / 缓存正文）时原样返回，行为与接线前一致。
+    /// 调用方应把覆盖后的结果用于一切「成败」判定，避免同一结果出现两种结论。
+    pub fn apply_outcome_facts(&mut self, facts: &ToolOutcomeFacts) {
+        let Some(ok) = facts.ok else {
+            return;
+        };
+        self.ok = ok;
+        if ok {
+            self.error_code = None;
+        } else if let Some(code) = facts.error_code.as_deref() {
+            self.error_code = Some(code.to_string());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `#1430` 接线：只在 `ok` 已知时覆盖；成功后清掉正文里反推出的旧码。
+    #[test]
+    fn apply_outcome_facts_overrides_only_when_known() {
+        let mut parsed = parse_tool_output("read_file", "退出码：1\n");
+        assert!(!parsed.ok, "「退出码：1」应被反推为失败");
+        let inferred_code = parsed.error_code.clone();
+
+        // 未知（早退 / 缓存路径）：一字不改，行为与接线前一致。
+        parsed.apply_outcome_facts(&ToolOutcomeFacts::unknown());
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error_code, inferred_code);
+
+        // 已知成功：ok 翻正，且不残留失败码（否则客户端会误判可重试）。
+        parsed.apply_outcome_facts(&ToolOutcomeFacts::known(true, None));
+        assert!(parsed.ok);
+        assert_eq!(parsed.error_code, None);
+
+        // 已知失败且带码：码取执行层的。
+        parsed.apply_outcome_facts(&ToolOutcomeFacts::known(
+            false,
+            Some("timeout".to_string()),
+        ));
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error_code.as_deref(), Some("timeout"));
     }
 }

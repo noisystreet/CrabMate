@@ -10,7 +10,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::cm_tools::tool_result::{NormalizedToolEnvelope, ToolEnvelopeContext, parse_tool_output};
+use crate::cm_tools::tool_result::{
+    NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
+};
 use crate::cm_config::AgentConfig;
 
 #[derive(Debug)]
@@ -91,6 +93,9 @@ impl ToolOutcomeRecorder {
     }
 
     /// 与 SSE / `role: tool` 写入共用解析路径，在工具结果已定稿时调用。
+    ///
+    /// `facts` 为执行层直给的成败（#1430）：已知时覆盖正文反推，避免统计里出现
+    /// 「执行层判成功、统计判失败」。早退 / 缓存路径传 [`ToolOutcomeFacts::unknown`]。
     pub fn record_tool_outcome(
         &self,
         cfg: &AgentConfig,
@@ -98,11 +103,13 @@ impl ToolOutcomeRecorder {
         result_raw: &str,
         tool_summary: Option<String>,
         envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
+        facts: &ToolOutcomeFacts,
     ) {
         if !cfg.agent_tool_stats.agent_tool_stats_enabled {
             return;
         }
-        let parsed = parse_tool_output(tool_name, result_raw);
+        let mut parsed = parse_tool_output(tool_name, result_raw);
+        parsed.apply_outcome_facts(facts);
         let summary = tool_summary.unwrap_or_else(|| format!("tool: {tool_name}"));
         let structured_payload =
             crate::cm_tools::tool_result::structured_payload_for_tool(tool_name, result_raw);
@@ -273,7 +280,14 @@ mod tests {
         c.agent_tool_stats.agent_tool_stats_enabled = false;
         c.thinking_echo.thinking_avoid_echo_system_prompt = false;
         for _ in 0..5 {
-            rec.record_tool_outcome(&c, "read_file", fake_read_fail(), None, None);
+            rec.record_tool_outcome(
+                &c,
+                "read_file",
+                fake_read_fail(),
+                None,
+                None,
+                &ToolOutcomeFacts::unknown(),
+            );
         }
         let base = "BASE";
         assert_eq!(rec.augment_system_prompt(base, &c), base);
@@ -298,12 +312,41 @@ mod tests {
         let rec = ToolOutcomeRecorder::new();
         let c = test_cfg();
         for _ in 0..3 {
-            rec.record_tool_outcome(&c, "read_file", fake_read_fail(), None, None);
+            rec.record_tool_outcome(
+                &c,
+                "read_file",
+                fake_read_fail(),
+                None,
+                None,
+                &ToolOutcomeFacts::unknown(),
+            );
         }
         let out = rec.augment_system_prompt("SYS", &c);
         assert!(out.contains("SYS"));
         assert!(out.contains("read_file"));
         assert!(out.contains("read_file_failed"));
+    }
+
+    /// #1430 接线：执行层判成功时，统计**不再**被正文「退出码：1」反推成失败。
+    #[test]
+    fn outcome_facts_win_over_body_heuristics() {
+        let rec = ToolOutcomeRecorder::new();
+        let c = test_cfg();
+        for _ in 0..3 {
+            rec.record_tool_outcome(
+                &c,
+                "read_file",
+                fake_read_fail(),
+                None,
+                None,
+                &ToolOutcomeFacts::known(true, None),
+            );
+        }
+        let out = rec.augment_system_prompt("SYS", &c);
+        assert!(
+            !out.contains("read_file_failed"),
+            "执行层判成功时不应报失败提示：{out}"
+        );
     }
 
     #[test]
@@ -312,7 +355,14 @@ mod tests {
         let mut c = test_cfg();
         c.agent_tool_stats.agent_tool_stats_warn_below_success_ratio = 0.95;
         for _ in 0..3 {
-            rec.record_tool_outcome(&c, "run_command", "执行失败\n", None, None);
+            rec.record_tool_outcome(
+                &c,
+                "run_command",
+                "执行失败\n",
+                None,
+                None,
+                &ToolOutcomeFacts::unknown(),
+            );
         }
         let out = rec.augment_system_prompt("S", &c);
         assert!(out.contains("run_command"));

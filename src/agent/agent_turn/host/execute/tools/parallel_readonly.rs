@@ -10,10 +10,11 @@ use crate::agent::agent_turn::execute::{ParallelPrefetchParams, ToolExecutionHos
 use crate::agent::agent_turn::policy::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
+use crate::cm_tools::tool_result::error_text;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
-use crate::tool_registry::{HandlerId, HandlerLookupTable, ToolRuntime};
+use crate::tool_registry::{HandlerId, HandlerLookupTable, ToolRunOutcome, ToolRuntime};
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
@@ -110,7 +111,7 @@ async fn parallel_collect_unique_results(
     parts: ParallelUniqueBatchParts<'_>,
     prefetch_failures: HashMap<(String, String), String>,
     parallel_max: usize,
-) -> HashMap<(String, String), String> {
+) -> HashMap<(String, String), ToolRunOutcome> {
     let ParallelUniqueBatchParts {
         tool_calls,
         cfg,
@@ -163,7 +164,7 @@ async fn parallel_collect_unique_results(
         let constraint = step_executor_constraint;
         unique_futs.push(async move {
             if let Some(err) = prefetch_err {
-                return (name, args, err);
+                return (name, args, ToolRunOutcome::failed(err, None));
             }
             if let Some(denied) = tool_policy_early_deny_message(&ToolPolicyEarlyDenyParams {
                 cfg: cfg.as_ref(),
@@ -173,7 +174,7 @@ async fn parallel_collect_unique_results(
                 turn_allow,
                 permission,
             }) {
-                return (name, args, denied);
+                return (name, args, ToolRunOutcome::failed(denied, None));
             }
             let wall_secs =
                 crate::tool_registry::parallel_tool_wall_timeout_secs(cfg.as_ref(), name.as_str());
@@ -197,7 +198,7 @@ async fn parallel_collect_unique_results(
                     crate::redact::tool_arguments_preview_for_log(&args_for_log)
                 );
                 let t_tool = Instant::now();
-                let result = match kind {
+                let outcome = match kind {
                     ParallelToolKind::HttpFetch => {
                         CrabmateParallelToolDispatch::dispatch_parallel_http_fetch(
                             ParallelHttpFetchParams {
@@ -260,7 +261,6 @@ async fn parallel_collect_unique_results(
                             },
                         )
                         .await
-                        .0
                     }
                 };
                 info!(
@@ -270,7 +270,7 @@ async fn parallel_collect_unique_results(
                     crate::redact::tool_arguments_preview_for_log(&args_for_return),
                     t_tool.elapsed().as_millis()
                 );
-                (name_for_return, args_for_return, result)
+                (name_for_return, args_for_return, outcome)
             }
             .instrument(parallel_span);
             match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
@@ -286,13 +286,13 @@ async fn parallel_collect_unique_results(
                     (
                         name_timeout,
                         args_timeout,
-                        format!("工具执行超时（{} 秒）", wall_secs),
+                        parallel_tool_timeout_outcome(wall_secs),
                     )
                 }
             }
         });
     }
-    let unique_outcomes: Vec<(String, String, String)> = stream::iter(unique_futs)
+    let unique_outcomes: Vec<(String, String, ToolRunOutcome)> = stream::iter(unique_futs)
         .buffer_unordered(parallel_max)
         .collect()
         .await;
@@ -302,9 +302,26 @@ async fn parallel_collect_unique_results(
         .collect()
 }
 
+/// 并行只读批墙钟超时的结构化结论。
+///
+/// 正文与 `dispatch.rs` 的墙钟超时**逐字同形**（都带 `错误：` 前缀）。这不是风格问题：
+/// ④ 级收紧成「只认前缀」后，不带前缀的裸正文会被判**成功**（`run_command.rs` 里
+/// 「已知残余漏判」那条测试讲的正是这一类）。故正文与结构化结论同时给，
+/// 任一条路径单独生效都不会误判。
+fn parallel_tool_timeout_outcome(wall_secs: u64) -> ToolRunOutcome {
+    ToolRunOutcome::failed(
+        format!(
+            "{}：工具执行超时（{} 秒）",
+            error_text::ERROR_PREFIX,
+            wall_secs
+        ),
+        Some("timeout".to_string()),
+    )
+}
+
 struct ParallelEmitOrderedParams<'a> {
     tool_calls: &'a [ToolCall],
-    result_by_name_args: &'a HashMap<(String, String), String>,
+    result_by_name_args: &'a HashMap<(String, String), ToolRunOutcome>,
     parallel_batch_id_ref: &'a str,
     per_coord: &'a mut crate::agent::per_coord::PerCoordinator,
     messages: &'a mut Vec<Message>,
@@ -393,11 +410,11 @@ async fn parallel_emit_ordered_tool_results(
             return ExecuteToolsBatchOutcome::AbortedSse;
         }
         let key = (tc.function.name.clone(), tc.function.arguments.clone());
-        let cached = result_by_name_args
-            .get(&key)
-            .map(String::as_str)
-            .unwrap_or("")
-            .to_string();
+        // 去重表里没有该键（理论上不会发生）时退回空正文 + 未知成败，与接线前一致。
+        let (cached, cached_facts) = match result_by_name_args.get(&key) {
+            Some(o) => (o.output.clone(), o.facts()),
+            None => (String::new(), crate::tool_result::ToolOutcomeFacts::unknown()),
+        };
         emit_tool_batch_result(
             super::batch_dispatch::EmitToolBatchResultParams {
                 messages,
@@ -410,6 +427,7 @@ async fn parallel_emit_ordered_tool_results(
                 args: &tc.function.arguments,
                 id: &tc.id,
                 result: cached,
+                facts: cached_facts,
                 reflection_inject: None,
                 execution_mode: "parallel_readonly_batch",
                 parallel_batch_id: Some(parallel_batch_id_ref),
@@ -530,6 +548,25 @@ pub(super) async fn execute_tools_parallel(
 mod tests {
     use super::*;
     use crate::types::FunctionCall;
+
+    /// 并行批墙钟超时：结构化判失败，且正文带 `错误：` 前缀（文本反推也判失败）。
+    ///
+    /// 接线前这条正文是裸「工具执行超时（N 秒）」，④ 级收紧后会被判**成功**——
+    /// 于是超时的并行工具在 SSE / stats / replay 里全记成 ok。本测试同时钉住两条路。
+    #[test]
+    fn parallel_tool_timeout_fails_by_both_sources() {
+        let outcome = parallel_tool_timeout_outcome(7);
+        assert!(!outcome.ok, "超时必须判失败");
+        assert_eq!(outcome.error_code.as_deref(), Some("timeout"));
+        assert!(
+            outcome.output.starts_with(error_text::ERROR_PREFIX),
+            "正文需带 `错误：` 前缀：{}",
+            outcome.output
+        );
+        let reparsed = crate::tool_result::parse_tool_output("read_file", &outcome.output);
+        assert!(!reparsed.ok, "退化为文本反推时也必须判失败");
+        assert_eq!(reparsed.error_code.as_deref(), Some("timeout"));
+    }
 
     fn tool_call(id: &str, name: &str, arguments: &str) -> ToolCall {
         ToolCall {

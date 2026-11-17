@@ -197,7 +197,7 @@ async fn serial_execute_one_tool_call(
         workspace_changed: st.workspace_changed,
         ctx: st.web_tool_ctx,
     };
-    let (result, reflection_inject) = {
+    let (result, reflection_inject, facts) = {
         let mut host = CrabmateToolExecutionHost {
             per_coord: st.per_coord,
             request_chrome_trace: st.request_chrome_trace.clone(),
@@ -242,6 +242,7 @@ async fn serial_execute_one_tool_call(
             },
         )
         .await
+        .into_parts()
     };
 
     info!(
@@ -322,6 +323,7 @@ async fn serial_execute_one_tool_call(
         args: args.as_str(),
         id: id.as_str(),
         result,
+        facts,
         reflection_inject,
     })
     .await;

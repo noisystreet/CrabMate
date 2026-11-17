@@ -9,7 +9,9 @@ use crate::agent::agent_turn::execute::tool_dispatch::ToolDispatch;
 use crate::agent::agent_turn::execute::tool_execution_trait::{
     ParallelPrefetchFailures, ParallelPrefetchParams, ToolExecutionHost,
 };
-use crate::tool_host::tool_registry::{self, DispatchToolParams, HandlerId, HandlerLookupTable};
+use crate::tool_host::tool_registry::{
+    self, DispatchToolParams, HandlerId, HandlerLookupTable, ToolRunOutcome,
+};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;
@@ -97,11 +99,11 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
         &mut self,
         name: &str,
         p: DispatchToolParams<'_>,
-    ) -> (String, Option<serde_json::Value>) {
+    ) -> ToolRunOutcome {
         match agent_layer_handler(name, p.policy.handler_lookup) {
             Some(AgentLayerHandler::Workflow) => {
                 let permission = p.policy.permission;
-                workflow_tool_dispatch::dispatch_workflow_execute_tool(
+                let (output, payload) = workflow_tool_dispatch::dispatch_workflow_execute_tool(
                     p.runtime,
                     self.per_coord,
                     p.policy.cfg,
@@ -111,13 +113,16 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                     self.request_chrome_trace.clone(),
                     permission,
                 )
-                .await
+                .await;
+                // `workflow_execute` 的执行体仍返回 `(String, payload)`（内部已有结构化状态，
+                // 但通道未改造），此处按正文判定过渡；改造后换成 `ToolRunOutcome` 直出。
+                ToolRunOutcome::from_body_and_payload(tool_names::WORKFLOW_EXECUTE, output, payload)
             }
             // #839 P1：`delegate_task` 由 agent 层调度——delegator 在此由持有凭据的一侧
             // 预先装配并注入（工具层刻意不持 `client` / `api_key`）。
             Some(AgentLayerHandler::Delegate) => {
                 let sub = &p.policy.cfg.subagent;
-                crate::agent::delegation_dispatch::dispatch_delegate_task_tool(
+                let (output, payload) = crate::agent::delegation_dispatch::dispatch_delegate_task_tool(
                     p.delegation.delegator,
                     crate::cm_tools::delegation_host::SubTaskLimits {
                         max_llm_calls: sub.max_llm_calls,
@@ -128,11 +133,10 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                     sub.max_report_chars,
                     p.call.args,
                 )
-                .await
+                .await;
+                ToolRunOutcome::from_body_and_payload(tool_names::DELEGATE_TASK, output, payload)
             }
-            // #1430：`ToolDispatch` 已返回 `ToolRunOutcome`；此处仍按历史 `(String, payload)`
-            // 形状交给调用方（上游解构语义未改），结构化 `ok` 留待消费方接入。
-            None => InternalToolDispatch.dispatch(p).await.into_body_and_payload(),
+            None => InternalToolDispatch.dispatch(p).await,
         }
     }
 
@@ -150,21 +154,19 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
         &mut self,
         name: &str,
         p: DispatchToolParams<'_>,
-    ) -> (String, Option<serde_json::Value>) {
+    ) -> ToolRunOutcome {
         match agent_layer_handler(name, p.policy.handler_lookup) {
-            Some(AgentLayerHandler::Workflow) => (
+            Some(AgentLayerHandler::Workflow) => ToolRunOutcome::failed(
                 "错误：并行只读批不支持 workflow_execute。".to_string(),
                 None,
             ),
             // 只读并行批的前提是「无副作用」，而子回合会跑工具、发 LLM 请求。
             // 这是永久规则，不随接线进度改变（设计 §6 第 4 项）。
-            Some(AgentLayerHandler::Delegate) => (
+            Some(AgentLayerHandler::Delegate) => ToolRunOutcome::failed(
                 "错误：并行只读批不支持 delegate_task（子回合不是无副作用操作）。".to_string(),
                 None,
             ),
-            // #1430：`ToolDispatch` 已返回 `ToolRunOutcome`；此处仍按历史 `(String, payload)`
-            // 形状交给调用方（上游解构语义未改），结构化 `ok` 留待消费方接入。
-            None => InternalToolDispatch.dispatch(p).await.into_body_and_payload(),
+            None => InternalToolDispatch.dispatch(p).await,
         }
     }
 
@@ -189,7 +191,11 @@ pub struct ParallelHttpFetchParams<'a> {
 
 impl CrabmateParallelToolDispatch {
     /// 并行只读批：`http_fetch` 经阻塞池直调（审批已在批前 prefetch）。
-    pub async fn dispatch_parallel_http_fetch(params: ParallelHttpFetchParams<'_>) -> String {
+    ///
+    /// 返回 [`ToolRunOutcome`]：`run_direct` 本来就有 `Result`，成败不必再从正文反推（#1430）。
+    pub async fn dispatch_parallel_http_fetch(
+        params: ParallelHttpFetchParams<'_>,
+    ) -> ToolRunOutcome {
         let ParallelHttpFetchParams {
             cfg,
             args,
@@ -225,11 +231,16 @@ impl CrabmateParallelToolDispatch {
                 // 并行 `http_fetch` 路径不涉及后台任务查询。
                 None,
             );
-            // 并行只读批把正文交给编排层：这里只展平 `Err`（正文与迁移前逐字一致）。
-            crate::tools::http_fetch::run_direct(&args, &ctx).unwrap_or_else(|e| e.message)
+            // 并行只读批把正文交给编排层：这里只把 `Result` 折成结构化结果（正文与迁移前逐字一致）。
+            match crate::tools::http_fetch::run_direct(&args, &ctx) {
+                Ok(body) => ToolRunOutcome::ok(body, None),
+                Err(e) => ToolRunOutcome::failed(e.message, None),
+            }
         })
         .await
-        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+        .unwrap_or_else(|e| {
+            ToolRunOutcome::failed(format!("工具执行 panic：{}", e), None)
+        })
     }
 }
 

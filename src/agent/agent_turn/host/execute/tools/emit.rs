@@ -118,13 +118,16 @@ pub(super) async fn emit_tool_result_sse_and_append(
         args,
         id,
         result,
+        facts,
         reflection_inject,
         envelope_ctx,
     } = p;
     let out = control.out;
     let sse_control_mirror = control.sse_control_mirror;
     let tool_summary = summarize_tool_call_args(name, args);
-    let parsed_for_timeline = parse_tool_output(name, result.as_str());
+    let mut parsed_for_timeline = parse_tool_output(name, result.as_str());
+    // #1430：执行层直给的成败优先；`facts` 未知时等价于接线前（仍按正文反推）。
+    parsed_for_timeline.apply_outcome_facts(&facts);
 
     emit_sse_tool_result(
         out,
@@ -133,6 +136,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         result.as_str(),
         tool_summary.clone(),
         envelope_ctx,
+        &facts,
         reflection_inject.as_ref(),
         encoder,
     )
@@ -212,6 +216,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         result.as_str(),
         tool_summary.clone(),
         envelope_ctx.as_ref(),
+        &facts,
     );
     tool_outcome_recorder.record_tool_execution_trace(
         name,
@@ -222,14 +227,14 @@ pub(super) async fn emit_tool_result_sse_and_append(
     );
 
     let content_for_model = if tool_result_envelope_v1 {
-        let parsed = parse_tool_output(name, &result);
+        // 复用已按执行层事实覆盖过的那份 parse，避免同一正文再解析一次。
         let summary_str = tool_summary
             .clone()
             .unwrap_or_else(|| format!("tool: {name}"));
         tool_result::encode_tool_message_envelope_v1(
             name,
             summary_str,
-            &parsed,
+            &parsed_for_timeline,
             &result,
             envelope_ctx.as_ref(),
         )
