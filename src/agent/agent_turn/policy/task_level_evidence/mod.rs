@@ -7,4 +7,4 @@
 mod evidence;
 
 pub use evidence::{EvidenceItem, EvidenceKind, EvidenceSet, EvidenceStrength};
-pub(crate) use evidence::command_line_looks_like_verify;
+pub(crate) use evidence::{command_line_looks_like_verify, is_env_assignment};

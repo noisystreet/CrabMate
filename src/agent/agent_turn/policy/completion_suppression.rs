@@ -8,7 +8,7 @@ use crate::cm_types::{Message, ToolCall};
 use super::run_command_dedupe::{
     normalize_run_command_key, successful_run_command_keys_from_messages,
 };
-use super::task_level_evidence::command_line_looks_like_verify;
+use super::task_level_evidence::{command_line_looks_like_verify, is_env_assignment};
 
 /// 只读「探测」类工具：目标已有完成证据时，再调一次不会带回新信息。
 ///
@@ -31,15 +31,21 @@ const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
 /// 命令是结构化字段，按 argv 判定，不看拼串。
 const READONLY_PROBE_PROGRAMS: &[&str] = &["ls", "stat", "file", "test", "readlink", "realpath"];
 
-/// 只问用法/版本，不产生副作用——任何程序带这些 flag 都算探测
-/// （`cargo build --help` 确实不构建）。
+/// 只问用法/版本，不产生副作用——**单条命令**带这些 flag 才算探测
+/// （`cargo build --help` 确实不构建）。复合命令里 `--help` 只修饰它那一段，
+/// 见 [`shell_script_segments`]：全段都是探测才整体算探测。
 const PROBE_USAGE_FLAGS: &[&str] = &["--help", "--version"];
 
 /// 包装器：自身不改变「内层命令是否只读」，必须剥壳递归判定。
-/// `timeout 300 make` 是构建，`timeout 5 ls` 才是探测。
-const PROBE_WRAPPER_PROGRAMS: &[&str] = &[
-    "timeout", "strace", "env", "nice", "nohup", "command", "exec", "sudo",
-];
+/// `strace -f make` 是构建，`strace -f ls` 才是探测。
+///
+/// **不含 `timeout`**：它还要跳过时长、并判内层是「干活」还是「跑一下」，
+/// 见 [`timeout_wrapped_is_probe`]。
+const PROBE_WRAPPER_PROGRAMS: &[&str] = &["strace", "env", "nice", "nohup", "command", "exec", "sudo"];
+
+/// `timeout` 中**带取值**的 flag：`-s KILL` / `--signal=KILL` / `-k 5`。
+/// 认错会让取值被当成时长、时长被当成命令名（#1422 review 的 High）。
+const TIMEOUT_VALUE_FLAGS: &[&str] = &["-s", "--signal", "-k", "--kill-after"];
 
 /// `bash -c` 等：真实命令在 `-c` 的脚本文本里。
 const SHELL_WRAPPER_FLAGS: &[&str] = &["-c", "-lc", "-ic", "-ec"];
@@ -212,8 +218,15 @@ fn argv_is_readonly_probe(command: &str, args: &[String], depth: usize) -> bool 
     }
     let base = program_basename(command);
     if is_probe_shell_wrapper(base) {
-        return shell_script_argv(args)
-            .is_some_and(|(cmd, rest)| argv_is_readonly_probe(&cmd, &rest, depth.saturating_add(1)));
+        let Some(segments) = shell_script_segments(args) else {
+            return false;
+        };
+        // 全段都是探测才算探测：`cargo build && ./x --help` 里只有后段问用法，
+        // 前段是真干活，整条不能被掐掉。
+        return !segments.is_empty()
+            && segments
+                .iter()
+                .all(|seg| segment_is_probe(seg, depth.saturating_add(1)));
     }
     if base == "timeout" {
         return timeout_wrapped_is_probe(args);
@@ -224,6 +237,19 @@ fn argv_is_readonly_probe(command: &str, args: &[String], depth: usize) -> bool 
         });
     }
     READONLY_PROBE_PROGRAMS.contains(&base)
+}
+
+/// 复合脚本里的一段：`cd <dir>` 不产生信息，判定落到后面的段。
+fn segment_is_probe(segment: &str, depth: usize) -> bool {
+    let mut tokens = segment.split_whitespace().map(str::to_string);
+    let Some(cmd) = tokens.next() else {
+        return true;
+    };
+    if cmd == "cd" {
+        return true;
+    }
+    let rest: Vec<String> = tokens.collect();
+    argv_is_readonly_probe(&cmd, &rest, depth)
 }
 
 /// `timeout` 是「限时跑一下」的典型形态（`timeout 30 ./bin/app 2>&1`）。
@@ -252,33 +278,75 @@ fn is_probe_shell_wrapper(prog: &str) -> bool {
     matches!(prog, "bash" | "sh" | "zsh" | "dash")
 }
 
-/// `bash -c "ls -la"`：把 `-c` 之后拼回脚本再切成 argv。
+/// `bash -c "…"`：把 `-c` 之后的脚本按 `&&` / `||` / `|` / `;` / 换行切段。
 ///
-/// 引号边界在这一步会丢，但判定只看 `argv[0]` 与 flag，够用；故意**不**做完整的
+/// 引号边界在这一步会丢，但判定只看每段的 `argv[0]` 与 flag，够用；故意**不**做完整的
 /// shell 解析——那会把「只读探测」判定变成一个小 shell。
-fn shell_script_argv(args: &[String]) -> Option<(String, Vec<String>)> {
+fn shell_script_segments(args: &[String]) -> Option<Vec<String>> {
     let pos = args
         .iter()
         .position(|t| SHELL_WRAPPER_FLAGS.contains(&t.as_str()))?;
     let script = args[pos.saturating_add(1)..].join(" ");
-    let mut tokens = script.split_whitespace().map(str::to_string);
-    let cmd = tokens.next()?;
-    Some((cmd, tokens.collect()))
+    // 重定向里的 `&`（`2>&1`）不是命令分隔，不先剥掉会把 `2>&1` 切成 `2>` 与 `1`
+    // 两段，凭空多出一条「命令」。
+    let script = script
+        .split_whitespace()
+        .filter(|t| !is_shell_redirection(t))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(
+        script
+            .split(['&', '|', ';', '\n'])
+            .map(str::trim)
+            .filter(|seg| !seg.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+/// shell 重定向的 token：`2>&1` / `>&2` / `2>file` / `&>`。
+fn is_shell_redirection(token: &str) -> bool {
+    token.starts_with('>')
+        || token.starts_with("&>")
+        || token.starts_with("1>")
+        || token.starts_with("2>")
+        || token.contains(">&")
+}
+
+/// 跳过 `timeout` 自身的 flag、它们的取值，以及随后的时长 token，返回内层命令的下标。
+///
+/// 「跳过首个非 flag」的旧写法会认错：`timeout -s KILL 60 make` 里 `KILL` 被当成时长、
+/// `60` 被当成命令名，于是真实构建被判成只读探测（#1422 review）。
+fn skip_timeout_prefix(args: &[String]) -> usize {
+    let mut i = 0usize;
+    while let Some(t) = args.get(i) {
+        if !t.starts_with('-') {
+            break;
+        }
+        let takes_value = TIMEOUT_VALUE_FLAGS.contains(&t.as_str());
+        i = i.saturating_add(1);
+        if takes_value && args.get(i).is_some_and(|v| !v.starts_with('-')) {
+            i = i.saturating_add(1);
+        }
+    }
+    // 时长：`60` / `5s` / `1.5m`，按「数字开头」识别。
+    if args
+        .get(i)
+        .and_then(|t| t.chars().next())
+        .is_some_and(|c| c.is_ascii_digit())
+    {
+        i = i.saturating_add(1);
+    }
+    i
 }
 
 /// 剥掉包装器自身的 flag 与 `VAR=val`，返回（内层命令, 内层 args）。
 fn unwrap_wrapper_argv(prog: &str, args: &[String]) -> Option<(String, Vec<String>)> {
-    let mut i = 0usize;
-    if prog == "timeout" {
-        // `timeout` 的首个非 flag token 是时长（`60` / `5s`），必须跳过，
-        // 否则 `timeout 60 make` 会把 `60` 当成内层命令名。
-        while let Some(t) = args.get(i) {
-            i = i.saturating_add(1);
-            if !t.starts_with('-') {
-                break;
-            }
-        }
-    }
+    let mut i = if prog == "timeout" {
+        skip_timeout_prefix(args)
+    } else {
+        0
+    };
     while let Some(t) = args.get(i) {
         if t.starts_with('-') || is_env_assignment(t) {
             i = i.saturating_add(1);
@@ -288,15 +356,6 @@ fn unwrap_wrapper_argv(prog: &str, args: &[String]) -> Option<(String, Vec<Strin
     }
     let cmd = args.get(i)?.clone();
     Some((cmd, args[i.saturating_add(1)..].to_vec()))
-}
-
-fn is_env_assignment(token: &str) -> bool {
-    let Some((name, _)) = token.split_once('=') else {
-        return false;
-    };
-    !name.is_empty()
-        && !name.starts_with('-')
-        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == 95)
 }
 
 pub fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
@@ -430,8 +489,13 @@ mod tests {
             r#"{"command":"bash","args":["-c","cmake --build build 2>&1 | tail -50"]}"#,
             r#"{"command":"grep","args":["Makefile","-n"]}"#,
             r#"{"command":"timeout","args":["300","make","-j8"]}"#,
+            // review 发现：`-s` / `-k` 的取值曾被当成时长、时长被当成命令名。
+            r#"{"command":"timeout","args":["-s","KILL","60","make"]}"#,
+            r#"{"command":"timeout","args":["-k","5","60","make"]}"#,
             r#"{"command":"strace","args":["-f","make"]}"#,
             r#"{"command":"./build/hello","args":[]}"#,
+            // 复合命令里 `--help` 只修饰后段，前段是真干活。
+            r#"{"command":"bash","args":["-c","cargo build && ./x --help"]}"#,
         ] {
             assert!(
                 !run_command_is_redundant_verification(args),
@@ -454,6 +518,7 @@ mod tests {
             r#"{"command":"env","args":["A=1","ls"]}"#,
             // `timeout` 是「限时跑一下」的探针形态（既有语义，见 outer_loop 的完成门测试）。
             r#"{"command":"timeout","args":["30","./bin/app"]}"#,
+            r#"{"command":"timeout","args":["-s","KILL","30","./bin/app"]}"#,
             r#"{"command":"bash","args":["-c","timeout 30 ./bin/app 2>&1"]}"#,
             r#"{"command":"bash","args":["-c","cd app && ./bin/app --help"]}"#,
         ] {
@@ -507,6 +572,17 @@ mod tests {
             Some("weird_kind"),
             "检查编译产物是否存在"
         )));
+    }
+
+    /// `step_kind` 的写 / 修取值全覆盖：命中即放行，不看描述。
+    #[test]
+    fn step_kind_write_or_fix_variants_are_not_redundant() {
+        for kind in ["implement", "fix", "refactor", "update", "migrate", "create"] {
+            assert!(
+                !plan_step_is_redundant_after_completion(&step("s7", Some(kind), "检查产物是否存在")),
+                "step_kind={kind} 应放行"
+            );
+        }
     }
 
     /// #1422 A2 误命中 golden：token 边界在两个方向上的效果。

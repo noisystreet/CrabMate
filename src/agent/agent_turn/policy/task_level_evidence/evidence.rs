@@ -219,7 +219,10 @@ fn strip_shell_quotes(token: &str) -> &str {
 
 /// 形式上用字节判定（`b == 95`，`95` 是下划线 `_` 的 ASCII 码）而非 `'_'` 字面量：
 /// 本仓 lizard 会把 `'_'` 当生命周期起始，进而错算本文件的函数边界。
-fn is_env_assignment(token: &str) -> bool {
+///
+/// `pub(crate)`：`completion_suppression` 的 argv 剥壳也用它——#1422 review 指出那里
+/// 曾逐字重抄一份，正是本 issue 要收敛的「同一语义两套实现」。
+pub(crate) fn is_env_assignment(token: &str) -> bool {
     let Some((name, _)) = token.split_once("=") else {
         return false;
     };
