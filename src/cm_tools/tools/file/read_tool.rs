@@ -66,8 +66,9 @@ fn read_file_workspace_tool_error_maybe_hint(
 }
 
 fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output(
+    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
         tool_names::READ_FILE,
+        true,
         crate::cm_tools::tool_result::ReadFileOutputFields {
             path: path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path)),
             revision: meta.revision.to_string(),

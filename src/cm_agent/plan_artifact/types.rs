@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use log::debug;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use crate::cm_agent::text_markers::text_matches_any;
 
 /// 规划步骤 `id` / 可选 `workflow_node_id` 的语法：稳定、可日志引用，并与工作流节点 `id` 常见字符集对齐。
 static PLAN_STEP_ID_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -219,17 +220,31 @@ pub fn plan_step_acceptance_implies_build_progress(a: &PlanStepAcceptance) -> bo
 }
 
 /// 步描述是否**命中**任一关键词（三个 `implies_*` 的唯一实现；#1239 前各抄一份）。
+///
+/// #1422 B1：改走 `text_markers` 的单一实现——英文标记按 token 边界匹配，中文保留子串语义。
+/// 方向取「漏词即保守」：少命中 ⇒ 少剥验收、少对「这一步要验证」下结论，
+/// 而不是把文案猜测做得更全。唯一例外是 `BUILD_EXECUTION_KEYWORDS` 里显式补回的动词变形。
 fn plan_step_description_matches_any(desc: &str, keywords: &[&str]) -> bool {
-    let lower = desc.to_lowercase();
-    keywords.iter().any(|k| lower.contains(k))
+    text_matches_any(&desc.to_lowercase(), keywords)
 }
 
 /// 编译 / 构建 / 测试执行阶段的关键词。
+///
+/// 走 token 边界后 `build` 不再命中 `rebuild` / `builds`、`compile` 不再命中 `recompile`。
+/// 补偿判据**只**覆盖两族：`re-` 前缀（`rebuild` / `recompile`）与 `-ing`（`building` /
+/// `compiling`）——它们是描述「这一步在做什么」时的高频形态，漏掉会让
+/// `outer_loop_task_implies_build_execution` 少触发「只说不做」纠偏。
+/// `-s` 形式（`builds`）**刻意不补**：任务描述多为祈使句，且漏词落在保守侧（少剥验收），
+/// 不为此把表撑大。其余表的漏词方向一律保持保守，同样不补。
 const BUILD_EXECUTION_KEYWORDS: &[&str] = &[
     "编译",
     "构建",
     "build",
+    "building",
+    "rebuild",
     "compile",
+    "compiling",
+    "recompile",
     "make ",
     "cmake",
     "link",
@@ -279,6 +294,21 @@ const UNPACK_KEYWORDS: &[&str] = &[
 ];
 
 /// 步描述是否像「编译/构建/测试执行」阶段（而非仅解压/阅读/分析）。
+///
+/// # 这是意图猜测，不是完备判据
+///
+/// 本函数靠**自然语言描述**反推执行语义，两头都不通用：词形态收不全（`build` / `builds` /
+/// `built` / `rebuild`）、构建入口枚举不完（`just` / `zig build` / `dotnet build` / `gradle` …）。
+/// 补词只能缩小偏差，**不能收敛——不要靠往表里加词来「修」漏判**。
+///
+/// 三个消费者的可用信号并不相同：
+/// - `align_plan_step_acceptance_with_executor_kind`：手里有 `executor_kind` + `acceptance`，
+///   本可纯结构化判定，却被迫共用本表；
+/// - `default_exit_code_for_build_execution_description`：只有描述；
+/// - `outer_loop_task_implies_build_execution`：只有用户任务原文，注定只能猜（#1422 非目标）。
+///
+/// 最终解是**执行期对账**：验收要求的证据形态与该工具实际产出（`parsed.exit_code` 是否为
+/// `None`）不匹配时判「不适用」，而不是在规划期用关键词提前剥。见 #1427。
 pub fn plan_step_description_implies_build_execution(desc: &str) -> bool {
     plan_step_description_matches_any(desc, BUILD_EXECUTION_KEYWORDS)
 }
@@ -517,4 +547,69 @@ pub fn agent_reply_plan_v1_to_json_string(
     plan: &AgentReplyPlanV1,
 ) -> Result<String, serde_json::Error> {
     serde_json::to_string(plan)
+}
+
+#[cfg(test)]
+mod text_marker_tests {
+    use super::*;
+
+    /// #1422 B1 golden：英文标记走 token 边界，词内子串不再误命中。
+    #[test]
+    fn build_execution_ignores_word_internal_substrings() {
+        assert!(!plan_step_description_implies_build_execution(
+            "summarize the notes"
+        ));
+        // 补偿词覆盖被边界收窄掉的真实语义。
+        assert!(plan_step_description_implies_build_execution(
+            "rebuild the crate"
+        ));
+        assert!(plan_step_description_implies_build_execution(
+            "building the crate"
+        ));
+    }
+
+    /// 中文标记保留子串语义（中文没有词边界可依）。
+    #[test]
+    fn cjk_markers_keep_substring_semantics() {
+        assert!(plan_step_description_implies_build_execution("编译并运行"));
+        assert!(plan_step_description_implies_readonly_setup_phase(
+            "查看目录结构"
+        ));
+    }
+
+    /// `make ` 的尾随空格是「构建」与「Makefile 文件名」的唯一区分线索。
+    #[test]
+    fn trailing_space_make_marker_needs_a_following_space() {
+        assert!(plan_step_description_implies_build_execution("make -j8"));
+        assert!(!plan_step_description_implies_build_execution(
+            "makefile cleanup"
+        ));
+    }
+
+    /// `UNPACK` 的扩展名标记以 `.` 开头，左边界由 `.` 自身顶替。
+    ///
+    /// 注意：这**不是**「新边界规则生效」的区分性用例——旧实现用 `contains` 同样命中
+    /// （`.tar` / `tar.gz` 都是子串）。它守的是「改走边界匹配后该表**不退化**」。
+    /// `.tar` 的边界语义本身由 `cm_agent::text_markers` 的
+    /// `leading_separator_marker_needs_no_left_boundary` 钉住（那里旧实现会 fail）。
+    #[test]
+    fn unpack_extension_markers_do_not_regress_after_boundaries() {
+        // 只可能靠 `.tar` 命中：`a.tar` 不含 `tar.gz`，描述里也没有「解压」类中文词。
+        assert!(plan_step_description_implies_unpack("处理 a.tar"));
+        assert!(plan_step_description_implies_unpack("处理 xhpcg.tar.gz"));
+        assert!(plan_step_description_implies_unpack("处理 a.tgz"));
+        assert!(!plan_step_description_implies_unpack("处理 notes.md"));
+    }
+
+    /// 已知漏词（保守方向）：`-ing` 形式未给只读表补补偿词，于是 `inspecting` 不再命中。
+    /// 后果是「少剥验收」，不是「误剥验收」——钉住以免以后被当成回归“修”回去。
+    #[test]
+    fn readonly_setup_known_miss_on_gerund_is_deliberate() {
+        assert!(plan_step_description_implies_readonly_setup_phase(
+            "inspect the tree"
+        ));
+        assert!(!plan_step_description_implies_readonly_setup_phase(
+            "inspecting the tree"
+        ));
+    }
 }

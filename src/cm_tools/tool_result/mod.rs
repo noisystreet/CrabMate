@@ -30,9 +30,11 @@ pub use output_header::{
     CrabmateToolOutputEnvelope,
     CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
     ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
-    WorkspaceWriteDiffFile, prepend_crabmate_tool_output, prepend_crabmate_tool_output_with_ok,
+    WorkspaceWriteDiffFile, prepend_crabmate_tool_output_with_ok,
     prepend_crabmate_tool_output_with_ok_and_error_code,
 };
+#[allow(unused_imports)] // 保留既有 pub 再导出面；#1422 C1 之后 crate 内已无消费者
+pub use output_header::prepend_crabmate_tool_output;
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
 
