@@ -18,8 +18,7 @@ mod runtime;
 
 pub use execute::{
     DispatchToolCall, DispatchToolDelegation, DispatchToolMemory, DispatchToolObs,
-    DispatchToolParams, DispatchToolPolicy,
-    DispatchToolWorkspace, dispatch_tool,
+    DispatchToolParams, DispatchToolPolicy, DispatchToolWorkspace, ToolRunOutcome, dispatch_tool,
 };
 pub use execute::{
     prefetch_http_fetch_parallel_approvals, prefetch_parallel_syncdefault_approvals,

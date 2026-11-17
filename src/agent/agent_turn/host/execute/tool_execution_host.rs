@@ -130,7 +130,9 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
                 )
                 .await
             }
-            None => InternalToolDispatch.dispatch(p).await,
+            // #1430：`ToolDispatch` 已返回 `ToolRunOutcome`；此处仍按历史 `(String, payload)`
+            // 形状交给调用方（上游解构语义未改），结构化 `ok` 留待消费方接入。
+            None => InternalToolDispatch.dispatch(p).await.into_body_and_payload(),
         }
     }
 
@@ -160,7 +162,9 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
                 "错误：并行只读批不支持 delegate_task（子回合不是无副作用操作）。".to_string(),
                 None,
             ),
-            None => InternalToolDispatch.dispatch(p).await,
+            // #1430：`ToolDispatch` 已返回 `ToolRunOutcome`；此处仍按历史 `(String, payload)`
+            // 形状交给调用方（上游解构语义未改），结构化 `ok` 留待消费方接入。
+            None => InternalToolDispatch.dispatch(p).await.into_body_and_payload(),
         }
     }
 

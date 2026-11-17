@@ -221,9 +221,7 @@ async fn try_dispatch_mcp_proxy_tool(
     Some((out, None))
 }
 
-async fn dispatch_sync_default_tool(
-    p: SyncDefaultToolDispatchArgs<'_>,
-) -> (String, Option<serde_json::Value>) {
+async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolRunOutcome {
     let SyncDefaultToolDispatchArgs {
         env,
         runtime,
@@ -241,10 +239,10 @@ async fn dispatch_sync_default_tool(
     } = p;
     if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
         if !workspace_is_set {
-            return (
+            return ToolRunOutcome::failed(
                 "错误：未设置工作区，无法在 Docker 沙盒中执行 SyncDefault 工具（请先设置工作区目录）。"
                     .to_string(),
-                None,
+                Some("workspace_not_set".to_string()),
             );
         }
         let out = crate::tool_sandbox::run_sync_default_in_docker(
@@ -256,8 +254,8 @@ async fn dispatch_sync_default_tool(
         )
         .await;
         return match out {
-            Ok(s) => (s, None),
-            Err(e) => (e, None),
+            Ok(s) => ToolRunOutcome::ok(s, None),
+            Err(e) => ToolRunOutcome::failed(e, None),
         };
     }
 
@@ -272,7 +270,7 @@ async fn dispatch_sync_default_tool(
     if name == crate::cm_names::READ_DIR {
         let web_ctx = http_tool_approval_context(runtime);
         if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, env.permission).await {
-            return (msg, None);
+            return ToolRunOutcome::failed(msg, None);
         }
     }
 
@@ -298,7 +296,13 @@ async fn dispatch_sync_default_tool(
                 .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
         )
         .with_path_scope(path_scope);
-        return (tools::run_tool(name, args, &ctx), None);
+        let (output, ok, error_code) = tools::run_tool_outcome(name, args, &ctx);
+        return ToolRunOutcome {
+            output,
+            payload: None,
+            ok,
+            error_code,
+        };
     }
     let cfg2 = Arc::clone(cfg);
     let tool_name = tc.function.name.clone();
@@ -334,11 +338,16 @@ async fn dispatch_sync_default_tool(
                     .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
             )
             .with_path_scope(path_scope);
-            tools::run_tool(&tool_name, &tool_args, &ctx)
+            tools::run_tool_outcome(&tool_name, &tool_args, &ctx)
         })
     });
-    let result = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
-        Ok(Ok(s)) => s,
+    match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
+        Ok(Ok((output, ok, error_code))) => ToolRunOutcome {
+            output,
+            payload: None,
+            ok,
+            error_code,
+        },
         Ok(Err(e)) => {
             error!(
                 target: "crabmate",
@@ -346,20 +355,26 @@ async fn dispatch_sync_default_tool(
                 name,
                 e
             );
-            format!("{}：工具执行异常：{:?}", error_text::ERROR_PREFIX, e)
+            // 不给码：panic 没有既登记码，落 `{tool}_failed` 兜底比伪造一个未分类码更诚实。
+            ToolRunOutcome::failed(
+                format!("{}：工具执行异常：{:?}", error_text::ERROR_PREFIX, e),
+                None,
+            )
         }
         Err(_) => {
             error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
-            format!("{}：工具执行超时（{} 秒）", error_text::ERROR_PREFIX, wall_secs)
+            ToolRunOutcome::failed(
+                format!("{}：工具执行超时（{} 秒）", error_text::ERROR_PREFIX, wall_secs),
+                Some("timeout".to_string()),
+            )
         }
-    };
-    (result, None)
+    }
 }
 
 /// 工具分发入口：默认单次执行；开启 `[tool_registry] tool_retry_*` 且资格门通过时，
 /// 对瞬时类失败（`error_code ∈ tool_retry_error_codes`）做**透明重试**——失败中间态不写
 /// 模型上下文，仅最终结果返回；重试间隔按 `backoff_for_retry` 指数退避，用户取消立即停止。
-pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> ToolRunOutcome {
     let spec = ToolRetrySpec::from_config(p.policy.cfg.as_ref());
     if !spec.tool_retry_eligible(p.policy.cfg.as_ref(), p.call.name, p.call.args) {
         return dispatch_tool_inner(&mut p).await;
@@ -367,11 +382,9 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<ser
     let max_attempts = spec.max_attempts;
     let mut attempt: u64 = 1;
     loop {
-        let (out, payload) = dispatch_tool_inner(&mut p).await;
-        let error_code =
-            crate::cm_tools::tool_result::parse_tool_output(p.call.name, &out).error_code;
-        if !spec.should_retry(error_code.as_deref(), attempt) {
-            return (out, payload);
+        let outcome = dispatch_tool_inner(&mut p).await;
+        if !spec.should_retry(outcome.error_code.as_deref(), attempt) {
+            return outcome;
         }
         // 用户取消：停止重试，返回最后一次结果。
         if p
@@ -380,7 +393,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<ser
             .as_ref()
             .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
         {
-            return (out, payload);
+            return outcome;
         }
         log::info!(
             target: "crabmate",
@@ -388,7 +401,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<ser
             p.call.name,
             attempt,
             max_attempts,
-            error_code.as_deref().unwrap_or("-"),
+            outcome.error_code.as_deref().unwrap_or("-"),
             crate::cm_tools::redact::tool_arguments_preview_for_log(p.call.args)
         );
         let backoff = spec.backoff_for_retry(attempt);
@@ -398,7 +411,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<ser
                 _ = tokio::time::sleep(std::time::Duration::from_millis(backoff)) => {}
                 _ = wait_for_tool_cancel(cancel.as_ref()) => {
                     // 退避期间用户取消：立即停止，返回最后一次结果。
-                    return (out, payload);
+                    return outcome;
                 }
             }
         }
@@ -434,7 +447,7 @@ fn internal_dispatch_error(tool: &str) -> String {
 }
 
 /// 单次工具执行（含审批、沙盒与 handler 分发）；供 [`dispatch_tool`] 重试循环按可变借用复用。
-async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
     let DispatchToolParams {
         runtime,
         call,
@@ -498,23 +511,29 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         permission,
     };
     if !crate::context::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
-        return (crate::context::agent_role_turn::turn_tool_denied_message(name), None);
+        // 不给码：`tool_denied` 类文案已带「错误：」前缀，下游 `{tool}_failed` 兜底即可；
+        // 且策略拒绝的既有码是 `command_denied` / `approval_denied`，不是分类名 `policy_denied`。
+        return ToolRunOutcome::failed(
+            crate::context::agent_role_turn::turn_tool_denied_message(name),
+            None,
+        );
     }
 
-    if let Some(out) =
+    if let Some((out, payload)) =
         try_dispatch_dynamic_tool(cfg, effective_working_dir, workspace_is_set, name, args).await
     {
-        return out;
+        return ToolRunOutcome::from_body_and_payload(name, out, payload);
     }
 
-    if let Some(out) = try_dispatch_mcp_proxy_tool(cfg, mcp_turn, name, args).await {
-        return out;
+    if let Some((out, payload)) = try_dispatch_mcp_proxy_tool(cfg, mcp_turn, name, args).await {
+        return ToolRunOutcome::from_body_and_payload(name, out, payload);
     }
 
     let args_processed =
         match crate::tool_host::tool_call_explain::require_explain_for_mutation(cfg.as_ref(), name, args) {
             Ok(c) => c,
-            Err(e) => return (e, None),
+            // 不给码：`require_explain_for_mutation` 只返回用户可见文案，本来就没有错误码。
+            Err(e) => return ToolRunOutcome::failed(e, None),
         };
     let args = args_processed.as_ref();
 
@@ -522,14 +541,14 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
 
     // Web 未设置工作区时：仍允许出网类工具；禁止所有 SyncDefault（否则 `working_dir` 会回落到配置目录，等效于未选工作区仍可读本地树）。
     if !workspace_is_set && matches!(hid, HandlerId::SyncDefault) {
-        return (
-            web_tool_err_workspace_not_set("执行内置工具").to_string(),
-            None,
+        return ToolRunOutcome::failed(
+            web_tool_err_workspace_not_set("执行内置工具"),
+            Some("workspace_not_set".to_string()),
         );
     }
 
     // 非 `run_command` 工具的 `async=true` 后台门闩（`cargo_test` / `pytest_run` 等进程载荷）。
-    if let Some(out) = try_dispatch_background_async_tool(
+    if let Some((out, payload)) = try_dispatch_background_async_tool(
         cfg,
         effective_working_dir,
         runtime.ctx,
@@ -537,24 +556,18 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         args,
         tool_jobs.as_ref(),
     ) {
-        return out;
+        return ToolRunOutcome::from_body_and_payload(name, out, payload);
     }
 
-    match hid {
+    let (out, payload) = match hid {
         HandlerId::Workflow => {
             // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。
-            (
-                internal_dispatch_error("workflow_execute"),
-                None,
-            )
+            (internal_dispatch_error("workflow_execute"), None)
         }
         HandlerId::Delegate => {
             // `delegate_task` 同理：它要 `SubAgentDelegator` 能力对象，而工具层**刻意不持 LLM 凭据**
             // （`agent_turn/host/execute/**` 中 `api_key` 零命中）。见 `docs/design/subagent_delegation.md` §3。
-            (
-                internal_dispatch_error("delegate_task"),
-                None,
-            )
+            (internal_dispatch_error("delegate_task"), None)
         }
         HandlerId::RunCommand => {
             let ToolRuntime {
@@ -643,8 +656,10 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
                 tool_jobs,
             })
             .await
+            .into_body_and_payload()
         }
-    }
+    };
+    ToolRunOutcome::from_body_and_payload(name, out, payload)
 }
 
 /// 并行只读批内 `SyncDefault` 预审批：当前仅覆盖 `read_dir` 的工作区外路径访问。
