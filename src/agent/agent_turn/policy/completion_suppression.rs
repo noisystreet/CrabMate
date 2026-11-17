@@ -8,6 +8,7 @@ use crate::cm_types::{Message, ToolCall};
 use super::run_command_dedupe::{
     normalize_run_command_key, successful_run_command_keys_from_messages,
 };
+use super::task_level_evidence::command_line_looks_like_verify;
 
 /// 只读「探测」类工具：目标已有完成证据时，再调一次不会带回新信息。
 ///
@@ -214,12 +215,32 @@ fn argv_is_readonly_probe(command: &str, args: &[String], depth: usize) -> bool 
         return shell_script_argv(args)
             .is_some_and(|(cmd, rest)| argv_is_readonly_probe(&cmd, &rest, depth.saturating_add(1)));
     }
+    if base == "timeout" {
+        return timeout_wrapped_is_probe(args);
+    }
     if PROBE_WRAPPER_PROGRAMS.contains(&base) {
         return unwrap_wrapper_argv(base, args).is_some_and(|(cmd, rest)| {
             argv_is_readonly_probe(&cmd, &rest, depth.saturating_add(1))
         });
     }
     READONLY_PROBE_PROGRAMS.contains(&base)
+}
+
+/// `timeout` 是「限时跑一下」的典型形态（`timeout 30 ./bin/app 2>&1`）。
+///
+/// 只在**内层是构建 / 测试**时才算真干活；其余一律视为探一眼——目标已有完成证据时，
+/// 再限时跑一次同一个产物不会带回新信息。这条替代了旧表里 `timeout ` 与 ` 2>&1`
+/// 两个代理 marker：它们真正的语义是「跑产物看看」，而不是「命令行里有这俩字符」。
+fn timeout_wrapped_is_probe(args: &[String]) -> bool {
+    let Some((cmd, rest)) = unwrap_wrapper_argv("timeout", args) else {
+        return false;
+    };
+    let inner = if rest.is_empty() {
+        cmd
+    } else {
+        format!("{cmd} {}", rest.join(" "))
+    };
+    !command_line_looks_like_verify(&inner)
 }
 
 /// `basename`：`/bin/ls` 与 `ls` 同义。
@@ -431,6 +452,10 @@ mod tests {
             r#"{"command":"bash","args":["-c","ls -la"]}"#,
             r#"{"command":"timeout","args":["5","ls","-la"]}"#,
             r#"{"command":"env","args":["A=1","ls"]}"#,
+            // `timeout` 是「限时跑一下」的探针形态（既有语义，见 outer_loop 的完成门测试）。
+            r#"{"command":"timeout","args":["30","./bin/app"]}"#,
+            r#"{"command":"bash","args":["-c","timeout 30 ./bin/app 2>&1"]}"#,
+            r#"{"command":"bash","args":["-c","cd app && ./bin/app --help"]}"#,
         ] {
             assert!(
                 run_command_is_redundant_verification(args),
