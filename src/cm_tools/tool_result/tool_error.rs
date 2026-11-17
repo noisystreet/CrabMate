@@ -227,6 +227,37 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
 }
 
 impl ToolError {
+
+    /// 所有构造的**统一出口**。
+    ///
+    /// **#1430**：首行既带不出退出码、又不以任何 `error_text::KNOWN_ERROR_PREFIXES` 开头时，
+    /// 下游 `parse_tool_output` 会落到 ④ 级且 `starts_with` 全不命中——只能靠
+    /// `contains("失败")` 的宽口径兜住，而那条口径会把「正文提到失败」的成功输出误判为失败。
+    /// 这里在**产生处**补 `错误：`，让 ④ 级将来能只留结构化前缀。
+    ///
+    /// 带退出码的路径（`subprocess_failed`）**不补**：它的首行是 `退出码：N` / `命令：…`，
+    /// 补前缀会破坏 `parse_exit_code` 与 ③ 级判定。
+    fn build(
+        category: ToolFailureCategory,
+        code: String,
+        message: String,
+        retryable: bool,
+        parsed: ParsedToolOutput,
+    ) -> Self {
+        let head = message.lines().next().unwrap_or("");
+        let message = if parsed.exit_code.is_none() && !error_text::has_known_error_prefix(head) {
+            format!("{}：{}", error_text::ERROR_PREFIX, message)
+        } else {
+            message
+        };
+        Self {
+            category,
+            code,
+            message,
+            retryable,
+            parsed,
+        }
+    }
     /// 由 [`super::parse_tool_output`] 的结果构造（`raw_output` 为完整 `run_tool` 字符串）。
     pub fn from_parsed(
         tool_name: &str,
@@ -239,13 +270,7 @@ impl ToolError {
             .unwrap_or_else(|| format!("{tool_name}_failed"));
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
         let category = failure_category_for_error_code(code.as_str());
-        Self {
-            category,
-            code,
-            message: raw_output,
-            retryable,
-            parsed: parsed.clone(),
-        }
+        Self::build(category, code, raw_output, retryable, parsed.clone())
     }
 
     /// 参数 / JSON 校验失败（`error_code`：`invalid_args`）。
@@ -257,13 +282,13 @@ impl ToolError {
             stderr: String::new(),
             error_code: Some("invalid_args".to_string()),
         };
-        Self {
-            category: ToolFailureCategory::InvalidInput,
-            code: "invalid_args".to_string(),
+        Self::build(
+            ToolFailureCategory::InvalidInput,
+            "invalid_args".to_string(),
             message,
-            retryable: false,
+            false,
             parsed,
-        }
+        )
     }
 
     /// 工作区路径解析 / 越界失败（`error_code`：`workspace_resolve_failed`；正文保持 `错误：…`）。
@@ -290,13 +315,13 @@ impl ToolError {
             error_code: Some(code.to_string()),
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        Self {
-            category: failure_category_for_error_code(code),
-            code: code.to_string(),
+        Self::build(
+            failure_category_for_error_code(code),
+            code.to_string(),
             message,
             retryable,
             parsed,
-        }
+        )
     }
 
     /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`failure_category_for_error_code`] 一致。
@@ -320,13 +345,13 @@ impl ToolError {
             stderr: String::new(),
             error_code: Some("rate_limited".to_string()),
         };
-        Self {
-            category: ToolFailureCategory::PolicyDenied,
-            code: "rate_limited".to_string(),
+        Self::build(
+            ToolFailureCategory::PolicyDenied,
+            "rate_limited".to_string(),
             message,
-            retryable: true,
+            true,
             parsed,
-        }
+        )
     }
 
     /// 需要用户审批（`error_code`：`approval_required`）。
@@ -338,13 +363,13 @@ impl ToolError {
             stderr: String::new(),
             error_code: Some("approval_required".to_string()),
         };
-        Self {
-            category: ToolFailureCategory::PolicyDenied,
-            code: "approval_required".to_string(),
+        Self::build(
+            ToolFailureCategory::PolicyDenied,
+            "approval_required".to_string(),
             message,
-            retryable: false,
+            false,
             parsed,
-        }
+        )
     }
 
     /// 子进程非零退出：`error_code` 为 `{tool_code}_failed`（如 `cargo_check_failed` /
@@ -359,13 +384,7 @@ impl ToolError {
             error_code: Some(code.clone()),
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        Self {
-            category: ToolFailureCategory::External,
-            code,
-            message,
-            retryable,
-            parsed,
-        }
+        Self::build(ToolFailureCategory::External, code, message, retryable, parsed)
     }
 
     /// 无法启动子进程（如找不到 `cargo` 可执行文件）。
@@ -378,13 +397,13 @@ impl ToolError {
             stderr: String::new(),
             error_code: Some("cargo_spawn_failed".to_string()),
         };
-        Self {
-            category: ToolFailureCategory::External,
-            code: "cargo_spawn_failed".to_string(),
+        Self::build(
+            ToolFailureCategory::External,
+            "cargo_spawn_failed".to_string(),
             message,
-            retryable: false,
+            false,
             parsed,
-        }
+        )
     }
 
     /// 外部工具/IO 类失败（`error_code` 由调用方指定，须与 [`failure_category_for_error_code`] 一致）。
@@ -406,13 +425,13 @@ impl ToolError {
             error_code: Some(code.clone()),
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        Self {
-            category: failure_category_for_error_code(code.as_str()),
+        Self::build(
+            failure_category_for_error_code(code.as_str()),
             code,
             message,
             retryable,
             parsed,
-        }
+        )
     }
 
     /// 逻辑或内部不变量破坏（极少见）；`error_code` 建议 `*_internal`。
@@ -424,13 +443,13 @@ impl ToolError {
             stderr: String::new(),
             error_code: Some(code.to_string()),
         };
-        Self {
-            category: ToolFailureCategory::Internal,
-            code: code.to_string(),
+        Self::build(
+            ToolFailureCategory::Internal,
+            code.to_string(),
             message,
-            retryable: false,
+            false,
             parsed,
-        }
+        )
     }
 
     /// 子进程会话超时 / 取消（供 `run_command` 与 `run_and_format*` 类工具复用）：
@@ -440,13 +459,13 @@ impl ToolError {
         let mut parsed = super::parse_tool_output(code, &message);
         parsed.ok = false;
         parsed.error_code = Some(code.to_string());
-        Self {
-            category: ToolFailureCategory::Timeout,
-            code: code.to_string(),
+        Self::build(
+            ToolFailureCategory::Timeout,
+            code.to_string(),
             message,
-            retryable: code == "timeout",
+            code == "timeout",
             parsed,
-        }
+        )
     }
 }
 
@@ -454,6 +473,48 @@ impl ToolError {
 mod tests {
     use super::*;
     use crate::cm_tools::tool_result::parse_tool_output;
+
+    /// #1430：无已知前缀的错误正文在**构造处**补 `错误：`，让下游 ④ 级只靠 `starts_with`
+    /// 就能识别，不必依赖 `contains("失败")` 那条会把成功输出误判的宽口径。
+    #[test]
+    fn unrecognized_message_gets_error_prefix() {
+        let e = ToolError::external_code(
+            "read_file_io_failed",
+            "读取文件失败: permission denied".to_string(),
+        );
+        assert_eq!(e.message, "错误：读取文件失败: permission denied");
+        // 端到端：补过前缀后 ④ 级判定为失败。
+        assert!(!parse_tool_output("read_file", &e.message).ok);
+    }
+
+    /// 已带已知前缀的正文**不再重复补**——否则会把 `classify_error_code` 的前缀反查打偏。
+    #[test]
+    fn known_prefix_is_not_double_prefixed() {
+        for msg in [
+            "错误：未设置工作区，禁止执行",
+            "未知工具：nope",
+            "参数解析错误：missing field `path`",
+            "参数 JSON 无效: expected value",
+            "参数与工具 JSON Schema 不一致：x",
+            "校验失败（PY_SYNTAX_ERROR）：app.py:2",
+            "不允许的命令：rm。允许的命令：ls",
+        ] {
+            let e = ToolError::external_code("some_failed", msg.to_string());
+            assert_eq!(e.message, msg, "已带前缀的正文不应被改写");
+        }
+    }
+
+    /// 带退出码的路径**不补前缀**：首行 `退出码：N` 必须原样保留，否则 ③ 级与
+    /// `parse_exit_code` 会失效（这是本改动最容易踩的坑）。
+    #[test]
+    fn exit_code_messages_are_left_untouched() {
+        let raw = "退出码：101\n标准错误：\nboom".to_string();
+        let e = ToolError::subprocess_failed("cargo_test", 101, raw.clone());
+        assert_eq!(e.message, raw, "带退出码的正文不应被改写");
+        let p = parse_tool_output("cargo_test", &e.message);
+        assert_eq!(p.exit_code, Some(101), "③ 级仍应解析出退出码");
+        assert!(!p.ok);
+    }
 
     #[test]
     fn tool_error_from_unknown_tool_legacy() {

@@ -805,7 +805,11 @@ fn misc_basic_typed_error_codes() {
     let e =
         run_tool_try("json_format", r#"{"text":"{oops"}"#, &ctx).expect_err("非法 JSON 必须失败");
     assert_eq!(e.code, "invalid_args");
-    assert!(e.message.starts_with("JSON 解析失败"), "{}", e.message);
+    assert!(
+        e.message.starts_with("错误：JSON 解析失败"),
+        "无前缀正文会被补 `错误：`（#1430）：{}",
+        e.message
+    );
 
     let e = run_tool_try("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
     assert_eq!(e.code, "invalid_args");
