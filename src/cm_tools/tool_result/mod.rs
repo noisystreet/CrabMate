@@ -43,8 +43,9 @@ use std::borrow::Cow;
 use serde_json::Value;
 
 use run_command::{
-    exit_code_in_header_region, extract_streams, looks_like_failure, parse_exit_code,
-    run_command_structured_payload, strip_leading_command_invocation_line,
+    exit_code_in_header_region, extract_streams, looks_like_failure,
+    looks_like_failure_structured, parse_exit_code, run_command_structured_payload,
+    strip_leading_command_invocation_line,
 };
 use crate::cm_names as tool_names;
 
@@ -123,17 +124,19 @@ pub fn parse_tool_output(tool_name: &str, output: &str) -> ParsedToolOutput {
     } else if let Some(code) = exit_code {
         code == 0
     } else {
-        // ④ 级：无头、无退出码，**纯靠文案启发式**（`looks_like_failure`）。
+        // ④ 级：无头、无退出码，纯靠首行前缀判定。
         //
-        // 这是 #1401 #6 三步走的第 1 步：先量出这条分支的命中率，再在产生侧补头 / 补退出码，
-        // **归零之前不要删** `looks_like_failure`——否则无信号输出会失去唯一的失败识别。
+        // **#1430**：改用收紧口径 [`looks_like_failure_structured`]（只认结构化前缀）。
+        // 前提是错误正文在产生处已补 `错误：`（`ToolError::build` / `dispatch_tool` 的裸字符串）；
+        // `contains("失败")` 那条宽口径只留给「工具正文扫描」类路径（`body_after_header_looks_like_failure`
+        // / `run_command_structured_payload` / `status.rs`），不再用于首行判定。
         tracing::debug!(
             target: "crabmate::tool_result",
             tool = tool_name,
             first_line = %crate::redact::preview_chars(first, 80),
             "tool status fell back to text heuristics (no header, no exit_code)"
         );
-        !looks_like_failure(first)
+        !looks_like_failure_structured(first)
     };
     // 生产者显式声明的 `error_code` 优先于正文启发式，避免精确码（如 `invalid_args`）
     // 在主 Agent / SSE 路径退化为 `{tool}_failed`。
@@ -492,7 +495,11 @@ mod tests {
         assert_eq!(code("错误[http_body_read_error]：读取响应体失败: io").as_deref(), Some("http_body_read_error"));
         assert_eq!(code("错误[http_5xx]：上游 5xx").as_deref(), Some("http_5xx"));
         assert_eq!(code("错误[timeout]：网络请求超时").as_deref(), Some("timeout"));
-        assert_eq!(code("请求失败: connect error").as_deref(), Some("http_fetch_failed"));
+        // #1430：无结构化前缀的正文在 ④ 级不再判失败，故用带前缀的形态测 classify。
+        assert_eq!(
+            code("错误：请求失败: connect error").as_deref(),
+            Some("http_fetch_failed")
+        );
         assert_eq!(extract_error_code_marker("错误：未知错误"), None);
         assert_eq!(extract_error_code_marker("错误[Invalid]：…"), None);
         assert_eq!(extract_error_code_marker("错误[]：…"), None);
