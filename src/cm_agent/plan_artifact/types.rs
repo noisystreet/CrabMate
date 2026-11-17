@@ -361,11 +361,18 @@ pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
         //
         // 原条件还带 `executor_kind.is_none()`，于是「模型没指定 executor + 描述漏词」也会剥——
         // 而漏词方向正是本 issue 反复出现的隐患：描述没命中关键词，并不等于这一步不需要验证。
+        // #1427 第 1 步（度量）：`executor_kind` 是结构化信号，只有它缺失时这里才真在
+        // 「靠描述猜」。两类混在一起看不出关键词表的影响面，故分开记——**本 commit 不改行为**。
+        let kind = step
+            .executor_kind
+            .map(PlanStepExecutorKind::as_snake_case_str)
+            .unwrap_or("none");
         if plan_step_description_implies_readonly_setup_phase(step.description.as_str()) {
             debug!(
                 target: "crabmate::plan_artifact",
-                "strip build acceptance on readonly-setup step step_id={}",
+                "strip build acceptance on readonly-setup step step_id={} executor_kind={}",
                 step.id.as_str(),
+                kind,
             );
             strip_build_only_acceptance_fields(acc);
         } else {
@@ -373,8 +380,9 @@ pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
             // 「漏词步」有多少、这次规则变更的影响面有多大。
             debug!(
                 target: "crabmate::plan_artifact",
-                "keep build acceptance on neutral-description step (keyword miss) step_id={}",
+                "keep build acceptance on neutral-description step (keyword miss) step_id={} executor_kind={}",
                 step.id.as_str(),
+                kind,
             );
         }
     }
