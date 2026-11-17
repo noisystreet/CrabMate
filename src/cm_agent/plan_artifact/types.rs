@@ -620,4 +620,32 @@ mod text_marker_tests {
             "inspecting the tree"
         ));
     }
+
+    /// #1422 B2：`extensionless_basename_is_build_artifact` 的**魔法阈值**现状钉住。
+    ///
+    /// `basename.len() <= 24 && !contains("release")` 显然是猜测而不是判据：短的无扩展名
+    /// 目录名会被当成可执行产物，长产物名会被漏判。本用例**只钉现状、不改行为**。
+    ///
+    /// 用处：按 #1427 第 3 步删掉这条启发式（改由执行期 `NotApplicable` 对账）时，
+    /// 这几条会一起变红，逼着先把替代信号补上再删——#1401 反复强调的「归零之前不能删兜底」。
+    #[test]
+    fn extensionless_artifact_magic_threshold_is_pinned() {
+        // 短名 ⇒ 判为产物（也可能误判：`src` / `docs` 这类短目录名同样满足阈值）
+        assert!(plan_acceptance_path_looks_like_build_artifact("xhpcg"));
+        assert!(plan_acceptance_path_looks_like_build_artifact("build/xhpcg"));
+        // 含 `release` ⇒ 不判为产物（哪怕它其实是产物）
+        assert!(!plan_acceptance_path_looks_like_build_artifact(
+            "xhpcg-release"
+        ));
+        // 超过 24 字节的无扩展名名 ⇒ 漏判
+        assert!(!plan_acceptance_path_looks_like_build_artifact(
+            "a-really-long-binary-name-here"
+        ));
+        // 有扩展名走另一条分支：源码后缀不算产物
+        assert!(!plan_acceptance_path_looks_like_build_artifact("src/main.rs"));
+        // 构建目录前缀直接判产物
+        assert!(plan_acceptance_path_looks_like_build_artifact(
+            "target/debug/app"
+        ));
+    }
 }
