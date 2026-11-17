@@ -131,22 +131,36 @@ fn verify_exit_code_branch(
             ),
         }),
         Some(_) => None,
-        None => match spec.exit_code_policy {
-            ExitCodePolicy::DefaultZeroIfMissing => {
-                let implicit = 0;
-                if implicit != expected_code {
-                    Some(VerifyOutcome::Fail {
-                        reason: format!(
-                            "exit_code_mismatch: expected {}, got {}",
-                            expected_code, implicit
-                        ),
-                    })
-                } else {
-                    None
+        None => {
+            // #1427 第 1 步（度量）：验收要求了退出码，但该工具**根本没有**退出码信号。
+            //
+            // 这不是「必然失败」而是更糟的情况：`DefaultZeroIfMissing` 会把 `expected == 0`
+            // 直接判 **Pass**，即验收静默失效（假阳性）；`expected != 0` 才会变成误判失败。
+            // 这里只记录，不改行为——`NotApplicable` 要等这批计数落地后再引入。
+            tracing::debug!(
+                target: "crabmate::acceptance",
+                "exit_code acceptance without structured exit code: tool={} expected={} policy={:?}",
+                ev.tool_name,
+                expected_code,
+                spec.exit_code_policy,
+            );
+            match spec.exit_code_policy {
+                ExitCodePolicy::DefaultZeroIfMissing => {
+                    let implicit = 0;
+                    if implicit != expected_code {
+                        Some(VerifyOutcome::Fail {
+                            reason: format!(
+                                "exit_code_mismatch: expected {}, got {}",
+                                expected_code, implicit
+                            ),
+                        })
+                    } else {
+                        None
+                    }
                 }
+                ExitCodePolicy::LenientIfUnparsed => None,
             }
-            ExitCodePolicy::LenientIfUnparsed => None,
-        },
+        }
     }
 }
 
@@ -338,6 +352,12 @@ pub fn verify_against_spec(spec: &AcceptanceSpec, ev: &AcceptanceEvidence<'_>) -
 mod tests {
     use super::*;
 
+    /// #1427 核心证据（**故意断言 Pass**）：无退出码语义的工具（`read_file` / `list_tree` /
+    /// `search_in_files`）配上 `expect_exit_code: 0` 时，`DefaultZeroIfMissing` 会凭空判 **Pass**
+    /// ——验收静默失效（假阳性），比「误判失败」更隐蔽。
+    ///
+    /// 本用例同时证明上面那条 `debug!` 埋点**不是空集断言**：现象真实存在，且可复现。
+    /// 将来引入 `NotApplicable` 后这条会变红，逼着把契约一起改掉。
     #[test]
     fn exit_code_default_zero_when_no_tool_error() {
         let spec = AcceptanceSpec {
@@ -346,7 +366,7 @@ mod tests {
             ..Default::default()
         };
         let ev = AcceptanceEvidence {
-            tool_name: "x",
+            tool_name: tool_names::READ_FILE,
             tool_output: "",
             stdout: "",
             stderr: "",
@@ -357,6 +377,37 @@ mod tests {
             combined_text_override: None,
         };
         assert!(verify_against_spec(&spec, &ev).is_pass());
+    }
+
+    /// 同一现象的另一面：`expected != 0` 时，缺失退出码会被当成 0，于是变成**误判失败**。
+    /// 与上一条合起来才能说清「关键词/隐式默认」这条路的两个失效方向。
+    #[test]
+    fn exit_code_missing_becomes_false_failure_for_nonzero_expected() {
+        let spec = AcceptanceSpec {
+            expect_exit_code: Some(1),
+            exit_code_policy: ExitCodePolicy::DefaultZeroIfMissing,
+            ..Default::default()
+        };
+        let ev = AcceptanceEvidence {
+            tool_name: tool_names::READ_FILE,
+            tool_output: "文件内容",
+            stdout: "",
+            stderr: "",
+            tool_error: None,
+            fallback_exit_code: None,
+            workspace_root: std::path::Path::new("/tmp"),
+            file_resolve: FileResolveKind::AbsolutizeRelative,
+            combined_text_override: None,
+        };
+        match verify_against_spec(&spec, &ev) {
+            VerifyOutcome::Fail { reason } => {
+                assert!(
+                    reason.contains("exit_code_mismatch"),
+                    "期望 exit_code_mismatch，实得 {reason}"
+                );
+            }
+            VerifyOutcome::Pass => panic!("缺失退出码被当成了满足 expect_exit_code=1"),
+        }
     }
 
     #[test]
