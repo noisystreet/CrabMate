@@ -209,7 +209,7 @@ S2 逐条切换，每行 = 一个 commit：
 | 1 | `cm_internal/tool_stats.rs:105` | `parse` 后建 envelope | 读 `outcome.ok` |
 | 2 | `cm_internal/tool_registry/execute/dispatch.rs` | `parse(...).error_code` | 读 `outcome.code` |
 | 3 | `agent_turn/turn_loop/turn_completion.rs:171` | `parse` 后编码信封 | 读 `outcome` |
-| 4 | `cm_agent/acceptance/tool_evidence.rs:19` | `parse` + 伪造 `ToolError` | 读 `outcome.exit_code`，删掉假错误 |
+| 4 | ~~`cm_agent/acceptance/tool_evidence.rs:19`~~ | ~~`parse` + 伪造 `ToolError`~~ | **已随 #1429 删除（文件不存在），本条作废** |
 | 5 | `agent_turn/policy/run_command_dedupe.rs:77` | `ok \|\| exit_code==0` | 统一成功定义（见开放问题 1） |
 | 6 | `agent_turn/host/execute/tools/serial/after_dispatch.rs:26,79` | `parse` 后分类失败族 | 读 `outcome` |
 | 7 | `.../serial/emit.rs:119` | `parse` 后写 TTL 缓存 | 读 `outcome.ok` |

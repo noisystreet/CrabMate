@@ -33,7 +33,7 @@
 |---|---|---|
 | 1 | **契约不承载内部表示** | `context_slice` 是**结构化 DTO**，**不是** `messages`。`messages` 是后端内部表示（MiniMax 网关会把 `system` 合入 `user`），跨后端 / 跨进程不稳定；渲染成 `messages` 是**子 Agent 侧**的责任。 |
 | 2 | **粒度先于委托** | 先过 **§6.6 门限**，不满足就自己做。委托只对「预期 ≥3 次工具调用 / 需上下文隔离 / 可并行」的任务；单次读文件、单次检索**禁止**委托。 |
-| 3 | **验收必须可判定** | `Task.acceptance` + 既有 **`step_verifier`**；`Result.status == ok` **不**由子 Agent 自述决定，自述仅为参考信号。 |
+| 3 | **验收必须可判定** | `Task.acceptance`；`Result.status == ok` **不**由自述决定。**注**：`step_verifier` 已随 `staged-removal` 删除（#1429），实现时需另定判定器。 |
 | 4 | **权限裁决链唯一** | 按 **§6.5** 的固定顺序取交。`allowed_tools`（**名字集合**）与 `node_tool_role`（**类别枚举**）粒度不同，**不可互相替代**。 |
 | 5 | **上限要算组合账** | L3 层内并行与 `multi_agent_max_concurrent_children` **取 min**，另设**全局总闸**；差异化走「全局默认 + 角色覆盖」，**不再堆扁平键**。 |
 | 6 | **模型选择是收益来源** | 复用既有 `planner_model` / `executor_model` 按阶段换模型机制，由 `Task.model_hint` 表达。缺这一维，多 Agent 只剩成本、没有收益。 |
@@ -123,7 +123,7 @@
 | `root_turn_id` | `string` | 根回合 id。与 `parent_trace_id` 并存：长链归并整棵树时**无需逐级回溯**。 |
 | `parent_trace_id` | `string` | 直接父回合 / 节点，供 span 串联。 |
 | `goal` | `string` | 单句目标。**只描述要什么，不承担验收判据**（判据见 `acceptance`）。 |
-| `acceptance` | `string[]` | **可判定的验收条目**。复用分阶段 `steps[].acceptance` + `step_verifier` 的既有语义，**不新造判定器**；`Result.status == ok` 由此产出（§0-3）。 |
+| `acceptance` | `string[]` | **可判定的验收条目**。**注**：原文「复用 `step_verifier` 既有语义、不新造判定器」已不适用——`step_verifier` 随 `staged-removal` 删除（#1429），实现时需另定判定器。 |
 | `context_slice` | `ContextSlice` | **结构化 DTO**：`{ summary, facts[], files[], input_artifacts[] }`。**不得**是 `messages` —— `messages` 是后端内部表示（MiniMax 网关会把 `system` 合入 `user`），跨后端 / 跨进程不稳定；渲染成 `messages` 是**子 Agent 侧**的责任（§0-1）。 |
 | `role_id` | `string?` | 子 Agent 人设；缺省继承父角色的人设、**不**继承其工具全量。 |
 | `model_hint` | `string?` | 期望模型档位 / 名称。项目已有按阶段换模型机制（首轮 `planner_model`、其后 `executor_model`，见 `agent_turn/host/params.rs` 的 `use_executor_model`）；本字段是其向「按 Agent 选模型」的自然延伸（§0-6）。 |

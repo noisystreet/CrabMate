@@ -22,6 +22,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `list_tree` / `search_in_files`, replacing the implicit "a header means success" convention.
   Visible to clients in SSE `structured_preview`; `SSE_PROTOCOL_VERSION` stays **v2**.
 
+### Removed
+
+- **BREAKING: removed the orphaned acceptance verification kernel (#1429).** `AcceptanceSpec`,
+  `AcceptanceEvidence`, `VerifyOutcome`, `ExitCodePolicy`, `FileResolveKind`, `verify_against_spec`,
+  `verify_plan_step_acceptance_for_tool_message`, `parse_exit_code_from_combined_output`,
+  `effective_plan_step_acceptance` and `default_exit_code_for_build_execution_description` had no
+  production caller left after `chore(staged-removal)` deleted the staged engine and `GoalVerifier`
+  — only goldens and unit tests referenced them, and those went with them. Kept:
+  `apply_executor_kind_acceptance_defaults` (`plan_artifact/parse.rs`) and
+  `PlanStepAcceptance::is_effective` (redundancy suppression) — both still have callers.
+
 ### Fixed
 
 - **A `"make\n"` marker could never match in the build-progress table (#1422).** The matcher

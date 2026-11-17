@@ -159,7 +159,7 @@ struct ToolCompressHit { index: usize, original_chars: usize, kept_head: usize, 
 - 单测（`transforms.rs`）：最近 2 组的 `tool` 正文不动；第 3 组起被压到上限；`keep_recent_groups = 0` 等价旧行为。
 - 单测（`sync_pipeline.rs`）：管道跑完后 `delta.tool_compress_hits` 只统计旧组；④ 删除后计数不变。
 - 单测（`context_compaction.rs`）：最近组超硬上限时兜底压缩生效；未超限时不压（避免无谓损失）。
-- 集成/golden：`turn-completion-golden`、`acceptance-golden` 不应变化（默认配置不命中）。
+- 集成/golden：`turn-completion-golden` 不应变化（默认配置不命中）；`acceptance-golden` 已随 #1429 删除。
 - 手工复现（issue §Reproduction）：`command_max_output_len = 65536`，跑一次 `cat` 大文件，确认
   下一轮 `context_trim` 的 `compress_hits` 不再因最新一条而置位。
 

@@ -545,7 +545,8 @@ struct PolicyDecision<'a> {
 L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。必须同时处理：
 
 1. `run_dispatch.rs:34` 的只读挂载不必走（`tool_visibility = None` 已足够强）；
-2. `cm_agent/acceptance/` 与 `final_plan_gate` 中**依赖工具证据**的校验降级为跳过，仅保留文本形态校验（`final_plan_requirement` 按 `none` 处理）；
+2. `final_plan_gate` 中**依赖工具证据**的校验降级为跳过，仅保留文本形态校验（`final_plan_requirement` 按 `none` 处理）；
+   （原文另含 `cm_agent/acceptance/`——其工具证据校验已随 #1429 删除。）
 3. `intent_at_turn_start` 的 Act 句启发式跳过（避免“以为要去改代码”而产出空工具调用循环）；
 4. `per_plan_semantic_check`（无工具侧向调用）可保留——它不消耗工具能力。
 
