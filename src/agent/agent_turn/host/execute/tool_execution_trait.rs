@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::ToolCall;
 
-use crate::tool_registry::{DispatchToolParams, HandlerLookupTable};
+use crate::tool_registry::{DispatchToolParams, HandlerLookupTable, ToolRunOutcome};
 
 /// 并行只读批预取审批失败映射的键。
 pub type ParallelPrefetchFailureKey = (String, String);
@@ -28,13 +28,16 @@ pub struct ParallelPrefetchParams<'a> {
 }
 
 /// 根包实现的工具分发（经 [`super::ToolDispatch`] 与 `workflow_execute` 等）。
+///
+/// 返回 [`ToolRunOutcome`]（#1430）：`ok` / `error_code` 由执行层直接给出，下游（emit、
+/// 统计、turn replay）不再靠 `parse_tool_output` 从正文反推成败。
 #[async_trait]
 pub trait ToolExecutionHost: Send + Sync {
     async fn dispatch_tool_call(
         &mut self,
         name: &str,
         p: DispatchToolParams<'_>,
-    ) -> (String, Option<serde_json::Value>);
+    ) -> ToolRunOutcome;
 
     async fn prefetch_parallel_approval_failures(
         &self,

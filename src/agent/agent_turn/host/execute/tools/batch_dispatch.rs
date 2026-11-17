@@ -18,6 +18,8 @@ pub(super) struct EmitToolBatchResultParams<'a> {
     pub args: &'a str,
     pub id: &'a str,
     pub result: String,
+    /// 执行层直给的成败事实（#1430）；早退 / 缓存路径传 `unknown()`。
+    pub facts: crate::tool_result::ToolOutcomeFacts,
     pub reflection_inject: Option<serde_json::Value>,
     pub execution_mode: &'static str,
     pub parallel_batch_id: Option<&'a str>,
@@ -41,6 +43,7 @@ pub(super) async fn emit_tool_batch_result(
             args: p.args,
             id: p.id,
             result: p.result,
+            facts: p.facts,
             reflection_inject: p.reflection_inject,
             envelope_ctx: Some(envelope_ctx),
         },

@@ -12,7 +12,7 @@ use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::error_text;
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
-use crate::tool_result::parse_tool_output;
+use crate::tool_result::{ToolOutcomeFacts, parse_tool_output};
 
 use super::super::batch_dispatch::emit_tool_batch_result;
 use super::super::run_command_guard::{
@@ -59,6 +59,7 @@ pub(super) async fn serial_try_ttl_run_command_cache_hit(
         args: p.args,
         id: p.id,
         result: body,
+        facts: ToolOutcomeFacts::unknown(),
         reflection_inject: None,
     })
     .await;
@@ -102,6 +103,7 @@ pub(super) async fn serial_emit_early_tool_policy_denials(
             args: p.args,
             id: p.id,
             result: denied,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;
@@ -163,6 +165,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         args,
         id,
         result,
+        facts,
         reflection_inject,
     } = p;
     emit_tool_batch_result(
@@ -177,6 +180,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
             args,
             id,
             result,
+            facts,
             reflection_inject,
             execution_mode: "serial",
             parallel_batch_id: None,
@@ -253,6 +257,7 @@ async fn serial_emit_run_command_success_dedupe(
         args,
         id,
         result: format!("{RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG}\n{cached}"),
+        facts: ToolOutcomeFacts::unknown(),
         reflection_inject: None,
     })
     .await;
@@ -298,6 +303,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             args,
             id,
             result: short_circuit,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;
@@ -330,6 +336,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             args,
             id,
             result: short_circuit,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;
@@ -360,6 +367,7 @@ async fn serial_emit_run_command_preflight_errors(
             args: p.args,
             id: p.id,
             result: preflight_error,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;
@@ -380,6 +388,7 @@ async fn serial_emit_run_command_preflight_errors(
             args: p.args,
             id: p.id,
             result: preflight_error,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;
@@ -464,6 +473,7 @@ async fn serial_emit_run_command_and_readonly_cache_hits(
             args: p.args,
             id: p.id,
             result: cached,
+            facts: ToolOutcomeFacts::unknown(),
             reflection_inject: None,
         })
         .await;

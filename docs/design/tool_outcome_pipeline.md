@@ -1,6 +1,9 @@
 # 工具结果管线：用 `ToolOutcome` 消除「Typed → String → 启发式再解析」回环
 
-> **状态：设计稿（issue #1143），尚未实现。** 落地按 §6 分四阶段，每阶段独立 PR、独立可回滚。
+> **状态：部分落地。** §5 第 1、2、8 条（`tool_stats` / `dispatch` 重试 / emit 三层 parse）已随 **#1430**（PR #1432）
+> 接上 `ToolRunOutcome` → `ToolOutcomeFacts` 覆盖链：执行层的 `ok` / `error_code` 优先，未知时回退正文反推。
+> 剩余 S2 条目（3 / 5 / 6 / 7）、S3 可见性收窄、S4 `ToolError` 瘦身均未做。
+> 原设计稿（issue #1143）按 §6 分四阶段，每阶段独立 PR、独立可回滚。
 > 前置：`tool_runner_typed_migration.md`（Legacy → Typed 迁移）已完成，`ToolRunner` 只剩 `Typed` / `AsyncOnly`。
 > 文中行号基于 `6876fe16` 之后的树；实现推进后行号会漂移，引用时以函数名为准。
 
@@ -206,14 +209,20 @@ S2 逐条切换，每行 = 一个 commit：
 
 | # | 位置 | 现在 | 改成 |
 |---|---|---|---|
-| 1 | `cm_internal/tool_stats.rs:105` | `parse` 后建 envelope | 读 `outcome.ok` |
-| 2 | `cm_internal/tool_registry/execute/dispatch.rs` | `parse(...).error_code` | 读 `outcome.code` |
+| 1 | `cm_internal/tool_stats.rs:105` | `parse` 后建 envelope | 读 `outcome.ok` — ✅ #1432 |
+| 2 | `cm_internal/tool_registry/execute/dispatch.rs` | `parse(...).error_code` | 读 `outcome.code` — ✅ #1432 |
 | 3 | `agent_turn/turn_loop/turn_completion.rs:171` | `parse` 后编码信封 | 读 `outcome` |
 | 4 | ~~`cm_agent/acceptance/tool_evidence.rs:19`~~ | ~~`parse` + 伪造 `ToolError`~~ | **已随 #1429 删除（文件不存在），本条作废** |
 | 5 | `agent_turn/policy/run_command_dedupe.rs:77` | `ok \|\| exit_code==0` | 统一成功定义（见开放问题 1） |
 | 6 | `agent_turn/host/execute/tools/serial/after_dispatch.rs:26,79` | `parse` 后分类失败族 | 读 `outcome` |
 | 7 | `.../serial/emit.rs:119` | `parse` 后写 TTL 缓存 | 读 `outcome.ok` |
-| 8 | `.../tools/emit.rs:127,225` + `emit_common.rs:42` | 两次 `parse`（timeline / 信封 / 观测） | 一次 `outcome` 复用 |
+| 8 | `.../tools/emit.rs:127,225` + `emit_common.rs:42` | 两次 `parse`（timeline / 信封 / 观测） | 一次 `outcome` 复用 — ✅ #1432 |
+
+**#1432 的落地形态与此表原文略有不同**：没有把 `ToolOutcome` 直接铺到每个消费点，而是加了中间层
+`ToolOutcomeFacts { ok: Option<bool>, error_code: Option<String> }`（`ok: None` = 该路径无结构化结论，沿用正文反推）。
+`ParsedToolOutput::apply_outcome_facts` 是唯一覆盖点，覆盖后的 parsed 同时喂 SSE 信封、`tool_stats` 与模型可见的
+`crabmate_tool` 信封。这样早退 / 缓存路径（正文由本处构造、前缀受控）不必逐个改签名。
+S3 收窄 `parse_tool_output` 可见性之前，`from_body_and_payload` 仍是尚未改造的执行体的过渡桥。
 
 不在 S2 范围：`cm_tools/tools/file/write_ops.rs:538,548`（写工具自身预览判定）、`tool_error.rs` 的三个构造器（属 S3/S4）、
   `tool_result/normalize.rs:109`（反序列化回放兜底，S3 保留）、`tools/mod.rs:668`（编译成功判定，签名只吃 `&str`，需先扩参数）。

@@ -559,22 +559,27 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
         return ToolRunOutcome::from_body_and_payload(name, out, payload);
     }
 
-    let (out, payload) = match hid {
+    // 过渡包装：尚未改造的 `execute_*_impl` 仍返回 `(正文, 载荷)`，按其自带退出码 / 头折叠。
+    // 已返回 `ToolRunOutcome` 的路径（`SyncDefault`）**不要**过这里，否则结论会被拍平再反推。
+    let wrap = |parts: (String, Option<serde_json::Value>)| {
+        ToolRunOutcome::from_body_and_payload(name, parts.0, parts.1)
+    };
+    match hid {
         HandlerId::Workflow => {
             // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。
-            (internal_dispatch_error("workflow_execute"), None)
+            ToolRunOutcome::failed(internal_dispatch_error("workflow_execute"), None)
         }
         HandlerId::Delegate => {
             // `delegate_task` 同理：它要 `SubAgentDelegator` 能力对象，而工具层**刻意不持 LLM 凭据**
             // （`agent_turn/host/execute/**` 中 `api_key` 零命中）。见 `docs/design/subagent_delegation.md` §3。
-            (internal_dispatch_error("delegate_task"), None)
+            ToolRunOutcome::failed(internal_dispatch_error("delegate_task"), None)
         }
         HandlerId::RunCommand => {
             let ToolRuntime {
                 workspace_changed,
                 ctx,
             } = runtime;
-            execute_run_command_impl(RunCommandHostInvoke {
+            wrap(execute_run_command_impl(RunCommandHostInvoke {
                 env: &env,
                 effective_working_dir,
                 workspace_is_set,
@@ -587,14 +592,14 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
                 cancel,
                 tool_jobs,
             })
-            .await
+            .await)
         }
         HandlerId::TerminalSession => {
             let ToolRuntime {
                 workspace_changed,
                 ctx,
             } = runtime;
-            execute_terminal_session_impl(TerminalSessionExecInvoke {
+            wrap(execute_terminal_session_impl(TerminalSessionExecInvoke {
                 env: &env,
                 effective_working_dir,
                 workspace_is_set,
@@ -607,39 +612,38 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
                 sse_encoder: None,
                 cancel,
             })
-            .await
+            .await)
         }
-        HandlerId::GetWeather => {
-            execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args).await
-        }
-        HandlerId::WebSearch => {
-            execute_web_search_web(&env, effective_working_dir, workspace_is_set, name, args).await
-        }
-        HandlerId::HttpFetch => {
-            let web_ctx = http_tool_approval_context(runtime);
+        HandlerId::GetWeather => wrap(
+            execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args).await,
+        ),
+        HandlerId::WebSearch => wrap(
+            execute_web_search_web(&env, effective_working_dir, workspace_is_set, name, args).await,
+        ),
+        HandlerId::HttpFetch => wrap(
             execute_http_fetch_impl(
                 &env,
                 effective_working_dir,
                 workspace_is_set,
-                web_ctx,
+                http_tool_approval_context(runtime),
                 name,
                 args,
             )
-            .await
-        }
-        HandlerId::HttpRequest => {
-            let web_ctx = http_tool_approval_context(runtime);
+            .await,
+        ),
+        HandlerId::HttpRequest => wrap(
             execute_http_request_impl(
                 &env,
                 effective_working_dir,
                 workspace_is_set,
-                web_ctx,
+                http_tool_approval_context(runtime),
                 name,
                 args,
             )
-            .await
-        }
+            .await,
+        ),
         HandlerId::SyncDefault => {
+            // 已返回 `ToolRunOutcome`：**不要**再折成 `(正文, 载荷)` 反推，否则结构化结论白丢。
             dispatch_sync_default_tool(SyncDefaultToolDispatchArgs {
                 env: &env,
                 runtime,
@@ -656,10 +660,8 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
                 tool_jobs,
             })
             .await
-            .into_body_and_payload()
         }
-    };
-    ToolRunOutcome::from_body_and_payload(name, out, payload)
+    }
 }
 
 /// 并行只读批内 `SyncDefault` 预审批：当前仅覆盖 `read_dir` 的工作区外路径访问。

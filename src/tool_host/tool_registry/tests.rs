@@ -16,7 +16,8 @@ use super::runtime::ToolRuntime;
 async fn dispatch_tool_bp(
     p: DispatchToolParams<'_>,
 ) -> (String, Option<serde_json::Value>) {
-    dispatch_tool(p).await.into_body_and_payload()
+    let (out, payload, _facts) = dispatch_tool(p).await.into_parts();
+    (out, payload)
 }
 
 fn tc(name: &str) -> ToolCall {

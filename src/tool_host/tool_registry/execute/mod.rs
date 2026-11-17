@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_tools::tool_result::ToolOutcomeFacts;
 use crate::cm_types::ToolCall;
 
 use super::meta::HandlerLookupTable;
@@ -39,10 +40,12 @@ pub struct ToolRunOutcome {
     pub payload: Option<serde_json::Value>,
     /// 执行层直接给出的成败（不再靠正文反推）。
     ///
-    /// **尚未接线**：`tool_execution_host` 仍解构历史 `(String, payload)`，故本字段目前
-    /// 没有生产消费者。接入点是 `ToolExecutionHost::dispatch_tool_call` → `record_tool_outcome`
-    /// （#1430 follow-up）；接入后删除本 `allow` 与 `into_body_and_payload`。
-    #[allow(dead_code)]
+    /// 消费方：emit 层（SSE `tool_result.ok` / `timeline` / turn replay）与
+    /// `ToolOutcomeRecorder::record_tool_outcome`（统计 / 系统提示），经
+    /// [`ToolOutcomeFacts`] 覆盖 [`NormalizedToolEnvelope`] 的反推结果。
+    ///
+    /// [`ToolOutcomeFacts`]: crate::cm_tools::tool_result::ToolOutcomeFacts
+    /// [`NormalizedToolEnvelope`]: crate::cm_tools::tool_result::NormalizedToolEnvelope
     pub ok: bool,
     pub error_code: Option<String>,
 }
@@ -87,14 +90,22 @@ impl ToolRunOutcome {
         }
     }
 
-    /// 丢弃结构化成败，退化为历史上的 `(String, Option<Value>)` 形状。
+    /// 只取结构化成败事实（不搬正文）。
     ///
-    /// 纯形状转换，**不做任何判定**（此前版本里为诊断多做了一次 `parse_tool_output`，
-    /// 那相当于把已经结构化出来的 `ok` 又用文本反推一遍，属净增开销，已移除）。
+    /// 并行只读批按 `name+args` 缓存同一次执行的结果，回写时对每个 `tool_call_id`
+    /// 各取一次事实，不需要把正文再克隆一遍。
+    pub fn facts(&self) -> ToolOutcomeFacts {
+        ToolOutcomeFacts::known(self.ok, self.error_code.clone())
+    }
+
+    /// 拆成 `(正文, 载荷, 成败事实)`：正文 / 载荷是写回 `role: tool` 与 SSE 的那两个字段，
+    /// 事实（[`ToolOutcomeFacts`]）交给 emit / stats 定 `ok` 与 `error_code`。
     ///
-    /// 调用方接入 `ok` / `error_code` 后，本函数应随之删除。
-    pub fn into_body_and_payload(self) -> (String, Option<serde_json::Value>) {
-        (self.output, self.payload)
+    /// **纯形状转换**，不做任何判定——此前版本为诊断多做一次 `parse_tool_output`，
+    /// 等于把已结构化出来的 `ok` 又用文本反推一遍，属净增开销，已移除。
+    pub fn into_parts(self) -> (String, Option<serde_json::Value>, ToolOutcomeFacts) {
+        let facts = self.facts();
+        (self.output, self.payload, facts)
     }
 }
 
@@ -293,11 +304,14 @@ mod tool_run_outcome_tests {
         assert!(git_log.ok, "正文提到失败不再误判");
     }
 
+    /// `into_parts` 只搬形状：正文 / 载荷原样，事实与结构化成败一致。
     #[test]
-    fn into_body_and_payload_is_a_shape_cast() {
-        let o = ToolRunOutcome::failed("错误：x".to_string(), None);
-        let (out, payload) = o.into_body_and_payload();
+    fn into_parts_is_a_shape_cast() {
+        let o = ToolRunOutcome::failed("错误：x".to_string(), Some("boom".to_string()));
+        let (out, payload, facts) = o.into_parts();
         assert_eq!(out, "错误：x");
         assert!(payload.is_none());
+        assert_eq!(facts.ok, Some(false));
+        assert_eq!(facts.error_code.as_deref(), Some("boom"));
     }
 }

@@ -108,6 +108,8 @@ pub(super) struct EmitToolResultParams<'a> {
     args: &'a str,
     id: &'a str,
     result: String,
+    /// 执行层直给的成败事实（#1430）：`unknown()` = 该路径无结构化结论，按正文反推。
+    facts: crate::tool_result::ToolOutcomeFacts,
     reflection_inject: Option<serde_json::Value>,
     envelope_ctx: Option<ToolEnvelopeContext<'a>>,
 }

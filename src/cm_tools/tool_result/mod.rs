@@ -21,7 +21,7 @@ mod run_command;
 pub(crate) mod status;
 mod tool_error;
 
-pub use normalize::{NormalizedToolEnvelope, normalize_tool_message_content};
+pub use normalize::{NormalizedToolEnvelope, ToolOutcomeFacts, normalize_tool_message_content};
 /// 三态判定只服务 crate 内的消费侧（`cm_memory`），**不**进 crates.io 承诺面：
 /// `root public API list` 门禁只扫 `src/lib.rs` 顶格 `pub`，嵌套模块的 `pub` 它拦不住，
 /// 所以这里显式收窄（#1401 P1 review）。
