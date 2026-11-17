@@ -415,10 +415,17 @@ pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool
         .map(str::trim)
         .filter(|k| !k.is_empty());
     // 「写 / 修」信号任一侧出现就放行——抑制是不可逆的少干活，保守方向是「可能是要动的」。
-    if kind.is_some_and(step_kind_implies_write_or_fix)
+    // `executor_kind` 排在最前：它是**执行层强制**的契约，比 `step_kind` 自述与描述文本都硬。
+    if step.executor_kind.is_some_and(executor_kind_may_write)
+        || kind.is_some_and(step_kind_implies_write_or_fix)
         || text_matches_any(&text, FOLLOWUP_WRITE_OR_FIX_MARKERS)
     {
         return false;
+    }
+    // 结构上只能读：调用方已确认完成（`completion_confirmed`），再跑一次不产生新信息。
+    // 这一条**不看描述**——它正是把「猜这步想干什么」换成结构判定的一步。
+    if step.executor_kind.is_some_and(executor_kind_is_readonly_only) {
+        return true;
     }
     if kind.is_some_and(step_kind_implies_probe) {
         return true;
@@ -426,6 +433,19 @@ pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool
     // `step_kind` 缺失或取值未知：它是模型自由填的字符串，不认识时回落到描述判定
     // （与 #1422 之前一致），不额外放行也不额外抑制。
     text_matches_any(&text, REDUNDANT_PROBE_TEXT_MARKERS)
+}
+
+/// `executor_kind` 能写：`PatchWrite` 允许受限写补丁类工具，本步可能还有后续改动。
+///
+/// 这个字段是**执行层会强制执行**的（越权 `tool_calls` 会被拒），所以可信；
+/// 相比之下 `step_kind` 只是模型自述，除了本函数没有消费者。
+fn executor_kind_may_write(kind: PlanStepExecutorKind) -> bool {
+    matches!(kind, PlanStepExecutorKind::PatchWrite)
+}
+
+/// `executor_kind` 只能读：`ReviewReadonly` 仅允许语义只读工具。
+fn executor_kind_is_readonly_only(kind: PlanStepExecutorKind) -> bool {
+    matches!(kind, PlanStepExecutorKind::ReviewReadonly)
 }
 
 fn step_kind_implies_write_or_fix(kind: &str) -> bool {
@@ -572,6 +592,34 @@ mod tests {
             Some("weird_kind"),
             "检查编译产物是否存在"
         )));
+    }
+
+    /// `executor_kind` 是**执行层强制**的契约，优先于 `step_kind` 自述与描述文本。
+    #[test]
+    fn executor_kind_is_structural_and_wins_over_text() {
+        // PatchWrite：结构上允许写 → 即使描述像探测也不抑制。
+        let mut may_write = step("s8", None, "检查编译产物是否存在");
+        may_write.executor_kind = Some(PlanStepExecutorKind::PatchWrite);
+        assert!(
+            !plan_step_is_redundant_after_completion(&may_write),
+            "允许写补丁的步不能被抑制"
+        );
+
+        // ReviewReadonly：结构上只能读 → 描述一个探测词都没命中也抑制。
+        let mut readonly = step("s9", None, "看一眼那个东西");
+        readonly.executor_kind = Some(PlanStepExecutorKind::ReviewReadonly);
+        assert!(
+            plan_step_is_redundant_after_completion(&readonly),
+            "只读步不该依赖描述命中"
+        );
+
+        // 矛盾数据保守放行：结构说只读，描述写着动手。
+        let mut contradictory = step("s10", None, "修复失败测试");
+        contradictory.executor_kind = Some(PlanStepExecutorKind::ReviewReadonly);
+        assert!(
+            !plan_step_is_redundant_after_completion(&contradictory),
+            "描述里的动手信号仍保留否决权"
+        );
     }
 
     /// `step_kind` 的写 / 修取值全覆盖：命中即放行，不看描述。
