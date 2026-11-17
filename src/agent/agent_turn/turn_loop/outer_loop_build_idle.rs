@@ -2,7 +2,7 @@
 
 use crate::agent::agent_turn::policy::task_level_evidence::command_line_looks_like_verify;
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
-use crate::cm_agent::text_markers::text_matches_any;
+use crate::cm_agent::text_markers::{marker_matches, text_matches_any};
 use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
 use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::normalize_tool_message_content;
@@ -102,23 +102,46 @@ pub(crate) fn outer_loop_window_has_build_progress_since_last_user(messages: &[M
     })
 }
 
+/// 助手终答是否在**承诺**编译 / 构建却没给工具调用。
+///
+/// #1422 A4：原来的表里有裸 `make`，于是 `make sure …` / `make it …` 全被算成承诺，
+/// 凭空注入「只说不做」纠偏。裸 `make` 在自然语言里没有任何词边界可依
+/// （`make sure` 是完整的两个词），所以它不是「加边界」能救的，只能拆成双条件。
 fn assistant_text_promises_build_or_compile(text: &str) -> bool {
     let lower = text.to_lowercase();
-    const MARKERS: &[&str] = &[
+    /// 构建动作词：正文里出现即在谈构建，无需再要意图词。
+    /// 刻意**不含裸 `make`** —— 它走下面的双条件。
+    const BUILD_ACTION_MARKERS: &[&str] = &[
         "编译",
         "构建",
-        "make",
+        "makefile",
         "cmake",
         "build",
         "compile",
-        "makefile",
         "install",
         "运行 make",
         "执行 make",
         "开始编译",
         "进行编译",
     ];
-    MARKERS.iter().any(|m| lower.contains(m))
+    /// 「我要去做」的信号。只在与 `make` 同现时才有意义。
+    const INTENT_MARKERS: &[&str] = &[
+        "将",
+        "马上",
+        "开始",
+        "准备",
+        "接下来",
+        "先",
+        "执行",
+        "运行",
+        "现在",
+        "will",
+        "let me",
+        "going to",
+        "about to",
+    ];
+    text_matches_any(&lower, BUILD_ACTION_MARKERS)
+        || (marker_matches(&lower, "make") && text_matches_any(&lower, INTENT_MARKERS))
 }
 
 pub(crate) fn outer_loop_assistant_is_build_idle_without_tools(msg: &Message) -> bool {
@@ -239,6 +262,24 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// #1422 A4：裸 `make` 不再单独算「承诺构建」。
+    #[test]
+    fn make_sure_is_not_a_build_promise() {
+        assert!(!outer_loop_assistant_is_build_idle_without_tools(
+            &assistant("Make sure the tests still pass")
+        ));
+        assert!(!outer_loop_assistant_is_build_idle_without_tools(
+            &assistant("I'll make the API consistent")
+        ));
+        // 真承诺仍然命中：动作词，或「意图词 + make」。
+        assert!(outer_loop_assistant_is_build_idle_without_tools(&assistant(
+            "接下来执行 make 构建"
+        )));
+        assert!(outer_loop_assistant_is_build_idle_without_tools(&assistant(
+            "接下来运行 make"
+        )));
     }
 
     #[test]
