@@ -40,8 +40,6 @@ pub use plan_rewrite::PlanRewriteExhaustedReason;
 pub use plan_semantic::PlanSemanticLlmOutcome;
 
 #[cfg(test)]
-mod acceptance_regression_golden;
-#[cfg(test)]
 mod plan_artifact_golden;
 
 pub(crate) use crate::cm_types::text_utils::preview_chars;
