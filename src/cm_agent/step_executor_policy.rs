@@ -60,33 +60,6 @@ fn test_runner_allowed_name(cfg: &AgentConfig, name: &str) -> bool {
         .is_some_and(|s| s.contains(name))
 }
 
-/// 分阶段 `review_readonly` 步末空执行检测：须出现阅读/探查类只读工具。
-pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
-    if tool_origin(name) == ToolOrigin::Mcp {
-        return false;
-    }
-    // `list_dir` / `grep` / `stat` 曾在此出现，但它们是**命令名**而非注册工具名
-    // （`specs/` 与 `cm_names::ALL` 里都没有）。`name` 来自当前调用，不可能是已删除的
-    // 工具名，故删除这三个分支 —— 它们从未命中过。
-    matches!(
-        name,
-        tool_names::READ_FILE
-            | tool_names::READ_DIR
-            | tool_names::SEARCH_IN_FILES
-            | tool_names::GIT
-            | tool_names::CODE_NAV
-            | tool_names::ARCHIVE_LIST
-            | tool_names::HTTP_FETCH
-            | tool_names::DIAGNOSTIC_SUMMARY
-            | tool_names::SELF_CONFIG_INFO
-    )
-}
-
-/// 分阶段 `patch_write` 步末空执行检测：须出现补丁/写文件类工具。
-pub fn tool_name_implies_patch_write_progress(name: &str) -> bool {
-    default_patch_write_tool_names().contains(name)
-}
-
 /// 该 `executor_kind` / 节点角色下是否允许调用该工具。
 pub fn tool_allowed_for_step_executor_kind(
     cfg: &AgentConfig,

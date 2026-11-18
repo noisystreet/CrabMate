@@ -57,7 +57,7 @@ fn finalize_agent_reply_plan_v1_acceptance_in_place(plan: &mut AgentReplyPlanV1)
 }
 
 /// 合并 `reasoning_details`→`reasoning_content` 后与正文拼接，供 [`parse_agent_reply_plan_v1`] 使用（网关常把 `agent_reply_plan` 放在思维链字段）。
-pub fn assistant_merged_text_for_plan_artifact_parse(msg: &crate::cm_types::Message) -> String {
+fn assistant_merged_text_for_plan_artifact_parse(msg: &crate::cm_types::Message) -> String {
     let mut m = msg.clone();
     crate::cm_types::merge_reasoning_details_into_reasoning_content(&mut m);
     let c = crate::cm_types::message_content_as_str(&m.content).unwrap_or("");
@@ -78,15 +78,6 @@ pub fn parse_agent_reply_plan_v1_from_assistant_message(
 ) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     let merged = assistant_merged_text_for_plan_artifact_parse(msg);
     parse_agent_reply_plan_v1(&merged)
-}
-
-/// 从助手消息（正文 + 思维链）解析 `agent_reply_plan` v1（带 validate-only 绑定上下文）。
-pub fn parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
-    msg: &crate::cm_types::Message,
-    validate_only_binding_ids: Option<&[String]>,
-) -> Result<AgentReplyPlanV1, PlanArtifactError> {
-    let merged = assistant_merged_text_for_plan_artifact_parse(msg);
-    parse_agent_reply_plan_v1_with_validate_only_binding_ids(&merged, validate_only_binding_ids)
 }
 
 /// 候选 JSON 字符串：每个 fenced \`\`\` 块（奇数段）去掉可选语言行（`json` / `markdown` / `md`，忽略大小写；可含前导空行）后尝试；再尝试整段 trim 后以 `{` 开头的全文。
