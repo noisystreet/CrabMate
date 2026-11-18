@@ -59,7 +59,7 @@
 | 完成证据（主路径） | **已接线**：`outer_loop` → `turn_early_stop_allowed_with_judge`（第 ② 层语义判定）；冗余工具抑制读 `PerCoordinator` 缓存的同一结论，两道门同源。**非**「靠模型自述」 | `turn_loop/turn_completion.rs`、`turn_loop/outer_loop.rs` |
 | 证据检测器覆盖 | **检测器已整层删除**（#1415）：第 ① 层不再自下结论，只剩 `evidence.rs` 的结构化事实采集供 judge 消费 | `policy/task_level_evidence/evidence.rs` |
 | 早停门 | 只有一个判定源：第 ② 层语义判定（`completion_judge_enabled`）；判定不可用即不早停，**无确定性短路** | `policy/turn_completion_decision.rs`、`turn_loop/turn_completion.rs` |
-| 步后抑规划 | `evaluate_turn_suppress_replanning` **注释自述生产未接线**（仅金样与单测） | `turn_completion.rs`、`turn_completion_decision.rs` |
+| 步后抑规划 | **已删除**（#1424）：判定门与四张文案 / `step_kind` 表在生产无消费者，`PlanStepV1.step_kind` 一并移除 | — |
 | 子 Agent | `HandlerId::Delegate` 未注册；agent 层 handler 清单只有 `Workflow` | `host/execute/tool_execution_host.rs` |
 | 跨回合状态 | plan artifact 只在回合内；跨回合仅 `reminder` / `event` 与 cron 定时任务 | `src/cm_config/scheduled_agent_task.rs` |
 | 记忆 | scope **固定 `conversation_id`**；自动沉淀只覆盖 build/test 失败→成功 | `config/memory.toml`、`auto_memory` 系 |
@@ -240,8 +240,8 @@ L6（读三态），且当前实现双向误判（§3.2 实测）。**判定层�
 
 - §3.2 三个实测探针全部按预期改变：`cargo_test` 专用工具 → 不再 `NotApplicable`；
   纯写无验证 → 不再 `Satisfied`。
-- `fixtures/turn_completion_golden.jsonl` 的 `suppress_replanning` / `redundant_tools` 两档各有
-  `confirmed: true → allow` 与 `confirmed: false → deny` 用例（`early_stop` 档随第 ① 层一并删除，#1415）。
+- `fixtures/turn_completion_golden.jsonl` 的 `redundant_tools` 档有 `confirmed: true → allow` 与
+  `confirmed: false → deny` 用例（`early_stop` 档随第 ① 层删除，#1415；`suppress_replanning` 档随该门删除，#1424）。
 - 综合任务场景：分解释义下子项判定可独立回归。
 - 关闭该功能时行为逐字不变。
 
@@ -315,8 +315,8 @@ P3（C 层护栏），**不要跳过 A 直接扩 E 层沉淀面**——否则噪
 |---|---|---|---|
 | S0 | 本文评审定稿 | — | 只出方案，不写码 |
 | **S0.5** | **L1 完成判定层重建（P0 前置）** | — | **所有后续阶段的公共前置**。判定层不可信，`TaskState` 与预算再分配都无从验收 |
-| S1 | 步后抑制接线（`evaluate_turn_suppress_replanning`） | S0.5 | 小改动，依赖可信三态 |
-| S2 | L2 `TaskState` 与续跑 | S0.5、S1 | 自主性核心；默认关闭，先做单实例内 |
+| S1 | ~~步后抑制接线~~ **已放弃**（#1424） | — | 生产无消费者已删除；恢复须按 `executor_kind` + `acceptance` 重写 |
+| S2 | L2 `TaskState` 与续跑 | S0.5 | 自主性核心；默认关闭，先做单实例内 |
 | S3 | L3 `delegate_task` P1 | 独立 | 与 S2 无编译冲突，可并行 |
 | S4 | L4 `autonomy_profile` | S2 | 有了续航才需要减少打断频率 |
 | S5 | L5 记忆 A→B→C | 独立 | 与 S2/S3 不同模块，可并行 |
