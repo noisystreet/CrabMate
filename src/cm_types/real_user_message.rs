@@ -32,7 +32,7 @@ pub fn last_real_user_message_index(
     })
 }
 
-/// 自最后一条真实 user 起至末尾的消息切片（完成证据、构建空转窗口等共用）。
+/// 自最后一条真实 user 起至末尾的消息切片（完成证据等窗口判定共用）。
 #[must_use]
 pub fn messages_slice_since_last_real_user(
     messages: &[Message],

@@ -33,6 +33,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Removed
 
+- **Removed the build-idle「只说不做」correction (#1440).** `outer_loop_build_idle` is gone in full:
+  its three keyword tables (`BUILD_MARKERS` / `BUILD_ACTION_MARKERS` / `INTENT_MARKERS`), the
+  streak / feedback counters in `OuterLoopReflectMemo`, and the
+  `OuterLoopReflectPreGateReason::BuildIdleFeedback` variant. With it went
+  `plan_step_description_implies_build_execution` / `BUILD_EXECUTION_KEYWORDS` and the now-unused
+  `cm_agent::text_markers` module. Rationale: it was a four-layer keyword heuristic guarding a
+  failure mode ("promises to build, then calls no tool") that strong models rarely exhibit, while
+  false positives injected a user-visible「【编排纠偏】」turn. Truncated-answer and
+  missing-final-answer corrections stay unchanged; their shared prefix constant was renamed to
+  `OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX` (text stays【编排纠偏】).
 - **BREAKING: removed the orphaned acceptance verification kernel (#1429).** `AcceptanceSpec`,
   `AcceptanceEvidence`, `VerifyOutcome`, `ExitCodePolicy`, `FileResolveKind`, `verify_against_spec`,
   `verify_plan_step_acceptance_for_tool_message`, `parse_exit_code_from_combined_output`,

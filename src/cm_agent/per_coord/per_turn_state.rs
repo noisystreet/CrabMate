@@ -20,8 +20,6 @@ use crate::cm_agent::plan_rewrite;
 /// `plan_rewrite_attempts` 混读。见 **`docs/design/run_loop_state_ownership.md`**。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct OuterLoopReflectMemo {
-    pub(crate) build_idle_streak: u32,
-    pub(crate) build_idle_feedback_injected: u32,
     pub(crate) missing_final_answer_feedback_injected: u32,
     pub(crate) truncated_feedback_injected: u32,
 }
@@ -29,23 +27,6 @@ pub(crate) struct OuterLoopReflectMemo {
 impl OuterLoopReflectMemo {
     pub(crate) fn new() -> Self {
         Self::default()
-    }
-
-    pub(crate) fn record_build_idle_round(&mut self) -> u32 {
-        self.build_idle_streak = self.build_idle_streak.saturating_add(1);
-        self.build_idle_streak
-    }
-
-    pub(crate) fn reset_build_idle_streak(&mut self) {
-        self.build_idle_streak = 0;
-    }
-
-    pub(crate) fn record_build_idle_feedback_injected(&mut self) {
-        self.build_idle_feedback_injected = self.build_idle_feedback_injected.saturating_add(1);
-    }
-
-    pub(crate) fn build_idle_feedback_injected(&self) -> u32 {
-        self.build_idle_feedback_injected
     }
 
     pub(crate) fn record_missing_final_answer_feedback_injected(&mut self) {
@@ -142,23 +123,6 @@ impl PerTurnCounters {
         self.completion_judge_evidence_fingerprint = Some(fingerprint);
         self.completion_judge_calls = self.completion_judge_calls.saturating_add(1);
         true
-    }
-
-    pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
-        self.outer_loop_reflect.record_build_idle_round()
-    }
-
-    pub(crate) fn reset_outer_loop_build_idle_streak(&mut self) {
-        self.outer_loop_reflect.reset_build_idle_streak();
-    }
-
-    pub(crate) fn record_outer_loop_build_idle_feedback_injected(&mut self) {
-        self.outer_loop_reflect
-            .record_build_idle_feedback_injected();
-    }
-
-    pub(crate) fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
-        self.outer_loop_reflect.build_idle_feedback_injected()
     }
 
     pub(crate) fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {

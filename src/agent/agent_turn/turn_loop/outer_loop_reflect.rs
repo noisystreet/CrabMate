@@ -1,6 +1,6 @@
 //! 外循环反思结果 → **`ReflectBranchCtl`** 映射（副作用与 IO 仍在本模块；类型见 **`outer_loop_fsm`**）。
 //!
-//! **Gate 前 L2 纠偏**（build-idle、终答缺失）在本模块处理；终答规划门控见 **`per_coord::final_plan_gate`**。
+//! **Gate 前 L2 纠偏**（截断、终答缺失）在本模块处理；终答规划门控见 **`per_coord::final_plan_gate`**。
 
 use std::sync::atomic::Ordering;
 
@@ -10,10 +10,6 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{SsePayload, encode_message};
 use crate::types::Message;
 
-use super::outer_loop_build_idle::{
-    outer_loop_assistant_is_build_idle_without_tools, outer_loop_build_idle_feedback_if_needed,
-    outer_loop_window_has_build_progress_since_last_user,
-};
 use crate::agent::agent_turn::policy::outer_loop_fsm::ReflectBranchCtl;
 use crate::agent::agent_turn::policy::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use super::turn_completion::{
@@ -44,14 +40,14 @@ fn last_assistant_finish_truncated(p: &RunLoopParams<'_>) -> bool {
         .is_some_and(|f| f.last_assistant_finish_truncated.load(Ordering::Relaxed))
 }
 
-/// `StopTurn`：build-idle / 终答缺失纠偏 → 继续外循环，否则结束。
+/// `StopTurn`：截断 / 终答缺失纠偏 → 继续外循环，否则结束。
 fn reflect_branch_on_stop_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     msg: &Message,
 ) -> ReflectBranchCtl {
     let messages = p.turn.messages();
-    if let Some(task) = crate::types::last_real_user_task_content(messages, false) {
+    if crate::types::last_real_user_task_content(messages, false).is_some() {
         // 截断纠偏优先：截断是最具体的根因信号，其「继续/收敛」文案优于泛化的 idle / 空答纠偏。
         if let Some(feedback) = outer_loop_truncated_feedback_if_needed(
             last_assistant_finish_truncated(p),
@@ -66,29 +62,6 @@ fn reflect_branch_on_stop_turn(
             per_coord.record_outer_loop_truncated_feedback_injected();
             sync_per_flight_from_coord(p, per_coord);
             return ReflectBranchCtl::ContinueOuter;
-        }
-        if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
-            per_coord.reset_outer_loop_build_idle_streak();
-        } else if outer_loop_assistant_is_build_idle_without_tools(msg) {
-            let streak = per_coord.record_outer_loop_build_idle_round();
-            if let Some(feedback) = outer_loop_build_idle_feedback_if_needed(
-                task,
-                messages,
-                msg,
-                streak,
-                per_coord.outer_loop_build_idle_feedback_injected(),
-            ) {
-                info!(
-                    target: "crabmate::agent_turn",
-                    "outer loop pre-gate: {} streak={}",
-                    OuterLoopReflectPreGateReason::BuildIdleFeedback.as_str(),
-                    streak,
-                );
-                push_pre_gate_user_feedback(p, feedback);
-                per_coord.record_outer_loop_build_idle_feedback_injected();
-                sync_per_flight_from_coord(p, per_coord);
-                return ReflectBranchCtl::ContinueOuter;
-            }
         }
         if let Some(feedback) = outer_loop_missing_final_answer_feedback_if_needed(
             messages,
@@ -187,7 +160,7 @@ async fn reflect_branch_on_plan_rewrite_exhausted(
     ReflectBranchCtl::BreakOuter
 }
 
-/// `per_reflect_after_assistant` 结果 → 外循环控制（含 build-idle 纠偏、plan_rewrite SSE 等）。
+/// `per_reflect_after_assistant` 结果 → 外循环控制（含截断 / 终答缺失纠偏、plan_rewrite SSE 等）。
 pub(super) async fn map_reflect_outcome_to_branch_ctl(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -204,7 +177,6 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
             ReflectBranchCtl::ContinueOuter
         }
         ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-            per_coord.reset_outer_loop_build_idle_streak();
             sync_per_flight_from_coord(p, per_coord);
             ReflectBranchCtl::ProceedToTools
         }
