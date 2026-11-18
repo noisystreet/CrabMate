@@ -183,9 +183,6 @@ pub struct PlanStepV1 {
     /// 可选：本步执行子循环的工具角色（子代理）；省略则全量工具。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_kind: Option<PlanStepExecutorKind>,
-    /// 可选：步骤类型，例如 `implement` 或 `verify`。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub step_kind: Option<String>,
     /// 可选：本步骤的确定性验收条件。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance: Option<PlanStepAcceptance>,
@@ -537,7 +534,6 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
 - 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器 + `run_command`，后者仅允许配置白名单内命令）；越权调用会在工具层被拒绝并记入对话
-- 可选 \"step_kind\"（字符串）：标识步骤类型，例如 `implement` 或 `verify`（当需要进行强校验时可使用 `verify`）。
 - 可选 \"acceptance\"（对象）：确定性验收条件；设定后由服务端对**本步最后一条** `role: tool` 硬断言，失败则走 **`patch_planner`** 等闭环。可含：\"expect_exit_code\"（整数）、\"expect_stdout_contains\" / \"expect_stderr_contains\"（字符串子串）、\"expect_file_exists\"（工作区相对路径）、\"expect_json_path_equals\"（对象，字段 \"path\" + \"value\"；Legacy `$…` 或 JSON Pointer `/…`）、\"expect_http_status\"（整数；仅 `http_request`/`http_fetch` 类工具）
 - **解压/归档步**（`archive_unpack` 等）：优先 `expect_file_exists` 指向解压后的目录或关键文件；**勿**用 `expect_stdout_contains` 填 `ls`/`run_command` 的目录列表子串（验收只读最后一条 tool 的正文）。若须匹配解压工具输出，子串须出现在 `archive_unpack` 返回文中（如「已解压」）
 - 可选 \"max_step_retries\" (整数)：指定本步骤失败后允许的局部重试（打补丁）次数上限。
@@ -551,11 +547,11 @@ pub const PLAN_V1_REWRITE_BRIEF_RULES: &str = "\
 - 顶层：`type`=\"agent_reply_plan\"，`version`=1
 - 默认：`steps` 恰好 1 项，每项含非空 `id`、`description`（`id`：字母/数字开头，仅含 -_./，≤128，无首尾空白）
 - 无具体任务：可设 `no_task`=true 且 `steps`=[]
-- 可选：`executor_kind`（`review_readonly`|`patch_write`|`test_runner`）、`step_kind`、`acceptance`、`workflow_node_id`、`max_step_retries`、`transitions`
+- 可选：`executor_kind`（`review_readonly`|`patch_write`|`test_runner`）、`acceptance`、`workflow_node_id`、`max_step_retries`、`transitions`
 - `workflow_validate_only` 绑定等多步细则：见本消息中的**校验反馈**与「补充」段（勿臆造节点 id）";
 
 /// Plan v1 的 JSON 示例（校验/文档；重写提示优先用 [`PLAN_V1_REWRITE_EXAMPLE_JSON`]）。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"verify-cargo-check","description":"在本工作区运行 cargo check 并确认通过","executor_kind":"test_runner","step_kind":"verify","max_step_retries":2,"acceptance":{"expect_exit_code":0,"expect_stdout_contains":"Finished"}}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"verify-cargo-check","description":"在本工作区运行 cargo check 并确认通过","executor_kind":"test_runner","max_step_retries":2,"acceptance":{"expect_exit_code":0,"expect_stdout_contains":"Finished"}}]}"#;
 
 /// 重写提示用的最短合法示例（单步，无验收细节）。
 pub const PLAN_V1_REWRITE_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"完成用户请求的一步并核对结果"}]}"#;
