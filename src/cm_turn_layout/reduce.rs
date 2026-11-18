@@ -233,41 +233,6 @@ pub fn reduce_event(turn: &mut Turn, event: TurnEvent) {
     }
 }
 
-/// 形态 B：按终答分隔符拆回 batch + final（纯函数，保留供未来复用）。
-#[allow(dead_code)]
-#[must_use]
-pub fn try_split_combined_post_tool_answer(combined: &str) -> Option<(String, String)> {
-    const MARKERS: &[&str] = &[
-        "\n\n**",
-        "\n---\n",
-        "。总结：",
-        "。总结:",
-        "。Summary:",
-        "。summary:",
-    ];
-    let trimmed = combined.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut best: Option<(usize, &str)> = None;
-    for marker in MARKERS {
-        if let Some(pos) = trimmed.rfind(marker)
-            && pos > 0
-            && best.is_none_or(|(p, _)| pos > p)
-        {
-            best = Some((pos, marker));
-        }
-    }
-    let (pos, marker) = best?;
-    let head = trimmed[..pos].trim();
-    let tail = trimmed[pos..].trim();
-    let tail = tail.strip_prefix(marker).unwrap_or(tail).trim();
-    if head.len() < 8 || tail.len() < 4 {
-        return None;
-    }
-    Some((head.to_string(), tail.to_string()))
-}
-
 impl TurnReducer {
     pub fn apply(&self, turn: &mut Turn, event: TurnEvent) {
         reduce_event(turn, event);

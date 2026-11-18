@@ -29,9 +29,7 @@ pub use project::{
     project_turn_projection, project_turn_web_v2, streaming_commentary_before_tool,
     streaming_commentary_block_text,
 };
-pub use reduce::{
-    TurnReducer, close_open_commentary_segments, reduce_event, try_split_combined_post_tool_answer,
-};
+pub use reduce::{TurnReducer, close_open_commentary_segments, reduce_event};
 
 #[cfg(test)]
 mod golden {
