@@ -7,7 +7,8 @@
 //!
 //! 现存只有 [`apply_executor_kind_acceptance_defaults`]：解析期由 `plan_artifact/parse.rs` 调用。
 //! 注意 `PlanStepAcceptance::is_effective` 名字相近，但它定义在 `plan_artifact`，
-//! 仍被 `completion_suppression` 用于冗余抑制判定。
+//! 目前只被 `plan_artifact` 自身的解析期归一（空对象置 `None`）与单测使用；
+//! **没有**运行时校验消费者（`completion_suppression` 不读取 `acceptance`）。
 
 mod executor_defaults;
 
