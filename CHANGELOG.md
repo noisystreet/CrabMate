@@ -21,6 +21,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Payload tool headers now carry an explicit `ok: true`** for `read_file` / `read_dir` /
   `list_tree` / `search_in_files`, replacing the implicit "a header means success" convention.
   Visible to clients in SSE `structured_preview`; `SSE_PROTOCOL_VERSION` stays **v2**.
+- **Auto experience summarization is now off by default (#1438).**
+  `long_term_memory_auto_summarize_experience` / `CM_LONG_TERM_MEMORY_AUTO_SUMMARIZE_EXPERIENCE`
+  defaults to **`false`**: the judgement "this failure→success is worth remembering" moves to the
+  model itself, which calls the `summarize_experience` tool (the shipped system prompt gained a
+  matching paragraph). With the server-side gate off by default, the keyword table behind
+  `user_message_suggests_task` decides nothing unless you re-enable the key, and `run_command`
+  build detection now reads the structured `invocation` instead of scanning output text.
+  Set the key to `true` to restore the previous server-side fallback. Deduplication
+  (`has_duplicate_text`), `max_entries` eviction and content validation are unchanged.
 
 ### Removed
 
