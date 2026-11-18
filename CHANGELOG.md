@@ -29,9 +29,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `verify_plan_step_acceptance_for_tool_message`, `parse_exit_code_from_combined_output`,
   `effective_plan_step_acceptance` and `default_exit_code_for_build_execution_description` had no
   production caller left after `chore(staged-removal)` deleted the staged engine and `GoalVerifier`
-  — only goldens and unit tests referenced them, and those went with them. Kept:
-  `apply_executor_kind_acceptance_defaults` (`plan_artifact/parse.rs`) and
-  `PlanStepAcceptance::is_effective` (redundancy suppression) — both still have callers.
+  — only goldens and unit tests referenced them, and those went with them. The two survivors kept at
+  that point (`apply_executor_kind_acceptance_defaults` and `PlanStepAcceptance::is_effective`) were
+  themselves removed in the follow-up sweep below.
+- **BREAKING: removed the now-orphaned `PlanStepV1` acceptance / retry / transition fields (#1427).**
+  With the verifier gone (#1429), `acceptance` (`PlanStepAcceptance`, `JsonPathEqualsRule`),
+  `max_step_retries` and `transitions` (`PlanStepControlFlow`) had no reader left — and
+  `validate_plan_step_transitions` kept strictly validating a state machine that nothing executed.
+  Removed alongside them: `cm_agent/acceptance/` (whose only job was injecting `expect_exit_code`),
+  `align_plan_step_acceptance_with_executor_kind`, the `normalize_*_acceptance_in_place` helpers, and
+  the path-shape / keyword heuristics that fed them. `PlanStepV1` is now exactly `id` + `description`
+  + `workflow_node_id` + `executor_kind`. The prompt constants (`PLAN_V1_SCHEMA_RULES`,
+  `PLAN_V1_REWRITE_BRIEF_RULES`, `PLAN_V1_EXAMPLE_JSON`) no longer advertise the removed fields.
+  Plans still carrying them keep parsing, since `PlanStepV1` has no `deny_unknown_fields`.
 - **Removed the unwired post-step replan-suppression gate and its text tables (#1424).**
   `plan_steps_are_redundant_after_completion`, `plan_step_requires_formal_execution`,
   `evaluate_turn_suppress_replanning`, the `Allow`/`DenySuppressReplanning` decision variants, the
