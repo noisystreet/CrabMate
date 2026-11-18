@@ -10,7 +10,7 @@ fn prose_before_first_fence(content: &str) -> String {
     content.split("```").next().unwrap_or("").trim().to_string()
 }
 
-/// 将已解析的 v1 规划格式化为与终答展示相同的 Markdown 有序列表（`1. \`id\`: description`），供 TUI/CLI 分步通知与气泡展示共用。
+/// 将已解析的 v1 规划格式化为与终答展示相同的 Markdown 有序列表（`1. \`id\`: description`）；仅本模块的展示入口使用。
 fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     use std::fmt::Write;
 

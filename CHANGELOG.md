@@ -42,6 +42,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   entry above. Kept: the tool-call redundant-probe gate (live via `outer_loop`) and the #1422 B1
   description tables used by `outer_loop_build_idle`. Plans still carrying `step_kind` keep parsing,
   since `PlanStepV1` has no `deny_unknown_fields`.
+  The same sweep removed the plan helpers orphaned by `chore(staged-removal)` —
+  `plan_steps_fingerprint`, `tool_name_implies_readonly_probe`,
+  `tool_name_implies_patch_write_progress`, plus one unused
+  `parse_agent_reply_plan_v1_from_assistant_message*` variant — and made five
+  display/parse helpers module-private instead of re-exported (#1435).
 
 ### Fixed
 
