@@ -10,87 +10,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Changed
+## [0.9.1] - 2026-11-18
 
-- **Fewer redundant-probe suppressions once a goal is met (#1422).** Plan-step description markers
-  now go through the same token-boundary matcher as the other text heuristics, so English markers no
-  longer hit word-internal substrings (`build` no longer matches `rebuild` unless the `re-` / `-ing`
-  form is listed explicitly). Expect **more tool calls and slightly higher token cost**, not fewer:
-  the miss direction is deliberately conservative. `make ` / `cmake` and the Chinese markers are
-  unchanged.
-- **Payload tool headers now carry an explicit `ok: true`** for `read_file` / `read_dir` /
-  `list_tree` / `search_in_files`, replacing the implicit "a header means success" convention.
-  Visible to clients in SSE `structured_preview`; `SSE_PROTOCOL_VERSION` stays **v2**.
-- **Auto experience summarization is now off by default (#1438).**
-  `long_term_memory_auto_summarize_experience` / `CM_LONG_TERM_MEMORY_AUTO_SUMMARIZE_EXPERIENCE`
-  defaults to **`false`**: the judgement "this failure→success is worth remembering" moves to the
-  model itself, which calls the `summarize_experience` tool (the shipped system prompt gained a
-  matching paragraph). With the server-side gate off by default, the keyword table behind
-  `user_message_suggests_task` decides nothing unless you re-enable the key, and `run_command`
-  build detection now reads the structured `invocation` instead of scanning output text.
-  Set the key to `true` to restore the previous server-side fallback. Deduplication
-  (`has_duplicate_text`), `max_entries` eviction and content validation are unchanged.
-
-### Removed
-
-- **Removed the build-idle「只说不做」correction (#1440).** `outer_loop_build_idle` is gone in full:
-  its three keyword tables (`BUILD_MARKERS` / `BUILD_ACTION_MARKERS` / `INTENT_MARKERS`), the
-  streak / feedback counters in `OuterLoopReflectMemo`, and the
-  `OuterLoopReflectPreGateReason::BuildIdleFeedback` variant. With it went
-  `plan_step_description_implies_build_execution` / `BUILD_EXECUTION_KEYWORDS` and the now-unused
-  `cm_agent::text_markers` module. Rationale: it was a four-layer keyword heuristic guarding a
-  failure mode ("promises to build, then calls no tool") that strong models rarely exhibit, while
-  false positives injected a user-visible「【编排纠偏】」turn. Truncated-answer and
-  missing-final-answer corrections stay unchanged; their shared prefix constant was renamed to
-  `OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX` (text stays【编排纠偏】).
-- **BREAKING: removed the orphaned acceptance verification kernel (#1429).** `AcceptanceSpec`,
-  `AcceptanceEvidence`, `VerifyOutcome`, `ExitCodePolicy`, `FileResolveKind`, `verify_against_spec`,
-  `verify_plan_step_acceptance_for_tool_message`, `parse_exit_code_from_combined_output`,
-  `effective_plan_step_acceptance` and `default_exit_code_for_build_execution_description` had no
-  production caller left after `chore(staged-removal)` deleted the staged engine and `GoalVerifier`
-  — only goldens and unit tests referenced them, and those went with them. The two survivors kept at
-  that point (`apply_executor_kind_acceptance_defaults` and `PlanStepAcceptance::is_effective`) were
-  themselves removed in the follow-up sweep below.
-- **BREAKING: removed the now-orphaned `PlanStepV1` acceptance / retry / transition fields (#1427).**
-  With the verifier gone (#1429), `acceptance` (`PlanStepAcceptance`, `JsonPathEqualsRule`),
-  `max_step_retries` and `transitions` (`PlanStepControlFlow`) had no reader left — and
-  `validate_plan_step_transitions` kept strictly validating a state machine that nothing executed.
-  Removed alongside them: `cm_agent/acceptance/` (whose only job was injecting `expect_exit_code`),
-  `align_plan_step_acceptance_with_executor_kind`, the `normalize_*_acceptance_in_place` helpers, and
-  the path-shape / keyword heuristics that fed them. `PlanStepV1` is now exactly `id` + `description`
-  + `workflow_node_id` + `executor_kind`. The prompt constants (`PLAN_V1_SCHEMA_RULES`,
-  `PLAN_V1_REWRITE_BRIEF_RULES`, `PLAN_V1_EXAMPLE_JSON`) no longer advertise the removed fields.
-  Plans still carrying them keep parsing, since `PlanStepV1` has no `deny_unknown_fields`.
-- **Removed the unwired post-step replan-suppression gate and its text tables (#1424).**
-  `plan_steps_are_redundant_after_completion`, `plan_step_requires_formal_execution`,
-  `evaluate_turn_suppress_replanning`, the `Allow`/`DenySuppressReplanning` decision variants, the
-  `suppress_replanning` golden rows and `PlanStepV1.step_kind` had no production caller — the only
-  wrapper was `#[cfg(test)]` and the golden header already said "production `outer_loop` not wired".
-  With them went `FOLLOWUP_WRITE_OR_FIX_MARKERS`, `REDUNDANT_PROBE_TEXT_MARKERS`,
-  `STEP_KIND_WRITE_OR_FIX` and `STEP_KIND_PROBE`, which supersedes the plan-step half of the #1422
-  entry above. Kept: the tool-call redundant-probe gate (live via `outer_loop`) and the #1422 B1
-  description tables used by `outer_loop_build_idle`. Plans still carrying `step_kind` keep parsing,
-  since `PlanStepV1` has no `deny_unknown_fields`.
-  The same sweep removed the plan helpers orphaned by `chore(staged-removal)` —
-  `plan_steps_fingerprint`, `tool_name_implies_readonly_probe`,
-  `tool_name_implies_patch_write_progress`, plus one unused
-  `parse_agent_reply_plan_v1_from_assistant_message*` variant — and made five
-  display/parse helpers module-private instead of re-exported (#1435).
-
-### Fixed
-
-- **A `"make\n"` marker could never match in the build-progress table (#1422).** The matcher
-  required a right-hand token boundary even when the marker itself ended in a newline, so a `make`
-  line followed by more output was never counted as build progress.
-
-## [0.9.1] - 2026-11-17
-
-**First pre-release after `v0.9.0`.** Everything below is the completion-judgement rework (#1401 / #1414 /
-  #1415). Two of its switches land **on by default**, so an untouched deployment does notice it: the Act
-  turn-start read-only narrowing now costs **one extra LLM call per turn**, and early stop has a single verdict
-  path — with `completion_judge_enabled` off, no `API_KEY`, or a failed judge call, **no turn stops early at
-  all** (it runs to the iteration cap). The offline keyword heuristics are gone, so the narrowing is also absent
-  when the gateway is unreachable (fail-open). **No SSE / HTTP wire change** — `SSE_PROTOCOL_VERSION` stays **v2**.
+**First stable tag after `v0.9.0`.** The `v0.9.1-alpha.0` pre-release carried the completion-judgement rework
+  (#1401 / #1414 / #1415); this cut adds the follow-up sweeps. Two of that rework's switches land **on by
+  default**, so an untouched deployment does notice it: the Act turn-start read-only narrowing now costs **one
+  extra LLM call per turn**, and early stop has a single verdict path — with `completion_judge_enabled` off, no
+  `API_KEY`, or a failed judge call, **no turn stops early at all** (it runs to the iteration cap). The offline
+  keyword heuristics are gone, so the narrowing is also absent when the gateway is unreachable (fail-open). On
+  top of that, auto experience summarization now defaults to **off** (#1438) and the 「只说不做」build-idle
+  correction is removed outright (#1440). **No SSE / HTTP wire change** — `SSE_PROTOCOL_VERSION` stays **v2**.
 
 ### Fixed
 
@@ -110,8 +39,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   nudge has a 2-injection budget; once exhausted the terminal fallback had nothing to emit and the turn ended
   with tool output only. It now falls back to a single-line, truncated digest of the last tool result
   (`stream_ended: fallback`).
+- **A `"make\n"` marker could never match in the build-progress table (#1422).** The matcher
+  required a right-hand token boundary even when the marker itself ended in a newline, so a `make`
+  line followed by more output was never counted as build progress.
 
 ### Changed
+
 - **Act turn-start read-only narrowing is now a semantic judgement, not keyword matching (#1401).**
   The old `at_turn_start` heuristics matched three substring tables: they missed explicit prohibitions
   such as 「别动代码」 while misfiring on `explainer` / `show token`. They are deleted and replaced by one
@@ -140,6 +73,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   when `completion_judge_enabled` is off, `API_KEY` is absent, or the judge fails, **no turn stops early** and it
   runs to the iteration cap. That is the accepted cost of a single verdict path. Golden coverage moved to
   `confirmed: true` / `false` rows on the `suppress_replanning` and `redundant_tools` cases.
+- **Fewer redundant-probe suppressions once a goal is met (#1422).** Plan-step description markers
+  now go through the same token-boundary matcher as the other text heuristics, so English markers no
+  longer hit word-internal substrings (`build` no longer matches `rebuild` unless the `re-` / `-ing`
+  form is listed explicitly). Expect **more tool calls and slightly higher token cost**, not fewer:
+  the miss direction is deliberately conservative. `make ` / `cmake` and the Chinese markers are
+  unchanged.
+- **Payload tool headers now carry an explicit `ok: true`** for `read_file` / `read_dir` /
+  `list_tree` / `search_in_files`, replacing the implicit "a header means success" convention.
+  Visible to clients in SSE `structured_preview`; `SSE_PROTOCOL_VERSION` stays **v2**.
+- **Auto experience summarization is now off by default (#1438).**
+  `long_term_memory_auto_summarize_experience` / `CM_LONG_TERM_MEMORY_AUTO_SUMMARIZE_EXPERIENCE`
+  defaults to **`false`**: the judgement "this failure→success is worth remembering" moves to the
+  model itself, which calls the `summarize_experience` tool (the shipped system prompt gained a
+  matching paragraph). With the server-side gate off by default, the keyword table behind
+  `user_message_suggests_task` decides nothing unless you re-enable the key, and `run_command`
+  build detection now reads the structured `invocation` instead of scanning output text.
+  Set the key to `true` to restore the previous server-side fallback. Deduplication
+  (`has_duplicate_text`), `max_entries` eviction and content validation are unchanged.
 
 ### Removed
 
@@ -156,6 +107,49 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `turn_completion_deny_reason` value emitted when a gate blocks also changed: `early_stop_not_allowed` is now
   `completion_not_confirmed` (the gate no longer has an evidence layer to name) — update any log filter or
   dashboard keyed on the old string.
+- **BREAKING: removed the orphaned acceptance verification kernel (#1429).** `AcceptanceSpec`,
+  `AcceptanceEvidence`, `VerifyOutcome`, `ExitCodePolicy`, `FileResolveKind`, `verify_against_spec`,
+  `verify_plan_step_acceptance_for_tool_message`, `parse_exit_code_from_combined_output`,
+  `effective_plan_step_acceptance` and `default_exit_code_for_build_execution_description` had no
+  production caller left after `chore(staged-removal)` deleted the staged engine and `GoalVerifier`
+  — only goldens and unit tests referenced them, and those went with them. The two survivors kept at
+  that point (`apply_executor_kind_acceptance_defaults` and `PlanStepAcceptance::is_effective`) were
+  themselves removed in the follow-up sweep below.
+- **BREAKING: removed the now-orphaned `PlanStepV1` acceptance / retry / transition fields (#1427).**
+  With the verifier gone (#1429), `acceptance` (`PlanStepAcceptance`, `JsonPathEqualsRule`),
+  `max_step_retries` and `transitions` (`PlanStepControlFlow`) had no reader left — and
+  `validate_plan_step_transitions` kept strictly validating a state machine that nothing executed.
+  Removed alongside them: `cm_agent/acceptance/` (whose only job was injecting `expect_exit_code`),
+  `align_plan_step_acceptance_with_executor_kind`, the `normalize_*_acceptance_in_place` helpers, and
+  the path-shape / keyword heuristics that fed them. `PlanStepV1` is now exactly `id` + `description`
+  + `workflow_node_id` + `executor_kind`. The prompt constants (`PLAN_V1_SCHEMA_RULES`,
+  `PLAN_V1_REWRITE_BRIEF_RULES`, `PLAN_V1_EXAMPLE_JSON`) no longer advertise the removed fields.
+  Plans still carrying them keep parsing, since `PlanStepV1` has no `deny_unknown_fields`.
+- **Removed the unwired post-step replan-suppression gate and its text tables (#1424).**
+  `plan_steps_are_redundant_after_completion`, `plan_step_requires_formal_execution`,
+  `evaluate_turn_suppress_replanning`, the `Allow`/`DenySuppressReplanning` decision variants, the
+  `suppress_replanning` golden rows and `PlanStepV1.step_kind` had no production caller — the only
+  wrapper was `#[cfg(test)]` and the golden header already said "production `outer_loop` not wired".
+  With them went `FOLLOWUP_WRITE_OR_FIX_MARKERS`, `REDUNDANT_PROBE_TEXT_MARKERS`,
+  `STEP_KIND_WRITE_OR_FIX` and `STEP_KIND_PROBE`, which supersedes the plan-step half of the #1422
+  entry above. Kept: the tool-call redundant-probe gate (live via `outer_loop`) and the #1422 B1
+  description tables — the latter did not survive the build-idle removal below. Plans still carrying
+  `step_kind` keep parsing, since `PlanStepV1` has no `deny_unknown_fields`.
+  The same sweep removed the plan helpers orphaned by `chore(staged-removal)` —
+  `plan_steps_fingerprint`, `tool_name_implies_readonly_probe`,
+  `tool_name_implies_patch_write_progress`, plus one unused
+  `parse_agent_reply_plan_v1_from_assistant_message*` variant — and made five
+  display/parse helpers module-private instead of re-exported (#1435).
+- **Removed the build-idle「只说不做」correction (#1440).** `outer_loop_build_idle` is gone in full:
+  its three keyword tables (`BUILD_MARKERS` / `BUILD_ACTION_MARKERS` / `INTENT_MARKERS`), the
+  streak / feedback counters in `OuterLoopReflectMemo`, and the
+  `OuterLoopReflectPreGateReason::BuildIdleFeedback` variant. With it went
+  `plan_step_description_implies_build_execution` / `BUILD_EXECUTION_KEYWORDS` and the now-unused
+  `cm_agent::text_markers` module. Rationale: it was a four-layer keyword heuristic guarding a
+  failure mode ("promises to build, then calls no tool") that strong models rarely exhibit, while
+  false positives injected a user-visible「【编排纠偏】」turn. Truncated-answer and
+  missing-final-answer corrections stay unchanged; their shared prefix constant was renamed to
+  `OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX` (text stays【编排纠偏】).
 
 ## [0.9.0] - 2026-11-15
 
@@ -3259,8 +3253,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
   extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.9.1-alpha.0...HEAD
-[0.9.1]: https://github.com/noisystreet/CrabMate/compare/v0.9.0...v0.9.1-alpha.0
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/noisystreet/CrabMate/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-beta.1...v0.9.0
 [0.8.1]: https://github.com/noisystreet/CrabMate/compare/v0.8.1-alpha.1...v0.8.1-beta.1
 [0.8.0]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...v0.8.0
