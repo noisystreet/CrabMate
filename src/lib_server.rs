@@ -72,8 +72,6 @@ pub use crate::cm_types as types;
 /// 这里只把结果类型留在 crate 内部可见。
 pub use crate::cm_llm::http_client;
 pub mod llm;
-/// 元对话门控补充（如「我刚才问了什么」类追问）。
-mod meta_dialogue;
 mod per_turn_flight;
 pub use process_handles::ProcessHandles;
 pub use process_handles::TurnProcessHandles;

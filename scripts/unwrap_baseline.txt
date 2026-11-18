@@ -34,7 +34,6 @@ src/cm_tools/tools/markdown_links/core.rs	4
 src/cm_workflow/author_validate.rs	4
 src/cm_workflow/execute/node.rs	1
 src/e2e_scenario.rs	3
-src/meta_dialogue.rs	1
 src/shutdown/signals.rs	2
 src/test_serve.rs	5
 src/web/workspace/clone_validate.rs	6
