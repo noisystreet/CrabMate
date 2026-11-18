@@ -401,21 +401,6 @@ pub fn align_plan_step_acceptance_with_executor_kind(step: &mut PlanStepV1) {
     }
 }
 
-/// 分阶段规划步列表的稳定性指纹（`id` + `executor_kind`），用于检测补丁/滚动视界重复规划。
-pub fn plan_steps_fingerprint(steps: &[PlanStepV1]) -> String {
-    steps
-        .iter()
-        .map(|s| {
-            format!(
-                "{}|{}",
-                s.id.trim().to_lowercase(),
-                s.executor_kind.map(|k| k.as_snake_case_str()).unwrap_or("")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(";;")
-}
-
 fn path_contains_build_dir(lower: &str) -> bool {
     lower.contains("/bin/") || lower.contains("/build/") || lower.contains("/target/")
 }

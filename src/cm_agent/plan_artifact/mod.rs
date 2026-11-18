@@ -12,20 +12,11 @@ pub use types::{
     PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1, agent_reply_plan_v1_to_json_string,
     plan_acceptance_path_looks_like_build_artifact, plan_artifact_error_log_summary,
     plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
-    plan_steps_fingerprint,
 };
 
-pub use display::{augment_agent_reply_plan_goal_for_display, prose_before_first_fence};
-pub use display::{
-    format_agent_reply_plan_for_display, format_plan_steps_markdown,
-    strip_agent_reply_plan_fence_blocks_for_display,
-};
-
-pub use fence::fenced_body_after_optional_jsonish_lang_label;
+pub use display::{format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display};
 
 pub use parse::{
-    assistant_merged_text_for_plan_artifact_parse,
-    parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids,
     parse_agent_reply_plan_v1_with_validate_only_binding_ids,
 };
 pub use parse::{parse_agent_reply_plan_v1, parse_agent_reply_plan_v1_from_assistant_message};
@@ -301,16 +292,13 @@ mod tests {
     fn augment_goal_prepends_breakdown_lead_when_only_in_first_step() {
         let step_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"以下是任务拆解。创建 hello.cpp"}]}"#;
         let content = format!("让我先规划一下任务步骤：\n```json\n{step_json}\n```\n");
-        let plan = parse_agent_reply_plan_v1(&content).unwrap();
-        let raw = prose_before_first_fence(&content);
-        let goal = crate::cm_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
-        let out = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
+        // 走公开入口：它在内部取围栏前正文、并把首步里的拆解引导句拼回目标段。
+        let out = format_agent_reply_plan_for_display(&content).expect("plan display");
         assert!(
             out.contains("以下是任务拆解"),
-            "应拼回首步里的拆解引导句: {}",
-            out
+            "应拼回首步里的拆解引导句: {out}"
         );
-        assert!(out.contains("让我先规划"), "{}", out);
+        assert!(out.contains("让我先规划"), "{out}");
     }
 
     #[test]
