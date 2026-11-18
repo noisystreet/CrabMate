@@ -276,7 +276,6 @@ mod validate_workflow_binding_tests {
             description: desc.into(),
             workflow_node_id: wf.map(str::to_string),
             executor_kind: None,
-            step_kind: None,
             acceptance: None,
             max_step_retries: None,
             transitions: None,
