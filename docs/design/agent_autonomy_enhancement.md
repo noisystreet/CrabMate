@@ -55,7 +55,7 @@
 | 路由 | Act 回合起点的**执行约束语义判定**（一次无工具短请求，可挂只读收窄）；Ask/Plan 跳过 | `TurnStartSnapshot::ActHeuristics` |
 | 预算 | 墙钟 / Token 粗估 / LLM 次数 + 迭代硬上限；耗尽即报错中止 | `src/cm_agent/turn_budget.rs`、`turn_loop/outer_loop.rs` |
 | 上下文 | 分级压缩：压旧工具正文 → 删最旧完整交互组，保工具链完整 | `src/agent/context_compaction/policy.rs` |
-| 验收内核 | **已删除**（#1429）：`AcceptanceSpec` / `verify_against_spec` 等整层移除（`staged-removal` 后无消费者）；仅 `apply_executor_kind_acceptance_defaults`、`is_effective` 保留 | `src/cm_agent/acceptance/` |
+| 验收内核 | **已整体删除**：校验层随 #1429 移除，`acceptance` 字段与 `cm_agent/acceptance/` 模块随后按 #1427 第 3 步删除（删除前已无读取者） | —（模块与字段均不存在） |
 | 完成证据（主路径） | **已接线**：`outer_loop` → `turn_early_stop_allowed_with_judge`（第 ② 层语义判定）；冗余工具抑制读 `PerCoordinator` 缓存的同一结论，两道门同源。**非**「靠模型自述」 | `turn_loop/turn_completion.rs`、`turn_loop/outer_loop.rs` |
 | 证据检测器覆盖 | **检测器已整层删除**（#1415）：第 ① 层不再自下结论，只剩 `evidence.rs` 的结构化事实采集供 judge 消费 | `policy/task_level_evidence/evidence.rs` |
 | 早停门 | 只有一个判定源：第 ② 层语义判定（`completion_judge_enabled`）；判定不可用即不早停，**无确定性短路** | `policy/turn_completion_decision.rs`、`turn_loop/turn_completion.rs` |

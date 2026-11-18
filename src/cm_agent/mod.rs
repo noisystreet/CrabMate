@@ -7,7 +7,6 @@
 //!
 //! 依赖链：`cm_types` → `cm_config` → `cm_tools` → **`cm_agent`** → 根包编排。
 
-pub mod acceptance;
 /// 完成判定第 ② 层契约（#1387 S0.5）：LLM 语义判定、锚点校验、可注入判定器。
 /// 设计见 `docs/design/completion_judge.md`。
 pub mod completion_judge;

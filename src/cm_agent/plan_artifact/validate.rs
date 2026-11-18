@@ -102,34 +102,6 @@ pub(super) fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), P
     validate_agent_reply_plan_v1_with_validate_only_binding_ids(p, None)
 }
 
-fn validate_plan_step_transitions(
-    p: &AgentReplyPlanV1,
-    step_index: usize,
-    transitions: &[super::PlanStepControlFlow],
-    seen_step_ids: &HashSet<String>,
-) -> Result<(), PlanArtifactError> {
-    for t in transitions {
-        if !seen_step_ids.contains(t.target_step_id.as_str())
-            && !p.steps.iter().any(|st| st.id == t.target_step_id)
-        {
-            return Err(PlanArtifactError::InvalidStep {
-                index: step_index,
-                reason: "transitions 包含不存在的 target_step_id",
-            });
-        }
-        #[allow(clippy::collapsible_if)]
-        if let Some(max) = t.max_loops {
-            if max > 20 {
-                return Err(PlanArtifactError::InvalidStep {
-                    index: step_index,
-                    reason: "transitions 中的 max_loops 不得超过 20",
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 fn invalid_plan_step(index: usize, reason: &'static str) -> PlanArtifactError {
     PlanArtifactError::InvalidStep { index, reason }
 }
@@ -185,7 +157,6 @@ fn validate_optional_workflow_node_id(
 }
 
 fn validate_single_plan_step_v1(
-    p: &AgentReplyPlanV1,
     step_index: usize,
     s: &super::PlanStepV1,
     seen_step_ids: &mut HashSet<String>,
@@ -195,9 +166,6 @@ fn validate_single_plan_step_v1(
         return Err(invalid_plan_step(step_index, "description 为空"));
     }
     validate_optional_workflow_node_id(s.workflow_node_id.as_deref(), step_index)?;
-    if let Some(ref transitions) = s.transitions {
-        validate_plan_step_transitions(p, step_index, transitions, seen_step_ids)?;
-    }
     Ok(())
 }
 
@@ -257,7 +225,7 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     }
     let mut seen_step_ids = HashSet::<String>::new();
     for (i, s) in p.steps.iter().enumerate() {
-        validate_single_plan_step_v1(p, i, s, &mut seen_step_ids)?;
+        validate_single_plan_step_v1(i, s, &mut seen_step_ids)?;
     }
     Ok(())
 }
@@ -276,9 +244,6 @@ mod validate_workflow_binding_tests {
             description: desc.into(),
             workflow_node_id: wf.map(str::to_string),
             executor_kind: None,
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
         }
     }
 

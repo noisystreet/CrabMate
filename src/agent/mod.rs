@@ -2,8 +2,6 @@
 //!
 //! **领域层**（规划产物、墙钟预算等）见 **`cm_agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
 
-/// 验收规则内核（规范化 spec + 证据 → 判定）。
-pub use crate::cm_agent::acceptance;
 pub mod agent_turn;
 pub use crate::cm_agent::context_budget_pressure;
 /// 最终请求 Token 预算、分项估算与完整交互组压缩报告。
