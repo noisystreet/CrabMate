@@ -1,4 +1,4 @@
-//! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
+//! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 的共享判定。
 
 use crate::cm_names as tool_names;
 use crate::cm_types::{Message, ToolCall};

@@ -1,6 +1,6 @@
 //! 回合级「目标完成 / 早停 / 冗余工具抑制 / 终答纠偏」共用判定。
 //!
-//! 纯判定核（[`TurnCompletionDecision`] / evaluate_*）已下沉 **`crate::cm_agent`**；本文件保留
+//! 纯判定核（[`TurnCompletionDecision`] / evaluate_*）已下沉 **`crate::agent::agent_turn::policy`**；本文件保留
 //! 外循环纠偏文案与依赖 `tool_result` 信封的终答空答检测。
 
 #[cfg(test)]
