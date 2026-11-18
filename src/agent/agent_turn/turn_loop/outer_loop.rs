@@ -601,7 +601,7 @@ pub(crate) async fn run_agent_outer_loop(
 mod tests {
     use super::{OuterLoopIterationExit, turn_budget_deny_to_turn_error};
     use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
-    use crate::agent::agent_turn::turn_completion::{
+    use crate::agent::agent_turn::policy::completion_suppression::{
         tool_call_is_redundant_after_completion, tool_calls_are_redundant_after_completion,
     };
     use crate::agent::turn_budget::{

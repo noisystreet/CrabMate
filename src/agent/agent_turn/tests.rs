@@ -236,7 +236,7 @@ mod workflow_binding_context_tests {
 }
 
 mod multi_turn_orchestration_fixture_tests {
-    use crate::agent::agent_turn::turn_completion::tool_calls_are_redundant_after_completion;
+    use crate::agent::agent_turn::policy::completion_suppression::tool_calls_are_redundant_after_completion;
     use crate::types::{FunctionCall, ToolCall};
 
     #[test]

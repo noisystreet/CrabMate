@@ -21,7 +21,6 @@ pub mod turn_orchestration;
 pub mod turn_route_decision;
 
 pub use completion_suppression::{
-    plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
     redundant_tool_names_for_log, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion, tool_calls_are_redundant_when_goal_satisfied,
 };
@@ -44,8 +43,7 @@ pub use tool_execution::{
     resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_completion_decision::{
-    TurnCompletionDecision, evaluate_turn_redundant_tools, evaluate_turn_suppress_replanning,
-    log_turn_completion_decision,
+    TurnCompletionDecision, evaluate_turn_redundant_tools, log_turn_completion_decision,
 };
 pub use turn_orchestration::{ReActBecause, TurnOrchestrationMode, TurnResolution};
 pub use turn_route_decision::{
