@@ -32,8 +32,7 @@
 主 Agent 在**规划（P）—执行（E）—反思 / 重试（R）**链路上可能产生：规划与工具事实不一致、步间假设漂移、反思后仍遗漏风险等情况。已有能力包括：
 
 - **确定性验证**：**本条已失效**——分阶段 `steps[].acceptance` + `step_verifier`、分层 `GoalVerifier` 均已随
-  `chore(staged-removal)` 删除（#1429）；`acceptance` 字段现无运行时读取者，`is_effective` 只在解析期
-  用于「空对象置 `None`」。
+  #1429 删除；`acceptance` 字段与相关模块随后按 #1427 第 3 步整体删除，**已不存在**。
 - **终答形态与重写**：**`final_plan_requirement`** + **`plan_rewrite_max_attempts`**（**`per_coord::after_final_assistant`** / **`final_plan_gate`**）。  
 - **可选侧向一致性**：**`final_plan_semantic_check_*`**（**`per_plan_semantic_check`**）：在特定条件下对「终答规划 vs 近期工具摘要」
   做一次**无工具**短调用，默认 **fail-open**。

@@ -76,27 +76,7 @@ This document describes built-in tools, common function-calling JSON examples, a
     {
       "id": "read-only-survey",
       "description": "Read-only scan of YOUR_ANCHOR_FILE.md",
-      "executor_kind": "review_readonly",
-      "max_step_retries": 1
-    }
-  ]
-}
-```
-
-```json
-{
-  "type": "agent_reply_plan",
-  "version": 1,
-  "steps": [
-    {
-      "id": "run-checks",
-      "description": "Run a placeholder check and assert stdout/exit code",
-      "executor_kind": "test_runner",
-      "max_step_retries": 2,
-      "acceptance": {
-        "expect_exit_code": 0,
-        "expect_stdout_contains": "YOUR_EXPECTED_SUBSTRING"
-      }
+      "executor_kind": "review_readonly"
     }
   ]
 }

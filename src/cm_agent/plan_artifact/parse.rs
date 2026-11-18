@@ -1,7 +1,5 @@
 use super::fence::strip_optional_json_fence_label;
-use super::types::{
-    AgentReplyPlanV1, PlanArtifactError, normalize_agent_reply_plan_v1_acceptance_in_place,
-};
+use super::types::{AgentReplyPlanV1, PlanArtifactError};
 use super::validate::{
     validate_agent_reply_plan_v1, validate_agent_reply_plan_v1_with_validate_only_binding_ids,
 };
@@ -16,8 +14,6 @@ pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, Plan
             continue;
         };
         if validate_agent_reply_plan_v1(&plan).is_ok() {
-            let mut plan = plan;
-            finalize_agent_reply_plan_v1_acceptance_in_place(&mut plan);
             return Ok(plan);
         }
     }
@@ -40,20 +36,10 @@ pub fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
         )
         .is_ok()
         {
-            let mut plan = plan;
-            finalize_agent_reply_plan_v1_acceptance_in_place(&mut plan);
             return Ok(plan);
         }
     }
     Err(PlanArtifactError::NotFound)
-}
-
-/// 对齐/剥离验收字段后注入 `executor_kind` 缺省（分阶段与分层共用 [`crate::cm_agent::acceptance`]）。
-fn finalize_agent_reply_plan_v1_acceptance_in_place(plan: &mut AgentReplyPlanV1) {
-    normalize_agent_reply_plan_v1_acceptance_in_place(plan);
-    for step in &mut plan.steps {
-        crate::cm_agent::acceptance::apply_executor_kind_acceptance_defaults(step);
-    }
 }
 
 /// 合并 `reasoning_details`→`reasoning_content` 后与正文拼接，供 [`parse_agent_reply_plan_v1`] 使用（网关常把 `agent_reply_plan` 放在思维链字段）。

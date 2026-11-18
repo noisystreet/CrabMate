@@ -7,9 +7,9 @@ mod types;
 mod validate;
 
 pub use types::{
-    AgentReplyPlanV1, JsonPathEqualsRule, PLAN_V1_EXAMPLE_JSON, PLAN_V1_REWRITE_BRIEF_RULES,
-    PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, PlanArtifactError, PlanStepAcceptance,
-    PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1, agent_reply_plan_v1_to_json_string,
+    AgentReplyPlanV1, PLAN_V1_EXAMPLE_JSON, PLAN_V1_REWRITE_BRIEF_RULES,
+    PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, PlanArtifactError, PlanStepExecutorKind,
+    PlanStepV1, agent_reply_plan_v1_to_json_string,
     plan_artifact_error_log_summary, plan_step_description_implies_build_execution,
 };
 
@@ -56,9 +56,6 @@ mod tests {
                 description: "x".into(),
                 workflow_node_id: None,
                 executor_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
             }],
             no_task: false,
         };
@@ -71,9 +68,6 @@ mod tests {
                 description: "x".into(),
                 workflow_node_id: Some("a".into()),
                 executor_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
             }],
             no_task: false,
         };
@@ -87,18 +81,12 @@ mod tests {
                     description: "x".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "y".into(),
                     workflow_node_id: Some("b".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
             ],
             no_task: false,
@@ -154,9 +142,6 @@ mod tests {
                 description: "do".into(),
                 workflow_node_id: Some("fmt".into()),
                 executor_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
             }],
             no_task: false,
         };
@@ -175,18 +160,12 @@ mod tests {
                     description: "b".into(),
                     workflow_node_id: Some("b".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s1".into(),
                     description: "a".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
             ],
             no_task: false,
@@ -207,18 +186,12 @@ mod tests {
                     description: "x".into(),
                     workflow_node_id: Some("dup".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "y".into(),
                     workflow_node_id: Some("dup".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
             ],
             no_task: false,
@@ -241,18 +214,12 @@ mod tests {
                     description: "a".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "b".into(),
                     workflow_node_id: None,
                     executor_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
                 },
             ],
             no_task: false,
@@ -316,176 +283,13 @@ mod tests {
         );
     }
 
-    /// #1427 第 3 步：只读步的 `expect_file_exists` 不再按「像不像二进制」剔除。
-    ///
-    /// 原实现靠路径形状（`/bin/` 前缀）把它剥掉；但只读步验收「某文件已存在」是合法用法
-    /// （如「检查构建产物是否就绪」），且验收内核已随 #1429 移除、无人读取被剥的字段。
     #[test]
-    fn review_readonly_keeps_file_acceptance_regardless_of_path_shape() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"unpack","executor_kind":"review_readonly","acceptance":{"expect_file_exists":"hpcg/bin/xhpcg"}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        assert_eq!(
-            p.steps[0]
-                .acceptance
-                .as_ref()
-                .and_then(|a| a.expect_file_exists.as_deref()),
-            Some("hpcg/bin/xhpcg"),
-            "路径形状不应再决定字段去留"
-        );
-    }
-
-    #[test]
-    fn review_readonly_keeps_doc_file_acceptance() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"read","executor_kind":"review_readonly","acceptance":{"expect_file_exists":"proj/README.md"}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        assert_eq!(
-            p.steps[0]
-                .acceptance
-                .as_ref()
-                .and_then(|a| a.expect_file_exists.as_deref()),
-            Some("proj/README.md")
-        );
-    }
-
-    #[test]
-    fn test_runner_keeps_binary_file_acceptance() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"build","executor_kind":"test_runner","acceptance":{"expect_file_exists":"hpcg/bin/xhpcg"}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        assert_eq!(
-            p.steps[0]
-                .acceptance
-                .as_ref()
-                .and_then(|a| a.expect_file_exists.as_deref()),
-            Some("hpcg/bin/xhpcg")
-        );
-    }
-
-    /// #1427 第 3 步：无 `executor_kind` 的解压步不再按路径形状剥 `expect_file_exists`。
-    ///
-    /// 解压步仍会剥命令流类验收（`expect_stdout_contains` 等，见
-    /// `unpack_step_strips_stdout_acceptance_keeps_file_exists`）——那是按工具语义剥，
-    /// 不依赖「路径像不像二进制」。
-    #[test]
-    fn null_executor_unpack_step_keeps_file_acceptance() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"解压源码包","acceptance":{"expect_file_exists":"proj/bin/app"}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        assert_eq!(
-            p.steps[0]
-                .acceptance
-                .as_ref()
-                .and_then(|a| a.expect_file_exists.as_deref()),
-            Some("proj/bin/app")
-        );
-    }
-
-    /// #1401 #4：描述**漏词**（既不像构建、也不像只读）时不下结论——保留验收，而不是静默剥掉。
-    ///
-    /// 原实现在 `executor_kind.is_none()` 时无条件进入剥离分支，于是「模型没指定 executor +
-    /// 描述没命中任何关键词」也会让 `expect_exit_code` 消失，验收变成空、这一步等于不验。
-    ///
-    /// 现在描述完全不参与判定，「漏词」已不可能导致剥离（#1427 第 3 步）。
-    #[test]
-    fn neutral_description_keeps_build_acceptance() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"run the suites","acceptance":{"expect_exit_code":0}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        let acc = p.steps[0].acceptance.as_ref().expect("验收应保留");
-        assert_eq!(acc.expect_exit_code, Some(0), "漏词时不得静默剥掉验收");
-    }
-
-    /// 对照：步描述**不再**参与判定——「查看目录结构」这类只读准备措辞不剥验收。
-    ///
-    /// 原实现靠 `READONLY_SETUP_KEYWORDS` 命中就剥；关键词补不完，且「分析并修复」这类
-    /// 已授权改动的描述同样命中「分析」，会把验证要求误删（#1427 第 3 步移除）。
-    #[test]
-    fn readonly_setup_description_no_longer_strips_acceptance() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"查看目录结构","acceptance":{"expect_exit_code":0}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        let acc = p.steps[0].acceptance.as_ref().expect("描述不参与判定");
-        assert_eq!(acc.expect_exit_code, Some(0));
-    }
-
-
-    /// 解压步不再按描述剥命令流验收（`UNPACK_KEYWORDS` 已随 #1427 第 3 步移除）。
-    #[test]
-    fn unpack_step_keeps_all_acceptance_fields() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"unpack-hpcg","description":"解压 hpcg 压缩包","acceptance":{"expect_stdout_contains":"hpcg-HPCG","expect_file_exists":"hpcg-HPCG-release-3-1-0"}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        let acc = p.steps[0].acceptance.as_ref().expect("acceptance");
-        assert_eq!(acc.expect_stdout_contains.as_deref(), Some("hpcg-HPCG"));
-        assert_eq!(
-            acc.expect_file_exists.as_deref(),
-            Some("hpcg-HPCG-release-3-1-0")
-        );
-    }
-
-    #[test]
-    fn parse_normalizes_empty_acceptance_object_to_none() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do","acceptance":{}}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        assert!(p.steps[0].acceptance.is_none());
-    }
-
-    #[test]
-    fn parse_injects_test_runner_default_exit_code() {
-        let json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"t","description":"cargo test","executor_kind":"test_runner"}]}"#;
-        let p = parse_agent_reply_plan_v1(json).expect("parse");
-        let acc = p.steps[0].acceptance.as_ref().expect("defaults injected");
-        assert_eq!(acc.expect_exit_code, Some(0));
-    }
-
-    #[test]
-    fn plan_step_acceptance_is_effective_false_for_empty_object_fields() {
-        let a = PlanStepAcceptance {
-            expect_exit_code: None,
-            expect_stdout_contains: None,
-            expect_stderr_contains: None,
-            expect_file_exists: None,
-            expect_json_path_equals: None,
-            expect_http_status: None,
-        };
-        assert!(!a.is_effective());
-    }
-
-    #[test]
-    fn plan_step_acceptance_compact_reference_skips_empty() {
-        let a = PlanStepAcceptance {
-            expect_exit_code: None,
-            expect_stdout_contains: None,
-            expect_stderr_contains: None,
-            expect_file_exists: None,
-            expect_json_path_equals: None,
-            expect_http_status: None,
-        };
-        assert!(a.compact_reference_for_planner_feedback().is_none());
-    }
-
-    #[test]
-    fn plan_step_acceptance_compact_reference_joins_fields() {
-        let a = PlanStepAcceptance {
-            expect_exit_code: Some(0),
-            expect_stdout_contains: Some("ok".into()),
-            expect_stderr_contains: None,
-            expect_file_exists: Some("p.md".into()),
-            expect_json_path_equals: None,
-            expect_http_status: Some(200),
-        };
-        let s = a.compact_reference_for_planner_feedback().expect("ref");
-        assert!(s.contains("expect_exit_code=0"));
-        assert!(s.contains("expect_stdout_contains=ok"));
-        assert!(s.contains("expect_file_exists=p.md"));
-        assert!(s.contains("expect_http_status=200"));
-    }
-
-    #[test]
-    fn plan_v1_example_json_is_single_test_runner_with_acceptance() {
+    fn plan_v1_example_json_is_single_test_runner() {
         let p = parse_agent_reply_plan_v1(PLAN_V1_EXAMPLE_JSON).expect("PLAN_V1_EXAMPLE_JSON");
         assert_eq!(p.steps.len(), 1);
         let step = &p.steps[0];
         assert_eq!(step.id, "verify-cargo-check");
         assert_eq!(step.executor_kind, Some(PlanStepExecutorKind::TestRunner));
-        let acc = step.acceptance.as_ref().expect("acceptance");
-        assert_eq!(acc.expect_exit_code, Some(0));
-        assert_eq!(acc.expect_stdout_contains.as_deref(), Some("Finished"));
     }
 
     #[test]

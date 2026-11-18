@@ -494,11 +494,6 @@ mod tests {
             base_len * 2 < rules_len,
             "rewrite user should omit full SCHEMA_RULES: base_len={base_len} rules_len={rules_len}"
         );
-        // 长文细则中的标志性字段名不应出现在短重写底座里
-        assert!(
-            !base.contains("expect_json_path_equals"),
-            "rewrite user must not embed full acceptance schema rules"
-        );
         assert!(base.contains(PLAN_V1_REWRITE_EXAMPLE_JSON));
         assert!(base.contains("agent_reply_plan"));
     }
