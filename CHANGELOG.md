@@ -32,6 +32,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   — only goldens and unit tests referenced them, and those went with them. Kept:
   `apply_executor_kind_acceptance_defaults` (`plan_artifact/parse.rs`) and
   `PlanStepAcceptance::is_effective` (redundancy suppression) — both still have callers.
+- **Removed the unwired post-step replan-suppression gate and its text tables (#1424).**
+  `plan_steps_are_redundant_after_completion`, `plan_step_requires_formal_execution`,
+  `evaluate_turn_suppress_replanning`, the `Allow`/`DenySuppressReplanning` decision variants, the
+  `suppress_replanning` golden rows and `PlanStepV1.step_kind` had no production caller — the only
+  wrapper was `#[cfg(test)]` and the golden header already said "production `outer_loop` not wired".
+  With them went `FOLLOWUP_WRITE_OR_FIX_MARKERS`, `REDUNDANT_PROBE_TEXT_MARKERS`,
+  `STEP_KIND_WRITE_OR_FIX` and `STEP_KIND_PROBE`, which supersedes the plan-step half of the #1422
+  entry above. Kept: the tool-call redundant-probe gate (live via `outer_loop`) and the #1422 B1
+  description tables used by `outer_loop_build_idle`. Plans still carrying `step_kind` keep parsing,
+  since `PlanStepV1` has no `deny_unknown_fields`.
 
 ### Fixed
 
