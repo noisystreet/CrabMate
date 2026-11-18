@@ -1,4 +1,4 @@
-//! 回合级「目标完成 / 早停 / 冗余工具抑制 / 终答纠偏 / 步后抑规划」共用判定。
+//! 回合级「目标完成 / 早停 / 冗余工具抑制 / 终答纠偏」共用判定。
 //!
 //! 纯判定核（[`TurnCompletionDecision`] / evaluate_*）已下沉 **`crate::cm_agent`**；本文件保留
 //! 外循环纠偏文案与依赖 `tool_result` 信封的终答空答检测。
@@ -7,8 +7,6 @@
 #[path = "turn_completion_golden.rs"]
 mod turn_completion_golden;
 
-#[cfg(test)]
-pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::evaluate_turn_suppress_replanning;
 pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_redundant_tools, log_turn_completion_decision,
 };
@@ -16,13 +14,6 @@ pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::{
 pub(crate) use crate::agent::agent_turn::policy::completion_suppression::redundant_tool_names_for_log;
 
 pub(crate) use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
-
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use crate::agent::agent_turn::policy::completion_suppression::{
-    plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
-    tool_calls_are_redundant_after_completion,
-};
 
 use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
@@ -149,23 +140,6 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
     evaluate_turn_redundant_tools(tool_calls, messages, completion_confirmed).is_allow()
 }
 
-/// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
-///
-/// 生产 outer_loop 尚未接线；仅单测与金样使用。
-#[cfg(test)]
-pub(crate) fn turn_suppress_completed_replanning(
-    entered_from_step_execution_round: bool,
-    steps: &[crate::agent::plan_artifact::PlanStepV1],
-    completion_confirmed: bool,
-) -> bool {
-    evaluate_turn_suppress_replanning(
-        entered_from_step_execution_round,
-        steps,
-        completion_confirmed,
-    )
-    .is_allow()
-}
-
 fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
     let Some(user_idx) = last_real_user_message_index(messages, false) else {
         return false;
@@ -282,7 +256,7 @@ mod tests {
     use super::*;
     use crate::types::Message;
 
-    use crate::test_fixtures::{msg, step, tool_env};
+    use crate::test_fixtures::{msg, tool_env};
 
     /// #1414：工具轮的 assistant 只有 `tool_calls`、正文为空 → 视为「尚无可见终答」。
     ///
@@ -405,20 +379,6 @@ mod tests {
         let fp1 = evidence_fingerprint(&EvidenceSet::collect(&one));
         let fp2 = evidence_fingerprint(&EvidenceSet::collect(&two));
         assert_ne!(fp1, fp2);
-    }
-
-    /// 未确认完成时，步后抑规划不得放行。
-    #[test]
-    fn probe_only_replan_not_suppressed_when_not_confirmed() {
-        let steps = vec![step("summary", Some("summary"), "最终汇报")];
-        assert!(!turn_suppress_completed_replanning(true, &steps, false));
-    }
-
-    /// 已确认完成时，仅探针/总结类的新规划应被抑制（保住正向覆盖）。
-    #[test]
-    fn probe_only_replan_suppressed_when_confirmed() {
-        let steps = vec![step("summary", Some("summary"), "最终汇报")];
-        assert!(turn_suppress_completed_replanning(true, &steps, true));
     }
 
     fn list_tree_probe() -> ToolCall {

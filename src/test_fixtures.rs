@@ -15,8 +15,6 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "server")]
 use serde::de::DeserializeOwned;
 
-#[cfg(feature = "server")]
-use crate::cm_agent::plan_artifact::PlanStepV1;
 #[cfg(feature = "protocol")]
 use crate::cm_types::Message;
 
@@ -134,22 +132,4 @@ pub(crate) fn tool_env(name: &str, summary: &str, output: &str) -> Message {
             None,
         ),
     )
-}
-
-/// `PlanStepV1` 测试构造器：只填 `id` / `step_kind` / `description`，其余字段留 `None`。
-///
-/// **仅 `server` feature**（`cm_agent` 随 `lib_server.rs` 编译）：此前
-/// `turn_completion` 与 `completion_suppression` 各抄一份同构副本（#1241）。
-#[cfg(feature = "server")]
-pub(crate) fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
-    PlanStepV1 {
-        id: id.to_string(),
-        description: description.to_string(),
-        workflow_node_id: None,
-        executor_kind: None,
-        step_kind: kind.map(str::to_string),
-        acceptance: None,
-        max_step_retries: None,
-        transitions: None,
-    }
 }
