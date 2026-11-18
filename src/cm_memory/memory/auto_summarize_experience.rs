@@ -108,7 +108,7 @@ fn is_build_verify_tool(name: &str) -> bool {
 
 /// `run_command` 这条工具消息是否在跑构建 / 测试。
 ///
-/// **优先读结构化 `invocation`**（与 `outer_loop_build_idle` / `evidence.rs` 同口径、
+/// **优先读结构化 `invocation`**（与 `evidence.rs` 同口径、
 /// 同一个 `command_line_looks_like_verify`，见 #1422 A5）；只有缺少信封的旧消息才回落到
 /// [`run_command_looks_like_build`] 的正文关键词。
 fn run_command_is_build(content: &str) -> bool {
@@ -120,7 +120,7 @@ fn run_command_is_build(content: &str) -> bool {
 
 /// 取 `crabmate_tool.structured_payload.invocation`（完整命令行）。
 ///
-/// 空串等同「没有 invocation」：与 `outer_loop_build_idle::run_command_invocation` 同口径，
+/// 空串等同「没有 invocation」：与 `evidence.rs` 同口径，
 /// 否则「字段存在但解析为空」的消息会走「结构化判定为假」而**不**回落到正文。
 fn run_command_invocation(raw: &str) -> Option<String> {
     let env = normalize_tool_message_content(raw)?;

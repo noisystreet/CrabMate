@@ -136,7 +136,7 @@
 | 3 | 只读身份变粗 | 写效应名单只含 `cargo_test` / `cargo_run`（2026-10-28 起；`check` / `clippy` 仍算只读） | `check` / `clippy` 当前算只读，`test` / `run` 算写。合并成单个 `cargo` 后整族只能按写处理（按工具名判定），`check` / `clippy` 会丢掉只读重试、`Plan`·`Ask` 门控与 TTL 缓存（与 `gh_*` 合并同型代价） |
 | 4 | 并行只读批前缀失配 | `builtin_parallel_sync_prefix_hit` 的前缀表含 `"cargo_"`（带下划线） | 改名成 `cargo` 后**不再命中**，会重新进入并行批判定，须同步补 `"cargo"` |
 | 5 | 工作流 / fixtures 大面积引用 | `cm_workflow/workflow_templates.rs`（`rust_ci_light` 三节点）、`cm_workflow/tests.rs`、`examples/workflows/*.yaml`、`fixtures/workflows/*.yaml` | 10+ 处 `tool: cargo_check` / `cargo_clippy` / `cargo_test` 需逐一改写，并同步 `.expected.json` |
-| 6 | 按名 `match` 的语义分支 | `auto_summarize_experience.rs`、`outer_loop_build_idle.rs`、`dev_tag.rs`、`step_executor_policy.rs` | 构建/质量识别、经验提炼、计划执行器测试运行器名单各有一份工具名清单 |
+| 6 | 按名 `match` 的语义分支 | `auto_summarize_experience.rs`、`dev_tag.rs`、`step_executor_policy.rs` | 构建/质量识别、经验提炼、计划执行器测试运行器名单各有一份工具名清单 |
 
 **不受影响**：`error_code`（`cargo_check_failed` 等）由工具名自动派生，合并后自然成为 `cargo_failed`，无需额外改动；
   `test_result_cache` 的指纹 `cargo_test_args_fingerprint` 只需把 `action` 纳入指纹输入。

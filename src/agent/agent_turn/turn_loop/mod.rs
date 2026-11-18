@@ -10,7 +10,6 @@ pub(crate) mod check_abort;
 pub(crate) mod context_timeline_sse;
 pub(crate) mod orchestration_route;
 pub(crate) mod outer_loop;
-pub(crate) mod outer_loop_build_idle;
 pub(crate) mod outer_loop_reflect;
 pub(crate) mod react_turn;
 pub(crate) mod run_dispatch;

@@ -19,7 +19,6 @@ use crate::types::{
     Message, USER_CANCELLED_FINISH_REASON, is_execution_constraint_ephemeral_system,
 };
 
-use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
 use crate::agent::agent_turn::policy::outer_loop_driver::OuterLoopDriver;
 use crate::agent::agent_turn::policy::outer_loop_fsm::{
     OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl,
@@ -355,9 +354,6 @@ async fn outer_loop_post_tools_exit(
         "outer_loop tools execute"
     );
     outer_loop_execute_tools_round(p, per_coord, msg).await?;
-    if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
-        per_coord.reset_outer_loop_build_idle_streak();
-    }
     // 「截断 + 工具调用」经 `ProceedToExecuteTools` 跳过 stop-turn 纠偏；
     // 工具结果回到下一轮模型前补注入续写纠偏，并强制继续外循环以消费之。
     let truncated_feedback_injected =

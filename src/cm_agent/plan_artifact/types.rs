@@ -2,7 +2,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::cm_agent::text_markers::text_matches_any;
 
 /// 规划步骤 `id` / 可选 `workflow_node_id` 的语法：稳定、可日志引用，并与工作流节点 `id` 常见字符集对齐。
 static PLAN_STEP_ID_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -63,62 +62,6 @@ pub struct PlanStepV1 {
     /// 可选：本步执行子循环的工具角色（子代理）；省略则全量工具。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_kind: Option<PlanStepExecutorKind>,
-}
-
-/// 步描述是否**命中**任一关键词（`text_markers` 的单一实现；#1239 前各抄一份）。
-///
-/// #1422 B1：英文标记按 token 边界匹配，中文保留子串语义。
-/// 方向取「漏词即保守」：少命中 ⇒ 少触发「只说不做」纠偏，
-/// 而不是把文案猜测做得更全。唯一例外是 `BUILD_EXECUTION_KEYWORDS` 里显式补回的动词变形。
-fn plan_step_description_matches_any(desc: &str, keywords: &[&str]) -> bool {
-    text_matches_any(&desc.to_lowercase(), keywords)
-}
-
-/// 编译 / 构建 / 测试执行阶段的关键词。
-///
-/// 走 token 边界后 `build` 不再命中 `rebuild` / `builds`、`compile` 不再命中 `recompile`。
-/// 补偿判据**只**覆盖两族：`re-` 前缀（`rebuild` / `recompile`）与 `-ing`（`building` /
-/// `compiling`）——它们是描述「这一步在做什么」时的高频形态，漏掉会让
-/// `outer_loop_task_implies_build_execution` 少触发「只说不做」纠偏。
-/// `-s` 形式（`builds`）**刻意不补**：任务描述多为祈使句，且漏词落在保守侧（少触发纠偏），
-/// 不为此把表撑大。
-const BUILD_EXECUTION_KEYWORDS: &[&str] = &[
-    "编译",
-    "构建",
-    "build",
-    "building",
-    "rebuild",
-    "compile",
-    "compiling",
-    "recompile",
-    "make ",
-    "cmake",
-    "link",
-    "test_runner",
-    "运行测试",
-    "跑测试",
-    "cargo test",
-    "cargo build",
-    "pytest",
-    "go test",
-    "ninja",
-    "meson",
-];
-
-/// 步描述是否像「编译/构建/测试执行」阶段（而非仅解压/阅读/分析）。
-///
-/// # 这是意图猜测，不是完备判据
-///
-/// 本函数靠**自然语言描述**反推执行语义，两头都不通用：词形态收不全（`build` / `builds` /
-/// `built` / `rebuild`）、构建入口枚举不完（`just` / `zig build` / `dotnet build` / `gradle` …）。
-/// 补词只能缩小偏差，**不能收敛——不要靠往表里加词来「修」漏判**。
-///
-/// 现存消费者只剩 `outer_loop_task_implies_build_execution`（`outer_loop_build_idle` 的
-/// 「只说不做」纠偏）：输入只有用户任务原文，注定只能猜（#1422 非目标）。
-/// `acceptance` 相关裁剪已整体删除（#1427 第 3 步）；
-/// `default_exit_code_for_build_execution_description` 亦随 #1429 删除。
-pub fn plan_step_description_implies_build_execution(desc: &str) -> bool {
-    plan_step_description_matches_any(desc, BUILD_EXECUTION_KEYWORDS)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,40 +158,4 @@ pub fn agent_reply_plan_v1_to_json_string(
     plan: &AgentReplyPlanV1,
 ) -> Result<String, serde_json::Error> {
     serde_json::to_string(plan)
-}
-
-#[cfg(test)]
-mod text_marker_tests {
-    use super::*;
-
-    /// #1422 B1 golden：英文标记走 token 边界，词内子串不再误命中。
-    #[test]
-    fn build_execution_ignores_word_internal_substrings() {
-        assert!(!plan_step_description_implies_build_execution(
-            "summarize the notes"
-        ));
-        // 补偿词覆盖被边界收窄掉的真实语义。
-        assert!(plan_step_description_implies_build_execution(
-            "rebuild the crate"
-        ));
-        assert!(plan_step_description_implies_build_execution(
-            "building the crate"
-        ));
-    }
-
-    /// 中文标记保留子串语义（中文没有词边界可依）。
-    #[test]
-    fn cjk_markers_keep_substring_semantics() {
-        assert!(plan_step_description_implies_build_execution("编译并运行"));
-    }
-
-    /// `make ` 的尾随空格是「构建」与「Makefile 文件名」的唯一区分线索。
-    #[test]
-    fn trailing_space_make_marker_needs_a_following_space() {
-        assert!(plan_step_description_implies_build_execution("make -j8"));
-        assert!(!plan_step_description_implies_build_execution(
-            "makefile cleanup"
-        ));
-    }
-
 }

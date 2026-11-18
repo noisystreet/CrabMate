@@ -6,8 +6,8 @@
 /// 无工具规划轮 tool_calls 拒绝后的一次性重写约束 user 首行（同一来源见 `cm_types`）。
 pub use crate::cm_types::STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX as STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX;
 
-/// 外循环构建空转纠偏 user 首行（与 `outer_loop_build_idle` / `turn_completion` 对齐）。
-pub const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
+/// 外循环纠偏 user 首行（截断 / 终答缺失纠偏共用；与 `turn_completion` 对齐）。
+pub const OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX: &str = "【编排纠偏】";
 
 /// 长期记忆召回注入正文前缀（为 `long_term_memory::format_ltm_injection_body` 的前缀；无 `user.name` 时的兜底识别）。
 pub const LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX: &str = "以下为与当前问题可能相关的长期记忆";
@@ -54,7 +54,7 @@ pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
         || is_long_term_memory_injected_user_content(s)
         || is_context_summary_injected_user_content(s)
         || s.trim_start()
-            .starts_with(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX)
+            .starts_with(OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX)
 }
 
 #[cfg(test)]

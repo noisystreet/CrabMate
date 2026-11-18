@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **`RunLoopTurnState`** | `src/agent/agent_turn/host/params.rs` | `messages_buf` / `messages_revision`、`sub_phase`（观测）、`TurnPlannerHints`、模型/温度覆盖、共享 **`Arc<TurnBudgetCounter>`** | Gate 计数、工作流反思 FSM、工具失败短路表 |
 | **`PerCoordinator`** | `src/cm_agent/per_coord/` | 配置镜像、`PlanRequirementSource`、**`plan_rewrite_attempts`**、workflow validate 缓存、工具失败 / `run_command` 去重、内嵌 **`WorkflowReflectionController`** | 整场只读 LLM 句柄、前端 UI 相位 |
-| **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环纠偏：build-idle streak / 注入次数、终答缺失注入次数、截断纠偏注入次数（R 轨 3；stop-turn **与**工具执行后共用同一预算） | 终答 Gate 相位、`plan_rewrite` |
+| **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环纠偏：终答缺失注入次数、截断纠偏注入次数（R 轨 3；stop-turn **与**工具执行后共用同一预算） | 终答 Gate 相位、`plan_rewrite` |
 | **`PerTurnFlight`** | `src/per_turn_flight.rs` | 只读镜像（如 `plan_rewrite_attempts`、`require_plan`）供 `/status` | 权威可变源（权威在 PerCoord） |
 
 **消息写入约定**：会话正文以 **`RunLoopTurnState`** 为权威缓冲；`append_tool_result_and_reflection` 仍接 `&mut Vec<Message>`（历史接合），

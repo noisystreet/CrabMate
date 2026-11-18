@@ -172,23 +172,6 @@ impl PerCoordinator {
             .record_success(suppress_key, output);
     }
 
-    pub fn record_outer_loop_build_idle_round(&mut self) -> u32 {
-        self.counters.record_outer_loop_build_idle_round()
-    }
-
-    pub fn reset_outer_loop_build_idle_streak(&mut self) {
-        self.counters.reset_outer_loop_build_idle_streak();
-    }
-
-    pub fn record_outer_loop_build_idle_feedback_injected(&mut self) {
-        self.counters
-            .record_outer_loop_build_idle_feedback_injected();
-    }
-
-    pub fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
-        self.counters.outer_loop_build_idle_feedback_injected()
-    }
-
     pub fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
         self.counters
             .record_outer_loop_missing_final_answer_feedback_injected();

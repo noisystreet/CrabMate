@@ -10,7 +10,7 @@ pub use types::{
     AgentReplyPlanV1, PLAN_V1_EXAMPLE_JSON, PLAN_V1_REWRITE_BRIEF_RULES,
     PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, PlanArtifactError, PlanStepExecutorKind,
     PlanStepV1, agent_reply_plan_v1_to_json_string,
-    plan_artifact_error_log_summary, plan_step_description_implies_build_execution,
+    plan_artifact_error_log_summary,
 };
 
 pub use display::{format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display};

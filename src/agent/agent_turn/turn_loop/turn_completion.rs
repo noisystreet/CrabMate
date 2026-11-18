@@ -13,7 +13,7 @@ pub(crate) use crate::agent::agent_turn::policy::turn_completion_decision::{
 
 pub(crate) use crate::agent::agent_turn::policy::completion_suppression::redundant_tool_names_for_log;
 
-pub(crate) use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
+pub(crate) use crate::cm_display_rules::OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX;
 
 use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
@@ -194,7 +194,7 @@ pub(crate) fn outer_loop_missing_final_answer_feedback_body() -> String {
     format!(
         "{prefix}本轮工具已执行并产生结果，但助手终答为空或过短。请基于**当前对话与工具输出**，用自然语言向用户给出完整终答：\
          说明已完成什么、关键结果/路径/命令输出摘要，以及若仍有未完成项请明确列出。**禁止**再发起无必要的 tool_calls。",
-        prefix = OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
+        prefix = OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX
     )
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn outer_loop_truncated_feedback_body() -> String {
         "{prefix}上一轮助手输出因达到模型长度上限或流式中断而被**截断**，终答不完整。\
          请基于已有上下文**继续**并给出完整、可验收的终答：若任务已完成，直接输出最终结论；\
          若仍需执行，请通过 `tool_calls` 继续；避免重复已输出内容，必要时分段或精炼。",
-        prefix = OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
+        prefix = OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX
     )
 }
 
@@ -463,7 +463,7 @@ mod tests {
         let fb = outer_loop_truncated_feedback_if_needed(true, 0);
         let fb = fb.expect("截断且预算内应注入纠偏");
         assert!(fb.contains("截断"));
-        assert!(fb.contains(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX));
+        assert!(fb.contains(OUTER_LOOP_ORCHESTRATION_FEEDBACK_PREFIX));
     }
 
     #[test]

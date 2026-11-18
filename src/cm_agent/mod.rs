@@ -24,8 +24,6 @@ pub mod plan_rewrite;
 /// PER 侧向语义校验结果类型（侧向 LLM 调用本身仍在根包）。
 pub mod plan_semantic;
 pub mod step_executor_policy;
-/// 文案标记匹配的唯一实现：ASCII 按 token 边界、中文保留子串（#1422 A 组）。
-pub mod text_markers;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
