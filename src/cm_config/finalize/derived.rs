@@ -270,10 +270,12 @@ pub(super) fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
             .long_term_memory
             .long_term_memory_auto_index_turns
             .unwrap_or(true),
+        // 默认关闭：沉淀时机交给模型主动调用 `summarize_experience`（#1438）；
+        // 需要服务端兜底时由配置显式开启。
         long_term_memory_auto_summarize_experience: b
             .long_term_memory
             .long_term_memory_auto_summarize_experience
-            .unwrap_or(true),
+            .unwrap_or(false),
         long_term_memory_prioritize_experience_recall: b
             .long_term_memory
             .long_term_memory_prioritize_experience_recall
