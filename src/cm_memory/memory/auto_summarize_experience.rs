@@ -1,7 +1,8 @@
 //! 回合结束后启发式检测「由失败到成功」的构建/验证类工具调用，自动写入长期记忆（`source_role=auto_summarize_experience`）。
 
+use crate::agent::agent_turn::policy::task_level_evidence::command_line_looks_like_verify;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
+use crate::cm_tools::tool_result::{ToolStatus, normalize_tool_message_content, tool_output_status};
 use crate::cm_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。
@@ -9,7 +10,7 @@ pub fn draft_auto_experience_from_turn(messages: &[Message]) -> Option<(String, 
     let turn_start = last_non_injection_user_index(messages)?;
     let turn = &messages[turn_start..];
     let (user_text, assistant_text) = last_user_assistant_final_pair(turn)?;
-    if !user_message_suggests_task(user_text) {
+    if !turn_has_user_task_context(user_text) {
         return None;
     }
     let recovery = detect_build_recovery_in_slice(turn)?;
@@ -43,16 +44,18 @@ fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> 
     crate::cm_memory::memory::long_term_memory::last_user_assistant_final_pair_for_turn(messages)
 }
 
-fn user_message_suggests_task(user: &str) -> bool {
-    if user.chars().count() < 8 {
-        return false;
-    }
-    let lower = user.to_ascii_lowercase();
-    const KEYS: &[&str] = &[
-        "修复", "编译", "构建", "测试", "错误", "失败", "fix", "error", "failed", "build", "test",
-        "clippy", "cargo", "rust", "配置", "config", "debug", "bug", "报错",
-    ];
-    KEYS.iter().any(|k| lower.contains(k))
+/// 本轮是否存在**可归因的任务上下文**。
+///
+/// 只做**形态**判断（真实 user 发言 + 非纯寒暄长度），**不再匹配构建/故障词表**：
+/// 词表双向都会错——「这个 build 阶段没问题，帮我解释下 test 目录」会误命中，
+/// 「帮我把编译不过的地方改对」会漏命中；而且函数名说「是否提出任务」，
+/// 实现却只判「是否提到这些词」，名实不符本身就是误判源（#1438）。
+///
+/// 「这一轮是否真的发生了构建失败并修复」由 [`detect_build_recovery_in_slice`] 的
+/// **结构化**判定承担（`tool_output_status` 的 Failed → Ok），不需要用户句来确认。
+fn turn_has_user_task_context(user: &str) -> bool {
+    const MIN_TASK_CHARS: usize = 8;
+    user.chars().count() >= MIN_TASK_CHARS
 }
 
 struct BuildRecovery {
@@ -71,7 +74,7 @@ fn detect_build_recovery_in_slice(turn: &[Message]) -> Option<BuildRecovery> {
             continue;
         }
         let content = message_content_as_str(&m.content).unwrap_or("").trim();
-        if tool_name == tool_names::RUN_COMMAND && !run_command_looks_like_build(content) {
+        if tool_name == tool_names::RUN_COMMAND && !run_command_is_build(content) {
             continue;
         }
         match tool_output_status(tool_name, content) {
@@ -103,6 +106,37 @@ fn is_build_verify_tool(name: &str) -> bool {
     )
 }
 
+/// `run_command` 这条工具消息是否在跑构建 / 测试。
+///
+/// **优先读结构化 `invocation`**（与 `outer_loop_build_idle` / `evidence.rs` 同口径、
+/// 同一个 `command_line_looks_like_verify`，见 #1422 A5）；只有缺少信封的旧消息才回落到
+/// [`run_command_looks_like_build`] 的正文关键词。
+fn run_command_is_build(content: &str) -> bool {
+    if let Some(invocation) = run_command_invocation(content) {
+        return command_line_looks_like_verify(&invocation);
+    }
+    run_command_looks_like_build(content)
+}
+
+/// 取 `crabmate_tool.structured_payload.invocation`（完整命令行）。
+///
+/// 空串等同「没有 invocation」：与 `outer_loop_build_idle::run_command_invocation` 同口径，
+/// 否则「字段存在但解析为空」的消息会走「结构化判定为假」而**不**回落到正文。
+fn run_command_invocation(raw: &str) -> Option<String> {
+    let env = normalize_tool_message_content(raw)?;
+    env.structured_payload
+        .as_ref()?
+        .get("invocation")?
+        .as_str()
+        .map(str::to_string)
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// 正文里的构建 / 测试特征——**仅用于没有 `invocation` 的旧消息**。
+///
+/// 扫正文两个方向都会错：`make sure` 这类自然语言会误命中，而 `ninja` / `cargo nextest`
+/// 的真实输出里根本没有这些字样。正常链路已由 [`run_command_is_build`] 的结构化判定覆盖，
+/// 这里只作兜底（#1438）。
 fn run_command_looks_like_build(content: &str) -> bool {
     let lower = content.to_ascii_lowercase();
     lower.contains("cargo ")
@@ -136,10 +170,18 @@ fn one_line_excerpt(s: &str, max_chars: usize) -> String {
 fn tags_for_recovery(recovery: &BuildRecovery) -> Vec<String> {
     let mut tags = vec!["auto".to_string(), "build-recovery".to_string()];
     let n = recovery.tool_name.as_str();
-    if n.contains("cargo") || n == tool_names::RUN_COMMAND {
+    // 工具名是**结构化字段**，用精确匹配而非子串：`contains("test")` 会把任何含 `test`
+    // 的工具名都算成测试工具（#1438）。
+    if matches!(
+        n,
+        tool_names::RUN_COMMAND
+            | tool_names::CARGO_CHECK
+            | tool_names::CARGO_TEST
+            | tool_names::CARGO_CLIPPY
+    ) {
         tags.push("rust".to_string());
     }
-    if n.contains("test") {
+    if matches!(n, tool_names::CARGO_TEST | tool_names::PYTEST_RUN) {
         tags.push("test".to_string());
     }
     tags
@@ -203,5 +245,45 @@ mod tests {
             asst_final("Fixed the type mismatch in lib.rs."),
         ];
         assert!(draft_auto_experience_from_turn(&messages).is_some());
+    }
+
+    /// 用户句**不含**任何构建/故障词时也要能沉淀——旧关键词表会在这里拒绝。
+    ///
+    /// 区分度：旧实现返回 `None`（`KEYS` 全不命中），新实现返回 `Some`。
+    /// 「这一轮真的失败后修好了」由 `cargo_check` 的 exit=101 → exit=0 结构化事实证明。
+    #[test]
+    fn detects_recovery_without_build_words_in_user_message() {
+        let messages = vec![
+            user_msg("帮我把这个整理一下可以吗"),
+            tool_msg("cargo_check", "cargo check (exit=101):\nstderr: error[E0425]"),
+            tool_msg("cargo_check", "cargo check (exit=0):\n(check output)"),
+            asst_final("已修好那个未使用的导入。"),
+        ];
+        assert!(
+            draft_auto_experience_from_turn(&messages).is_some(),
+            "不应再依赖用户句关键词"
+        );
+    }
+
+    /// `run_command` 是否算构建，以结构化 `invocation` 为准，不再扫输出正文。
+    ///
+    /// 区分度：旧实现扫正文，会把 `grep -rn build src` 判成构建、把 invocation 为
+    /// `cargo build` 但正文不含构建词的正常输出漏掉。
+    #[test]
+    fn run_command_build_judged_by_invocation_not_output_text() {
+        let build_inv = r#"{"crabmate_tool":{"v":1,"ok":true,"structured_payload":{"invocation":"cargo build"},"output":"done"}}"#;
+        assert!(
+            run_command_is_build(build_inv),
+            "invocation 是构建命令即应判构建（与正文无关）"
+        );
+
+        let grep_inv = r#"{"crabmate_tool":{"v":1,"ok":true,"structured_payload":{"invocation":"grep -rn build src"},"output":"build target 文档"}}"#;
+        assert!(
+            !run_command_is_build(grep_inv),
+            "正文提到 build 但 invocation 不是构建，不应命中"
+        );
+
+        // 无信封的旧消息：回落到正文关键词（保留原兜底）。
+        assert!(run_command_is_build("命令：cargo build\n退出码：101"));
     }
 }
