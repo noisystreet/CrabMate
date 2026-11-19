@@ -51,7 +51,7 @@ fn clone_stream_body() -> serde_json::Value {
     })
 }
 
-static WORKSPACE_DECLS: [RouteDecl; 19] = [
+static WORKSPACE_DECLS: &[RouteDecl] = &[
     RouteDecl {
         path: "/workspace",
         method: HttpMethod::Get,
@@ -549,5 +549,5 @@ static WORKSPACE_DECLS: [RouteDecl; 19] = [
 ];
 
 pub(crate) fn decls() -> &'static [RouteDecl] {
-    &WORKSPACE_DECLS
+    WORKSPACE_DECLS
 }

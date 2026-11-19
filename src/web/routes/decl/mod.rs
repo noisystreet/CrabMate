@@ -15,9 +15,11 @@
 //!
 //! 分批迁移：本文件只定义形状与 `system` 组；其余分组按 `routes/` 逐批迁入（每批 1 commit）。
 
+mod memory;
 mod system;
 mod workspace;
 
+pub(crate) use memory::decls as memory_decls;
 pub(crate) use system::decls as system_decls;
 pub(crate) use workspace::decls as workspace_decls;
 
@@ -57,7 +59,9 @@ impl HttpMethod {
 pub(crate) enum Override {
     /// 无需覆盖：`responses` 完全由表字段渲染。
     None,
-    /// 非 JSON 响应（`text/event-stream` 等）。
+    /// 非 JSON 响应。**当前无必需场景**：`text/event-stream` 的 schema 已能用
+    /// `RespBody::Media` 表达，`/workspace/clone/stream` 用 `RespBody::None` 即可。
+    /// 登记前请先确认表字段真的表达不了——登记后会撞上渲染器的 `assert!`。
     Streaming,
     /// 响应对象键随运行环境增减。
     DynamicKeys,
@@ -81,6 +85,18 @@ pub(crate) enum SchemaDecl {
     Str,
     /// `{ "type": "string", "enum": [...] }`；空列表退化为 `{ "type": "string" }`。
     StrEnum(&'static [&'static str]),
+    /// `{ "type": "string", "enum": [...], "default": ... }`（带默认值的枚举参数）。
+    StrEnumDefault {
+        values: &'static [&'static str],
+        default: &'static str,
+    },
+    /// `{ "type": "integer", ... }`：只带 OpenAPI 里实际出现的约束。
+    Integer {
+        format: Option<&'static str>,
+        minimum: Option<i64>,
+        maximum: Option<i64>,
+        default: Option<i64>,
+    },
     /// 多个具名 schema 的 `oneOf`（同一端点按参数返回不同视图，如 `GET /status?view=shell`）。
     OneOfRefs(&'static [&'static str]),
     /// `{ "type": "boolean" }`：开关型 query 参数（`confirm` / `recursive` / `create_only` …）。
@@ -97,6 +113,7 @@ impl SchemaDecl {
             Self::Ref(name) => out.push(name),
             Self::OneOfRefs(names) => out.extend_from_slice(names),
             Self::Object | Self::Str | Self::StrEnum(_) | Self::Bool | Self::Binary => {}
+            Self::StrEnumDefault { .. } | Self::Integer { .. } => {}
         }
     }
 }
@@ -104,11 +121,10 @@ impl SchemaDecl {
 /// 参数位置。
 ///
 /// `header` 暂无端点使用，真有需求再加——不为「可能用得上」预留空转的变体。
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ParamLocation {
     Query,
-    /// 路径参数（如 `/memory/{id}` 的 `id`）。S0 无用例，随 `workspace` 组启用。
+    /// 路径参数（如 `/memory/{id}` 的 `id`）。
     Path,
 }
 
@@ -240,6 +256,7 @@ pub(crate) fn all() -> Vec<&'static RouteDecl> {
     let mut out: Vec<&'static RouteDecl> = Vec::new();
     out.extend(system_decls());
     out.extend(workspace_decls());
+    out.extend(memory_decls());
     out
 }
 

@@ -19,7 +19,7 @@ const VIEW_PARAM: ParamDecl = ParamDecl {
     schema: SchemaDecl::StrEnum(&["shell"]),
 };
 
-static SYSTEM_DECLS: [RouteDecl; 4] = [
+static SYSTEM_DECLS: &[RouteDecl] = &[
     RouteDecl {
         path: "/openapi.json",
         method: HttpMethod::Get,
@@ -90,5 +90,5 @@ static SYSTEM_DECLS: [RouteDecl; 4] = [
 ];
 
 pub(crate) fn decls() -> &'static [RouteDecl] {
-    &SYSTEM_DECLS
+    SYSTEM_DECLS
 }
