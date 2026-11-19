@@ -16,8 +16,10 @@
 //! 分批迁移：本文件只定义形状与 `system` 组；其余分组按 `routes/` 逐批迁入（每批 1 commit）。
 
 mod system;
+mod workspace;
 
 pub(crate) use system::decls as system_decls;
+pub(crate) use workspace::decls as workspace_decls;
 
 /// HTTP 方法。渲染时小写，与 axum `.route(.., get(..))` / OpenAPI 键一致。
 ///
@@ -75,10 +77,16 @@ pub(crate) enum SchemaDecl {
     Ref(&'static str),
     /// `{ "type": "object" }`：键不固定但确实是个 object 的响应（如 OpenAPI 文档本体）。
     Object,
+    /// `{ "type": "string" }`：无枚举约束的字符串（路径、编码名等）。
+    Str,
     /// `{ "type": "string", "enum": [...] }`；空列表退化为 `{ "type": "string" }`。
     StrEnum(&'static [&'static str]),
     /// 多个具名 schema 的 `oneOf`（同一端点按参数返回不同视图，如 `GET /status?view=shell`）。
     OneOfRefs(&'static [&'static str]),
+    /// `{ "type": "boolean" }`：开关型 query 参数（`confirm` / `recursive` / `create_only` …）。
+    Bool,
+    /// `{ "type": "string", "format": "binary" }`：二进制上传 / 下载（图片、zip、octet-stream）。
+    Binary,
 }
 
 impl SchemaDecl {
@@ -88,7 +96,7 @@ impl SchemaDecl {
         match self {
             Self::Ref(name) => out.push(name),
             Self::OneOfRefs(names) => out.extend_from_slice(names),
-            Self::Object | Self::StrEnum(_) => {}
+            Self::Object | Self::Str | Self::StrEnum(_) | Self::Bool | Self::Binary => {}
         }
     }
 }
@@ -136,8 +144,50 @@ pub(crate) struct RespDecl {
     /// `"200"` / `"400"` / `"4XX"` …
     pub status: &'static str,
     pub description: &'static str,
-    /// `None` ⇒ 该响应无 `content`（纯状态码说明）。
-    pub schema: Option<SchemaDecl>,
+    pub body: RespBody,
+}
+
+/// 响应体：决定 `content` 段怎么渲染。
+///
+/// 二进制下载与图片端点有多个 media type，`application/json` 的单 schema 表达不了，
+/// 所以这里用枚举而不是 `Option<SchemaDecl>`——加 `Media` 时编译器会逼着每处声明
+/// 明确选一种，而不是默默退化成 JSON。
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RespBody {
+    /// 无 `content`：纯状态码 + 说明（`4XX` / `5XX`，以及「形状与实现一致」的 200）。
+    None,
+    /// `application/json` + 该 schema。
+    Json(SchemaDecl),
+    /// 多个 media type（图片 / zip / octet-stream 下载）。
+    Media(&'static [MediaTypeDecl]),
+}
+
+/// 一个 media type 及其 schema。
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MediaTypeDecl {
+    /// `application/zip` / `image/png` / `application/octet-stream` …
+    pub media: &'static str,
+    pub schema: SchemaDecl,
+}
+
+/// 请求体（OpenAPI `requestBody`）。
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RequestBody {
+    /// `requestBody.required`。注意 `POST /workspace` 原契约就没写（默认 false）。
+    pub required: bool,
+    pub media: MediaDecl,
+}
+
+/// 请求体的 media 描述。
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum MediaDecl {
+    /// `application/json` + `$ref` 到 `components.schemas`。
+    JsonRef(&'static str),
+    /// `application/json` + 原样 schema。用于尚未具名化的请求体
+    /// （如 `/workspace/clone/stream` 的 `{url,name,depth?,branch?}`）。
+    JsonInline(fn() -> serde_json::Value),
+    /// 单一非 JSON media type + binary schema（`application/octet-stream`）。
+    Binary(&'static str),
 }
 
 /// 一个 `(path, method)` 端点。
@@ -152,6 +202,7 @@ pub(crate) struct RouteDecl {
     /// 是否渲染共享的 Bearer / API-Key `security`（受保护 API）。
     pub protected: bool,
     pub params: &'static [ParamDecl],
+    pub request: Option<RequestBody>,
     pub responses: &'static [RespDecl],
     pub override_kind: Override,
 }
@@ -163,9 +214,18 @@ impl RouteDecl {
         for param in self.params {
             param.schema.collect_refs(out);
         }
+        if let Some(MediaDecl::JsonRef(name)) = self.request.map(|body| body.media) {
+            out.push(name);
+        }
         for resp in self.responses {
-            if let Some(schema) = resp.schema {
-                schema.collect_refs(out);
+            match resp.body {
+                RespBody::Json(schema) => schema.collect_refs(out),
+                RespBody::Media(items) => {
+                    for item in items {
+                        item.schema.collect_refs(out);
+                    }
+                }
+                RespBody::None => {}
             }
         }
     }
@@ -179,6 +239,7 @@ impl RouteDecl {
 pub(crate) fn all() -> Vec<&'static RouteDecl> {
     let mut out: Vec<&'static RouteDecl> = Vec::new();
     out.extend(system_decls());
+    out.extend(workspace_decls());
     out
 }
 

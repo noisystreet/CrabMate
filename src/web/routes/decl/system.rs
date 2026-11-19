@@ -6,7 +6,9 @@
 //!
 //! 文案与 `openapi_paths.rs` 原手写片段逐字一致 —— `docs/openapi.json` 快照测试是判据。
 
-use super::{HttpMethod, Override, ParamDecl, ParamLocation, RespDecl, RouteDecl, SchemaDecl};
+use super::{
+    HttpMethod, Override, ParamDecl, ParamLocation, RespBody, RespDecl, RouteDecl, SchemaDecl,
+};
 
 /// `GET /status?view=shell`：切到壳层稳定子集。
 const VIEW_PARAM: ParamDecl = ParamDecl {
@@ -26,10 +28,11 @@ static SYSTEM_DECLS: [RouteDecl; 4] = [
         description: None,
         protected: false,
         params: &[],
+        request: None,
         responses: &[RespDecl {
             status: "200",
             description: "OpenAPI 3.0 JSON",
-            schema: Some(SchemaDecl::Object),
+            body: RespBody::Json(SchemaDecl::Object),
         }],
         override_kind: Override::None,
     },
@@ -41,10 +44,11 @@ static SYSTEM_DECLS: [RouteDecl; 4] = [
         description: None,
         protected: false,
         params: &[],
+        request: None,
         responses: &[RespDecl {
             status: "200",
             description: "健康报告 JSON（status + checks；checks 键随运行环境动态增减）",
-            schema: Some(SchemaDecl::Ref("HealthReportView")),
+            body: RespBody::Json(SchemaDecl::Ref("HealthReportView")),
         }],
         override_kind: Override::None,
     },
@@ -56,10 +60,11 @@ static SYSTEM_DECLS: [RouteDecl; 4] = [
         description: None,
         protected: false,
         params: &[VIEW_PARAM],
+        request: None,
         responses: &[RespDecl {
             status: "200",
             description: "状态 JSON",
-            schema: Some(SchemaDecl::OneOfRefs(&[
+            body: RespBody::Json(SchemaDecl::OneOfRefs(&[
                 "StatusShellView",
                 "StatusResponseBody",
             ])),
@@ -74,10 +79,11 @@ static SYSTEM_DECLS: [RouteDecl; 4] = [
         description: None,
         protected: false,
         params: &[],
+        request: None,
         responses: &[RespDecl {
             status: "200",
             description: "Web UI 配置 JSON",
-            schema: Some(SchemaDecl::Ref("WebUiConfigResponse")),
+            body: RespBody::Json(SchemaDecl::Ref("WebUiConfigResponse")),
         }],
         override_kind: Override::None,
     },
