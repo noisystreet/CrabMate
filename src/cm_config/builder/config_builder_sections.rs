@@ -127,7 +127,6 @@ pub(crate) struct ConfigBuilderSkills {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderToolTranscript {
     pub(crate) tool_message_max_chars: Option<u64>,
-    pub(crate) tool_result_envelope_v1: Option<bool>,
     pub(crate) sse_tool_call_include_arguments: Option<bool>,
 }
 

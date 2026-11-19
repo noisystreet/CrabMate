@@ -10,6 +10,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: `tool_result_envelope_v1` / `CM_TOOL_RESULT_ENVELOPE_V1` are removed (#1440 K6/K7).** The flag
+  let a deployment turn `role: tool` messages back into plain text, which made the whole evidence pipeline
+  re-derive "was this a build?" from output wording. `crabmate_tool` is now the only shape. A
+  `tool_result_envelope_v1` key in `[agent]` fails as an unknown field (delete the line); the environment
+  variable is ignored. The `ToolTranscriptConfig` field and the whole `bool` parameter chain behind
+  `emit_tool_result_sse_and_append` are gone with it, so no code path writes a plain-text `role: tool`
+  message any more.
+- **Two "guess the task type from output text" fallbacks are deleted (#1440 K6/K7).**
+  `evidence::run_command_output_looks_like_verify` (10 markers) and
+  `auto_summarize_experience::run_command_looks_like_build` (8 words) are gone: this turn's `run_command`
+  output always carries the `命令：` line, so `structured_payload.invocation` is always present and the
+  fallbacks were unreachable — keeping them only let `make sure …` in some output count as a build. Turn
+  evidence and auto-experience now read the command line only. If a future early-exit path stops emitting
+  `invocation`, that message simply stops counting as a build (the conservative direction) and
+  `run_command_verify_requires_structured_invocation` will flag it.
+
 ### Fixed
 
 - **A failed `git clone` now says why (#1440 K4).** `CLONE_GIT_FAILED` used to carry only

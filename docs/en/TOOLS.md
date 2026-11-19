@@ -14,7 +14,7 @@ This document describes built-in tools, common function-calling JSON examples, a
     proxies do not require it; MCP still strips the key before forwarding. Complements command/HTTP **approval** (approval authorizes,
   explain card improves traceability).
 
-**Long outputs in model context** (`tool_result_envelope_v1`, default on): History `role: tool` uses the **`crabmate_tool`** JSON envelope (`summary`,
+**Long outputs in model context** (`crabmate_tool` envelope, always on): History `role: tool` uses the **`crabmate_tool`** JSON envelope (`summary`,
   `output`, …). Optional **`structured_payload`** bundles stable **`schema`** values: **`run_command_exit_v1`** (`run_command`),
   **`subprocess_exit_v1`** (`cargo_*`; matches `{title} (exit=N):` first line),
   **`http_tool_response_v1`** (`http_fetch` / `http_request` successful bodies with `method:` / `请求 URL:` / `状态:` lines;

@@ -106,16 +106,14 @@ fn is_build_verify_tool(name: &str) -> bool {
     )
 }
 
-/// `run_command` 这条工具消息是否在跑构建 / 测试。
+/// `run_command` 这条工具消息是否在跑构建 / 测试：**只看结构化 `invocation`**。
 ///
-/// **优先读结构化 `invocation`**（与 `evidence.rs` 同口径、
-/// 同一个 `command_line_looks_like_verify`，见 #1422 A5）；只有缺少信封的旧消息才回落到
-/// [`run_command_looks_like_build`] 的正文关键词。
+/// 与 `evidence.rs` 同口径（同一个 `command_line_looks_like_verify`，见 #1422 A5）。
+/// 不再回落到正文关键词（#1440 K7）：本函数处理的切片已被裁到**本轮**
+/// （`last_non_injection_user_index`），而本轮 `run_command` 结果恒含 `命令：` 行、
+/// `crabmate_tool` 信封恒开——正文兜底不可达，留着只会把 `make sure` 当成构建。
 fn run_command_is_build(content: &str) -> bool {
-    if let Some(invocation) = run_command_invocation(content) {
-        return command_line_looks_like_verify(&invocation);
-    }
-    run_command_looks_like_build(content)
+    run_command_invocation(content).is_some_and(|inv| command_line_looks_like_verify(&inv))
 }
 
 /// 取 `crabmate_tool.structured_payload.invocation`（完整命令行）。
@@ -130,23 +128,6 @@ fn run_command_invocation(raw: &str) -> Option<String> {
         .as_str()
         .map(str::to_string)
         .filter(|s| !s.trim().is_empty())
-}
-
-/// 正文里的构建 / 测试特征——**仅用于没有 `invocation` 的旧消息**。
-///
-/// 扫正文两个方向都会错：`make sure` 这类自然语言会误命中，而 `ninja` / `cargo nextest`
-/// 的真实输出里根本没有这些字样。正常链路已由 [`run_command_is_build`] 的结构化判定覆盖，
-/// 这里只作兜底（#1438）。
-fn run_command_looks_like_build(content: &str) -> bool {
-    let lower = content.to_ascii_lowercase();
-    lower.contains("cargo ")
-        || lower.contains("rustc")
-        || lower.contains("cmake")
-        || lower.contains(" make ")
-        || lower.contains("npm ")
-        || lower.contains("ctest")
-        || lower.contains("mvn ")
-        || lower.contains("gradle")
 }
 
 fn format_auto_experience(user: &str, assistant: &str, recovery: &BuildRecovery) -> Option<String> {
@@ -204,6 +185,35 @@ mod tests {
         Message::assistant_only(text)
     }
 
+    /// `run_command` 的**真实信封**形状（含 `structured_payload.invocation`）。
+    ///
+    /// #1440 K7 之后正文兜底已删除，凡是要被测成「构建」的 `run_command` 消息
+    /// 都必须带这个块——否则就是「无结构化信号」，一律不算构建。
+    fn run_command_msg(invocation: &str, output: &str, ok: bool, exit_code: i64) -> Message {
+        tool_msg(
+            "run_command",
+            &serde_json::json!({
+                "crabmate_tool": {
+                    "name": "run_command",
+                    "summary": invocation,
+                    "output": output,
+                    "ok": ok,
+                    "exit_code": exit_code,
+                    "structured_payload": {
+                        "kind": "crabmate_structured_payload",
+                        "tool": "run_command",
+                        "version": 1,
+                        "schema": "run_command_exit_v1",
+                        "invocation": invocation,
+                        "ok": ok,
+                        "exit_code": exit_code,
+                    }
+                }
+            })
+            .to_string(),
+        )
+    }
+
     /// fixture 用**真实**形状：`cargo_*` 工具输出首行是 `{title} (exit=N):`
     /// （见 `cm_tools::tool_result` 的 `subprocess_exit_v1` 用例），不是 `退出码：N`。
     /// 早期这里写的是 `cargo check 完成\n退出码：0`——那种形状现实里不存在，
@@ -236,12 +246,10 @@ mod tests {
 
     #[test]
     fn run_command_build_recovery() {
-        let fail = "命令：cargo build\n退出码：101\nerror: could not compile";
-        let ok = "命令：cargo build\n退出码：0\nFinished";
         let messages = vec![
             user_msg("fix the build failure please"),
-            tool_msg("run_command", fail),
-            tool_msg("run_command", ok),
+            run_command_msg("cargo build", "error: could not compile", false, 101),
+            run_command_msg("cargo build", "Finished", true, 0),
             asst_final("Fixed the type mismatch in lib.rs."),
         ];
         assert!(draft_auto_experience_from_turn(&messages).is_some());
@@ -271,19 +279,19 @@ mod tests {
     /// `cargo build` 但正文不含构建词的正常输出漏掉。
     #[test]
     fn run_command_build_judged_by_invocation_not_output_text() {
-        let build_inv = r#"{"crabmate_tool":{"v":1,"ok":true,"structured_payload":{"invocation":"cargo build"},"output":"done"}}"#;
+        let build_inv = r#"{"crabmate_tool":{"v":1,"name":"run_command","summary":"cargo build","ok":true,"exit_code":0,"output":"done","structured_payload":{"invocation":"cargo build"}}}"#;
         assert!(
             run_command_is_build(build_inv),
             "invocation 是构建命令即应判构建（与正文无关）"
         );
 
-        let grep_inv = r#"{"crabmate_tool":{"v":1,"ok":true,"structured_payload":{"invocation":"grep -rn build src"},"output":"build target 文档"}}"#;
+        let grep_inv = r#"{"crabmate_tool":{"v":1,"name":"run_command","summary":"grep -rn build src","ok":true,"exit_code":0,"output":"build target 文档","structured_payload":{"invocation":"grep -rn build src"}}}"#;
         assert!(
             !run_command_is_build(grep_inv),
             "正文提到 build 但 invocation 不是构建，不应命中"
         );
 
-        // 无信封的旧消息：回落到正文关键词（保留原兜底）。
-        assert!(run_command_is_build("命令：cargo build\n退出码：101"));
+        // 无信封（无 `structured_payload.invocation`）：一律不算构建，不再从正文反推（#1440 K7）。
+        assert!(!run_command_is_build("命令：cargo build\n退出码：101"));
     }
 }

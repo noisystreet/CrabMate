@@ -10,7 +10,7 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
     **`context_inject`** covers first-turn **`living_docs_*`**, **`agent_memory_file_*`**,
     **`project_dependency_brief_inject_*`** (**`project_profile_inject_*`** is **not** a first-turn key any more—it only gates the Web sidebar
     **`GET /workspace/profile`**);
-  **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**,
+  **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`**,
     **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**,
     **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.;
   **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration;
@@ -399,7 +399,6 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | --- | --- |
 | `CM_MAX_MESSAGE_HISTORY` | Max messages kept (see also removed D2.2 session-UI keys in the planner table above). |
 | `CM_TOOL_MESSAGE_MAX_CHARS` | Compress `role: tool` before model if longer. |
-| `CM_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` envelope v1. |
 | `CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | When truthy, SSE **`tool_call`** includes redacted, length-capped **`arguments`** in addition to **`arguments_preview`** (default off; reduces accidental exposure in the browser). |
 | `CM_TOOL_STATS_ENABLED` | When truthy, enable in-process tool-outcome stats and append a short hint to the **new** conversation’s first `system` (see below). |
 | `CM_TOOL_STATS_WINDOW_EVENTS` | Sliding-window event cap (16–65536); mirrors TOML `agent_tool_stats_window_events`. |
@@ -842,7 +841,7 @@ Before each model call, Server estimates the final-request input from vendor-sha
   and targets **70%** by default. History is removed only as complete `user + assistant/tool chain` groups, preserving at least the two newest groups;
     `max_message_history` (default **1024**) is a high-count fallback that must stay above the token trigger. With `llm_context_tokens = 0`,
   **`context_char_budget`** remains the fallback. **`tool_message_max_chars`** compresses long **`role: tool`** content first;
-    with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
+    the **`crabmate_tool`** envelope (always on) head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
   Load-time self-check: when `max_message_history × assumed 1,200 tokens/message < trigger_tokens`, the server logs a
   `warn` with the suggested cap; `crabmate doctor` prints the same two-gate comparison (#1342).
   If the suggested cap exceeds the `max_message_history` upper bound (**1024**), the `warn` says so explicitly and

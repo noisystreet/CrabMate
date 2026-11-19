@@ -23,10 +23,6 @@ fn tool_transcript(b: &mut ConfigBuilder) {
         &mut b.tool_transcript.sse_tool_call_include_arguments,
         "CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS",
     );
-    apply_bool(
-        &mut b.tool_transcript.tool_result_envelope_v1,
-        "CM_TOOL_RESULT_ENVELOPE_V1",
-    );
 }
 
 fn thinking_trace(b: &mut ConfigBuilder) {

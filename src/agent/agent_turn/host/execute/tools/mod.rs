@@ -103,7 +103,6 @@ pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
-    tool_result_envelope_v1: bool,
     name: &'a str,
     args: &'a str,
     id: &'a str,
@@ -153,7 +152,6 @@ struct ExecuteToolsCommonCtx<'a> {
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
@@ -333,7 +331,6 @@ pub(crate) async fn per_execute_tools_web(
         .map(|t| t.enter_section("agent.tools_batch"));
 
     // 先取值再 move `env`：`LoopEnv` 自 #839 P1 起持 `Arc`，不再 `Copy`。
-    let tool_result_envelope_v1 = env.cfg.tool_transcript.tool_result_envelope_v1;
 
     per_execute_tools_common(ExecuteToolsCommonCtx {
         tool_calls,
@@ -344,7 +341,6 @@ pub(crate) async fn per_execute_tools_web(
         workspace_changelist,
         control,
         cancel,
-        tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn,
         request_chrome_trace,

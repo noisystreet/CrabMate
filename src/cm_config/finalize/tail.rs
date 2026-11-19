@@ -26,7 +26,6 @@ pub(super) struct FinalizeTailScalars {
     pub(super) subagent_max_wall_secs: u64,
     pub(super) subagent_max_report_chars: usize,
     pub(super) tool_message_max_chars: usize,
-    pub(super) tool_result_envelope_v1: bool,
     pub(super) sse_tool_call_include_arguments: bool,
     pub(super) agent_thinking_trace_enabled: bool,
     pub(super) agent_tool_stats_enabled: bool,
@@ -121,7 +120,6 @@ struct TailPlanToolThinkingScalars {
     subagent_max_wall_secs: u64,
     subagent_max_report_chars: usize,
     tool_message_max_chars: usize,
-    tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
     agent_thinking_trace_enabled: bool,
     agent_tool_stats_enabled: bool,
@@ -191,7 +189,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
-    let tool_result_envelope_v1 = b.tool_transcript.tool_result_envelope_v1.unwrap_or(true);
     let sse_tool_call_include_arguments = b.tool_transcript.sse_tool_call_include_arguments.unwrap_or(true);
     // 默认开启；仅 `CM_THINKING_TRACE_ENABLED` 可关闭（不从 `[agent]` TOML 读入）。
     let agent_thinking_trace_enabled = b.agent_thinking_trace.agent_thinking_trace_enabled.unwrap_or(true);
@@ -235,7 +232,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         subagent_max_wall_secs,
         subagent_max_report_chars,
         tool_message_max_chars,
-        tool_result_envelope_v1,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
         agent_tool_stats_enabled,
@@ -696,7 +692,6 @@ fn assemble_finalize_tail_scalars(
         subagent_max_wall_secs,
         subagent_max_report_chars,
         tool_message_max_chars,
-        tool_result_envelope_v1,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
         agent_tool_stats_enabled,
@@ -756,7 +751,6 @@ fn assemble_finalize_tail_scalars(
         subagent_max_wall_secs,
         subagent_max_report_chars,
         tool_message_max_chars,
-        tool_result_envelope_v1,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
         agent_tool_stats_enabled,

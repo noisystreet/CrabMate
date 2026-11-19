@@ -142,7 +142,6 @@ pub struct SkillsConfigSection {
 #[derive(Debug, Clone)]
 pub struct ToolTranscriptConfig {
     pub tool_message_max_chars: usize,
-    pub tool_result_envelope_v1: bool,
     pub sse_tool_call_include_arguments: bool,
 }
 

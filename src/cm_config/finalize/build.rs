@@ -179,7 +179,6 @@ fn finalize_section_skills(tail: &FinalizeTailScalars) -> types::SkillsConfigSec
 fn finalize_section_tool_transcript(tail: &FinalizeTailScalars) -> types::ToolTranscriptConfig {
     types::ToolTranscriptConfig {
         tool_message_max_chars: tail.tool_message_max_chars,
-        tool_result_envelope_v1: tail.tool_result_envelope_v1,
         sse_tool_call_include_arguments: tail.sse_tool_call_include_arguments,
     }
 }

@@ -113,7 +113,6 @@ pub(super) async fn emit_tool_result_sse_and_append(
         cfg,
         tool_outcome_recorder,
         control,
-        tool_result_envelope_v1,
         name,
         args,
         id,
@@ -226,21 +225,18 @@ pub(super) async fn emit_tool_result_sse_and_append(
         tool_t0.elapsed().as_millis() as u64,
     );
 
-    let content_for_model = if tool_result_envelope_v1 {
-        // 复用已按执行层事实覆盖过的那份 parse，避免同一正文再解析一次。
-        let summary_str = tool_summary
-            .clone()
-            .unwrap_or_else(|| format!("tool: {name}"));
-        tool_result::encode_tool_message_envelope_v1(
-            name,
-            summary_str,
-            &parsed_for_timeline,
-            &result,
-            envelope_ctx.as_ref(),
-        )
-    } else {
-        result
-    };
+    // `crabmate_tool` 信封恒开（#1440）：`role: tool` 只有这一种形态。
+    // 复用已按执行层事实覆盖过的那份 parse，避免同一正文再解析一次。
+    let summary_str = tool_summary
+        .clone()
+        .unwrap_or_else(|| format!("tool: {name}"));
+    let content_for_model = tool_result::encode_tool_message_envelope_v1(
+        name,
+        summary_str,
+        &parsed_for_timeline,
+        &result,
+        envelope_ctx.as_ref(),
+    );
 
     PerCoordinator::append_tool_result_and_reflection(
         per_coord,

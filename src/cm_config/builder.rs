@@ -265,7 +265,6 @@ impl ConfigBuilder {
         sk.skills_max_chars = agent.skills_max_chars.or(sk.skills_max_chars);
         let tt = &mut self.tool_transcript;
         tt.tool_message_max_chars = agent.tool_message_max_chars.or(tt.tool_message_max_chars);
-        tt.tool_result_envelope_v1 = agent.tool_result_envelope_v1.or(tt.tool_result_envelope_v1);
         tt.sse_tool_call_include_arguments = agent
             .sse_tool_call_include_arguments
             .or(tt.sse_tool_call_include_arguments);
