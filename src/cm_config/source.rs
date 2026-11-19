@@ -219,7 +219,6 @@ pub(super) struct AgentSection {
     pub(super) skills_system_dir: Option<String>,
     pub(super) skills_max_chars: Option<u64>,
     pub(super) tool_message_max_chars: Option<u64>,
-    pub(super) tool_result_envelope_v1: Option<bool>,
     pub(super) sse_tool_call_include_arguments: Option<bool>,
     pub(super) agent_tool_stats_enabled: Option<bool>,
     pub(super) agent_tool_stats_window_events: Option<u64>,
@@ -493,6 +492,8 @@ typo_unknown_key = 1
             // 已移除：`permission_confirm_tools` 从来没有消费点（确认由工具自身 `confirm` 承担），
             // 留着只会让人以为改它能改变行为；见 #1260 与 CHANGELOG 的 Removed 条。
             "permission_confirm_tools = [\"delete_dir\", \"delete_files\"]",
+            // 已移除（#1440）：`crabmate_tool` 信封恒开，关掉会让证据/记忆判定退回正文关键词。
+            "tool_result_envelope_v1 = false",
         ] {
             let toml = format!(
                 r#"

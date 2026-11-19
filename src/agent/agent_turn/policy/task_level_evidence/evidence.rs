@@ -163,19 +163,19 @@ fn is_workspace_write_tool(name: &str) -> bool {
     )
 }
 
-/// `run_command` 是否算「验证性执行」。
+/// `run_command` 是否算「验证性执行」：**只看结构化命令行**，不读输出文本。
 ///
-/// **结构化优先**：`structured_payload.invocation` 是完整命令行，按「程序名 + 子命令」判定，
-/// 不看输出文本。**文本兜底**：无信封的旧消息（没有 `invocation`）才退回看输出特征。
+/// 为什么可以只留这一条（#1440 K6）：
+/// - `run_command` 结果恒含 `命令：` 行（`CommandOutcome::render_body`；缓存命中把原正文
+///   拼在 banner 之后），`structured_payload.invocation` 因此恒非空；
+/// - `crabmate_tool` 信封已恒开（`tool_result_envelope_v1` 配置键已移除）；
+/// - 输入被裁到**本轮**（`messages_slice_since_last_real_user`）。
 ///
-/// 为什么要有两段（#1401 #19）：输出文本两个方向都会错——`make` 是 `make sure …` 的子串，
-/// 而 `ninja` / `cargo nextest` / `go test` 的输出里根本没有 `built target`。命令本身是结构化
-/// 字段，「这次跑的是不是构建/测试」直接看它更准，不必从输出反推。
-fn run_command_is_verify(invocation: Option<&str>, text_lower: &str) -> bool {
-    match invocation {
-        Some(inv) if !inv.trim().is_empty() => command_line_looks_like_verify(inv),
-        _ => run_command_output_looks_like_verify(text_lower),
-    }
+/// 于是「没有 `invocation`」只剩早退短路文案（预检 / 策略拒绝），那些正文里也没有构建
+/// 特征。反过来说，输出文本两个方向都会错：`make` 是 `make sure …` 的子串，而
+/// `ninja` / `cargo nextest` / `go test` 的输出里根本没有 `built target`（#1401 #19）。
+fn run_command_is_verify(invocation: Option<&str>) -> bool {
+    invocation.is_some_and(|inv| !inv.trim().is_empty() && command_line_looks_like_verify(inv))
 }
 
 /// 命令行是否在跑构建 / 测试。
@@ -328,26 +328,6 @@ fn first_verb<'a>(rest: &[&'a str]) -> Option<&'a str> {
         .find(|t| !t.is_empty() && !t.starts_with('+') && !t.starts_with('-'))
 }
 
-/// 输出文本里的构建 / 测试特征——**仅用于没有结构化 `invocation` 的旧消息**。
-///
-/// 去掉了 `make` / `cmake` 这两个短词：它们正是本函数最主要的误命中来源
-/// （`make sure …`、文档正文里的 `cmake` 都算），而真正的 `make` / `cmake` 命令
-/// 现在由 [`command_line_looks_like_verify`] 从命令行识别。
-fn run_command_output_looks_like_verify(text_lower: &str) -> bool {
-    const MARKERS: &[&str] = &[
-        "cargo test",
-        "cargo check",
-        "cargo clippy",
-        "cargo build",
-        "pytest",
-        "built target",
-        "linking cxx executable",
-        "test result: ok",
-        "tests passed",
-        "build succeeded",
-    ];
-    MARKERS.iter().any(|m| text_lower.contains(m))
-}
 
 /// 按 Unicode scalar 截断并压成单行，避免证据正文塞满上下文。
 fn summarize_output(s: &str) -> String {
@@ -392,8 +372,7 @@ fn evidence_from_tool_message(
     if tool.trim().is_empty() {
         return None;
     }
-    let lower = format!("{output}\n{raw}").to_lowercase();
-    // 命令是结构化字段：优先按它判定「这次算不算验证性执行」，输出文本只作旧消息的兜底。
+    // 命令是结构化字段：「这次算不算验证性执行」只看它，不读输出文本（#1440 K6）。
     let invocation = env
         .as_ref()
         .and_then(|e| e.structured_payload.as_ref())
@@ -409,7 +388,7 @@ fn evidence_from_tool_message(
         (EvidenceKind::Verify, strength)
     } else if is_workspace_write_tool(tool) {
         (EvidenceKind::Write, EvidenceStrength::Strong)
-    } else if tool == tool_names::RUN_COMMAND && run_command_is_verify(invocation, &lower) {
+    } else if tool == tool_names::RUN_COMMAND && run_command_is_verify(invocation) {
         (EvidenceKind::Verify, EvidenceStrength::Weak)
     } else {
         (EvidenceKind::Other, EvidenceStrength::Weak)
@@ -566,36 +545,33 @@ mod tests {
         }
     }
 
-    /// 旧实现的主要误命中来源：`make` / `cmake` 作为**普通词**出现在输出正文里。
+    /// #1440 K6：没有结构化 `invocation` 就不判 verify —— 不再从输出文本反推任务类型。
+    ///
+    /// 这条同时守住「本轮 `run_command` 恒有 `invocation`」这个前提的可观察面：
+    /// 一旦某条新路径既不产 `invocation`、又指望靠正文认出构建，就会在这里露出来。
     #[test]
-    fn output_fallback_ignores_bare_words() {
-        assert!(
-            !run_command_output_looks_like_verify("please make sure the file exists"),
-            "`make sure` 不是构建"
-        );
-        assert!(
-            !run_command_output_looks_like_verify("see the cmake docs for details"),
-            "正文提到 cmake 不是构建"
-        );
-        assert!(run_command_output_looks_like_verify("built target hpcg"));
-        assert!(run_command_output_looks_like_verify(
-            "test result: ok. 12 passed; 0 failed"
-        ));
+    fn run_command_verify_requires_structured_invocation() {
+        assert!(run_command_is_verify(Some("cargo test")));
+        assert!(run_command_is_verify(Some("cargo +nightly clippy --all-targets")));
+        assert!(run_command_is_verify(Some("python -m pytest -q")));
+        // 早退短路文案解析不出命令行：一律不算 verify。
+        assert!(!run_command_is_verify(None));
+        assert!(!run_command_is_verify(Some("")));
+        assert!(!run_command_is_verify(Some("   ")));
+        assert!(!run_command_is_verify(Some("git status")));
     }
 
-    /// 有结构化命令时**只看命令**，输出文本不参与；无命令的旧消息才退回文本。
+    /// 只看命令，输出文本完全不参与；**没有命令时也不再退回文本**（#1440 K6）。
     #[test]
     fn invocation_takes_precedence_over_output_text() {
         assert!(
-            !run_command_is_verify(Some("git status"), "please make sure the file exists"),
-            "命令不是构建/测试时，输出里的 `make` 不得翻案"
+            !run_command_is_verify(Some("git status")),
+            "命令不是构建/测试时，输出里的 `make` / `built target` 不得翻案"
         );
-        assert!(run_command_is_verify(Some("make"), "whatever"));
-        assert!(run_command_is_verify(None, "built target hpcg"));
-        assert!(!run_command_is_verify(
-            None,
-            "please make sure the file exists"
-        ));
+        assert!(run_command_is_verify(Some("cargo build")));
+        assert!(run_command_is_verify(Some("cd build && cargo test --all")));
+        // 没有 `invocation`：即使正文看起来像构建，也不判 verify。
+        assert!(!run_command_is_verify(None));
     }
 
     /// #19 全链路：从 `crabmate_tool` 信封里读 `structured_payload.invocation`。

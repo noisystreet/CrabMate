@@ -179,7 +179,7 @@ run_command_working_dir = "."
 
 # --- 工具消息形态 ---
 tool_message_max_chars = 32768
-tool_result_envelope_v1 = true
+# `tool_result_envelope_v1` 已移除：`crabmate_tool` 信封恒开（#1440）。
 # 为 true 时 SSE `tool_call` 另含脱敏后的 `arguments`（更长上限）；默认 false，防浏览器/共享屏泄露。
 # sse_tool_call_include_arguments = false
 

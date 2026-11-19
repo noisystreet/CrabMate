@@ -328,7 +328,6 @@ struct ParallelEmitOrderedParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
-    tool_result_envelope_v1: bool,
 }
 
 async fn parallel_emit_tool_starts(
@@ -393,7 +392,6 @@ async fn parallel_emit_ordered_tool_results(
         cfg,
         tool_outcome_recorder,
         control,
-        tool_result_envelope_v1,
     } = p;
 
     let out = control.out;
@@ -422,7 +420,6 @@ async fn parallel_emit_ordered_tool_results(
                 cfg,
                 tool_outcome_recorder,
                 control: control.clone(),
-                tool_result_envelope_v1,
                 name: &tc.function.name,
                 args: &tc.function.arguments,
                 id: &tc.id,
@@ -452,7 +449,6 @@ pub(super) async fn execute_tools_parallel(
             workspace_changelist,
             control,
             cancel,
-            tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn: _,
         request_chrome_trace: _,
@@ -539,7 +535,6 @@ pub(super) async fn execute_tools_parallel(
         cfg: env.cfg,
         tool_outcome_recorder: &tool_outcome_recorder,
         control,
-        tool_result_envelope_v1,
     })
     .await
 }
