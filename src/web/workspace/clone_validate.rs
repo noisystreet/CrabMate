@@ -1,7 +1,8 @@
 //! 项目池 clone：URL 校验、进度行解析、日志脱敏。
 
 use regex::Regex;
-use std::sync::LazyLock;
+use std::collections::VecDeque;
+use std::sync::{LazyLock, Mutex};
 
 /// Clone 墙钟超时（规划已拍板；MVP 不可配）。
 pub const WORKSPACE_CLONE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
@@ -177,6 +178,76 @@ pub fn split_progress_chunks(buf: &mut String, chunk: &str) -> Vec<String> {
     out
 }
 
+/// SSE `error.message` 附带的 stderr 尾部：最多 N 行 / 总字符上限（**采集时已脱敏**）。
+///
+/// 只进内存与 SSE 帧、不落盘；失败路径会把半成品目录删掉，故摘要不是唯一信息源
+/// （逐行 `log` 事件已推过），只是让「只看错误提示」的用户也能看到原因。
+pub const STDERR_TAIL_LINES: usize = 3;
+pub const STDERR_TAIL_TOTAL_CHARS: usize = 400;
+
+/// 摘要前缀：点明来源（git 的 stderr），避免用户以为是本服务自己的文案。
+pub const TAIL_SUMMARY_PREFIX: &str = "git 输出（尾部）：";
+
+/// 记录 stderr 尾部（**已脱敏**），只保留最后 [`STDERR_TAIL_LINES`] 行。
+pub fn push_stderr_tail(tail: &Mutex<VecDeque<String>>, line: &str) {
+    if line.trim().is_empty() {
+        return;
+    }
+    let Ok(mut q) = tail.lock() else {
+        return;
+    };
+    q.push_back(line.to_string());
+    while q.len() > STDERR_TAIL_LINES {
+        q.pop_front();
+    }
+}
+
+/// 只有**非进度**行才进尾部。
+///
+/// `git clone --progress` 的进度也走 **stderr**（`Receiving objects: 45% …`），放任它
+/// 会把 [`STDERR_TAIL_LINES`] 的配额占满，真正的 `fatal:` 反而被挤出去——那等于本功能
+/// 白做。进度信息另走 `progress` 事件，不需要在摘要里重复。
+pub fn should_keep_stderr_tail_line(line: &str) -> bool {
+    parse_clone_progress_percent(line).is_none()
+}
+
+/// 退出码短语（**不含外层括号**，由调用方包一次，避免「失败（被信号终止（无退出码））」这种嵌套）。
+pub fn format_clone_exit_code(exit_code: Option<i32>) -> String {
+    match exit_code {
+        Some(c) => format!("退出码 {c}"),
+        None => "进程被信号终止，无退出码".to_string(),
+    }
+}
+
+/// 把 stderr 尾部拼成一段可读摘要（输入**必须**已脱敏）。
+///
+/// 总长按 [`STDERR_TAIL_TOTAL_CHARS`] 截断；空输入返回 `None`（不追加空行）。
+/// 分隔符用 ASCII ` / `：`⏎` 之类符号在部分字体下会渲染成方块。
+pub fn stderr_tail_summary(tail: &[String]) -> Option<String> {
+    let joined = tail
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" / ");
+    if joined.is_empty() {
+        return None;
+    }
+    let mut chars = joined.chars();
+    let truncated: String = chars.by_ref().take(STDERR_TAIL_TOTAL_CHARS).collect();
+    let suffix = if chars.next().is_some() { "…" } else { "" };
+    Some(format!("{TAIL_SUMMARY_PREFIX}{truncated}{suffix}"))
+}
+
+/// 把摘要追加到 message 末尾（摘要为空时不追加）。
+pub fn with_stderr_tail(mut message: String, tail: &[String]) -> String {
+    if let Some(s) = stderr_tail_summary(tail) {
+        message.push('\n');
+        message.push_str(&s);
+    }
+    message
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +313,68 @@ mod tests {
             split_progress_chunks(&mut buf, "Receiving objects: 10%\rReceiving objects: 20%\n");
         assert_eq!(lines.len(), 2);
         assert!(buf.is_empty());
+    }
+
+    /// 摘要边界：空输入不追加、超长截断、多行用 ASCII 分隔。
+    #[test]
+    fn stderr_tail_summary_is_bounded() {
+        assert_eq!(stderr_tail_summary(&[]), None);
+        assert_eq!(stderr_tail_summary(&["   ".to_string()]), None);
+
+        let long = vec!["x".repeat(STDERR_TAIL_TOTAL_CHARS + 50)];
+        let s = stderr_tail_summary(&long).expect("非空输入应有摘要");
+        assert!(s.starts_with(TAIL_SUMMARY_PREFIX), "{s}");
+        assert!(s.ends_with('…'), "超长应截断：{s}");
+        assert!(
+            s.chars().count() <= STDERR_TAIL_TOTAL_CHARS + TAIL_SUMMARY_PREFIX.chars().count() + 1
+        );
+
+        // 多行用 ASCII 分隔符（`⏎` 等符号在部分字体下渲染成方块）。
+        let two = stderr_tail_summary(&["a".to_string(), "b".to_string()]).expect("非空");
+        assert_eq!(two, "git 输出（尾部）：a / b");
+    }
+
+    /// `--progress` 的进度行也走 stderr；不得占用尾部配额，否则 `error.message`
+    /// 只会出现 `Receiving objects: 45%` 而不是 `fatal:`。
+    #[test]
+    fn progress_lines_do_not_consume_tail_budget() {
+        let tail = Mutex::new(VecDeque::new());
+        for line in [
+            "Receiving objects:  45% (5/12), 1.20 MiB | 500.00 KiB/s",
+            "Resolving deltas: 99% (9/10)",
+            "fatal: could not read from remote repository",
+        ] {
+            if should_keep_stderr_tail_line(line) {
+                push_stderr_tail(&tail, line);
+            }
+        }
+        let q = tail.lock().expect("lock");
+        let kept: Vec<&str> = q.iter().map(String::as_str).collect();
+        assert_eq!(kept, ["fatal: could not read from remote repository"]);
+    }
+
+    /// 尾部只保留最后 `STDERR_TAIL_LINES` 行；空白行不入队。
+    #[test]
+    fn push_stderr_tail_keeps_last_lines() {
+        let tail = Mutex::new(VecDeque::new());
+        for i in 0..(STDERR_TAIL_LINES + 3) {
+            push_stderr_tail(&tail, &format!("line{i}"));
+        }
+        push_stderr_tail(&tail, "   ");
+        let q = tail.lock().expect("lock");
+        assert_eq!(q.len(), STDERR_TAIL_LINES);
+        let kept: Vec<&str> = q.iter().map(String::as_str).collect();
+        assert_eq!(kept, ["line3", "line4", "line5"]);
+    }
+
+    /// 退出码短语：不得出现 `Some(128)` / `None` 的 Debug 形态，也不得自带括号。
+    #[test]
+    fn exit_code_phrase_has_no_debug_or_parens() {
+        assert_eq!(format_clone_exit_code(Some(128)), "退出码 128");
+        assert_eq!(format_clone_exit_code(None), "进程被信号终止，无退出码");
+        for phrase in [format_clone_exit_code(Some(1)), format_clone_exit_code(None)] {
+            assert!(!phrase.contains("Some("), "{phrase}");
+            assert!(!phrase.contains('（'), "{phrase}");
+        }
     }
 }
