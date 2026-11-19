@@ -10,6 +10,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- **An upstream `5xx` is no longer reported as a rate limit (#1440 K3).** The quota / rate-limit check was a
+  substring scan over the user-facing message, which always embeds `（HTTP {status}）` — so an upstream `503`
+  matched the `HTTP 503` needle and surfaced to clients as `LLM_RATE_LIMIT` / HTTP **429**. The SSE golden
+  hid this because its 503 case used a synthetic message that production never emits.
+- **The decision now happens once, at the construction point.** `LlmCallError` carries a structured
+  `LlmFailureClass` decided from the HTTP status plus the **raw response body** (never the rendered message),
+  `LlmCompleteError` gained a `RateLimit` variant, and the SSE code / HTTP status mapping reads that variant
+  instead of the text. Goldens add the real 503 wording, `402 → 429`, and the 401 balance-wording case.
+- **`401` / `403` / `404` now short-circuit the wording scan.** A body like `账户余额充足` or
+  `quota exceeded` behind an auth / route failure is now reported as that failure. This is a behaviour change
+  for those statuses: `403` / `404` carrying quota wording used to become `LLM_RATE_LIMIT` / `429`.
+- **The CLI exit-code path is unchanged.** `classify_model_error_message` still scans the error string — it
+  only ever gets a string, with no HTTP status — and is now documented as such. No wire change:
+  `SSE_PROTOCOL_VERSION` stays **v2**.
+
 ## [0.9.1] - 2026-11-18
 
 **First stable tag after `v0.9.0`.** The `v0.9.1-alpha.0` pre-release carried the completion-judgement rework

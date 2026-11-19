@@ -122,7 +122,9 @@ impl StreamChatHost for CrabmateStreamChatHost {
                 format!("模型接口返回错误（HTTP {status_code}），请检查 API 密钥与配额，或稍后重试")
             }
         };
-        LlmCallError::from_http_api(status_code, err_text)
+        // 分类读**原始响应体**：`err_text` 里的「请检查 API 密钥与配额」是我们自己的提示语，
+        // 不能参与语义判定（否则所有 5xx 都会被判成配额类）。
+        LlmCallError::from_http_api_classified(status_code, err_text, body)
     }
 
     fn boxed_non_stream_chat_parse_error(

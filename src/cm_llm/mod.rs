@@ -32,7 +32,7 @@ pub use backend_openai::{
     OPENAI_COMPAT_BACKEND, OpenAiCompatBackend, default_chat_completions_backend,
 };
 pub use backend_shared::{shared_chat_backend, shared_static_chat_backend};
-pub use call_error::LlmCallError;
+pub use call_error::{LlmCallError, LlmFailureClass, classify_llm_failure};
 pub use chat_params::{LlmRetryingTransportOpts, StreamChatParams};
 pub use complete_error::LlmCompleteError;
 pub use fingerprint::RequestFingerprint;

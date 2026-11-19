@@ -191,8 +191,8 @@
 | `REPLAN_EXHAUSTED` | `agent_turn` | 全局重规划耗尽（同上） |
 | `TIME_LIMIT_EXHAUSTED` | `agent_turn` | 墙钟超时（同上） |
 | `TOKEN_LIMIT_EXHAUSTED` | `agent_turn` | Token 预算耗尽（同上） |
-| `LLM_REQUEST_FAILED` | `chat_job_queue`（由 `agent_turn` 映射） | 模型 HTTP/传输失败（**`error`** 为脱敏后的网关说明；**429** 等限流见 **`LLM_RATE_LIMIT`**） |
-| `LLM_RATE_LIMIT` | `chat_job_queue`（由 `agent_turn` 映射） | 限流 / 配额类（**HTTP 429** 或文案启发式与 `agent_errors::is_quota_or_rate_limit_llm_message` 一致） |
+| `LLM_REQUEST_FAILED` | `chat_job_queue`（由 `agent_turn` 映射） | 模型 HTTP/传输失败（**`error`** 为脱敏后的网关说明；配额 / 限流见 **`LLM_RATE_LIMIT`**） |
+| `LLM_RATE_LIMIT` | `chat_job_queue`（由 `agent_turn` 映射） | 配额 / 限流（服务端**结构化判定**：HTTP **429/402**，或上游响应体带配额语义；**不看**展示文案） |
 | `turn_aborted` | `chat_job_queue`（由 `agent_turn` 映射） | 编排早停（如 **SSE 接收端已关闭**仍尝试继续）；**`error`** 为用户可读说明 |
 | `STREAM_CANCELLED` | `chat_job_queue` | 流被取消且仍可投递时补发（`POST /chat/stream/{job_id}/cancel` 或内部协作取消） |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |

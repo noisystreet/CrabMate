@@ -149,15 +149,9 @@ impl RunAgentTurnError {
         match self {
             Self::Llm { kind, .. } => match kind {
                 LlmCompleteError::Cancelled => crate::types::SSE_STREAM_CANCELLED_CODE,
-                LlmCompleteError::Transport(e) => {
-                    if e.http_status == Some(429)
-                        || crate::agent_errors::is_quota_or_rate_limit_llm_message(&e.user_message)
-                    {
-                        "LLM_RATE_LIMIT"
-                    } else {
-                        "LLM_REQUEST_FAILED"
-                    }
-                }
+                // #1440 K3：配额判定在 `cm_llm::classify_llm_failure`（构造点）完成，这里只读变体。
+                LlmCompleteError::RateLimit(_) => "LLM_RATE_LIMIT",
+                LlmCompleteError::Transport(_) => "LLM_REQUEST_FAILED",
                 LlmCompleteError::Other(_) => "INTERNAL_ERROR",
             },
             Self::TurnAborted { reason, .. } => match reason {
@@ -177,7 +171,9 @@ impl RunAgentTurnError {
         match self {
             Self::Llm { kind, .. } => match kind {
                 LlmCompleteError::Cancelled => LLM_CANCELLED_ERROR.to_string(),
-                LlmCompleteError::Transport(e) => e.user_message.clone(),
+                LlmCompleteError::Transport(e) | LlmCompleteError::RateLimit(e) => {
+                    e.user_message.clone()
+                }
                 LlmCompleteError::Other(_) => "对话失败，请稍后重试".to_string(),
             },
             Self::TurnAborted { reason, .. } => reason.to_string(),
@@ -200,17 +196,14 @@ impl RunAgentTurnError {
                 LlmCompleteError::Cancelled => {
                     StatusCode::from_u16(499).unwrap_or(StatusCode::BAD_REQUEST)
                 }
-                LlmCompleteError::Transport(e) => {
-                    if e.http_status == Some(429)
-                        || crate::agent_errors::is_quota_or_rate_limit_llm_message(&e.user_message)
-                    {
-                        StatusCode::TOO_MANY_REQUESTS
-                    } else if let Some(s) = e.http_status {
-                        StatusCode::from_u16(s).unwrap_or(StatusCode::BAD_GATEWAY)
-                    } else {
-                        StatusCode::BAD_GATEWAY
-                    }
-                }
+                // 契约：配额 / 限流类**一律**对外 `429`，即使上游是 `402`（余额不足）。
+                // 有意丢弃 `e.http_status` 的 402 ——客户端按「退避重试」处理比按 402 语义更安全，
+                // 且与改动前行为一致（golden `llm_transport_402` / `llm_transport_quota_msg` 钉住）。
+                LlmCompleteError::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
+                LlmCompleteError::Transport(e) => e
+                    .http_status
+                    .and_then(|s| StatusCode::from_u16(s).ok())
+                    .unwrap_or(StatusCode::BAD_GATEWAY),
                 LlmCompleteError::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
             },
             Self::TurnAborted { reason, .. } => match reason {
@@ -235,7 +228,7 @@ impl RunAgentTurnError {
     /// JSON **`ApiError.reason_code`** 仅对 **`INTERNAL_ERROR`** 附带截断内部摘要，避免预算类/取消类路径向客户端泄露编排细节。
     pub(crate) fn http_api_error(&self) -> ApiError {
         if let Self::Llm {
-            kind: LlmCompleteError::Transport(_),
+            kind: LlmCompleteError::Transport(_) | LlmCompleteError::RateLimit(_),
             ..
         } = self
         {
@@ -307,17 +300,16 @@ impl RunAgentTurnError {
                         LLM_CANCELLED_ERROR.to_string(),
                         None,
                     ),
-                    LlmCompleteError::Transport(e) => {
-                        let code = if e.http_status == Some(429)
-                            || crate::agent_errors::is_quota_or_rate_limit_llm_message(
-                                &e.user_message,
-                            ) {
-                            "LLM_RATE_LIMIT".to_string()
-                        } else {
-                            "LLM_REQUEST_FAILED".to_string()
-                        };
-                        (code, e.user_message.clone(), None)
-                    }
+                    LlmCompleteError::RateLimit(e) => (
+                        "LLM_RATE_LIMIT".to_string(),
+                        e.user_message.clone(),
+                        None,
+                    ),
+                    LlmCompleteError::Transport(e) => (
+                        "LLM_REQUEST_FAILED".to_string(),
+                        e.user_message.clone(),
+                        None,
+                    ),
                     LlmCompleteError::Other(e) => (
                         "INTERNAL_ERROR".to_string(),
                         "对话失败，请稍后重试".to_string(),
@@ -545,14 +537,31 @@ mod tests {
     fn http_llm_transport_omits_reason() {
         let e = RunAgentTurnError::Llm {
             phase: AgentTurnSubPhase::Executor,
-            kind: LlmCompleteError::Transport(crate::llm::LlmCallError::from_http_api(
-                503,
-                "upstream".into(),
+            kind: LlmCompleteError::from_boxed(Box::new(
+                crate::llm::LlmCallError::from_http_api(503, "upstream".into()),
             )),
         };
         let api = e.http_api_error();
         assert_eq!(api.code, "LLM_REQUEST_FAILED");
         assert!(api.reason_code.is_none());
+    }
+
+    /// #1440 K3：上游 `503` 的**真实**文案恒含「（HTTP 503）」，历史子串反查会把它误判成
+    /// 限流（对外 `429` / `LLM_RATE_LIMIT`）。结构化判定后必须回落成 `LLM_REQUEST_FAILED`，
+    /// 并保留 `503`。
+    #[test]
+    fn http_llm_transport_503_real_shape_is_not_rate_limit() {
+        let e = RunAgentTurnError::Llm {
+            phase: AgentTurnSubPhase::Executor,
+            kind: LlmCompleteError::from_boxed(Box::new(
+                crate::llm::LlmCallError::from_http_api(
+                    503,
+                    "模型接口返回错误（HTTP 503），请检查 API 密钥与配额，或稍后重试".into(),
+                ),
+            )),
+        };
+        assert_eq!(e.public_error_code(), "LLM_REQUEST_FAILED");
+        assert_eq!(e.suggested_http_status().as_u16(), 503);
     }
 
     #[test]
