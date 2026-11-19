@@ -156,18 +156,66 @@ fn render_response_body(resp: &RespDecl) -> Value {
 }
 
 fn render_schema(schema: SchemaDecl) -> Value {
+    // 拆出三个 helper 是为了把本函数的 CCN 压在 10 以内（`lizard-rust.sh` 的棘轮）。
     match schema {
         SchemaDecl::Ref(name) => schema_ref(name),
         SchemaDecl::Object => json!({ "type": "object" }),
+        SchemaDecl::Str => json!({ "type": "string" }),
         SchemaDecl::Binary => json!({ "type": "string", "format": "binary" }),
         SchemaDecl::Bool => json!({ "type": "boolean" }),
-        SchemaDecl::Str => json!({ "type": "string" }),
-        SchemaDecl::StrEnum([]) => json!({ "type": "string" }),
-        SchemaDecl::StrEnum(values) => json!({ "type": "string", "enum": values }),
+        SchemaDecl::StrEnum(values) => string_enum_schema(values),
+        SchemaDecl::StrEnumDefault { values, default } => str_enum_default_schema(values, default),
+        SchemaDecl::Integer {
+            format,
+            minimum,
+            maximum,
+            default,
+        } => integer_schema(format, minimum, maximum, default),
         SchemaDecl::OneOfRefs(names) => json!({
             "oneOf": names.iter().map(|name| schema_ref(name)).collect::<Vec<_>>()
         }),
     }
+}
+
+/// `{ "type": "string" }`；有枚举值时才带 `enum`（空列表退化为纯 string）。
+fn string_enum_schema(values: &'static [&'static str]) -> Value {
+    if values.is_empty() {
+        json!({ "type": "string" })
+    } else {
+        json!({ "type": "string", "enum": values })
+    }
+}
+
+fn str_enum_default_schema(values: &'static [&'static str], default: &str) -> Value {
+    let mut out = string_enum_schema(values);
+    if let Value::Object(map) = &mut out {
+        map.insert("default".to_string(), json!(default));
+    }
+    out
+}
+
+/// 只写实际存在的约束：`limit` 有 min/max/default，`id` 只有 format。
+fn integer_schema(
+    format: Option<&'static str>,
+    minimum: Option<i64>,
+    maximum: Option<i64>,
+    default: Option<i64>,
+) -> Value {
+    let mut out = Map::new();
+    out.insert("type".to_string(), json!("integer"));
+    if let Some(format) = format {
+        out.insert("format".to_string(), json!(format));
+    }
+    if let Some(minimum) = minimum {
+        out.insert("minimum".to_string(), json!(minimum));
+    }
+    if let Some(maximum) = maximum {
+        out.insert("maximum".to_string(), json!(maximum));
+    }
+    if let Some(default) = default {
+        out.insert("default".to_string(), json!(default));
+    }
+    Value::Object(out)
 }
 
 fn schema_ref(name: &str) -> Value {
@@ -177,7 +225,7 @@ fn schema_ref(name: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::web::routes::decl::{HttpMethod, ParamLocation};
+    use crate::web::routes::decl::{HttpMethod, MediaTypeDecl, ParamLocation};
 
     static QUERY_PARAM: ParamDecl = ParamDecl {
         name: "view",
@@ -325,6 +373,109 @@ mod tests {
             render_route_decls(&DECLS)["/plain"]["get"]["parameters"][0]["schema"],
             json!({ "type": "string" }),
             "空 enum 列表退化为纯 string，不要渲染成空 enum 数组"
+        );
+    }
+
+    /// 多 media type 响应（图片 / zip / octet-stream）：`content` 下每个 media 各带一份 schema。
+    #[test]
+    fn renders_multi_media_type_response() {
+        static DECLS: [RouteDecl; 1] = [RouteDecl {
+            path: "/img",
+            method: HttpMethod::Get,
+            tag: "workspace",
+            summary: "图片",
+            description: None,
+            protected: false,
+            params: &[],
+            request: None,
+            responses: &[RespDecl {
+                status: "200",
+                description: "图片字节",
+                body: RespBody::Media(&[
+                    MediaTypeDecl {
+                        media: "image/png",
+                        schema: SchemaDecl::Binary,
+                    },
+                    MediaTypeDecl {
+                        media: "application/zip",
+                        schema: SchemaDecl::Binary,
+                    },
+                ]),
+            }],
+            override_kind: Override::None,
+        }];
+        let content = &render_route_decls(&DECLS)["/img"]["get"]["responses"]["200"]["content"];
+        assert_eq!(
+            content["image/png"]["schema"],
+            json!({ "type": "string", "format": "binary" })
+        );
+        assert_eq!(
+            content["application/zip"]["schema"],
+            json!({ "type": "string", "format": "binary" })
+        );
+        assert_eq!(
+            content.as_object().expect("content 是 object").len(),
+            2,
+            "每个 media type 一项，不要合并成单个 schema"
+        );
+    }
+
+    fn inline_body() -> serde_json::Value {
+        json!({ "type": "object", "required": ["url"] })
+    }
+
+    /// 请求体三种形态 + `required=false` 不写键（`POST /workspace` 原契约如此）。
+    #[test]
+    fn renders_binary_and_inline_request_bodies() {
+        static DECLS: [RouteDecl; 2] = [
+            RouteDecl {
+                path: "/upload-raw",
+                method: HttpMethod::Put,
+                tag: "workspace",
+                summary: "写原始字节",
+                description: None,
+                protected: false,
+                params: &[],
+                request: Some(RequestBody {
+                    required: true,
+                    media: MediaDecl::Binary("application/octet-stream"),
+                }),
+                responses: &[],
+                override_kind: Override::None,
+            },
+            RouteDecl {
+                path: "/set",
+                method: HttpMethod::Post,
+                tag: "workspace",
+                summary: "内联请求体",
+                description: None,
+                protected: false,
+                params: &[],
+                request: Some(RequestBody {
+                    required: false,
+                    media: MediaDecl::JsonInline(inline_body),
+                }),
+                responses: &[],
+                override_kind: Override::None,
+            },
+        ];
+        let rendered = render_route_decls(&DECLS);
+
+        let put = &rendered["/upload-raw"]["put"]["requestBody"];
+        assert_eq!(put["required"], json!(true));
+        assert_eq!(
+            put["content"]["application/octet-stream"]["schema"],
+            json!({ "type": "string", "format": "binary" })
+        );
+
+        let post = &rendered["/set"]["post"]["requestBody"];
+        assert!(
+            post.get("required").is_none(),
+            "required=false 时不写该键，否则与 POST /workspace 的原契约不同"
+        );
+        assert_eq!(
+            post["content"]["application/json"]["schema"],
+            json!({ "type": "object", "required": ["url"] })
         );
     }
 
