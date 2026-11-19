@@ -63,41 +63,30 @@ pub(super) fn exit_code_in_header_region(output: &str) -> Option<i32> {
     None
 }
 
-/// **宽口径**判定：含「失败」「超时」即算失败。
+/// 工具正文是否在报告失败：**只认约定前缀**，不匹配任何措辞。
 ///
-/// 仍被这些路径使用——它们的输入是**工具正文**而非 `ToolError.message` 首行，没有
-/// 「产生处补前缀」的保证：
+/// 被这些路径使用（输入是**工具正文**，没有 `ToolError` 的「认不出就补前缀」保证）：
 /// - `body_after_header_looks_like_failure`（写预览正文逐行扫描）
-/// - `run_command_structured_payload`
-/// - `status.rs` 的三态判定
+/// - `status.rs` 的三态判定（无结构化证据时的 `Failed` / `Unknown` 分流）
+/// - `parse_tool_output` 的 ④ 级首行兜底
 ///
-/// 因此它保留 `contains` 的双向失真（#1401 P1 记录在案）；④ 级首行判定请用
-/// [`looks_like_failure_structured`]。
-pub(super) fn looks_like_failure(first_line: &str) -> bool {
-    if first_line.is_empty() {
+/// #1440 K8：这里原本有 `contains("失败")` 与 `contains("超时")` 两条宽口径，都会把
+/// 「正文提到这些词」的成功输出误判为失败（`git log` 里的 `fix: 修复失败重试`）。
+/// 现在只认 [`error_text::has_known_error_prefix`]——**单一真源**，与
+/// [`super::ToolError::build`] 的「认不出就补 `错误：`」是同一条判据：
+/// 凡是走 `ToolError` 的错误正文，首行必然命中；工具超时也走 `ToolError`，
+/// 因此不需要再靠「超时」这个词去猜。
+///
+/// 剩下不命中的只有**没经过 `ToolError` 的裸正文**，那属产生处该补前缀的责任
+/// （`tool_error` 的守卫测试会盯住）。
+pub(super) fn looks_like_failure(line: &str) -> bool {
+    let head = line.trim_start();
+    if head.is_empty() {
         return false;
     }
-    first_line.starts_with(error_text::ERROR_PREFIX)
-        || first_line.starts_with(error_text::UNKNOWN_TOOL_PREFIX)
-        || first_line.starts_with(error_text::INVALID_ARGS_PREFIX)
-        || first_line.starts_with(error_text::EXECUTE_FAILED_PREFIX)
-        || first_line.contains(error_text::FAILURE_MARKER)
-        || first_line.contains(error_text::TIMEOUT_MARKER)
+    error_text::has_known_error_prefix(head)
 }
 
-/// **收紧口径**（#1430）：只认结构化前缀，供 `parse_tool_output` 的 ④ 级兜底使用。
-///
-/// 前提是错误正文在产生处已统一补 `错误：`（`ToolError::build`）或本身带已知前缀
-/// （`dispatch_tool` 的裸字符串也补过）。少了 `contains("失败")`，就不会把「正文提到
-/// 失败」的成功输出误判为失败（`git log` 里的 `fix: 修复失败重试`）。
-///
-/// 已知残余漏判（属 #1430 第 3 步）：真实失败但文案是 `command not found` /
-/// `permission denied` 的仍判成功，需要产生处带 `ok` / 退出码。
-pub(super) fn looks_like_failure_structured(first_line: &str) -> bool {
-    // 与 `ToolError::build` 的补前缀判据**同源**：那边保证「无前缀就补 `错误：`」，
-    // 这边就认同一张表。这样新增前缀只需改 `KNOWN_ERROR_PREFIXES` 一处。
-    error_text::has_known_error_prefix(first_line)
-}
 
 pub(super) fn extract_streams(output: &str) -> (String, String) {
     let stdout = if let Some(pos) = output.find(STDOUT_MARKER) {
@@ -124,11 +113,10 @@ pub(super) fn run_command_structured_payload(raw_output: &str) -> Value {
     let first = body.lines().next().unwrap_or("").trim();
     // 先按首行解析（单行命令的常态），失配再扫头部区域（多行回显的兜底）。
     let exit_code = parse_exit_code(first).or_else(|| exit_code_in_header_region(raw_output));
-    let ok = if let Some(code) = exit_code {
-        code == 0
-    } else {
-        !looks_like_failure(first)
-    };
+    // #1440 K8：`run_command` 的结果恒写 `退出码：N`（`ExitStatusKind` 三态都收敛成 `i32`，
+    // 超时 / 取消是 `-1`；缓存条目存的是完整 `render_body`），`exit_code` 因此恒为 `Some`。
+    // 取不到就保守判失败——不再用正文猜成败。
+    let ok = exit_code == Some(0);
     let (stdout, stderr) = extract_streams(raw_output);
     serde_json::json!({
         "kind": "crabmate_structured_payload",
@@ -183,10 +171,7 @@ fn split_invocation_and_body(raw_output: &str) -> (String, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        exit_code_in_header_region, looks_like_failure, looks_like_failure_structured,
-        run_command_structured_payload,
-    };
+    use super::{exit_code_in_header_region, looks_like_failure, run_command_structured_payload};
 
     /// 回归守卫：`命令：` 回显含真实换行（多行 `-m`）时仍须取到退出码，
     /// 不得退化成「正文含『失败』即失败」。旧实现的 `structured_payload` 里
@@ -259,38 +244,67 @@ mod tests {
         assert_eq!(payload["exit_code"], serde_json::json!(-1));
     }
 
-    /// **宽口径** `looks_like_failure` 的现状（#1401 P1 记录的双向失真，仍在）。
+    /// #1440 K8：判定依据只剩「约定前缀 + 服务端自产的超时词」，不再猜措辞。
     ///
-    /// 它继续服务「工具正文扫描」这类路径——输入没有「产生处补前缀」的保证，
-    /// 所以 #1430 只收紧了 ④ 级，没有动这条。
+    /// 关键回归：`fix: 修复失败重试` 这类**正文提到失败**的成功输出不再误判；
+    /// 同时前缀走单一真源，原先手抄 4 条漏掉的几条现在也能认出。
     #[test]
-    fn looks_like_failure_wide_still_has_both_gaps() {
-        // ① 往失败偏：正文里带「失败」。
-        assert!(looks_like_failure("fix: 修复失败重试"));
-        // ② 往成功偏：真实失败但无中文失败词。
+    fn looks_like_failure_only_trusts_conventional_text() {
+        // 往失败偏的误判已消除（`git log` 里的 `fix: ...`）。
+        assert!(!looks_like_failure("fix: 修复失败重试"));
+        // 约定前缀：`ToolError::build` 保证「认不出就补 `错误：`」。
+        assert!(looks_like_failure("错误：读取文件失败"));
+        assert!(looks_like_failure("执行失败：cargo test 退出码 101"));
+        // 以前手抄 4 条前缀漏掉、现在经 `KNOWN_ERROR_PREFIXES` 覆盖的。
+        assert!(looks_like_failure("参数解析错误: unexpected token"));
+        assert!(looks_like_failure("校验失败（write_precheck）：语法不合法"));
+        assert!(looks_like_failure("未设置工作区"));
+        assert!(looks_like_failure("不允许的命令: rm"));
+        assert!(looks_like_failure("检测到同命令重复失败：cargo test"));
+        // 裸「超时」不再被认：工具超时经 `ToolError`，产生处已补 `错误：`（#1440 K8）。
+        assert!(!looks_like_failure("命令执行超时（5 秒）"));
+        assert!(looks_like_failure("错误：命令执行超时（5 秒）"));
+        // 其余已知前缀同样只认首行形态。
+        assert!(looks_like_failure("未知工具：nope"));
+        assert!(looks_like_failure("执行失败（cargo: not found）"));
+        assert!(!looks_like_failure("0 failed; 12 passed"));
+        // 无约定前缀的英文失败文案仍判成功（已知漏判，方向保守：需产生处带 ok / 退出码）。
         assert!(!looks_like_failure("bash: foo: command not found"));
         assert!(!looks_like_failure("permission denied"));
+        // 空 / 空白不判失败。
+        assert!(!looks_like_failure(""));
+        assert!(!looks_like_failure("   "));
     }
 
-    /// ④ 级用的**收紧口径**（#1430）：只认结构化前缀，误判方向已消除。
+    /// #1440 K8：`run_command` 的结果恒写 `退出码：N`（超时 / 取消是 `-1`，
+    /// 缓存条目存完整 `render_body`），所以 `structured_payload.ok` 只由 `exit_code` 决定，
+    /// 四种形态都不得落到正文猜测。
     #[test]
-    fn looks_like_failure_structured_only_trusts_prefixes() {
-        // 成功正文里带「失败」不再误判。
-        assert!(!looks_like_failure_structured("fix: 修复失败重试"));
-        assert!(!looks_like_failure_structured("0 failed; 12 passed"));
-        // 结构化前缀仍认——第 1 步保证错误正文都带其中之一。
-        assert!(looks_like_failure_structured(
-            "错误：读取文件失败: permission denied"
-        ));
-        assert!(looks_like_failure_structured("错误：工具执行超时（5 秒）"));
-        assert!(looks_like_failure_structured("未知工具：nope"));
-        assert!(looks_like_failure_structured(
-            "参数解析错误：missing field `path`"
-        ));
-        assert!(looks_like_failure_structured("执行失败（cargo: not found）"));
-        // 已知残余漏判（#1430 第 3 步）：无前缀的真实失败仍判成功。
-        assert!(!looks_like_failure_structured(
-            "bash: foo: command not found"
-        ));
+    fn structured_payload_ok_comes_from_exit_code_only() {
+        for (raw, expect_code) in [
+            ("命令：pwd\n退出码：0\n标准输出：\n/\n", 0),
+            ("命令：false\n退出码：1\n", 1),
+            (
+                "命令执行超时（5 秒）；子进程已发送终止信号。\n命令：sleep 30\n退出码：-1\n",
+                -1,
+            ),
+            (
+                "[CrabMate 测试输出缓存命中] 输入指纹与上次相同，未重新执行；以下为缓存副本。\n\
+                 指纹：abc123\n---\n命令：cargo test\n退出码：0\n标准输出：\ntest result: ok\n",
+                0,
+            ),
+        ] {
+            let payload = run_command_structured_payload(raw);
+            assert_eq!(
+                payload["exit_code"],
+                serde_json::json!(expect_code),
+                "应解析出退出码（raw={raw}）"
+            );
+            assert_eq!(
+                payload["ok"],
+                serde_json::json!(expect_code == 0),
+                "`ok` 必须只由 exit_code 决定（raw={raw}）"
+            );
+        }
     }
 }

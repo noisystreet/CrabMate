@@ -516,6 +516,40 @@ mod tests {
         assert!(!p.ok);
     }
 
+    /// #1440 K8 的**通用化前提**：任何 `ToolError` 的正文首行都必须能被
+    /// `error_text::has_known_error_prefix` 认出，或带退出码（走 ③ 级）。
+    ///
+    /// 满足这条，下游的 `looks_like_failure` 才只需认前缀、不必猜措辞。
+    /// 新增构造器若漏给前缀，这里会红——修法是**在产生处补前缀**（`build` 会自动补），
+    /// 而不是往消费端的词表里加词。
+    #[test]
+    fn every_constructor_yields_recognizable_first_line() {
+        let cases = [
+            ToolError::invalid_args("缺参数 path".to_string()),
+            ToolError::unknown_tool("nope"),
+            ToolError::rate_limited("太频繁".to_string()),
+            ToolError::approval_required("需审批".to_string()),
+            ToolError::with_code("reminder_not_found", "找不到提醒".to_string()),
+            ToolError::workspace("workspace_not_set", "未绑定工作区".to_string()),
+            ToolError::external_code("read_file_io_failed", "读取失败".to_string()),
+            // 带退出码的路径：首行不是前缀，但 ③ 级能解析出退出码。
+            ToolError::subprocess_failed(
+                "cargo_check",
+                101,
+                "退出码：101\n标准错误：\nboom".to_string(),
+            ),
+        ];
+        for e in cases {
+            let head = e.message.lines().next().unwrap_or("");
+            assert!(
+                crate::cm_tools::tool_result::error_text::has_known_error_prefix(head)
+                    || e.parsed.exit_code.is_some(),
+                "首行既无已知前缀也无退出码，下游只能靠猜：{head:?}（code={}）",
+                e.code
+            );
+        }
+    }
+
     #[test]
     fn tool_error_from_unknown_tool_legacy() {
         let raw = "未知工具：foo".to_string();

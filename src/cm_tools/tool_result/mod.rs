@@ -43,9 +43,8 @@ use std::borrow::Cow;
 use serde_json::Value;
 
 use run_command::{
-    exit_code_in_header_region, extract_streams, looks_like_failure,
-    looks_like_failure_structured, parse_exit_code, run_command_structured_payload,
-    strip_leading_command_invocation_line,
+    exit_code_in_header_region, extract_streams, looks_like_failure, parse_exit_code,
+    run_command_structured_payload, strip_leading_command_invocation_line,
 };
 use crate::cm_names as tool_names;
 
@@ -81,8 +80,22 @@ fn is_tool_output_header(first: &str) -> bool {
         || first.contains("\"kind\":\"crabmate_tool_output\"") // 非法 JSON 回退；合法头走 parse_line
 }
 
+/// 本仓自产工具的**部分失败区块行首**（`apply_patch` 的 `失败：`、`delete_files` 的
+/// `删除失败（N 个）：`）。
+///
+/// 这类正文把「成功区块」和「失败区块」并列，失败信息既不在首行、也不带 `错误：` 前缀。
+/// 它们是**固定格式而非用户措辞**（#1440 K8），所以只在这里逐行扫，不放进首行前缀表。
+fn is_partial_failure_block_line(line: &str) -> bool {
+    let t = line.trim_start();
+    t.starts_with(error_text::PATCH_PARTIAL_FAILURE_PREFIX)
+        || t.starts_with(error_text::PATCH_FAILED_PREFIX)
+        || t.starts_with(error_text::DELETE_FAILED_PREFIX)
+}
+
 fn body_after_header_looks_like_failure(body: &str) -> bool {
-    body.lines().skip(1).any(|l| looks_like_failure(l.trim()))
+    body.lines()
+        .skip(1)
+        .any(|l| looks_like_failure(l.trim()) || is_partial_failure_block_line(l))
 }
 
 /// 按 **header 契约** 判断，不维护工具名白名单：
@@ -126,17 +139,15 @@ pub fn parse_tool_output(tool_name: &str, output: &str) -> ParsedToolOutput {
     } else {
         // ④ 级：无头、无退出码，纯靠首行前缀判定。
         //
-        // **#1430**：改用收紧口径 [`looks_like_failure_structured`]（只认结构化前缀）。
-        // 前提是错误正文在产生处已补 `错误：`（`ToolError::build` / `dispatch_tool` 的裸字符串）；
-        // `contains("失败")` 那条宽口径只留给「工具正文扫描」类路径（`body_after_header_looks_like_failure`
-        // / `run_command_structured_payload` / `status.rs`），不再用于首行判定。
+        // **#1440 K8**：与 ②③ 及 `body` 扫描共用同一个 [`looks_like_failure`]
+        // （只认 `error_text::KNOWN_ERROR_PREFIXES`）；不再有宽口径分支。
         tracing::debug!(
             target: "crabmate::tool_result",
             tool = tool_name,
             first_line = %crate::redact::preview_chars(first, 80),
             "tool status fell back to text heuristics (no header, no exit_code)"
         );
-        !looks_like_failure_structured(first)
+        !looks_like_failure(first)
     };
     // 生产者显式声明的 `error_code` 优先于正文启发式，避免精确码（如 `invalid_args`）
     // 在主 Agent / SSE 路径退化为 `{tool}_failed`。

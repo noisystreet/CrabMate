@@ -13,9 +13,8 @@
 //! - **双向绑定**：产生处直接引用同名常量，或由单测断言 `Display` 前缀——改文案必然编译
 //!   失败或测试变红。已覆盖 `parse_args`、`write_precheck`、`run_command` 的两条短路说明、
 //!   [`super::ToolError::unknown_tool`]、`RunCommandError`。
-//! - **仅单向匹配**：[`ERROR_PREFIX`] / [`FAILURE_MARKER`] / [`TIMEOUT_MARKER`] 这类泛用词
-//!   散落在几十个产生点，无法逐处替换成常量；它们仍是「约定」，改这些词时要人工扫一遍
-//!   [`super::classify_error_code`]。
+//! - **仅单向匹配**：[`ERROR_PREFIX`] 这类泛用词散落在几十个产生点，无法逐处替换成常量；
+//!   它仍是「约定」，改这个词时要人工扫一遍 [`super::classify_error_code`]。
 //!
 //! `command_error.rs` 的 `thiserror` `#[error("…")]` 属性只接受字面量格式串，无法直接
 //! 引用常量，故那里改用单测把文案与常量绑死（改文案而漏改常量会让测试变红）。
@@ -53,7 +52,10 @@ pub(crate) const REPEATED_SAME_COMMAND_PREFIX: &str = "检测到同命令重复�
 /// 同类失败已发生的短路说明（`agent_turn` 的 `run_command` 家族短路）。
 pub(crate) const REPEATED_FAILURE_FAMILY_PREFIX: &str = "检测到同类失败已发生";
 
-/// 超时（多个工具的错误文案都会带这个词）。
+/// 「超时」字样。
+///
+/// **只服务 [`super::classify_error_code`] 的「错误码推断」**（把带超时的历史正文映射成
+/// `timeout`），**不参与成败判定**：`looks_like_failure` 只认前缀（#1440 K8）。
 pub(crate) const TIMEOUT_MARKER: &str = "超时";
 
 /// 工具正文的通用错误前缀。
@@ -62,12 +64,23 @@ pub(crate) const ERROR_PREFIX: &str = "错误";
 /// 执行失败（子进程 / 外部命令类工具）。
 pub(crate) const EXECUTE_FAILED_PREFIX: &str = "执行失败";
 
-/// 「失败」字样（宽口径判定用）。
+/// `apply_patch` 部分应用失败时，body 里**失败区块的行首**（输出用 `成功：` / `失败：`
+/// 两段列出文件）。
 ///
-/// **#1430**：④ 级首行判定已改用 `looks_like_failure_structured`（只认前缀）；本常量仍服务
-/// `body_after_header_looks_like_failure`（写预览正文逐行扫描）、`run_command_structured_payload`
-/// 与 `status.rs` 的三态判定——这些输入的正文**没有**「产生处补前缀」的保证。
-pub(crate) const FAILURE_MARKER: &str = "失败";
+/// **故意不进 [`KNOWN_ERROR_PREFIXES`]**：那张表服务「错误正文**首行**」判定
+/// （④ 级与 `ToolError::build` 补前缀），而这里是 body 中间的一行。只由
+/// `body_after_header_looks_like_failure` 的逐行扫描使用。
+pub(crate) const PATCH_PARTIAL_FAILURE_PREFIX: &str = "失败：";
+
+/// `delete_files` 部分失败时，body 里的失败区块行首（形如 `删除失败（2 个）：…`）。
+///
+/// 同 [`PATCH_PARTIAL_FAILURE_PREFIX`]：只用于 body 逐行扫描，不进首行前缀表。
+pub(crate) const DELETE_FAILED_PREFIX: &str = "删除失败（";
+
+/// `apply_patch` 整体失败时的区块行首（形如 `补丁应用失败：…`）。
+///
+/// 同 [`PATCH_PARTIAL_FAILURE_PREFIX`]：只用于 body 逐行扫描，不进首行前缀表。
+pub(crate) const PATCH_FAILED_PREFIX: &str = "补丁应用失败";
 
 /// 工具在错误正文里**显式嵌入错误码**的标记前缀，形如 `错误[http_timeout]：…`。
 ///
