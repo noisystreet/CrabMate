@@ -12,6 +12,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **A failed `git clone` now says why (#1440 K4).** `CLONE_GIT_FAILED` used to carry only
+  `git clone 失败（退出码 Some(128)）` — the `Option` Debug form, and no cause at all. It now renders the exit
+  code as `128` (or `被信号终止` when the process was signalled) and appends the last 3 **redacted** stderr
+  lines (≤400 chars). Error codes are unchanged.
+- **The "no GitHub credentials" branch no longer asserts it was a credentials problem.** With no token, *any*
+  GitHub HTTPS failure returned `CLONE_AUTH_REQUIRED` with "需要有效凭据" — so a public repo cloned over a
+  broken network, or a repo that does not exist (GitHub answers `404` for a private repo you cannot see),
+  told the user to go configure a token, and they hit the same failure after doing so. That branch now lists
+  the possible causes and points at the stderr tail; the token-present-but-rejected branch may still state it
+  plainly. Codes are unchanged, so clients keying on `CLONE_AUTH_REQUIRED` keep working.
+- **The clone auth-wording heuristics finally have tests.** `line_suggests_git_auth_failure` had zero
+  coverage, so its documented promise not to match generic fatals (`could not read from remote repository`,
+  `Could not resolve host`, `repository not found`) was not enforced. Added hit / miss tables plus a
+  `clone_fail_code_and_message` decision matrix.
 - **An upstream `5xx` is no longer reported as a rate limit (#1440 K3).** The quota / rate-limit check was a
   substring scan over the user-facing message, which always embeds `（HTTP {status}）` — so an upstream `503`
   matched the `HTTP 503` needle and surfaced to clients as `LLM_RATE_LIMIT` / HTTP **429**. The SSE golden

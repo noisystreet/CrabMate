@@ -1,11 +1,12 @@
 //! `POST /workspace/clone/stream`：项目池内 `git clone --progress` 并以 SSE 推送进度，成功后切换工作区。
 
+use std::collections::VecDeque;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
 
 use axum::Json;
@@ -27,8 +28,9 @@ use crate::workspace::path::{is_sensitive_workspace_path, validate_workspace_set
 use crate::workspace::project::workspace_project_dir;
 
 use super::clone_validate::{
-    WORKSPACE_CLONE_TIMEOUT, parse_clone_progress_percent, redact_clone_log_line,
-    split_progress_chunks, validate_clone_branch, validate_clone_repo_url,
+    WORKSPACE_CLONE_TIMEOUT, format_clone_exit_code, parse_clone_progress_percent,
+    push_stderr_tail, redact_clone_log_line, should_keep_stderr_tail_line, split_progress_chunks,
+    validate_clone_branch, validate_clone_repo_url, with_stderr_tail,
 };
 use super::handlers::apply_workspace_override;
 
@@ -173,6 +175,7 @@ async fn pump_git_stderr_lines(
     stderr: tokio::process::ChildStderr,
     tx: mpsc::Sender<Result<Event, axum::Error>>,
     auth_hint: Arc<AtomicBool>,
+    tail: Arc<Mutex<VecDeque<String>>>,
 ) {
     let mut reader = BufReader::new(stderr);
     let mut raw_buf = [0u8; 4096];
@@ -189,6 +192,9 @@ async fn pump_git_stderr_lines(
                     let redacted = redact_clone_log_line(&line);
                     if redacted.is_empty() {
                         continue;
+                    }
+                    if should_keep_stderr_tail_line(&redacted) {
+                        push_stderr_tail(&tail, &redacted);
                     }
                     if let Some((percent, label)) = parse_clone_progress_percent(&redacted) {
                         let _ = tx
@@ -215,6 +221,9 @@ async fn pump_git_stderr_lines(
             auth_hint.store(true, Ordering::Relaxed);
         }
         let redacted = redact_clone_log_line(&line_buf);
+        if should_keep_stderr_tail_line(&redacted) {
+            push_stderr_tail(&tail, &redacted);
+        }
         let _ = tx
             .send(sse_data(json!({ "type": "log", "line": redacted })))
             .await;
@@ -233,26 +242,62 @@ fn line_suggests_git_auth_failure(line: &str) -> bool {
         || l.contains("the requested url returned error: 403")
 }
 
+/// 纯判定：GitHub HTTPS / 有无凭据 / 强鉴权信号 / 退出码 / stderr 尾部 → (`error.code`, `message`)。
+///
+/// **错误码与改动前完全一致**，只有文案与摘要变化。三态：
+/// 1. **无凭据**：不能断言「就是凭据问题」——公开仓网络/DNS 失败、仓库不存在（GitHub 对
+///    无权限私有仓同样返回 `404`）都会走到这里，故文案列出**可能原因**。
+/// 2. **有凭据且命中强鉴权信号**：可以如实说「凭据被拒绝」。
+/// 3. 其余 → `CLONE_GIT_FAILED` + 退出码 + 摘要。
+fn clone_fail_code_and_message_for(
+    is_github_https: bool,
+    has_token: bool,
+    auth_hint: bool,
+    exit_code: Option<i32>,
+    stderr_tail: &[String],
+) -> (&'static str, String) {
+    if is_github_https && !has_token {
+        return (
+            "CLONE_AUTH_REQUIRED",
+            with_stderr_tail(
+                "git clone 失败：GitHub HTTPS 未配置凭据。请在「设置 → GitHub」连接，或配置服务端 GH_TOKEN；SSH remote 不使用 OAuth token。也可能不是凭据问题——仓库不存在或无权限（GitHub 对两者同样返回 404）、网络不可达都会失败，请对照下方原因。"
+                    .into(),
+                stderr_tail,
+            ),
+        );
+    }
+    if is_github_https && auth_hint {
+        return (
+            "CLONE_AUTH_REQUIRED",
+            with_stderr_tail(
+                "git clone 失败：已配置 GitHub 凭据但被拒绝。请确认 token 未过期且对该仓库有权限（可在「设置 → GitHub」重新连接，或更新服务端 GH_TOKEN；SSH remote 不使用 OAuth token）。"
+                    .into(),
+                stderr_tail,
+            ),
+        );
+    }
+    (
+        "CLONE_GIT_FAILED",
+        with_stderr_tail(
+            format!("git clone 失败（{}）", format_clone_exit_code(exit_code)),
+            stderr_tail,
+        ),
+    )
+}
+
 fn clone_fail_code_and_message(
     url: &str,
     auth_hint: bool,
     exit_code: Option<i32>,
+    stderr_tail: &[String],
 ) -> (&'static str, String) {
-    let github = crate::github_token::is_github_https_url(url);
-    let has_token = crate::github_token::resolve_token_plaintext().is_some();
-    // 无 token：GitHub HTTPS 失败一律引导连接；有 token：仅强鉴权信号才引导重连。
-    if github && (!has_token || auth_hint) {
-        (
-            "CLONE_AUTH_REQUIRED",
-            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → GitHub」连接，或配置服务端 GH_TOKEN；SSH remote 不使用 OAuth token。"
-                .into(),
-        )
-    } else {
-        (
-            "CLONE_GIT_FAILED",
-            format!("git clone 失败（退出码 {exit_code:?}）"),
-        )
-    }
+    clone_fail_code_and_message_for(
+        crate::github_token::is_github_https_url(url),
+        crate::github_token::resolve_token_plaintext().is_some(),
+        auth_hint,
+        exit_code,
+        stderr_tail,
+    )
 }
 
 /// 客户端断开 SSE 时发取消信号。
@@ -356,13 +401,15 @@ async fn run_clone_and_stream(job: CloneJob) {
     };
 
     let auth_hint = Arc::new(AtomicBool::new(false));
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stderr = child.stderr.take();
     let stdout = child.stdout.take();
     let tx_err = tx.clone();
     let auth_hint_pump = Arc::clone(&auth_hint);
+    let tail_pump = Arc::clone(&stderr_tail);
     let stderr_task = tokio::spawn(async move {
         if let Some(err) = stderr {
-            pump_git_stderr_lines(err, tx_err, auth_hint_pump).await;
+            pump_git_stderr_lines(err, tx_err, auth_hint_pump, tail_pump).await;
         }
     });
     let stdout_task = tokio::spawn(async move {
@@ -410,8 +457,17 @@ async fn run_clone_and_stream(job: CloneJob) {
 
     if !status.success() {
         cleanup_partial_clone(&pool, &target).await;
-        let (code, msg) =
-            clone_fail_code_and_message(&url, auth_hint.load(Ordering::Relaxed), status.code());
+        // stderr 尾部在采集时已脱敏；这里只做快照，避免持锁跨 `await`。
+        let tail_lines: Vec<String> = stderr_tail
+            .lock()
+            .map(|q| q.iter().cloned().collect())
+            .unwrap_or_default();
+        let (code, msg) = clone_fail_code_and_message(
+            &url,
+            auth_hint.load(Ordering::Relaxed),
+            status.code(),
+            &tail_lines,
+        );
         send_err(&tx, code, &msg).await;
         return;
     }
@@ -681,5 +737,69 @@ mod tests {
             .unwrap();
         assert!(st.success(), "clone failed");
         assert!(target.join(".git").exists());
+    }
+
+    /// 词表必须命中的 git 固定文案（风险是「git 升级改文案」，不是「用户换说法」）。
+    #[test]
+    fn auth_needles_hit_known_git_messages() {
+        for line in [
+            "remote: Invalid username or password.",
+            "fatal: Authentication failed for 'https://github.com/a/b.git/'",
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            "remote: Support for password authentication was removed on August 13, 2021.",
+            "error: The requested URL returned error: 401",
+            "error: The requested URL returned error: 403",
+        ] {
+            assert!(line_suggests_git_auth_failure(line), "应命中：{line}");
+        }
+    }
+
+    /// **误报边界比命中更重要**：泛化 fatal 不得被判成鉴权失败——否则网络 / DNS / 仓库不存在
+    /// 都会被引导去「配置凭据」，用户配完再试仍然失败。
+    #[test]
+    fn auth_needles_ignore_generic_fatal() {
+        for line in [
+            "fatal: could not read from remote repository",
+            "fatal: unable to access 'https://github.com/a/b.git/': Could not resolve host: github.com",
+            "ERROR: Repository not found.",
+            "fatal: the remote end hung up unexpectedly",
+            "ssh: connect to host github.com port 22: Connection timed out",
+            "git@github.com: Permission denied (publickey).",
+            "fatal: destination path '.' already exists and is not an empty directory.",
+        ] {
+            assert!(!line_suggests_git_auth_failure(line), "不应命中：{line}");
+        }
+    }
+
+    /// 三态决策矩阵：**错误码与改动前完全一致**，只有文案与摘要变化。
+    #[test]
+    fn fail_code_matrix() {
+        let tail = vec!["fatal: Repository not found.".to_string()];
+
+        // ① 无凭据：仍给 AUTH_REQUIRED（保住私有仓引导），但不得断言「就是凭据问题」。
+        let (code, msg) = clone_fail_code_and_message_for(true, false, false, Some(128), &tail);
+        assert_eq!(code, "CLONE_AUTH_REQUIRED");
+        assert!(msg.contains("也可能不是凭据问题"), "{msg}");
+        assert!(msg.contains("Repository not found"), "应附摘要：{msg}");
+
+        // ② 有凭据但命中强鉴权信号：可以如实断言。
+        let (code, msg) = clone_fail_code_and_message_for(true, true, true, Some(128), &[]);
+        assert_eq!(code, "CLONE_AUTH_REQUIRED");
+        assert!(msg.contains("凭据但被拒绝"), "{msg}");
+
+        // ③ 有凭据、无鉴权信号：普通失败 + 退出码（不得出现 Debug 形态）。
+        let (code, msg) = clone_fail_code_and_message_for(true, true, false, Some(128), &[]);
+        assert_eq!(code, "CLONE_GIT_FAILED");
+        assert!(msg.contains("退出码 128"), "{msg}");
+        assert!(!msg.contains("Some("), "不得打印 Debug 形态：{msg}");
+
+        // 无退出码（被信号杀死）。
+        let (_, msg) = clone_fail_code_and_message_for(false, true, false, None, &[]);
+        assert!(msg.contains("被信号终止"), "{msg}");
+
+        // 非 GitHub + 命中词表：词表不得改变非 GitHub 的引导。
+        let (code, msg) = clone_fail_code_and_message_for(false, false, true, Some(128), &[]);
+        assert_eq!(code, "CLONE_GIT_FAILED");
+        assert!(msg.contains("退出码 128"), "{msg}");
     }
 }
