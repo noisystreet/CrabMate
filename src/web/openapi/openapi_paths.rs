@@ -10,73 +10,6 @@ use super::{
 };
 
 
-fn openapi_paths_fragment_system() -> Value {
-    json!({
-        "/openapi.json": {
-            "get": {
-                "tags": ["system"],
-                "summary": "OpenAPI 本文档",
-                "responses": {
-                    "200": {
-                        "description": "OpenAPI 3.0 JSON",
-                        "content": super::openapi_helpers::json_content(json!({ "type": "object" }))
-                    }
-                }
-            }
-        },
-        "/health": {
-            "get": {
-                "tags": ["system"],
-                "summary": "健康检查（依赖、可选 LLM models 探活等）",
-                "responses": {
-                    "200": {
-                        "description": "健康报告 JSON（status + checks；checks 键随运行环境动态增减）",
-                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/HealthReportView" }))
-                    }
-                }
-            }
-        },
-        "/status": {
-            "get": {
-                "tags": ["system"],
-                "summary": "运行状态（模型、工具数、会话模式默认、规划配置等）",
-                "parameters": [
-                    {
-                        "name": "view",
-                        "in": "query",
-                        "required": false,
-                        "schema": { "type": "string", "enum": ["shell"] },
-                        "description": "为 shell 时返回 Web 壳层稳定子集 StatusShellView；省略则返回完整运行状态（StatusResponseBody）"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "状态 JSON",
-                        "content": super::openapi_helpers::json_content(json!({
-                                    "oneOf": [
-                                        { "$ref": "#/components/schemas/StatusShellView" },
-                                        { "$ref": "#/components/schemas/StatusResponseBody" }
-                                    ]
-                                }))
-                    }
-                }
-            }
-        },
-        "/web-ui": {
-            "get": {
-                "tags": ["system"],
-                "summary": "CSR 展示开关（Markdown、助手展示过滤；受 CM_WEB_* 环境变量影响）",
-                "responses": {
-                    "200": {
-                        "description": "Web UI 配置 JSON",
-                        "content": super::openapi_helpers::json_content(json!({ "$ref": "#/components/schemas/WebUiConfigResponse" }))
-                    }
-                }
-            }
-        },
-    })
-}
-
 fn openapi_paths_fragment_chat_core() -> Value {
     json!({
         "/chat": {
@@ -732,8 +665,10 @@ fn openapi_paths_fragment_github() -> Value {
 }
 
 pub(super) fn openapi_paths_value() -> Value {
+    // `system` 组已迁入声明表（`web/routes/decl/system.rs`），由渲染器生成；
+    // 其余分组仍是手写片段，按 `routes/` 逐批迁移（issue #1382）。
     merge_object_fragments("openapi path", "OpenAPI path", &[
-        openapi_paths_fragment_system(),
+        super::route_render::render_route_decls(crate::web::routes::decl::system_decls()),
         openapi_paths_fragment_chat_core(),
         openapi_paths_chat_stream::openapi_paths_fragment_chat_stream_cancel(),
         openapi_paths_fragment_chat_async(),

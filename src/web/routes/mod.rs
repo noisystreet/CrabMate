@@ -15,9 +15,14 @@
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
 //! | [`tools`] | `/tools`、`/tools/plugins`、`/tools/{tool_name}`、`/tools/{tool_name}/enabled`、`/tools/jobs/*` | 工具清单/详情/插件列表/进程级启停 + 后台任务轮询取消 |
 //! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`**；[`E2eConversationFixtureFacet`](crate::web::app_state_facets::E2eConversationFixtureFacet) |
+//!
+//! [`decl`] 不是路由注册模块，而是 **HTTP 端点声明表**：`(path, method)` 一行，OpenAPI
+//! `paths` 由它渲染（issue #1382）。它按**语义分组**聚合，因此跨文件注册的端点
+//! （如 `/web-ui` 注册在 `cm_web_host`）能与同组端点写在一起。
 
 pub(crate) mod chat;
 pub(crate) mod config;
+pub(crate) mod decl;
 pub(crate) mod e2e_fixtures;
 pub(crate) mod github;
 pub(crate) mod memory;
