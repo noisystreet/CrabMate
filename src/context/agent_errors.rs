@@ -25,11 +25,13 @@ const QUOTA_OR_RATE_LIMIT_NEEDLES: &[&str] = &[
 
 /// 配额 / 限流 / 余额类（与 `llm::api` 常见中文文案及 HTTP 状态片段对齐）。
 ///
-/// #1422 C4：这是**子串反查**，属已知缺口而非完备判据——`余额` / `insufficient` /
-/// `限流` 出现在正文里未必表示命中配额（`余额充足` / `insufficient evidence`）。
-/// 该路径本来就有 HTTP status 可用，最终解是结构化判定（与 #1427 同族的方法论）。
-/// 按 issue 的建议，当前**保留文案 + 用 golden 钉住已知误判**；
-/// 不要为了「让用例转绿」而加词或删词，那只会把误判藏起来。
+/// **现在只服务 CLI 退出码归类与契约测试**（`classify_model_error_message` + `tests/cli_contract.rs`）：
+/// #1440 K3 之后，SSE / HTTP 面的 `LLM_RATE_LIMIT` 与 `429` 已改由
+/// [`crate::cm_llm::classify_llm_failure`] 在 `LlmCallError` 构造点**结构化**判定，不再读本函数。
+///
+/// 保留原因：CLI 退出码路径只拿到**错误字符串**、没有 HTTP status，只能靠文案。
+/// 已知误判（`余额充足` / `insufficient evidence` / `限流说明文档`）由
+/// `quota_needles_known_false_positives_are_pinned` 钉住——不要为了让用例转绿而加词删词。
 pub fn is_quota_or_rate_limit_llm_message(msg: &str) -> bool {
     QUOTA_OR_RATE_LIMIT_NEEDLES.iter().any(|n| msg.contains(n))
 }
@@ -87,6 +89,9 @@ mod tests {
     }
 
     /// #1422 C4：喂给 needle 表的 HTTP 状态片段全覆盖（这些是「真命中」）。
+    ///
+    /// **本函数现仅服务 CLI 退出码归类**（#1440 K3 起，SSE / HTTP 面走结构化判定）：
+    /// 改这里不会改变线协议行为，要改协议语义请改 `cm_llm::classify_llm_failure`。
     #[test]
     fn quota_needles_cover_status_fragments() {
         for text in [

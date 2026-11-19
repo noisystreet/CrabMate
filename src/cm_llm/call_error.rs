@@ -3,6 +3,62 @@
 use std::error::Error;
 use std::fmt;
 
+/// 一次 LLM HTTP / 传输失败的**结构化分类**。
+///
+/// 判定只在构造点（[`LlmCallError::from_http_api`] / [`LlmCallError::boxed_from_reqwest`]）做一次；
+/// 下游（SSE `code`、HTTP 状态、CLI 退出码）只读本字段，**不再**对用户可见文案做子串反查（#1440 K3）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmFailureClass {
+    /// 配额 / 限流：`429`、`402`，或响应体带明确配额语义（部分网关用 `400` 报 quota）。
+    QuotaOrRateLimit,
+    /// 其余 HTTP / 传输失败。
+    Other,
+}
+
+/// 响应体中**明确表示配额 / 限流**的语义片段（上游文案，与状态码互补）。
+///
+/// 刻意**不含** `HTTP 429` / `status=429` / `HTTP 503` 这类状态片段：状态已由
+/// [`classify_llm_failure`] 的结构化分支处理，留在文本里只会在状态本非配额时制造误判——
+/// 历史实现因此把上游 503 误判成限流（#1440 K3）。
+///
+/// **不要把中文「配额」加进来**：`LlmCallError::from_http_api` 的兜底 `user_message`
+/// 恒为「…请检查 API 密钥与**配额**，或稍后重试」，一旦命中，所有 5xx 都会变成配额类。
+/// 生产路径已改读**原始响应体**（见 [`LlmCallError::from_http_api_classified`]），但便捷构造
+/// 仍可能把该文案传进来。
+const QUOTA_SEMANTIC_NEEDLES: &[&str] = &[
+    "quota",
+    "Quota",
+    "insufficient",
+    "rate limit",
+    "too many requests",
+    "限流",
+    "余额",
+];
+
+/// 鉴权 / 路径类状态：**短路**语义反查，避免 `账户余额充足` 这类正文把鉴权失败判成配额。
+fn status_is_auth_or_route(status: u16) -> bool {
+    matches!(status, 401 | 403 | 404)
+}
+
+/// 结构化判定一次：状态码优先，其次响应体语义片段。
+///
+/// `text` 传**上游响应体摘要**（`user_message` 亦可，其内容是 `（HTTP {status}）：{摘要}`）。
+pub fn classify_llm_failure(status: Option<u16>, text: &str) -> LlmFailureClass {
+    if let Some(s) = status {
+        if matches!(s, 429 | 402) {
+            return LlmFailureClass::QuotaOrRateLimit;
+        }
+        if status_is_auth_or_route(s) {
+            return LlmFailureClass::Other;
+        }
+    }
+    if QUOTA_SEMANTIC_NEEDLES.iter().any(|n| text.contains(n)) {
+        LlmFailureClass::QuotaOrRateLimit
+    } else {
+        LlmFailureClass::Other
+    }
+}
+
 /// 模型 HTTP 调用失败（含传输层）；与 `redact` 后的用户可见文案一致，并标记是否应指数退避重试。
 #[derive(Debug, Clone)]
 pub struct LlmCallError {
@@ -10,6 +66,8 @@ pub struct LlmCallError {
     pub user_message: String,
     pub http_status: Option<u16>,
     pub retryable: bool,
+    /// 配额 / 限流与否（构造点一次判定，见 [`classify_llm_failure`]）。
+    pub class: LlmFailureClass,
 }
 
 impl fmt::Display for LlmCallError {
@@ -29,10 +87,26 @@ pub fn http_status_retryable_for_backoff(status: u16) -> bool {
 }
 
 impl LlmCallError {
+    /// **生产入口**：分类读**原始响应体**（而非拼接后的 `user_message`），
+    /// 这样「兜底提示语的措辞」与「判定」彻底解耦。
+    pub fn from_http_api_classified(status: u16, user_message: String, body: &str) -> Self {
+        Self {
+            retryable: http_status_retryable_for_backoff(status),
+            http_status: Some(status),
+            class: classify_llm_failure(Some(status), body),
+            user_message,
+        }
+    }
+
+    /// 便捷构造：分类只在 `user_message` 上做（测试 / golden / 无独立 body 的调用点）。
+    ///
+    /// 生产路径请用 [`Self::from_http_api_classified`]——`user_message` 里混着
+    /// 「请检查 API 密钥与配额」这类**我们自己写的**提示语，不该参与语义判定。
     pub fn from_http_api(status: u16, user_message: String) -> Self {
         Self {
             retryable: http_status_retryable_for_backoff(status),
             http_status: Some(status),
+            class: classify_llm_failure(Some(status), &user_message),
             user_message,
         }
     }
@@ -47,6 +121,7 @@ impl LlmCallError {
             user_message: msg,
             http_status: None,
             retryable,
+            class: LlmFailureClass::Other,
         })
     }
 }
@@ -152,5 +227,69 @@ mod tests {
         });
         assert!(err.is_connect(), "{err}");
         assert!(reqwest_transport_error_retryable(&err));
+    }
+
+    /// #1440 K3：配额判定只做在**构造点**，且状态码优先于文本片段。
+    ///
+    /// 关键回归：上游 `503` 的 `user_message` 恒含 `（HTTP 503）`，历史实现靠子串反查把它
+    /// 误判成限流（对外 `429` / `LLM_RATE_LIMIT`）；结构化后必须回落成普通失败。
+    #[test]
+    fn classify_llm_failure_prefers_status_and_ignores_status_fragments() {
+        let unavail = LlmCallError::from_http_api(
+            503,
+            "模型接口返回错误（HTTP 503），请检查 API 密钥与配额，或稍后重试".to_string(),
+        );
+        assert_eq!(unavail.class, LlmFailureClass::Other, "503 不是限流");
+
+        let limited =
+            LlmCallError::from_http_api(429, "模型接口返回错误（HTTP 429）：x".to_string());
+        assert_eq!(limited.class, LlmFailureClass::QuotaOrRateLimit);
+
+        let payment = LlmCallError::from_http_api(402, "payment required".to_string());
+        assert_eq!(payment.class, LlmFailureClass::QuotaOrRateLimit);
+
+        // 非标网关：用 400 报配额（golden `llm_transport_quota_msg` 的契约）。
+        let quota_400 = LlmCallError::from_http_api(400, "You exceeded your current quota".to_string());
+        assert_eq!(quota_400.class, LlmFailureClass::QuotaOrRateLimit);
+
+        // 鉴权类短路：正文里的「余额充足」不得把 401 判成配额。
+        let auth = LlmCallError::from_http_api(
+            401,
+            "模型接口返回错误（HTTP 401）：账户余额充足".to_string(),
+        );
+        assert_eq!(auth.class, LlmFailureClass::Other);
+
+        // 无响应（传输层）一律非配额。
+        assert_eq!(
+            classify_llm_failure(None, "connection reset"),
+            LlmFailureClass::Other
+        );
+    }
+
+    /// 生产入口只读**原始响应体**：`user_message` 里的自有提示语不参与判定。
+    #[test]
+    fn classified_constructor_reads_body_not_user_message() {
+        // body 无配额语义 → 503 仍是普通失败，哪怕 user_message 里有「配额」二字。
+        let unavail = LlmCallError::from_http_api_classified(
+            503,
+            "模型接口返回错误（HTTP 503），请检查 API 密钥与配额，或稍后重试".to_string(),
+            "<html>502 Bad Gateway</html>",
+        );
+        assert_eq!(unavail.class, LlmFailureClass::Other);
+        assert_eq!(unavail.http_status, Some(503));
+
+        // body 有配额语义 → 判配额。
+        let quota = LlmCallError::from_http_api_classified(
+            500,
+            "模型接口返回错误（HTTP 500），请检查 API 密钥与配额，或稍后重试".to_string(),
+            "{\"error\":{\"message\":\"insufficient_quota\"}}",
+        );
+        assert_eq!(quota.class, LlmFailureClass::QuotaOrRateLimit);
+
+        // 英文限流短语（网关常见形态）。
+        assert_eq!(
+            classify_llm_failure(Some(503), "rate limit exceeded, please retry later"),
+            LlmFailureClass::QuotaOrRateLimit
+        );
     }
 }

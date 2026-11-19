@@ -46,7 +46,11 @@ fn build_turn_error(case: &Value) -> RunAgentTurnError {
                 .to_string();
             RunAgentTurnError::Llm {
                 phase,
-                kind: LlmCompleteError::Transport(LlmCallError::from_http_api(status, msg)),
+                // 走生产同一条入口：`from_boxed` 按 `LlmCallError::class` 分流
+                // `RateLimit` / `Transport`（#1440 K3），不要直接构造变体绕过分类。
+                kind: LlmCompleteError::from_boxed(Box::new(LlmCallError::from_http_api(
+                    status, msg,
+                ))),
             }
         }
         "llm_other" => {

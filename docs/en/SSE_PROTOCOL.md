@@ -165,8 +165,8 @@ Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`,
 | `REPLAN_EXHAUSTED` | `agent_turn` | Global replan budget exhausted (same shape) |
 | `TIME_LIMIT_EXHAUSTED` | `agent_turn` | Wall-clock time limit (same shape) |
 | `TOKEN_LIMIT_EXHAUSTED` | `agent_turn` | Token budget exhausted (same shape) |
-| `LLM_REQUEST_FAILED` | `chat_job_queue` (mapped from `agent_turn`) | Model HTTP/transport failure (**`error`** is the redacted gateway message; prefer **`LLM_RATE_LIMIT`** for **429** / quota heuristics) |
-| `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Rate limit / quota class (**HTTP 429** or heuristic aligned with `agent_errors::is_quota_or_rate_limit_llm_message`) |
+| `LLM_REQUEST_FAILED` | `chat_job_queue` (mapped from `agent_turn`) | Model HTTP/transport failure (**`error`** is the redacted gateway message; quota / rate limit use **`LLM_RATE_LIMIT`**) |
+| `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Quota / rate limit (**structured** server-side: HTTP **429/402**, or quota wording in the upstream body; never the rendered message) |
 | `turn_aborted` | `chat_job_queue` (mapped from `agent_turn`) | Orchestration early stop (e.g. SSE receiver closed while the turn continues); **`error`** is user-facing |
 | `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open (`POST /chat/stream/{job_id}/cancel` or internal cooperative cancel) |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | Final plan rewrite budget exhausted |
