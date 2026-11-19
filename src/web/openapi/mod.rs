@@ -14,6 +14,7 @@ mod openapi_paths_tools;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
 mod openapi_paths_workspace;
+mod route_render;
 #[cfg(test)]
 mod route_table;
 
@@ -80,6 +81,60 @@ mod tests {
         assert!(
             documented.iter().all(|(path, _)| !path.starts_with("/e2e/")),
             "E2E fixture routes must not appear in OpenAPI"
+        );
+    }
+
+    /// 声明表里的每个 `(path, method)` 都必须真的挂在 axum `.route(` 上。
+    ///
+    /// 表与注册之间只有字符串关联（Rust 无编译期绑定），这条是「表不能凭空多出端点」的护栏；
+    /// 反方向（注册了但没进表）由 [`openapi_ops_match_axum_route_source`] 兜住，
+    /// 分批迁移完成后两者合起来即为双向一致。
+    #[test]
+    fn declared_ops_are_mounted_in_axum_routes() {
+        let mounted = super::route_table::axum_route_ops_from_source(Path::new(env!(
+            "CARGO_MANIFEST_DIR"
+        )));
+        let missing: Vec<_> = crate::web::routes::decl::all()
+            .into_iter()
+            .map(|decl| (decl.method.as_str(), decl.path))
+            .filter(|(method, path)| !mounted.contains(&(path.to_string(), method.to_string())))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "声明表里的端点没在源码 `.route(` 找到（method, path）：{missing:?}"
+        );
+    }
+
+    /// 声明表登记的 component 名必须在 `components.schemas` 里存在。
+    ///
+    /// 表里写的是字符串而不是 `JsonSchema` 类型，拼错只会表现为「OpenAPI 里有个悬空 `$ref`」，
+    /// 所以这里在渲染之外单独断言一次。
+    #[test]
+    fn declared_schema_refs_exist_in_components() {
+        let spec = build_openapi_spec();
+        let schemas = spec["components"]["schemas"]
+            .as_object()
+            .expect("components.schemas object");
+        let mut missing = Vec::new();
+        for decl in crate::web::routes::decl::all() {
+            // `Conditional` 不进 OpenAPI（渲染器跳过该行），其引用的 schema 不必存在。
+            if matches!(
+                decl.override_kind,
+                crate::web::routes::decl::Override::Conditional
+            ) {
+                continue;
+            }
+            let mut refs = Vec::new();
+            decl.collect_refs(&mut refs);
+            for name in refs {
+                if !schemas.contains_key(name) {
+                    missing.push((decl.path, name));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "声明表引用了不存在的 components schema（path, schema）：{missing:?}"
         );
     }
 
