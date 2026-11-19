@@ -10,7 +10,9 @@
 
 use serde_json::{Map, Value, json};
 
-use crate::web::routes::decl::{Override, ParamDecl, RespDecl, RouteDecl, SchemaDecl};
+use crate::web::routes::decl::{
+    MediaDecl, Override, ParamDecl, RequestBody, RespBody, RespDecl, RouteDecl, SchemaDecl,
+};
 
 use super::openapi_helpers::{json_content, protected_security};
 
@@ -65,8 +67,37 @@ fn render_operation(decl: &RouteDecl) -> Value {
             Value::Array(decl.params.iter().map(render_param).collect()),
         );
     }
+    if let Some(request) = &decl.request {
+        operation.insert("requestBody".to_string(), render_request_body(request));
+    }
     operation.insert("responses".to_string(), render_responses(decl));
     Value::Object(operation)
+}
+
+/// 渲染 `requestBody`。`required` 为 false 时**不写该键**——原契约就是这么写的
+/// （`POST /workspace` 没有 `required`），补上 `false` 会造成快照漂移。
+fn render_request_body(request: &RequestBody) -> Value {
+    let mut out = Map::new();
+    if request.required {
+        out.insert("required".to_string(), json!(true));
+    }
+    out.insert("content".to_string(), render_request_media(request.media));
+    Value::Object(out)
+}
+
+fn render_request_media(media: MediaDecl) -> Value {
+    match media {
+        MediaDecl::JsonRef(name) => json_content(schema_ref(name)),
+        MediaDecl::JsonInline(build) => json_content(build()),
+        MediaDecl::Binary(media_type) => {
+            let mut content = Map::new();
+            content.insert(
+                media_type.to_string(),
+                json!({ "schema": render_schema(SchemaDecl::Binary) }),
+            );
+            Value::Object(content)
+        }
+    }
 }
 
 /// 渲染 `parameters`：`"in"` 由 [`ParamDecl::location`] 决定，不再写死 query。
@@ -103,10 +134,23 @@ fn render_responses(decl: &RouteDecl) -> Value {
 fn render_response_body(resp: &RespDecl) -> Value {
     let mut body = Map::new();
     body.insert("description".to_string(), json!(resp.description));
-    // `schema: None` 表示**有意**无 `content`（`4XX` / `5XX` 的纯状态码说明），不是漏写；
-    // 漏写会表现为「该有 schema 的 200 变成了纯说明」，由 `docs/openapi.json` 快照测试拦住。
-    if let Some(schema) = resp.schema {
-        body.insert("content".to_string(), json_content(render_schema(schema)));
+    match resp.body {
+        // `RespBody::None` 表示**有意**无 `content`（`4XX` / `5XX` 的纯状态码说明），不是漏写；
+        // 漏写会表现为「该有 schema 的 200 变成了纯说明」，由 `docs/openapi.json` 快照测试拦住。
+        RespBody::None => {}
+        RespBody::Json(schema) => {
+            body.insert("content".to_string(), json_content(render_schema(schema)));
+        }
+        RespBody::Media(items) => {
+            let mut content = Map::new();
+            for item in items {
+                content.insert(
+                    item.media.to_string(),
+                    json!({ "schema": render_schema(item.schema) }),
+                );
+            }
+            body.insert("content".to_string(), Value::Object(content));
+        }
     }
     Value::Object(body)
 }
@@ -115,6 +159,9 @@ fn render_schema(schema: SchemaDecl) -> Value {
     match schema {
         SchemaDecl::Ref(name) => schema_ref(name),
         SchemaDecl::Object => json!({ "type": "object" }),
+        SchemaDecl::Binary => json!({ "type": "string", "format": "binary" }),
+        SchemaDecl::Bool => json!({ "type": "boolean" }),
+        SchemaDecl::Str => json!({ "type": "string" }),
         SchemaDecl::StrEnum([]) => json!({ "type": "string" }),
         SchemaDecl::StrEnum(values) => json!({ "type": "string", "enum": values }),
         SchemaDecl::OneOfRefs(names) => json!({
@@ -149,10 +196,11 @@ mod tests {
             description: Some("读说明"),
             protected: true,
             params: &[QUERY_PARAM],
+            request: None,
             responses: &[RespDecl {
                 status: "200",
                 description: "读取结果",
-                schema: Some(SchemaDecl::Ref("MockView")),
+                body: RespBody::Json(SchemaDecl::Ref("MockView")),
             }],
             override_kind: Override::None,
         },
@@ -164,16 +212,17 @@ mod tests {
             description: None,
             protected: false,
             params: &[],
+            request: None,
             responses: &[
                 RespDecl {
                     status: "200",
                     description: "写入结果",
-                    schema: Some(SchemaDecl::Object),
+                    body: RespBody::Json(SchemaDecl::Object),
                 },
                 RespDecl {
                     status: "4XX",
                     description: "参数错误",
-                    schema: None,
+                    body: RespBody::None,
                 },
             ],
             override_kind: Override::None,
@@ -229,10 +278,11 @@ mod tests {
             description: None,
             protected: false,
             params: &[],
+            request: None,
             responses: &[RespDecl {
                 status: "200",
                 description: "合一",
-                schema: Some(SchemaDecl::OneOfRefs(&["BView", "AView"])),
+                body: RespBody::Json(SchemaDecl::OneOfRefs(&["BView", "AView"])),
             }],
             override_kind: Override::None,
         }];
@@ -267,6 +317,7 @@ mod tests {
                 description: Some("任意字符串"),
                 schema: SchemaDecl::StrEnum(&[]),
             }],
+            request: None,
             responses: &[],
             override_kind: Override::None,
         }];
@@ -293,6 +344,7 @@ mod tests {
                 description: None,
                 schema: SchemaDecl::StrEnum(&[]),
             }],
+            request: None,
             responses: &[],
             override_kind: Override::None,
         }];
@@ -316,6 +368,7 @@ mod tests {
                 description: None,
                 protected: false,
                 params: &[],
+                request: None,
                 responses: &[],
                 override_kind: Override::Conditional,
             },
@@ -327,6 +380,7 @@ mod tests {
                 description: None,
                 protected: false,
                 params: &[],
+                request: None,
                 responses: &[],
                 override_kind: Override::None,
             },
@@ -351,6 +405,7 @@ mod tests {
                 description: None,
                 protected: false,
                 params: &[],
+                request: None,
                 responses: &[],
                 override_kind: Override::None,
             },
@@ -362,6 +417,7 @@ mod tests {
                 description: None,
                 protected: false,
                 params: &[],
+                request: None,
                 responses: &[],
                 override_kind: Override::None,
             },
