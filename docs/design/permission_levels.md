@@ -276,7 +276,7 @@ effective = min(chosen, ceiling, role.max_permission_level)
   但 `run_command` 的 `AllowAlways` 存的是**裸命令名**（`run_command/approval.rs`）。引入等级后必须防止“高等级批过的键在低等级继续放行”。
 
 **决定：给键加等级前缀，存储类型不变**（仍是 `Arc<Mutex<HashSet<String>>>`）。这是第一优先级方案——不新增结构体、不改序列化、不动调用方签名；
-  该集合是**内存态**（`stream_job_setup.rs:162` 以空集初始化），无磁盘 schema，故**零迁移成本**。
+  该集合是**内存态**（`stream_job_setup.rs` 的 `stream_job_web_tool_ctx` 以空集初始化），无磁盘 schema，故**零迁移成本**。
 
 | 来源 | 现有键 | 加前缀后 |
 |---|---|---|
@@ -1136,7 +1136,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | 执行附件（`RunLoopAttach`） | `src/agent/agent_turn/host/params.rs:65` |
 | Docker 沙盒挂载 | `src/tool_sandbox/mod.rs:82` |
 | ceiling 推导（loopback 判断） | `src/cli_run.rs:534`（`validate_bind_auth`） |
-| 会话级 allowlist（内存态） | `src/chat_job_queue/worker/stream_job_setup.rs:162` |
+| 会话级 allowlist（内存态） | `src/chat_job_queue/worker/stream_job_setup.rs` 的 `stream_job_web_tool_ctx` |
 | workflow 节点能力上下文 | `src/cm_workflow/run.rs:228`、`src/cm_workflow/execute/node.rs:36` |
 | MCP 一律放行（现状） | `src/cm_agent/step_executor_policy.rs:98` |
 | MCP / 动态工具判定 | `src/cm_tools/tool_naming.rs` |

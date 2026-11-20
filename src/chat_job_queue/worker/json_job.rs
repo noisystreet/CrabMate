@@ -6,14 +6,11 @@ use log::{debug, error, info};
 use tokio::sync::oneshot;
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
-use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 use crate::types::Message;
 
 use super::super::stream_finish::{PostTurnWebPrepareParams, post_turn_web_prepare_and_save};
-use super::super::{
-    ChatJsonJobFailure, PerTurnFlight, WebChatJobEnvelope, resolve_executor_llm_for_job,
-    resolve_web_llm_for_job,
-};
+use super::super::{ChatJsonJobFailure, WebChatJobEnvelope};
+use super::prelude::{PreparedTurnParams, prepare_queued_turn};
 use super::JobOutcome;
 
 /// `run_json_queued_job` 入参（[`WebChatJobEnvelope`] + JSON oneshot）。
@@ -24,31 +21,7 @@ pub(super) struct JsonQueuedJobParams {
 
 pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     let JsonQueuedJobParams { envelope, reply_tx } = p;
-    let WebChatJobEnvelope {
-        job_id,
-        queue_deps,
-        app,
-        conversation_id,
-        mut messages,
-        expected_revision,
-        request_agent_role,
-        persisted_active_agent_role,
-        request_session_mode,
-        persisted_active_session_mode,
-        request_permission_level,
-        persisted_active_permission_level,
-        work_dir,
-        workspace_is_set,
-        temperature_override,
-        seed_override,
-        llm_override,
-        executor_llm_override,
-        readonly_tool_ttl_cache_secs,
-        request_audit,
-        client_sse_protocol: _,
-        request_id,
-        github_token: _,
-    } = envelope;
+    let job_id = envelope.job_id;
     info!(
         target: "crabmate",
         "chat json 任务开始执行 job_id={}",
@@ -58,89 +31,63 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         target: "crabmate",
         "chat json 执行上下文 job_id={} message_count={} last_user_preview={}",
         job_id,
-        messages.len(),
-        crate::redact::last_user_message_preview_for_log(&messages)
+        envelope.messages.len(),
+        crate::redact::last_user_message_preview_for_log(&envelope.messages)
     );
-    let flight = Arc::new(PerTurnFlight::default());
-    // 只登记、不持 guard：在册 ⟺ 本函数仍持有 `flight`（#1380）。故 `per_flight`
-    // 传 `Arc::clone` 而非 move，让条目活到收尾结束。
-    queue_deps.chat_queue.attach_per_flight(job_id, &flight);
-    let cfg_snap = {
-        let g = queue_deps.cfg.read().await;
-        std::sync::Arc::new(g.clone())
-    };
-    let session_mode = resolve_job_session_mode(
-        cfg_snap.as_ref(),
-        request_session_mode.as_deref(),
-        persisted_active_session_mode.as_deref(),
-        request_agent_role.as_deref(),
-        persisted_active_agent_role.as_deref(),
-    );
-    let (mut cfg_turn, api_key_turn) =
-        resolve_web_llm_for_job(queue_deps.as_ref(), cfg_snap.clone(), llm_override.as_ref());
-    if let Some(secs) = readonly_tool_ttl_cache_secs {
-        let mut c = (*cfg_turn).clone();
-        c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;
-        cfg_turn = Arc::new(c);
-    }
-    let turn_allow = turn_allow_for_web_or_cli_job(
-        &cfg_turn,
-        persisted_active_agent_role.as_deref(),
-        request_agent_role.as_deref(),
-    );
-    // 角色级权限上限：与工具白名单同一角色解析口径（设计 §6.1 的 min 链）。
-    let permission_role_max =
-        crate::context::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
-            &cfg_turn,
-            persisted_active_agent_role.as_deref(),
-            request_agent_role.as_deref(),
-        );
-    let tools_for_job =
-        filter_tools_for_agent_role(&queue_deps.tools, turn_allow.as_ref().map(|a| a.as_ref()));
-    let executor_override = resolve_executor_llm_for_job(
-        &queue_deps,
-        Arc::clone(&cfg_turn),
-        executor_llm_override.as_ref(),
-    );
-    let (executor_api_base, executor_api_key, executor_model_override) =
-        executor_llm_triple(executor_override.as_ref(), &cfg_turn);
-    let client_model_override = llm_override.as_ref().and_then(|o| o.model.clone());
+
+    // 前置解析（配置 / 角色 / 工具 / 权限 / executor / per-flight）与 SSE 路径共用同一份。
+    let prepared = prepare_queued_turn(PreparedTurnParams {
+        envelope: &envelope,
+        queue_deps: envelope.queue_deps.as_ref(),
+    })
+    .await;
+
+    let WebChatJobEnvelope {
+        queue_deps,
+        app,
+        conversation_id,
+        mut messages,
+        expected_revision,
+        request_agent_role,
+        request_session_mode,
+        request_permission_level,
+        work_dir,
+        workspace_is_set,
+        temperature_override,
+        seed_override,
+        request_audit,
+        request_id,
+        ..
+    } = envelope;
+
     let r = queue_deps
         .turn_runner
         .run(crate::TurnRequest::web_chat_json(
             crate::WebChatJsonBuildArgs {
                 shared: crate::RunAgentTurnSharedInputs {
                     client: &queue_deps.client,
-                    api_key: api_key_turn.as_str(),
-                    cfg: &cfg_turn,
-                    tools: tools_for_job.as_slice(),
+                    api_key: prepared.api_key_turn.as_str(),
+                    cfg: &prepared.cfg_turn,
+                    tools: prepared.tools_for_job.as_slice(),
                 },
                 messages: &mut messages,
                 effective_working_dir: &work_dir,
                 workspace_is_set,
-                per_flight: Arc::clone(&flight),
+                // 留一份强引用：它让条目在 `/status` 里活到收尾结束（#1380）。
+                per_flight: Arc::clone(&prepared.flight),
                 temperature_override,
-                model_override: client_model_override,
+                model_override: prepared.client_model_override,
                 use_executor_model: false,
-                executor_model_override,
-                executor_api_base,
-                executor_api_key,
+                executor_model_override: prepared.executor_model_override,
+                executor_api_base: prepared.executor_api_base,
+                executor_api_key: prepared.executor_api_key,
                 seed_override,
                 long_term_memory: queue_deps.long_term_memory.clone(),
                 job_id,
                 conversation_id: conversation_id.as_str(),
                 request_id,
-                turn_allowed_tool_names: turn_allow,
-                permission: crate::cm_agent::permission::TurnPermissionStages {
-                    role_max: permission_role_max,
-                    session_mode,
-                    requested: super::resolve_job_permission_requested(
-                        request_permission_level.as_deref(),
-                    ),
-                    persisted: super::resolve_job_permission_persisted(
-                        persisted_active_permission_level.as_deref(),
-                    ),
-                },
+                turn_allowed_tool_names: prepared.turn_allow,
+                permission: prepared.permission,
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
@@ -154,7 +101,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             job_id,
             app: &app,
             queue_deps: queue_deps.as_ref(),
-            cfg_snap: &cfg_snap,
+            cfg_snap: &prepared.cfg_snap,
             conversation_id: &conversation_id,
             messages: &mut messages,
             expected_revision,
@@ -165,54 +112,6 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     )
     .await;
     JobOutcome::Json { ok, cancelled, err }
-}
-
-fn resolve_job_session_mode(
-    cfg: &crate::config::AgentConfig,
-    request: Option<&str>,
-    persisted: Option<&str>,
-    request_agent_role: Option<&str>,
-    persisted_agent_role: Option<&str>,
-) -> crate::types::SessionMode {
-    let role_default = crate::session_mode_turn::role_default_session_mode_for_turn(
-        cfg,
-        persisted_agent_role,
-        request_agent_role,
-    );
-    match crate::session_mode_turn::resolve_session_mode_for_turn(
-        request,
-        persisted,
-        role_default,
-        cfg.roles_prompts.default_session_mode,
-    ) {
-        Ok(m) => m,
-        Err(e) => {
-            log::warn!(target: "crabmate", "session_mode resolve failed: {e}; using act");
-            crate::types::SessionMode::Act
-        }
-    }
-}
-
-fn executor_llm_triple(
-    executor_override: Option<&(Arc<crate::config::AgentConfig>, String)>,
-    cfg_turn: &crate::config::AgentConfig,
-) -> (Option<String>, Option<String>, Option<String>) {
-    match executor_override {
-        Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
-                Some(executor_cfg.llm.api_base.clone())
-            } else {
-                None
-            };
-            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
-                Some(executor_cfg.llm.model.clone())
-            } else {
-                None
-            };
-            (base, Some(executor_key.clone()), model)
-        }
-        None => (None, None, None),
-    }
 }
 
 struct JsonTurnFinishParams<'a> {

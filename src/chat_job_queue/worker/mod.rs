@@ -1,6 +1,7 @@
 //! 队列 worker：在独立 task 中经 [`crate::TurnEngine`] 执行回合（流式与 JSON 模式）。
 
 mod json_job;
+mod prelude;
 mod stream_job;
 mod stream_job_setup;
 

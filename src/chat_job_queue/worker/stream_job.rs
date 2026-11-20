@@ -8,7 +8,7 @@ use super::super::stream_finish::{
 };
 use super::super::{WebApprovalSession, WebChatJobEnvelope};
 use super::JobOutcome;
-use super::stream_job_setup::{StreamJobSetupParams, stream_job_setup_runtime};
+use super::stream_job_setup::{StreamJobRuntime, StreamJobSetupParams, stream_job_setup_runtime};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -51,11 +51,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         mut messages,
         expected_revision,
         request_agent_role,
-        persisted_active_agent_role,
         request_session_mode,
-        persisted_active_session_mode,
         request_permission_level,
-        persisted_active_permission_level,
         work_dir,
         workspace_is_set,
         temperature_override,
@@ -65,69 +62,45 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         ..
     } = p.envelope;
 
-    let cfg_snap = {
-        let g = queue_deps.cfg.read().await;
-        std::sync::Arc::new(g.clone())
-    };
-    let session_mode = match crate::session_mode_turn::resolve_session_mode_for_turn(
-        request_session_mode.as_deref(),
-        persisted_active_session_mode.as_deref(),
-        crate::session_mode_turn::role_default_session_mode_for_turn(
-            cfg_snap.as_ref(),
-            persisted_active_agent_role.as_deref(),
-            request_agent_role.as_deref(),
-        ),
-        cfg_snap.roles_prompts.default_session_mode,
-    ) {
-        Ok(m) => m,
-        Err(e) => {
-            log::warn!(target: "crabmate", "session_mode resolve failed: {e}; using act");
-            crate::types::SessionMode::Act
-        }
-    };
+    // 前置解析（配置 / 角色 / 工具 / 权限 / executor / per-flight）已由 setup 调
+    // `prepare_queued_turn` 完成，这里只取用，不再二次解析。解构 `rt` 而不借用：
+    // `prepared` 因此是拥有值，字段可直接 move 进 `TurnRequest`（与 JSON 路径同形）。
+    let StreamJobRuntime {
+        sse_tx,
+        cancel,
+        prepared,
+        web_tool_ctx,
+        approval_session_id,
+    } = rt;
 
     let mut params = crate::TurnRequest::web_chat_stream(crate::WebChatStreamBuildArgs {
         shared: crate::RunAgentTurnSharedInputs {
             client: &queue_deps.client,
-            api_key: rt.api_key_turn.as_str(),
-            cfg: &rt.cfg_turn,
-            tools: rt.tools_for_job.as_slice(),
+            api_key: prepared.api_key_turn.as_str(),
+            cfg: &prepared.cfg_turn,
+            tools: prepared.tools_for_job.as_slice(),
         },
         messages: &mut messages,
         effective_working_dir: &work_dir,
         workspace_is_set,
-        cancel: rt.cancel.clone(),
-        per_flight: std::sync::Arc::clone(&rt.flight),
-        web_tool_ctx: rt.web_tool_ctx.as_ref().map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
+        cancel: cancel.clone(),
+        per_flight: std::sync::Arc::clone(&prepared.flight),
+        web_tool_ctx: web_tool_ctx.as_ref().map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
         temperature_override,
-        model_override: rt.client_model_override,
+        model_override: prepared.client_model_override,
         use_executor_model: false,
-        executor_model_override: rt.executor_model_override,
-        executor_api_base: rt.executor_api_base,
-        executor_api_key: rt.executor_api_key,
+        executor_model_override: prepared.executor_model_override,
+        executor_api_base: prepared.executor_api_base,
+        executor_api_key: prepared.executor_api_key,
         seed_override,
         long_term_memory: queue_deps.long_term_memory.clone(),
         job_id,
         conversation_id: conversation_id.as_str(),
         request_id: request_id.clone(),
-        out: &rt.sse_tx,
-        turn_allowed_tool_names: rt.turn_allow,
-        permission: crate::cm_agent::permission::TurnPermissionStages {
-            // 角色级权限上限：与 `rt.turn_allow` 同一角色解析口径（设计 §6.1 的 min 链）。
-            role_max:
-                crate::context::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job(
-                    rt.cfg_turn.as_ref(),
-                    persisted_active_agent_role.as_deref(),
-                    request_agent_role.as_deref(),
-                ),
-            session_mode,
-            requested: super::resolve_job_permission_requested(
-                request_permission_level.as_deref(),
-            ),
-            persisted: super::resolve_job_permission_persisted(
-                persisted_active_permission_level.as_deref(),
-            ),
-        },
+        out: &sse_tx,
+        turn_allowed_tool_names: prepared.turn_allow,
+        // `TurnPermissionStages` 是 `Copy`，直接取用。
+        permission: prepared.permission,
         request_audit: std::sync::Arc::new(request_audit),
         process_handles: std::sync::Arc::clone(&app.process_handles),
         tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
@@ -135,7 +108,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     // e2e 测试注入的自定义 LLM 后端（`None` 时使用默认 HTTP 后端）。
     params.transport.llm_backend = queue_deps.llm_backend;
     // 排队期间已 cancel：仍发过 setup 帧，但不再进 LLM/工具。
-    let r = if rt.cancel.load(std::sync::atomic::Ordering::SeqCst) {
+    let r = if cancel.load(std::sync::atomic::Ordering::SeqCst) {
         // 未进 LLM/工具即被取消：合成一个空结构性提交，聚合保持 `Default`（全零 / 未截断）。
         Ok(crate::turn_runner::TurnOutcome {
             commit: crate::agent::model_context_view::StructuralCommit::default(),
@@ -146,16 +119,16 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     };
 
     cancel_watcher.abort();
-    if let Some(session_id) = rt.approval_session_id.as_deref() {
+    if let Some(session_id) = approval_session_id.as_deref() {
         app.approval_sessions.write().await.remove(session_id);
     }
 
-    let cancelled_by_signal = rt.cancel.load(std::sync::atomic::Ordering::SeqCst);
+    let cancelled_by_signal = cancel.load(std::sync::atomic::Ordering::SeqCst);
     // 层 1：`run_agent_turn` 通过 `PerTurnFlight` 记录本轮最后一次 assistant 输出是否被截断。
-    let assistant_finish_truncated =
-        rt.flight
-            .last_assistant_finish_truncated
-            .load(std::sync::atomic::Ordering::Relaxed);
+    let assistant_finish_truncated = prepared
+        .flight
+        .last_assistant_finish_truncated
+        .load(std::sync::atomic::Ordering::Relaxed);
     let mut stream_ended_sent = false;
     let (ok, cancelled, err, stream_end_reason) =
         stream_job_outcome_after_agent_turn(StreamJobOutcomeCtx {
@@ -163,12 +136,12 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             cancelled_by_signal,
             truncated: assistant_finish_truncated,
             queue_deps: queue_deps.as_ref(),
-            sse_tx: &rt.sse_tx,
-            flight: rt.flight.as_ref(),
+            sse_tx: &sse_tx,
+            flight: prepared.flight.as_ref(),
             job_id,
             request_id: request_id.clone(),
             messages: &mut messages,
-            cfg_snap: &cfg_snap,
+            cfg_snap: &prepared.cfg_snap,
             app: &app,
             conversation_id: conversation_id.as_str(),
             expected_revision,
@@ -180,15 +153,15 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .await;
 
     if cancelled {
-        emit_stream_cancelled_terminal(&rt.sse_tx, job_id, request_id.clone()).await;
+        emit_stream_cancelled_terminal(&sse_tx, job_id, request_id.clone()).await;
     }
     if !stream_ended_sent {
         let tiktoken_prompt_tokens =
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
-                &cfg_snap, &messages,
+                &prepared.cfg_snap, &messages,
             );
         emit_stream_ended_once(
-            &rt.sse_tx,
+            &sse_tx,
             job_id,
             stream_end_reason,
             &mut stream_ended_sent,
@@ -198,8 +171,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .await;
     }
     // 发完最后一帧就放手：桥接任务在通道关闭（⟺ 不可能再产帧）后自己摘除登记，因此这里
-    // 不需要任何 hub 调用。`rt` 余下的发送端（`web_tool_ctx.out_tx`）随函数返回一起 drop
-    // （`turn_allow` 已 move 进 `TurnRequest`，不能整体 `drop(rt)`）。
-    drop(rt.sse_tx);
+    // 不需要任何 hub 调用。`prepared` / `web_tool_ctx` 随函数返回 drop，这里只提前放掉
+    // `sse_tx`（它可能是最后一个发送端）。
+    drop(sse_tx);
     JobOutcome::Stream { ok, cancelled, err }
 }
