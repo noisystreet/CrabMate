@@ -9,8 +9,9 @@ use crate::types::{FunctionCall, Message, ToolCall};
 
 use super::ChatJobQueue;
 use super::stream_finish::{
-    completed_turn_end_reason, emit_missing_final_response_fallback_if_needed,
-    emit_stream_draining, emit_stream_ended_once, sse_payload_has_final_response_timeline,
+    StreamEndedOnce, completed_turn_end_reason,
+    emit_missing_final_response_fallback_if_needed, emit_stream_draining, emit_stream_ended_once,
+    sse_payload_has_final_response_timeline,
 };
 
 #[tokio::test]
@@ -423,7 +424,7 @@ async fn conversation_saved_emits_before_stream_ended() {
         "chat_job_queue::tests conversation_saved_before_end",
     )
     .await;
-    let mut sent = false;
+    let mut sent = StreamEndedOnce::default();
     emit_stream_ended_once(
         &tx,
         99,
@@ -493,4 +494,53 @@ async fn stale_per_flight_keys_are_swept_on_read() {
     let listed = q.active_per_jobs();
     assert_eq!(listed.len(), 1, "旧键应在读取时被清扫");
     assert_eq!(listed[0].job_id, 2);
+}
+
+/// #1380 风险段：`stream_ended` 终态帧**只能成功发一次**。
+///
+/// 守的是「抽象成 sink/守卫后最容易被抹平」的那层保护：终态帧重复会让客户端把一次完成
+/// 当两次收尾（`docs/Turn布局设计.md` §16.6 的终态序约束）。状态收进 [`StreamEndedOnce`]
+/// 后，第二次调用必须既不产帧、也不覆盖已发出的结果。
+#[tokio::test]
+async fn stream_ended_is_emitted_only_once() {
+    let (tx, mut rx) = mpsc::channel::<String>(8);
+    let mut ended = StreamEndedOnce::default();
+    assert!(!ended.is_sent(), "初始应为未发送");
+
+    emit_stream_ended_once(
+        &tx,
+        7,
+        StreamEndReason::Completed,
+        &mut ended,
+        "chat_job_queue::tests stream_ended_first",
+        None,
+    )
+    .await;
+    assert!(ended.is_sent(), "首次调用后应标记为已发送");
+
+    // 第二次用**不同**的 reason：既不能产帧，也不能把结果改成 Truncated。
+    emit_stream_ended_once(
+        &tx,
+        7,
+        StreamEndReason::Truncated,
+        &mut ended,
+        "chat_job_queue::tests stream_ended_second",
+        None,
+    )
+    .await;
+
+    let first = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("应收到终态帧")
+        .expect("终态帧负载");
+    assert!(
+        first.contains("stream_ended") || first.contains("RUN_FINISHED"),
+        "首帧应为终态帧，实际：{first}"
+    );
+    // 不断言「reason 没有被改写成 truncated」：已入队的帧是值语义，第二次调用无论怎么实现
+    // 都改不了它，那样写是一条恒真的自欺断言。真正防重复的是下面这条。
+    assert!(
+        timeout(Duration::from_millis(50), rx.recv()).await.is_err(),
+        "第二次调用不得再产帧"
+    );
 }

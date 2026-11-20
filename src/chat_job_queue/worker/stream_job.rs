@@ -3,7 +3,7 @@
 use log::{debug, info};
 
 use super::super::stream_finish::{
-    StreamJobOutcomeCtx, emit_stream_cancelled_terminal, emit_stream_ended_once,
+    StreamEndedOnce, StreamJobOutcomeCtx, emit_stream_cancelled_terminal, emit_stream_ended_once,
     stream_job_outcome_after_agent_turn,
 };
 use super::super::{WebApprovalSession, WebChatJobEnvelope};
@@ -129,7 +129,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .flight
         .last_assistant_finish_truncated
         .load(std::sync::atomic::Ordering::Relaxed);
-    let mut stream_ended_sent = false;
+    let mut stream_ended_sent = StreamEndedOnce::default();
     let (ok, cancelled, err, stream_end_reason) =
         stream_job_outcome_after_agent_turn(StreamJobOutcomeCtx {
             r,
@@ -155,7 +155,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     if cancelled {
         emit_stream_cancelled_terminal(&sse_tx, job_id, request_id.clone()).await;
     }
-    if !stream_ended_sent {
+    // 先判不是防重复发帧（`emit_stream_ended_once` 自己守），而是跳过 tiktoken 计算。
+    if !stream_ended_sent.is_sent() {
         let tiktoken_prompt_tokens =
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                 &prepared.cfg_snap, &messages,
