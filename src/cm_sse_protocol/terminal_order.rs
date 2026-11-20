@@ -1,8 +1,16 @@
-//! 终态后业务帧检测（#1333 B4/P1）：帧角色分类 + 违规计数状态机。
+//! 终态后业务帧检测（#1333 B4/P1）+ **投递决策**（#1338 E4/S1）。
 //!
 //! 权威语义见 `docs/SSE协议.md`「终态顺序」与 `docs/Turn布局设计.md` §16.6 / §16.7：
-//! 终态（`RUN_FINISHED` / `RUN_ERROR`）之后**不应**再有业务帧。本模块只做**观测**
-//! （计数 + 日志），不拦帧、不重排、不改变任何下行序列——它是 B4/E4 收缩前的证据来源。
+//! 终态（`RUN_FINISHED` / `RUN_ERROR`）之后**不应**再有业务帧。
+//!
+//! P1 阶段本模块只做观测（计数 + 日志）作为收缩证据；**E4/S1（#1338）落地后不再只是观测**：
+//! 终态后的回合业务帧由 [`decide_delivery`] 判为 [`FrameDelivery::DropAfterTerminal`]，
+//! 由 `sse::stream_hub` 在分配 `seq` 之前**拒绝投递**（不占序号、不入环形缓冲、不广播）。
+//!
+//! 两类例外，都写在这里而不是散在 hub 里：
+//! - `Error → Finished`：既有收尾形状（取消 / 冲突 / 回合失败），属设计内，放行；
+//! - [`is_cross_job_control_frame`]：`tool_job_finished` 等**跨 job 控制面帧**，不是本回合的
+//!   业务内容，且后台任务契约明确「尽力而为、主通道是轮询」，终态后仍放行。
 //!
 //! 分类同时认两族线形状：
 //! - **V2 / AG-UI**（`default_encoder` 的现行输出）：`{"type":"RUN_FINISHED"|"RUN_ERROR",…}`
@@ -83,6 +91,43 @@ impl TerminalOrderReport {
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.event_after_terminal == 0 && self.repeated_terminal == 0
+    }
+}
+
+/// 一帧的投递决策（E4/S1 收缩后）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameDelivery {
+    /// 正常投递：终态之前的一切帧，以及本帧自身就是终态。
+    Deliver,
+    /// 终态之后的**回合业务帧**：拒绝投递。
+    DropAfterTerminal,
+    /// 终态之后的**跨 job 控制面帧**：放行（见 [`is_cross_job_control_frame`]）。
+    DeliverCrossJobControl,
+}
+
+/// 是否属于「跨 job 控制面帧」：后台任务终态补发（`tool_job_finished`）。
+///
+/// 它不是本回合的业务内容，而是另一个 job 的完成通知；`background_tool_jobs_contract.md` §5
+/// 明确「尽力而为、主通道是轮询 `background_job`」。终态后仍放行，但**单独计数**，
+/// 免得它把「终态后还有没有回合业务帧」这条门禁搅浑。
+///
+/// 用子串判断而非 JSON 解析：AG-UI 转换后它是 `CUSTOM` + `customType`，v1 形状是顶层
+/// `tool_job_finished`，两种线形状都要能认；且这里在热路径上（每帧一次）。
+#[must_use]
+pub fn is_cross_job_control_frame(payload: &str) -> bool {
+    payload.contains("tool_job_finished")
+}
+
+/// 按终态序 + 帧种类决定投递。`obs` 来自 [`TerminalOrderWatch::observe`]。
+#[must_use]
+pub fn decide_delivery(obs: &TerminalOrderObservation, payload: &str) -> FrameDelivery {
+    if !(obs.event_after_terminal || obs.repeated_terminal) {
+        return FrameDelivery::Deliver;
+    }
+    if is_cross_job_control_frame(payload) {
+        FrameDelivery::DeliverCrossJobControl
+    } else {
+        FrameDelivery::DropAfterTerminal
     }
 }
 
@@ -201,7 +246,9 @@ impl TerminalOrderWatch {
 
 #[cfg(test)]
 mod tests {
-    use super::{SseFrameRole, TerminalOrderWatch, classify_sse_frame_role};
+    use super::{
+        FrameDelivery, SseFrameRole, TerminalOrderWatch, classify_sse_frame_role, decide_delivery,
+    };
     use std::path::PathBuf;
 
     /// 反向门禁（#1333 P1）：`fixtures/sse_terminal_order_golden.jsonl` 给出**帧序列**与
@@ -265,6 +312,25 @@ mod tests {
                 want.as_slice(),
                 "{}:{}: counts mismatch\n  desc: {}\n  frames: {frames:?}\n  \
                  (event_after_terminal, repeated_terminal, error_then_finished)",
+                path.display(),
+                line_no + 1,
+                parts[0],
+            );
+            // E4/S1：同一序列还要走一遍投递决策——「判违规的帧」必须等于「被拒投递的帧」，
+            // 否则 gate 与计数就会各说一套。
+            let mut watch = TerminalOrderWatch::default();
+            let mut dropped = 0u64;
+            for frame in &frames {
+                let obs = watch.observe(frame);
+                if decide_delivery(&obs, frame) == FrameDelivery::DropAfterTerminal {
+                    dropped += 1;
+                }
+            }
+            assert_eq!(
+                dropped,
+                want[0] + want[1],
+                "{}:{}: 拒绝投递的帧数应等于 (event_after_terminal + repeated_terminal)\n  \
+                 desc: {}\n  frames: {frames:?}",
                 path.display(),
                 line_no + 1,
                 parts[0],
@@ -390,6 +456,51 @@ mod tests {
         let second = watch.observe("又一帧");
         assert!(second.event_after_terminal && !second.first_after_terminal);
         assert_eq!(watch.report().event_after_terminal, 2);
+    }
+
+    /// E4/S1：终态后的回合业务帧拒绝投递；`Error → Finished` 与跨 job 控制面帧放行。
+    #[test]
+    fn decide_delivery_after_terminal() {
+        let mut watch = TerminalOrderWatch::default();
+        let pre = watch.observe(r#"{"type":"RUN_STARTED"}"#);
+        assert_eq!(decide_delivery(&pre, "x"), FrameDelivery::Deliver);
+
+        let term = watch.observe(r#"{"type":"RUN_FINISHED"}"#);
+        assert_eq!(decide_delivery(&term, "x"), FrameDelivery::Deliver);
+
+        // 回合业务帧：拒。
+        let late = watch.observe("迟到的正文 delta");
+        assert_eq!(
+            decide_delivery(&late, "迟到的正文 delta"),
+            FrameDelivery::DropAfterTerminal
+        );
+        let dup = watch.observe(r#"{"type":"RUN_FINISHED"}"#);
+        assert_eq!(
+            decide_delivery(&dup, r#"{"type":"RUN_FINISHED"}"#),
+            FrameDelivery::DropAfterTerminal,
+            "重复终态同样不该再下发"
+        );
+
+        // 跨 job 控制面帧：放行（后台任务补发，主通道是轮询）。
+        let mut watch2 = TerminalOrderWatch::default();
+        let _ = watch2.observe(r#"{"type":"RUN_FINISHED"}"#);
+        let job = r#"{"type":"CUSTOM","customType":"tool_job_finished","data":{"toolJobId":"t1"}}"#;
+        let obs = watch2.observe(job);
+        assert_eq!(
+            decide_delivery(&obs, job),
+            FrameDelivery::DeliverCrossJobControl
+        );
+        assert!(obs.event_after_terminal, "仍要计数：它确实是终态后的帧");
+    }
+
+    /// 既有收尾形状（`Error → Finished`）不算「终态后业务帧」，必须放行。
+    #[test]
+    fn decide_delivery_keeps_error_then_finished() {
+        let mut watch = TerminalOrderWatch::default();
+        let _ = watch.observe(r#"{"type":"RUN_ERROR","code":"STREAM_CANCELLED"}"#);
+        let fin = r#"{"type":"RUN_FINISHED"}"#;
+        let obs = watch.observe(fin);
+        assert_eq!(decide_delivery(&obs, fin), FrameDelivery::Deliver);
     }
 
     #[test]

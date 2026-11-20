@@ -678,11 +678,18 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | **E1** | 修正终态顺序（expand-first）：前端吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；~~`terminal_order` 软能力~~（B4/P3 已删） | ✅ 已落地（兼容层 B1） |
 | **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | persist（保存写 `layout`）✅；hydration 仍走 legacy（E3） |
 | **E3** | 双读：新会话写元数据；hydration 消费 `layout` 记差分（行数/角色序/文本 hash）；GET 历史保持 legacy 行 id（完整同键投影待 Client 可复用投影器）；无元数据走 legacy | ✅ Client 双读观测；不 stamp 流式活键；E4 前**不**删 same-revision 守卫 |
-| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | ⬜ 删除条件见下 |
+| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 🟡 S1（#1338）**已落地**：终态后回合业务帧拒绝投递（不占 `seq`、不入 ring）；`Error → Finished` 与 `tool_job_finished` 例外放行。same-revision（本仓无实现，转 Client）+ legacy merge/dedupe（待 backfill）仍未做 |
 
 **E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；
 线上无终态后业务事件；legacy 会话比例可接受——该比例由 **`crabmate doctor`** 的「会话布局覆盖率」给出
 （`layout_meta_json` 为 NULL / 空白的行占比，B4/P4 落地）。
+
+> **S1 为何不等「一个版本区间的 `event_after_terminal_count == 0`」**（#1338 实测后修正）：
+> 全仓 `publish` 只有**一个**调用点（`stream_job_bridge_loop`），终态后帧按定义就是 bug 产物，
+> 在单点 gate 的收益远大于「先观测一个版本区间」。改为**拒绝投递 + 计数**后，该计数本身即判据
+> （长期为 0 = 闸门空转；非 0 = 仍有生产者迟到，日志里带 `job_id`）。
+> 条件 ②（legacy 占比）另有口径问题：`conversation_store_ttl_secs` 默认 24h 会清行、且真实会话可能
+> 只存在于 Client 侧 `web_sessions.json`——见 Issue #1338「条件 ② 的口径问题」。
 
 ### 16.6 测试与可观测性（落地时）
 
