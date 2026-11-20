@@ -457,3 +457,40 @@ async fn conversation_saved_emits_before_stream_ended() {
     );
     assert!(third.contains("\"type\":\"RUN_FINISHED\"") || third.contains("\"stream_ended\""));
 }
+
+/// #1380：per-flight 观测镜像改由所有权决定在册与否。
+///
+/// 回归点：`stream_job_setup` 曾把 RAII guard 声明在装配函数内，drop 得比回合早，
+/// 于是流式回合期间 `GET /status` 的 `per_active_jobs` 恒为空。改成 `Weak` 后
+/// 「还有强引用」与「在册」是同一件事，无法再被作用域悄悄改变。
+#[tokio::test]
+async fn per_flight_listed_while_owner_alive() {
+    let q = ChatJobQueue::new(1, 1);
+    let flight = std::sync::Arc::new(PerTurnFlight::default());
+    q.attach_per_flight(7, &flight);
+
+    let listed = q.active_per_jobs();
+    assert_eq!(listed.len(), 1, "driver 持有 flight 时应可见");
+    assert_eq!(listed[0].job_id, 7);
+
+    // 模拟回合收尾：最后一个强引用消失。
+    drop(flight);
+    assert!(q.active_per_jobs().is_empty(), "强引用消失后应自动摘除");
+}
+
+/// #1380：`active_per_jobs` 的惰性清扫要顺手摘掉失效键，不能随进程寿命累积。
+#[tokio::test]
+async fn stale_per_flight_keys_are_swept_on_read() {
+    let q = ChatJobQueue::new(1, 1);
+    let first = std::sync::Arc::new(PerTurnFlight::default());
+    q.attach_per_flight(1, &first);
+    drop(first);
+
+    // 第二个回合登记时，1 号的 flight 已无人持有 —— 读取只应看到 2 号。
+    let second = std::sync::Arc::new(PerTurnFlight::default());
+    q.attach_per_flight(2, &second);
+
+    let listed = q.active_per_jobs();
+    assert_eq!(listed.len(), 1, "旧键应在读取时被清扫");
+    assert_eq!(listed[0].job_id, 2);
+}

@@ -6,7 +6,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
@@ -150,17 +150,6 @@ pub struct PerFlightStatusEntry {
     pub require_plan_in_final_content: bool,
 }
 
-struct PerFlightJobGuard {
-    queue: ChatJobQueue,
-    job_id: u64,
-}
-
-impl Drop for PerFlightJobGuard {
-    fn drop(&mut self) {
-        self.queue.unregister_per_job_per_flight(self.job_id);
-    }
-}
-
 /// 队列拒绝：有界通道已满（等待槽位过多）
 #[derive(Debug, Clone, Copy)]
 pub struct ChatQueueFull {
@@ -299,8 +288,13 @@ struct Inner {
     next_job_id: AtomicU64,
     metrics: Arc<QueueMetrics>,
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
-    /// 正在执行的队列任务的 PER 飞行快照（任务结束即移除）。
-    active_per_flights: Arc<Mutex<HashMap<u64, Arc<PerTurnFlight>>>>,
+    /// 正在执行的队列任务的 PER 飞行快照；**仅观测**（`GET /status` 的 `per_active_jobs`）。
+    ///
+    /// 存 `Weak`：在册 ⟺ 仍有人持有该回合 `PerTurnFlight` 的强引用（即 driver 还在跑）。
+    /// 于是「登记活多久」由所有权决定，而不是由 guard 声明在哪个 `{}` 里决定——
+    /// `stream_job_setup` 曾把 RAII guard 声明在装配函数内，登记只活了几十行（#1380）。
+    /// 取消与生命周期决策**不得**读本表：`/chat/stream` 的停止走 `stream_cancels`。
+    active_per_flights: Arc<Mutex<HashMap<u64, Weak<PerTurnFlight>>>>,
     /// `/chat/stream` 协作取消：入队时登记，任务结束移除。Client「停止」走
     /// `POST /chat/stream/{job_id}/cancel` 置位；**不断** SSE 不断开即取消（否则无法 `stream_resume`）。
     stream_cancels: Arc<Mutex<HashMap<u64, Arc<AtomicBool>>>>,
@@ -394,38 +388,38 @@ impl ChatJobQueue {
             .unwrap_or_default()
     }
 
-    fn begin_per_flight_job(&self, job_id: u64, flight: Arc<PerTurnFlight>) -> PerFlightJobGuard {
+    /// 登记本回合的 PER 观测镜像（**无 guard**，见 `active_per_flights` 字段注释）。
+    ///
+    /// 调用方只须保证 `flight` 的强引用活过整个回合；引用消失后条目由
+    /// [`Self::active_per_jobs`] 惰性摘除。
+    fn attach_per_flight(&self, job_id: u64, flight: &Arc<PerTurnFlight>) {
         if let Ok(mut g) = self.inner.active_per_flights.lock() {
-            g.insert(job_id, flight);
-        }
-        PerFlightJobGuard {
-            queue: self.clone(),
-            job_id,
-        }
-    }
-
-    fn unregister_per_job_per_flight(&self, job_id: u64) {
-        if let Ok(mut g) = self.inner.active_per_flights.lock() {
-            g.remove(&job_id);
+            g.insert(job_id, Arc::downgrade(flight));
         }
     }
 
     /// 当前正在执行的队列任务及其 PER 镜像（无运行中任务时为空 Vec）。
     pub fn active_per_jobs(&self) -> Vec<PerFlightStatusEntry> {
-        let Ok(g) = self.inner.active_per_flights.lock() else {
+        let Ok(mut g) = self.inner.active_per_flights.lock() else {
             return Vec::new();
         };
+        // 惰性清扫：flight 已无人持有时顺手摘键，避免 `job_id` 键随进程寿命累积。
+        g.retain(|_, weak| weak.strong_count() > 0);
         let mut v: Vec<PerFlightStatusEntry> = g
             .iter()
-            .map(|(&job_id, flight)| PerFlightStatusEntry {
-                job_id,
-                awaiting_plan_rewrite_model: flight
-                    .awaiting_plan_rewrite_model
-                    .load(Ordering::Relaxed),
-                plan_rewrite_attempts: flight.plan_rewrite_attempts.load(Ordering::Relaxed),
-                require_plan_in_final_content: flight
-                    .require_plan_in_final_content
-                    .load(Ordering::Relaxed),
+            .filter_map(|(&job_id, weak)| {
+                // 与 `retain` 同一临界区：`upgrade` 不会在这里落空，读不到半死不活的状态。
+                let flight = weak.upgrade()?;
+                Some(PerFlightStatusEntry {
+                    job_id,
+                    awaiting_plan_rewrite_model: flight
+                        .awaiting_plan_rewrite_model
+                        .load(Ordering::Relaxed),
+                    plan_rewrite_attempts: flight.plan_rewrite_attempts.load(Ordering::Relaxed),
+                    require_plan_in_final_content: flight
+                        .require_plan_in_final_content
+                        .load(Ordering::Relaxed),
+                })
             })
             .collect();
         v.sort_by_key(|e| e.job_id);

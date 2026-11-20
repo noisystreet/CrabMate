@@ -86,10 +86,9 @@ pub(super) async fn stream_job_setup_runtime(
         stream_job_spawn_cancel_watcher(sse_tx.clone(), Arc::clone(&cancel), job_id);
 
     let flight = Arc::new(PerTurnFlight::default());
-    let _per_guard = p
-        .queue_deps
-        .chat_queue
-        .begin_per_flight_job(job_id, flight.clone());
+    // 登记随 `flight` 的所有权走：它存进 `StreamJobRuntime`、活到 driver 收尾结束，
+    // 因此 stream 任务在整个回合期间都在 `/status` 的 `per_active_jobs` 里（#1380）。
+    p.queue_deps.chat_queue.attach_per_flight(job_id, &flight);
 
     let cfg_snap = {
         let g = p.queue_deps.cfg.read().await;
