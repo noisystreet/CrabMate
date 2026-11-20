@@ -29,7 +29,10 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::broadcast;
 
 use super::protocol::SSE_RESUME_RING_CAP;
-use crate::cm_sse_protocol::terminal_order::{TerminalOrderReport, TerminalOrderWatch};
+use crate::cm_sse_protocol::terminal_order::{
+    FrameDelivery, TerminalOrderObservation, TerminalOrderReport, TerminalOrderWatch,
+    decide_delivery,
+};
 
 /// SSE replay dump 文件名。
 const SSE_REPLAY_FILE: &str = "sse-replay-events.jsonl";
@@ -102,7 +105,7 @@ struct StreamEntry {
     next_seq: AtomicU64,
     ring: Mutex<VecDeque<(u64, String)>>,
     tx: broadcast::Sender<(u64, String)>,
-    /// 终态序观测（#1333 P1）。**只计数**，不参与投递决策——见 [`Self::note_terminal_order`]。
+    /// 终态序状态机（#1333 P1 观测 + #1338 E4/S1 投递决策）——见 [`Self::observe_and_decide`]。
     order_watch: Mutex<TerminalOrderWatch>,
 }
 
@@ -119,12 +122,17 @@ impl StreamEntry {
     }
 
     /// 递增序号、写入环形缓冲、向所有订户广播（**含** `id:` / `data:` / 空行）。
-    /// 返回 **`(seq, data_payload)`** 供 HTTP 层设置 `Event::id` / `data`。
+    /// 返回 **`Some((seq, data_payload))`** 供 HTTP 层设置 `Event::id` / `data`；
+    /// **`None` = 被 E4/S1 门禁拒绝投递**（终态后的回合业务帧）。
     ///
     /// 当 `CM_SSE_REPLAY_DUMP_DIR` 设置时，同时将事件追加写入 `sse-replay-events.jsonl`。
-    fn publish(&self, job_id: u64, data_payload: String) -> (u64, String) {
+    fn publish(&self, job_id: u64, data_payload: String) -> Option<(u64, String)> {
+        // E4/S1：决策在分配 `seq` 之前做——被拒的帧不占序号，否则 `stream_resume` 的
+        // `after_seq` 会出现空洞（重放方按序号推进，空洞会被当成丢帧）。
+        if self.observe_and_decide(job_id, &data_payload) == FrameDelivery::DropAfterTerminal {
+            return None;
+        }
         let seq = self.next_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        self.note_terminal_order(job_id, seq, &data_payload);
         {
             let mut ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
             ring.push_back((seq, data_payload.clone()));
@@ -135,39 +143,54 @@ impl StreamEntry {
         // 无订户时返回 `Err`，属正常（重连靠环形缓冲补）。
         let _ = self.tx.send((seq, data_payload.clone()));
         append_sse_replay_line(job_id, seq, &data_payload);
-        (seq, data_payload)
+        Some((seq, data_payload))
     }
 
-    /// 终态序观测（#1333 P1 / Turn §16.6 的 `event_after_terminal_count`）。
+    /// 分类 + 定投递 + 记日志；返回本帧的投递决策。
     ///
     /// 这是**所有** Web 帧的必经之路（worker 收尾帧、后台工具任务迟到帧、审批帧都经
-    /// [`StreamPublisher::publish`]），所以它比「在收尾处打点」更接近「终态后还有没有帧」
-    /// 的真实语义：收尾函数自己当然不会在终态后再发帧，问题恰恰出在别处的迟到帧。
+    /// [`StreamPublisher::publish`]），所以它比「在收尾处打点」更接近「终态后还有没有帧」的
+    /// 真实语义：收尾函数自己当然不会在终态后再发帧，问题恰恰出在别处的迟到帧。
     ///
-    /// **不改变下行行为**：只计数 + 打日志；分类在 `ring` 锁之外做（避免把 JSON 解析
-    /// 塞进已有的临界区），且 [`TerminalOrderWatch`] 内部有子串预筛，正文 delta 不解析。
+    /// **E4/S1（#1338）起改变下行行为**：终态后的回合业务帧返回
+    /// [`FrameDelivery::DropAfterTerminal`]，`publish` 据此不分配 `seq`、不入 ring、不广播。
+    /// 分类在 `ring` 锁之外做，且 [`TerminalOrderWatch`] 内部有子串预筛，正文 delta 不解析。
     ///
-    /// 告警节流：每条流只对**首次**「终态后业务帧」`warn` 一次，累计值由桥接任务在
-    /// 通道关闭后汇总（见 `chat_job_queue::worker::stream_job_bridge_loop`）。
-    ///
-    /// 顺序说明：`seq` 由 `next_seq` 原子分配，而分类顺序由 `order_watch` 自己的锁决定；
-    /// 并发 `publish` 下两者可能交错，日志里的 `seq` 未必是真实相邻帧。计数只关心终态与非
-    /// 终态的先后，不受影响。
-    fn note_terminal_order(&self, job_id: u64, seq: u64, data_payload: &str) {
+    /// 告警节流：每条流只对**首次**「终态后业务帧」`warn` 一次（之后静默丢，累计值由桥接
+    /// 任务在通道关闭后汇总，见 `chat_job_queue::worker::stream_job_bridge_loop`）。
+    fn observe_and_decide(&self, job_id: u64, data_payload: &str) -> FrameDelivery {
         let obs = {
             let mut watch = self.order_watch.lock().unwrap_or_else(|e| e.into_inner());
             watch.observe(data_payload)
         };
-        if obs.event_after_terminal && obs.first_after_terminal {
-            log::warn!(
-                target: "crabmate",
-                "event_after_terminal_count job_id={job_id} seq={seq}：终态后又下发业务帧（B4/E4 收缩证据；不拦帧）"
-            );
-        } else if obs.repeated_terminal {
-            log::warn!(
-                target: "crabmate",
-                "repeated_terminal job_id={job_id} seq={seq}：终态后又下发终态帧（`RUN_FINISHED` 之后的任意终态，或 `RUN_ERROR` 之后再来 `RUN_ERROR`）"
-            );
+        let delivery = decide_delivery(&obs, data_payload);
+        self.log_delivery(job_id, &obs, delivery);
+        delivery
+    }
+
+    /// 投递决策的日志：丢弃只对首次告警（避免逐帧刷屏），放行的跨 job 帧记 `debug`。
+    fn log_delivery(&self, job_id: u64, obs: &TerminalOrderObservation, delivery: FrameDelivery) {
+        match delivery {
+            FrameDelivery::Deliver => {}
+            FrameDelivery::DropAfterTerminal => {
+                if obs.first_after_terminal {
+                    log::warn!(
+                        target: "crabmate",
+                        "event_after_terminal_count job_id={job_id}：终态后的回合业务帧已拒绝投递（E4/S1；后续同类帧静默丢弃并计数）"
+                    );
+                } else if obs.repeated_terminal {
+                    log::warn!(
+                        target: "crabmate",
+                        "repeated_terminal job_id={job_id}：终态后又来的终态帧已拒绝投递（`RUN_FINISHED` 之后的任意终态，或 `RUN_ERROR` 之后再来 `RUN_ERROR`）"
+                    );
+                }
+            }
+            FrameDelivery::DeliverCrossJobControl => {
+                log::debug!(
+                    target: "crabmate",
+                    "tool_job_finished job_id={job_id}：终态后的跨 job 控制面帧仍投递（主通道是轮询 `background_job`）"
+                );
+            }
         }
     }
 
@@ -252,7 +275,7 @@ impl SseStreamHub {
     /// 「登记已摘除但帧还在队列里」时返回 `None`，正是 #1316 的丢帧路径。
     pub fn publish(&self, job_id: u64, data_payload: String) -> Option<(u64, String)> {
         match self.live_entry(job_id) {
-            Some(entry) => Some(entry.publish(job_id, data_payload)),
+            Some(entry) => entry.publish(job_id, data_payload),
             None => {
                 log::debug!(
                     target: "crabmate",
@@ -303,8 +326,10 @@ impl StreamPublisher {
         self.job_id
     }
 
-    /// 递增序号、写入环形缓冲、广播；**恒成功**（无订户时 `send` 的 `Err` 属正常）。
-    pub fn publish(&self, data_payload: String) -> (u64, String) {
+    /// 递增序号、写入环形缓冲、广播；**`None` = 被 E4/S1 门禁拒绝投递**。
+    ///
+    /// 除「终态后的回合业务帧」外恒成功（无订户时 `send` 的 `Err` 属正常）。
+    pub fn publish(&self, data_payload: String) -> Option<(u64, String)> {
         self.entry.publish(self.job_id, data_payload)
     }
 
@@ -336,18 +361,50 @@ impl StreamPublisher {
 mod tests {
     use super::*;
 
-    /// #1333 P1：投递路径即观测点——终态后再投业务帧要能被记到这条流自己头上。
+    /// #1338 E4/S1：终态后的回合业务帧**被拒绝投递**——不计数进 ring、不占 seq，但计入报告。
     #[test]
-    fn publish_counts_frames_after_terminal() {
+    fn publish_drops_business_frames_after_terminal() {
         let hub = SseStreamHub::new();
         let publisher = hub.register_job(13);
         assert!(publisher.terminal_order_report().is_clean());
-        let _ = publisher.publish(r#"{"type":"RUN_FINISHED"}"#.to_string());
+
+        let term = publisher.publish(r#"{"type":"RUN_FINISHED"}"#.to_string());
+        assert_eq!(term.map(|(s, _)| s), Some(1), "终态帧本身要投递");
         assert!(publisher.terminal_order_report().is_clean());
-        let _ = publisher.publish("迟到的正文 delta".to_string());
+
+        // 终态后的回合业务帧：拒。
+        assert!(
+            publisher.publish("迟到的正文 delta".to_string()).is_none(),
+            "终态后业务帧应被拒绝投递"
+        );
         let report = publisher.terminal_order_report();
-        assert_eq!(report.event_after_terminal, 1);
+        assert_eq!(report.event_after_terminal, 1, "仍要计数，作为 E4 观测口径");
         assert!(report.terminal_seen);
+
+        // 拒绝的帧不占序号、不进 ring：重放里只有终态帧那一条。
+        let replay = hub.replay_after(13, 0).expect("replay");
+        assert_eq!(replay.len(), 1, "被拒帧不入环形缓冲: {replay:?}");
+        assert_eq!(replay[0].0, 1);
+
+        // 下一帧（若放行）序号应紧接 2，不出现空洞。
+        let after = publisher.publish(r#"{"type":"RUN_ERROR","message":"x"}"#.to_string());
+        assert!(after.is_none(), "重复终态同样被拒");
+    }
+
+    /// 跨 job 控制面帧（`tool_job_finished`）在终态后仍投递：它不属于本回合的业务内容。
+    #[test]
+    fn publish_keeps_cross_job_control_frame_after_terminal() {
+        let hub = SseStreamHub::new();
+        let publisher = hub.register_job(14);
+        let _ = publisher.publish(r#"{"type":"RUN_FINISHED"}"#.to_string());
+        let job = r#"{"type":"CUSTOM","customType":"tool_job_finished","data":{"toolJobId":"t1"}}"#;
+        let ev = publisher.publish(job.to_string());
+        assert_eq!(ev.map(|(s, _)| s), Some(2), "跨 job 帧仍投递且占下一个序号");
+        assert_eq!(
+            publisher.terminal_order_report().event_after_terminal,
+            1,
+            "但它是终态后的帧，仍要计数"
+        );
     }
 
     #[test]
@@ -432,7 +489,9 @@ mod tests {
             "查表投递失效——这正是旧实现在收尾窗口里丢终态帧的路径"
         );
 
-        let (seq, data) = publisher.publish("terminal".to_string());
+        let (seq, data) = publisher
+            .publish("terminal".to_string())
+            .expect("终态前应投递");
         assert_eq!((seq, data.as_str()), (1, "terminal"));
         assert_eq!(
             sub.try_recv().expect("late frame"),

@@ -106,7 +106,11 @@ pub(crate) async fn stream_job_bridge_loop(
 ) {
     while let Some(line) = sse_rx.recv().await {
         // 客户端已断开时不要提前 break：环形缓冲还要继续累积，供 `stream_resume` 重放。
-        let _ = http_tx.send(publisher.publish(line)).await;
+        // E4/S1（#1338）：终态后的回合业务帧由 `publish` 直接拒绝（返回 `None`），
+        // 此时既不写 HTTP 流，也不留序号空洞。
+        if let Some(ev) = publisher.publish(line) {
+            let _ = http_tx.send(ev).await;
+        }
     }
     log_terminal_order_summary(&publisher);
     publisher.finalize();

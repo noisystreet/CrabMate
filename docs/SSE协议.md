@@ -359,10 +359,17 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
   首帧不再下发 `terminal_order`（B4/P3 已删除该软字段）；终态序**恒为**新序，`SSE_PROTOCOL_VERSION` 不变。
 - **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，
   由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
-- **后续收缩（E4）**：待删除「终态后业务帧」兼容等；见 **`docs/Turn布局设计.md` §16**。
-- **服务端自检（观测，非契约）**：服务端在 SSE hub 的投递口逐帧判定终态序；违规只计数 + `warn`
-  （`event_after_terminal_count` / `repeated_terminal`），**不**拦帧、**不**改下行序列，累加值在流关闭时以
-  `terminal_order_summary` 汇总。它是 E4 收缩前的证据来源，口径见 **`docs/Turn布局设计.md` §16.6**。
+- **后续收缩（E4）**：~~待删除「终态后业务帧」兼容等~~ → **S1 已落地（#1338）**，见下一条。
+- **服务端闸门（E4/S1，`#1338`）**：终态之后的**回合业务帧不再下发**——`sse::stream_hub` 在分配 `seq`
+  之前判定，命中即拒绝投递：不占序号、不入重连环形缓冲、不广播（`stream_resume` 因此不会出现序号空洞）。
+  细节见 **`docs/Turn布局设计.md` §16.5 E4**。
+  - **放行例外一**：`RUN_ERROR` → `RUN_FINISHED`（取消 / 冲突 / 回合失败）是既有收尾形状，照旧下发。
+  - **放行例外二**：**`tool_job_finished`**（后台任务终态补发）——它不属于本回合的业务内容，且主通道本来就是
+    轮询 `GET /tools/jobs/{id}`；终态后仍投递，但计入观测。
+  - 被丢弃的帧计入 `event_after_terminal_count` / `repeated_terminal`；每条流只对**首次**丢弃 `warn` 一次，
+    累加值在流关闭时以 `terminal_order_summary` 汇总（口径见 **`docs/Turn布局设计.md` §16.6**）。
+- **服务端自检（观测口径）**：闸门与观测同源（同一个终态序状态机），所以 `terminal_order_summary` 里
+  的计数现在等于「被拒绝投递的帧数」。验收语义仍是 **`RUN_FINISHED` / `RUN_ERROR` 为最后一个业务事件**。
   取消 / 冲突 / 失败路径的 `RUN_ERROR` → `RUN_FINISHED` 是既有收尾形状，**不计**重复终态（单记 `error_then_finished`）。
 
 ### 工具调用
