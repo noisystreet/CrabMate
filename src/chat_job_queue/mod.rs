@@ -399,18 +399,18 @@ impl ChatJobQueue {
     }
 
     /// 当前正在执行的队列任务及其 PER 镜像（无运行中任务时为空 Vec）。
+    ///
+    /// 读取时顺手清扫失效键：`retain` 的谓词就是「`upgrade` 是否成功」，收集与剔除在
+    /// **同一次** `upgrade` 里完成。`Arc` 的最后一次 drop 不持本锁，故「先看
+    /// `strong_count` 再 `upgrade`」两步判定之间存在窗口；这里只判定一次。
     pub fn active_per_jobs(&self) -> Vec<PerFlightStatusEntry> {
         let Ok(mut g) = self.inner.active_per_flights.lock() else {
             return Vec::new();
         };
-        // 惰性清扫：flight 已无人持有时顺手摘键，避免 `job_id` 键随进程寿命累积。
-        g.retain(|_, weak| weak.strong_count() > 0);
-        let mut v: Vec<PerFlightStatusEntry> = g
-            .iter()
-            .filter_map(|(&job_id, weak)| {
-                // 与 `retain` 同一临界区：`upgrade` 不会在这里落空，读不到半死不活的状态。
-                let flight = weak.upgrade()?;
-                Some(PerFlightStatusEntry {
+        let mut v: Vec<PerFlightStatusEntry> = Vec::with_capacity(g.len());
+        g.retain(|&job_id, weak| match weak.upgrade() {
+            Some(flight) => {
+                v.push(PerFlightStatusEntry {
                     job_id,
                     awaiting_plan_rewrite_model: flight
                         .awaiting_plan_rewrite_model
@@ -419,9 +419,12 @@ impl ChatJobQueue {
                     require_plan_in_final_content: flight
                         .require_plan_in_final_content
                         .load(Ordering::Relaxed),
-                })
-            })
-            .collect();
+                });
+                true
+            }
+            // 已无人持有该回合的 flight：顺手摘键，避免 `job_id` 键随进程寿命累积。
+            None => false,
+        });
         v.sort_by_key(|e| e.job_id);
         v
     }
