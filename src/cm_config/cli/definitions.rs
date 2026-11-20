@@ -293,6 +293,18 @@ pub struct SaveSessionCmd {
     pub session_file: Option<String>,
 }
 
+/// 回填会话库 `layout_meta_json`（#1338 E4/S3 前置；默认 dry-run，不写盘）
+#[derive(Parser, Debug, Clone)]
+pub struct BackfillLayoutCmd {
+    /// 真正写盘（缺省只报告候选 / 可回填行数）
+    #[arg(long)]
+    pub apply: bool,
+
+    /// 会话库路径（缺省取配置 `conversation_store_sqlite_path`；相对路径按当前工作目录解析，与 `serve` 一致）
+    #[arg(long, value_name = "FILE")]
+    pub db: Option<String>,
+}
+
 /// `save-session --format` 取值
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
 pub enum SaveSessionFormat {
@@ -451,6 +463,9 @@ pub enum Commands {
     /// 从 SSE 事件录制文件回放 AG-UI 事件到 TurnLayout 投影（**不要**求 API_KEY）
     #[command(name = "sse-replay")]
     SseReplay(SseReplayCmd),
+    /// 回填会话库 `layout_meta_json`（#1338 S3 前置；默认 dry-run，**不要**求 API_KEY）
+    #[command(name = "backfill-layout")]
+    BackfillLayout(BackfillLayoutCmd),
     /// MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
     Mcp(McpCmd),
     /// 动态工具模板与校验（工作区 `plugins/*.json`）
@@ -477,6 +492,7 @@ impl Commands {
             Commands::SaveSession(_) => "save-session",
             Commands::ToolReplay(_) => "tool-replay",
             Commands::SseReplay(_) => "sse-replay",
+            Commands::BackfillLayout(_) => "backfill-layout",
             Commands::Mcp(_) => "mcp",
             Commands::Plugin(_) => "plugin",
             Commands::Workflow(_) => "workflow",

@@ -66,6 +66,7 @@ async fn dispatch_offline(
         // 不读配置也能跑（配置损坏时依然可用）。
         Commands::WebBearer(cmd) => offline::run_web_bearer(cmd),
         Commands::SseReplay(cmd) => offline::run_sse_replay(cmd),
+        Commands::BackfillLayout(cmd) => offline::run_backfill_layout(&global, cmd),
         // 自己按需加载配置。
         Commands::Doctor => diagnostics::run_doctor(&global),
         Commands::Config => diagnostics::run_dry_run(&global).await,
