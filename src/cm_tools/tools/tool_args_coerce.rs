@@ -4,16 +4,26 @@
 //! `apply_write_content_coercions`），新增或改名一个参数要同时改 Args 结构与那条分支，
 //! 漏改不报错，只表现为「模型传别名时突然 `invalid_args`」。
 //!
-//! 现在每条规则都是**数据**（[`FieldCoercion`]），由工具在 `builtin_tool!` 里用
-//! `coerce: coerce_policy::PATH_ONLY` 这样的常量声明，挂在 [`ToolSpec`] 上；运行时按 spec 查表，
-//! 不再看工具名。声明可被测试枚举 —— `tool_args_validate` 的 5 条门禁遍历 `tool_specs()`，
-//! 把「漏声明」「目标键不在 schema」「下界/类型/枚举写错」都变成测试失败。
+//! 现在每条规则都是**数据**（[`FieldCoercion`]），并**绑在 Args 类型上**（[`ArgsCoercion`]）：
+//! spec 写 `coerce: auto`，`builtin_tool!` 展开成 `<Args as ArgsCoercion>::POLICY` 挂到
+//! [`ToolSpec`]，运行时按 spec 查表 —— 既不看工具名，也不由 spec 选常量。
+//!
+//! 声明可被测试枚举：`tool_args_validate` 的 6 条门禁遍历 `tool_specs()`，把「漏声明」
+//! 「目标键不在 schema」「下界 / 类型 / 枚举写错」「关键工具字段缩水」都变成测试失败。
 //!
 //! **只做入站兼容**：任何策略都不得让 schema 的 `properties` 多出键，别名不反写 schema。
 //!
 //! [`ToolSpec`]: super::ToolSpec
 
 use serde_json::{Map, Value};
+
+use super::tool_param_types::{
+    AppendFileArgs, CodeNavArgs, CodeStatsArgs, CodebaseSemanticSearchArgs, CoverageReportArgs,
+    CreateDirArgs, DeleteDirArgs, FileFromToOverwriteArgs, FileWriteArgs, GhApiArgs, GitArgs,
+    GlobFilesArgs, ListTreeArgs, ModifyFileArgs, ReadBinaryMetaArgs, ReadDirEnhancedArgs,
+    ReadFileArgs, RustAnalyzerArgs, SearchInFilesEnhancedArgs, SearchReplaceArgs, StructuredArgs,
+    TableTextArgs,
+};
 
 /// 别名键与目标键的匹配方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -571,143 +581,75 @@ pub const FROM_TO_POLICY: ArgsCoercionPolicy = ArgsCoercionPolicy {
     nested_edits: None,
 };
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
+// ── 类型 ↔ 策略绑定 ────────────────────────────────────────────
 
-    #[test]
-    fn path_alias_and_case_variant_both_land_on_path() {
-        let mut v = json!({ "FilePath": " a.txt " });
-        assert!(coerce_args_value(&PATH_ONLY, &mut v));
-        assert_eq!(v["path"], "a.txt");
-    }
-
-    #[test]
-    fn existing_path_wins_over_alias() {
-        let mut v = json!({ "path": "keep.txt", "file_path": "drop.txt" });
-        coerce_args_value(&PATH_ONLY, &mut v);
-        assert_eq!(v["path"], "keep.txt");
-    }
-
-    #[test]
-    fn u64_field_rejects_fraction_and_below_min() {
-        let mut v = json!({ "start_line": 1.5 });
-        coerce_args_value(&READ_FILE_POLICY, &mut v);
-        assert_eq!(v["start_line"], json!(1.5), "非整数不应被改写成整数");
-
-        let mut v = json!({ "start_line": "0" });
-        coerce_args_value(&READ_FILE_POLICY, &mut v);
-        assert_eq!(v["start_line"], json!("0"), "低于下界不应被接受");
-    }
-
-    #[test]
-    fn bool_field_accepts_words_and_digits() {
-        let mut v = json!({ "count_total_lines": " YES " });
-        assert!(coerce_args_value(&READ_FILE_POLICY, &mut v));
-        assert_eq!(v["count_total_lines"], json!(true));
-    }
-
-    #[test]
-    fn modify_file_top_level_mode_synonyms_include_overwrite_to_full() {
-        let mut v = json!({ "path": "a.txt", "mode": "Overwrite" });
-        assert!(coerce_args_value(&MODIFY_FILE_POLICY, &mut v));
-        assert_eq!(v["mode"], "full");
-    }
-
-    #[test]
-    fn modify_file_edits_mode_is_restricted_to_line_modes() {
-        let mut v = json!({
-            "path": "a.txt",
-            "edits": [{ "mode": "overwrite", "content": "x" }],
-        });
-        coerce_args_value(&MODIFY_FILE_POLICY, &mut v);
-        assert_eq!(v["edits"][0]["mode"], "overwrite", "edits 不收整覆盖同义词");
-    }
-
-    #[test]
-    fn create_file_defaults_missing_content() {
-        let mut v = json!({ "output_path": "x.txt" });
-        assert!(coerce_args_value(&CREATE_FILE_POLICY, &mut v));
-        assert_eq!(v["path"], "x.txt");
-        assert_eq!(v["content"], "");
-    }
-
-    #[test]
-    fn from_to_aliases_are_exact_key_match() {
-        let mut v = json!({ "src": "a.txt", "dst": "b.txt" });
-        assert!(coerce_args_value(&FROM_TO_POLICY, &mut v));
-        assert_eq!(v["from"], "a.txt");
-        assert_eq!(v["to"], "b.txt");
-
-        let mut v = json!({ "Src": "a.txt", "Dst": "b.txt" });
-        assert!(!coerce_args_value(&FROM_TO_POLICY, &mut v));
-        assert_eq!(v["Src"], "a.txt", "大小写变体不走 from/to 别名（旧行为）");
-    }
-
-    #[test]
-    fn no_coercion_policy_is_a_noop() {
-        let mut v = json!({ "file_path": "a.txt" });
-        assert!(!coerce_args_value(&NO_COERCION, &mut v));
-        assert_eq!(v["file_path"], "a.txt");
-    }
-
-    // ── 边角：钉住旧实现（按工具名分派时代）的具体行为 ────────────────────
-
-    /// `path: null` 保持原样（旧 `coerce_path_string_field` 对 null 返回 `false`），
-    /// 交给 schema 报「类型不符」，而不是被悄悄补成字符串。
-    #[test]
-    fn null_path_is_left_for_schema_validation() {
-        let mut v = json!({ "path": null });
-        assert!(!coerce_args_value(&PATH_ONLY, &mut v));
-        assert_eq!(v["path"], Value::Null);
-    }
-
-    /// `edits` 不是数组时忽略（旧实现 `if let Some(Value::Array(edits))`）。
-    #[test]
-    fn non_array_edits_is_ignored() {
-        let mut v = json!({ "path": "a.txt", "edits": { "mode": "lines" } });
-        coerce_args_value(&MODIFY_FILE_POLICY, &mut v);
-        assert_eq!(v["edits"]["mode"], "lines", "非数组不该被逐项归一");
-    }
-
-    /// `guard` 里已显式给的子键优先，旧平铺键上抬不覆盖它（旧 `or_insert` 语义）。
-    #[test]
-    fn guard_explicit_value_wins_over_legacy_flat_key() {
-        let mut v = json!({
-            "path": "a.txt",
-            "guard": { "content": "KEEP" },
-            "expect_content": "OLD",
-            "expect_first_line": "L1",
-        });
-        assert!(coerce_args_value(&MODIFY_FILE_POLICY, &mut v));
-        assert_eq!(v["guard"]["content"], "KEEP");
-        assert_eq!(v["guard"]["first_line"], "L1");
-        assert!(v.get("expect_content").is_none());
-    }
-
-    /// `guard` 存在但不是对象：旧实现整个替换为空对象再接收上抬键。
-    #[test]
-    fn non_object_guard_is_replaced_before_uplift() {
-        let mut v = json!({ "path": "a.txt", "guard": "x", "expect_content": "L1" });
-        assert!(coerce_args_value(&MODIFY_FILE_POLICY, &mut v));
-        assert_eq!(v["guard"], json!({ "content": "L1" }));
-    }
-
-    /// 顶层 `mode` 的未知值也会被「归一后写回」（旧 `_ => norm`），
-    /// `edits[i].mode` 则只认表内命中 —— 两条语义必须保持不同。
-    #[test]
-    fn unknown_top_level_mode_falls_back_to_normalized_string() {
-        let mut v = json!({ "path": "a.txt", "mode": " ReWrite Files " });
-        assert!(coerce_args_value(&MODIFY_FILE_POLICY, &mut v));
-        assert_eq!(v["mode"], "rewrite_files");
-    }
-
-    /// `after_line` 的下界是 0（`insert_after_line` 允许插到文件开头）。
-    #[test]
-    fn after_line_accepts_zero() {
-        let mut v = json!({ "path": "a.txt", "after_line": "0" });
-        assert!(coerce_args_value(&MODIFY_FILE_POLICY, &mut v));
-        assert_eq!(v["after_line"], json!(0));
-    }
+/// 把宽容化策略**绑定到 Args 类型**上（#1381）。
+///
+/// spec 里只写 `coerce: auto`，`builtin_tool!` 把它展开成 `<Args as ArgsCoercion>::POLICY`，
+/// 于是「哪个类型走哪套策略」由**类型自己**决定。
+///
+/// 这堵的是门禁抓不到的一类漂移：把 `PATH_ONLY` 误挂到 `read_file` 上时，门禁 1（`path`）
+/// 依然成立、门禁 2–5 只检查「已声明的字段」，结果 `read_file` 的行号宽容化会**静默失效**。
+/// 改成类型绑定后，这种错写在编译期就不成立。
+///
+/// **新增 impl 时必须在对应 spec 写 `coerce: auto`** —— 这一步没有编译期检查（Rust 没有
+/// specialization，无法「有 impl 就自动启用」）。当前兜底只有门禁 1：该类型的工具若带
+/// `path` / `content` / `from` / `to` 会失败；若将来给「只做行号归一」这类非通用键的类型加
+/// 策略，记得同时补进 `permissive_tools_keep_their_documented_fields`。
+pub trait ArgsCoercion {
+    const POLICY: &'static ArgsCoercionPolicy;
 }
+
+/// 只做 `path` 归一的只读 / 文件工具：17 个 Args 类型共用同一套策略。
+macro_rules! path_only_args {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl ArgsCoercion for $ty {
+                const POLICY: &'static ArgsCoercionPolicy = &PATH_ONLY;
+            }
+        )*
+    };
+}
+
+path_only_args!(
+    CodeNavArgs,
+    CodeStatsArgs,
+    CodebaseSemanticSearchArgs,
+    CoverageReportArgs,
+    CreateDirArgs,
+    DeleteDirArgs,
+    GhApiArgs,
+    GitArgs,
+    GlobFilesArgs,
+    ListTreeArgs,
+    ReadBinaryMetaArgs,
+    ReadDirEnhancedArgs,
+    RustAnalyzerArgs,
+    SearchInFilesEnhancedArgs,
+    SearchReplaceArgs,
+    StructuredArgs,
+    TableTextArgs,
+);
+
+impl ArgsCoercion for ReadFileArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &READ_FILE_POLICY;
+}
+
+impl ArgsCoercion for FileWriteArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &CREATE_FILE_POLICY;
+}
+
+impl ArgsCoercion for AppendFileArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &APPEND_FILE_POLICY;
+}
+
+impl ArgsCoercion for ModifyFileArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &MODIFY_FILE_POLICY;
+}
+
+impl ArgsCoercion for FileFromToOverwriteArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &FROM_TO_POLICY;
+}
+
+#[cfg(test)]
+mod tests;

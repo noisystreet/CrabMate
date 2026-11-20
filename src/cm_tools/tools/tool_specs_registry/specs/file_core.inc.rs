@@ -2,7 +2,7 @@
         builtin_tool! {
             name: tool_names::CREATE_FILE,
             args: args::FileWriteArgs,
-            coerce: coerce_policy::CREATE_FILE_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_create_file_try,
@@ -12,7 +12,7 @@
         builtin_tool! {
             name: tool_names::MODIFY_FILE,
             args: args::ModifyFileArgs,
-            coerce: coerce_policy::MODIFY_FILE_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_modify_file_try,
@@ -22,7 +22,7 @@
         builtin_tool! {
             name: tool_names::COPY_FILE,
             args: args::FileFromToOverwriteArgs,
-            coerce: coerce_policy::FROM_TO_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_copy_file_try,
@@ -32,7 +32,7 @@
         builtin_tool! {
             name: tool_names::MOVE_FILE,
             args: args::FileFromToOverwriteArgs,
-            coerce: coerce_policy::FROM_TO_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_move_file_try,
@@ -42,7 +42,7 @@
         builtin_tool! {
             name: tool_names::READ_FILE,
             args: args::ReadFileArgs,
-            coerce: coerce_policy::READ_FILE_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: read_file_try_dispatch,
@@ -52,7 +52,7 @@
         builtin_tool! {
             name: tool_names::READ_DIR,
             args: args::ReadDirEnhancedArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_read_dir_try,
@@ -62,7 +62,7 @@
         builtin_tool! {
             name: tool_names::GLOB_FILES,
             args: args::GlobFilesArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_glob_files_try,
@@ -72,7 +72,7 @@
         builtin_tool! {
             name: tool_names::LIST_TREE,
             args: args::ListTreeArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_list_tree_try,
@@ -82,7 +82,7 @@
         builtin_tool! {
             name: tool_names::READ_BINARY_META,
             args: args::ReadBinaryMetaArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_read_binary_meta_try,
@@ -101,7 +101,7 @@
         builtin_tool! {
             name: tool_names::SEARCH_IN_FILES,
             args: args::SearchInFilesEnhancedArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_search_in_files_try,
@@ -111,7 +111,7 @@
         builtin_tool! {
             name: tool_names::CODEBASE_SEMANTIC_SEARCH,
             args: args::CodebaseSemanticSearchArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_codebase_semantic_search_try,

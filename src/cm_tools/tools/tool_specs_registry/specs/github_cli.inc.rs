@@ -38,7 +38,7 @@
         builtin_tool! {
             name: tool_names::GH_API,
             args: args::GhApiArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL, dev_tag::VCS],
             runner: runner_gh_api_try,
