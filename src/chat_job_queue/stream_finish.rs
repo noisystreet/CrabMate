@@ -225,15 +225,36 @@ pub(crate) async fn emit_stream_cancelled_terminal(
     }
 }
 
+/// `stream_ended` 终态帧「**只能成功一次**」的守卫。
+///
+/// 单独成类型而不是在各处传 `&mut bool`：终态帧重复会让客户端把一次完成当两次收尾。
+/// 原实现是「局部 `bool` + 每个调用点自己先检查」，属于靠调用方自觉的契约；
+/// [`emit_stream_ended_once`] 是唯一入口，状态由本类型独占，外部只能读 `is_sent()`。
+#[derive(Debug, Default)]
+pub(super) struct StreamEndedOnce {
+    sent: bool,
+}
+
+impl StreamEndedOnce {
+    /// 终态帧是否已发出（供调用方决定是否还需要补发）。
+    pub(super) fn is_sent(&self) -> bool {
+        self.sent
+    }
+
+    fn mark_sent(&mut self) {
+        self.sent = true;
+    }
+}
+
 pub(crate) async fn emit_stream_ended_once(
     sse_tx: &mpsc::Sender<String>,
     job_id: u64,
     reason: StreamEndReason,
-    stream_ended_sent: &mut bool,
+    stream_ended_sent: &mut StreamEndedOnce,
     log_context: &'static str,
     tiktoken_prompt_tokens: Option<crate::types::TiktokenPromptTokensSnapshot>,
 ) {
-    if *stream_ended_sent {
+    if stream_ended_sent.is_sent() {
         return;
     }
     let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
@@ -244,7 +265,7 @@ pub(crate) async fn emit_stream_ended_once(
         },
     });
     let _ = crate::sse::send_string_logged(sse_tx, end_line, log_context).await;
-    *stream_ended_sent = true;
+    stream_ended_sent.mark_sent();
 }
 
 /// 非终态：模型/工具已结束、正在落盘；官方 Web 可提前进入 Draining 文案。
@@ -498,7 +519,7 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) request_session_mode: Option<&'a str>,
     /// 本请求显式申请的权限等级；`None` = 本回合没申请，落盘时该列保持原值。
     pub(super) request_permission_level: Option<&'a str>,
-    pub(super) stream_ended_sent: &'a mut bool,
+    pub(super) stream_ended_sent: &'a mut StreamEndedOnce,
 }
 
 pub(crate) async fn stream_job_outcome_after_agent_turn(
