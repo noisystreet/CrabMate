@@ -36,7 +36,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
-        $(coerce: $coerce:expr,)?
+        $(coerce: $coerce:ident,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -50,7 +50,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Dynamic($summary),
-            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $args $(, $coerce)?),
             description: $description,
         )
     };
@@ -58,7 +58,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
-        $(coerce: $coerce:expr,)?
+        $(coerce: $coerce:ident,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -74,7 +74,7 @@ macro_rules! builtin_tool {
             summary: ToolSummaryKind::Dynamic(
                 <$args as $crate::cm_tools::tools::tool_summary_args::ToolArgsSummary>::summary_line,
             ),
-            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $args $(, $coerce)?),
             description: $description,
         )
     };
@@ -82,7 +82,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
-        $(coerce: $coerce:expr,)?
+        $(coerce: $coerce:ident,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -96,7 +96,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Static($summary),
-            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $args $(, $coerce)?),
             description: $description,
         )
     };
@@ -104,7 +104,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
-        $(coerce: $coerce:expr,)?
+        $(coerce: $coerce:ident,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -118,7 +118,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::None,
-            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $args $(, $coerce)?),
             description: $description,
         )
     };
@@ -131,14 +131,14 @@ macro_rules! builtin_tool {
     (@runner $runner:tt) => {
         ToolRunner::Typed($runner)
     };
-    // ── 宽容化策略：未写 `coerce:` 即空策略 ────────────────────────────────
-    // 只有真正需要入站兼容的工具才声明；常量名写错是编译错误，于是不会再出现
-    // 「按工具名 if 漏改一处 ⇒ 模型传别名时静默 invalid_args」那种漂移。
-    (@coerce) => {
+    // ── 宽容化策略：`coerce: auto` = 取该 Args 类型自带的策略 ────────────────
+    // 写别的值会编译失败：策略与类型是**一一绑定**的（`impl ArgsCoercion for XArgs`），
+    // 所以「把策略挂错工具」写不出来 —— 那类错的后果是某工具静默失去别名容错。
+    (@coerce $args:ty) => {
         &$crate::cm_tools::tools::tool_args_coerce::NO_COERCION
     };
-    (@coerce $coerce:expr) => {
-        &$coerce
+    (@coerce $args:ty, auto) => {
+        <$args as $crate::cm_tools::tools::tool_args_coerce::ArgsCoercion>::POLICY
     };
     // ── 装配：各写法最终收敛到这一处 ─────────────────────────────────────────
     (

@@ -11,7 +11,7 @@
         builtin_tool! {
             name: tool_names::STRUCTURED,
             args: args::StructuredArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_structured_try,

@@ -11,7 +11,7 @@
         builtin_tool! {
             name: tool_names::TABLE_TEXT,
             args: args::TableTextArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_table_text_try,
@@ -21,7 +21,7 @@
         builtin_tool! {
             name: tool_names::CODE_NAV,
             args: args::CodeNavArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL, dev_tag::RUST],
             runner: runner_code_nav_try,

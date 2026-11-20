@@ -11,7 +11,7 @@
         builtin_tool! {
             name: tool_names::DELETE_DIR,
             args: args::DeleteDirArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_delete_dir_try,
@@ -21,7 +21,7 @@
         builtin_tool! {
             name: tool_names::APPEND_FILE,
             args: args::AppendFileArgs,
-            coerce: coerce_policy::APPEND_FILE_POLICY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_append_file_try,
@@ -31,7 +31,7 @@
         builtin_tool! {
             name: tool_names::CREATE_DIR,
             args: args::CreateDirArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_create_dir_try,
@@ -41,7 +41,7 @@
         builtin_tool! {
             name: tool_names::SEARCH_REPLACE,
             args: args::SearchReplaceArgs,
-            coerce: coerce_policy::PATH_ONLY,
+            coerce: auto,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_search_replace_try,
