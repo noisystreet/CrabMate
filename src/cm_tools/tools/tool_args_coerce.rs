@@ -5,9 +5,9 @@
 //! 漏改不报错，只表现为「模型传别名时突然 `invalid_args`」。
 //!
 //! 现在每条规则都是**数据**（[`FieldCoercion`]），由工具在 `builtin_tool!` 里用
-//! `coerce: args::PATH_ONLY` 这样的常量声明，挂在 [`ToolSpec`] 上；运行时按 spec 查表，
-//! 不再看工具名。声明可被测试枚举 —— 见 `tool_args_validate` 的门禁用例
-//! `every_tool_with_path_property_declares_the_path_policy`。
+//! `coerce: coerce_policy::PATH_ONLY` 这样的常量声明，挂在 [`ToolSpec`] 上；运行时按 spec 查表，
+//! 不再看工具名。声明可被测试枚举 —— `tool_args_validate` 的 5 条门禁遍历 `tool_specs()`，
+//! 把「漏声明」「目标键不在 schema」「下界/类型/枚举写错」都变成测试失败。
 //!
 //! **只做入站兼容**：任何策略都不得让 schema 的 `properties` 多出键，别名不反写 schema。
 //!
