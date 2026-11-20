@@ -62,9 +62,9 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         crate::redact::last_user_message_preview_for_log(&messages)
     );
     let flight = Arc::new(PerTurnFlight::default());
-    let _per_guard = queue_deps
-        .chat_queue
-        .begin_per_flight_job(job_id, flight.clone());
+    // 只登记、不持 guard：在册 ⟺ 本函数仍持有 `flight`（#1380）。故 `per_flight`
+    // 传 `Arc::clone` 而非 move，让条目活到收尾结束。
+    queue_deps.chat_queue.attach_per_flight(job_id, &flight);
     let cfg_snap = {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
@@ -118,7 +118,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 messages: &mut messages,
                 effective_working_dir: &work_dir,
                 workspace_is_set,
-                per_flight: flight,
+                per_flight: Arc::clone(&flight),
                 temperature_override,
                 model_override: client_model_override,
                 use_executor_model: false,
