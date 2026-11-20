@@ -36,6 +36,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
+        $(coerce: $coerce:expr,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -49,6 +50,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Dynamic($summary),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
             description: $description,
         )
     };
@@ -56,6 +58,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
+        $(coerce: $coerce:expr,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -71,6 +74,7 @@ macro_rules! builtin_tool {
             summary: ToolSummaryKind::Dynamic(
                 <$args as $crate::cm_tools::tools::tool_summary_args::ToolArgsSummary>::summary_line,
             ),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
             description: $description,
         )
     };
@@ -78,6 +82,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
+        $(coerce: $coerce:expr,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -91,6 +96,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::Static($summary),
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
             description: $description,
         )
     };
@@ -98,6 +104,7 @@ macro_rules! builtin_tool {
     (
         name: $name:expr,
         args: $args:ty,
+        $(coerce: $coerce:expr,)?
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         runner: $runner:tt,
@@ -111,6 +118,7 @@ macro_rules! builtin_tool {
             category: $category,
             tags: [$($tag),*],
             summary: ToolSummaryKind::None,
+            args_coercion: $crate::cm_tools::tools::builtin_tool!(@coerce $($coerce)?),
             description: $description,
         )
     };
@@ -123,6 +131,15 @@ macro_rules! builtin_tool {
     (@runner $runner:tt) => {
         ToolRunner::Typed($runner)
     };
+    // ── 宽容化策略：未写 `coerce:` 即空策略 ────────────────────────────────
+    // 只有真正需要入站兼容的工具才声明；常量名写错是编译错误，于是不会再出现
+    // 「按工具名 if 漏改一处 ⇒ 模型传别名时静默 invalid_args」那种漂移。
+    (@coerce) => {
+        &$crate::cm_tools::tools::tool_args_coerce::NO_COERCION
+    };
+    (@coerce $coerce:expr) => {
+        &$coerce
+    };
     // ── 装配：各写法最终收敛到这一处 ─────────────────────────────────────────
     (
         @spec
@@ -132,6 +149,7 @@ macro_rules! builtin_tool {
         category: $category:ident,
         tags: [$($tag:expr),* $(,)?],
         summary: $summary:expr,
+        args_coercion: $args_coercion:expr,
         description: $description:expr $(,)?
     ) => {
         ToolSpec {
@@ -142,6 +160,7 @@ macro_rules! builtin_tool {
             runner: $runner,
             summary: $summary,
             tags: &[$($tag),*],
+            args_coercion: $args_coercion,
         }
     };
 }

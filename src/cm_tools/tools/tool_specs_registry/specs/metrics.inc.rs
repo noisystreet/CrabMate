@@ -2,6 +2,7 @@
         builtin_tool! {
             name: tool_names::CODE_STATS,
             args: args::CodeStatsArgs,
+            coerce: coerce_policy::PATH_ONLY,
             category: Development,
             tags: [dev_tag::GENERAL],
             runner: runner_code_stats_try,
@@ -20,6 +21,7 @@
         builtin_tool! {
             name: tool_names::COVERAGE_REPORT,
             args: args::CoverageReportArgs,
+            coerce: coerce_policy::PATH_ONLY,
             category: Development,
             tags: [dev_tag::GENERAL, dev_tag::RUST, dev_tag::FRONTEND, dev_tag::PYTHON, dev_tag::GO, dev_tag::QUALITY],
             runner: runner_coverage_report_try,

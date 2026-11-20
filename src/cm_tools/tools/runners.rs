@@ -50,6 +50,11 @@ pub struct ToolSpec {
     /// `match`，与 `specs/` 各写一份——漏改其一不会报错，只会在 `build_tools_with_options`
     /// 的栈裁剪里静默丢工具（或留下不该出现的工具）。
     pub tags: &'static [&'static str],
+    /// 入参宽容化策略（#1381）：规则是**数据**（见 [`super::tool_args_coerce`]），
+    /// 运行时按本字段查表，不再按工具名 `if` 分派；未声明即 [`NO_COERCION`]。
+    ///
+    /// [`NO_COERCION`]: super::tool_args_coerce::NO_COERCION
+    pub args_coercion: &'static super::tool_args_coerce::ArgsCoercionPolicy,
 }
 
 #[inline]
