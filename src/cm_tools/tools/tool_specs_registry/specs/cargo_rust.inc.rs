@@ -38,6 +38,7 @@
         builtin_tool! {
             name: tool_names::RUST_ANALYZER,
             args: args::RustAnalyzerArgs,
+            coerce: coerce_policy::PATH_ONLY,
             category: Development,
             tags: [dev_tag::GENERAL, dev_tag::RUST],
             runner: runner_rust_analyzer_try,

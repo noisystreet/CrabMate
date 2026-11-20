@@ -2,6 +2,7 @@
         builtin_tool! {
             name: tool_names::GIT,
             args: args::GitArgs,
+            coerce: coerce_policy::PATH_ONLY,
             category: Development,
             tags: [dev_tag::GENERAL, dev_tag::VCS],
             runner: runner_git_try,

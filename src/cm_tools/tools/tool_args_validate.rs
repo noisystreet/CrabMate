@@ -4,12 +4,13 @@
 //! 与工具「必填键」粗检互补：
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
 //!
-//! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` / **`modify_file`**
-//! 的 **`start_line` / `end_line`** 字符串与整型 JSON 数字、`modify_file` 的 **`mode`** 大小写/同义词、
-//! `path` 的常见别名（**`file_path`** / **`filename`** / **`file`** / **`name`** / **`output_path`** 等；键名大小写不敏感）、
-//! **`copy_file`** 的 **`src`/`dst`**、
-//! **`create_file`** / **`modify_file`** / **`append_file`** 的 **`content`** 别名（含 **`code`**）与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
-//! [`effective_builtin_tool_args_json`]。
+//! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（行号字符串、`mode` 同义词、
+//! `path` / `content` / `from` / `to` 的入站别名、守卫键上抬等）。
+//!
+//! 规则本身是**数据**，声明在各工具的 `builtin_tool! { … coerce: … }`（策略常量与引擎见
+//! [`super::tool_args_coerce`]）；本模块只负责「查 spec → 跑策略 → 校验」，见
+//! [`coerce_builtin_tool_args_value`] 与 [`effective_builtin_tool_args_json`]。
+//! 历史实现按工具名 `if` 分派，新增参数要改两处，漏改只会静默少做一步归一（#1381）。
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -44,455 +45,20 @@ fn build_validators_map() -> HashMap<&'static str, Validator> {
     m
 }
 
-/// 将 `jsonschema` 的若干条错误合成为对用户与模型可读的**中文**短句（含 `instance path` 便于定位嵌套键）。
-fn json_number_to_u64(n: &serde_json::Number) -> Option<u64> {
-    n.as_u64().or_else(|| {
-        let f = n.as_f64()?;
-        if f.is_finite() && f >= 1.0 && f.fract() == 0.0 {
-            Some(f as u64)
-        } else {
-            None
-        }
-    })
-}
-
-fn coerce_path_string_field(path_val: &mut Value) -> bool {
-    match path_val {
-        Value::Number(n) => {
-            *path_val = Value::String(n.to_string());
-            true
-        }
-        Value::String(s) => {
-            let t = s.trim();
-            if t != s.as_str() {
-                *path_val = Value::String(t.to_string());
-                true
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
-
-fn coerce_read_file_one_u64_line_field(val: &mut Value) -> bool {
-    coerce_one_u64_field_min(val, 1)
-}
-
-fn coerce_one_u64_field_min(val: &mut Value, min: u64) -> bool {
-    match val {
-        Value::String(s) => {
-            let t = s.trim();
-            if let Ok(n) = t.parse::<u64>()
-                && n >= min
-            {
-                *val = Value::Number(n.into());
-                true
-            } else {
-                false
-            }
-        }
-        Value::Number(n) => {
-            let Some(u) = json_number_to_u64(n) else {
-                return false;
-            };
-            if u < min {
-                return false;
-            }
-            let new_v = Value::Number(u.into());
-            if *val != new_v {
-                *val = new_v;
-                true
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
-
-fn coerce_read_file_line_int_fields(map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
-    for key in [
-        "start_line",
-        "end_line",
-        "max_lines",
-        "anchor_line",
-        "context_lines",
-    ] {
-        let Some(val) = map.get_mut(key) else {
-            continue;
-        };
-        if coerce_read_file_one_u64_line_field(val) {
-            changed = true;
-        }
-    }
-    changed
-}
-
-fn coerce_read_file_encoding_trim(map: &mut serde_json::Map<String, Value>) -> bool {
-    let Some(enc) = map.get_mut("encoding") else {
-        return false;
-    };
-    let Value::String(s) = enc else {
-        return false;
-    };
-    let t = s.trim();
-    if t == s.as_str() {
-        return false;
-    }
-    *enc = Value::String(t.to_string());
-    true
-}
-
-fn coerce_read_file_count_total_lines(map: &mut serde_json::Map<String, Value>) -> bool {
-    let Some(b) = map.get_mut("count_total_lines") else {
-        return false;
-    };
-    match b {
-        Value::String(s) => {
-            let t = s.trim().to_ascii_lowercase();
-            let nv = match t.as_str() {
-                "true" | "1" | "yes" => Some(Value::Bool(true)),
-                "false" | "0" | "no" => Some(Value::Bool(false)),
-                _ => None,
-            };
-            let Some(vv) = nv else {
-                return false;
-            };
-            *b = vv;
-            true
-        }
-        Value::Number(n) => {
-            let Some(u) = n.as_u64() else {
-                return false;
-            };
-            if !matches!(u, 0 | 1) {
-                return false;
-            }
-            *b = Value::Bool(u == 1);
-            true
-        }
-        _ => false,
-    }
-}
-
-/// 旧平铺守卫键迁移到 `guard` 子对象。
+/// 对已知内置工具 JSON 对象做一轮宽容化（顶层须为 object）。
 ///
-/// schema 只暴露 `guard`（`deny_unknown_fields` 会拒收平铺旧键），但历史会话回放与沿用旧习惯的
-/// 调用仍应可用，故在校验前把 `expect_content` 等上抬为 `guard.content` 等；`guard` 已有的同名
-/// 子键优先，不覆盖调用方显式写的值。
-fn uplift_guard_keys(map: &mut serde_json::Map<String, Value>) -> bool {
-    const LEGACY: [(&str, &str); 4] = [
-        ("content", "expect_content"),
-        ("first_line", "expect_first_line"),
-        ("last_line", "expect_last_line"),
-        ("anchor_line", "expect_line_content"),
-    ];
-    let mut moved: Vec<(&str, Value)> = Vec::new();
-    for (new, old) in LEGACY {
-        if let Some(v) = map.remove(old) {
-            moved.push((new, v));
-        }
-    }
-    if moved.is_empty() {
-        return false;
-    }
-    let slot = map
-        .entry("guard".to_string())
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if !slot.is_object() {
-        *slot = Value::Object(serde_json::Map::new());
-    }
-    if let Value::Object(guard) = slot {
-        for (key, val) in moved {
-            guard.entry(key.to_string()).or_insert(val);
-        }
-    }
-    true
-}
-
-/// `modify_file` 的 `replace_lines` 与 `read_file` 一样常用字符串行号；`mode` 常被写成大小写变体或 `lines`。
-fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = uplift_guard_keys(map);
-    for key in ["start_line", "end_line"] {
-        let Some(val) = map.get_mut(key) else {
-            continue;
-        };
-        if coerce_read_file_one_u64_line_field(val) {
-            changed = true;
-        }
-    }
-    if let Some(val) = map.get_mut("after_line")
-        && coerce_one_u64_field_min(val, 0)
-    {
-        changed = true;
-    }
-    if let Some(Value::Array(edits)) = map.get_mut("edits") {
-        for edit in edits.iter_mut() {
-            let Value::Object(obj) = edit else {
-                continue;
-            };
-            if coerce_modify_file_edit_fields(obj) {
-                changed = true;
-            }
-        }
-    }
-    let Some(mode_val) = map.get_mut("mode") else {
-        return changed;
-    };
-    let Value::String(s) = mode_val else {
-        return changed;
-    };
-    let mapped = normalize_modify_file_mode_str(s);
-    if mapped.as_str() != s.as_str() {
-        *mode_val = Value::String(mapped);
-        changed = true;
-    }
-    changed
-}
-
-/// `modify_file.edits[i]` 的确定性纠错：字符串行号 → 整型；`mode` 同义词/大小写归一。
-fn coerce_modify_file_edit_fields(obj: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = uplift_guard_keys(obj);
-    for key in ["start_line", "end_line"] {
-        let Some(val) = obj.get_mut(key) else {
-            continue;
-        };
-        if coerce_read_file_one_u64_line_field(val) {
-            changed = true;
-        }
-    }
-    if let Some(val) = obj.get_mut("after_line")
-        && coerce_one_u64_field_min(val, 0)
-    {
-        changed = true;
-    }
-    if let Some(Value::String(s)) = obj.get("mode") {
-        let mapped = normalize_modify_file_mode_str(s);
-        if matches!(mapped.as_str(), "replace_lines" | "insert_after_line")
-            && mapped.as_str() != s.as_str()
-        {
-            obj.insert("mode".to_string(), Value::String(mapped));
-            changed = true;
-        }
-    }
-    changed
-}
-
-/// `modify_file` 的 `mode` 归一：去空白、小写，并把常见同义词映射到规范值。
-fn normalize_modify_file_mode_str(s: &str) -> String {
-    let norm: String = s
-        .trim()
-        .chars()
-        .map(|c| {
-            if c.is_whitespace() {
-                '_'
-            } else {
-                c.to_ascii_lowercase()
-            }
-        })
-        .collect();
-    match norm.as_str() {
-        "lines" | "line" | "line_replace" | "replace" | "partial" => "replace_lines".to_string(),
-        "insert" | "insert_line" | "insert_after" | "append_after_line" => {
-            "insert_after_line".to_string()
-        }
-        "replacelines" => "replace_lines".to_string(),
-        "full" | "overwrite" | "whole" | "whole_file" => "full".to_string(),
-        other
-            if other == "replace_lines"
-                || other == "insert_after_line"
-                || other == "full"
-                || other == "overwrite" =>
-        {
-            other.to_string()
-        }
-        _ => norm,
-    }
-}
-
-fn schema_has_top_level_prop(tool_name: &str, prop: &str) -> bool {
-    cached_params_for_tool_name(tool_name)
-        .and_then(|schema| schema.get("properties").cloned())
-        .and_then(|props| props.get(prop).cloned())
-        .is_some()
-}
-
-/// 按大小写不敏感取出键；优先精确 `want`，再扫一遍别名表。
-fn take_key_ci(map: &mut serde_json::Map<String, Value>, want: &str) -> Option<Value> {
-    if let Some(v) = map.remove(want) {
-        return Some(v);
-    }
-    let found = map.keys().find(|k| k.eq_ignore_ascii_case(want)).cloned()?;
-    map.remove(&found)
-}
-
-fn remap_path_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
-    if map.contains_key("path") {
-        // 仅纠正大小写变体残留（如同时有 Path）；已有 path 则不动。
-        return false;
-    }
-    if let Some(v) = take_key_ci(map, "path") {
-        map.insert("path".to_string(), v);
-        return true;
-    }
-    const ALIASES: &[&str] = &[
-        "file_path",
-        "filepath",
-        "relative_path",
-        "rel_path",
-        "filename",
-        "file_name",
-        "file",
-        "name",
-        "output_path",
-        "write_path",
-        "target_file",
-        "target_path",
-        "target",
-        "dest_path",
-        "destination_path",
-    ];
-    for key in ALIASES {
-        if let Some(v) = take_key_ci(map, key) {
-            map.insert("path".to_string(), v);
-            return true;
-        }
-    }
-    false
-}
-
-fn remap_content_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
-    if map.contains_key("content") {
-        return false;
-    }
-    if let Some(v) = take_key_ci(map, "content") {
-        map.insert("content".to_string(), v);
-        return true;
-    }
-    const ALIASES: &[&str] = &["file_content", "body", "text", "source", "code"];
-    for key in ALIASES {
-        if let Some(v) = take_key_ci(map, key) {
-            map.insert("content".to_string(), v);
-            return true;
-        }
-    }
-    false
-}
-
-fn remap_from_to_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
-    if !map.contains_key("from") {
-        const FROM_KEYS: &[&str] = &["src", "source", "source_path", "old_path", "from_path"];
-        for key in FROM_KEYS {
-            if let Some(v) = map.remove(*key) {
-                map.insert("from".to_string(), v);
-                changed = true;
-                break;
-            }
-        }
-    }
-    if !map.contains_key("to") {
-        const TO_KEYS: &[&str] = &[
-            "dst",
-            "dest",
-            "destination",
-            "target",
-            "target_path",
-            "new_path",
-            "to_path",
-        ];
-        for key in TO_KEYS {
-            if let Some(v) = map.remove(*key) {
-                map.insert("to".to_string(), v);
-                changed = true;
-                break;
-            }
-        }
-    }
-    changed
-}
-
-fn coerce_read_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
-    if coerce_read_file_line_int_fields(map) {
-        changed = true;
-    }
-    if coerce_read_file_encoding_trim(map) {
-        changed = true;
-    }
-    if coerce_read_file_count_total_lines(map) {
-        changed = true;
-    }
-    changed
-}
-
-fn apply_path_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
-    if schema_has_top_level_prop(name, "path") {
-        if remap_path_aliases(map) {
-            changed = true;
-        }
-        if let Some(p) = map.get_mut("path")
-            && coerce_path_string_field(p)
-        {
-            changed = true;
-        }
-    }
-    if matches!(name, tool_names::COPY_FILE | tool_names::MOVE_FILE) {
-        if remap_from_to_aliases(map) {
-            changed = true;
-        }
-        for key in ["from", "to"] {
-            if let Some(x) = map.get_mut(key)
-                && coerce_path_string_field(x)
-            {
-                changed = true;
-            }
-        }
-    }
-    changed
-}
-
-fn apply_write_content_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
-    if matches!(name, tool_names::CREATE_FILE | tool_names::MODIFY_FILE | tool_names::APPEND_FILE)
-        && schema_has_top_level_prop(name, "content")
-        && remap_content_aliases(map)
-    {
-        changed = true;
-    }
-    if name == tool_names::CREATE_FILE && schema_has_top_level_prop(name, "content") {
-        let needs_empty_default = matches!(map.get("content"), None | Some(Value::Null));
-        if needs_empty_default {
-            map.insert("content".to_string(), Value::String(String::new()));
-            changed = true;
-        }
-    }
-    changed
-}
-
-/// 对已知内置工具 JSON 对象做一轮纠错（顶层须为 object）。与各自 Schema 对齐：仅当 schema 含对应属性时才做路径别名等。
+/// 规则来自 [`ToolSpec::args_coercion`]（工具在 `builtin_tool!` 里用 `coerce:` 声明），
+/// 本函数**不再按工具名分支**：新增/改名参数只需改 Args 侧的声明，漏声明会由
+/// `every_tool_with_path_property_declares_the_path_policy` 这类门禁用例拦住。
+///
+/// [`ToolSpec::args_coercion`]: super::ToolSpec
 pub fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
-    let Value::Object(map) = v else {
+    let Some(spec) = super::find_spec(name) else {
         return false;
     };
-    let mut changed = false;
-    if apply_path_coercions(name, map) {
-        changed = true;
-    }
-    if apply_write_content_coercions(name, map) {
-        changed = true;
-    }
-    if name == tool_names::READ_FILE && coerce_read_file_extra_fields(map) {
-        changed = true;
-    }
-    if name == tool_names::MODIFY_FILE && coerce_modify_file_extra_fields(map) {
-        changed = true;
-    }
-    changed
+    super::tool_args_coerce::coerce_args_value(spec.args_coercion, v)
 }
+
 
 /// 内置工具入参 JSON：解析成功后做一轮 [`coerce_builtin_tool_args_value`]，若有改写则返回序列化字符串供校验与 runner 共用。
 pub fn effective_builtin_tool_args_json<'a>(
@@ -844,6 +410,74 @@ mod tests {
             "expect_line_content",
         ] {
             assert!(!s.contains(legacy), "schema 不应再暴露 {legacy}: {s}");
+        }
+    }
+    /// 门禁：schema 有 `path` 的工具必须声明 `path` 策略，反之亦然。
+    ///
+    /// 迁移（#1381）时这条就是**等价性判据**：旧实现是「探一下 schema 有没有 `path` 属性再决定
+    /// 是否做别名归一」，所以「schema 有 path」与「做了 path 归一」曾天然一致；改成声明式之后，
+    /// 丢一次声明不会编译报错，只会让某工具静默失去别名容错 —— 由本测试守住。
+    #[test]
+    fn every_tool_with_path_property_declares_the_path_policy() {
+        for spec in tool_specs() {
+            let schema = cached_params_for_tool_name(spec.name).expect("parameters 已缓存");
+            let has_path = schema
+                .get("properties")
+                .and_then(|p| p.get("path"))
+                .is_some();
+            let declared = spec
+                .args_coercion
+                .fields
+                .iter()
+                .any(|f| f.key == "path");
+            assert_eq!(
+                has_path, declared,
+                "工具 {}：schema.properties.path 存在性（{has_path}）与 coerce 声明（{declared}）不一致",
+                spec.name
+            );
+        }
+    }
+
+    /// 门禁：策略里的目标键必须是该工具 schema 的 `properties` 键，别名则**不得**出现。
+    ///
+    /// 前半句抓「策略写了一个 schema 不接受的键」（coerce 之后必然校验失败），
+    /// 后半句钉住非目标：别名只做入站兼容，不能被反写进对外 JSON Schema。
+    #[test]
+    fn coercion_policy_keys_match_schema_properties() {
+        for spec in tool_specs() {
+            let schema = cached_params_for_tool_name(spec.name).expect("parameters 已缓存");
+            let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
+                assert!(
+                    spec.args_coercion.fields.is_empty(),
+                    "工具 {} 没有 properties 却声明了 coerce",
+                    spec.name
+                );
+                continue;
+            };
+            for field in spec.args_coercion.fields {
+                assert!(
+                    props.contains_key(field.key),
+                    "工具 {}：策略目标键 `{}` 不在 schema properties 里",
+                    spec.name,
+                    field.key
+                );
+                for alias in field.aliases {
+                    assert!(
+                        !props.contains_key(*alias),
+                        "工具 {}：别名 `{alias}` 不应出现在 schema properties 里",
+                        spec.name
+                    );
+                }
+            }
+            // 结构规则也会**写入**键（`default_empty_content` 写 `content`），
+            // 只查 `fields` 会漏掉「挂错策略 ⇒ coerce 造出一个 schema 不接受的键」。
+            if spec.args_coercion.structural.default_empty_content {
+                assert!(
+                    props.contains_key("content"),
+                    "工具 {}：声明了 default_empty_content，但 schema 没有 content 属性",
+                    spec.name
+                );
+            }
         }
     }
 }

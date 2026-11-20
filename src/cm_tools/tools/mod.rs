@@ -84,6 +84,7 @@ mod test_result_cache;
 mod text_diff;
 mod text_truncate;
 #[cfg(feature = "schema-tools")]
+mod tool_args_coerce;
 mod tool_args_validate;
 mod tool_json_schema;
 mod tool_param_types;
