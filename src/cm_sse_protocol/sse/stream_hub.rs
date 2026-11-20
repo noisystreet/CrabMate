@@ -129,6 +129,11 @@ impl StreamEntry {
     fn publish(&self, job_id: u64, data_payload: String) -> Option<(u64, String)> {
         // E4/S1：决策在分配 `seq` 之前做——被拒的帧不占序号，否则 `stream_resume` 的
         // `after_seq` 会出现空洞（重放方按序号推进，空洞会被当成丢帧）。
+        //
+        // 并发说明：`observe_and_decide` 与 `next_seq.fetch_add` 不是同一原子步，所以两个
+        // 并发 `publish` 的「判定顺序」与「落号顺序」可能不一致。后果只会是**多丢**一帧
+        // （某帧被判成终态后、而它其实略早），不会让本不该丢的终态帧丢失；同一 `job_id` 上
+        // 并发的帧序列本来就无定义顺序，且终态帧由 worker 在收尾处最后发出，故按此实现。
         if self.observe_and_decide(job_id, &data_payload) == FrameDelivery::DropAfterTerminal {
             return None;
         }
