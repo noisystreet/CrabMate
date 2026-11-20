@@ -12,6 +12,7 @@ use crate::cm_types::Message;
 use crate::cm_types::StructuralCommit;
 
 mod archive;
+mod backfill;
 #[cfg(test)]
 mod coverage_tests;
 #[cfg(test)]
@@ -20,6 +21,9 @@ mod tests;
 // A3/A4 接线前，lib 构建下暂无调用方；保留原 `conversation_store::…` 路径。
 #[allow(unused_imports)]
 pub use archive::*;
+// 生产侧只有 CLI 用 `backfill_layout_meta`；`…_in_conn` 与报告类型由测试直接走子模块路径，
+// 不在根上 re-export（避免 `unused_imports` 例外）。
+pub use backfill::backfill_layout_meta;
 
 const TABLE: &str = "crabmate_conversations";
 

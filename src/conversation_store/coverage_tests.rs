@@ -3,6 +3,7 @@
 //! 单独成文件而不是塞进 `tests.rs`：后者已贴着 `fn-nloc` 的文件行数上限（920 行），
 //! 再加用例就会超标——这本身也说明覆盖率统计不属会话 CRUD 的主测试面。
 
+use super::backfill::backfill_layout_meta_in_conn;
 use super::*;
 
 #[test]
@@ -84,4 +85,130 @@ fn layout_coverage_reads_file_read_only_and_counts_whitespace_layout() {
     assert_eq!(cov.legacy_ratio(), Some(0.5));
 
     std::fs::remove_file(&path).expect("cleanup");
+}
+
+// ── 回填（#1338 E4/S3 前置：把 legacy 行清零）─────────────────────────────
+
+/// dry-run 只统计、不写盘；`--apply` 之后同一批行才被填上。
+#[test]
+fn backfill_layout_meta_dry_run_then_apply() {
+    let conn = Connection::open_in_memory().expect("in-memory db");
+    migrate(&conn).expect("migrate");
+    let msgs = vec![Message::user_only("hi".to_string())];
+    for id in ["a", "b"] {
+        assert_eq!(
+            save_if_revision(&conn, id, msgs.clone(), None, None, None, None).expect("save"),
+            SaveConversationOutcome::Saved
+        );
+    }
+    // 模拟旧库行：该列是 NOT NULL，所以「无 layout」只能是空串或纯空白（口径与 coverage 一致）。
+    conn.execute(&format!("UPDATE {TABLE} SET layout_meta_json = ''"), [])
+        .expect("blank layout");
+    conn.execute(
+        &format!("UPDATE {TABLE} SET layout_meta_json = ' ' WHERE id = 'b'"),
+        [],
+    )
+    .expect("blank layout");
+
+    let dry = backfill_layout_meta_in_conn(&conn, false).expect("dry-run");
+    assert_eq!(dry.candidates, 2, "空串与纯空白都算候选");
+    assert_eq!(dry.filled, 2);
+    assert_eq!(dry.skipped_invalid, 0);
+    assert!(!dry.applied);
+    assert!(dry.ready_for_contract(), "全部可回填");
+    // dry-run 真的没写：覆盖率仍是 2 行无 layout。
+    assert_eq!(
+        layout_coverage_from_conn(&conn)
+            .expect("coverage")
+            .without_layout,
+        2
+    );
+
+    let applied = backfill_layout_meta_in_conn(&conn, true).expect("apply");
+    assert_eq!(applied.filled, 2);
+    assert!(applied.applied);
+    assert_eq!(
+        layout_coverage_from_conn(&conn)
+            .expect("coverage")
+            .without_layout,
+        0,
+        "回填后库内再无 legacy 行"
+    );
+    // 幂等：再跑一次没有候选。
+    let again = backfill_layout_meta_in_conn(&conn, true).expect("re-run");
+    assert_eq!(again.candidates, 0);
+}
+
+/// `messages_json` 已损坏的行：**跳过且不删**，且不能让 `ready_for_contract()` 变真
+/// （否则删读路径会让这些行不可读）。
+#[test]
+fn backfill_layout_meta_skips_broken_rows_without_deleting() {
+    let conn = Connection::open_in_memory().expect("in-memory db");
+    migrate(&conn).expect("migrate");
+    assert_eq!(
+        save_if_revision(
+            &conn,
+            "ok",
+            vec![Message::user_only("hi".to_string())],
+            None,
+            None,
+            None,
+            None
+        )
+        .expect("save"),
+        SaveConversationOutcome::Saved
+    );
+    assert_eq!(
+        save_if_revision(
+            &conn,
+            "broken",
+            vec![Message::user_only("x".to_string())],
+            None,
+            None,
+            None,
+            None
+        )
+        .expect("save"),
+        SaveConversationOutcome::Saved
+    );
+    conn.execute(&format!("UPDATE {TABLE} SET layout_meta_json = ''"), [])
+        .expect("blank layout");
+    conn.execute(
+        &format!("UPDATE {TABLE} SET messages_json = '{{not json' WHERE id = 'broken'"),
+        [],
+    )
+    .expect("corrupt messages");
+
+    let report = backfill_layout_meta_in_conn(&conn, true).expect("apply");
+    assert_eq!(report.candidates, 2);
+    assert_eq!(report.filled, 1);
+    assert_eq!(report.skipped_invalid, 1);
+    assert!(
+        !report.ready_for_contract(),
+        "存在解析失败行时不得宣称可以删 legacy 读路径"
+    );
+    // 坏行仍在（没被删）。
+    let left: i64 = conn
+        .query_row(
+            &format!("SELECT count(*) FROM {TABLE} WHERE id = 'broken'"),
+            [],
+            |r| r.get(0),
+        )
+        .expect("count broken");
+    assert_eq!(left, 1, "解析失败的行只报告、不删除");
+}
+
+/// 路径入口：库不存在时报明确错误（而不是静默 0 行）。
+#[test]
+fn backfill_layout_meta_path_reports_missing_db() {
+    let path = std::env::temp_dir().join(format!(
+        "crabmate_backfill_missing_{}_{}.sqlite",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let err = backfill_layout_meta(&path, false).expect_err("missing db should fail");
+    assert!(err.contains("会话库不存在"), "{err}");
 }
