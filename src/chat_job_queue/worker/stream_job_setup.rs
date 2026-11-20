@@ -7,27 +7,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
-use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
-
-use super::super::WebChatQueueDeps;
-use super::super::{
-    PerTurnFlight, WebApprovalSession, WebChatJobEnvelope, resolve_executor_llm_for_job,
-    resolve_web_llm_for_job,
-};
+use super::super::{WebApprovalSession, WebChatJobEnvelope, WebChatQueueDeps};
+use super::prelude::{PreparedQueuedTurn, PreparedTurnParams, prepare_queued_turn};
 
 pub(super) struct StreamJobRuntime {
     pub sse_tx: mpsc::Sender<String>,
     pub cancel: Arc<AtomicBool>,
-    pub flight: Arc<PerTurnFlight>,
-    pub cfg_turn: Arc<crate::config::AgentConfig>,
-    pub api_key_turn: String,
-    pub tools_for_job: Arc<Vec<crate::types::Tool>>,
-    pub turn_allow: Option<Arc<std::collections::HashSet<String>>>,
-    pub executor_api_base: Option<String>,
-    pub executor_api_key: Option<String>,
-    pub executor_model_override: Option<String>,
-    /// 客户端请求中 client_llm.model 覆盖值，单独传递以避免影响内部组件（如 L2 分类器）。
-    pub client_model_override: Option<String>,
+    /// 回合前置解析结果（配置 / 角色 / 工具 / 权限 / executor / per-flight），与 JSON 路径共用。
+    /// 持有它即持有 `flight` 强引用 ⇒ 本任务在整个回合期间都在 `/status` 的 `per_active_jobs` 里。
+    pub prepared: PreparedQueuedTurn,
     pub web_tool_ctx: Option<crate::tool_registry::WebToolRuntime>,
     pub approval_session_id: Option<String>,
 }
@@ -85,55 +73,18 @@ pub(super) async fn stream_job_setup_runtime(
     let cancel_watcher =
         stream_job_spawn_cancel_watcher(sse_tx.clone(), Arc::clone(&cancel), job_id);
 
-    let flight = Arc::new(PerTurnFlight::default());
-    // 登记随 `flight` 的所有权走：它存进 `StreamJobRuntime`、活到 driver 收尾结束，
+    // 前置解析与 JSON 路径共用同一份；`flight` 的强引用随 `prepared` 交给 runtime，
     // 因此 stream 任务在整个回合期间都在 `/status` 的 `per_active_jobs` 里（#1380）。
-    p.queue_deps.chat_queue.attach_per_flight(job_id, &flight);
-
-    let cfg_snap = {
-        let g = p.queue_deps.cfg.read().await;
-        Arc::new(g.clone())
-    };
-    let (mut cfg_turn, api_key_turn) = resolve_web_llm_for_job(
-        p.queue_deps,
-        cfg_snap.clone(),
-        p.envelope.llm_override.as_ref(),
-    );
-    if let Some(secs) = p.envelope.readonly_tool_ttl_cache_secs {
-        let mut c = (*cfg_turn).clone();
-        c.chat_queues_cache.readonly_tool_ttl_cache_secs = secs;
-        cfg_turn = Arc::new(c);
-    }
-    let turn_allow = turn_allow_for_web_or_cli_job(
-        &cfg_turn,
-        p.envelope.persisted_active_agent_role.as_deref(),
-        p.envelope.request_agent_role.as_deref(),
-    );
-    let tools_for_job = Arc::new(filter_tools_for_agent_role(
-        &p.queue_deps.tools,
-        turn_allow.as_ref().map(|a| a.as_ref()),
-    ));
-    let (executor_api_base, executor_api_key, executor_model_override) =
-        stream_job_resolve_executor_llm(p.queue_deps, cfg_turn.clone(), p.envelope);
-    // 提取 client_llm.model 覆盖值，单独传递给 model_override 而非写入 cfg.llm.model
-    let client_model_override = p
-        .envelope
-        .llm_override
-        .as_ref()
-        .and_then(|o| o.model.clone());
+    let prepared = prepare_queued_turn(PreparedTurnParams {
+        envelope: p.envelope,
+        queue_deps: p.queue_deps,
+    })
+    .await;
 
     let runtime = StreamJobRuntime {
         sse_tx,
         cancel,
-        flight,
-        cfg_turn,
-        api_key_turn,
-        tools_for_job,
-        turn_allow,
-        executor_api_base,
-        executor_api_key,
-        executor_model_override,
-        client_model_override,
+        prepared,
         web_tool_ctx,
         approval_session_id,
     };
@@ -229,34 +180,6 @@ fn stream_job_spawn_cancel_watcher(
             job_id
         );
     })
-}
-
-fn stream_job_resolve_executor_llm(
-    queue_deps: &WebChatQueueDeps,
-    cfg_turn: Arc<crate::config::AgentConfig>,
-    envelope: &WebChatJobEnvelope,
-) -> (Option<String>, Option<String>, Option<String>) {
-    let executor_override = resolve_executor_llm_for_job(
-        queue_deps,
-        cfg_turn.clone(),
-        envelope.executor_llm_override.as_ref(),
-    );
-    match executor_override {
-        Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
-                Some(executor_cfg.llm.api_base.clone())
-            } else {
-                None
-            };
-            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
-                Some(executor_cfg.llm.model.clone())
-            } else {
-                None
-            };
-            (base, Some(executor_key), model)
-        }
-        None => (None, None, None),
-    }
 }
 
 #[cfg(test)]
