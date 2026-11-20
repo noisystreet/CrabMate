@@ -47,41 +47,87 @@ pub fn backfill_layout_meta_in_conn(
     conn: &Connection,
     apply: bool,
 ) -> Result<LayoutBackfillReport, rusqlite::Error> {
-    let rows: Vec<(String, String)> = {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id, messages_json FROM {TABLE} WHERE layout_meta_json IS NULL OR trim(layout_meta_json) = ''"
-        ))?;
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<_, _>>()?
+    let rows = collect_candidates(conn)?;
+    let (filled, skipped_invalid) = if apply {
+        apply_rows(conn, &rows)?
+    } else {
+        dry_run_rows(&rows)
     };
-    let mut report = LayoutBackfillReport {
+    Ok(LayoutBackfillReport {
         candidates: rows.len() as u64,
+        filled,
+        skipped_invalid,
         applied: apply,
-        ..LayoutBackfillReport::default()
-    };
-    for (id, json) in rows {
-        let Ok(messages) = messages_from_json(&json) else {
-            report.skipped_invalid += 1;
-            continue;
-        };
-        let layout_json = layout_meta_json_for_messages(&id, &messages);
-        if apply {
-            conn.execute(
-                &format!("UPDATE {TABLE} SET layout_meta_json = ?1 WHERE id = ?2"),
-                params![layout_json, id],
-            )?;
-        }
-        report.filled += 1;
-    }
-    Ok(report)
+    })
 }
 
-/// 按路径回填（`crabmate backfill-layout` 的实现；dry-run 也走同一个连接，避免两套 SQL 漂移）。
+/// `layout_meta_json` 为 `NULL` 或只含空白的行（与 [`super::layout_coverage`] 同一口径）。
+fn collect_candidates(conn: &Connection) -> Result<Vec<(String, String)>, rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, messages_json FROM {TABLE} WHERE layout_meta_json IS NULL OR trim(layout_meta_json) = ''"
+    ))?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+/// 从 `messages_json` 重算 `layout_meta_json`；解析失败返回 `None`（**不删行**：那些行的
+/// `messages_json` 本身可能已损坏，删掉等于销毁证据）。
+fn build_layout_json(id: &str, messages_json: &str) -> Option<String> {
+    let Ok(messages) = messages_from_json(messages_json) else {
+        return None;
+    };
+    Some(layout_meta_json_for_messages(id, &messages))
+}
+
+/// 返回 `(filled, skipped_invalid)`。
+fn dry_run_rows(rows: &[(String, String)]) -> (u64, u64) {
+    let mut filled = 0;
+    let mut skipped = 0;
+    for (id, json) in rows {
+        match build_layout_json(id, json) {
+            Some(_) => filled += 1,
+            None => skipped += 1,
+        }
+    }
+    (filled, skipped)
+}
+
+/// 真写盘：包**一个**事务（几千行逐条自动提交会慢一个量级，中途失败还会留下「一半已回填」的
+/// 状态——虽然幂等，但运维时看到半成品数字容易误判）。
+fn apply_rows(conn: &Connection, rows: &[(String, String)]) -> Result<(u64, u64), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    let mut filled = 0;
+    let mut skipped = 0;
+    for (id, json) in rows {
+        match build_layout_json(id, json) {
+            Some(layout_json) => {
+                tx.execute(
+                    &format!("UPDATE {TABLE} SET layout_meta_json = ?1 WHERE id = ?2"),
+                    params![layout_json, id],
+                )?;
+                filled += 1;
+            }
+            None => skipped += 1,
+        }
+    }
+    tx.commit()?;
+    Ok((filled, skipped))
+}
+
+/// 按路径回填（`crabmate backfill-layout` 的实现）。
+///
+/// **dry-run 用只读连接**（与 [`super::layout_coverage`] 同口径）：既保证「不写盘」是连接级
+/// 事实而不是「这段代码恰好没写」，也避免在 `serve` 正在写时去抢写锁。
 pub fn backfill_layout_meta(path: &Path, apply: bool) -> Result<LayoutBackfillReport, String> {
     if !path.exists() {
         return Err(format!("会话库不存在：{}", path.display()));
     }
-    let conn =
-        Connection::open(path).map_err(|e| format!("打开会话库失败 {}：{e}", path.display()))?;
+    let flags = if apply {
+        rusqlite::OpenFlags::default()
+    } else {
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI
+    };
+    let conn = Connection::open_with_flags(path, flags)
+        .map_err(|e| format!("打开会话库失败 {}：{e}", path.display()))?;
     backfill_layout_meta_in_conn(&conn, apply).map_err(|e| format!("回填失败：{e}"))
 }

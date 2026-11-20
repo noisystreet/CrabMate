@@ -212,3 +212,52 @@ fn backfill_layout_meta_path_reports_missing_db() {
     let err = backfill_layout_meta(&path, false).expect_err("missing db should fail");
     assert!(err.contains("会话库不存在"), "{err}");
 }
+
+/// 路径入口的两条打开分支：**dry-run 只读**（不写盘、覆盖率不变），`--apply` 才写。
+#[test]
+fn backfill_layout_meta_path_dry_run_is_read_only_then_apply_writes() {
+    let path = std::env::temp_dir().join(format!(
+        "crabmate_backfill_{}_{}.sqlite",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    {
+        let conn = Connection::open(&path).expect("create db");
+        migrate(&conn).expect("migrate");
+        assert_eq!(
+            save_if_revision(
+                &conn,
+                "legacy",
+                vec![Message::user_only("hi".to_string())],
+                None,
+                None,
+                None,
+                None
+            )
+            .expect("save"),
+            SaveConversationOutcome::Saved
+        );
+        conn.execute(&format!("UPDATE {TABLE} SET layout_meta_json = ''"), [])
+            .expect("blank layout");
+    }
+
+    // dry-run：只读打开，数字对得上，且库里仍是 1 行无 layout。
+    let dry = backfill_layout_meta(&path, false).expect("dry-run");
+    assert_eq!((dry.candidates, dry.filled), (1, 1));
+    assert!(!dry.applied);
+    assert_eq!(
+        layout_coverage(&path).expect("coverage").without_layout,
+        1,
+        "dry-run 不得写盘"
+    );
+
+    // apply：写盘后归零。
+    let applied = backfill_layout_meta(&path, true).expect("apply");
+    assert!(applied.applied && applied.ready_for_contract());
+    assert_eq!(layout_coverage(&path).expect("coverage").without_layout, 0);
+
+    std::fs::remove_file(&path).expect("cleanup");
+}

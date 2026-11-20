@@ -10,6 +10,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- **No business frames after a terminal frame (#1338 E4/S1).** The SSE hub now **refuses to deliver** a turn's
+  business frames once `RUN_FINISHED` / `RUN_ERROR` has gone out: the frame is dropped before a `seq` is assigned,
+  so it neither enters the resume ring nor reaches HTTP (`stream_resume` therefore has no sequence hole). Two
+  exceptions stay: the existing `RUN_ERROR` → `RUN_FINISHED` teardown shape (cancel / conflict / failed turn), and
+  `tool_job_finished` — a cross-job control frame whose primary channel is `GET /tools/jobs/{id}`; dropping it would
+  silently lose background-job completion notices. `event_after_terminal_count` now counts *rejected* frames, so a
+  long-run zero means the gate is idle rather than "nothing happened". Clients need no change (they simply stop
+  receiving frames that should never have existed); `SSE_PROTOCOL_VERSION` stays **2**.
+
+### Added
+
+- **`crabmate backfill-layout`** — recomputes `layout_meta_json` from stored `messages_json` with
+  `layout_meta_from_messages` (same function used when persisting). **Dry-run by default**, `--apply` writes in one
+  transaction, `--db FILE` overrides the store path. Rows whose `messages_json` cannot be parsed are counted and
+  **left untouched**, and the run then refuses to claim "legacy read path is removable" (#1338 S3 prerequisite).
+
 ### Removed
 
 - **BREAKING: `tool_result_envelope_v1` / `CM_TOOL_RESULT_ENVELOPE_V1` are removed (#1440 K6/K7).** The flag
