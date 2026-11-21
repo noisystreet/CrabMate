@@ -20,6 +20,7 @@ use crate::web::WebChatJobAppFacet;
 use log::debug;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
+mod auto_resume;
 mod stream_finish;
 mod worker;
 

@@ -520,6 +520,11 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     /// 本请求显式申请的权限等级；`None` = 本回合没申请，落盘时该列保持原值。
     pub(super) request_permission_level: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut StreamEndedOnce,
+    /// `#1455` C 步：落盘成功后的**新** revision 回传口（`None` = 调用方不关心）。
+    ///
+    /// 入队续跑必须用这个值：`SaveConversationOutcome` 只给 `Saved`/`Conflict`、不带 revision，
+    /// 而 `expected_revision` 用旧值会让续跑一开跑就 `CONVERSATION_CONFLICT`。
+    pub(super) saved_revision_sink: Option<&'a std::sync::Arc<std::sync::Mutex<Option<u64>>>>,
 }
 
 pub(crate) async fn stream_job_outcome_after_agent_turn(
@@ -543,6 +548,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         request_session_mode,
         request_permission_level,
         stream_ended_sent,
+        saved_revision_sink,
     } = ctx;
     match r {
         Ok(outcome) if cancelled_by_signal => {
@@ -601,6 +607,12 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         .await
                         .and_then(|s| s.expected_revision)
                     {
+                        // `#1455` C 步：把「写回后的 revision」交给收尾方（入队续跑用）。
+                        if let Some(sink) = saved_revision_sink
+                            && let Ok(mut slot) = sink.lock()
+                        {
+                            *slot = Some(new_rev);
+                        }
                         let line =
                             crate::sse::encode_message(crate::sse::SsePayload::ConversationSaved {
                                 saved: crate::sse::ConversationSavedBody {

@@ -59,6 +59,11 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         seed_override,
         request_audit,
         request_id,
+        llm_override,
+        executor_llm_override,
+        readonly_tool_ttl_cache_secs,
+        github_token,
+        client_sse_protocol,
         ..
     } = p.envelope;
 
@@ -79,6 +84,9 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     let paused_reason_sink: std::sync::Arc<
         std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>,
     > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    // 落盘成功后的新 revision（入队续跑用；`SaveConversationOutcome` 不带它）。
+    let saved_revision_sink: std::sync::Arc<std::sync::Mutex<Option<u64>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
 
     let mut params = crate::TurnRequest::web_chat_stream(crate::WebChatStreamBuildArgs {
         shared: crate::RunAgentTurnSharedInputs {
@@ -126,20 +134,6 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         queue_deps.turn_runner.run(params).await
     };
 
-    // `#1455` C 步（阶段一）：只记录本回合是否因预算暂停。
-    // **不入队**、不自动续跑——决策依赖进程内轮数计数，尚未接入；
-    // 接入后在这里调 `cm_agent::task_state::decide_auto_resume` 再决定是否提交下一回合。
-    if let Ok(slot) = paused_reason_sink.lock()
-        && let Some(reason) = *slot
-    {
-        tracing::info!(
-            target: "crabmate::autonomy",
-            conversation_id = %conversation_id,
-            reason = reason.as_str(),
-            "turn paused on budget; auto-resume not wired yet (#1455 C)"
-        );
-    }
-
     cancel_watcher.abort();
     if let Some(session_id) = approval_session_id.as_deref() {
         app.approval_sessions.write().await.remove(session_id);
@@ -171,8 +165,36 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             request_session_mode: request_session_mode.as_deref(),
             request_permission_level: request_permission_level.as_deref(),
             stream_ended_sent: &mut stream_ended_sent,
+            saved_revision_sink: Some(&saved_revision_sink),
         })
         .await;
+
+    // `#1455` C 步：预算暂停后的自动续跑。放在 outcome 返回**之后**——此时落盘已完成，
+    // `saved_revision_sink` 里是写回后的 revision（判据 5：状态定稿之后才排后续动作）。
+    let paused_reason = paused_reason_sink.lock().ok().and_then(|g| *g);
+    let saved_revision = saved_revision_sink.lock().ok().and_then(|g| *g);
+    crate::chat_job_queue::auto_resume::maybe_auto_resume_next_turn(
+        crate::chat_job_queue::auto_resume::AutoResumeCtx {
+        queue_deps: &queue_deps,
+        app: &app,
+        cfg_snap: &prepared.cfg_snap,
+        conversation_id: conversation_id.as_str(),
+        paused_reason,
+        saved_revision,
+        request_agent_role: request_agent_role.as_deref(),
+        request_session_mode: request_session_mode.as_deref(),
+        request_permission_level: request_permission_level.as_deref(),
+        work_dir: work_dir.as_path(),
+        workspace_is_set,
+        temperature_override,
+        seed_override,
+        llm_override,
+        executor_llm_override,
+        readonly_tool_ttl_cache_secs,
+        github_token,
+        client_sse_protocol,
+    })
+    .await;
 
     if cancelled {
         emit_stream_cancelled_terminal(&sse_tx, job_id, request_id.clone()).await;
