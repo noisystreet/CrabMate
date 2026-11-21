@@ -73,7 +73,7 @@ pub use agent_role_spec::AgentRoleSpec;
 #[allow(unused_imports)]
 pub use types::{
     AgentsMdConfigSection, AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig,
-    ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig,
+    AutonomyConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig,
     ContextPipelineConfig, ConversationPersistenceConfig, ExposeSecret, HttpFetchConfigSection,
     LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
     LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend, McpClientConfig,
@@ -435,6 +435,22 @@ mod hot_reload_tests {
             dst.conversation_persistence.conversation_store_sqlite_path,
             frozen
         );
+    }
+
+    /// `apply_hot_reload_config_subset` 是**逐字段白名单**：未登记的配置段 `POST /config/reload` 后不生效。
+    /// `autonomy`（#1455 A 步）必须登记，否则「开 `autonomy_enabled` 后热重载」只会静默无效。
+    #[test]
+    fn apply_hot_reload_carries_autonomy_section() {
+        let mut dst = without_cm_env_overrides(|| load_config(None).expect("default config"));
+        assert!(!dst.autonomy.enabled, "默认必须关闭");
+        let mut src = dst.clone();
+        src.autonomy.enabled = true;
+        src.autonomy.max_tasks = 7;
+        src.autonomy.task_ttl_secs = 42;
+        apply_hot_reload_config_subset(&mut dst, &src);
+        assert!(dst.autonomy.enabled);
+        assert_eq!(dst.autonomy.max_tasks, 7);
+        assert_eq!(dst.autonomy.task_ttl_secs, 42);
     }
 
     /// 组合式配置下：各子结构应从 `src` 整段替换；仅会话库路径保留 `dst` 原值。

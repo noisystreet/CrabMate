@@ -7,6 +7,7 @@
 use super::builder::ConfigBuilder;
 
 mod agents_md;
+mod autonomy;
 mod chat_queue;
 mod context;
 mod llm;
@@ -38,6 +39,7 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     tools_network::apply(b);
     per_plan_policy::apply(b);
     subagent::apply(b);
+    autonomy::apply(b);
     roles::apply(b);
     agents_md::apply(b);
     skills::apply(b);

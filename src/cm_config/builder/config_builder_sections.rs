@@ -109,6 +109,17 @@ pub(crate) struct ConfigBuilderSubagent {
     pub(crate) max_report_chars: Option<u64>,
 }
 
+/// `[agent]` 段的 L2 跨回合任务状态开关（`#1386` S2 / `#1455` A 步）。
+///
+/// 与 [`ConfigBuilderSubagent`] 同处 `[agent]` 平铺键而非新开顶层 section：
+/// 沿用 #1395 的既有结论，省掉 `ConfigFile` 顶层 section 的四处改动。
+#[derive(Default)]
+pub(crate) struct ConfigBuilderAutonomy {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) max_tasks: Option<u64>,
+    pub(crate) task_ttl_secs: Option<u64>,
+}
+
 #[derive(Default)]
 pub(crate) struct ConfigBuilderAgentsMd {
     pub(crate) agents_md_enabled: Option<bool>,
@@ -341,6 +352,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) http_fetch: ConfigBuilderHttpFetch,
     pub(crate) per_plan_policy: ConfigBuilderPerPlanPolicy,
     pub(crate) subagent: ConfigBuilderSubagent,
+    pub(crate) autonomy: ConfigBuilderAutonomy,
     pub(crate) agents_md: ConfigBuilderAgentsMd,
     pub(crate) skills: ConfigBuilderSkills,
     pub(crate) tool_transcript: ConfigBuilderToolTranscript,

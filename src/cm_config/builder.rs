@@ -257,6 +257,10 @@ impl ConfigBuilder {
         sa.max_llm_calls = agent.subagent_max_llm_calls.or(sa.max_llm_calls);
         sa.max_wall_secs = agent.subagent_max_wall_secs.or(sa.max_wall_secs);
         sa.max_report_chars = agent.subagent_max_report_chars.or(sa.max_report_chars);
+        let au = &mut self.autonomy;
+        au.enabled = agent.autonomy_enabled.or(au.enabled);
+        au.max_tasks = agent.autonomy_max_tasks.or(au.max_tasks);
+        au.task_ttl_secs = agent.autonomy_task_ttl_secs.or(au.task_ttl_secs);
         let am = &mut self.agents_md;
         am.agents_md_enabled = agent.agents_md_enabled.or(am.agents_md_enabled);
         am.agents_md_max_chars = agent.agents_md_max_chars.or(am.agents_md_max_chars);

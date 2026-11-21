@@ -1,0 +1,607 @@
+//! L2 跨回合任务状态（`#1386` S2 / `#1455` 的 **A 步：只落盘，不续跑**）。
+//!
+//! ## 为什么
+//!
+//! 预算耗尽时回合直接终止（`TurnBudgetDeny` → `RunAgentTurnError`），进度只留在
+//! 压缩后的对话里。用户必须再发一句话，模型只能重新推断「做到哪一步」。本模块把
+//! 这一刻的状态写成一份**有界、可读回**的 JSON：
+//! `<working_dir>/.crabmate/tasks/<scope>.json`。
+//!
+//! ## 边界（A 步刻意不做，见 `docs/design/agent_autonomy_enhancement.md` §5）
+//!
+//! - **不含自动续跑**：没有任何生产代码读这些文件去发起新回合（C 步才做）。
+//! - **不做跨回合累计预算**：`budget` 只是本回合耗尽时刻的快照（B 步才改口径）。
+//! - **默认关闭**：`autonomy_enabled = false` 时调用点在进入本模块前就返回，零 IO。
+//!
+//! ## 三条不变量
+//!
+//! 1. **不存原始工具输出**：只存证据 id / 工具名 / `ok` / `exit_code`。工具 stdout 可能
+//!    含凭据或用户数据，而续跑真正需要的是「哪条证据支持哪个子项」。这条也让该文件
+//!    可以安全地进日志、被运维复制排查。
+//! 2. **文件名只由 `scope` 白名单派生**：除 `[A-Za-z0-9_-]` 外一律替换，`.` 也不保留，
+//!    因此 `../../etc/passwd` 不可能逃出 `.crabmate/tasks/`（与 `docs/AGENTS.md` §4.6 一致）。
+//! 3. **写盘失败不影响回合**：调用点只 `log::warn!`；IO 错误绝不升级为回合错误。
+
+use std::io;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::cm_agent::turn_budget::TurnBudgetDeny;
+use crate::cm_config::AutonomyConfig;
+
+/// 落盘 schema 版本。读取时只接受当前版本，其余视为不可读（不猜测迁移）。
+pub const TASK_STATE_SCHEMA: u32 = 1;
+
+/// 工作区数据目录（与 `reminder` / `event` 同一约定）。
+const DATA_DIR: &str = ".crabmate";
+/// 任务状态子目录。
+const TASKS_SUBDIR: &str = "tasks";
+/// 文件名后缀。
+const FILE_EXT: &str = "json";
+
+/// 目标正文保留的字符上限。任务是给「续跑」看的摘要，不是存档。
+pub const GOAL_MAX_CHARS: usize = 400;
+/// 证据条目上限（超出保留**最新**的 N 条：续跑要先知道刚才试到哪、哪次失败了）。
+pub const MAX_EVIDENCE_ITEMS: usize = 40;
+/// 文件名字符上限（`scope` 截断阈值）。
+pub const SCOPE_MAX_CHARS: usize = 64;
+
+/// 任务状态。A 步只会写出 [`Self::Paused`]；`Done` 留给 B / C 步。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    /// 因预算耗尽等原因中止，进度已保留。
+    Paused,
+}
+
+impl TaskStatus {
+    /// 稳定标识（日志 / 金样 / 将来的 HTTP 呈现）。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Paused => "paused",
+        }
+    }
+}
+
+/// 暂停原因。**与 [`TurnBudgetDeny`] 一一对应**，不引入自由文本：
+/// 自由文本会被下游按文案匹配，改一句提示就静默改语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPauseReason {
+    /// 触到单轮墙钟上限。
+    BudgetWallClock,
+    /// 触到单轮 LLM 调用次数上限。
+    BudgetLlmCalls,
+    /// 触到单轮 Token 粗估上限。
+    BudgetTokens,
+}
+
+impl TaskPauseReason {
+    /// 稳定标识。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BudgetWallClock => "budget_wall_clock",
+            Self::BudgetLlmCalls => "budget_llm_calls",
+            Self::BudgetTokens => "budget_tokens",
+        }
+    }
+}
+
+impl From<TurnBudgetDeny> for TaskPauseReason {
+    fn from(d: TurnBudgetDeny) -> Self {
+        match d {
+            TurnBudgetDeny::WallClock => Self::BudgetWallClock,
+            TurnBudgetDeny::LlmCalls => Self::BudgetLlmCalls,
+            TurnBudgetDeny::Tokens => Self::BudgetTokens,
+        }
+    }
+}
+
+/// 一条证据的**指针**（不含输出正文，见模块文档不变量 1）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskEvidenceRef {
+    /// 与第 ① 层证据层同一套 id（`ev_1`…），供续跑时回引。
+    pub id: String,
+    /// `verify` / `write` / `other`（沿用 `EvidenceKind::as_str`）。
+    pub kind: String,
+    /// 产生该证据的工具名。
+    pub tool: String,
+    /// 该次调用是否成功。
+    pub ok: bool,
+    /// 结构化退出码（专用工具才有）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+}
+
+/// 暂停时刻的本回合预算快照（**单轮**口径；跨回合累计属 B 步）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskBudgetSnapshot {
+    pub llm_calls: u32,
+    pub outer_loop_iterations: u32,
+    pub estimated_tokens: usize,
+    pub elapsed_secs: u64,
+}
+
+/// 一份任务状态。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskState {
+    /// 落盘 schema（读取方据此拒绝未知形状，不做猜测式迁移）。
+    pub schema: u32,
+    /// 派生文件名的会话标识（`conversation_id` 或 CLI 的固定 `cli`）。
+    pub scope_id: String,
+    /// 目标摘要（已按 [`GOAL_MAX_CHARS`] 截断）。
+    pub goal: String,
+    pub status: TaskStatus,
+    pub pause_reason: TaskPauseReason,
+    pub budget: TaskBudgetSnapshot,
+    pub evidence: Vec<TaskEvidenceRef>,
+    /// 最后写入时刻（RFC3339，UTC）。
+    pub updated_at: String,
+}
+
+impl TaskState {
+    /// 构造一份 `paused` 状态，并就地施加全部上界（目标截断、证据裁剪）。
+    ///
+    /// 截断与裁剪放在构造器而不是调用点：让「写出去的永远不会超界」成为类型级承诺，
+    /// 调用点无法忘记。
+    #[must_use]
+    pub fn new_paused(
+        scope_id: &str,
+        goal: &str,
+        reason: TaskPauseReason,
+        budget: TaskBudgetSnapshot,
+        evidence: Vec<TaskEvidenceRef>,
+    ) -> Self {
+        Self {
+            schema: TASK_STATE_SCHEMA,
+            scope_id: sanitize_scope(scope_id),
+            goal: truncate_chars(goal.trim(), GOAL_MAX_CHARS),
+            status: TaskStatus::Paused,
+            pause_reason: reason,
+            budget,
+            evidence: cap_evidence(evidence),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+}
+
+/// 按 Unicode scalar 截断，超出时补省略号（不切半个 UTF-8）。
+#[must_use]
+pub fn truncate_chars(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// 把任意 scope 归一为安全文件名主干。
+///
+/// 白名单而非黑名单：`/` `\` `.` `:` 与不可打印字符全部落成 `_`，因此既不可能出现
+/// `..` 段，也不可能出现绝对路径。空结果回退 `unknown`（否则会得到 `.json` 这种隐藏文件）。
+#[must_use]
+pub fn sanitize_scope(scope: &str) -> String {
+    let mut out = String::new();
+    for ch in scope.chars().take(SCOPE_MAX_CHARS) {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "unknown".to_string()
+    } else {
+        out
+    }
+}
+
+/// 证据裁剪：保留**最新**的 N 条。
+///
+/// 方向不能反：续跑最需要知道「刚才试到哪、哪次失败了」，而不是「最早读了哪些文件」。
+/// 首版按「保留最早」实现，会把长回合里最关键的尾部失败证据丢掉。
+fn cap_evidence(mut evidence: Vec<TaskEvidenceRef>) -> Vec<TaskEvidenceRef> {
+    if evidence.len() > MAX_EVIDENCE_ITEMS {
+        let drop_count = evidence.len() - MAX_EVIDENCE_ITEMS;
+        evidence.drain(..drop_count);
+    }
+    evidence
+}
+
+/// `.crabmate/tasks/` 的读写与清理。
+pub struct TaskStateStore<'a> {
+    root: &'a Path,
+    max_tasks: usize,
+    ttl_secs: u64,
+}
+
+impl<'a> TaskStateStore<'a> {
+    /// 以工作区根与 `[agent.autonomy]` 配置构造。
+    #[must_use]
+    pub fn new(root: &'a Path, cfg: &AutonomyConfig) -> Self {
+        Self {
+            root,
+            max_tasks: cfg.max_tasks,
+            ttl_secs: cfg.task_ttl_secs,
+        }
+    }
+
+    /// 任务状态目录（`<root>/.crabmate/tasks`）。
+    #[must_use]
+    pub fn tasks_dir(&self) -> PathBuf {
+        self.root.join(DATA_DIR).join(TASKS_SUBDIR)
+    }
+
+    /// 某个 scope 对应的文件路径。
+    #[must_use]
+    pub fn path_for(&self, scope_id: &str) -> PathBuf {
+        self.tasks_dir()
+            .join(format!("{}.{FILE_EXT}", sanitize_scope(scope_id)))
+    }
+
+    /// 写一份状态并顺带清理旧文件。
+    ///
+    /// **同一 scope 覆盖同一文件**：`conversation_id` 是天然主键，所以长期运行不会
+    /// 每回合新增一个文件（这是最省事的「不堆积」保证）。
+    pub fn save(&self, state: &TaskState) -> io::Result<PathBuf> {
+        let dir = self.tasks_dir();
+        std::fs::create_dir_all(&dir)?;
+        let path = self.path_for(&state.scope_id);
+        let mut bytes = serde_json::to_vec_pretty(state)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        bytes.push(b'\n');
+        write_atomic(&path, &bytes)?;
+        // 清理失败不影响主写入（旧文件只是占空间，不影响本次落盘的正确性）。
+        let _ = self.prune();
+        Ok(path)
+    }
+
+    /// 读回某个 scope 的状态。文件不存在 → `Ok(None)`；schema 不认识 → `Ok(None)`
+    /// （旧/新版本文件不是错误，而是「不可用」）。
+    pub fn load(&self, scope_id: &str) -> io::Result<Option<TaskState>> {
+        let path = self.path_for(scope_id);
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let parsed: TaskState = match serde_json::from_slice(&bytes) {
+            Ok(s) => s,
+            Err(_) => return Ok(None),
+        };
+        if parsed.schema != TASK_STATE_SCHEMA {
+            return Ok(None);
+        }
+        Ok(Some(parsed))
+    }
+
+    /// 删除超期与超量的文件，返回删除个数。
+    ///
+    /// - `ttl_secs == 0`：不按时间清理；
+    /// - `max_tasks == 0`：不按数量清理。
+    ///
+    /// 先按 TTL 删，再按修改时间从旧到新删到上限以内——顺序不能反：先按数量删会把
+    /// 「本来就该过期」的文件留在上限之内。
+    pub fn prune(&self) -> io::Result<usize> {
+        if self.ttl_secs == 0 && self.max_tasks == 0 {
+            return Ok(0);
+        }
+        let entries = match std::fs::read_dir(self.tasks_dir()) {
+            Ok(e) => e,
+            // 目录还不存在 = 没有任何状态文件，不是错误。
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(e),
+        };
+        let (expired, kept) = self.drop_expired(entries);
+        Ok(expired + self.trim_to_max_tasks(kept))
+    }
+
+    /// 删掉超期文件，返回（删除个数, 存活文件及其修改时间）。
+    fn drop_expired(
+        &self,
+        entries: std::fs::ReadDir,
+    ) -> (usize, Vec<(std::time::SystemTime, PathBuf)>) {
+        let now = std::time::SystemTime::now();
+        let mut kept: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+        let mut removed = 0usize;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some(FILE_EXT) {
+                continue;
+            }
+            let mtime = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            if self.ttl_secs > 0 && is_expired(now, mtime, self.ttl_secs) {
+                // 删不掉（权限 / 已被别的回合删了）不计入，也不报错。
+                if std::fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                }
+                continue;
+            }
+            kept.push((mtime, path));
+        }
+        (removed, kept)
+    }
+
+    /// 按修改时间从旧到新删到上限以内，返回删除个数。
+    fn trim_to_max_tasks(&self, mut kept: Vec<(std::time::SystemTime, PathBuf)>) -> usize {
+        if self.max_tasks == 0 || kept.len() <= self.max_tasks {
+            return 0;
+        }
+        kept.sort_by_key(|a| a.0);
+        let excess = kept.len() - self.max_tasks;
+        let mut removed = 0usize;
+        for (_, path) in kept.into_iter().take(excess) {
+            if std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+}
+
+/// `now - mtime > ttl`；时钟回拨（mtime 在未来）一律**不**判过期。
+fn is_expired(
+    now: std::time::SystemTime,
+    mtime: std::time::SystemTime,
+    ttl_secs: u64,
+) -> bool {
+    match now.duration_since(mtime) {
+        Ok(age) => age.as_secs() > ttl_secs,
+        Err(_) => false,
+    }
+}
+
+/// 原子写：先写同目录临时文件再 `rename`，避免读到半个 JSON。
+///
+/// 并发：同一 scope 的两个回合可能同时写。`rename` 是原子的，结果必然是其中一份
+/// 完整文件（后者胜），不会出现交错内容——这比加锁更简单，且这里不需要顺序保序。
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    // 临时文件名**必须唯一**：首版用固定的 `<name>.json.tmp`，`cm_ctl` 支持的多实例共享同一工作区时，
+    // 两个进程写同一 scope 会落到同一 tmp 路径——A 的 `rename` 把 inode 搬走之后，B 仍持有该 inode 的
+    // 写句柄，于是**直接截断目标文件**，读到的可能是半截 JSON。pid + 进程内序号即可两者都覆盖。
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{FILE_EXT}.{}.{seq}.tmp", std::process::id()));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(max_tasks: usize, ttl_secs: u64) -> AutonomyConfig {
+        AutonomyConfig {
+            enabled: true,
+            max_tasks,
+            task_ttl_secs: ttl_secs,
+        }
+    }
+
+    fn budget() -> TaskBudgetSnapshot {
+        TaskBudgetSnapshot {
+            llm_calls: 7,
+            outer_loop_iterations: 4,
+            estimated_tokens: 12_345,
+            elapsed_secs: 61,
+        }
+    }
+
+    fn state(scope: &str) -> TaskState {
+        TaskState::new_paused(
+            scope,
+            "修好 CI 并跑通全量测试",
+            TaskPauseReason::BudgetWallClock,
+            budget(),
+            vec![],
+        )
+    }
+
+    /// 默认配置必须**关闭**：本步只落盘，但落盘本身是新的对外可观察行为（工作区里多出文件），
+    /// 因此默认值不是「顺手开」，而是硬约束。
+    #[test]
+    fn default_config_keeps_autonomy_off() {
+        let cfg = crate::cm_config::load_config_test_env::without_cm_env_overrides(|| {
+            crate::cm_config::load_config(None).expect("embed default config")
+        });
+        assert!(!cfg.autonomy.enabled);
+        assert_eq!(cfg.autonomy.max_tasks, 200);
+        assert_eq!(cfg.autonomy.task_ttl_secs, 604_800);
+    }
+
+    #[test]
+    fn status_and_reason_strings_are_stable() {
+        assert_eq!(TaskStatus::Paused.as_str(), "paused");
+        assert_eq!(
+            TaskPauseReason::BudgetWallClock.as_str(),
+            "budget_wall_clock"
+        );
+        assert_eq!(TaskPauseReason::BudgetLlmCalls.as_str(), "budget_llm_calls");
+        assert_eq!(TaskPauseReason::BudgetTokens.as_str(), "budget_tokens");
+    }
+
+    #[test]
+    fn pause_reason_maps_every_deny_variant() {
+        assert_eq!(
+            TaskPauseReason::from(TurnBudgetDeny::WallClock),
+            TaskPauseReason::BudgetWallClock
+        );
+        assert_eq!(
+            TaskPauseReason::from(TurnBudgetDeny::LlmCalls),
+            TaskPauseReason::BudgetLlmCalls
+        );
+        assert_eq!(
+            TaskPauseReason::from(TurnBudgetDeny::Tokens),
+            TaskPauseReason::BudgetTokens
+        );
+    }
+
+    #[test]
+    fn scope_cannot_escape_tasks_dir() {
+        for raw in ["../../etc/passwd", "/etc/passwd", "a/b", "..\\x", "a.b"] {
+            let name = sanitize_scope(raw);
+            assert!(
+                !name.contains('/') && !name.contains('\\') && !name.contains('.'),
+                "unsafe file name for {raw}: {name}"
+            );
+        }
+        assert_eq!(sanitize_scope(""), "unknown");
+        assert_eq!(sanitize_scope("conv-1_ok"), "conv-1_ok");
+    }
+
+    #[test]
+    fn goal_truncation_is_unicode_safe() {
+        let s = "äöü中文🙂abcdef";
+        let t = truncate_chars(s, 5);
+        assert_eq!(t.chars().count(), 5, "{t}");
+        assert!(t.ends_with('…'), "{t}");
+        // 未超上限时原样返回，不加省略号。
+        assert_eq!(truncate_chars("abc", 5), "abc");
+        assert_eq!(truncate_chars("abc", 0), "");
+    }
+
+    #[test]
+    fn evidence_keeps_the_latest_items_when_capped() {
+        let total = MAX_EVIDENCE_ITEMS + 5;
+        let items: Vec<TaskEvidenceRef> = (0..total)
+            .map(|i| TaskEvidenceRef {
+                id: format!("ev_{i}"),
+                kind: "verify".into(),
+                tool: "cargo_test".into(),
+                ok: true,
+                exit_code: Some(0),
+            })
+            .collect();
+        let s = TaskState::new_paused(
+            "conv",
+            "goal",
+            TaskPauseReason::BudgetTokens,
+            budget(),
+            items,
+        );
+        assert_eq!(s.evidence.len(), MAX_EVIDENCE_ITEMS);
+        // 丢弃的是**最早**的 5 条，最后一条必须是最新证据。
+        assert_eq!(s.evidence[0].id, "ev_5");
+        assert_eq!(s.evidence[MAX_EVIDENCE_ITEMS - 1].id, format!("ev_{}", total - 1));
+    }
+
+    #[test]
+    fn save_then_load_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(0, 0));
+        let s = state("conv-42");
+        let path = store.save(&s).expect("save");
+        assert!(path.exists(), "state file should exist");
+        let back = store.load("conv-42").expect("load").expect("some");
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn save_overwrites_the_same_scope() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(0, 0));
+        store.save(&state("conv-1")).expect("first");
+        let mut second = state("conv-1");
+        second.pause_reason = TaskPauseReason::BudgetTokens;
+        store.save(&second).expect("second");
+        let files = std::fs::read_dir(store.tasks_dir())
+            .expect("dir")
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some(FILE_EXT))
+            .count();
+        assert_eq!(files, 1, "same scope must reuse one file");
+        let back = store.load("conv-1").expect("load").expect("some");
+        assert_eq!(back.pause_reason, TaskPauseReason::BudgetTokens);
+    }
+
+    #[test]
+    fn load_missing_or_unknown_schema_returns_none() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(0, 0));
+        assert!(store.load("nope").expect("load").is_none());
+
+        let path = store.path_for("conv-9");
+        std::fs::create_dir_all(store.tasks_dir()).expect("dir");
+        let mut v = serde_json::to_value(state("conv-9")).expect("value");
+        v["schema"] = serde_json::json!(TASK_STATE_SCHEMA + 1);
+        std::fs::write(&path, serde_json::to_vec(&v).expect("bytes")).expect("write");
+        assert!(
+            store.load("conv-9").expect("load").is_none(),
+            "unknown schema must not be guessed"
+        );
+
+        std::fs::write(&path, b"{not json").expect("write garbage");
+        assert!(
+            store.load("conv-9").expect("load").is_none(),
+            "unparsable file must be treated as absent"
+        );
+    }
+
+    #[test]
+    fn prune_enforces_max_tasks_oldest_first() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(2, 0));
+        for scope in ["a", "b", "c"] {
+            store.save(&state(scope)).expect("save");
+            // 保证 mtime 有可区分的先后（文件系统时间粒度可能较粗）。
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let remaining: Vec<String> = std::fs::read_dir(store.tasks_dir())
+            .expect("dir")
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        assert_eq!(remaining.len(), 2, "{remaining:?}");
+        assert!(!remaining.contains(&"a.json".to_string()), "{remaining:?}");
+    }
+
+    #[test]
+    fn prune_drops_expired_by_ttl() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(0, 1));
+        let path = store.save(&state("old")).expect("save");
+        // 把 mtime 拨回 10 分钟前。
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        let f = std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("open");
+        f.set_modified(old).expect("set mtime");
+        drop(f);
+        let removed = store.prune().expect("prune");
+        assert_eq!(removed, 1);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn zero_limits_disable_pruning() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TaskStateStore::new(dir.path(), &cfg(0, 0));
+        store.save(&state("keep")).expect("save");
+        assert_eq!(store.prune().expect("prune"), 0);
+        assert!(store.load("keep").expect("load").is_some());
+    }
+
+    #[test]
+    fn serialized_state_has_no_free_text_output() {
+        // 不变量 1 的机器化检查：结构里不该出现 detail / stdout 这类字段。
+        let s = state("conv");
+        let json = serde_json::to_string(&s).expect("json");
+        for banned in ["detail", "stdout", "stderr", "content"] {
+            assert!(!json.contains(banned), "banned field leaked: {banned}");
+        }
+        assert_eq!(s.schema, TASK_STATE_SCHEMA);
+    }
+}

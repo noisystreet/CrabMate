@@ -201,6 +201,12 @@ pub(super) struct AgentSection {
     pub(super) subagent_max_llm_calls: Option<u64>,
     pub(super) subagent_max_wall_secs: Option<u64>,
     pub(super) subagent_max_report_chars: Option<u64>,
+    /// L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）。默认关；开 = 预算耗尽时落盘 `paused`。
+    pub(super) autonomy_enabled: Option<bool>,
+    /// `.crabmate/tasks/` 保留文件数上限；`0` = 不按数量清理。
+    pub(super) autonomy_max_tasks: Option<u64>,
+    /// 任务状态文件存活秒数；`0` = 不按时间清理。
+    pub(super) autonomy_task_ttl_secs: Option<u64>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

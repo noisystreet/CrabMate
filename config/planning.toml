@@ -41,6 +41,17 @@ subagent_max_wall_secs = 300
 # 回传正文长度上限（字符）；0 = 不截断。
 subagent_max_report_chars = 4000
 
+# L2 跨回合任务状态（#1386 S2 / #1455 A 步，见 docs/design/agent_autonomy_enhancement.md §4）。
+# 默认关。开启后**仅在回合因预算耗尽而中止时**把进度写成
+# `<工作区>/.crabmate/tasks/<conversation>.json`（`status = "paused"`）。
+# 本步不含续跑：没有任何代码据此发起新回合，因此**不产生额外 LLM 调用、也不扩大操作面**。
+# 落盘内容只有目标摘要、证据 id/工具名/成败/退出码与预算快照——**不含工具原始输出**。
+autonomy_enabled = false
+# `.crabmate/tasks/` 保留文件数上限；0 = 不按数量清理。
+autonomy_max_tasks = 200
+# 任务状态文件存活秒数（默认 7 天）；0 = 不按时间清理。
+autonomy_task_ttl_secs = 604800
+
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、
 # intent_l0_routing_boost_enabled、intent_mode_bias_enabled；CM_INTENT_AT_TURN_START_ENABLED 亦已移除。

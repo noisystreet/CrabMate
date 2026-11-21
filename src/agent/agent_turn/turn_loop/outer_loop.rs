@@ -44,6 +44,9 @@ use crate::agent::agent_turn::plan::{PerPlanCallModelParams, per_plan_call_model
 use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
 use crate::agent::agent_turn::reflect::per_reflect_after_assistant;
 use crate::cm_agent::step_executor_policy::filter_tool_defs_for_executor_kind;
+use crate::cm_agent::task_state::{
+    TaskBudgetSnapshot, TaskEvidenceRef, TaskPauseReason, TaskState, TaskStateStore,
+};
 
 /// 预算拒绝 → 回合错误：墙钟单独映射为 [`RunAgentTurnError::TimeLimitExhausted`]（SSE `TIME_LIMIT_EXHAUSTED`），
 /// 其余（LLM 次数 / Token）为 [`RunAgentTurnError::Other`]。
@@ -69,9 +72,93 @@ fn turn_budget_deny_to_turn_error(
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
     let cfg = &p.ctx.core.cfg.turn_budget;
     if let Err(deny) = p.turn.turn_budget.deny_llm_call_if_exhausted(cfg) {
+        // 落盘是**旁路**：即使写盘失败，回合仍按原语义中止（见 `cm_agent::task_state` 模块文档）。
+        record_budget_paused(p, deny);
         return Err(turn_budget_deny_to_turn_error(deny, cfg));
     }
     Ok(())
+}
+
+/// 预算耗尽时把「到哪一步」落盘（`#1386` S2 / `#1455` A 步）。
+///
+/// **不做续跑**：这里只写 `.crabmate/tasks/<scope>.json`，没有任何消费者据此发起新回合。
+///
+/// 三条保守取舍：
+/// 1. `autonomy_enabled = false`（默认）或工作区未设置 ⇒ 立即返回，**零 IO**；
+/// 2. 无会话作用域 id ⇒ 不落盘：没有作用域，「续跑哪一条」就没有定义；
+/// 3. IO / 序列化失败只 `warn`，**绝不**升级为回合错误——落盘不参与回合成败判定。
+fn record_budget_paused(p: &RunLoopParams<'_>, deny: TurnBudgetDeny) {
+    let agent_cfg = p.ctx.core.cfg.as_ref();
+    if !agent_cfg.autonomy.enabled || !p.ctx.core.workspace_is_set {
+        return;
+    }
+    // 作用域 id 复用记忆作用域（`conversation_id` 或 CLI 的固定 `cli`）：它与「会话」同源，
+    // 也是续跑时唯一需要的定位键。B 步若需要更严格的会话身份，再提升为独立字段。
+    let Some(scope_id) = p.ctx.attach.long_term_memory_scope_id.as_deref() else {
+        return;
+    };
+    let Some(goal) = last_user_goal(p.turn.messages_buf) else {
+        return;
+    };
+    let state = TaskState::new_paused(
+        scope_id,
+        &goal,
+        TaskPauseReason::from(deny),
+        TaskBudgetSnapshot {
+            llm_calls: p.turn.turn_budget.llm_calls(),
+            outer_loop_iterations: p.turn.turn_budget.outer_loop_iterations(),
+            estimated_tokens: p.turn.turn_budget.estimated_tokens(),
+            elapsed_secs: p.turn.turn_budget.elapsed_secs(),
+        },
+        task_evidence_refs(p.turn.messages_buf),
+    );
+    let store = TaskStateStore::new(p.ctx.core.effective_working_dir, &agent_cfg.autonomy);
+    match store.save(&state) {
+        Ok(path) => debug!(
+            target: "crabmate::autonomy",
+            "paused task state written: {} (reason={})",
+            path.display(),
+            state.pause_reason.as_str()
+        ),
+        Err(e) => log::warn!(
+            target: "crabmate::autonomy",
+            "paused task state write failed (turn outcome unaffected): {e}"
+        ),
+    }
+}
+
+/// 最后一条**真实**用户输入即任务目标。
+///
+/// 跳过 UI 分隔线与空正文：它们是回合分隔标记，不是任务描述；把它当目标写进状态文件
+/// 会让续跑（C 步）拿到一堆没意义的分隔符。
+fn last_user_goal(messages: &[Message]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .filter(|m| m.role == "user" && !crate::cm_types::is_chat_ui_separator(m))
+        .filter_map(|m| crate::cm_types::message_content_as_str(&m.content))
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// 把本回合工具消息归一为**证据指针**（id / 工具 / 成败 / 退出码）。
+///
+/// 复用第 ① 层 [`EvidenceSet`](crate::agent::agent_turn::policy::task_level_evidence::EvidenceSet)：
+/// `paused` 状态里的 `ev_N` 必须与判定层看到的是同一套 id，否则续跑时回引会对不上。
+/// **不带输出正文**——见 `cm_agent::task_state` 不变量 1。
+fn task_evidence_refs(messages: &[Message]) -> Vec<TaskEvidenceRef> {
+    crate::agent::agent_turn::policy::task_level_evidence::EvidenceSet::collect(messages)
+        .items()
+        .iter()
+        .map(|e| TaskEvidenceRef {
+            id: e.id.clone(),
+            kind: e.kind.as_str().to_string(),
+            tool: e.tool.clone(),
+            ok: e.ok,
+            exit_code: e.exit_code,
+        })
+        .collect()
 }
 
 fn outer_loop_iteration_guard(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
@@ -641,6 +728,25 @@ mod tests {
             OuterLoopIterationExit::StopOuterLoop.as_trace_str(),
             "stop_outer_loop"
         );
+    }
+
+    /// 任务目标取**最后一条非空 user 正文**：更早的 user 可能是既有上下文的一部分，
+    /// 空正文（`""` 占位）与 UI 分隔线都不是任务描述。
+    #[test]
+    fn last_user_goal_takes_the_latest_non_empty_user_text() {
+        use crate::types::Message;
+
+        let messages = vec![
+            Message::user_only("第一轮目标"),
+            Message::assistant_only("中间回复"),
+            Message::user_only("   "),
+            Message::user_only("最终目标"),
+        ];
+        assert_eq!(super::last_user_goal(&messages).as_deref(), Some("最终目标"));
+
+        let blank = vec![Message::user_only("   ")];
+        assert_eq!(super::last_user_goal(&blank), None);
+        assert_eq!(super::last_user_goal(&[]), None);
     }
 
     fn tc(name: &str, arguments: &str) -> ToolCall {

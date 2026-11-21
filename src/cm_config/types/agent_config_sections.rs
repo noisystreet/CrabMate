@@ -106,6 +106,28 @@ pub struct SubagentConfig {
     pub max_report_chars: usize,
 }
 
+/// L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）。见
+/// `docs/design/agent_autonomy_enhancement.md` §4 L2。
+///
+/// **A 步只落盘，不续跑**：开启后仅在「本回合因预算耗尽而中止」时把进度写成
+/// `<工作区>/.crabmate/tasks/<conversation>.json`。没有任何代码据此发起新回合，
+/// 因此本组开关**不会**带来额外 LLM 调用或自主操作面——那属 C 步（续跑）。
+///
+/// 默认 `enabled = false`：关闭时调用点在进入落盘模块之前就返回，**零 IO、零行为变化**。
+#[derive(Debug, Clone)]
+pub struct AutonomyConfig {
+    /// 总开关。
+    pub enabled: bool,
+    /// `.crabmate/tasks/` 保留文件数上限；`0` = 不按数量清理。
+    ///
+    /// 由于文件名由 `conversation_id` 派生（同一会话覆盖同一文件），正常情况下
+    /// 文件数等于「有未完成任务的会话数」，不会随回合数增长；本上限防的是会话 id
+    /// 高度分散的部署（例如每次请求都新建会话）。
+    pub max_tasks: usize,
+    /// 任务状态文件存活秒数；`0` = 不按时间清理，`> 0` 时每次落盘顺带清理过期文件。
+    pub task_ttl_secs: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct RolesPromptsConfig {
     pub system_prompt: String,

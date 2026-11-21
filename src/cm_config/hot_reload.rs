@@ -82,6 +82,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.tool_registry_policy
         .clone_from(&src.tool_registry_policy);
     dst.turn_budget.clone_from(&src.turn_budget);
+    // `autonomy`（#1455 A 步）：本函数是**逐字段白名单**，不登记就只能靠重启生效。
+    // `subagent` 至今未登记（见 #1455 review 记录），本 PR 不顺手改它——那是独立缺陷。
+    dst.autonomy.clone_from(&src.autonomy);
 
     dst.conversation_persistence.scheduled_agent_tasks =
         src.conversation_persistence.scheduled_agent_tasks.clone();
