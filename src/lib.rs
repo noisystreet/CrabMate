@@ -25,7 +25,8 @@
 //! - **不承诺**：清单里 `excluded` 的 45 项——`#[doc(hidden)]` 的 `cm_agent` / `cm_llm` /
 //!   `cm_config` / `cm_workflow` / `cm_ctl`、`e2e_scenario`、`test_serve`；
 //!   CLI 内部入口 `run_cli_from_parsed`、CLI 解析助手与 `EXIT_*` 退出码常量；工具注册表
-//!   内部元数据；S2 遗留参数袋 `WebChat*BuildArgs`；`agent::agent_turn` 等组合面内部路径。
+//!   内部元数据；Web 端点输入 `WebTurnInputs` / `WebTurnEndpoint`（原 25/22 字段的
+//!   `WebChat*BuildArgs` 参数袋，见 #1379）；`agent::agent_turn` 等组合面内部路径。
 //!   `cm_tools` / `cmd_mate` 等为实现模块，`pub(crate)`。
 //!
 //! 本 crate 默认 feature 是带库的 **`serve` 服务器**，不是通用嵌入式 Agent SDK。
