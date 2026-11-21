@@ -610,11 +610,11 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
   删的是「同 revision 就跳过」的豁免，不是函数。
   回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web 消费 v2 `layout`：
   响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）。
-  旧库行若 `layout_meta_json` 为空，GET 曾**省略**该键——B4/P4 起 `layout` 键**总是**出现，未持久化为 `null`。
-  服务端**仍有** `layout = null` 分支（S3 未做）。Client 侧**只删了一半**：`session_merge.rs`
-  （v1 tool-pool / call-stub 重放）已删，但 `layout_projection::project_hydrated_rows` 的
-  `NoLayout` / `LayoutSchemaTooOld` **仍回落**「本页原样直出」——这条回落要等服务端 S3 保证
-  `layout` 必有之后再删。
+  旧库行若 `layout_meta_json` 为空，GET 曾**省略**该键——B4/P4 起 `layout` 键**总是**出现，E4/S3 起更是**必填**。
+  **S3 已落地**（#1338）：`GET /conversation/messages` 的 `layout` **必填**——缺失 / 坏 JSON / v1
+  一律 `500 CONVERSATION_LAYOUT_MISSING`（先跑 `crabmate backfill-layout`）。`layout_prefers_projection`
+  随之删除。Client 侧 `session_merge.rs` 已删，但 `NoLayout` / `LayoutSchemaTooOld` 回落仍在——
+  服务端已不再产出 `null`，那条回落成了无输入的死分支，可另行删除。
   `layout_schema_version: 1` 的行**同样**回 `null`（E4 起不再回传 v1 形状，见 `CHANGELOG.md`），
   由 `crabmate backfill-layout` 重算成 v2。
 - Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；
@@ -678,7 +678,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | 服务端 revision 更新 | 重新确定性投影 |
 | revision 相同且 projection hash/version 相同 | 跳过计算 |
 | revision 相同但 hash/version 不同 | 重新投影并记诊断 |
-| 旧会话缺布局元数据 | ~~legacy merge~~ `session_merge.rs` 已删（S4）；`NoLayout` 仍回落「本页原样直出」，待本仓 S3 让 `layout` 必有一并删 |
+| 旧会话缺布局元数据 | S3 起**不可能**：服务端 `layout` 必填，缺失即 `500 CONVERSATION_LAYOUT_MISSING`（先跑 `backfill-layout`） |
 | 本地空 / 跨浏览器 / 缓存丢失 | 仅从 canonical 生成，与原浏览器一致 |
 
 ### 16.5 迁移阶段（expand → contract）
@@ -689,7 +689,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | **E1** | 修正终态顺序（expand-first）：前端吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；~~`terminal_order` 软能力~~（B4/P3 已删） | ✅ 已落地（兼容层 B1） |
 | **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | persist（保存写 `layout`）✅；hydration 仍走 legacy（E3） |
 | **E3** | 双读：新会话写元数据；hydration 消费 `layout` 记差分（行数/角色序/文本 hash）；GET 历史保持 legacy 行 id（完整同键投影待 Client 可复用投影器）；无元数据走 legacy | ✅ Client 双读观测；不 stamp 流式活键；E4 前**不**删 same-revision 守卫 |
-| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 🟢 **S1 已落地**（#1338 / PR #1454）：终态后回合业务帧拒绝投递（不占 `seq`、不入 ring）；`Error → Finished` 与 `tool_job_finished` 例外放行。**S2/S4 在 `crabmate-client` 已处理**（`feat/545-hydration-v2-projection`，**未合入其 `main`**）：旧序兼容已删；same-revision 改成幂等重放；`session_merge.rs` / `conversation_hydrate_layout.rs` / `timeline_scan.rs` 共 1418 行已删，但 `NoLayout` 回落仍在。**未做**：S3 本仓 `null` 读路径 + Client 的 `NoLayout` 分支（后者依赖前者） |
+| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | ✅ **本仓已完成**：S1 终态后业务帧拒绝投递（PR #1454）；S3 `layout` 必填 + `CONVERSATION_LAYOUT_MISSING` + `layout_prefers_projection` 删除。**Client 侧已处理但未合入其 `main`**（`feat/545-hydration-v2-projection`）：旧序兼容已删、same-revision 改幂等重放、`session_merge.rs` 等 1418 行已删；其 `NoLayout` 回落仍在，但服务端不再产出 `null`，已是死分支。**剩**：§16.7 验收数据（条件 ①③） |
 
 **E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；
 线上无终态后业务事件；legacy 会话比例可接受——该比例由 **`crabmate doctor`** 的「会话布局覆盖率」给出
@@ -721,7 +721,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | `terminal_order_summary` | `chat_job_queue::worker::stream_job_bridge_loop` | 流关闭时一次汇总；带 `terminal_seen`，用于区分「干净跑完」与「没跑到终态就断了」 |
 | `stream_draining_to_saved_ms` | `chat_job_queue::stream_finish::log_finish_timing` | `stream_draining` 入队 → `conversation_saved` 入队（含落盘本身）；同条日志带 `saved_emitted` |
 | `conversation_saved_to_finished_ms` | 同上 | `conversation_saved` 入队 → 终态帧入队之后（含可选 `STATE_SNAPSHOT`）；`saved_emitted=false` 时两个 ms 无意义 |
-| `hydration_projection_source` | `web/chat_handlers/chat` 的 `GET /conversation/messages` | `layout_v2` / `legacy`（后者含 `layout` 缺失或 `layout_schema_version < 2`） |
+| `hydration_projection_source` | `web/chat_handlers/chat` 的 `GET /conversation/messages` | E4/S3 起**恒为** `layout_v2`（`layout` 必填，原 `legacy` 分支已删）；字段保留只为与历史日志一起聚合 |
 | `projection_hash_changed` | 同上 | 由 `messages` 重新派生的 hash ≠ 落盘 `projection_hash` |
 
 口径补充：
@@ -733,7 +733,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
   每次非成功回合都会让指标变脏、每次都 `warn`，真信号被淹没——所以它单独记 `error_then_finished`。
 - `saved_emitted=false`（`Conflict` / 落盘后读不到 revision）时两个 ms 字段恒为 `0` 且**无意义**，
   聚合时必须先按 `saved_emitted=true` 过滤，否则「未落盘」会被算成「落盘极快」。
-- `projection_hash_changed` 是三态：`None` = 无基线（v2 但落盘缺 hash / legacy），
+- `projection_hash_changed` 是三态：`None` = 无基线（落盘缺 `projection_hash`；E4/S3 起不存在 legacy 来源），
   `false` = 派生与落盘一致，`true` = 不一致。**别把 `None` 读成稳定**。
 - 反向门禁：`fixtures/sse_terminal_order_golden.jsonl` 由
   `cm_sse_protocol::terminal_order::tests::golden_terminal_order_matches_expected` 驱动

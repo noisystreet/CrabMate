@@ -224,8 +224,9 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
-    /// 会话级布局；`null` = 未持久化。P4 起该键**总是**出现（不再省略），不随本页 `messages` 窗口切片。
-    pub layout: Option<ConversationLayoutMeta>,
+    /// 会话级布局元数据。**必填**（E4/S3 起）：缺失 / 不可用不是「字段省略」，而是服务端错误
+    /// （`CONVERSATION_LAYOUT_MISSING`），由 `crabmate backfill-layout` 先回填。不随本页 `messages` 窗口切片。
+    pub layout: ConversationLayoutMeta,
     /// 可选的模型视图回放配方；旧会话为空。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(schema_with = "schema_open_object_array")]
@@ -389,9 +390,9 @@ pub struct ConversationMessagesResponseBody<M> {
     pub effective_permission_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
-    /// 会话级布局元数据；`null` = 未持久化。P4 起该键**总是**出现（不再省略），见 `docs/Turn布局设计.md` §16.1 / §16.5。
-    /// 不随本页 `messages` 窗口切片。
-    pub layout: Option<ConversationLayoutMeta>,
+    /// 会话级布局元数据。**必填**（E4/S3 起）：缺失 / 不可用不是「字段省略」，而是服务端错误
+    /// （`CONVERSATION_LAYOUT_MISSING`），须先跑 `crabmate backfill-layout`。不随本页 `messages` 窗口切片。
+    pub layout: ConversationLayoutMeta,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_artifacts: Vec<serde_json::Value>,
     /// 可选：该会话已归档（被移出 canonical）的原文行；仅查询带 `include_archive=true` 时非空。
@@ -544,7 +545,7 @@ mod b5_roundtrip_serde_tests {
 mod p4_layout_contract_tests {
     use super::*;
 
-    /// P4：`layout` 键**总是**出现（未持久化时为 `null`），不再靠「省略该键」兜底。
+    /// E4/S3：`layout` 必填——类型层面已不允许 `None`，序列化必须始终带出 `layout_schema_version`。
     #[test]
     fn messages_response_always_serializes_layout_key() {
         let body = ConversationMessagesResponseBody {
@@ -555,7 +556,11 @@ mod p4_layout_contract_tests {
             active_permission_level: None,
             effective_permission_level: None,
             tiktoken_prompt_tokens: None,
-            layout: None,
+            layout: ConversationLayoutMeta {
+                layout_schema_version: 2,
+                projection_hash: None,
+                segments: Vec::new(),
+            },
             context_artifacts: Vec::new(),
             archive: Vec::<serde_json::Value>::new(),
             messages: Vec::<serde_json::Value>::new(),
@@ -565,6 +570,10 @@ mod p4_layout_contract_tests {
         };
         let v = serde_json::to_value(&body).expect("serialize response body");
         assert!(v.get("layout").is_some(), "layout 键必须始终出现，got: {v}");
-        assert!(v["layout"].is_null(), "未持久化时应为 null，got: {v}");
+        assert_eq!(
+            v["layout"]["layout_schema_version"].as_u64(),
+            Some(2),
+            "必填字段必须随响应下发，got: {v}"
+        );
     }
 }

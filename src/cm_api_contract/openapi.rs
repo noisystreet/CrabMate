@@ -200,7 +200,7 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_api_contract::chat::ConversationMessagesResponseBody;
+    use crate::cm_api_contract::chat::{ConversationLayoutMeta, ConversationMessagesResponseBody};
 
     #[test]
     fn openapi_schemas_include_core_chat_and_status() {
@@ -292,8 +292,8 @@ mod tests {
             .and_then(|v| v.as_array())
             .expect("ConversationMessagesResponseBody required");
         assert!(
-            !required.iter().any(|v| v.as_str() == Some("layout")),
-            "layout must stay optional (B2 expand)"
+            required.iter().any(|v| v.as_str() == Some("layout")),
+            "E4/S3 起 layout 必须在 required"
         );
         assert!(
             conv.pointer("/properties/layout").is_some(),
@@ -319,9 +319,9 @@ mod tests {
         );
     }
 
-    /// P4：`layout` 键不再省略——未持久化时序列化为 `null`；`archive` 仍按空省略。
+    /// E4/S3：`layout` 必填——即使没有 segments 也照样序列化成对象，不再是 `null`；`archive` 仍按空省略。
     #[test]
-    fn conversation_messages_json_serializes_null_layout() {
+    fn conversation_messages_json_always_serializes_layout() {
         let body = ConversationMessagesResponseBody {
             conversation_id: "c".into(),
             revision: 1,
@@ -330,7 +330,11 @@ mod tests {
             active_permission_level: None,
             effective_permission_level: None,
             tiktoken_prompt_tokens: None,
-            layout: None,
+            layout: ConversationLayoutMeta {
+                layout_schema_version: 2,
+                projection_hash: None,
+                segments: Vec::new(),
+            },
             context_artifacts: Vec::new(),
             archive: Vec::new(),
             messages: Vec::<Value>::new(),
@@ -339,10 +343,11 @@ mod tests {
             has_older: false,
         };
         let v = serde_json::to_value(&body).expect("serialize");
+        let layout = v.get("layout").expect("layout 键必须存在");
+        assert!(!layout.is_null(), "E4/S3 起 layout 不再是 null");
         assert_eq!(
-            v.get("layout"),
-            Some(&Value::Null),
-            "P4 起 layout 键必须存在且为 null"
+            layout.get("layout_schema_version").and_then(Value::as_u64),
+            Some(2)
         );
         assert!(v.get("archive").is_none(), "empty archive must be omitted");
     }

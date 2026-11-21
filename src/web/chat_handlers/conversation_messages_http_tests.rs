@@ -259,3 +259,85 @@ async fn unknown_conversation_is_404() {
     let body: serde_json::Value = resp.json().await.expect("error json");
     assert_eq!(body["code"], "CONVERSATION_NOT_FOUND");
 }
+
+/// E4/S3：`layout` **必填**。库内不可用（空 / 坏 JSON / v1）的行直接 **500 `CONVERSATION_LAYOUT_MISSING`**，
+/// 不再回 `null`——官方 Client 已无「无布局」读路径，静默降级只会掩盖未回填的数据。
+///
+/// 用 `start_test_serve_with_config` 把会话库指向临时 SQLite：这样能造出 `save` 路径**写不出来**的行
+/// （`save` 总会按 messages 派生 layout），而「未回填」正是本契约要区分的状态。
+#[tokio::test]
+async fn unusable_layout_answers_500_instead_of_null() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let db = tmp.path().join("conversations.db");
+    let messages_json = serde_json::json!({
+        "version": 1,
+        "messages": vec![Message::user_only("hi".to_string())],
+    })
+    .to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs();
+    {
+        let conn = rusqlite::Connection::open(&db).expect("open db");
+        crate::conversation_store::migrate(&conn).expect("migrate");
+        for (id, layout) in [
+            ("no_layout", ""),
+            ("corrupt", "{not json"),
+            ("v1", r#"{"layout_schema_version":1}"#),
+            (
+                "v2",
+                r#"{"layout_schema_version":2,"projection_hash":"x","segments":[]}"#,
+            ),
+        ] {
+            // `active_*` 列由 `migrate` 以 `ALTER TABLE ADD COLUMN` 补，缺省是 `NULL`，而读取侧按
+            // `String` 取（空串 = 未设置）——不写空串会让 `load` 报错、handlers 回 404，掩盖本用例。
+            conn.execute(
+                "INSERT INTO crabmate_conversations \
+                 (id, messages_json, revision, updated_at_unix, active_agent_role, \
+                  active_session_mode, active_permission_level, layout_meta_json) \
+                 VALUES (?1, ?2, 7, ?3, '', '', '', ?4)",
+                rusqlite::params![id, messages_json, now as i64, layout],
+            )
+            .expect("seed row");
+        }
+    }
+
+    // `start_test_serve` 固定用内存后端，而「未回填」的行只有 SQLite 后端才可能出现
+    // （`save` 总会按 messages 派生 layout），所以直接把 backing 换成指向临时库的 SQLite。
+    let handle = start_test_serve(None).await;
+    let conn = rusqlite::Connection::open(&db).expect("open db");
+    *handle.state.conversation.conversation_backing.write().await =
+        crate::cm_session_store::ConversationBacking::Sqlite(std::sync::Arc::new(
+            std::sync::Mutex::new(conn),
+        ));
+    let client = loopback_http_client();
+
+    for id in ["no_layout", "corrupt", "v1"] {
+        let resp = client
+            .get(format!("{}/conversation/messages", handle.base_url))
+            .query(&[conversation_query(id)])
+            .send()
+            .await
+            .expect("GET /conversation/messages");
+        let status = resp.status();
+        let body = resp.text().await.expect("body");
+        assert_eq!(
+            status,
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "{id} 的 layout 不可用，应 500 而不是回 null：{body}"
+        );
+        assert!(
+            body.contains("CONVERSATION_LAYOUT_MISSING"),
+            "{id} 的错误体应带 CONVERSATION_LAYOUT_MISSING：{body}"
+        );
+    }
+
+    // 可用 v2 行照常 200，且 `layout` 是对象（不是 null）。
+    let body = fetch_messages(&client, &handle.base_url, &[conversation_query("v2")]).await;
+    assert_eq!(
+        body["layout"]["layout_schema_version"].as_u64(),
+        Some(2),
+        "v2 会话必须带回 layout 对象：{body}"
+    );
+}
