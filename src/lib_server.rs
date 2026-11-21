@@ -238,53 +238,71 @@ pub struct TurnRequest<'a> {
 #[deprecated(note = "改名为 TurnRequest（S2，见 #1285）")]
 pub type RunAgentTurnParams<'a> = TurnRequest<'a>;
 
-/// Web 端点（`/chat/stream` 与 `POST /chat`）之间**唯一**的传输差异。
-///
-/// 用 enum 而非三个 `Option` 字段：全 `None` 与「这就是 JSON 端点」在类型上不可区分，而两者的
-/// 取消 / 审批语义**不同**——`POST /chat` 没有取消通道，也没有审批会话。抹平会让
-/// 「传了 `cancel` 却被忽略」变成静默行为（#1379 风险节要求把这个差异显式化）。
 #[cfg(feature = "web")]
 #[doc(hidden)]
 pub enum WebTurnEndpoint<'a> {
-    /// `/chat/stream`：SSE 输出、可取消、可走工具审批。
+    /// `/chat/stream`：SSE 输出、可取消、可走工具审批、可回传暂停原因。
     Stream {
         out: &'a mpsc::Sender<String>,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+        /// `#1455` C 步：预算暂停的回传口（`None` = 调用方不关心）。
+        ///
+        /// 放在**变体**里而不是 `WebTurnInputs`：自动续跑对非流式没有语义，让 JSON 端点
+        /// 在类型上就拿不到它，而不是靠在字段 doc 里写「恒 `None`」。
+        paused_reason_sink: Option<
+            std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
+        >,
     },
-    /// `POST /chat`：无 SSE 通道、无取消、无工具审批。
+    /// `POST /chat`：无 SSE 通道、无取消、无工具审批、无暂停回传。
     Json,
 }
 
 impl<'a> WebTurnEndpoint<'a> {
-    /// 端点差异**只**落在这里：JSON 侧 `out` / `cancel` / `web_tool_ctx` 恒 `None`。
-    fn into_transport(self, per_flight: std::sync::Arc<PerTurnFlight>) -> AgentTurnTransport<'a> {
-        let (out, cancel, web_tool_ctx) = match self {
+    /// 端点差异**只**落在这里：JSON 侧 `out` / `cancel` / `web_tool_ctx` /
+    /// `paused_reason_sink` 恒 `None`。
+    ///
+    /// 返回两部分而非只返回 transport：暂停回传口落在 `obs` 而不是 `transport`，但它和另外
+    /// 三项一样是端点专属的，收在同一个 `match` 里才不会漏。
+    fn into_parts(
+        self,
+        per_flight: std::sync::Arc<PerTurnFlight>,
+    ) -> (
+        AgentTurnTransport<'a>,
+        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
+    ) {
+        let (out, cancel, web_tool_ctx, paused_reason_sink) = match self {
             Self::Stream {
                 out,
                 cancel,
                 web_tool_ctx,
-            } => (Some(out), Some(cancel), web_tool_ctx),
-            Self::Json => (None, None, None),
+                paused_reason_sink,
+            } => (Some(out), Some(cancel), web_tool_ctx, paused_reason_sink),
+            Self::Json => (None, None, None, None),
         };
-        AgentTurnTransport {
-            out,
-            no_stream: false,
-            cancel,
-            per_flight: Some(per_flight),
-            web_tool_ctx,
-            sse_control_mirror: None,
-            llm_backend: None,
-            trace_sink: None,
-        }
+        (
+            AgentTurnTransport {
+                out,
+                no_stream: false,
+                cancel,
+                per_flight: Some(per_flight),
+                web_tool_ctx,
+                sse_control_mirror: None,
+                llm_backend: None,
+                trace_sink: None,
+            },
+            paused_reason_sink,
+        )
     }
 }
 
-/// Web 端点专属的回合输入；其余通用输入由 [`TurnRequest::web`] 的前三个参数原样承接。
+/// Web 端点专属的回合输入；通用输入的 `shared` / `session` / `llm` / `per_flight`
+/// 由 [`TurnRequest::web`] 的参数原样承接。
 ///
 /// 取代 `WebChatStreamBuildArgs`（**25** 字段）/ `WebChatJsonBuildArgs`（**22** 字段）两个平铺袋，
 /// 以及它们与 `TurnRequest` 之间的 `WebChatJobCommonParts` / `from_web_job_common` 两层转接（#1379）。
-/// 这里只留**只有 Web 端点才有**的输入，端点差异另由 [`WebTurnEndpoint`] 显式表达。
+/// 这里只留**只有 Web 端点才有**的输入；端点差异（SSE 输出 / 取消 / 审批 / 暂停回传）另由
+/// [`WebTurnEndpoint`] 在类型上表达，而不是靠「`Option` 恒 `None`」的口头约定。
 ///
 /// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297 与 `fixtures/public_api_golden.txt`）：本仓
 /// `chat_job_queue` 仍在构造它，故刻意**不**标 `#[deprecated]`——`-D warnings` 会把内部调用点变成编译错误。
@@ -297,9 +315,6 @@ pub struct WebTurnInputs<'a> {
     pub conversation_id: &'a str,
     /// 与 HTTP **`x-request-id`** 同值；写入 [`observability::TracingChatTurn`] 供回合内 SSE 错误带回。
     pub request_id: Option<String>,
-    /// 本回合飞行状态。**持有这个 `Arc` 即在册**（`ChatJobQueue::active_per_flights`）：
-    /// 调用方必须让它活到收尾结束，否则 `GET /status` 的 `per_active_jobs` 会提前失去该任务。
-    pub per_flight: std::sync::Arc<PerTurnFlight>,
     pub request_audit: std::sync::Arc<WebRequestAudit>,
     pub process_handles: std::sync::Arc<crate::process_handles::TurnProcessHandles>,
     /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
@@ -310,16 +325,11 @@ pub struct WebTurnInputs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用。
     pub tool_job_registry: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
-    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。只有流式端点接它。
-    pub paused_reason_sink: Option<
-        std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
-    >,
     /// 端点差异（SSE / JSON）；见 [`WebTurnEndpoint`]。
     pub endpoint: WebTurnEndpoint<'a>,
 }
 
 impl<'a> TurnRequest<'a> {
-
     /// Web 端点（`/chat/stream`、`POST /chat`）的回合请求。
     ///
     /// 取代 `web_chat_stream` / `web_chat_json` 与两个 25/22 字段的参数袋（#1379）。三处派生收在这里，
@@ -331,28 +341,30 @@ impl<'a> TurnRequest<'a> {
         shared: RunAgentTurnSharedInputs<'a>,
         session: RunAgentTurnSession<'a>,
         llm: AgentTurnLlmOverrides,
+        // 与 transport 同源：`#1380` 的在册语义是「持有这个 `Arc` 就出现在 `GET /status` 里」，
+        // 所以它不进 `WebTurnInputs`。
+        per_flight: std::sync::Arc<PerTurnFlight>,
         inputs: WebTurnInputs<'a>,
     ) -> Self {
         let WebTurnInputs {
             job_id,
             conversation_id,
             request_id,
-            per_flight,
             request_audit,
             process_handles,
             permission,
             long_term_memory,
             turn_allowed_tool_names,
             tool_job_registry,
-            paused_reason_sink,
             endpoint,
         } = inputs;
         let tracing_chat_turn =
             observability::TracingChatTurn::new(job_id, conversation_id, request_id);
+        let (transport, paused_reason_sink) = endpoint.into_parts(per_flight);
         Self {
             shared,
             session,
-            transport: endpoint.into_transport(per_flight),
+            transport,
             llm,
             attach: RunAgentTurnAttach {
                 long_term_memory,
@@ -501,3 +513,50 @@ pub use agent_errors::classify_model_error_message;
 
 #[cfg(test)]
 mod tests;
+
+/// `WebTurnEndpoint` → （`AgentTurnTransport`, 暂停回传口）的映射锚（#1379）。
+///
+/// 这是那次重构**唯一新增的分支逻辑**：此前两处 worker 各自手写 `None` / `Some`，漏一项不会有
+/// 编译错误，只会在流式侧静默丢掉取消位、审批上下文或暂停回传口。两条断言分别钉住两个变体。
+#[cfg(all(test, feature = "web"))]
+mod web_turn_endpoint_tests {
+    use super::{PerTurnFlight, WebTurnEndpoint};
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    /// JSON 端点必须是「静默」的：无输出通道、无取消位、无审批上下文、无暂停回传。
+    #[test]
+    fn json_endpoint_keeps_transport_silent() {
+        let (transport, paused) =
+            WebTurnEndpoint::Json.into_parts(Arc::new(PerTurnFlight::default()));
+        assert!(transport.out.is_none(), "JSON 端点不应有 SSE 输出通道");
+        assert!(transport.cancel.is_none(), "JSON 端点不应有取消位");
+        assert!(transport.web_tool_ctx.is_none(), "JSON 端点不应有审批上下文");
+        assert!(paused.is_none(), "JSON 端点不应有暂停回传口");
+        assert!(
+            transport.per_flight.is_some(),
+            "per_flight 两侧都必须在册（#1380）"
+        );
+        assert!(!transport.no_stream, "JSON 端点沿用既有的 no_stream=false");
+    }
+
+    /// Stream 端点的三个 transport 项与暂停回传口都必须落到位。
+    #[test]
+    fn stream_endpoint_carries_sse_cancel_and_approval() {
+        let (tx, _rx) = mpsc::channel::<String>(1);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let sink = Arc::new(std::sync::Mutex::new(None));
+        let (transport, paused) = WebTurnEndpoint::Stream {
+            out: &tx,
+            cancel: Arc::clone(&cancel),
+            web_tool_ctx: None,
+            paused_reason_sink: Some(Arc::clone(&sink)),
+        }
+        .into_parts(Arc::new(PerTurnFlight::default()));
+        assert!(transport.out.is_some(), "Stream 端点必须带 SSE 输出通道");
+        assert!(transport.cancel.is_some(), "Stream 端点必须带取消位");
+        assert!(transport.per_flight.is_some());
+        assert!(!transport.no_stream);
+        assert!(paused.is_some(), "Stream 端点必须把暂停回传口带出去");
+    }
+}

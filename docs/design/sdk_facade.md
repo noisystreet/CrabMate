@@ -453,7 +453,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | `cli_run.rs` 行数 | `wc -l src/cli_run.rs` | 勘察时 **912**（上限 920）；S5-a 后 493；**S5 后 25** |
 | `Commands` 变体数 | `awk '/pub enum Commands/,/^}/' … \| grep -cE '^    [A-Z]'` | 14（变体名见 §2） |
 | `ParsedCliArgs` 字段 / `EarlyCliDispatch` 字段 / `try_early_*` 数 | 同上手法 | 24 / 13 / 11 |
-| `WebTurnInputs` 字段数（原 `WebChat` 两袋 25 / 22，见 #1379） | `awk '/pub struct WebTurnInputs/,/^}/' \| grep -c 'pub '` | 12 |
+| `WebTurnInputs` 字段数（原 `WebChat` 两袋 25 / 22，见 #1379） | `awk '/pub struct WebTurnInputs/,/^}/' \| grep -c 'pub '` | 10 |
 | `RunAgentTurnParams` 各组生命周期 | `grep -E "pub struct <组名>(<'a>)?"` | 3 组带 `'a`、3 组 owned |
 | `conversation_store` 自由函数 | `grep -cE '^pub fn ' src/conversation_store.rs` | 13 |
 | `classify_agent_sse_line` 消费者 | `grep -rn classify_agent_sse_line src \| grep -v line.rs` | 0（文件头已自述「刻意保留锚点」） |

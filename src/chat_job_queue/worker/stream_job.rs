@@ -113,11 +113,12 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             executor_api_key: prepared.executor_api_key,
             seed_override,
         },
+        // 持有 `flight` 的强引用即在册（`#1380`）：它必须活到收尾结束。
+        std::sync::Arc::clone(&prepared.flight),
         crate::WebTurnInputs {
             job_id,
             conversation_id: conversation_id.as_str(),
             request_id: request_id.clone(),
-            per_flight: std::sync::Arc::clone(&prepared.flight),
             request_audit: std::sync::Arc::new(request_audit),
             process_handles: std::sync::Arc::clone(&app.process_handles),
             // `TurnPermissionStages` 是 `Copy`，直接取用。
@@ -125,13 +126,13 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             long_term_memory: queue_deps.long_term_memory.clone(),
             turn_allowed_tool_names: prepared.turn_allow,
             tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
-            paused_reason_sink: Some(std::sync::Arc::clone(&paused_reason_sink)),
             endpoint: crate::WebTurnEndpoint::Stream {
                 out: &sse_tx,
                 cancel: cancel.clone(),
                 web_tool_ctx: web_tool_ctx
                     .as_ref()
                     .map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
+                paused_reason_sink: Some(std::sync::Arc::clone(&paused_reason_sink)),
             },
         },
     );
