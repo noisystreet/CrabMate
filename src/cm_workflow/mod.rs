@@ -43,9 +43,10 @@ pub use run::run_workflow_execute_tool;
 
 pub use author_load::resolve_workflow_execute_args;
 pub use compile_spec::compile_workflow_author_yaml;
-pub use dag::topo_layers as workflow_topo_layers;
-pub use dag::validate_dag as workflow_validate_dag;
 pub use md_extract::extract_first_crabmate_workflow_block;
 pub use parse::parse_workflow_spec as parse_workflow_spec_from_json;
-pub use tool_name_check::validate_tool_names as workflow_validate_tool_names;
 pub use validate::{ValidateFailure, ValidateStage, validate_workflow_spec};
+// 刻意**不**在这里再导出 `dag::*` / `tool_name_check::*` 的单函数别名（#1383）：
+// 加载期校验的唯一入口是 `validate_workflow_spec`，它保证「工具名 → DAG → 拓扑」的顺序与
+// 文案只有一份。真要单独调某一步就走模块路径（`super::dag::…`），别在根上开第二个门——
+// 之前正是三个别名让三处调用方各自拼了一套顺序。
