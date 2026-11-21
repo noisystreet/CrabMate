@@ -372,6 +372,18 @@ mod tests {
 
     const HEAD_MAIN: &str = "# branch.oid 1a2b3c4d5e6f\n# branch.head main\n";
 
+    /// 设计约束：探测超时 ≤ 缓存 TTL（设计文档 §10.4）。
+    ///
+    /// 反了就出问题：慢探测的窗口长于复用窗口，同一 TTL 内的并发请求会各自 fork 两条 git 命令。
+    /// 改任一个值都要先想清楚另一侧。
+    #[test]
+    fn probe_timeout_must_not_exceed_cache_ttl() {
+        assert!(
+            PROBE_TIMEOUT <= CACHE_TTL,
+            "PROBE_TIMEOUT({PROBE_TIMEOUT:?}) 必须 ≤ CACHE_TTL({CACHE_TTL:?})"
+        );
+    }
+
     fn parse_ok(stdout: &str) -> Projection {
         parse_porcelain_v2(stdout).expect("parse ok")
     }

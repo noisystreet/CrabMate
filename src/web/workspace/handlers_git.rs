@@ -12,7 +12,7 @@ use crate::cm_api_contract::workspace::{
 };
 use crate::web::app_state::{AppStateHttpCore, CachedWorkspaceGitStatus, WorkspaceGitCache};
 use crate::web::workspace::git_projection::{
-    self, CACHE_TTL, PROBE_TIMEOUT, ProbeOutcome, Projection, response_from_outcome,
+    self, CACHE_TTL, PROBE_TIMEOUT, ProbeOutcome, response_from_outcome,
 };
 use crate::web::workspace::handlers::effective_workspace_base_canonical;
 
@@ -33,10 +33,14 @@ pub async fn workspace_git_handler(
     }
     let root = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
+        // **不透传 `user_message()`**：`EffectiveRootOutsideAllowed` / `OutsideAllowedRoots` 的
+        // Display 会把允许根的**绝对路径**拼进文案，既泄露服务器目录结构，也违反本路由
+        // 「message 不含绝对路径」的契约（设计文档 §2.1）。按 `kind()` 映射成固定文案。
         Err(e) => {
+            tracing::debug!(kind = e.kind(), "workspace git: 工作区根不可用");
             return Json(workspace_level_failure(
                 error_codes::WORKSPACE_OUT_OF_ROOTS,
-                &e.user_message(),
+                workspace_root_failure_message(e.kind()),
             ));
         }
     };
@@ -61,9 +65,7 @@ pub async fn workspace_git_handler(
 
     let outcome = probe_with_timeout(root).await;
     match outcome {
-        ProbeOutcome::Ok(Projection { .. })
-        | ProbeOutcome::NotARepo
-        | ProbeOutcome::GitUnavailable => {
+        outcome @ (ProbeOutcome::Ok(_) | ProbeOutcome::NotARepo | ProbeOutcome::GitUnavailable) => {
             let response = response_from_outcome(
                 outcome,
                 git_projection::now_unix(),
@@ -85,6 +87,18 @@ pub async fn workspace_git_handler(
                 WorkspaceGitSource::Probe,
             ))
         }
+    }
+}
+
+/// 工作区根被拒时的固定文案（**不含**绝对路径）。
+///
+/// `WorkspacePathError` 的 `Display` 对 `EffectiveRootOutsideAllowed` 会带上允许根全路径，
+/// 所以这里只按 `kind()` 分类，不透传原文。
+fn workspace_root_failure_message(kind: &str) -> &'static str {
+    match kind {
+        "effective_root_sensitive" | "sensitive_path_denied" => "工作区根命中敏感目录黑名单",
+        "effective_root_outside_allowed" | "outside_allowed_roots" => "工作区根不在允许范围内",
+        _ => "工作区根无法解析",
     }
 }
 
@@ -156,5 +170,69 @@ fn write_cache(cache: &WorkspaceGitCache, root_key: &str, response: &WorkspaceGi
             computed_at: std::time::Instant::now(),
             projection: response.clone(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> WorkspaceGitStatusResponse {
+        WorkspaceGitStatusResponse {
+            state: WorkspaceGitState::Ok,
+            reason_code: None,
+            message: None,
+            head: None,
+            upstream: None,
+            ahead: None,
+            behind: None,
+            dirty: Some(false),
+            counts: None,
+            computed_at_unix: 1234,
+            source: WorkspaceGitSource::Probe,
+        }
+    }
+
+    fn store(cache: &WorkspaceGitCache, root: &str, computed_at: std::time::Instant) {
+        let mut guard = cache.entry.lock().expect("cache lock");
+        *guard = Some(CachedWorkspaceGitStatus {
+            workspace_root: root.to_string(),
+            computed_at,
+            projection: sample(),
+        });
+    }
+
+    #[test]
+    fn fresh_hit_within_ttl_keeps_computed_at_and_marks_cache() {
+        let cache = WorkspaceGitCache::default();
+        store(&cache, "/w", std::time::Instant::now());
+
+        let hit = read_fresh(&cache, "/w").expect("fresh hit");
+        assert_eq!(hit.source, WorkspaceGitSource::Cache);
+        assert_eq!(hit.computed_at_unix, 1234, "命中缓存不应推进探测时刻");
+        assert!(read_fresh(&cache, "/other").is_none(), "换工作区不应命中");
+    }
+
+    #[test]
+    fn expired_entry_is_not_fresh_but_serves_as_stale_cache() {
+        let cache = WorkspaceGitCache::default();
+        let old = std::time::Instant::now()
+            .checked_sub(CACHE_TTL * 2)
+            .expect("单调钟当前时刻必然大于 CACHE_TTL*2");
+        store(&cache, "/w", old);
+
+        assert!(read_fresh(&cache, "/w").is_none(), "过期条目不算命中");
+
+        let stale = read_stale(&cache, "/w").expect("stale fallback");
+        assert_eq!(stale.source, WorkspaceGitSource::StaleCache);
+        assert_eq!(stale.computed_at_unix, 1234, "兜底沿用旧探测时刻");
+        assert!(read_stale(&cache, "/other").is_none(), "换工作区不应兜底");
+    }
+
+    #[test]
+    fn empty_cache_never_hits() {
+        let cache = WorkspaceGitCache::default();
+        assert!(read_fresh(&cache, "/w").is_none());
+        assert!(read_stale(&cache, "/w").is_none());
     }
 }
