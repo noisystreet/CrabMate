@@ -57,6 +57,38 @@
         assert_eq!(messages.len(), 1, "None 应清空旧注入条");
     }
 
+    /// `#1455` C 步：自动续跑指令同样属「运行时刷新类」——落盘前必须被剥离。
+    ///
+    /// 理由：它每个续跑回合重新生成，落盘副本既无意义，又会把「机器代发的指令」
+    /// 写进会话历史（用户回看时看到一串「继续」）。
+    #[test]
+    fn auto_resume_injection_is_stripped_before_persist() {
+        let mut messages = vec![crate::cm_types::Message::user_only("hi")];
+        messages.push(crate::cm_types::Message {
+            role: "user".to_string(),
+            content: Some(
+                crate::cm_types::CRABMATE_AUTO_RESUME_TEXT
+                    .to_string()
+                    .into(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(crate::cm_types::CRABMATE_AUTO_RESUME_NAME.to_string()),
+            tool_call_id: None,
+        });
+        assert!(crate::cm_types::is_auto_resume_injection(&messages[1]));
+        assert!(
+            crate::cm_types::server_injected_user::is_runtime_refreshed_injection(&messages[1]),
+            "应归入运行时刷新类"
+        );
+        // 不算真实用户发言（不进 branch 截断计数）。
+        assert!(!crate::cm_types::user_message_counts_for_branch_truncation(&messages[1]));
+
+        crate::cm_types::server_injected_user::strip_runtime_refreshed_injections(&mut messages);
+        assert_eq!(messages.len(), 1, "落盘剥离后不应残留续跑指令");
+    }
+
     /// 判据 2 的护栏：落盘前必须能剥离这条注入。
     #[test]
     fn runtime_refreshed_strip_removes_paused_brief() {

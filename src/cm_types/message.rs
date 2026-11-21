@@ -306,6 +306,19 @@ pub fn is_long_term_memory_injection(m: &Message) -> bool {
 /// **不**落盘、**不**向客户端展示（与变更集注入同类）。
 pub const CRABMATE_PAUSED_TASK_NAME: &str = "crabmate_paused_task_brief";
 
+/// `#1455` C 步：自动续跑回合的最小指令正文（`user.name`）。
+///
+/// 内容刻意只有一句：**语义不靠它承载**——「做到哪、已用多少」由
+/// [`CRABMATE_PAUSED_TASK_NAME`] 的摘要表达；这条消息只负责让请求合法。
+pub const CRABMATE_AUTO_RESUME_TEXT: &str = "继续";
+/// 自动续跑指令的 `user.name`（登记为「运行时刷新类」注入：不落盘、不算真实发言）。
+pub const CRABMATE_AUTO_RESUME_NAME: &str = "crabmate_auto_resume";
+
+#[inline]
+pub fn is_auto_resume_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_AUTO_RESUME_NAME)
+}
+
 #[inline]
 pub fn is_paused_task_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_PAUSED_TASK_NAME)
