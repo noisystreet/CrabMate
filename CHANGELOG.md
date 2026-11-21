@@ -10,6 +10,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /workspace/git` — read-only git status projection (#1457).** New protected route in the
+  `/workspace/*` family for the Client sidebar (branch + dirty summary). Always **200**: availability
+  lives in **`state`** (`ok` / `not_a_repo` / `git_unavailable` / `failed` + `reason_code`), so
+  "not a repo", "no `git` on PATH" and "timed out" become three different answers instead of one
+  empty default. `head.kind` separates `branch` from `detached` (a detached HEAD carries **no**
+  `name` key rather than an empty string), `counts` is per-category (`staged` / `unstaged` /
+  `untracked` / `conflicted` / `total`), and `dirty` means "uncommitted changes **under the current
+  workspace root**" — `git status` paths are cwd-relative, so records outside the root (`../x`) are
+  dropped instead of being returned. Server-side **2 s** cache exposed as `source`
+  (`probe` / `cache` / `stale_cache`) plus `?refresh=true` (skips the cache read, still writes it).
+  The projection parses `--porcelain=v2 --branch` only and deliberately does **not** share the
+  tool-card's fuzzy `git status` heuristic (`structured_preview`), which must stay lenient for
+  previews; both divergences are documented on both sides. Contract tag: `client-contract-v0.4.0`
+  (marked after merge, not inside the feature PR).
+
 ### Changed
 
 - **No business frames after a terminal frame (#1338 E4/S1).** The SSE hub now **refuses to deliver** a turn's
