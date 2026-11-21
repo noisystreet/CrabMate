@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 
 use super::author_load::resolve_workflow_execute_args;
 use super::config::WorkflowConfig;
-use super::dag::{topo_layers, validate_dag};
+use super::dag::validate_dag;
 use super::execute::{
     WorkflowApprovalMode, WorkflowSemanticParams, WorkflowToolExecCtx, execute_workflow_dag,
     truncate_for_summary,
@@ -17,6 +17,7 @@ use super::execute::{
 use super::model::WorkflowSpec;
 use super::parse::parse_workflow_spec;
 use super::tool_name_check::validate_tool_names;
+use super::validate::validate_workflow_spec;
 use super::types::{
     WORKFLOW_RUN_SEQ, WorkflowExecutionCompensationReport, WorkflowExecutionNodeReport,
     WorkflowExecutionReport, WorkflowExecutionStats,
@@ -62,42 +63,21 @@ fn workflow_validate_only_finish(args_json: &str, workflow_run_id: u64) -> Resul
         .to_string()
     })?;
 
-    if let Some(err_json) = tool_name_check_failure(
-        &spec,
-        "workflow_validate_error",
-        "workflow_validate 工具名校验失败",
-    ) {
-        return Err(err_json);
-    }
-
-    if let Err(e) = validate_dag(&spec.nodes) {
+    // 编排与阶段名只有 `validate::validate_workflow_spec` 一份（#1383）：与 `crabmate
+    // workflow validate`、`crabmate doctor` 共用同一顺序，措辞也只拼这一次。
+    let execution_layers = validate_workflow_spec(&spec).map_err(|fail| {
         warn!(
             target: "crabmate",
-            "workflow_validate_only dag validation failed workflow_run_id={} error={}",
+            "workflow_validate_only failed workflow_run_id={} stage={} detail={}",
             workflow_run_id,
-            e
-        );
-        return Err(serde_json::json!({
-            "type": "workflow_validate_error",
-            "status": "failed",
-            "workspace_changed": false,
-            "human_summary": format!("workflow_validate DAG 校验失败：{}", e)
-        })
-        .to_string());
-    }
-
-    let execution_layers = topo_layers(&spec.nodes).map_err(|e| {
-        warn!(
-            target: "crabmate",
-            "workflow_validate_only topo layer failed workflow_run_id={} error={}",
-            workflow_run_id,
-            e
+            fail.stage.label(),
+            fail.detail
         );
         serde_json::json!({
             "type": "workflow_validate_error",
             "status": "failed",
             "workspace_changed": false,
-            "human_summary": format!("workflow_validate 层级计算失败：{}", e)
+            "human_summary": format!("workflow_validate {}", fail.message())
         })
         .to_string()
     })?;

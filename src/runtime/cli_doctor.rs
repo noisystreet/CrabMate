@@ -184,9 +184,8 @@ fn doctor_validate_workflow_file(path: &Path) -> Result<(), String> {
     let spec = crate::agent::workflow::parse_workflow_spec_from_json(&args_json)?;
     // 与 `crabmate workflow validate` / `workflow_execute` 加载期同源：本函数问的就是
     // 「这个工作流文件能加载吗」，拼错的 `tool_name` 与未知依赖都须在这里暴露。
-    // `workflow_validate_dag` 已含未知依赖与环检测，故不再单独跑 `topo_layers`。
-    crate::agent::workflow::workflow_validate_tool_names(&spec)?;
-    crate::agent::workflow::workflow_validate_dag(&spec.nodes)?;
+    // 编排走 `validate_workflow_spec`（#1383 的唯一实现），doctor 只报它的 `detail`。
+    crate::agent::workflow::validate_workflow_spec(&spec).map_err(|fail| fail.detail)?;
     Ok(())
 }
 
