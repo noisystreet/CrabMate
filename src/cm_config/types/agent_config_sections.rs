@@ -126,6 +126,15 @@ pub struct AutonomyConfig {
     pub max_tasks: usize,
     /// 任务状态文件存活秒数；`0` = 不按时间清理，`> 0` 时每次落盘顺带清理过期文件。
     pub task_ttl_secs: u64,
+    /// 跨回合累计 LLM 调用上限（**软闸**，`0` = 不限制）。B 步（`#1455`）。
+    ///
+    /// 软闸的理由：真源是 `.crabmate/tasks/<scope>.json`，属可损坏/可手删文件；
+    /// 由它驱动的限制只能是软的（删文件即清零）。硬闸见 C 步的 `max_autonomous_turns`。
+    pub max_cumulative_llm_calls: u32,
+    /// 跨回合累计 Token 上限（软闸，`0` = 不限制）。
+    pub max_cumulative_tokens: usize,
+    /// 跨回合累计墙钟秒数上限（软闸，`0` = 不限制；**不含**暂停等待时间）。
+    pub max_cumulative_secs: u64,
 }
 
 #[derive(Debug, Clone)]

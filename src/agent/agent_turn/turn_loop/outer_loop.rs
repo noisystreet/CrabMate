@@ -71,7 +71,25 @@ fn turn_budget_deny_to_turn_error(
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
     let cfg = &p.ctx.core.cfg.turn_budget;
-    if let Err(deny) = p.turn.turn_budget.deny_llm_call_if_exhausted(cfg) {
+    let autonomy = &p.ctx.core.cfg.autonomy;
+    let caps = crate::agent::turn_budget::CumulativeCaps {
+        llm_calls: autonomy.max_cumulative_llm_calls,
+        tokens: autonomy.max_cumulative_tokens,
+        secs: autonomy.max_cumulative_secs,
+    };
+    // 两组上限**严格分开**：单轮用本回合增量、累计用累计值。若把它们混用，
+    // 「开 autonomy」就会静默改写 `max_turn_*` 的语义（见 `CumulativeCaps` 文档）。
+    let verdict = p
+        .turn
+        .turn_budget
+        .deny_llm_call_if_exhausted(cfg)
+        .or_else(|_| p.turn.turn_budget.deny_if_cumulative_exhausted(&caps));
+    if let Err(deny) = verdict {
+        // 暂停信号：**无条件**置位。它是回合事实（预算耗尽就是耗尽），与 `autonomy_enabled`
+        // 无关；C 步据此决定要不要续跑，开关判断留在那里（见设计文档判据 6）。
+        if let Ok(mut slot) = p.turn.paused_reason.lock() {
+            *slot = Some(TaskPauseReason::from(deny));
+        }
         // 落盘是**旁路**：即使写盘失败，回合仍按原语义中止（见 `cm_agent::task_state` 模块文档）。
         record_budget_paused(p, deny);
         return Err(turn_budget_deny_to_turn_error(deny, cfg));
@@ -100,18 +118,31 @@ fn record_budget_paused(p: &RunLoopParams<'_>, deny: TurnBudgetDeny) {
     let Some(goal) = last_user_goal(p.turn.messages_buf) else {
         return;
     };
+    // 累计口径 vs 本次增量（`#1455` B 步）：注入跨回合起点后，`turn_budget` 的读数
+    // **本身就是累计值**，所以「本回合用了多少」必须减去起点。
+    let base = p.turn.turn_budget.spent_base();
+    let cumulative = TaskBudgetSnapshot {
+        llm_calls: p.turn.turn_budget.llm_calls(),
+        outer_loop_iterations: p.turn.turn_budget.outer_loop_iterations(),
+        estimated_tokens: p.turn.turn_budget.estimated_tokens(),
+        elapsed_secs: p.turn.turn_budget.elapsed_secs(),
+    };
+    let this_turn = TaskBudgetSnapshot {
+        llm_calls: cumulative.llm_calls.saturating_sub(base.llm_calls),
+        outer_loop_iterations: cumulative.outer_loop_iterations,
+        estimated_tokens: cumulative
+            .estimated_tokens
+            .saturating_sub(base.estimated_tokens),
+        elapsed_secs: cumulative.elapsed_secs.saturating_sub(base.elapsed_secs),
+    };
     let state = TaskState::new_paused(
         scope_id,
         &goal,
         TaskPauseReason::from(deny),
-        TaskBudgetSnapshot {
-            llm_calls: p.turn.turn_budget.llm_calls(),
-            outer_loop_iterations: p.turn.turn_budget.outer_loop_iterations(),
-            estimated_tokens: p.turn.turn_budget.estimated_tokens(),
-            elapsed_secs: p.turn.turn_budget.elapsed_secs(),
-        },
+        this_turn,
         task_evidence_refs(p.turn.messages_buf),
-    );
+    )
+    .with_cumulative(cumulative);
     let store = TaskStateStore::new(p.ctx.core.effective_working_dir, &agent_cfg.autonomy);
     match store.save(&state) {
         Ok(path) => debug!(

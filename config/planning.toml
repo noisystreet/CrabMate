@@ -51,6 +51,12 @@ autonomy_enabled = false
 autonomy_max_tasks = 200
 # 任务状态文件存活秒数（默认 7 天）；0 = 不按时间清理。
 autonomy_task_ttl_secs = 604800
+# 跨回合累计三项上限（#1455 B 步）。**软闸**：真源是可手删的状态文件，删掉即清零，
+# 因此它只能防「意外跑飞」，防不住「故意绕过」。0 = 不限制（默认）。
+# 与上面的单轮上限并存：单轮限制仍由 [agent] 的 max_turn_* 管，两者不互相改写语义。
+autonomy_max_cumulative_llm_calls = 0
+autonomy_max_cumulative_tokens = 0
+autonomy_max_cumulative_secs = 0
 
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、

@@ -243,6 +243,15 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// 最近一次主 Agent 模型调用返回的供应商 usage（摘要等旁路调用不写入）。
     pub(crate) provider_usage:
         Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
+    /// 本回合因**预算耗尽**而中止时的原因（`#1455` B 步引入、C 步消费）。
+    ///
+    /// `None` = 正常结束或其它失败。用 `Arc<Mutex<_>>` 而非普通字段，是为了让
+    /// `check_shared_turn_budget(&RunLoopParams)` 这类**只读签名**也能置位——
+    /// 与 [`Self::provider_usage`] 同款，省掉把整条调用链改成 `&mut` 的级联改动。
+    ///
+    /// **刻意不扩 `RunAgentTurnError`**：续跑触发只读这一个标记，改错误枚举会波及所有 `match` 点。
+    pub paused_reason:
+        Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
 }
 
 impl<'a> RunLoopTurnState<'a> {
@@ -519,6 +528,7 @@ mod turn_planner_hints_tests {
             context_timeline: Default::default(),
             model_context_artifacts: Vec::new(),
             provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            paused_reason: std::sync::Arc::new(std::sync::Mutex::new(None)),
         };
         assert_eq!(turn.messages_buffer_revision(), 0);
         turn.push_message(Message::assistant_only("a"));

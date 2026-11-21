@@ -116,8 +116,11 @@ pub struct TaskEvidenceRef {
     pub exit_code: Option<i32>,
 }
 
-/// 暂停时刻的本回合预算快照（**单轮**口径；跨回合累计属 B 步）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// 暂停时刻的本回合预算快照（**单轮**口径）。
+///
+/// B 步起 [`TaskState::cumulative`] 复用同一形状表示**跨回合累计**——两个口径分开存，
+/// 是因为「本回合用了多少」与「一共用了多少」在续跑判定里含义不同，混在一处必生歧义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct TaskBudgetSnapshot {
     pub llm_calls: u32,
     pub outer_loop_iterations: u32,
@@ -137,6 +140,12 @@ pub struct TaskState {
     pub status: TaskStatus,
     pub pause_reason: TaskPauseReason,
     pub budget: TaskBudgetSnapshot,
+    /// **累计到暂停时刻**的三项消耗（B 步新增；不含暂停等待时间）。
+    ///
+    /// 旧文件（A 步产物）没有该字段 ⇒ serde 落到全 `0`，即「未知即 0」——
+    /// 与「读失败当 0」的 fail-open 口径一致，不引入迁移分支。
+    #[serde(default)]
+    pub cumulative: TaskBudgetSnapshot,
     pub evidence: Vec<TaskEvidenceRef>,
     /// 最后写入时刻（RFC3339，UTC）。
     pub updated_at: String,
@@ -162,9 +171,18 @@ impl TaskState {
             status: TaskStatus::Paused,
             pause_reason: reason,
             budget,
+            // 首次暂停时「累计」自然等于「本次」——没有更早的历史。
+            cumulative: budget,
             evidence: cap_evidence(evidence),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
+    }
+
+    /// 用真实累计值覆盖 [`Self::cumulative`]（B 步接线用；构造器保持单参不改调用点）。
+    #[must_use]
+    pub fn with_cumulative(mut self, cumulative: TaskBudgetSnapshot) -> Self {
+        self.cumulative = cumulative;
+        self
     }
 }
 
@@ -387,6 +405,9 @@ mod tests {
             enabled: true,
             max_tasks,
             task_ttl_secs: ttl_secs,
+            max_cumulative_llm_calls: 0,
+            max_cumulative_tokens: 0,
+            max_cumulative_secs: 0,
         }
     }
 
