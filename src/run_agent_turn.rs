@@ -103,6 +103,7 @@ pub async fn run_agent_turn<'a>(
         request_audit,
         process_handles,
         tool_job_registry,
+        paused_reason_sink,
     } = obs;
     let AgentTurnTransport {
         out,
@@ -201,6 +202,7 @@ pub async fn run_agent_turn<'a>(
             request_audit: request_audit.clone(),
             process_handles: Arc::clone(&process_handles),
             tool_job_registry,
+            paused_reason_sink,
             request_chrome_trace: request_chrome_trace.clone(),
             trace_sink,
             temperature_override,
@@ -312,6 +314,8 @@ struct RunLoopAssembly<'a> {
     request_audit: Option<Arc<crate::request_audit::WebRequestAudit>>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
+    paused_reason_sink: Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     trace_sink: Option<Arc<dyn crate::llm::TraceSink>>,
     // → RunLoopTurnState 的采样覆盖段（`AgentTurnLlmOverrides` 已在外层解构）
@@ -364,6 +368,7 @@ fn assemble_run_loop_params<'a>(
         request_audit,
         process_handles,
         tool_job_registry,
+        paused_reason_sink,
         request_chrome_trace,
         trace_sink,
         temperature_override,
@@ -505,7 +510,9 @@ fn assemble_run_loop_params<'a>(
             context_timeline: Default::default(),
             model_context_artifacts: Vec::new(),
             provider_usage: Arc::new(std::sync::Mutex::new(None)),
-            paused_reason: Arc::new(std::sync::Mutex::new(None)),
+            // 复用调用方传入的句柄（若有）：回合结束后 worker 仍能读到「因何暂停」。
+            paused_reason: paused_reason_sink
+                .unwrap_or_else(|| Arc::new(std::sync::Mutex::new(None))),
             paused_task_brief,
         },
     }

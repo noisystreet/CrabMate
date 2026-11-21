@@ -203,6 +203,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
             tool_job_registry: None,
+            paused_reason_sink: None,
         },
     };
 
@@ -283,6 +284,7 @@ async fn run_mock_agent_turn<B>(
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
             tool_job_registry: None,
+            paused_reason_sink: None,
         },
     };
     run_agent_turn(params)
@@ -401,6 +403,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
             tool_job_registry: None,
+            paused_reason_sink: None,
         },
     };
 

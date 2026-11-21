@@ -91,6 +91,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
+                // `#1455` C 步：非流式路径**不**接暂停信号（自动续跑只对流式生效）。
+                paused_reason_sink: None,
             },
         ))
         .await;

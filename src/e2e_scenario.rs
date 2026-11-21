@@ -540,6 +540,8 @@ async fn run_single_agent_turn(
             request_audit: None,
             process_handles: ProcessHandles::default_arc_process_handles().turn_handles_arc(),
             tool_job_registry: None,
+            // `#1455` C 步：不参与自动续跑，不接暂停信号。
+            paused_reason_sink: None,
         },
     };
 
