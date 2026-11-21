@@ -161,6 +161,8 @@ impl<'a> SubTurnSpec<'a> {
                 request_audit: self.request_audit,
                 process_handles: self.process_handles,
                 tool_job_registry: None,
+                // `#1455` C 步：不参与自动续跑，不接暂停信号。
+                paused_reason_sink: None,
             },
         }
     }

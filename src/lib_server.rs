@@ -210,6 +210,13 @@ pub struct RunAgentTurnObs {
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用（默认关闭路径）。
     pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    /// `#1455` C 步：把「本回合因预算暂停」这一事实带回调用方。
+    ///
+    /// 用 `Arc<Mutex<_>>` 而不是让 `run_agent_turn` 返回它，是因为**预算拒绝走 `Err`**、
+    /// `TurnOutcome` 只在成功路径构造；而扩 `RunAgentTurnError` 会波及所有 `match` 点。
+    /// 调用方创建、传入、回合结束后读——回合已结束时该句柄仍然有效。
+    pub paused_reason_sink:
+        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
 }
 
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
@@ -268,6 +275,11 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
+    ///
+    /// 只有**流式**路径接这个信号（JSON 路径传 `None`）：自动续跑对非流式没有语义。
+    pub paused_reason_sink:
+        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
 }
 
 /// 构造 [`TurnRequest::web_chat_json`] 所需的参数包。
@@ -302,6 +314,11 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub permission: crate::cm_agent::permission::TurnPermissionStages,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
+    ///
+    /// 只有**流式**路径接这个信号（JSON 路径传 `None`）：自动续跑对非流式没有语义。
+    pub paused_reason_sink:
+        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
 }
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
 #[cfg(feature = "web")]
@@ -321,6 +338,8 @@ struct WebChatJobCommonParts<'a> {
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    paused_reason_sink:
+        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
 }
 
 impl<'a> TurnRequest<'a> {
@@ -341,6 +360,7 @@ impl<'a> TurnRequest<'a> {
             request_audit,
             process_handles,
             tool_job_registry,
+            paused_reason_sink,
         } = parts;
         Self {
             shared,
@@ -363,6 +383,7 @@ impl<'a> TurnRequest<'a> {
                 request_audit: Some(request_audit),
                 process_handles,
                 tool_job_registry,
+                paused_reason_sink,
             },
         }
     }
@@ -395,6 +416,7 @@ impl<'a> TurnRequest<'a> {
             permission,
             request_id,
             tool_job_registry,
+            paused_reason_sink,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -432,6 +454,7 @@ impl<'a> TurnRequest<'a> {
             request_audit,
             process_handles,
             tool_job_registry,
+            paused_reason_sink,
         })
     }
 
@@ -460,6 +483,7 @@ impl<'a> TurnRequest<'a> {
             permission,
             request_id,
             tool_job_registry,
+            paused_reason_sink,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -497,6 +521,7 @@ impl<'a> TurnRequest<'a> {
             request_audit,
             process_handles,
             tool_job_registry,
+            paused_reason_sink,
         })
     }
 
@@ -558,6 +583,8 @@ impl<'a> TurnRequest<'a> {
                 request_audit: None,
                 process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
                 tool_job_registry: None,
+                // bench 不参与自动续跑：不接暂停信号。
+                paused_reason_sink: None,
             },
         }
     }

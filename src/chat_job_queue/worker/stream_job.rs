@@ -73,6 +73,13 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         approval_session_id,
     } = rt;
 
+    // `#1455` C 步：暂停信号回传口。回合结束后从这里读「本回合是否因预算暂停」。
+    // 用 `Arc<Mutex<_>>` 与 `run_agent_turn` 共享同一句柄——预算拒绝走 `Err`，
+    // `TurnOutcome` 带不出来（见 `RunAgentTurnObs::paused_reason_sink` 的说明）。
+    let paused_reason_sink: std::sync::Arc<
+        std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+
     let mut params = crate::TurnRequest::web_chat_stream(crate::WebChatStreamBuildArgs {
         shared: crate::RunAgentTurnSharedInputs {
             client: &queue_deps.client,
@@ -104,6 +111,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         request_audit: std::sync::Arc::new(request_audit),
         process_handles: std::sync::Arc::clone(&app.process_handles),
         tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
+        paused_reason_sink: Some(std::sync::Arc::clone(&paused_reason_sink)),
     });
     // e2e 测试注入的自定义 LLM 后端（`None` 时使用默认 HTTP 后端）。
     params.transport.llm_backend = queue_deps.llm_backend;
@@ -117,6 +125,20 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     } else {
         queue_deps.turn_runner.run(params).await
     };
+
+    // `#1455` C 步（阶段一）：只记录本回合是否因预算暂停。
+    // **不入队**、不自动续跑——决策依赖进程内轮数计数，尚未接入；
+    // 接入后在这里调 `cm_agent::task_state::decide_auto_resume` 再决定是否提交下一回合。
+    if let Ok(slot) = paused_reason_sink.lock()
+        && let Some(reason) = *slot
+    {
+        tracing::info!(
+            target: "crabmate::autonomy",
+            conversation_id = %conversation_id,
+            reason = reason.as_str(),
+            "turn paused on budget; auto-resume not wired yet (#1455 C)"
+        );
+    }
 
     cancel_watcher.abort();
     if let Some(session_id) = approval_session_id.as_deref() {
