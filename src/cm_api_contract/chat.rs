@@ -237,10 +237,13 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub archive: Vec<serde_json::Value>,
     #[schemars(schema_with = "schema_open_object_array")]
     pub messages: Vec<serde_json::Value>,
+    /// 过滤后（客户端可见）的消息总条数，不随本页窗口变化。
     #[serde(default)]
     pub total_count: u32,
+    /// 本页首条在过滤后序列中的下标；`has_older` 为真时可原样用作下一次的 `before_index`。
     #[serde(default)]
     pub window_start_index: u32,
+    /// 是否还有更早的页（等价于 `window_start_index > 0`）。
     #[serde(default)]
     pub has_older: bool,
 }
@@ -399,10 +402,13 @@ pub struct ConversationMessagesResponseBody<M> {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub archive: Vec<M>,
     pub messages: Vec<M>,
+    /// 过滤后（客户端可见）的消息总条数，不随本页窗口变化。
     #[serde(default)]
     pub total_count: u32,
+    /// 本页首条在过滤后序列中的下标；`has_older` 为真时可原样用作下一次的 `before_index`。
     #[serde(default)]
     pub window_start_index: u32,
+    /// 是否还有更早的页（等价于 `window_start_index > 0`）。
     #[serde(default)]
     pub has_older: bool,
 }
