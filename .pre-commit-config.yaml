@@ -148,6 +148,20 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # 手册页是 `clap_mangen` 的产物（`src/bin/crabmate_gen_man.rs`）。此前**没有任何漂移信号**：
+      # 上面的 `check-version-sync` 只比版本串，于是「加了子命令却没重生成 man」能一路绿到合并
+      # （#1338 的 `backfill-layout` 就是这么漏的，还带上了错误的 `crabmate\-x(1)` 交叉引用）。
+      # `gen-man --check` 渲染到内存后与 `man/*.1` 逐字节比较；修法：
+      # `cargo run --features gen-man --bin crabmate-gen-man`。
+      # 代价：本钩子要编译 `gen-man` feature（多一个 `clap_mangen`）。与 clippy / doc 同属编译型，
+      # 命中 cargo 缓存后是秒级，故 always_run（pass_filenames 无用：产物是全量重生成）。
+      - id: check-man-sync
+        name: man pages in sync with clap (gen-man --check)
+        entry: bash -c 'cargo run --quiet --features gen-man --bin crabmate-gen-man -- --check'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       - id: check-docs-links
         name: docs relative link check
         entry: python3 scripts/check-docs-links.py

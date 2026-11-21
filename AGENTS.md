@@ -38,7 +38,7 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 
 | 场景 | 命令 |
 | --- | --- |
-| 每次提交前（**必跑**） | `pre-commit run --all-files`（fmt / clippy `-D warnings` / `cargo doc` / 依赖策略 / CCN·参数·nloc·工具名字面量·md 行宽棘轮 / 版本同步 / `taplo`） |
+| 每次提交前（**必跑**） | `pre-commit run --all-files`（fmt / clippy `-D warnings` / `cargo doc` / 依赖策略 / CCN·参数·nloc·工具名字面量·md 行宽棘轮 / 版本同步 / **man 与 clap 同步** / `taplo`） |
 | 构建 / 打包 | `make backend` / `make package` → `dist/`（**不是**门禁） |
 | 全量测试 | `make test`（`cargo test --workspace`）；单项：`cargo test -p crabmate <filter>` |
 | 单项检查 | `cargo build` · `cargo clippy` · `cargo fmt --check` · `cargo audit` · `cargo deny check licenses bans sources` |
@@ -49,7 +49,9 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
   `bash scripts/lizard-rust.sh`（CCN ≤ 10）；`bash scripts/fn-param-ratchet.sh`（参数 ≤ 9）；
   `bash scripts/fn-nloc-ratchet.sh`（fn ≤ 200 行 / 文件 ≤ 920 行）；`bash scripts/tool-name-literal-ratchet.sh`
   （比较 / match 处不新增工具名字面量，用 `crate::cm_names::*`，见 #1155）；`bash scripts/md-line-length-ratchet.sh`
-  （md 不新增超 160 显示列的行——折行，不要重生成基线）。
+  （md 不新增超 160 显示列的行——折行，不要重生成基线）；`cargo run --quiet --features gen-man --bin crabmate-gen-man
+  -- --check`（`man/*.1` 与当前 clap 定义逐字节一致；增删子命令后跑 `cargo run --features gen-man --bin
+  crabmate-gen-man` 重生成再提交——否则 man 会留着错误的 `crabmate\-x(1)` 交叉引用）。
 
 ### 4.2 对外写操作 / Outbound writes (repository-visible actions)
 
