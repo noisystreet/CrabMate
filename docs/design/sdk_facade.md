@@ -41,7 +41,7 @@
 | `protocol` 六个模块与 `server` 组合面已按 feature 分离 | `src/lib.rs:29-43` | ✅ |
 | 根上一次性 `pub(crate) use` `cm_internal` 的 **27** 项 | `src/lib_server.rs:33` | ✅ 逐项数 |
 | `RunAgentTurnParams` 分 6 组，其中**只有 3 组带 `'a`**（`shared` / `session` / `transport`），另 3 组**已经 owned**（`llm` / `attach` / `obs`） | `src/lib_server.rs:179` | ✅ |
-| `WebChatStreamBuildArgs` **25** 个平铺字段 / `WebChatJsonBuildArgs` **22** 个 | `src/lib_server.rs:190` / `:223` | ✅ |
+| ~~`WebChatStreamBuildArgs` **25** 字段 / `WebChatJsonBuildArgs` **22** 字段~~ | ~~`src/lib_server.rs:190` / `:223`~~ | ✅ **已消解**：合成 `WebTurnInputs`（#1379） |
 | `TurnRunner` 注入点的参数袋仍是 `RunAgentTurnParams<'_>` | `src/turn_runner.rs:19` | ✅ |
 | `conversation_store` 是 **13 个 `pub fn` 收 `&Connection`**（`migrate`:51、`open_file`:137、`load`:210、`save_if_revision`:307、`set_active_state`:389、`save_with_archive_if_revision`:427……），且被 `web` feature 门控 | `src/conversation_store.rs`；`src/lib_server.rs:53` | ✅ |
 | ~~`cm_internal` 暴露 **25** 个 `pub mod` + 多组再导出~~ | ~~`src/cm_internal/mod.rs:11-43`~~ | ✅ **已消解**：S4 四桶搬空后 P4 删除该模块 |
@@ -155,10 +155,10 @@ pub enum TurnEvent {
 - **可行性已有局部先例**：`RunAgentTurnParams` 的 6 组里，
   `RunAgentTurnLlmOverrides` / `RunAgentTurnAttach` / `RunAgentTurnObs` **本来就是 owned**（无生命周期），说明「把入参搬成 owned 结构」
   不需要先消灭全部借用，可以一组一组搬——这是 S2 能把风险拆碎的证据（见 §2）。
-- `AgentTurnTransport` / `RunAgentTurnSharedInputs` / `WebChatStreamBuildArgs` / `WebChatJsonBuildArgs` 退为**构造 `TurnRequest` 的内部细节**；
+- `AgentTurnTransport` / `RunAgentTurnSharedInputs` / `WebTurnInputs`（原 `WebChat*BuildArgs`）退为**构造 `TurnRequest` 的内部细节**；
   旧名可保留 `#[deprecated]` 薄封装（与 `run_command` 的旧 6–7 参入口同一套路）。
 - `TurnRunner` 签名改为 `run(&self, req: TurnRequest)`，否则注入点仍在传递 6 组借用袋。
-- 收益可测：**25** 字段的 `WebChatStreamBuildArgs` 消失；`chat_job_queue`、`bench`、未来终端走同一条构造路径。
+- 收益可测：**25** 字段的 `WebChatStreamBuildArgs` 消失（已达成，见 #1379）；`bench` 与未来终端的构造路径仍各自独立。
 
 #### 5.1.1 `TurnEvent` 的投影口径（S2-2，ADR）
 
@@ -453,7 +453,7 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 | `cli_run.rs` 行数 | `wc -l src/cli_run.rs` | 勘察时 **912**（上限 920）；S5-a 后 493；**S5 后 25** |
 | `Commands` 变体数 | `awk '/pub enum Commands/,/^}/' … \| grep -cE '^    [A-Z]'` | 14（变体名见 §2） |
 | `ParsedCliArgs` 字段 / `EarlyCliDispatch` 字段 / `try_early_*` 数 | 同上手法 | 24 / 13 / 11 |
-| `WebChat*BuildArgs` 字段数 | `awk '/pub struct WebChatStreamBuildArgs/,/^}/' \| grep -c 'pub '` | 25 / 22 |
+| `WebTurnInputs` 字段数（原 `WebChat` 两袋 25 / 22，见 #1379） | `awk '/pub struct WebTurnInputs/,/^}/' \| grep -c 'pub '` | 12 |
 | `RunAgentTurnParams` 各组生命周期 | `grep -E "pub struct <组名>(<'a>)?"` | 3 组带 `'a`、3 组 owned |
 | `conversation_store` 自由函数 | `grep -cE '^pub fn ' src/conversation_store.rs` | 13 |
 | `classify_agent_sse_line` 消费者 | `grep -rn classify_agent_sse_line src \| grep -v line.rs` | 0（文件头已自述「刻意保留锚点」） |
