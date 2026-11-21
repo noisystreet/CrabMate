@@ -97,6 +97,8 @@ pub use crate::cm_agent::text_sanitize;
 mod user_data;
 #[cfg(feature = "web")]
 mod web;
+/// `WorkflowConfig` 从 `AgentConfig` 派生的唯一实现（#1383）：工具面与运维 CLI 共用。
+mod workflow_config_bridge;
 
 pub use per_turn_flight::PerTurnFlight;
 pub use request_audit::WebRequestAudit;

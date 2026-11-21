@@ -4,14 +4,13 @@ use std::path::Path;
 
 use crate::agent::workflow::{
     WorkflowApprovalMode, compile_workflow_author_yaml, extract_first_crabmate_workflow_block,
-    parse_workflow_spec_from_json, run_workflow_execute_tool, workflow_topo_layers,
-    workflow_validate_dag, workflow_validate_tool_names,
+    parse_workflow_spec_from_json, run_workflow_execute_tool, validate_workflow_spec,
 };
 use crate::agent::workflow::model::WorkflowSpec;
 use crate::config::cli::WorkflowFileCli;
-use crate::config::{AgentConfig, ExposeSecret};
+use crate::config::AgentConfig;
 use crate::runtime::cli::cli_effective_work_dir;
-use crate::cm_workflow::config::WorkflowConfig;
+use crate::workflow_config_bridge::workflow_config_from;
 
 fn load_author_yaml_source(path: &Path) -> Result<String, String> {
     let text =
@@ -120,9 +119,9 @@ fn load_validated_workflow(
     let spec = parse_workflow_spec_from_json(&args_json)?;
     // 加载期即校验工具名与 DAG 结构：`workflow run` 的前序节点可能已有副作用，
     // 拼错的 `tool_name` 必须在这里暴露，而不是执行到该节点才报 `unknown_tool`。
-    workflow_validate_tool_names(&spec)?;
-    workflow_validate_dag(&spec.nodes)?;
-    let layers = workflow_topo_layers(&spec.nodes)?;
+    // 编排只有 `validate_workflow_spec` 一份（#1383）：顺序与阶段划分与工具面 / doctor 相同。
+    // CLI 仍只打印 `detail`（不含阶段前缀），错误文案与退出码与合并前逐字一致。
+    let layers = validate_workflow_spec(&spec).map_err(|fail| fail.detail)?;
     Ok((author_mode, spec, layers))
 }
 
@@ -152,51 +151,7 @@ pub async fn run_workflow_run_command(
         return Err("workflow run：文件路径不能为空".to_string());
     }
     let args = serde_json::json!({ "workflow_file": rel }).to_string();
-    let wf_cfg = WorkflowConfig {
-        command_timeout_secs: cfg.command_exec.command_timeout_secs,
-        weather_timeout_secs: cfg.weather_tool.weather_timeout_secs,
-        web_search_timeout_secs: cfg.web_search.web_search_timeout_secs,
-        web_search_provider: cfg.web_search.web_search_provider.as_str().to_string(),
-        web_search_api_key: cfg
-            .web_search
-            .web_search_api_key
-            .expose_secret()
-            .to_string(),
-        web_search_max_results: cfg.web_search.web_search_max_results,
-        web_search_proxy: cfg.web_search.web_search_proxy.clone(),
-        http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
-        http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
-        http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),
-        allowed_commands: cfg.command_exec.allowed_commands.to_vec(),
-        command_max_output_len: cfg.command_exec.command_max_output_len,
-        test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
-        test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
-        codebase_semantic_enabled: cfg.codebase_semantic.codebase_semantic_search_enabled,
-        codebase_semantic_invalidate_on_workspace_change: cfg
-            .codebase_semantic
-            .codebase_semantic_invalidate_on_workspace_change,
-        codebase_semantic_index_sqlite_path: cfg
-            .codebase_semantic
-            .codebase_semantic_index_sqlite_path
-            .clone(),
-        codebase_semantic_max_file_bytes: cfg.codebase_semantic.codebase_semantic_max_file_bytes,
-        codebase_semantic_chunk_max_chars: cfg.codebase_semantic.codebase_semantic_chunk_max_chars,
-        codebase_semantic_top_k: cfg.codebase_semantic.codebase_semantic_top_k,
-        codebase_semantic_query_max_chunks: cfg
-            .codebase_semantic
-            .codebase_semantic_query_max_chunks,
-        codebase_semantic_rebuild_max_files: cfg
-            .codebase_semantic
-            .codebase_semantic_rebuild_max_files,
-        codebase_semantic_rebuild_incremental: cfg
-            .codebase_semantic
-            .codebase_semantic_rebuild_incremental,
-        codebase_semantic_hybrid_alpha: cfg.codebase_semantic.codebase_semantic_hybrid_alpha,
-        codebase_semantic_fts_top_n: cfg.codebase_semantic.codebase_semantic_fts_top_n,
-        codebase_semantic_hybrid_semantic_pool: cfg
-            .codebase_semantic
-            .codebase_semantic_hybrid_semantic_pool,
-    };
+    let wf_cfg = workflow_config_from(cfg);
     let (out, _workspace_changed) = run_workflow_execute_tool(
         &args,
         &wf_cfg,
