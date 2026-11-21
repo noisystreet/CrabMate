@@ -79,6 +79,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Removed
 
+- **BREAKING: the two Web turn build-arg bags are gone (#1379).** `WebChatStreamBuildArgs` (25 flat fields)
+  and `WebChatJsonBuildArgs` (22) — plus the `WebChatJobCommonParts` / `from_web_job_common` relay between
+  them and `TurnRequest` — collapse into one `WebTurnInputs` (12 fields) and an explicit
+  `WebTurnEndpoint::{Stream, Json}`. Both structs were `#[doc(hidden)]` and never entered the promise surface
+  (`fixtures/public_api_golden.txt` stays at 112 items), so only code that spelled
+  `crabmate::WebChatStreamBuildArgs` literally breaks. `TurnRequest::web_chat_stream` / `web_chat_json` are
+  removed with them: call `TurnRequest::web(shared, session, llm, inputs)` instead, which now owns the three
+  derivations both call sites used to copy (memory scope from `conversation_id`, trace span from
+  `job_id + conversation_id + request_id`, transport defaults). The endpoint difference is a single `match`,
+  so the JSON endpoint can no longer be handed a `cancel` flag that would be silently ignored.
 - **BREAKING: `tool_result_envelope_v1` / `CM_TOOL_RESULT_ENVELOPE_V1` are removed (#1440 K6/K7).** The flag
   let a deployment turn `role: tool` messages back into plain text, which made the whole evidence pipeline
   re-derive "was this a build?" from output wording. `crabmate_tool` is now the only shape. A
