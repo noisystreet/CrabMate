@@ -69,35 +69,7 @@ pub(in crate::tool_host::tool_registry::execute) fn read_dir_path_is_external(
     None
 }
 
-/// `AllowedRoots` 下「目标是否落在 {会话根} ∪ 允许根内」的三态判定。
-///
-/// - `None`：本档位用不上（`SessionRoot` / `Any`），**或**调用点给不出上下文
-///   （并行批预审批拿不到工作目录与根集合）。两种情况都**不定论**，交给下一个判定点——
-///   否则会对「本来就该放行」的目标先在并行批里弹一次窗，或在 L2 下误判硬拒。
-/// - `Some(true / false)`：明确在根内 / 越界。
-///
-/// 复用 [`crate::cm_tools::tools::PathAccess::is_within_scope`]：根选择与文件工具
-/// 同一套，不另写前缀比较（S7 的「不要第二套」）。
-fn allowed_roots_admits(
-    scope: crate::cm_types::PathScope,
-    ext_path: &str,
-    scope_ctx: Option<(&std::path::Path, &[std::path::PathBuf])>,
-) -> Option<bool> {
-    if scope != crate::cm_types::PathScope::AllowedRoots {
-        return None;
-    }
-    let (working_dir, allowed_roots) = scope_ctx?;
-    Some(
-        crate::cm_tools::tools::PathAccess::with_scope_and_roots(
-            working_dir,
-            scope,
-            allowed_roots,
-        )
-        .is_within_scope(ext_path),
-    )
-}
-
-async fn approve_external_read_dir_if_needed(
+pub(in crate::tool_host::tool_registry::execute) async fn approve_external_read_dir_if_needed(
     args: &str,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
@@ -124,8 +96,22 @@ async fn approve_external_read_dir_if_needed(
         // S7：`AllowedRoots`（L2 / L3 + 非空 `workspace_allowed_roots`）下，落在
         // {会话根} ∪ 允许根内的目标直接放行——不弹窗、**不记 `allowed`**（`allowed` 只由
         // L4 的 `AuditOnly` 记，设计 §6.3）；越界仍走下面的 `Deny` / 交互审批。
-        if allowed_roots_admits(caps.path_scope(), &ext_path, scope_ctx) == Some(true) {
-            return Ok(());
+        if caps.path_scope() == crate::cm_types::PathScope::AllowedRoots {
+            let Some((working_dir, allowed_roots)) = scope_ctx else {
+                // 预审批层拿不到工作目录 / 根集合：**不定论**，交给 `dispatch_tool` 里的
+                // 正式判定。这里若继续往下走，L2 会把「落在允许根内」的目标误判成硬拒，
+                // L3 会先多弹一次窗。
+                return Ok(());
+            };
+            let within = crate::cm_tools::tools::PathAccess::with_scope_and_roots(
+                working_dir,
+                caps.path_scope(),
+                allowed_roots,
+            )
+            .is_within_scope(&ext_path);
+            if within {
+                return Ok(());
+            }
         }
         if caps.approval() == crate::cm_agent::permission::ApprovalPolicy::Deny {
             crate::cm_agent::permission_audit::record_denied(

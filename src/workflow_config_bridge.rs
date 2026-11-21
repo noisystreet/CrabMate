@@ -83,6 +83,10 @@ mod tests {
         cfg.weather_tool.weather_timeout_secs = 13;
         cfg.chat_queues_cache.test_result_cache_enabled = true;
         cfg.codebase_semantic.codebase_semantic_top_k = 9;
+        // S7：多根集合也必须搬过去——漏搬的表现是「节点内读同级仓仍被拒」，
+        // 不会报错，所以必须落在这条「关键字段一一对上」的断言里。
+        cfg.workspace_roots.workspace_allowed_roots =
+            vec![std::path::PathBuf::from("/tmp/roots")];
 
         let wf = workflow_config_from(&cfg);
         assert_eq!(wf.command_timeout_secs, 7);

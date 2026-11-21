@@ -36,7 +36,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   closed back to `SessionRoot` — deliberately the opposite of the Web-selection rule ("empty = anywhere").
   `GET /permission` and `self_config_info` now report `path_scope = allowed_roots` in that configuration.
   `read_file`'s registered runner also stops dropping `path_scope` (it silently forced `SessionRoot`, so not
-  even L4 ever worked for that tool). The **command axis is not covered**: `run_command` /
+  even L4 ever worked for that tool), and user-message `@path` expansion now follows the same axis instead of
+  staying pinned to `SessionRoot`. The **command axis is not covered**: `run_command` /
   `terminal_session` argv and `cwd` gates still use the session root (#1315). The Docker sync sandbox keeps
   `SessionRoot` on purpose — there is no mount for sibling roots.
 - **No business frames after a terminal frame (#1338 E4/S1).** The SSE hub now **refuses to deliver** a turn's

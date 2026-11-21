@@ -360,24 +360,28 @@ impl<'a> PathAccess<'a> {
         let base_canonical = canonical_workspace_root(self.root)?;
         let absolute = unrestricted_target(&base_canonical, sub);
         let resolved = resolve_scope_target(&absolute, must_exist)?;
-        // 会话根优先：相对路径天然落在它之下，`SessionRoot` 的行为因此逐字不变。
-        if resolved.starts_with(&base_canonical) {
-            return Ok((self.root, relative_subpath(&resolved, &base_canonical)));
-        }
-        match self.longest_prefix_root(&resolved) {
-            Some(root) => Ok((root, relative_subpath(&resolved, root))),
-            None => Err(WorkspacePathError::OutsideAllowedRoots {
+        self.select_scope_root(&resolved, &base_canonical)
+            .ok_or_else(|| WorkspacePathError::OutsideAllowedRoots {
                 roots_display: self.allowed_roots_display(),
-            }),
-        }
+            })
     }
 
-    /// 允许根里**最长前缀**匹配的那一个；无匹配返回 `None`（越界）。
+    /// 在 **{会话根} ∪ 允许根**里选**最长前缀**匹配的根，并给出该根下的相对路径。
     ///
-    /// 独立成函数是为了压 `resolve_within_allowed_roots` 的 CCN（棘轮 ≤ 10）——
-    /// 语义不变，仍是「取最贴近目标的那层根」。
-    fn longest_prefix_root(&self, resolved: &Path) -> Option<&'a Path> {
+    /// 会话根与允许根同为候选：相对路径天然落在会话根之下，`SessionRoot` 档的行为因此
+    /// 逐字不变；而允许根是会话根的子孙时（如 `allowed_roots = [/w/sub]`、目标 `/w/sub/x`）
+    /// 会选中更深的那层，使 `openat2` `RESOLVE_IN_ROOT` 的界更贴近目标，而不是一律退回会话根。
+    ///
+    /// 独立成函数是为了压 `resolve_within_allowed_roots` 的 CCN（棘轮 ≤ 10）。
+    fn select_scope_root(
+        &self,
+        resolved: &Path,
+        base_canonical: &Path,
+    ) -> Option<(&'a Path, String)> {
         let mut best: Option<(&'a Path, usize)> = None;
+        if resolved.starts_with(base_canonical) {
+            best = Some((self.root, base_canonical.as_os_str().len()));
+        }
         for candidate in self.allowed_roots {
             if resolved.starts_with(candidate) {
                 let depth = candidate.as_os_str().len();
@@ -386,7 +390,14 @@ impl<'a> PathAccess<'a> {
                 }
             }
         }
-        best.map(|(root, _)| root)
+        let (root, _) = best?;
+        // 会话根这一支用 canonical 形式做前缀（`self.root` 本身未 canonicalize）。
+        let prefix: &Path = if std::ptr::eq(root, self.root) {
+            base_canonical
+        } else {
+            root
+        };
+        Some((root, relative_subpath(resolved, prefix)))
     }
 
     /// 越界文案里列出的根（仅允许根；会话根由工具层另行提示）。
