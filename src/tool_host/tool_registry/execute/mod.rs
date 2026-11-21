@@ -264,6 +264,10 @@ mod run_command_gate_tests;
 mod allowlist_scope_tests;
 
 #[cfg(test)]
+#[path = "execute_read_dir_gate_tests.rs"]
+mod read_dir_gate_tests;
+
+#[cfg(test)]
 mod tool_run_outcome_tests {
     use super::ToolRunOutcome;
 

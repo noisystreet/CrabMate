@@ -366,7 +366,24 @@ fn permission_section(cfg: &AgentConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{section_body, self_config_info, SECTION_NAMES};
+    use super::{permission_section, section_body, self_config_info, SECTION_NAMES};
+
+    /// S7：配了非空 `workspace_allowed_roots` ⇒ 自检的 `caps.path_scope` 必须是
+    /// `allowed_roots`。走 `caps_view()`（等价空根）会报 `session_root`，
+    /// 让运维以为白名单没生效——这条钉住「静态视图与 `project_caps` 同源」。
+    #[test]
+    fn permission_section_reports_allowed_roots_when_configured() {
+        let mut cfg = crate::config::load_config(None).expect("embed default config");
+        cfg.workspace_roots.workspace_allowed_roots = vec![std::path::PathBuf::from("/tmp/roots")];
+        let out = permission_section(&cfg);
+        assert!(out.contains("caps.path_scope = allowed_roots"), "{out}");
+
+        // 空根时必须退回 `session_root`（fail-closed）。
+        let mut empty = crate::config::load_config(None).expect("embed default config");
+        empty.workspace_roots.workspace_allowed_roots.clear();
+        let out = permission_section(&empty);
+        assert!(out.contains("caps.path_scope = session_root"), "{out}");
+    }
 
     #[test]
     fn default_config_lists_llm_and_redacts_secrets() {
