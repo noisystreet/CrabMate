@@ -207,6 +207,10 @@ pub(super) struct AgentSection {
     pub(super) autonomy_max_tasks: Option<u64>,
     /// 任务状态文件存活秒数；`0` = 不按时间清理。
     pub(super) autonomy_task_ttl_secs: Option<u64>,
+    /// 跨回合累计三项上限（软闸，`0` = 不限制）。B 步（`#1455`）。
+    pub(super) autonomy_max_cumulative_llm_calls: Option<u64>,
+    pub(super) autonomy_max_cumulative_tokens: Option<u64>,
+    pub(super) autonomy_max_cumulative_secs: Option<u64>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

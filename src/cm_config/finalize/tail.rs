@@ -28,6 +28,9 @@ pub(super) struct FinalizeTailScalars {
     pub(super) autonomy_enabled: bool,
     pub(super) autonomy_max_tasks: usize,
     pub(super) autonomy_task_ttl_secs: u64,
+    pub(super) autonomy_max_cumulative_llm_calls: u32,
+    pub(super) autonomy_max_cumulative_tokens: usize,
+    pub(super) autonomy_max_cumulative_secs: u64,
     pub(super) tool_message_max_chars: usize,
     pub(super) sse_tool_call_include_arguments: bool,
     pub(super) agent_thinking_trace_enabled: bool,
@@ -125,6 +128,9 @@ struct TailPlanToolThinkingScalars {
     autonomy_enabled: bool,
     autonomy_max_tasks: usize,
     autonomy_task_ttl_secs: u64,
+    autonomy_max_cumulative_llm_calls: u32,
+    autonomy_max_cumulative_tokens: usize,
+    autonomy_max_cumulative_secs: u64,
     tool_message_max_chars: usize,
     sse_tool_call_include_arguments: bool,
     agent_thinking_trace_enabled: bool,
@@ -200,6 +206,18 @@ fn derive_tail_plan_tool_thinking_scalars(
         .task_ttl_secs
         .unwrap_or(604_800)
         .min(31_536_000);
+    // B 步（#1455）：跨回合累计三项上限，**软闸**，`0` = 不限制。
+    let autonomy_max_cumulative_llm_calls = b
+        .autonomy
+        .max_cumulative_llm_calls
+        .unwrap_or(0)
+        .min(u32::MAX as u64) as u32;
+    let autonomy_max_cumulative_tokens = b
+        .autonomy
+        .max_cumulative_tokens
+        .unwrap_or(0)
+        .min(usize::MAX as u64) as usize;
+    let autonomy_max_cumulative_secs = b.autonomy.max_cumulative_secs.unwrap_or(0);
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -249,6 +267,9 @@ fn derive_tail_plan_tool_thinking_scalars(
         autonomy_enabled,
         autonomy_max_tasks,
         autonomy_task_ttl_secs,
+        autonomy_max_cumulative_llm_calls,
+        autonomy_max_cumulative_tokens,
+        autonomy_max_cumulative_secs,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
@@ -712,6 +733,9 @@ fn assemble_finalize_tail_scalars(
         autonomy_enabled,
         autonomy_max_tasks,
         autonomy_task_ttl_secs,
+        autonomy_max_cumulative_llm_calls,
+        autonomy_max_cumulative_tokens,
+        autonomy_max_cumulative_secs,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
@@ -774,6 +798,9 @@ fn assemble_finalize_tail_scalars(
         autonomy_enabled,
         autonomy_max_tasks,
         autonomy_task_ttl_secs,
+        autonomy_max_cumulative_llm_calls,
+        autonomy_max_cumulative_tokens,
+        autonomy_max_cumulative_secs,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,

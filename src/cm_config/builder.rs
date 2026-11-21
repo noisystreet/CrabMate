@@ -261,6 +261,15 @@ impl ConfigBuilder {
         au.enabled = agent.autonomy_enabled.or(au.enabled);
         au.max_tasks = agent.autonomy_max_tasks.or(au.max_tasks);
         au.task_ttl_secs = agent.autonomy_task_ttl_secs.or(au.task_ttl_secs);
+        au.max_cumulative_llm_calls = agent
+            .autonomy_max_cumulative_llm_calls
+            .or(au.max_cumulative_llm_calls);
+        au.max_cumulative_tokens = agent
+            .autonomy_max_cumulative_tokens
+            .or(au.max_cumulative_tokens);
+        au.max_cumulative_secs = agent
+            .autonomy_max_cumulative_secs
+            .or(au.max_cumulative_secs);
         let am = &mut self.agents_md;
         am.agents_md_enabled = agent.agents_md_enabled.or(am.agents_md_enabled);
         am.agents_md_max_chars = agent.agents_md_max_chars.or(am.agents_md_max_chars);

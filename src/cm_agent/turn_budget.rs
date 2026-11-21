@@ -90,6 +90,30 @@ impl TurnBudgetDeny {
     }
 }
 
+/// 跨回合累计的**起点**（`#1455` B 步）。
+///
+/// 用途：把上一次暂停时的累计消耗注入新回合的计数器，让 `*_exceeded` 的 `>=` 比较
+/// **天然覆盖跨回合口径——判定逻辑一行不改**（见设计文档判据 1）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BudgetSpent {
+    pub llm_calls: u32,
+    pub estimated_tokens: usize,
+    /// 已消耗墙钟秒数。作为**偏移**注入：`Instant` 不可持久化、跨进程无意义，
+    /// 所以这里记「累计秒数」而不是「起始时刻」。不含暂停等待时间（暂停期间没消耗）。
+    pub elapsed_secs: u64,
+}
+
+/// 跨回合累计上限（`#1455` B 步；全 `0` = 不限制）。
+///
+/// 与 [`TurnBudgetConfig`] 的 `max_turn_*` **刻意分开**：同一配置键不得因另一个开关
+/// 改变语义（否则运维无法预测「开了 autonomy 之后单轮上限去哪了」）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CumulativeCaps {
+    pub llm_calls: u32,
+    pub tokens: usize,
+    pub secs: u64,
+}
+
 /// 单轮共享预算计数（`Arc` 供分层并行子任务与外循环共用）。
 #[derive(Debug)]
 pub struct TurnBudgetCounter {
@@ -101,24 +125,72 @@ pub struct TurnBudgetCounter {
     /// 已向模型提示过的预算档位（`0` / `70` / `90`）。**跨档才再提示**：同一档内每轮重发
     /// 会让每轮 `system` 都变，白废一次 prompt cache（#1326 方向的反向操作）。
     notice_tier: std::sync::atomic::AtomicU8,
+    /// 注入的墙钟偏移（跨回合累计；本回合新建且无历史时为 `0`）。
+    elapsed_base_secs: u64,
+    /// 注入的完整起点。保留它是为了让调用方能把「累计值」换算回「本回合增量」——
+    /// 计数器本身从起点开始累加，所以 `llm_calls()` 等读到的已是**累计**口径。
+    base: BudgetSpent,
 }
 
 impl TurnBudgetCounter {
     #[inline]
     pub fn new_shared() -> Arc<Self> {
+        Self::new_shared_with_spent(BudgetSpent::default())
+    }
+
+    /// 带**跨回合起点**的计数器（`#1455` B 步）。
+    ///
+    /// 语义是「累计 = 起点 + 本回合增量」：起点只喂计数器初值，判定逻辑不变。
+    #[must_use]
+    pub fn new_shared_with_spent(prior: BudgetSpent) -> Arc<Self> {
         Arc::new(Self {
             started_at: Instant::now(),
-            llm_calls: AtomicU32::new(0),
+            llm_calls: AtomicU32::new(prior.llm_calls),
             outer_loop_iterations: AtomicU32::new(0),
-            estimated_tokens: AtomicUsize::new(0),
+            estimated_tokens: AtomicUsize::new(prior.estimated_tokens),
             degradation_active: AtomicBool::new(false),
             notice_tier: std::sync::atomic::AtomicU8::new(0),
+            elapsed_base_secs: prior.elapsed_secs,
+            base: prior,
         })
+    }
+
+    /// 注入的起点（无历史时全 `0`）。调用方用它把累计值换算回本回合增量。
+    #[inline]
+    #[must_use]
+    pub fn spent_base(&self) -> BudgetSpent {
+        self.base
+    }
+
+    /// **本回合增量** LLM 调用数（不含注入起点）。
+    ///
+    /// 单轮上限判定与预算压力展示都必须用它，否则「开了 autonomy 就把单轮上限变成
+    /// 累计上限」——那正是配置语义漂移（见 [`CumulativeCaps`] 文档）。
+    #[inline]
+    #[must_use]
+    pub fn llm_calls_this_turn(&self) -> u32 {
+        self.llm_calls().saturating_sub(self.base.llm_calls)
+    }
+
+    /// **本回合增量** Token 粗估（不含注入起点）。
+    #[inline]
+    #[must_use]
+    pub fn estimated_tokens_this_turn(&self) -> usize {
+        self.estimated_tokens()
+            .saturating_sub(self.base.estimated_tokens)
+    }
+
+    /// **本回合真实耗时**秒（不含注入的墙钟偏移）。
+    #[inline]
+    #[must_use]
+    pub fn elapsed_secs_this_turn(&self) -> u64 {
+        self.started_at.elapsed().as_secs()
     }
 
     #[inline]
     pub fn elapsed_secs(&self) -> u64 {
-        self.started_at.elapsed().as_secs()
+        self.elapsed_base_secs
+            .saturating_add(self.started_at.elapsed().as_secs())
     }
 
     /// 记录一次 LLM 调用；返回记录后的累计次数。
@@ -157,22 +229,43 @@ impl TurnBudgetCounter {
         self.outer_loop_iterations.load(Ordering::Relaxed)
     }
 
-    /// 墙钟是否已超配置上限。
+    /// 墙钟是否已超**单轮**上限（只算本回合真实耗时，不含注入偏移）。
     #[inline]
     pub fn wall_clock_exceeded(&self, cfg: &TurnBudgetConfig) -> bool {
-        turn_wall_clock_exceeded(cfg.max_turn_duration_seconds, self.elapsed_secs())
+        turn_wall_clock_exceeded(cfg.max_turn_duration_seconds, self.elapsed_secs_this_turn())
     }
 
-    /// 累计 LLM 调用是否已超上限（`max_llm_calls_per_turn == 0` 表示不限制）。
+    /// **本回合** LLM 调用是否已超单轮上限（`max_llm_calls_per_turn == 0` 表示不限制）。
     #[inline]
     pub fn llm_calls_exceeded(&self, max_llm_calls_per_turn: u32) -> bool {
-        max_llm_calls_per_turn > 0 && self.llm_calls() >= max_llm_calls_per_turn
+        max_llm_calls_per_turn > 0 && self.llm_calls_this_turn() >= max_llm_calls_per_turn
     }
 
-    /// Token 粗估是否已超上限（`max_turn_tokens == 0` 表示不限制）。
+    /// **本回合** Token 粗估是否已超单轮上限（`max_turn_tokens == 0` 表示不限制）。
     #[inline]
     pub fn tokens_exceeded(&self, max_turn_tokens: usize) -> bool {
-        max_turn_tokens > 0 && self.estimated_tokens() >= max_turn_tokens
+        max_turn_tokens > 0 && self.estimated_tokens_this_turn() >= max_turn_tokens
+    }
+
+    /// 是否已超**跨回合累计**上限（`CumulativeCaps` 全 `0` 时恒 `false`）。
+    ///
+    /// 用累计口径（`llm_calls()` / `estimated_tokens()` / `elapsed_secs()`，均含注入起点），
+    /// 与上面的单轮判定严格分开——两组上限互不改写语义。
+    #[inline]
+    pub fn deny_if_cumulative_exhausted(
+        &self,
+        caps: &CumulativeCaps,
+    ) -> Result<(), TurnBudgetDeny> {
+        if caps.secs > 0 && self.elapsed_secs() >= caps.secs {
+            return Err(TurnBudgetDeny::WallClock);
+        }
+        if caps.llm_calls > 0 && self.llm_calls() >= caps.llm_calls {
+            return Err(TurnBudgetDeny::LlmCalls);
+        }
+        if caps.tokens > 0 && self.estimated_tokens() >= caps.tokens {
+            return Err(TurnBudgetDeny::Tokens);
+        }
+        Ok(())
     }
 
     /// 外循环迭代是否已超上限（`max_outer_loop_iterations == 0` 表示不限制）。
@@ -181,17 +274,21 @@ impl TurnBudgetCounter {
         max_outer_loop_iterations > 0 && self.outer_loop_iterations() >= max_outer_loop_iterations
     }
 
-    /// 当前预算使用比例（0–100），取 LLM 次数与 Token 粗估的较高者。
+    /// 当前**本回合**预算使用比例（0–100），取 LLM 次数与 Token 粗估的较高者。
+    ///
+    /// 用本回合增量而非累计值：压力提示与降级开关的语义是「这一回合快撑不住了」，
+    /// 若按累计算，开了 autonomy 的续跑回合会一开局就 90%+，立刻降级 + 发提示。
     #[inline]
     pub fn budget_usage_percent(&self, cfg: &TurnBudgetConfig) -> u8 {
         let max_llm = effective_max_llm_calls_per_turn(cfg);
         let llm_pct = if max_llm > 0 {
-            ((self.llm_calls() as u64 * 100) / max_llm as u64).min(100) as u8
+            ((self.llm_calls_this_turn() as u64 * 100) / max_llm as u64).min(100) as u8
         } else {
             0
         };
         let token_pct = if cfg.max_turn_tokens > 0 {
-            ((self.estimated_tokens() as u64 * 100) / cfg.max_turn_tokens as u64).min(100) as u8
+            ((self.estimated_tokens_this_turn() as u64 * 100) / cfg.max_turn_tokens as u64)
+                .min(100) as u8
         } else {
             0
         };
@@ -271,6 +368,79 @@ pub fn effective_max_llm_calls_per_turn(cfg: &TurnBudgetConfig) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `#1455` B 步核心不变量：注入起点后，**单轮**与**累计**两套口径必须能分开读。
+    ///
+    /// 这是对一次真实缺陷的回归保护：若单轮判定误用累计值（`llm_calls()` 而非
+    /// `llm_calls_this_turn()`），「历史 90 + 本回合 5 < 单轮上限 100」会被判超限——
+    /// 等于「开 autonomy 就把 `max_turn_*` 静默变成累计上限」。
+    #[test]
+    fn injected_base_is_not_counted_as_this_turn_usage() {
+        let counter = TurnBudgetCounter::new_shared_with_spent(BudgetSpent {
+            llm_calls: 90,
+            estimated_tokens: 9000,
+            elapsed_secs: 500,
+        });
+        // 累计口径含起点。
+        assert_eq!(counter.llm_calls(), 90);
+        assert_eq!(counter.estimated_tokens(), 9000);
+        assert_eq!(counter.elapsed_secs(), 500);
+        // 本回合增量从 0 起——单轮判定与预算压力都读这一组。
+        assert_eq!(counter.llm_calls_this_turn(), 0);
+        assert_eq!(counter.estimated_tokens_this_turn(), 0);
+        assert_eq!(counter.elapsed_secs_this_turn(), 0);
+
+        counter.record_llm_call();
+        counter.record_estimated_tokens(100);
+        assert_eq!(counter.llm_calls(), 91, "累计含起点");
+        assert_eq!(counter.llm_calls_this_turn(), 1, "本回合只用了 1 次");
+        assert_eq!(counter.estimated_tokens_this_turn(), 100);
+    }
+
+    /// 累计上限全 0 = 不限制（默认口径，保证「开着但不配」与今天行为一致）。
+    #[test]
+    fn zero_cumulative_caps_mean_unlimited() {
+        let counter = TurnBudgetCounter::new_shared_with_spent(BudgetSpent {
+            llm_calls: 1_000_000,
+            estimated_tokens: 1_000_000,
+            elapsed_secs: 1_000_000,
+        });
+        assert!(
+            counter
+                .deny_if_cumulative_exhausted(&CumulativeCaps::default())
+                .is_ok()
+        );
+    }
+
+    /// 累计上限按**累计值**触发（与本回合增量无关）。
+    #[test]
+    fn cumulative_caps_trigger_on_total_not_on_this_turn() {
+        let counter = TurnBudgetCounter::new_shared_with_spent(BudgetSpent {
+            llm_calls: 90,
+            estimated_tokens: 0,
+            elapsed_secs: 0,
+        });
+        let caps = CumulativeCaps {
+            llm_calls: 100,
+            tokens: 0,
+            secs: 0,
+        };
+        assert!(
+            counter.deny_if_cumulative_exhausted(&caps).is_ok(),
+            "累计 90 < 100 不该拒"
+        );
+        for _ in 0..10 {
+            counter.record_llm_call();
+        }
+        assert_eq!(counter.llm_calls_this_turn(), 10, "本回合只用了 10 次");
+        assert!(
+            matches!(
+                counter.deny_if_cumulative_exhausted(&caps),
+                Err(TurnBudgetDeny::LlmCalls)
+            ),
+            "累计达到 100 应拒——与本回合只用了 10 次无关"
+        );
+    }
 
     #[test]
     fn zero_means_unlimited_wall_clock() {

@@ -12,4 +12,17 @@ pub(super) fn apply(b: &mut ConfigBuilder) {
         &mut b.autonomy.task_ttl_secs,
         "CM_AUTONOMY_TASK_TTL_SECS",
     );
+    // B 步（#1455）：跨回合累计三项上限，**软闸**，默认 0 = 不限制。
+    apply_parse(
+        &mut b.autonomy.max_cumulative_llm_calls,
+        "CM_AUTONOMY_MAX_CUMULATIVE_LLM_CALLS",
+    );
+    apply_parse(
+        &mut b.autonomy.max_cumulative_tokens,
+        "CM_AUTONOMY_MAX_CUMULATIVE_TOKENS",
+    );
+    apply_parse(
+        &mut b.autonomy.max_cumulative_secs,
+        "CM_AUTONOMY_MAX_CUMULATIVE_SECS",
+    );
 }

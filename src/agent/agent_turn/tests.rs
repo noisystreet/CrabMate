@@ -193,6 +193,7 @@ mod per_reflect_tests {
                 turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
                 context_timeline: Default::default(),
                 model_context_artifacts: Vec::new(),
+                paused_reason: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
             },
         };

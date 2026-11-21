@@ -419,6 +419,27 @@ fn assemble_run_loop_params<'a>(
             None
         };
 
+    // B 步（`#1455`）：跨回合预算**起点**。放在 `RunLoopParams` 构造之前，因为
+    // `long_term_memory_scope_id` 随后会被 move 进 `attach`。
+    // **fail-open**：关闭 / 工作区未设置 / 无 scope / 读失败 ⇒ 全 0。
+    let prior_budget = {
+        let mut prior = crate::agent::turn_budget::BudgetSpent::default();
+        if cfg.autonomy.enabled
+            && workspace_is_set
+            && let Some(scope) = long_term_memory_scope_id.as_deref()
+            && let Ok(Some(state)) = crate::cm_agent::task_state::TaskStateStore::new(
+                effective_working_dir,
+                &cfg.autonomy,
+            )
+            .load(scope)
+        {
+            prior.llm_calls = state.cumulative.llm_calls;
+            prior.estimated_tokens = state.cumulative.estimated_tokens;
+            prior.elapsed_secs = state.cumulative.elapsed_secs;
+        }
+        prior
+    };
+
     RunLoopParams {
         ctx: RunLoopCtx {
             core: RunLoopCore {
@@ -473,10 +494,13 @@ fn assemble_run_loop_params<'a>(
             executor_api_base,
             executor_api_key,
             seed_override,
-            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared_with_spent(
+                prior_budget,
+            ),
             context_timeline: Default::default(),
             model_context_artifacts: Vec::new(),
             provider_usage: Arc::new(std::sync::Mutex::new(None)),
+            paused_reason: Arc::new(std::sync::Mutex::new(None)),
         },
     }
 }
