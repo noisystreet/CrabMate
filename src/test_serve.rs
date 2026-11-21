@@ -116,6 +116,9 @@ pub async fn start_test_serve_with_config(
             workspace_override: Arc::new(tokio::sync::RwLock::new(None)),
             uploads_dir: uploads_dir.clone(),
             workspace_git_cache: Arc::new(web::WorkspaceGitCache::default()),
+            run_epoch: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::cm_agent::run_epoch::RunEpoch::new(),
+            )),
         },
         chat: web::AppStateChatRuntime {
             chat_queue: chat_queue.clone(),

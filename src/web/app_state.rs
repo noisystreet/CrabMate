@@ -58,6 +58,8 @@ pub(crate) struct AppStateHttpCore {
     pub(crate) uploads_dir: std::path::PathBuf,
     /// `GET /workspace/git` 的只读投影缓存（TTL + single-flight，见 `web::workspace::git_projection`）。
     pub(crate) workspace_git_cache: Arc<WorkspaceGitCache>,
+    /// `#1455` C 步：自动续跑账本（见 [`WebChatJobAppFacet::run_epoch`] 的说明）。
+    pub(crate) run_epoch: Arc<std::sync::Mutex<crate::cm_agent::run_epoch::RunEpoch>>,
 }
 
 /// 由工作区覆盖 + 共享配置解析当前有效工作区根（空串表示未设置）。
@@ -171,6 +173,10 @@ pub(crate) struct AppState {
 #[derive(Clone)]
 pub(crate) struct WebChatJobAppFacet {
     pub(crate) conversation: AppStateConversationRuntime,
+    /// `#1455` C 步：单会话自动续跑的**进程内**账本（轮数硬闸 + 无进展检测的真源）。
+    ///
+    /// 必须进程内：真源若是 `.crabmate/tasks/*.json`，删文件即可绕过硬闸。重启归零是期望行为。
+    pub(crate) run_epoch: Arc<std::sync::Mutex<crate::cm_agent::run_epoch::RunEpoch>>,
     pub(crate) process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
     /// 后台任务注册表（`run_command` 的 `async=true`）。

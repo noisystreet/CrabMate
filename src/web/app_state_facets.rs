@@ -142,6 +142,8 @@ pub(crate) struct WebChatTurnAppFacet {
     pub(crate) async_chat_jobs: AsyncChatJobsMap,
     /// 后台任务注册表（`run_command` 的 `async=true`）。
     pub(crate) tool_job_registry: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
+    /// `#1455` C 步：自动续跑账本（进程内轮数硬闸 + 无进展检测）。
+    pub(crate) run_epoch: Arc<std::sync::Mutex<crate::cm_agent::run_epoch::RunEpoch>>,
 }
 
 /// 仅 `GET` 异步任务状态：只持 `async_chat_jobs`。
@@ -341,6 +343,7 @@ impl WebChatTurnAppFacet {
     pub(crate) fn chat_job_app_facet(&self) -> WebChatJobAppFacet {
         WebChatJobAppFacet {
             conversation: self.conversation.clone(),
+            run_epoch: Arc::clone(&self.run_epoch),
             process_handles: self.process_handles.turn_handles_arc(),
             approval_sessions: Arc::clone(&self.approval_sessions),
             tool_job_registry: Arc::clone(&self.tool_job_registry),
@@ -436,6 +439,7 @@ impl FromRef<Arc<AppState>> for WebChatTurnAppFacet {
             sse_stream_hub: Arc::clone(&state.aux.sse_stream_hub),
             async_chat_jobs: Arc::clone(&state.aux.async_chat_jobs),
             tool_job_registry: Arc::clone(&state.aux.tool_job_registry),
+            run_epoch: Arc::clone(&state.http.run_epoch),
         }
     }
 }

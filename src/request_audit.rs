@@ -28,6 +28,19 @@ impl WebRequestAudit {
             source: "scheduled",
         }
     }
+
+    /// `#1455` C 步：自动续跑回合的占位审计——它**没有** HTTP 请求。
+    ///
+    /// 与 [`Self::scheduled_placeholder`] 分开是为了让审计能区分「定时任务」与
+    /// 「用户请求的自动续跑」：两者的合规含义不同（后者继承了某次用户请求的授权）。
+    pub(crate) fn auto_resume_placeholder() -> Self {
+        Self {
+            peer_ip: IpAddr::from([0, 0, 0, 0]),
+            client_ip: "auto_resume".to_string(),
+            bearer_fp: None,
+            source: "auto_resume",
+        }
+    }
 }
 
 fn sha256_hex_prefix(secret: &[u8], prefix_hex_chars: usize) -> String {
