@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::cm_agent::turn_budget::TurnBudgetDeny;
+use crate::cm_agent::turn_origin::TurnOrigin;
 use crate::cm_config::AutonomyConfig;
 
 /// 落盘 schema 版本。读取时只接受当前版本，其余视为不可读（不猜测迁移）。
@@ -152,6 +153,9 @@ pub struct TaskState {
     /// 与「读失败当 0」的 fail-open 口径一致，不引入迁移分支。
     #[serde(default)]
     pub cumulative: TaskBudgetSnapshot,
+    /// 本轮是怎么发起的（`#1455` C 步）。与「发了什么」正交；旧文件缺省为 `User`。
+    #[serde(default)]
+    pub origin: TurnOrigin,
     pub evidence: Vec<TaskEvidenceRef>,
     /// 最后写入时刻（RFC3339，UTC）。
     pub updated_at: String,
@@ -179,6 +183,7 @@ impl TaskState {
             budget,
             // 首次暂停时「累计」自然等于「本次」——没有更早的历史。
             cumulative: budget,
+            origin: TurnOrigin::User,
             evidence: cap_evidence(evidence),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -188,6 +193,13 @@ impl TaskState {
     #[must_use]
     pub fn with_cumulative(mut self, cumulative: TaskBudgetSnapshot) -> Self {
         self.cumulative = cumulative;
+        self
+    }
+
+    /// 覆盖本轮发起者（`#1455` C 步接线用；默认 [`TurnOrigin::User`]）。
+    #[must_use]
+    pub fn with_origin(mut self, origin: TurnOrigin) -> Self {
+        self.origin = origin;
         self
     }
 }

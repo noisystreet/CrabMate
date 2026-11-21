@@ -30,6 +30,7 @@ pub mod text_sanitize;
 pub mod turn_budget;
 /// L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）：`paused` 落盘，**不含续跑**。
 pub mod task_state;
+pub mod turn_origin;
 /// 回合上下文时间线收集（注入 / 裁剪；不发 SSE）。
 pub mod context_timeline;
 pub mod workflow_reflection_controller;
