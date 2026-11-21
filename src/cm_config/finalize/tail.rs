@@ -212,11 +212,8 @@ fn derive_tail_plan_tool_thinking_scalars(
         .max_cumulative_llm_calls
         .unwrap_or(0)
         .min(u32::MAX as u64) as u32;
-    let autonomy_max_cumulative_tokens = b
-        .autonomy
-        .max_cumulative_tokens
-        .unwrap_or(0)
-        .min(usize::MAX as u64) as usize;
+    // Token 上限用 `as usize`（本仓只支持 64 位目标，见 AGENTS.md 工具链要求）。
+    let autonomy_max_cumulative_tokens = b.autonomy.max_cumulative_tokens.unwrap_or(0) as usize;
     let autonomy_max_cumulative_secs = b.autonomy.max_cumulative_secs.unwrap_or(0);
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
