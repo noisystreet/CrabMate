@@ -600,12 +600,15 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 
 - **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；
   冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。原软能力 `terminal_order` 已删（B4/P3；终态序恒为新序）。
-- **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；
+- **前端（单序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；
+  ~~亦接受旧序（终态后再来 `conversation_saved`）~~ 已在 `crabmate-client` 删除（E4/S4）。
   `stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、
-  不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
-- hydration：same-revision 守卫仍保留（E4 前不删）。回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web **双读**：
-  响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）；无 `layout` 走纯 legacy。
+  不置 `saw_stream_ended`。
+- hydration：~~same-revision 守卫（E4 前不删）~~ 已随 E4/S4 在 `crabmate-client` 删除；本仓从未有该实现。
+  回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web 消费 v2 `layout`：
+  响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）。
   旧库行若 `layout_meta_json` 为空，GET 曾**省略**该键——B4/P4 起 `layout` 键**总是**出现，未持久化为 `null`。
+  服务端**仍有** `layout = null` 分支（S3 未做），Client 的 legacy merge 已删：这段窗口的兜底语义须随 S3 一并确认。
 - Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；
   流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`；hydration / 冷启动双读 `layout` 但历史行仍是 legacy id，完整同键投影尚未成为权威。
 
@@ -667,7 +670,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | 服务端 revision 更新 | 重新确定性投影 |
 | revision 相同且 projection hash/version 相同 | 跳过计算 |
 | revision 相同但 hash/version 不同 | 重新投影并记诊断 |
-| 旧会话缺布局元数据 | legacy merge，标记 `legacy_projection` |
+| 旧会话缺布局元数据 | ~~legacy merge，标记 `legacy_projection`~~ Client 已删（S4）；服务端须先做 S3 让 `layout` 必有 |
 | 本地空 / 跨浏览器 / 缓存丢失 | 仅从 canonical 生成，与原浏览器一致 |
 
 ### 16.5 迁移阶段（expand → contract）
@@ -678,7 +681,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
 | **E1** | 修正终态顺序（expand-first）：前端吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；~~`terminal_order` 软能力~~（B4/P3 已删） | ✅ 已落地（兼容层 B1） |
 | **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | persist（保存写 `layout`）✅；hydration 仍走 legacy（E3） |
 | **E3** | 双读：新会话写元数据；hydration 消费 `layout` 记差分（行数/角色序/文本 hash）；GET 历史保持 legacy 行 id（完整同键投影待 Client 可复用投影器）；无元数据走 legacy | ✅ Client 双读观测；不 stamp 流式活键；E4 前**不**删 same-revision 守卫 |
-| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 🟡 S1（#1338）**已落地**：终态后回合业务帧拒绝投递（不占 `seq`、不入 ring）；`Error → Finished` 与 `tool_job_finished` 例外放行。same-revision（本仓无实现，转 Client）+ legacy merge/dedupe（待 backfill）仍未做 |
+| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 🟢 **S1 已落地**（#1338 / PR #1454）：终态后回合业务帧拒绝投递（不占 `seq`、不入 ring）；`Error → Finished` 与 `tool_job_finished` 例外放行。**S2（本仓无实现）+ S4 已落地**（`crabmate-client`）：旧序兼容、same-revision 守卫、legacy merge/dedupe 均删。**S3 未做**：`backfill-layout` 已就绪，待「库内 legacy 行 = 0」后删 `GET /conversation/messages` 的 `null` 读路径 |
 
 **E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；
 线上无终态后业务事件；legacy 会话比例可接受——该比例由 **`crabmate doctor`** 的「会话布局覆盖率」给出

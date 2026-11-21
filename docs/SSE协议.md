@@ -357,8 +357,9 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 
 - **服务端（新序）**：可选 **`stream_draining`** → 落盘 → **`conversation_saved`** →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED` / `RUN_ERROR`。
   首帧不再下发 `terminal_order`（B4/P3 已删除该软字段）；终态序**恒为**新序，`SSE_PROTOCOL_VERSION` 不变。
-- **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，
-  由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
+- **官方 Web（单序）**：仍在 `RUN_FINISHED` 后继续读 body；~~亦接受旧序（`RUN_FINISHED` 后再来
+  `conversation_saved`）~~ 该兼容已在 `crabmate-client` 删除（#1338 E4/S4）。`on_done` 至多一次，
+  由 body 消费完成驱动。
 - **后续收缩（E4）**：~~待删除「终态后业务帧」兼容等~~ → **S1 已落地（#1338）**，见下一条。
 - **服务端闸门（E4/S1，`#1338`）**：终态之后的**回合业务帧不再下发**——`sse::stream_hub` 在分配 `seq`
   之前判定，命中即拒绝投递：不占序号、不入重连环形缓冲、不广播（`stream_resume` 因此不会出现序号空洞）。
