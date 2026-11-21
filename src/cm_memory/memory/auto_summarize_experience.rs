@@ -26,9 +26,7 @@ fn last_non_injection_user_index(messages: &[Message]) -> Option<usize> {
         if m.role != "user" {
             continue;
         }
-        if crate::cm_types::is_long_term_memory_injection(m)
-            || crate::cm_types::is_workspace_changelist_injection(m)
-        {
+        if crate::cm_types::server_injected_user::is_runtime_refreshed_injection(m) {
             continue;
         }
         let c = message_content_as_str(&m.content)?.trim();

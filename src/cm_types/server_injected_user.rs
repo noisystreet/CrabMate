@@ -2,7 +2,7 @@
 
 use crate::cm_types::message::{
     CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
-    CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PLAN_REWRITE_NAME,
+    CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME,
     CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
     message_content_as_str,
 };
@@ -30,7 +30,27 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
             | Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME)
             | Some(CRABMATE_PLAN_REWRITE_NAME)
             | Some(CRABMATE_CONTEXT_SUMMARY_NAME)
+            | Some(CRABMATE_PAUSED_TASK_NAME)
     )
+}
+
+/// **由运行时每次 prepare 重新注入**的那一类（落盘里的旧副本必须剥离，否则会与
+/// 最新状态各说一套）。这是新增注入类型时**唯一**需要登记的地方。
+///
+/// 与 [`is_server_injected_user_message`] 的区别：后者还包含**要发给模型**的注入
+/// （首轮工作区画像、上下文摘要、plan rewrite 等），把它们一并剔除会改变模型输入。
+pub fn is_runtime_refreshed_injection(m: &Message) -> bool {
+    crate::cm_types::is_long_term_memory_injection(m)
+        || crate::cm_types::is_workspace_changelist_injection(m)
+        || crate::cm_types::is_paused_task_injection(m)
+}
+
+/// 落盘 / 快照前剥离「运行时刷新类」注入（LTM / 变更集 / 暂停任务摘要）。
+///
+/// 挂这里而不是各自实现：新增一类刷新型注入时只改 [`is_runtime_refreshed_injection`]，
+/// 所有剥离点自动跟上。
+pub fn strip_runtime_refreshed_injections(messages: &mut Vec<Message>) {
+    messages.retain(|m| !is_runtime_refreshed_injection(m));
 }
 
 /// 落盘前剥离：编排类注入 user（保留首轮工作区画像、上下文摘要等仍须持久化的注入）。

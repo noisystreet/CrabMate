@@ -223,11 +223,6 @@ fn strip_changelist_messages(messages: &mut Vec<crate::cm_types::Message>) {
     messages.retain(|m| !crate::cm_types::is_workspace_changelist_injection(m));
 }
 
-/// 持久化/返回客户端前移除变更集注入条（与长期记忆注入同理，由运行时每次刷新）。
-pub fn strip_workspace_changelist_injections(messages: &mut Vec<crate::cm_types::Message>) {
-    messages.retain(|m| !crate::cm_types::is_workspace_changelist_injection(m));
-}
-
 /// 写盘成功后：按相对路径读回当前全文并记入变更集（`before` 为写前快照，`None` 表示当时不存在）。
 pub fn record_file_state_after_write(
     cl: Option<&Arc<WorkspaceChangelist>>,

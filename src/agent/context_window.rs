@@ -720,6 +720,8 @@ pub struct PrepareMessagesForModelHooks<'a> {
     pub model_override: Option<&'a str>,
     pub workspace_changelist:
         Option<&'a crate::workspace::changelist::WorkspaceChangelist>,
+    /// `#1455` B 步：跨回合任务状态摘要（`render_task_brief` 的产物，`None` = 不注入）。
+    pub paused_task_brief: Option<&'a str>,
     pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
     pub run_loop_messages_revision: Option<&'a mut u64>,
     pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
@@ -755,6 +757,12 @@ pub async fn prepare_messages_for_model(
             .session_workspace_changelist_enabled,
         cfg.session_workspace_changelist
             .session_workspace_changelist_max_chars,
+    );
+    // `#1455` B 步：任务状态摘要。与变更集同一位置、同一刷新模式——都在同步压缩之后、
+    // token 预算收尾之前，因此它也计入本轮的 token 预算。
+    crate::cm_agent::task_state::sync_paused_task_brief_user_message(
+        messages,
+        hooks.paused_task_brief,
     );
     delta.compaction = finalize_token_budget_compaction(
         cfg,

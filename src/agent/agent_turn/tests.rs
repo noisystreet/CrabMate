@@ -194,6 +194,7 @@ mod per_reflect_tests {
                 context_timeline: Default::default(),
                 model_context_artifacts: Vec::new(),
                 paused_reason: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                paused_task_brief: None,
                 provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
             },
         };

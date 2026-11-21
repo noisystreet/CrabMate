@@ -186,6 +186,75 @@ impl TaskState {
     }
 }
 
+/// 注入给模型的**精简**任务状态摘要字符上限。
+///
+/// 只作对照：既有 `session_workspace_changelist` 的注入比这大一量级，本摘要刻意更小——
+/// 它的作用是「别从头重做」，不是复述历史。
+pub const TASK_BRIEF_MAX_CHARS: usize = 800;
+/// 摘要里列出的最近证据条数（取**最新**，与证据裁剪方向一致）。
+pub const TASK_BRIEF_EVIDENCE_ITEMS: usize = 3;
+
+/// 渲染注入模型的任务状态摘要。
+///
+/// 只含目标、暂停原因、累计预算与最近证据**指针**——不含任何工具原始输出
+/// （与模块不变量 1 同源，因此从 [`TaskState`] 渲染天然不泄露凭据/用户数据）。
+#[must_use]
+pub fn render_task_brief(state: &TaskState) -> String {
+    let mut out = String::new();
+    out.push_str("[任务上下文] 本会话此前因预算中断，进度如下。请据此继续，不要从头重做。\n");
+    out.push_str(&format!("目标：{}\n", state.goal));
+    out.push_str(&format!("暂停原因：{}\n", state.pause_reason.as_str()));
+    out.push_str(&format!(
+        "累计已用：LLM 调用 {} 次 / 约 {} tokens / 墙钟 {} 秒\n",
+        state.cumulative.llm_calls,
+        state.cumulative.estimated_tokens,
+        state.cumulative.elapsed_secs
+    ));
+    if !state.evidence.is_empty() {
+        let tail: Vec<String> = state
+            .evidence
+            .iter()
+            .rev()
+            .take(TASK_BRIEF_EVIDENCE_ITEMS)
+            .map(|e| {
+                let code = e
+                    .exit_code
+                    .map(|c| format!(" exit_code={c}"))
+                    .unwrap_or_default();
+                format!("{} {} ok={} tool={}{}", e.id, e.kind, e.ok, e.tool, code)
+            })
+            .collect();
+        out.push_str(&format!("最近证据：{}\n", tail.join("；")));
+    }
+    truncate_chars(&out, TASK_BRIEF_MAX_CHARS)
+}
+
+/// 供 `prepare_messages_for_model`：先移除旧注入条，再视需要插入最新摘要。
+///
+/// 与 `sync_changelist_user_message` 同一模式：**运行时每次刷新**，
+/// 落盘前由 `server_injected_user::strip_runtime_refreshed_injections` 整体剥离。
+pub fn sync_paused_task_brief_user_message(
+    messages: &mut Vec<crate::cm_types::Message>,
+    brief: Option<&str>,
+) {
+    messages.retain(|m| !crate::cm_types::is_paused_task_injection(m));
+    let Some(text) = brief.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    if messages.is_empty() {
+        return;
+    }
+    messages.push(crate::cm_types::Message {
+        role: "user".to_string(),
+        content: Some(text.to_string().into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: Some(crate::cm_types::CRABMATE_PAUSED_TASK_NAME.to_string()),
+        tool_call_id: None,
+    });
+}
+
 /// 按 Unicode scalar 截断，超出时补省略号（不切半个 UTF-8）。
 #[must_use]
 pub fn truncate_chars(s: &str, max: usize) -> String {
@@ -399,6 +468,67 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 注入摘要：有界、只含指针、只列**最新**证据。
+    #[test]
+    fn task_brief_is_bounded_and_carries_no_output_text() {
+        let evidence = (1..=10)
+            .map(|i| TaskEvidenceRef {
+                id: format!("ev_{i}"),
+                kind: "verify".to_string(),
+                tool: "run_command".to_string(),
+                ok: i % 2 == 0,
+                exit_code: Some(i),
+            })
+            .collect();
+        let mut s = TaskState::new_paused(
+            "s1",
+            "把构建修好并跑通测试",
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            evidence,
+        );
+        s.cumulative = TaskBudgetSnapshot {
+            llm_calls: 7,
+            outer_loop_iterations: 9,
+            estimated_tokens: 12_345,
+            elapsed_secs: 88,
+        };
+        let brief = render_task_brief(&s);
+        assert!(
+            brief.chars().count() <= TASK_BRIEF_MAX_CHARS,
+            "超出上界：{}",
+            brief.chars().count()
+        );
+        assert!(brief.contains("把构建修好并跑通测试"));
+        assert!(brief.contains("budget_tokens"), "{brief}");
+        assert!(brief.contains("12345"), "应含累计 tokens：{brief}");
+        // 只列最新 3 条（ev_8/9/10），旧证据不出现。
+        assert!(brief.contains("ev_8") && brief.contains("ev_9") && brief.contains("ev_10"));
+        assert!(!brief.contains("ev_7"), "只取最新 {TASK_BRIEF_EVIDENCE_ITEMS} 条：{brief}");
+    }
+
+    /// 注入条幂等：重复同步只保留一条；`None` 清空旧条。
+    #[test]
+    fn sync_keeps_single_injection_and_clears_on_none() {
+        let mut messages = vec![crate::cm_types::Message::user_only("hi")];
+        sync_paused_task_brief_user_message(&mut messages, Some("摘要A"));
+        sync_paused_task_brief_user_message(&mut messages, Some("摘要B"));
+        assert_eq!(messages.len(), 2, "重复同步不应堆叠注入条");
+        assert!(crate::cm_types::is_paused_task_injection(&messages[1]));
+        sync_paused_task_brief_user_message(&mut messages, None);
+        assert_eq!(messages.len(), 1, "None 应清空旧注入条");
+    }
+
+    /// 判据 2 的护栏：落盘前必须能剥离这条注入。
+    #[test]
+    fn runtime_refreshed_strip_removes_paused_brief() {
+        let mut messages = vec![crate::cm_types::Message::user_only("hi")];
+        sync_paused_task_brief_user_message(&mut messages, Some("摘要"));
+        assert_eq!(messages.len(), 2);
+        crate::cm_types::server_injected_user::strip_runtime_refreshed_injections(&mut messages);
+        assert_eq!(messages.len(), 1, "落盘剥离后不应残留注入条");
+    }
 
     fn cfg(max_tasks: usize, ttl_secs: u64) -> AutonomyConfig {
         AutonomyConfig {

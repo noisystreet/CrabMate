@@ -27,7 +27,6 @@ use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_types::text_utils::preview_chars;
 use crate::cm_types::{
     CRABMATE_LONG_TERM_MEMORY_NAME, Message, is_chat_ui_separator, is_long_term_memory_injection,
-    is_workspace_changelist_injection,
 };
 
 pub(super) fn clamp_text(s: &str, max: usize) -> String {
@@ -693,11 +692,6 @@ impl LongTermMemoryRuntime {
     }
 }
 
-/// 从持久化/返回给客户端的消息列表中移除注入条（避免写入会话存储）。
-pub fn strip_long_term_memory_injections(messages: &mut Vec<Message>) {
-    messages.retain(|m| !is_long_term_memory_injection(m));
-}
-
 fn system_insert_index(messages: &[Message]) -> usize {
     let mut i = 0;
     while i < messages.len() && messages[i].role == "system" {
@@ -711,7 +705,7 @@ fn last_user_query_for_memory(messages: &[Message]) -> Option<&str> {
         if m.role != "user" {
             continue;
         }
-        if is_long_term_memory_injection(m) || is_workspace_changelist_injection(m) {
+        if crate::cm_types::server_injected_user::is_runtime_refreshed_injection(m) {
             continue;
         }
         let c = crate::cm_types::message_content_as_str(&m.content)?.trim();
