@@ -125,10 +125,8 @@ pub struct TurnBudgetCounter {
     /// 已向模型提示过的预算档位（`0` / `70` / `90`）。**跨档才再提示**：同一档内每轮重发
     /// 会让每轮 `system` 都变，白废一次 prompt cache（#1326 方向的反向操作）。
     notice_tier: std::sync::atomic::AtomicU8,
-    /// 注入的墙钟偏移（跨回合累计；本回合新建且无历史时为 `0`）。
-    elapsed_base_secs: u64,
-    /// 注入的完整起点。保留它是为了让调用方能把「累计值」换算回「本回合增量」——
-    /// 计数器本身从起点开始累加，所以 `llm_calls()` 等读到的已是**累计**口径。
+    /// 注入的完整起点（含墙钟偏移）。计数器从起点开始累加，所以 `llm_calls()` 等读到的
+    /// 已是**累计**口径；调用方用它换算回「本回合增量」。
     base: BudgetSpent,
 }
 
@@ -150,7 +148,6 @@ impl TurnBudgetCounter {
             estimated_tokens: AtomicUsize::new(prior.estimated_tokens),
             degradation_active: AtomicBool::new(false),
             notice_tier: std::sync::atomic::AtomicU8::new(0),
-            elapsed_base_secs: prior.elapsed_secs,
             base: prior,
         })
     }
@@ -189,7 +186,8 @@ impl TurnBudgetCounter {
 
     #[inline]
     pub fn elapsed_secs(&self) -> u64 {
-        self.elapsed_base_secs
+        self.base
+            .elapsed_secs
             .saturating_add(self.started_at.elapsed().as_secs())
     }
 

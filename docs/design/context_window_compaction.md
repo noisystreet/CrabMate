@@ -346,16 +346,23 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
     由 [`post_turn_web_prepare_and_save`](../../src/chat_job_queue/stream_finish.rs) 调用），
   并写死为契约：
 
-- [`strip_long_term_memory_injections`](../../src/cm_memory/memory/long_term_memory.rs)
-  — 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`；
-- [`strip_workspace_changelist_injections`](../../src/cm_tools/workspace/changelist.rs)
-  — 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`；
+- [`strip_runtime_refreshed_injections`](../../src/cm_types/server_injected_user.rs)
+  — **运行时刷新类**注入：(a) 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`、
+  (b) 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`、(c) `#1455` 起新增的任务状态摘要
+  `CRABMATE_PAUSED_TASK_NAME`。三者的共同性质是「每次 prepare 重新注入」，所以落盘里的旧副本
+  必须剥离，否则会与最新状态各说一套。**新增同类注入只改 `is_runtime_refreshed_injection` 一处**；
 - [`strip_orchestration_injected_users_for_conversation_store`](../../src/cm_types/server_injected_user.rs)
-  — 其余编排注入 user；
+  — 其余编排注入 user（**保留**基线摘要 `CRABMATE_CONTEXT_SUMMARY_NAME` 与首轮工作区画像
+  `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`，它们必须持久化）；
+
 - `is_execution_constraint_ephemeral_system` 的 **system** 注入已由
   [`outer_loop` 在每次模型调用后 retain 移出](../../src/agent/agent_turn/turn_loop/outer_loop.rs)，
   正常情况下不进入提交；该步已并入 `strip_persist_injections`（**行为变更**：残留的执行约束 system 现于落盘前被显式剔除，
   不再依赖 `outer_loop` 的隐式副作用；原先此类残留会被固化进 `canonical`）。
+
+> 两类判定**不可互换**：[`is_server_injected_user_message`](../../src/cm_types/server_injected_user.rs)
+> 是「是否服务端注入」的统称，包含**要发给模型**的注入（上下文摘要、首轮画像、plan rewrite 等）；
+> 用它做剥离会改变模型输入。剥离只走 `is_runtime_refreshed_injection`。
 
 **基线摘要的优先级（关键）**：
   `CRABMATE_CONTEXT_SUMMARY_NAME` 恰在上述 strip 的**保留名单**内（与首轮工作区画像 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME` 一致），
