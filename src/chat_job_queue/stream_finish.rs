@@ -34,15 +34,15 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
 /// 落盘 / 结构性提交前的注入净化链（ADR §3.7.1，必须显式复用、不得依赖隐式副作用）。
 ///
 /// 契约：
-/// - [`crate::memory::long_term_memory::strip_long_term_memory_injections`] — 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`；
-/// - [`crate::workspace::changelist::strip_workspace_changelist_injections`] — 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`；
+/// - [`crate::cm_types::server_injected_user::strip_runtime_refreshed_injections`] —
+///   **运行时刷新类**注入（长期记忆 / 变更集 / 暂停任务摘要）：落盘里的旧副本会与最新状态
+///   各说一套，必须整体剥离。新增该类注入只需改 `is_runtime_refreshed_injection` 一处；
 /// - [`crate::types::strip_orchestration_injected_users_for_conversation_store`] — 其余编排注入 user
 ///   （**保留**基线摘要 `CRABMATE_CONTEXT_SUMMARY_NAME` 与首轮工作区画像 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`）；
 /// - [`crate::types::is_execution_constraint_ephemeral_system`] 的执行约束临时 system 正常由
 ///   `outer_loop` 每轮 retain 移出，异常残留须在此一并剔除。
 pub(crate) fn strip_persist_injections(messages: &mut Vec<Message>) {
-    crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
-    crate::workspace::changelist::strip_workspace_changelist_injections(messages);
+    crate::cm_types::server_injected_user::strip_runtime_refreshed_injections(messages);
     crate::types::strip_orchestration_injected_users_for_conversation_store(messages);
     messages.retain(|m| !crate::types::is_execution_constraint_ephemeral_system(m));
 }

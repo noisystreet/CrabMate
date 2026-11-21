@@ -252,6 +252,11 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// **刻意不扩 `RunAgentTurnError`**：续跑触发只读这一个标记，改错误枚举会波及所有 `match` 点。
     pub paused_reason:
         Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
+    /// `#1455` B 步：注入模型的「上次暂停进度」摘要（回合起算一次，`None` = 不注入）。
+    ///
+    /// 由 `render_task_brief` 产出；不进历史（落盘前由
+    /// `server_injected_user::strip_runtime_refreshed_injections` 统一剥离）。
+    pub paused_task_brief: Option<String>,
 }
 
 impl<'a> RunLoopTurnState<'a> {
@@ -414,6 +419,7 @@ impl RunLoopParams<'_> {
                 per_coord_layer_cache,
                 run_loop_messages_revision: Some(&mut self.turn.messages_revision),
                 turn_budget: Some(&self.turn.turn_budget),
+                paused_task_brief: self.turn.paused_task_brief.as_deref(),
             },
         )
         .await?;
@@ -529,6 +535,7 @@ mod turn_planner_hints_tests {
             model_context_artifacts: Vec::new(),
             provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
             paused_reason: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            paused_task_brief: None,
         };
         assert_eq!(turn.messages_buffer_revision(), 0);
         turn.push_message(Message::assistant_only("a"));

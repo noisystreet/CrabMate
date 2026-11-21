@@ -302,6 +302,15 @@ pub fn is_long_term_memory_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_LONG_TERM_MEMORY_NAME)
 }
 
+/// `#1455` B 步：跨回合任务状态摘要（`user.name`）。由运行时每次 prepare 刷新，
+/// **不**落盘、**不**向客户端展示（与变更集注入同类）。
+pub const CRABMATE_PAUSED_TASK_NAME: &str = "crabmate_paused_task_brief";
+
+#[inline]
+pub fn is_paused_task_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_PAUSED_TASK_NAME)
+}
+
 #[inline]
 pub fn is_workspace_changelist_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
@@ -508,8 +517,7 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
         .iter()
         .filter(|m| {
             !is_message_excluded_from_llm_context_except_memory(m)
-                && !is_long_term_memory_injection(m)
-                && !is_workspace_changelist_injection(m)
+                && !crate::cm_types::server_injected_user::is_runtime_refreshed_injection(m)
         })
         .map(|m| {
             let mut out = message_clone_stripping_reasoning_for_api(

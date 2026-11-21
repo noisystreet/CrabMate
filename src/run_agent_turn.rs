@@ -422,8 +422,9 @@ fn assemble_run_loop_params<'a>(
     // B 步（`#1455`）：跨回合预算**起点**。放在 `RunLoopParams` 构造之前，因为
     // `long_term_memory_scope_id` 随后会被 move 进 `attach`。
     // **fail-open**：关闭 / 工作区未设置 / 无 scope / 读失败 ⇒ 全 0。
-    let prior_budget = {
+    let (prior_budget, paused_task_brief) = {
         let mut prior = crate::agent::turn_budget::BudgetSpent::default();
+        let mut brief: Option<String> = None;
         if cfg.autonomy.enabled
             && workspace_is_set
             && let Some(scope) = long_term_memory_scope_id.as_deref()
@@ -436,8 +437,12 @@ fn assemble_run_loop_params<'a>(
             prior.llm_calls = state.cumulative.llm_calls;
             prior.estimated_tokens = state.cumulative.estimated_tokens;
             prior.elapsed_secs = state.cumulative.elapsed_secs;
+            // 只有确实「暂停中」才注入摘要：已完成的任务再复述一遍会让模型以为还没做完。
+            if state.status == crate::cm_agent::task_state::TaskStatus::Paused {
+                brief = Some(crate::cm_agent::task_state::render_task_brief(&state));
+            }
         }
-        prior
+        (prior, brief)
     };
 
     RunLoopParams {
@@ -501,6 +506,7 @@ fn assemble_run_loop_params<'a>(
             model_context_artifacts: Vec::new(),
             provider_usage: Arc::new(std::sync::Mutex::new(None)),
             paused_reason: Arc::new(std::sync::Mutex::new(None)),
+            paused_task_brief,
         },
     }
 }
