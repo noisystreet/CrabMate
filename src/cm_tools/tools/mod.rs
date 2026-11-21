@@ -629,18 +629,7 @@ fn finish_dispatch_text(
     }
 }
 
-/// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
-///
-/// `run_command` / `terminal_session` 的 spec runner 为 [`ToolRunner::AsyncOnly`]（须经服务端异步调度）；
-/// 其余工具按 `spec.runner` 执行，[`ToolRunner::Typed`] 的失败显式透传。
-#[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
-pub fn run_tool_try(
-    name: &str,
-    args_json: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    run_tool_dispatch(name, args_json, ctx).map(|(output, _)| output)
-}
+
 
 /// 执行本地工具并返回结构化结果（兼容既有字符串输出）。
 pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> ToolResult {

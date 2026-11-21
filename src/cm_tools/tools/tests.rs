@@ -70,6 +70,17 @@ fn test_work_dir() -> &'static Path {
     Path::new(".")
 }
 
+/// `Result` 面的一次投影：`run_tool_try` 已删（#1378，生产调用为 0），
+/// 测试要「结构化错误」时用它 —— 语义与原来的 `run_tool_try` 逐字相同。
+#[allow(clippy::result_large_err)] // `ToolError` 含正文解析快照，与 `run_tool_dispatch` 同因
+fn dispatch_string(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+    run_tool_dispatch(name, args_json, ctx).map(|(output, _)| output)
+}
+
 #[test]
 fn test_run_tool_unknown() {
     let allowed = test_allowed_commands();
@@ -79,24 +90,24 @@ fn test_run_tool_unknown() {
 }
 
 #[test]
-fn test_run_tool_try_unknown_is_err() {
+fn test_dispatch_string_unknown_is_err() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let e = run_tool_try("unknown_tool", "{}", &ctx).expect_err("unknown tool");
+    let e = dispatch_string("unknown_tool", "{}", &ctx).expect_err("unknown tool");
     assert_eq!(e.code, "unknown_tool");
     assert!(!e.retryable);
 }
 
 #[test]
-fn test_run_tool_try_schema_rejects_wrong_type() {
+fn test_dispatch_string_schema_rejects_wrong_type() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let e = run_tool_try("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
+    let e = dispatch_string("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
     assert_eq!(e.code, "invalid_args");
     assert!(e.message.contains("JSON Schema"), "{}", e.message);
 }
 
-/// 前置判定两侧同源（#1378）：`run_tool`（String 面）与 `run_tool_try`/`run_tool_result`
+/// 前置判定两侧同源（#1378）：`run_tool`（String 面）与 `run_tool_dispatch`/`run_tool_result`
 /// （`Result` 面）对同一入参走同一份判定，**只在渲染上不同** ——
 /// `未知工具：…` 正文自带前缀不再叠 `错误：`，其余前置失败叠一层 `错误：`。
 #[test]
@@ -105,12 +116,12 @@ fn string_and_result_faces_share_the_same_pre_dispatch_verdict() {
     let ctx = test_ctx(&allowed);
 
     let unknown_str = run_tool("unknown_tool", "{}", &ctx);
-    let unknown_err = run_tool_try("unknown_tool", "{}", &ctx).expect_err("unknown tool");
+    let unknown_err = dispatch_string("unknown_tool", "{}", &ctx).expect_err("unknown tool");
     assert_eq!(unknown_str, unknown_err.message);
     assert_eq!(unknown_err.code, "unknown_tool");
 
     let schema_str = run_tool("json_format", r#"{"text":1}"#, &ctx);
-    let schema_err = run_tool_try("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
+    let schema_err = dispatch_string("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
     assert_eq!(schema_str, format!("错误：{}", schema_err.message));
     assert_eq!(schema_err.code, "invalid_args");
 }
@@ -192,7 +203,7 @@ async fn test_run_tool_async_run_command_disallowed_tool_error() {
 }
 
 #[test]
-fn test_run_tool_try_cargo_check_workspace_no_cargo_toml() {
+fn test_dispatch_string_cargo_check_workspace_no_cargo_toml() {
     use crate::cm_tools::tool_result::ToolFailureCategory;
     let allowed = test_allowed_commands();
     let dir = std::env::temp_dir().join(format!("crabmate_cargo_empty_{}", std::process::id()));
@@ -202,7 +213,7 @@ fn test_run_tool_try_cargo_check_workspace_no_cargo_toml() {
         path_scope: crate::cm_types::PathScope::SessionRoot,
         ..test_ctx(&allowed)
     };
-    let e = run_tool_try("cargo_check", "{}", &ctx).expect_err("no Cargo.toml");
+    let e = dispatch_string("cargo_check", "{}", &ctx).expect_err("no Cargo.toml");
     assert_eq!(e.code, "workspace_no_cargo_toml");
     assert_eq!(e.category, ToolFailureCategory::Workspace);
     let _ = std::fs::remove_dir_all(&dir);
@@ -501,7 +512,7 @@ fn test_read_file_count_total_rejects_oversized_file() {
     let allowed = test_allowed_commands();
     let mut ctx = test_ctx(&allowed);
     ctx.working_dir = dir.path();
-    let err = run_tool_try("read_file", &args, &ctx).expect_err("oversized count_total");
+    let err = dispatch_string("read_file", &args, &ctx).expect_err("oversized count_total");
     assert_eq!(err.code, "read_file_count_total_too_large");
     assert_eq!(err.category, ToolFailureCategory::InvalidInput);
 }
@@ -517,7 +528,7 @@ fn test_read_file_try_workspace_error_has_stable_code() {
     let allowed = test_allowed_commands();
     let mut ctx = test_ctx(&allowed);
     ctx.working_dir = dir.path();
-    let err = run_tool_try("read_file", &args, &ctx).expect_err("outside workspace");
+    let err = dispatch_string("read_file", &args, &ctx).expect_err("outside workspace");
     assert!(
         err.code.starts_with("read_file_workspace_"),
         "expected read_file_workspace_* code, got {}",
@@ -532,7 +543,7 @@ fn test_search_in_files_try_invalid_regex_error_code() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let err =
-        run_tool_try("search_in_files", r#"{"pattern":"("}"#, &ctx).expect_err("invalid regex");
+        dispatch_string("search_in_files", r#"{"pattern":"("}"#, &ctx).expect_err("invalid regex");
     assert_eq!(err.code, "search_in_files_invalid_regex");
     assert_eq!(err.category, ToolFailureCategory::InvalidInput);
 }
@@ -787,7 +798,7 @@ fn misc_basic_typed_error_codes() {
     let ctx = test_ctx(&allowed);
 
     // 原本靠正文「失败 / 错误」关键词判失败的输入：迁移后码从 `{tool}_failed` 精化为 `invalid_args`。
-    let e = run_tool_try(
+    let e = dispatch_string(
         "date_calc",
         r#"{"mode":"diff","from":"2024-13-01","to":"2024-01-31"}"#,
         &ctx,
@@ -796,14 +807,14 @@ fn misc_basic_typed_error_codes() {
     assert_eq!(e.code, "invalid_args");
     assert_eq!(e.category, ToolFailureCategory::InvalidInput);
 
-    let e = run_tool_try("regex_test", r#"{"pattern":"(","test_strings":["x"]}"#, &ctx)
+    let e = dispatch_string("regex_test", r#"{"pattern":"(","test_strings":["x"]}"#, &ctx)
         .expect_err("非法正则必须失败");
     assert_eq!(e.code, "regex_test_invalid_regex");
     assert_eq!(e.category, ToolFailureCategory::InvalidInput);
     assert!(e.message.contains("正则编译失败"), "{}", e.message);
 
     let e =
-        run_tool_try("json_format", r#"{"text":"{oops"}"#, &ctx).expect_err("非法 JSON 必须失败");
+        dispatch_string("json_format", r#"{"text":"{oops"}"#, &ctx).expect_err("非法 JSON 必须失败");
     assert_eq!(e.code, "invalid_args");
     assert!(
         e.message.starts_with("错误：JSON 解析失败"),
@@ -811,7 +822,7 @@ fn misc_basic_typed_error_codes() {
         e.message
     );
 
-    let e = run_tool_try("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
+    let e = dispatch_string("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
     assert_eq!(e.code, "invalid_args");
     // 钉住失败发生在 runner 层：`EnvVarCheckArgs.names` 目前没有 `minItems`；
     // 若将来加了，这条会先红，提示改断言而不是静默退化成「测 schema 层」。
