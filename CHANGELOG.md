@@ -81,8 +81,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **BREAKING: the two Web turn build-arg bags are gone (#1379).** `WebChatStreamBuildArgs` (25 flat fields)
   and `WebChatJsonBuildArgs` (22) — plus the `WebChatJobCommonParts` / `from_web_job_common` relay between
-  them and `TurnRequest` — collapse into one `WebTurnInputs` (12 fields) and an explicit
-  `WebTurnEndpoint::{Stream, Json}`. Both structs were `#[doc(hidden)]` and never entered the promise surface
+  them and `TurnRequest` — collapse into one `WebTurnInputs` (10 fields) and an explicit
+  `WebTurnEndpoint::{Stream, Json}` covering all four endpoint-only inputs (`out` / `cancel` / `web_tool_ctx` /
+  `paused_reason_sink`). Both structs were `#[doc(hidden)]` and never entered the promise surface
   (`fixtures/public_api_golden.txt` stays at 112 items), so only code that spelled
   `crabmate::WebChatStreamBuildArgs` literally breaks. `TurnRequest::web_chat_stream` / `web_chat_json` are
   removed with them: call `TurnRequest::web(shared, session, llm, inputs)` instead, which now owns the three
