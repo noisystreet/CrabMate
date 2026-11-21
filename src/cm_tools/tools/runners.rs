@@ -116,7 +116,11 @@ macro_rules! define_runners_paths_try {
             pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
                 $func(
                     args,
-                    &file::PathAccess::with_scope(ctx.working_dir, ctx.path_scope),
+                    &file::PathAccess::with_scope_and_roots(
+                        ctx.working_dir,
+                        ctx.path_scope,
+                        ctx.allowed_roots,
+                    ),
                 )
             }
         )*
@@ -133,7 +137,11 @@ macro_rules! define_runners_paths_ctx_try {
             pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
                 $func(
                     args,
-                    &file::PathAccess::with_scope(ctx.working_dir, ctx.path_scope),
+                    &file::PathAccess::with_scope_and_roots(
+                        ctx.working_dir,
+                        ctx.path_scope,
+                        ctx.allowed_roots,
+                    ),
                     ctx,
                 )
             }
@@ -487,12 +495,25 @@ pub fn runner_background_job_wait_try(
     )
 }
 
+/// `read_file` 的注册 runner（`file_core.inc.rs`）。
+///
+/// **必须**用 `ctx` 的路径轴与根集合构造 `PathAccess`：这里若退回
+/// `PathAccess::new(ctx.working_dir)`，L4 的 `Any` 与 S7 的 `AllowedRoots` 会在
+/// `read_file` 上**静默失效**（其余工具照常按档位走，唯独 read_file 永远 `SessionRoot`）。
 #[allow(clippy::result_large_err)]
 pub fn read_file_try_dispatch(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, &file::PathAccess::new(ctx.working_dir), ctx)
+    file::read_file_try(
+        args_json,
+        &file::PathAccess::with_scope_and_roots(
+            ctx.working_dir,
+            ctx.path_scope,
+            ctx.allowed_roots,
+        ),
+        ctx,
+    )
 }
 
 /// 用户消息 `@路径` 展开等：与 `read_file` 工具同源校验与读取。
@@ -502,7 +523,15 @@ pub fn read_file_try_at_paths(
     working_dir: &std::path::Path,
     ctx: &ToolContext<'_>,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, &file::PathAccess::new(working_dir), ctx)
+    file::read_file_try(
+        args_json,
+        &file::PathAccess::with_scope_and_roots(
+            working_dir,
+            ctx.path_scope,
+            ctx.allowed_roots,
+        ),
+        ctx,
+    )
 }
 
 /// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。

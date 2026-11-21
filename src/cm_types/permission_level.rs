@@ -72,7 +72,11 @@ impl PermissionLevel {
         match self {
             PermissionLevel::Chat => "只能对话：不下发工具定义",
             PermissionLevel::Read => "只读探查：工作区内读 + 出站只读",
-            PermissionLevel::Workspace => "工作区硬边界：越界直接拒，不弹审批",
+            PermissionLevel::Workspace => {
+                // S7 起硬边界不止会话根：配了 `workspace_allowed_roots` 时边界是「允许根集合」，
+                // 未配置时才等价旧文案的「工作区根」。空根仍 fail-closed 退化为后者。
+                "硬边界：越界直接拒，不弹审批（边界 = 允许根集合；未配置时 = 工作区根）"
+            }
             PermissionLevel::Approved => "现状：越界走人工审批",
             PermissionLevel::Unrestricted => "不受工作区路径与命令白名单限制：放行 + 审计",
         }
@@ -206,45 +210,65 @@ impl PermissionLevel {
     /// 逐等级钉住。
     #[must_use]
     pub fn caps_view(self) -> PermissionCapsView {
-        let (tool_visibility, external_tools, path_scope, command_scope, net_scope, approval) =
-            match self {
-                PermissionLevel::Chat => ("none", "denied", "session_root", "none", "none", "deny"),
-                PermissionLevel::Read => (
-                    "readonly",
-                    "denied",
-                    "session_root",
-                    "none",
-                    "prefixes",
-                    "deny",
-                ),
-                PermissionLevel::Workspace => (
-                    "full",
-                    "denied",
-                    "session_root",
-                    "allowlist",
-                    "prefixes",
-                    "deny",
-                ),
-                PermissionLevel::Approved => (
-                    "full",
-                    "allowed",
-                    "session_root",
-                    "allowlist",
-                    "prefixes",
-                    "gate",
-                ),
-                PermissionLevel::Unrestricted => {
-                    ("full", "allowed", "any", "any", "any", "audit_only")
-                }
-            };
+        self.caps_view_with_allowed_roots(false)
+    }
+
+    /// 同 [`Self::caps_view`]，但按**允许根集合是否非空**决定 `path_scope` 轴名（S7）。
+    ///
+    /// 配置了 `workspace_allowed_roots` 的实例上必须走本函数：否则自检工具会对着一个实际
+    /// 生效 `allowed_roots` 的实例报 `session_root`，与
+    /// [`crate::cm_agent::permission::project_caps`] 的真实投影漂移。
+    ///
+    /// 路径轴一律经 [`path_scope_for`]，与 `project_caps` 同源——这里是「等级 → 轴名」的
+    /// **唯一** `match level` 处，新增等级时只改这一处。
+    #[must_use]
+    pub fn caps_view_with_allowed_roots(self, has_allowed_roots: bool) -> PermissionCapsView {
+        let (tool_visibility, external_tools, command_scope, net_scope, approval) = match self {
+            PermissionLevel::Chat => ("none", "denied", "none", "none", "deny"),
+            PermissionLevel::Read => ("readonly", "denied", "none", "prefixes", "deny"),
+            PermissionLevel::Workspace => ("full", "denied", "allowlist", "prefixes", "deny"),
+            PermissionLevel::Approved => ("full", "allowed", "allowlist", "prefixes", "gate"),
+            PermissionLevel::Unrestricted => ("full", "allowed", "any", "any", "audit_only"),
+        };
         PermissionCapsView {
             tool_visibility: tool_visibility.to_string(),
             external_tools: external_tools.to_string(),
-            path_scope: path_scope.to_string(),
+            path_scope: path_scope_for(self, has_allowed_roots).as_str().to_string(),
             command_scope: command_scope.to_string(),
             net_scope: net_scope.to_string(),
             approval: approval.to_string(),
         }
+    }
+}
+
+/// 权限等级 + 「允许根集合是否非空」→ 文件工具路径轴（**S7 的唯一分档处**）。
+///
+/// `project_caps`（权威投影）与本层的 [`PermissionLevel::caps_view_with_allowed_roots`]
+/// （叶子层自检输出）共用本函数，不允许各写一套。
+///
+/// - **L0 / L1 ⇒ [`PathScope::SessionRoot`]**：L1 的公开承诺是「工作区内读」（设计 §0），
+///   放宽等于改 L1 契约。代价是 `ask` / `plan` 被钳到 ≤ L1 时读同级仓仍需先切 `act` + L3；
+///   该代价是**有意为之**，不当作缺陷。
+/// - **L2 / L3 ⇒ [`PathScope::AllowedRoots`]（同档）**：运维显式写出的白名单在 L2 下本就是
+///   硬边界（越界仍是明确报错、不弹窗）。分档会让同一份配置在 L2 / L3 表现不同，
+///   连带 `GET /permission` 呈现、`promise_zh` 文案与文档都要写两套。
+/// - **L4 ⇒ [`PathScope::Any`]**。
+///
+/// **`AllowedRoots` + 空根 ⇒ 退化为 `SessionRoot`（fail-closed）**。这与 Web 选址侧
+/// `is_within_allowed_roots` 的「空表 = 任意」**故意不同**：一处是「工作区能选在哪」，
+/// 一处是「进到哪一级路径轴」。注意不要把它当 bug「修正」成放宽。
+#[must_use]
+pub const fn path_scope_for(level: PermissionLevel, has_allowed_roots: bool) -> PathScope {
+    match level {
+        PermissionLevel::Chat | PermissionLevel::Read => PathScope::SessionRoot,
+        PermissionLevel::Workspace | PermissionLevel::Approved => {
+            if has_allowed_roots {
+                PathScope::AllowedRoots
+            } else {
+                PathScope::SessionRoot
+            }
+        }
+        PermissionLevel::Unrestricted => PathScope::Any,
     }
 }
 
@@ -365,7 +389,7 @@ pub enum PathScope {
     /// 仅当前会话工作区根（L0–L3 的现状）。
     #[default]
     SessionRoot,
-    /// 会话根 + `workspace_allowed_roots`（S6）。
+    /// 会话根 + `workspace_allowed_roots`（S7）。
     AllowedRoots,
     /// 任意路径（L4）：文件工具跳过越界校验，`run_command` 的参数路径安全检查也随之放宽。
     Any,

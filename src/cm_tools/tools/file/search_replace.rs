@@ -449,7 +449,7 @@ fn search_replace_persist(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    search_replace_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    search_replace_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// [`search_replace`] 的显式失败版本（成功正文与 String 面逐字节一致）。

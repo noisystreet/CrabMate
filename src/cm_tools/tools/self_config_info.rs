@@ -333,7 +333,13 @@ fn sandbox_section(cfg: &AgentConfig) -> String {
 /// **只报等级与轴名**：白名单 / 前缀本身属内部数据且长度不可控，不进任何对外视图。
 fn permission_section(cfg: &AgentConfig) -> String {
     let p = &cfg.permission;
-    let caps = p.permission_level.caps_view();
+    // S7：路径轴按「等级 + 是否配了多根」分档，与 `project_caps` 同源
+    // （`cm_types::path_scope_for`）。不传根集合会让自检对着一个**实际生效**
+    // `allowed_roots` 的实例报 `session_root`——静态视图与运行时漂移。
+    let has_allowed_roots = !cfg.workspace_roots.workspace_allowed_roots.is_empty();
+    let caps = p
+        .permission_level
+        .caps_view_with_allowed_roots(has_allowed_roots);
     format!(
         "permission_level_default = {}\n\
          permission_level_max_effective = {}\n\

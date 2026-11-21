@@ -770,8 +770,12 @@ One knob projects onto six axes (tool visibility / external tools / path / comma
     **`GET /status?view=shell`** exposes `permission_level_default` and `permission_level_max` only.
 - **No ceiling-writing endpoint, by design**: an HTTP endpoint able to raise `permission_level_max` would defeat the startup gate (design doc §16.3).
 - **Audit**: `unrestricted` records every level-based allow under `target: "permission_audit"`; denials (L0–L2) and human approvals are always recorded.
-- **Not implemented yet**: `PathScope::AllowedRoots` (`workspace_allowed_roots` does not widen `workspace` / `approved` paths),
-  the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`),
+- **S7 landed**: `PathScope::AllowedRoots` widens the **file-tool** path axis for `workspace` / `approved` to
+  `{session root} ∪ workspace_allowed_roots` (a path under any allowed root is admitted; `../crabmate-client` no longer prompts).
+  L1 stays session-root-only and L4 stays unrestricted; an **empty** list fails closed back to `SessionRoot`
+  (deliberately the opposite of the Web-selection rule "empty = anywhere").
+  The **command axis** (`run_command` / `terminal_session` argv and `cwd`) is not covered — see #1315.
+- **Not implemented yet**: the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`),
   and the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
 
 ## Multi-role (agent_roles)

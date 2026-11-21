@@ -123,12 +123,8 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 ## Permission levels (`permission_level`)
 
 **Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices:
-  **`docs/design/permission_levels.md`**. S1–S6 are in; the items below are the wrap-up.
+  **`docs/design/permission_levels.md`**. S1–S7 are in; the items below are the wrap-up.
 
-- [ ] **S7 `PathScope::AllowedRoots` wiring**: the variant and `as_str` exist,
-  but `cm_agent::permission::project_caps` only produces `SessionRoot` / `Any` and `PathAccess` has no such branch,
-  so `workspace_allowed_roots` does **not** widen `workspace` / `approved` paths (every cross-root access to the sibling `../crabmate-client` still
-    needs approval). Design §15 Q4 is settled as "do it"; see §12 S7 and the §17.5 stop condition.
 - [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "
   no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping;
   the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.

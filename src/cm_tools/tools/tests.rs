@@ -15,6 +15,7 @@ pub(super) fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         allowed_commands,
         working_dir: test_work_dir(),
         path_scope: crate::cm_types::PathScope::SessionRoot,
+        allowed_roots: &[],
         web_search_timeout_secs: 15,
         web_search_provider: crate::cm_config::WebSearchProvider::Brave,
         web_search_api_key: "",

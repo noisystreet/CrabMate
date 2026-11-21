@@ -59,6 +59,9 @@ async fn execute_node_tool_phase(
     let run_command_reaps_self = tool_name == tool_names::RUN_COMMAND;
     // 节点内的文件工具同样受本回合权限等级的路径轴约束（S3）。
     let node_path_scope = tool_exec_ctx.path_scope;
+    // S7：多根放行的根集合与 `path_scope` 同源，一路透传到 `ToolContext`；
+    // 漏传的表现是节点内 `AllowedRoots` 退化为 `SessionRoot`（更严，不是放宽）。
+    let node_allowed_roots = tool_exec_ctx.allowed_roots.clone();
 
     let tool_result = if run_command_reaps_self {
         // `run_command`：直接走异步 funnel（内部 `spawn_blocking` + 墙钟超时），不再外层包超时。
@@ -72,6 +75,7 @@ async fn execute_node_tool_phase(
             allowed_commands: &allowed,
             working_dir: &working_dir,
             path_scope: node_path_scope,
+            allowed_roots: &node_allowed_roots,
             web_search_timeout_secs: ws_timeout,
             web_search_provider: ws_provider,
             web_search_api_key: &web_search_api_key,
@@ -100,6 +104,7 @@ async fn execute_node_tool_phase(
                     allowed_commands: &allowed,
                     working_dir: &working_dir,
                     path_scope: node_path_scope,
+                    allowed_roots: &node_allowed_roots,
                     web_search_timeout_secs: ws_timeout,
                     web_search_provider: ws_provider,
                     web_search_api_key: &web_search_api_key,

@@ -13,6 +13,11 @@ pub struct WorkflowConfig {
     pub http_fetch_max_response_bytes: usize,
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub allowed_commands: Vec<String>,
+    /// S7：多根放行的根集合，供工作流节点内的文件工具决定解析基。
+    ///
+    /// 空表 = fail-closed 退化为 `SessionRoot`（见 `cm_types::path_scope_for`）；
+    /// 工作流节点若漏搬该字段，表现是「节点内读同级仓仍被拒」而非静默放宽。
+    pub workspace_allowed_roots: Vec<std::path::PathBuf>,
     pub command_max_output_len: usize,
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,

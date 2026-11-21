@@ -286,6 +286,21 @@ mod tests {
         assert_eq!(view.caps, PermissionLevel::Approved.caps_view());
     }
 
+    /// S7：cfg 配了非空 `workspace_allowed_roots` ⇒ 默认档（L3）的 `caps.path_scope`
+    /// 必须是 `allowed_roots`。钉住「`GET /permission` 的呈现与实际生效路径轴同源」——
+    /// 这里若报 `session_root`，运维会以为白名单没生效。
+    #[test]
+    fn allowed_roots_surface_in_permission_view() {
+        let mut cfg = base_cfg();
+        cfg.workspace_roots.workspace_allowed_roots = vec![std::path::PathBuf::from("/tmp/roots")];
+        let view = view_for(&cfg, None);
+        assert_eq!(view.caps.path_scope, "allowed_roots");
+        assert_eq!(
+            view.caps,
+            PermissionLevel::Approved.caps_view_with_allowed_roots(true)
+        );
+    }
+
     /// `ask` / `plan`：可选项收缩到 L1，但 `caps` **不**回灌成 L1 —— 只读由既有的
     /// `ReviewReadonly` 通道执行（否则默认档的 Plan 会话会连带丢掉 MCP 工具）。
     #[test]

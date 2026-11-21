@@ -347,7 +347,12 @@ fn delete_files_execute(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    delete_files_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    delete_files_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
@@ -445,7 +450,12 @@ pub fn delete_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    append_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    append_file_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 追加到文件末尾（`dry_run` 默认只预览；`create_if_missing` 可建新文件）。

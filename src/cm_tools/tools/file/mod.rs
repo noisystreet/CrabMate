@@ -3,6 +3,8 @@
 //! 路径均为**相对于工作目录**的相对路径；`path` 子模块集中 `resolve_for_read` / `resolve_for_write` 等安全边界。
 
 mod commit_guard;
+#[cfg(test)]
+mod tests_allowed_roots;
 mod directory;
 mod display_fmt;
 mod edits_batch;

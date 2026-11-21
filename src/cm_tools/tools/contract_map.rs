@@ -266,6 +266,7 @@ mod tests {
             allowed_commands: &[],
             working_dir: root,
             path_scope: crate::cm_types::PathScope::SessionRoot,
+            allowed_roots: &[],
             web_search_timeout_secs: 0,
             web_search_provider: crate::cm_config::WebSearchProvider::Brave,
             web_search_api_key: "",

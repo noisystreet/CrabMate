@@ -154,6 +154,11 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) cfg_allowed_commands: Arc<[String]>,
     /// 本回合权限等级的路径轴（S3）：节点内文件工具据此决定是否仍在工作区根内解析。
     pub(crate) path_scope: crate::cm_types::PathScope,
+    /// S7：多根放行的根集合，与 `path_scope` 同源注入。
+    ///
+    /// 空表 = fail-closed 退化为 `SessionRoot`。漏注入的表现是「节点内读同级仓仍被拒」，
+    /// 不会静默放宽——但仍是缺陷，故 `run.rs` 与 `WorkflowConfig` 两侧都要搬。
+    pub(crate) allowed_roots: Vec<PathBuf>,
     pub(crate) effective_working_dir: PathBuf,
     pub(crate) workspace_is_set: bool,
     pub(crate) command_max_output_len: usize,

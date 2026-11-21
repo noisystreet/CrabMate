@@ -41,6 +41,9 @@ enum WorkspacePathErrorClass {
 fn classify_workspace_path_error(e: &WorkspacePathError) -> WorkspacePathErrorClass {
     match e {
         WorkspacePathError::OutsideWorkspaceRoot
+        // S7：越出**允许根集合**与越出会话根同属策略拒绝。归到 `InvalidArgs` 会让模型把
+        // 「这条路径不在白名单里」读成「参数写错了」，然后反复重试同一个路径。
+        | WorkspacePathError::OutsideAllowedRoots { .. }
         | WorkspacePathError::WorkspaceResolveFailed(_)
         | WorkspacePathError::NoExistingAncestor => WorkspacePathErrorClass::Workspace,
         WorkspacePathError::PathResolveFailed(_) => WorkspacePathErrorClass::Io,
@@ -251,34 +254,73 @@ pub(crate) fn audit_path_detail(sub: &str) -> String {
     }
 }
 
-/// 工作区路径访问器：把「根 + 访问范围」收成一个载体。
+/// 工作区路径访问器：把「根 + 访问范围 + 允许根集合」收成一个载体。
 ///
-/// R1（设计 §17.1）收口调用形态；S3 起持有 [`PathScope`]：`SessionRoot`（默认，L0–L3）
-/// 仍走 [`resolve_for_read`] / [`resolve_for_write`] 的越界校验，`Any`（L4）走
-/// [`resolve_unrestricted_for_read`] / [`resolve_unrestricted_for_write`]。
-/// 调用点不必知道自己在哪个档位，只需把 `ctx.path_scope` 传进来。
+/// R1（设计 §17.1）收口调用形态；S3 起持有 [`PathScope`]；S7 起再持有允许根集合：
+///
+/// - `SessionRoot`（L0–L1，以及 L2 / L3 未配多根时）仍走 [`resolve_for_read`] /
+///   [`resolve_for_write`] 的越界校验；
+/// - `Any`（L4）走 [`resolve_unrestricted_for_read`] / [`resolve_unrestricted_for_write`]；
+/// - `AllowedRoots`（S7，L2 / L3 + 非空 `workspace_allowed_roots`）先按**最长前缀**在
+///   {会话根} ∪ 允许根里选出解析基，再以**该根**为界复用上面两条路径——`openat2`
+///   `RESOLVE_IN_ROOT` 的基 fd 与写的 `ensure_existing_ancestor_within_root` 边界都随之落在
+///   被选中的那个根上，**不新增第二套越界判定**。
+///
+/// 调用点不必知道自己在哪个档位，只需把 `ctx.path_scope` 与本会话的允许根传进来。
 pub struct PathAccess<'a> {
     root: &'a Path,
     scope: crate::cm_types::PathScope,
+    /// 仅 `AllowedRoots` 档读取；**已 canonical / sort / dedup**（由 `cm_config` 的
+    /// `workspace_allowed_roots` 保证，见 `resolve_workspace_allowed_roots`）。
+    /// 其余档位传空切片，语义与 S3 逐字等价。
+    allowed_roots: &'a [PathBuf],
 }
 
 impl<'a> PathAccess<'a> {
-    /// 默认 `SessionRoot`（与 S3 之前逐字等价）。
+    /// 默认 `SessionRoot` + 空根集合（与 S3 之前逐字等价）。
     #[must_use]
     pub fn new(root: &'a Path) -> Self {
         Self::with_scope(root, crate::cm_types::PathScope::SessionRoot)
     }
 
     /// 带路径范围构造（主 Agent 的 `dispatch` 与工作流节点用这一条）。
+    ///
+    /// 允许根集合缺省为空：`AllowedRoots` + 空根按 `cm_types::path_scope_for` 的
+    /// fail-closed 约定退化为 `SessionRoot`（见 [`Self::allowed_roots_active`]）。
     #[must_use]
     pub fn with_scope(root: &'a Path, scope: crate::cm_types::PathScope) -> Self {
-        Self { root, scope }
+        Self::with_scope_and_roots(root, scope, &[])
+    }
+
+    /// 带路径范围 + 允许根集合构造（S7 的唯一注入口）。
+    #[must_use]
+    pub fn with_scope_and_roots(
+        root: &'a Path,
+        scope: crate::cm_types::PathScope,
+        allowed_roots: &'a [PathBuf],
+    ) -> Self {
+        Self {
+            root,
+            scope,
+            allowed_roots,
+        }
     }
 
     /// 工作区根（供 `canonical_workspace_root` / `path_for_tool_display` 复用）。
     #[must_use]
     pub fn root(&self) -> &'a Path {
         self.root
+    }
+
+    /// 多根放行是否**实际生效**。
+    ///
+    /// `AllowedRoots` + 空根 ⇒ `false`（fail-closed 退化为 `SessionRoot`）。这与 Web 选址侧
+    /// `is_within_allowed_roots` 的「空表 = 任意」**故意不同**：一处是「工作区能选在哪」，
+    /// 一处是「进到哪一级路径轴」。不要把它当 bug 修成放宽。
+    #[must_use]
+    fn allowed_roots_active(&self) -> bool {
+        matches!(self.scope, crate::cm_types::PathScope::AllowedRoots)
+            && !self.allowed_roots.is_empty()
     }
 
     /// L4 的路径放行留痕。
@@ -297,32 +339,181 @@ impl<'a> PathAccess<'a> {
         );
     }
 
+    /// `AllowedRoots` 下选解析基：{会话根} ∪ 允许根中**最长前缀**匹配的那一个。
+    ///
+    /// 返回 `(选中根, 该根下的相对路径)`；`sub` 可为相对（按会话根拼接）或绝对。
+    /// 目标不落在任何根之下 ⇒ [`WorkspacePathError::OutsideAllowedRoots`]（策略拒绝，
+    /// 见 `is_policy_denied()`），而不是 `OutsideWorkspaceRoot`——模型据此能把「越界」
+    /// 与「参数非法」区分开。
+    ///
+    /// `must_exist`：读路径为 `true`（直接 canonicalize）；写路径为 `false`（目标可不存在，
+    /// 退化为「最近已存在祖先 canonical + 剩余后缀」）。
+    fn resolve_within_allowed_roots(
+        &self,
+        sub: &str,
+        must_exist: bool,
+    ) -> Result<(&'a Path, String), WorkspacePathError> {
+        let sub = sub.trim();
+        if sub.is_empty() {
+            return Err(WorkspacePathError::EmptyPath);
+        }
+        let base_canonical = canonical_workspace_root(self.root)?;
+        let absolute = unrestricted_target(&base_canonical, sub);
+        let resolved = resolve_scope_target(&absolute, must_exist)?;
+        // 会话根优先：相对路径天然落在它之下，`SessionRoot` 的行为因此逐字不变。
+        if resolved.starts_with(&base_canonical) {
+            return Ok((self.root, relative_subpath(&resolved, &base_canonical)));
+        }
+        match self.longest_prefix_root(&resolved) {
+            Some(root) => Ok((root, relative_subpath(&resolved, root))),
+            None => Err(WorkspacePathError::OutsideAllowedRoots {
+                roots_display: self.allowed_roots_display(),
+            }),
+        }
+    }
+
+    /// 允许根里**最长前缀**匹配的那一个；无匹配返回 `None`（越界）。
+    ///
+    /// 独立成函数是为了压 `resolve_within_allowed_roots` 的 CCN（棘轮 ≤ 10）——
+    /// 语义不变，仍是「取最贴近目标的那层根」。
+    fn longest_prefix_root(&self, resolved: &Path) -> Option<&'a Path> {
+        let mut best: Option<(&'a Path, usize)> = None;
+        for candidate in self.allowed_roots {
+            if resolved.starts_with(candidate) {
+                let depth = candidate.as_os_str().len();
+                if best.is_none_or(|(_, b)| depth > b) {
+                    best = Some((candidate.as_path(), depth));
+                }
+            }
+        }
+        best.map(|(root, _)| root)
+    }
+
+    /// 越界文案里列出的根（仅允许根；会话根由工具层另行提示）。
+    fn allowed_roots_display(&self) -> String {
+        self.allowed_roots
+            .iter()
+            .map(|r| r.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// 目标是否落在**本档位的允许范围内**（不打开文件，只判落点）。
+    ///
+    /// 供 `read_dir` 这类「先判是否需要弹审批」的调用点使用：
+    /// - `Any`（L4）⇒ 恒 `true`；
+    /// - `AllowedRoots`（非空根）⇒ 落在 {会话根} ∪ 允许根内即 `true`；
+    /// - `SessionRoot`（含 `AllowedRoots` + 空根的 fail-closed 退化）⇒ 落在会话根内即 `true`。
+    ///
+    /// 读语义：目标不存在 ⇒ `false`（交回调用点走审批 / 报错）。判定规则与
+    /// [`resolve_for_read`] 一致（canonicalize + 前缀），只是不真的 `open`——`read_dir`
+    /// 的目标是目录，不必走 `openat2` 那一层。
+    #[must_use]
+    pub fn is_within_scope(&self, sub: &str) -> bool {
+        if self.scope.is_unrestricted() {
+            return true;
+        }
+        if self.allowed_roots_active() {
+            return self.resolve_within_allowed_roots(sub, true).is_ok();
+        }
+        let Ok(base) = canonical_workspace_root(self.root) else {
+            return false;
+        };
+        unrestricted_target(&base, sub.trim())
+            .canonicalize()
+            .is_ok_and(|p| p.starts_with(&base))
+    }
+
     /// 见 [`resolve_for_read`]。
     pub fn for_read(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
         if self.scope.is_unrestricted() {
             self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_read(self.root, sub);
         }
+        if self.allowed_roots_active() {
+            let (root, rel) = self.resolve_within_allowed_roots(sub, true)?;
+            return resolve_for_read(root, &rel);
+        }
         resolve_for_read(self.root, sub)
     }
 
     /// 见 [`resolve_for_read_open`]（`openat2` / `RESOLVE_IN_ROOT`）。
+    ///
+    /// `AllowedRoots` 下基 fd 换成**被选中的那个根**，逃逸边界随之下移到该根，
+    /// symlink 防逃逸语义不变。
     pub fn for_read_open(&self, sub: &str) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
         if self.scope.is_unrestricted() {
             self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_read_open(self.root, sub);
         }
+        if self.allowed_roots_active() {
+            let (root, rel) = self.resolve_within_allowed_roots(sub, true)?;
+            return resolve_for_read_open(root, &rel);
+        }
         resolve_for_read_open(self.root, sub)
     }
 
     /// 见 [`resolve_for_write`]。
+    ///
+    /// `AllowedRoots` 下仍走 `ensure_existing_ancestor_within_root`，只是根换成被选中的那个。
     pub fn for_write(&self, sub: &str) -> Result<PathBuf, WorkspacePathError> {
         if self.scope.is_unrestricted() {
             self.audit_unrestricted_path(sub);
             return resolve_unrestricted_for_write(self.root, sub);
         }
+        if self.allowed_roots_active() {
+            let (root, rel) = self.resolve_within_allowed_roots(sub, false)?;
+            return resolve_for_write(root, &rel);
+        }
         resolve_for_write(self.root, sub)
     }
+}
+
+/// 目标绝对路径：读要求存在（直接 `canonicalize`），写允许不存在（最近已存在祖先 + 后缀）。
+fn resolve_scope_target(
+    absolute: &Path,
+    must_exist: bool,
+) -> Result<PathBuf, WorkspacePathError> {
+    if must_exist {
+        absolute
+            .canonicalize()
+            .map_err(WorkspacePathError::PathResolveFailed)
+    } else {
+        resolve_existing_ancestor(absolute)
+    }
+}
+
+/// 把绝对路径解析成「已存在祖先的 canonical 形式 + 未存在的相对后缀」。
+///
+/// 写路径的目标可能尚不存在，不能直接 `canonicalize`；向上找到最近的可 canonical 祖先，
+/// 再拼回剩余后缀——与 [`normalize_subpath_for_workspace`] 同一策略，供 `AllowedRoots` 的
+/// 根选择复用。
+fn resolve_existing_ancestor(absolute: &Path) -> Result<PathBuf, WorkspacePathError> {
+    let mut try_path: &Path = absolute;
+    loop {
+        match try_path.canonicalize() {
+            Ok(anchor) => {
+                let suffix = absolute.strip_prefix(try_path).map_err(|_| {
+                    WorkspacePathError::PathResolveFailed(std::io::Error::other(
+                        "absolute path prefix mismatch during allowed-roots resolution",
+                    ))
+                })?;
+                return Ok(anchor.join(suffix));
+            }
+            Err(e) => {
+                try_path = try_path
+                    .parent()
+                    .ok_or(WorkspacePathError::PathResolveFailed(e))?;
+            }
+        }
+    }
+}
+
+/// 已确认 `resolved` 落在 `root` 之下时，取 POSIX 风格相对路径（空 ⇒ `.`）。
+fn relative_subpath(resolved: &Path, root: &Path) -> String {
+    let rel = resolved.strip_prefix(root).unwrap_or(Path::new(""));
+    let s = rel.to_string_lossy().replace('\\', "/");
+    if s.is_empty() { ".".to_string() } else { s }
 }
 
 /// 相对工作区根的 POSIX 风格路径（供工具返回给模型，不暴露绝对路径）。

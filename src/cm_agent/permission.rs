@@ -221,12 +221,20 @@ impl PermissionCaps {
 /// `net_scope = Any` 等价于 `http_fetch_allowed_prefixes = ["*"]`。
 #[must_use]
 pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps {
+    // S7：路径轴按「等级 + 是否配了多根」分档。规则只写在
+    // [`crate::cm_types::path_scope_for`] 一处（与 `caps_view_with_allowed_roots` 同源），
+    // 本函数**不另写一套** `match level` 来推 `path_scope`，否则两处迟早漂移。
+    //
+    // `has_allowed_roots` 只对 L2 / L3 有意义；L0 / L1 恒 `SessionRoot`（L1 的公开承诺是
+    // 「工作区内读」），L4 恒 `Any`。空根 ⇒ fail-closed 退化为 `SessionRoot`。
+    let has_allowed_roots = !cfg.workspace_roots.workspace_allowed_roots.is_empty();
+    let path_scope = crate::cm_types::path_scope_for(level, has_allowed_roots);
     let full = || PermissionCaps {
         level,
         tool_visibility: ToolVisibility::Full,
         readonly_allow: None,
         external_tools: ExternalTools::Allowed,
-        path_scope: PathScope::SessionRoot,
+        path_scope,
         command_scope: allowlist_from_cfg(cfg),
         net_scope: prefixes_from_cfg(cfg),
         approval: ApprovalPolicy::Gate,
