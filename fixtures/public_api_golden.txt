@@ -86,8 +86,8 @@ excluded	mod cm_llm
 excluded	mod cm_workflow
 excluded	mod e2e_scenario
 excluded	mod test_serve
-excluded	struct WebChatJsonBuildArgs
-excluded	struct WebChatStreamBuildArgs
+excluded	enum WebTurnEndpoint
+excluded	struct WebTurnInputs
 excluded	type RunAgentTurnParams
 excluded	use CliExitError
 excluded	use E2eMode

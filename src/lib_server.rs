@@ -238,138 +238,121 @@ pub struct TurnRequest<'a> {
 #[deprecated(note = "改名为 TurnRequest（S2，见 #1285）")]
 pub type RunAgentTurnParams<'a> = TurnRequest<'a>;
 
-/// 构造 [`TurnRequest::web_chat_stream`] 所需的参数包（避免长形参列表）。
+/// Web 端点（`/chat/stream` 与 `POST /chat`）之间**唯一**的传输差异。
 ///
-/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297 与 `fixtures/public_api_golden.txt`）：
-/// 这是 S2 遗留的 25 字段参数袋，SDK 化要消灭的正是它。刻意**不**标 `#[deprecated]`——
-/// 本仓 `chat_job_queue` 与 [`TurnRequest::web_chat_stream`] 自身仍在构造它，
-/// `-D warnings` 下会把内部调用点变成编译错误。
+/// 用 enum 而非三个 `Option` 字段：全 `None` 与「这就是 JSON 端点」在类型上不可区分，而两者的
+/// 取消 / 审批语义**不同**——`POST /chat` 没有取消通道，也没有审批会话。抹平会让
+/// 「传了 `cancel` 却被忽略」变成静默行为（#1379 风险节要求把这个差异显式化）。
 #[cfg(feature = "web")]
 #[doc(hidden)]
-pub struct WebChatStreamBuildArgs<'a> {
-    pub shared: RunAgentTurnSharedInputs<'a>,
-    pub messages: &'a mut Vec<types::Message>,
-    pub effective_working_dir: &'a std::path::Path,
-    pub workspace_is_set: bool,
-    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    pub per_flight: std::sync::Arc<PerTurnFlight>,
-    pub web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
-    pub temperature_override: Option<f32>,
-    pub model_override: Option<String>,
-    pub use_executor_model: bool,
-    pub executor_model_override: Option<String>,
-    pub executor_api_base: Option<String>,
-    pub executor_api_key: Option<String>,
-    pub seed_override: types::LlmSeedOverride,
-    pub long_term_memory:
-        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+pub enum WebTurnEndpoint<'a> {
+    /// `/chat/stream`：SSE 输出、可取消、可走工具审批。
+    Stream {
+        out: &'a mpsc::Sender<String>,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        web_tool_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    },
+    /// `POST /chat`：无 SSE 通道、无取消、无工具审批。
+    Json,
+}
+
+impl<'a> WebTurnEndpoint<'a> {
+    /// 端点差异**只**落在这里：JSON 侧 `out` / `cancel` / `web_tool_ctx` 恒 `None`。
+    fn into_transport(self, per_flight: std::sync::Arc<PerTurnFlight>) -> AgentTurnTransport<'a> {
+        let (out, cancel, web_tool_ctx) = match self {
+            Self::Stream {
+                out,
+                cancel,
+                web_tool_ctx,
+            } => (Some(out), Some(cancel), web_tool_ctx),
+            Self::Json => (None, None, None),
+        };
+        AgentTurnTransport {
+            out,
+            no_stream: false,
+            cancel,
+            per_flight: Some(per_flight),
+            web_tool_ctx,
+            sse_control_mirror: None,
+            llm_backend: None,
+            trace_sink: None,
+        }
+    }
+}
+
+/// Web 端点专属的回合输入；其余通用输入由 [`TurnRequest::web`] 的前三个参数原样承接。
+///
+/// 取代 `WebChatStreamBuildArgs`（**25** 字段）/ `WebChatJsonBuildArgs`（**22** 字段）两个平铺袋，
+/// 以及它们与 `TurnRequest` 之间的 `WebChatJobCommonParts` / `from_web_job_common` 两层转接（#1379）。
+/// 这里只留**只有 Web 端点才有**的输入，端点差异另由 [`WebTurnEndpoint`] 显式表达。
+///
+/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297 与 `fixtures/public_api_golden.txt`）：本仓
+/// `chat_job_queue` 仍在构造它，故刻意**不**标 `#[deprecated]`——`-D warnings` 会把内部调用点变成编译错误。
+#[cfg(feature = "web")]
+#[doc(hidden)]
+pub struct WebTurnInputs<'a> {
+    /// 队列任务号；派生 SSE 日志根 span。
     pub job_id: u64,
+    /// 会话 id：长期记忆作用域 + trace span 字段。
     pub conversation_id: &'a str,
     /// 与 HTTP **`x-request-id`** 同值；写入 [`observability::TracingChatTurn`] 供回合内 SSE 错误带回。
     pub request_id: Option<String>,
-    pub out: &'a mpsc::Sender<String>,
-    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub request_audit: Arc<WebRequestAudit>,
-    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    /// 本回合飞行状态。**持有这个 `Arc` 即在册**（`ChatJobQueue::active_per_flights`）：
+    /// 调用方必须让它活到收尾结束，否则 `GET /status` 的 `per_active_jobs` 会提前失去该任务。
+    pub per_flight: std::sync::Arc<PerTurnFlight>,
+    pub request_audit: std::sync::Arc<WebRequestAudit>,
+    pub process_handles: std::sync::Arc<crate::process_handles::TurnProcessHandles>,
     /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
     pub permission: crate::cm_agent::permission::TurnPermissionStages,
-    /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
-    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
-    ///
-    /// 只有**流式**路径接这个信号（JSON 路径传 `None`）：自动续跑对非流式没有语义。
-    pub paused_reason_sink:
-        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
-}
-
-/// 构造 [`TurnRequest::web_chat_json`] 所需的参数包。
-///
-/// `#[doc(hidden)]` + 不承诺 semver（S6，见 #1297）：理由同
-/// [`WebChatStreamBuildArgs`]，同样刻意不标 `#[deprecated]`（内部仍有构造点）。
-#[cfg(feature = "web")]
-#[doc(hidden)]
-pub struct WebChatJsonBuildArgs<'a> {
-    pub shared: RunAgentTurnSharedInputs<'a>,
-    pub messages: &'a mut Vec<types::Message>,
-    pub effective_working_dir: &'a std::path::Path,
-    pub workspace_is_set: bool,
-    pub per_flight: std::sync::Arc<PerTurnFlight>,
-    pub temperature_override: Option<f32>,
-    pub model_override: Option<String>,
-    pub use_executor_model: bool,
-    pub executor_model_override: Option<String>,
-    pub executor_api_base: Option<String>,
-    pub executor_api_key: Option<String>,
-    pub seed_override: types::LlmSeedOverride,
     pub long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    pub job_id: u64,
-    pub conversation_id: &'a str,
-    /// 与 HTTP **`x-request-id`** 同值（JSON 路径当前多为 `None`；与 stream 字段形状对齐）。
-    pub request_id: Option<String>,
+    /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub request_audit: Arc<WebRequestAudit>,
-    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    /// 权限 `min` 链的四档输入；见 [`RunAgentTurnAttach::permission`]。
-    pub permission: crate::cm_agent::permission::TurnPermissionStages,
-    /// 后台任务注册表（`run_command` 的 `async=true`）。
-    pub tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
-    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
-    ///
-    /// 只有**流式**路径接这个信号（JSON 路径传 `None`）：自动续跑对非流式没有语义。
-    pub paused_reason_sink:
-        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
-}
-/// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
-#[cfg(feature = "web")]
-struct WebChatJobCommonParts<'a> {
-    shared: RunAgentTurnSharedInputs<'a>,
-    messages: &'a mut Vec<types::Message>,
-    effective_working_dir: &'a std::path::Path,
-    workspace_is_set: bool,
-    transport: AgentTurnTransport<'a>,
-    llm: AgentTurnLlmOverrides,
-    long_term_memory:
-        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    conversation_id: &'a str,
-    turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    permission: crate::cm_agent::permission::TurnPermissionStages,
-    tracing_chat_turn: Arc<observability::TracingChatTurn>,
-    request_audit: Arc<WebRequestAudit>,
-    process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
-    paused_reason_sink:
-        Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
+    /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用。
+    pub tool_job_registry: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。只有流式端点接它。
+    pub paused_reason_sink: Option<
+        std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
+    >,
+    /// 端点差异（SSE / JSON）；见 [`WebTurnEndpoint`]。
+    pub endpoint: WebTurnEndpoint<'a>,
 }
 
 impl<'a> TurnRequest<'a> {
+
+    /// Web 端点（`/chat/stream`、`POST /chat`）的回合请求。
+    ///
+    /// 取代 `web_chat_stream` / `web_chat_json` 与两个 25/22 字段的参数袋（#1379）。三处派生收在这里，
+    /// 调用方不再各自复制：记忆作用域取 `conversation_id`、trace span 由
+    /// `job_id + conversation_id + request_id` 构造、transport 的 `sse_control_mirror` /
+    /// `llm_backend` / `trace_sink` 保持 `None`（需要注入的调用方在拿到结果后再赋值）。
     #[cfg(feature = "web")]
-    fn from_web_job_common(parts: WebChatJobCommonParts<'a>) -> Self {
-        let WebChatJobCommonParts {
-            shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
-            transport,
-            llm,
-            long_term_memory,
+    pub fn web(
+        shared: RunAgentTurnSharedInputs<'a>,
+        session: RunAgentTurnSession<'a>,
+        llm: AgentTurnLlmOverrides,
+        inputs: WebTurnInputs<'a>,
+    ) -> Self {
+        let WebTurnInputs {
+            job_id,
             conversation_id,
-            turn_allowed_tool_names,
-            permission,
-            tracing_chat_turn,
+            request_id,
+            per_flight,
             request_audit,
             process_handles,
+            permission,
+            long_term_memory,
+            turn_allowed_tool_names,
             tool_job_registry,
             paused_reason_sink,
-        } = parts;
+            endpoint,
+        } = inputs;
+        let tracing_chat_turn =
+            observability::TracingChatTurn::new(job_id, conversation_id, request_id);
         Self {
             shared,
-            session: RunAgentTurnSession {
-                messages,
-                effective_working_dir,
-                workspace_is_set,
-            },
-            transport,
+            session,
+            transport: endpoint.into_transport(per_flight),
             llm,
             attach: RunAgentTurnAttach {
                 long_term_memory,
@@ -386,143 +369,6 @@ impl<'a> TurnRequest<'a> {
                 paused_reason_sink,
             },
         }
-    }
-
-    /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
-    #[cfg(feature = "web")]
-    pub fn web_chat_stream(args: WebChatStreamBuildArgs<'a>) -> Self {
-        let WebChatStreamBuildArgs {
-            shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
-            cancel,
-            per_flight,
-            web_tool_ctx,
-            temperature_override,
-            model_override,
-            use_executor_model,
-            executor_model_override,
-            executor_api_base,
-            executor_api_key,
-            seed_override,
-            long_term_memory,
-            job_id,
-            conversation_id,
-            out,
-            turn_allowed_tool_names,
-            request_audit,
-            process_handles,
-            permission,
-            request_id,
-            tool_job_registry,
-            paused_reason_sink,
-        } = args;
-        Self::from_web_job_common(WebChatJobCommonParts {
-            shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
-            transport: AgentTurnTransport {
-                out: Some(out),
-                no_stream: false,
-                cancel: Some(cancel),
-                per_flight: Some(per_flight),
-                web_tool_ctx,
-                sse_control_mirror: None,
-                llm_backend: None,
-                trace_sink: None,
-            },
-            llm: AgentTurnLlmOverrides {
-                temperature_override,
-                model_override,
-                use_executor_model,
-                executor_model_override,
-                executor_api_base,
-                executor_api_key,
-                seed_override,
-            },
-            long_term_memory,
-            conversation_id,
-            turn_allowed_tool_names,
-            permission,
-            tracing_chat_turn: observability::TracingChatTurn::new(
-                job_id,
-                conversation_id,
-                request_id,
-            ),
-            request_audit,
-            process_handles,
-            tool_job_registry,
-            paused_reason_sink,
-        })
-    }
-
-    /// Web `POST /chat`（JSON）：无 SSE；不向 serve 进程 stdout 回显助手/工具输出。
-    #[cfg(feature = "web")]
-    pub fn web_chat_json(args: WebChatJsonBuildArgs<'a>) -> Self {
-        let WebChatJsonBuildArgs {
-            shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
-            per_flight,
-            temperature_override,
-            model_override,
-            use_executor_model,
-            executor_model_override,
-            executor_api_base,
-            executor_api_key,
-            seed_override,
-            long_term_memory,
-            job_id,
-            conversation_id,
-            turn_allowed_tool_names,
-            request_audit,
-            process_handles,
-            permission,
-            request_id,
-            tool_job_registry,
-            paused_reason_sink,
-        } = args;
-        Self::from_web_job_common(WebChatJobCommonParts {
-            shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
-            transport: AgentTurnTransport {
-                out: None,
-                no_stream: false,
-                cancel: None,
-                per_flight: Some(per_flight),
-                web_tool_ctx: None,
-                sse_control_mirror: None,
-                llm_backend: None,
-                trace_sink: None,
-            },
-            llm: AgentTurnLlmOverrides {
-                temperature_override,
-                model_override,
-                use_executor_model,
-                executor_model_override,
-                executor_api_base,
-                executor_api_key,
-                seed_override,
-            },
-            long_term_memory,
-            conversation_id,
-            turn_allowed_tool_names,
-            permission,
-            tracing_chat_turn: observability::TracingChatTurn::new(
-                job_id,
-                conversation_id,
-                request_id,
-            ),
-            request_audit,
-            process_handles,
-            tool_job_registry,
-            paused_reason_sink,
-        })
     }
 
     /// `bench` 批量任务：无终端渲染、非流式、可超时取消。

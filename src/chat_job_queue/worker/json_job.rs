@@ -62,19 +62,19 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
 
     let r = queue_deps
         .turn_runner
-        .run(crate::TurnRequest::web_chat_json(
-            crate::WebChatJsonBuildArgs {
-                shared: crate::RunAgentTurnSharedInputs {
-                    client: &queue_deps.client,
-                    api_key: prepared.api_key_turn.as_str(),
-                    cfg: &prepared.cfg_turn,
-                    tools: prepared.tools_for_job.as_slice(),
-                },
+        .run(crate::TurnRequest::web(
+            crate::RunAgentTurnSharedInputs {
+                client: &queue_deps.client,
+                api_key: prepared.api_key_turn.as_str(),
+                cfg: &prepared.cfg_turn,
+                tools: prepared.tools_for_job.as_slice(),
+            },
+            crate::RunAgentTurnSession {
                 messages: &mut messages,
                 effective_working_dir: &work_dir,
                 workspace_is_set,
-                // 留一份强引用：它让条目在 `/status` 里活到收尾结束（#1380）。
-                per_flight: Arc::clone(&prepared.flight),
+            },
+            crate::AgentTurnLlmOverrides {
                 temperature_override,
                 model_override: prepared.client_model_override,
                 use_executor_model: false,
@@ -82,17 +82,22 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 executor_api_base: prepared.executor_api_base,
                 executor_api_key: prepared.executor_api_key,
                 seed_override,
-                long_term_memory: queue_deps.long_term_memory.clone(),
+            },
+            crate::WebTurnInputs {
                 job_id,
                 conversation_id: conversation_id.as_str(),
                 request_id,
-                turn_allowed_tool_names: prepared.turn_allow,
-                permission: prepared.permission,
+                // 留一份强引用：它让条目在 `/status` 里活到收尾结束（#1380）。
+                per_flight: Arc::clone(&prepared.flight),
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
+                permission: prepared.permission,
+                long_term_memory: queue_deps.long_term_memory.clone(),
+                turn_allowed_tool_names: prepared.turn_allow,
                 tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
                 // `#1455` C 步：非流式路径**不**接暂停信号（自动续跑只对流式生效）。
                 paused_reason_sink: None,
+                endpoint: crate::WebTurnEndpoint::Json,
             },
         ))
         .await;

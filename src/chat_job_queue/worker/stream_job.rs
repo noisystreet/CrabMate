@@ -92,39 +92,49 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     let saved_revision_sink: std::sync::Arc<std::sync::Mutex<Option<u64>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
 
-    let mut params = crate::TurnRequest::web_chat_stream(crate::WebChatStreamBuildArgs {
-        shared: crate::RunAgentTurnSharedInputs {
+    let mut params = crate::TurnRequest::web(
+        crate::RunAgentTurnSharedInputs {
             client: &queue_deps.client,
             api_key: prepared.api_key_turn.as_str(),
             cfg: &prepared.cfg_turn,
             tools: prepared.tools_for_job.as_slice(),
         },
-        messages: &mut messages,
-        effective_working_dir: &work_dir,
-        workspace_is_set,
-        cancel: cancel.clone(),
-        per_flight: std::sync::Arc::clone(&prepared.flight),
-        web_tool_ctx: web_tool_ctx.as_ref().map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
-        temperature_override,
-        model_override: prepared.client_model_override,
-        use_executor_model: false,
-        executor_model_override: prepared.executor_model_override,
-        executor_api_base: prepared.executor_api_base,
-        executor_api_key: prepared.executor_api_key,
-        seed_override,
-        long_term_memory: queue_deps.long_term_memory.clone(),
-        job_id,
-        conversation_id: conversation_id.as_str(),
-        request_id: request_id.clone(),
-        out: &sse_tx,
-        turn_allowed_tool_names: prepared.turn_allow,
-        // `TurnPermissionStages` 是 `Copy`，直接取用。
-        permission: prepared.permission,
-        request_audit: std::sync::Arc::new(request_audit),
-        process_handles: std::sync::Arc::clone(&app.process_handles),
-        tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
-        paused_reason_sink: Some(std::sync::Arc::clone(&paused_reason_sink)),
-    });
+        crate::RunAgentTurnSession {
+            messages: &mut messages,
+            effective_working_dir: &work_dir,
+            workspace_is_set,
+        },
+        crate::AgentTurnLlmOverrides {
+            temperature_override,
+            model_override: prepared.client_model_override,
+            use_executor_model: false,
+            executor_model_override: prepared.executor_model_override,
+            executor_api_base: prepared.executor_api_base,
+            executor_api_key: prepared.executor_api_key,
+            seed_override,
+        },
+        crate::WebTurnInputs {
+            job_id,
+            conversation_id: conversation_id.as_str(),
+            request_id: request_id.clone(),
+            per_flight: std::sync::Arc::clone(&prepared.flight),
+            request_audit: std::sync::Arc::new(request_audit),
+            process_handles: std::sync::Arc::clone(&app.process_handles),
+            // `TurnPermissionStages` 是 `Copy`，直接取用。
+            permission: prepared.permission,
+            long_term_memory: queue_deps.long_term_memory.clone(),
+            turn_allowed_tool_names: prepared.turn_allow,
+            tool_job_registry: Some(std::sync::Arc::clone(&app.tool_job_registry)),
+            paused_reason_sink: Some(std::sync::Arc::clone(&paused_reason_sink)),
+            endpoint: crate::WebTurnEndpoint::Stream {
+                out: &sse_tx,
+                cancel: cancel.clone(),
+                web_tool_ctx: web_tool_ctx
+                    .as_ref()
+                    .map(|c| c as &dyn crate::cm_approval::ApprovalBroker),
+            },
+        },
+    );
     // e2e 测试注入的自定义 LLM 后端（`None` 时使用默认 HTTP 后端）。
     params.transport.llm_backend = queue_deps.llm_backend;
     // 排队期间已 cancel：仍发过 setup 帧，但不再进 LLM/工具。
