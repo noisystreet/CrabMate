@@ -268,6 +268,97 @@ pub struct WorkspaceChangelogResponse {
     pub error: Option<String>,
 }
 
+/// `GET /workspace/git` 查询参数：`refresh=true` 只跳过缓存读（仍回写缓存）。
+#[derive(Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceGitQuery {
+    #[serde(default)]
+    pub refresh: Option<bool>,
+}
+
+/// `GET /workspace/git` 的可用性状态。
+///
+/// 四值互不相同 —— 非 git 工作区 / git 不可用 / 读取失败必须能被 UI 分别展示，
+/// 不能退化成同一个「空值 + error」形态（否则客户端分不清该写哪句文案）。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceGitState {
+    /// 探测成功：`head` / `counts` 有效。
+    Ok,
+    /// 工作区根不是 git 工作树。
+    NotARepo,
+    /// 找不到 / 起不来 `git`（未安装或不在 `PATH`）。
+    GitUnavailable,
+    /// 其余失败，具体看 `reason_code`。
+    Failed,
+}
+
+/// `head` 的判别标签。
+///
+/// detached 时**没有** `name` 字段：用「字段缺失」而不是空串来区分，避免客户端把
+/// 空分支名当成合法值渲染。`oid` 两种情形都存在（首提交仓库为 `null`），
+/// 让客户端只需处理「有值 / null」，不必再区分「字段缺失」。
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceGitHead {
+    Branch { name: String, oid: Option<String> },
+    Detached { oid: Option<String> },
+}
+
+/// 脏摘要：**分类计数**而非文件数去重（同一文件可同时 staged 与 unstaged）。
+///
+/// 口径：只统计工作区根子树内的记录（仓库根可能在工作区根之上，见 `git_projection` 的裁剪规则）。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WorkspaceGitCounts {
+    pub staged: u32,
+    pub unstaged: u32,
+    pub untracked: u32,
+    pub conflicted: u32,
+    /// 计入的记录行总数（rename 的 `2` 行只算一行）。
+    pub total: u32,
+}
+
+/// 响应值的来源，替代 `cached` + `stale` 两个布尔（后者存在 `stale=true` 而 `cached=false` 的非法组合）。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceGitSource {
+    /// 本次真探。
+    Probe,
+    /// TTL 内复用缓存。
+    Cache,
+    /// 重探失败，沿用旧值兜底。
+    StaleCache,
+}
+
+/// `GET /workspace/git`：当前工作区的只读 git 状态投影。
+///
+/// 一律 HTTP 200，用 [`WorkspaceGitState`] 表达可用性；`reason_code` 用
+/// `cm_api_contract::error_codes` 的 SCREAMING_SNAKE 常量。
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkspaceGitStatusResponse {
+    pub state: WorkspaceGitState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head: Option<WorkspaceGitHead>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ahead: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub behind: Option<u32>,
+    /// 「当前工作区根下」是否有未提交改动；**不**代表整个仓库干净（见裁剪规则）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dirty: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<WorkspaceGitCounts>,
+    /// 上次**真实探测**完成的服务端 unix 秒；命中缓存时不推进。
+    pub computed_at_unix: u64,
+    pub source: WorkspaceGitSource,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

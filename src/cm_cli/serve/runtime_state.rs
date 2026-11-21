@@ -81,6 +81,7 @@ pub(super) async fn build(
             tools,
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
             uploads_dir: paths.uploads_dir,
+            workspace_git_cache: std::sync::Arc::new(web::WorkspaceGitCache::default()),
         },
         chat: web::AppStateChatRuntime {
             chat_queue,

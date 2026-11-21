@@ -1858,6 +1858,97 @@
         },
         "type": "object"
       },
+      "WorkspaceGitStatusResponse": {
+        "properties": {
+          "ahead": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "behind": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "computed_at_unix": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "counts": {
+            "properties": {
+              "conflicted": {
+                "type": "integer"
+              },
+              "staged": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "unstaged": {
+                "type": "integer"
+              },
+              "untracked": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "head": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "branch",
+                  "detached"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "oid": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "probe",
+              "cache",
+              "stale_cache"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "not_a_repo",
+              "git_unavailable",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "upstream": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "computed_at_unix",
+          "source"
+        ],
+        "type": "object"
+      },
       "WorkspaceListEntry": {
         "properties": {
           "hash": {
@@ -5162,6 +5253,46 @@
           }
         ],
         "summary": "写入工作区文件原始字节（任意类型；上限 16 MiB；与 POST /workspace/file 的 JSON content 上限一致）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/git": {
+      "get": {
+        "description": "一律 200，用 `state` 表达可用性：`ok` / `not_a_repo` / `git_unavailable` / `failed`（后者看 `reason_code`）。`dirty` 只代表「当前工作区根下」有未提交改动，**不**代表仓库干净。`source` 为 `probe` / `cache` / `stale_cache`；`refresh=true` 只跳过缓存读，仍回写缓存。",
+        "parameters": [
+          {
+            "description": "跳过缓存读，强制重新探测（仍回写缓存）",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceGitStatusResponse"
+                }
+              }
+            },
+            "description": "git 状态投影（四态）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "当前工作区 git 状态只读投影（分支 + 脏摘要）",
         "tags": [
           "workspace"
         ]
