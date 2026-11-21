@@ -1,6 +1,9 @@
 //! B3：布局元数据差分指纹（只记行数 / kind 序 / `projection_hash`，不记全文）。
+//!
+//! E4/S3 起 `layout` 必填，原 `layout_prefers_projection`（`layout_schema_version >= 2` 判定）已删——
+//! 读路径不再可能给出 v1 / 缺失的元数据，留一个恒真的守卫只会让后来者以为还有第二条路。
 
-use crate::cm_api_contract::chat::{CONVERSATION_LAYOUT_SCHEMA_VERSION_V2, ConversationLayoutMeta};
+use crate::cm_api_contract::chat::ConversationLayoutMeta;
 
 /// 脱敏差分快照：可与客户端 hydration 指纹对照（不含正文）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,12 +11,6 @@ pub struct HydrationLayoutFingerprint {
     pub segment_count: usize,
     pub kind_order: String,
     pub projection_hash: Option<String>,
-}
-
-/// `layout_schema_version >= 2` 的元数据视为可用确定性投影键。
-#[must_use]
-pub fn layout_prefers_projection(meta: Option<&ConversationLayoutMeta>) -> bool {
-    meta.is_some_and(|m| m.layout_schema_version >= CONVERSATION_LAYOUT_SCHEMA_VERSION_V2)
 }
 
 /// 由会话 `layout` 生成差分指纹。
@@ -34,7 +31,7 @@ pub fn fingerprint_layout(meta: &ConversationLayoutMeta) -> HydrationLayoutFinge
 
 #[cfg(test)]
 mod tests {
-    use super::{fingerprint_layout, layout_prefers_projection};
+    use super::fingerprint_layout;
     use crate::cm_api_contract::chat::{ConversationLayoutMeta, ConversationLayoutSegment};
 
     fn seg(kind: &str, id: &str, seq: u32) -> ConversationLayoutSegment {
@@ -45,27 +42,6 @@ mod tests {
             before_tool_call_id: None,
             sequence: seq,
         }
-    }
-
-    #[test]
-    fn absent_or_v1_layout_is_legacy() {
-        assert!(!layout_prefers_projection(None));
-        let v1 = ConversationLayoutMeta {
-            layout_schema_version: 1,
-            projection_hash: None,
-            segments: vec![],
-        };
-        assert!(!layout_prefers_projection(Some(&v1)));
-    }
-
-    #[test]
-    fn v2_layout_prefers_projection_even_without_segments() {
-        let v2 = ConversationLayoutMeta {
-            layout_schema_version: 2,
-            projection_hash: Some("abc".into()),
-            segments: vec![],
-        };
-        assert!(layout_prefers_projection(Some(&v2)));
     }
 
     #[test]

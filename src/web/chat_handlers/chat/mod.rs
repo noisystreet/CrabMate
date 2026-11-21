@@ -322,7 +322,19 @@ pub(crate) async fn conversation_messages_handler(
     );
     let messages =
         crate::runtime::message_snapshot_display::web_client_snapshot_messages(&window.messages);
-    log_hydration_layout_projection(&cid, revision, seed.layout.as_ref(), &seed.messages);
+    // E4/S3：`layout` 不再可空。缺失 / 坏 JSON / v1 都说明这一行没被回填，直接报错而不是回 `null`——
+    // Client 的「无布局」兜底（S4 后已收窄）不该再被这条路径喂到，静默降级只会让「库内归零」重启不可判。
+    let Some(layout) = seed.layout.clone() else {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::new(
+                "CONVERSATION_LAYOUT_MISSING",
+                "会话缺少可用的布局元数据（未回填 / JSON 损坏 / v1）；先跑 `crabmate backfill-layout`"
+                    .to_string(),
+            )),
+        ));
+    };
+    log_hydration_layout_projection(&cid, revision, &layout, &seed.messages);
     let archive = if q.include_archive == Some(true) {
         let archived = state.load_conversation_archive_messages(&cid).await;
         crate::runtime::message_snapshot_display::web_client_snapshot_messages(&archived)
@@ -367,7 +379,7 @@ pub(crate) async fn conversation_messages_handler(
         active_permission_level,
         effective_permission_level,
         tiktoken_prompt_tokens,
-        layout: seed.layout,
+        layout,
         context_artifacts,
         archive,
         messages,
@@ -379,97 +391,87 @@ pub(crate) async fn conversation_messages_handler(
 
 /// hydration 布局观测（#1333 P1 / `docs/Turn布局设计.md` §16.6）。
 ///
-/// - `hydration_projection_source`：`layout_v2`（`layout_schema_version >= 2`）或 `legacy`；
-/// - `projection_hash_changed`：由 `messages` **重新派生**的投影 hash 与落盘 `projection_hash`
-///   是否不一致。只对 v2 会话计算——`layout` 缺失或过旧的会话没有基线可比，重算纯属浪费。
+/// E4/S3 起 `layout` 必填，所以只观测 `projection_hash_changed`：由 `messages` **重新派生**的投影
+/// hash 与落盘 `projection_hash` 是否不一致。落盘缺 hash 时为 `None`（**无基线**，不是「差分稳定」）。
 ///
 /// 「同 revision hash 抖动」要跨请求才看得出来：离线按 `(conversation_id, revision)` 分组，
 /// 同一 revision 出现两个不同 hash 才算抖动；单次请求只能报「派生 ≠ 落盘」。
+///
+/// 日志仍输出 `source=layout_v2` 字面量：该字段已恒值，但保留它才能与历史日志一起聚合。
 ///
 /// 脱敏：只记会话 id、revision 与 hash 前 12 字符，不含消息正文。
 fn log_hydration_layout_projection(
     conversation_id: &str,
     revision: u64,
-    layout: Option<&ConversationLayoutMeta>,
+    layout: &ConversationLayoutMeta,
     messages: &[Message],
 ) {
-    let (source, changed, hash_prefix) = hydration_layout_projection(layout, messages);
+    let (changed, hash_prefix) = hydration_projection_hash_diff(layout, messages);
     info!(
         target: "crabmate",
-        "hydration_projection_source conversation_id={conversation_id} revision={revision} source={source} projection_hash_changed={changed:?} projection_hash_prefix={hash_prefix:?}"
+        "hydration_projection_source conversation_id={conversation_id} revision={revision} source=layout_v2 projection_hash_changed={changed:?} projection_hash_prefix={hash_prefix:?}"
     );
 }
 
 /// [`log_hydration_layout_projection`] 的纯逻辑部分（便于单测）。
-fn hydration_layout_projection(
-    layout: Option<&ConversationLayoutMeta>,
+fn hydration_projection_hash_diff(
+    layout: &ConversationLayoutMeta,
     messages: &[Message],
-) -> (&'static str, Option<bool>, Option<String>) {
-    let Some(meta) = layout else {
-        return ("legacy", None, None);
-    };
-    // 守卫在生产路径上**恒真**：v1 已在 `conversation_store::layout_meta_from_column` 被拒
-    // （#1338 起不再回传 v1），能走到这里的必有 `layout_schema_version >= 2`。保留它只为让纯函数
-    // 边界仍然自洽（对应单测的 v1 输入），S3 删读路径时一并删。
-    if !crate::cm_turn_layout::layout_prefers_projection(Some(meta)) {
-        return ("legacy", None, None);
-    }
-    // v2 但落盘侧没有 hash（旧行 / 手工数据）⇒ **无基线**：报 `None` 而不是 `false`。
+) -> (Option<bool>, Option<String>) {
+    // 落盘侧没有 hash（旧行 / 手工数据）⇒ **无基线**：报 `None` 而不是 `false`。
     // `false` 会被读成「差分稳定」，而实际是「没法比」——两者对 B4 的判断完全相反。
     // 顺带省掉一次全量重算。
-    let Some(persisted) = meta.projection_hash.as_deref() else {
-        return ("layout_v2", None, None);
+    let Some(persisted) = layout.projection_hash.as_deref() else {
+        return (None, None);
     };
     let derived = crate::cm_turn_layout::layout_meta_from_messages(messages);
     let changed = derived.projection_hash.as_deref() != Some(persisted);
     let hash_prefix = Some(persisted.chars().take(12).collect::<String>());
-    ("layout_v2", Some(changed), hash_prefix)
+    (Some(changed), hash_prefix)
 }
 
 #[cfg(test)]
 mod hydration_telemetry_tests {
-    use super::hydration_layout_projection;
+    use super::hydration_projection_hash_diff;
     use crate::cm_api_contract::chat::ConversationLayoutMeta;
     use crate::types::Message;
 
-    fn meta(version: u32, hash: Option<&str>) -> ConversationLayoutMeta {
+    fn meta(hash: Option<&str>) -> ConversationLayoutMeta {
         ConversationLayoutMeta {
-            layout_schema_version: version,
+            layout_schema_version: 2,
             projection_hash: hash.map(str::to_string),
             segments: vec![],
         }
     }
 
-    /// 旧会话（无 `layout` / v1）走 legacy 且**不**重算 hash。
+    /// 落盘 hash 与重新派生不一致要能被记到（B4/E4 的关键证据）。
     #[test]
-    fn missing_or_v1_layout_is_legacy_without_hash_check() {
+    fn layout_reports_derived_hash_mismatch() {
         let messages = vec![Message::user_only("hi")];
-        let (source, changed, prefix) = hydration_layout_projection(None, &messages);
-        assert_eq!((source, changed, prefix), ("legacy", None, None));
-        let v1 = meta(1, Some("stale"));
-        let (source, changed, prefix) = hydration_layout_projection(Some(&v1), &messages);
-        assert_eq!((source, changed, prefix), ("legacy", None, None));
-    }
-
-    /// v2 会话：落盘 hash 与重新派生不一致要能被记到（B4/E4 的关键证据）。
-    #[test]
-    fn v2_layout_reports_derived_hash_mismatch() {
-        let messages = vec![Message::user_only("hi")];
-        let v2 = meta(2, Some("hash-that-will-not-match-派生值"));
-        let (source, changed, prefix) = hydration_layout_projection(Some(&v2), &messages);
-        assert_eq!(source, "layout_v2");
+        let (changed, prefix) =
+            hydration_projection_hash_diff(&meta(Some("hash-that-will-not-match-派生值")), &messages);
         assert_eq!(changed, Some(true));
         assert_eq!(prefix.as_deref(), Some("hash-that-wi"));
     }
 
-    /// v2 但落盘缺 hash ⇒ `None`（无基线），**不能**报 `false`——那会被读成「差分稳定」。
+    /// 落盘缺 hash ⇒ `None`（无基线），**不能**报 `false`——那会被读成「差分稳定」。
     #[test]
-    fn v2_layout_without_persisted_hash_has_no_baseline() {
+    fn layout_without_persisted_hash_has_no_baseline() {
         let messages = vec![Message::user_only("hi")];
-        let v2 = meta(2, None);
-        let (source, changed, prefix) = hydration_layout_projection(Some(&v2), &messages);
-        assert_eq!(source, "layout_v2");
+        let (changed, prefix) = hydration_projection_hash_diff(&meta(None), &messages);
         assert_eq!(changed, None, "无基线必须与「稳定」区分开");
         assert_eq!(prefix, None);
+    }
+
+    /// 落盘 hash 与派生一致 ⇒ `false`（真·稳定）。此前没有用例覆盖这一支。
+    #[test]
+    fn layout_with_matching_hash_is_stable() {
+        let messages = vec![Message::user_only("hi")];
+        let derived = crate::cm_turn_layout::layout_meta_from_messages(&messages);
+        let persisted = derived.projection_hash.clone();
+        let (changed, prefix) =
+            hydration_projection_hash_diff(&meta(persisted.as_deref()), &messages);
+        assert_eq!(changed, Some(false));
+        assert!(prefix.is_some(), "一致时也要记 hash 前缀，便于对照");
     }
 }

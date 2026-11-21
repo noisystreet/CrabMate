@@ -35,12 +35,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   criterion is unmet (a dry-run that finds unparsable rows exits non-zero too), so a script can gate the
   legacy-read-path deletion instead of reading a human-oriented summary. Its output grows from three
   counters to total rows / to-backfill / filled / skipped-unparsable.
-- **`layout_schema_version: 1` rows are no longer served (#1338).** Such a row now yields `layout: null` —
-  the same shape as "never persisted" — and `crabmate backfill-layout` rewrites it as v2. There is no v1
-  compatibility path left **on purpose**: this server has always written v2 for Web, so a v1 row can only come
-  from hand-edited or early experimental data, and keeping a second read shape alive was exactly what made
-  "zero unusable rows" unverifiable. v2 conversations see no change; the shape of `layout` for them is
-  untouched.
+- **BREAKING: `GET /conversation/messages` now requires a usable `layout` (#1338 E4/S3).** `layout` left the
+  optional half of the contract: a conversation whose stored `layout_meta_json` is missing, not valid JSON, or
+  still `layout_schema_version: 1` answers **HTTP 500 `CONVERSATION_LAYOUT_MISSING`** instead of `layout: null`.
+  That is the whole point of E4 — the official Client carries no "no layout" read path any more, so serving
+  `null` would only hide un-migrated data. **Before deploying this build: run `crabmate backfill-layout`
+  (dry-run → `--apply` → dry-run again; a non-zero exit means rows remain).**
+  `cm_turn_layout::layout_prefers_projection` is gone with it, and the `hydration_projection_source` log value
+  is now always `layout_v2` (`legacy` can no longer occur). v2 conversations see no shape change other than
+  "there is no longer a null case".
 
 ### Added
 

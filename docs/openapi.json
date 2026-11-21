@@ -703,15 +703,8 @@
             "type": "boolean"
           },
           "layout": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConversationLayoutMeta"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "会话级布局；`null` = 未持久化。P4 起该键**总是**出现（不再省略），不随本页 `messages` 窗口切片。"
+            "$ref": "#/components/schemas/ConversationLayoutMeta",
+            "description": "会话级布局元数据。**必填**（E4/S3 起）：缺失 / 不可用不是「字段省略」，而是服务端错误\n（`CONVERSATION_LAYOUT_MISSING`），由 `crabmate backfill-layout` 先回填。不随本页 `messages` 窗口切片。"
           },
           "messages": {
             "description": "OpenAI 兼容 chat messages 对象数组",
@@ -752,6 +745,7 @@
         "required": [
           "conversation_id",
           "revision",
+          "layout",
           "messages"
         ],
         "title": "ConversationMessagesResponseBodyOpenApi",
