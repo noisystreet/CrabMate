@@ -321,6 +321,160 @@ mod tests {
         }
     }
 
+
+    /// 真 e2e（函数级）：决策 → 入队 → **队列真的执行了那一轮**。
+    ///
+    /// 用可控 `TurnEngine` 代替真 LLM：它既计数，又钉住「入队的消息里确实带续跑指令」。
+    /// 这比「`try_submit_json` 返回 Ok」强——那只证明入队，不证明它会跑。
+    #[tokio::test]
+    async fn go_actually_enqueues_and_runs_a_turn() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingEngine {
+            calls: Arc<AtomicUsize>,
+            saw_instruction: Arc<AtomicUsize>,
+        }
+
+        #[async_trait::async_trait]
+        impl crate::turn_runner::TurnEngine for CountingEngine {
+            async fn run(
+                &self,
+                params: crate::TurnRequest<'_>,
+            ) -> Result<
+                crate::turn_runner::TurnOutcome,
+                crate::agent::agent_turn::RunAgentTurnError,
+            > {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if params
+                    .session
+                    .messages
+                    .iter()
+                    .any(crate::cm_types::is_auto_resume_injection)
+                {
+                    self.saw_instruction.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(crate::turn_runner::TurnOutcome {
+                    commit: crate::agent::model_context_view::StructuralCommit::default(),
+                    stats: crate::turn_runner::TurnStats::default(),
+                })
+            }
+        }
+
+        let mut fixed = crate::config::load_config(None).expect("cfg");
+        fixed.autonomy.enabled = true;
+        fixed.autonomy.auto_resume = true;
+        // 两种 `cfg` 形状：`cfg_snap` 要 `Arc<AgentConfig>`，队列/会话要 `SharedAgentConfig`。
+        let agent_cfg: Arc<AgentConfig> = Arc::new(fixed);
+        let shared_cfg: crate::cm_config::SharedAgentConfig =
+            Arc::new(tokio::sync::RwLock::new((*agent_cfg).clone()));
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let saw = Arc::new(AtomicUsize::new(0));
+        let chat_queue = crate::chat_job_queue::ChatJobQueue::new(1, 8);
+        let queue_deps = Arc::new(crate::chat_job_queue::WebChatQueueDeps {
+            cfg: Arc::clone(&shared_cfg),
+            api_key: String::new(),
+            client: reqwest::Client::new(),
+            tools: crate::build_tools(),
+            chat_queue,
+            long_term_memory: None,
+            sse_stream_hub: Arc::new(crate::chat_job_queue::SseStreamHub::new()),
+            llm_backend: None,
+            turn_runner: Arc::new(CountingEngine {
+                calls: Arc::clone(&calls),
+                saw_instruction: Arc::clone(&saw),
+            }),
+        });
+
+        let app = crate::web::WebChatJobAppFacet {
+            conversation: crate::web::AppStateConversationRuntime {
+                conversation_backing: Arc::new(tokio::sync::RwLock::new(
+                    crate::cm_session_store::ConversationBacking::memory_default(),
+                )),
+                conversation_id_counter: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+                cfg: Arc::clone(&shared_cfg),
+            },
+            run_epoch: Arc::new(std::sync::Mutex::new(RunEpoch::new())),
+            process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
+            approval_sessions: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            tool_job_registry: crate::jobs::tool_jobs::registry_from_config(&agent_cfg),
+        };
+
+        // 先造一条会话：续跑会 `load_conversation_seed` 读它。
+        let saved = app
+            .conversation
+            .save_conversation_messages_if_revision(
+                "conv-e2e".to_string(),
+                vec![crate::cm_types::Message::user_only("跑个任务")],
+                None,
+                None,
+                None,
+                None,
+                Vec::new(),
+            )
+            .await;
+        assert_eq!(saved, crate::conversation_store::SaveConversationOutcome::Saved);
+        let rev = app
+            .conversation
+            .load_conversation_seed("conv-e2e")
+            .await
+            .and_then(|s| s.expected_revision)
+            .expect("seed revision");
+
+        maybe_auto_resume_next_turn(AutoResumeCtx {
+            queue_deps: &queue_deps,
+            app: &app,
+            cfg_snap: &agent_cfg,
+            conversation_id: "conv-e2e",
+            paused_reason: Some(TaskPauseReason::BudgetTokens),
+            saved_revision: Some(rev),
+            cancelled: false,
+            from_auto_resume: false,
+            request_agent_role: None,
+            request_session_mode: None,
+            request_permission_level: None,
+            work_dir: std::path::Path::new("."),
+            workspace_is_set: true,
+            temperature_override: None,
+            seed_override: crate::types::LlmSeedOverride::default(),
+            llm_override: None,
+            executor_llm_override: None,
+            readonly_tool_ttl_cache_secs: None,
+            github_token: None,
+            client_sse_protocol: None,
+        })
+        .await;
+
+        // 队列是异步的：等那一轮真的被执行。
+        for _ in 0..100 {
+            if calls.load(Ordering::SeqCst) > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "续跑回合应被队列执行一次——不只是入队"
+        );
+        assert_eq!(
+            saw.load(Ordering::SeqCst),
+            1,
+            "入队的消息里必须带续跑指令（magic name）"
+        );
+        assert_eq!(
+            app.run_epoch
+                .lock()
+                .expect("epoch")
+                .snapshot("conv-e2e")
+                .resumed_turns,
+            1,
+            "提交成功后应记一轮"
+        );
+    }
+
     /// **取消优先于一切**（含开关）：用户刚点了停止，绝不能替他再起一回合。
     #[test]
     fn cancelled_wins_even_over_switched_on() {
