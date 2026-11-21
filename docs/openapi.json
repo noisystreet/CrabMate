@@ -700,6 +700,7 @@
           },
           "has_older": {
             "default": false,
+            "description": "是否还有更早的页（等价于 `window_start_index > 0`）。",
             "type": "boolean"
           },
           "layout": {
@@ -731,12 +732,14 @@
           },
           "total_count": {
             "default": 0,
+            "description": "过滤后（客户端可见）的消息总条数，不随本页窗口变化。",
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
           "window_start_index": {
             "default": 0,
+            "description": "本页首条在过滤后序列中的下标；`has_older` 为真时可原样用作下一次的 `before_index`。",
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
@@ -2391,18 +2394,19 @@
             }
           },
           {
-            "description": "分页每页条数；省略或 0 表示返回过滤后的全量（兼容旧客户端）",
+            "description": "分页每页条数。省略或 0 表示返回过滤后的全量（兼容旧客户端）；超过单页上限按上限截断（见 maximum）。**服务端没有默认页长**。",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "format": "int32",
+              "maximum": 200,
               "minimum": 0,
               "type": "integer"
             }
           },
           {
-            "description": "取该下标之前的更早消息；省略表示尾部一页",
+            "description": "取该下标之前的更早消息（窗口的右开端点）。**仅当 `limit` > 0 时生效**——`limit` 省略或为 0 时本参数被忽略；超过当前总条数时按尾部一页处理（过期游标不报错）。",
             "in": "query",
             "name": "before_index",
             "required": false,
