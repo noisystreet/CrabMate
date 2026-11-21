@@ -29,6 +29,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Sandbox axes reach the permission projection (#1150, MB-6).** `sync_default_tool_sandbox_mode = docker`
+  now actually narrows two axes instead of being silently ignored at the caps layer: with no
+  `sync_default_tool_sandbox_docker_network` the container has no egress (`net_scope = none`), and a
+  non-empty `workspace_allowed_roots` is clamped back to the session root (sibling roots are not mounted).
+  Both show up in `GET /permission`'s `clamped_by` as `sandbox` **only when something is really clamped**,
+  plus one startup log line. `unrestricted` × Docker is now a **rejected combination** at finalize time —
+  the check looks only at an explicit/effective L4 (default level `unrestricted`, or an explicit
+  `permission_level_max = unrestricted`) and deliberately **not** at the L4 that loopback auto-derivation
+  produces, so `loopback + docker` keeps working.
 - **Multi-root path scope for file tools (#1149, S7).** `workspace_allowed_roots` now actually widens the
   file-tool path axis at **`workspace` / `approved`**: resolution uses `{session root} ∪ allowed roots` with
   longest-prefix root selection, so `read_file ../crabmate-client/...` no longer asks for approval. L1 is

@@ -91,7 +91,43 @@ pub async fn freeze_permission_ceiling_for_bind(
     bind_ip: IpAddr,
 ) -> Result<(PermissionLevel, CeilingSource), String> {
     let mut guard = cfg.write().await;
-    apply_ceiling_for_bind(&mut guard.permission, bind_ip)
+    let (mut level, source) = apply_ceiling_for_bind(&mut guard.permission, bind_ip)?;
+    let docker = guard.sync_tool_sandbox.sync_default_tool_sandbox_mode
+        == super::types::SyncDefaultToolSandboxMode::Docker;
+    if let Some(capped) = cap_derived_ceiling_under_docker_sandbox(&mut guard.permission, docker) {
+        level = capped;
+    }
+    Ok((level, source))
+}
+
+/// Docker 沙盒把**推导**出来的 L4 上限封顶到 `Approved`（设计 §6.4）。
+///
+/// 为什么是封顶而不是报错：`loopback + 未配 permission_level_max` 会推导出 L4，
+/// 那是绑定地址的副作用、用户并没说要 L4；直接拒绝会让「loopback + 开 Docker 沙盒」
+/// 这个常见组合起不来。但也**不能留着 L4**——容器只挂工作区且默认无出网，运行时应允许
+/// 切到 L4 就成了谎报（MB-6）。显式配置 L4 的情形由
+/// [`super::finalize::checks::validate_unrestricted_with_docker_sandbox`] 直接拒绝。
+///
+/// 返回封顶后的生效上限（未封顶时 `None`），供调用方更新已写回的启动日志值。
+fn cap_derived_ceiling_under_docker_sandbox(
+    perm: &mut PermissionConfig,
+    docker: bool,
+) -> Option<PermissionLevel> {
+    if !docker || perm.permission_level_max.is_some() {
+        return None;
+    }
+    if perm.permission_level_max_effective != PermissionLevel::Unrestricted {
+        return None;
+    }
+    perm.permission_level_max_effective = PermissionLevel::Approved;
+    perm.permission_level =
+        reconcile_default_level_with_ceiling(perm.permission_level, PermissionLevel::Approved);
+    log::warn!(
+        target: "crabmate",
+        "配置：Docker 沙盒把推导出的权限上限 unrestricted 封顶到 approved\
+         （容器只挂工作区且默认无出网，L4 在容器里名不副实；设计 §6.4）"
+    );
+    Some(PermissionLevel::Approved)
 }
 
 /// [`freeze_permission_ceiling_for_bind`] 的纯逻辑：推导上限 → 写回生效值 → 用**刚冻结的**
@@ -340,6 +376,89 @@ mod tests {
         assert_eq!(source, CeilingSource::DerivedLoopback);
         assert_eq!(perm.permission_level, PermissionLevel::Unrestricted);
         assert_eq!(perm.effective_ceiling(), PermissionLevel::Unrestricted);
+    }
+
+    /// 设计 §6.4：Docker 沙盒把 **loopback 推导**出的 L4 上限封顶到 `approved`。
+    ///
+    /// 不封顶的话运行时可切到 L4，而容器里两轴都被钳——`GET /permission` 会谎报
+    /// 「任意路径 + 任意出站」（MB-6 要消除的静默不一致）。
+    #[test]
+    fn docker_sandbox_caps_derived_unrestricted_ceiling() {
+        let mut b = crate::cm_config::builder::ConfigBuilder::default();
+        b.permission.permission_level_str = Some("approved".to_string());
+        let mut perm = derive_permission_config(&b).expect("derive 应成功");
+        let (ceiling, _) =
+            apply_ceiling_for_bind(&mut perm, IpAddr::from([127, 0, 0, 1])).expect("loopback 冻结");
+        assert_eq!(
+            ceiling,
+            PermissionLevel::Unrestricted,
+            "loopback + 未配上限应推导出 L4"
+        );
+
+        // 非 Docker：保持推导值。
+        assert_eq!(
+            cap_derived_ceiling_under_docker_sandbox(&mut perm, false),
+            None
+        );
+        assert_eq!(
+            perm.permission_level_max_effective,
+            PermissionLevel::Unrestricted
+        );
+
+        // Docker：封顶到 approved，默认档不再是 L4。
+        assert_eq!(
+            cap_derived_ceiling_under_docker_sandbox(&mut perm, true),
+            Some(PermissionLevel::Approved)
+        );
+        assert_eq!(perm.effective_ceiling(), PermissionLevel::Approved);
+        assert_eq!(perm.permission_level, PermissionLevel::Approved);
+    }
+
+    /// 显式配置的上限**不**封顶：那一支由 `finalize` 的拒绝组合报错处理，
+    /// 悄悄降档会让「我明明写了 unrestricted」变成谎话。
+    #[test]
+    fn docker_sandbox_does_not_cap_explicit_ceiling() {
+        let mut b = crate::cm_config::builder::ConfigBuilder::default();
+        b.permission.permission_level_max_str = Some("unrestricted".to_string());
+        let mut perm = derive_permission_config(&b).expect("derive 应成功");
+
+        assert_eq!(
+            cap_derived_ceiling_under_docker_sandbox(&mut perm, true),
+            None
+        );
+        assert_eq!(
+            perm.permission_level_max_effective,
+            PermissionLevel::Unrestricted
+        );
+    }
+
+    /// 接线回归：`freeze_permission_ceiling_for_bind` 在**看得到沙盒配置**的位置完成封顶。
+    ///
+    /// 与前面几条纯函数用例的区别：这条走的是生产入口，若把封顶调用从
+    /// `freeze_permission_ceiling_for_bind` 里删掉，它会红。
+    #[tokio::test]
+    async fn freeze_caps_derived_ceiling_under_docker_sandbox() {
+        use crate::SharedAgentConfig;
+        use crate::cm_config::types::SyncDefaultToolSandboxMode;
+
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+        cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode = SyncDefaultToolSandboxMode::Docker;
+        cfg.permission.permission_level_max = None;
+        cfg.permission.permission_level = PermissionLevel::Approved;
+        let shared: SharedAgentConfig = std::sync::Arc::new(tokio::sync::RwLock::new(cfg));
+
+        let (level, _source) =
+            freeze_permission_ceiling_for_bind(&shared, IpAddr::from([127, 0, 0, 1]))
+                .await
+                .expect("冻结应成功");
+
+        assert_eq!(level, PermissionLevel::Approved, "推导出的 L4 应被封顶");
+        let guard = shared.read().await;
+        assert_eq!(
+            guard.permission.effective_ceiling(),
+            PermissionLevel::Approved
+        );
+        assert_eq!(guard.permission.permission_level, PermissionLevel::Approved);
     }
 
     #[test]

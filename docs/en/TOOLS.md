@@ -468,7 +468,9 @@ This document describes built-in tools, common function-calling JSON examples, a
   `../crabmate-client/...` no longer needs approval. L1 stays session-root-only, L4 stays unrestricted,
   and an empty list fails closed back to the session root. **The command axis is out of scope**:
   `run_command` / `terminal_session` argv and `cwd` gates still use the session root (see #1315).
-  The sandbox does not narrow the network axis yet and `clamped_by` never reports `sandbox`.
+  The Docker sandbox narrows both axes further: with no `sync_default_tool_sandbox_docker_network` the
+  container has no egress (`net_scope = none`), and multi-root is clamped back to the session root — both
+  reported via `GET /permission`'s `clamped_by` (`sandbox`) and the startup log.
 
 ---
 

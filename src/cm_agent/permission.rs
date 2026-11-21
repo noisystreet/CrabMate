@@ -228,7 +228,23 @@ pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps
     // `has_allowed_roots` 只对 L2 / L3 有意义；L0 / L1 恒 `SessionRoot`（L1 的公开承诺是
     // 「工作区内读」），L4 恒 `Any`。空根 ⇒ fail-closed 退化为 `SessionRoot`。
     let has_allowed_roots = !cfg.workspace_roots.workspace_allowed_roots.is_empty();
-    let path_scope = crate::cm_types::path_scope_for(level, has_allowed_roots);
+    // 沙盒（设计 §6.4）：Docker 容器只挂 `working_dir`，宿主侧的多根在容器里不存在，
+    // 因此 `AllowedRoots` 必须钳回 `SessionRoot`——否则 `GET /permission` 报多根、实际
+    // 执行却是会话根，正是 MB-6 要消除的静默不一致。
+    let clamps = sandbox_clamps(level, cfg);
+    let path_scope = if clamps.path {
+        crate::cm_types::PathScope::SessionRoot
+    } else {
+        crate::cm_types::path_scope_for(level, has_allowed_roots)
+    };
+    // 出站网络：Docker 且未配网络名 ⇒ 容器无出网。
+    let net_scope_for = || {
+        if clamps.net {
+            NetScope::None
+        } else {
+            prefixes_from_cfg(cfg)
+        }
+    };
     let full = || PermissionCaps {
         level,
         tool_visibility: ToolVisibility::Full,
@@ -236,7 +252,7 @@ pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps
         external_tools: ExternalTools::Allowed,
         path_scope,
         command_scope: allowlist_from_cfg(cfg),
-        net_scope: prefixes_from_cfg(cfg),
+        net_scope: net_scope_for(),
         approval: ApprovalPolicy::Gate,
     };
     match level {
@@ -259,7 +275,7 @@ pub fn project_caps(level: PermissionLevel, cfg: &AgentConfig) -> PermissionCaps
             external_tools: ExternalTools::Denied,
             path_scope: PathScope::SessionRoot,
             command_scope: CommandScope::None,
-            net_scope: prefixes_from_cfg(cfg),
+            net_scope: net_scope_for(),
             approval: ApprovalPolicy::Deny,
         },
         PermissionLevel::Workspace => PermissionCaps {
@@ -541,6 +557,75 @@ fn prefixes_from_cfg(cfg: &AgentConfig) -> NetScope {
     NetScope::Prefixes(Arc::new(cfg.http_fetch.http_fetch_allowed_prefixes.clone()))
 }
 
+/// Docker 沙盒对两轴的钳制结果（设计 §6.4）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SandboxClamps {
+    /// 未配 `sync_default_tool_sandbox_docker_network` ⇒ 容器无出网，
+    /// `net_scope` 从 `Prefixes` 收窄成 `None`。
+    ///
+    /// **前提**：`http_fetch` / `http_request` 也经 SyncDefault Docker 执行
+    /// （`run_sync_default_in_docker`）。若将来改成宿主侧执行，这一轴就不再成立。
+    pub net: bool,
+    /// 容器只挂工作区 ⇒ 宿主侧的多根不存在，`AllowedRoots` 钳回 `SessionRoot`。
+    ///
+    /// 只有该档**原本**是 `AllowedRoots`（L2 / L3 + 非空 `workspace_allowed_roots`）
+    /// 才为 `true`；L1 即使配了多根也不放宽，因此不涉及钳制。
+    pub path: bool,
+}
+
+impl SandboxClamps {
+    /// 至少一轴被钳 ⇒ `clamped_by` 应含 `sandbox`（MB-6「不可静默」）。
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.net || self.path
+    }
+}
+
+/// 本等级 + 本配置下沙盒**实际**钳了哪些轴。
+///
+/// [`project_caps`]（投影）与 `GET /permission` 的 `clamped_by` 共用这一条判据，避免
+/// 「投影钳了但报不出来」。
+///
+/// - **非 Docker** ⇒ 恒不钳。
+/// - **L4** ⇒ 不钳：`unrestricted` 与沙盒是拒绝组合（设计 §6.4）。可达性由启动期保证——
+///   显式 L4 在 `finalize` 期直接报错，推导出的 L4 被封顶到 `approved`
+///   （`cm_config::cap_derived_ceiling_under_docker_sandbox`），所以运行时到不了 L4，
+///   这里也就不需要「偷偷降」。
+/// - **L0** ⇒ 不钳：`net_scope` 本来就是 `None`，路径本就 `SessionRoot`。
+#[must_use]
+pub fn sandbox_clamps(level: PermissionLevel, cfg: &AgentConfig) -> SandboxClamps {
+    let sb = &cfg.sync_tool_sandbox;
+    if sb.sync_default_tool_sandbox_mode != crate::cm_config::SyncDefaultToolSandboxMode::Docker
+        || level == PermissionLevel::Unrestricted
+        || level == PermissionLevel::Chat
+    {
+        return SandboxClamps::default();
+    }
+    let net = sb.sync_default_tool_sandbox_docker_network.trim().is_empty();
+    let has_roots = !cfg.workspace_roots.workspace_allowed_roots.is_empty();
+    let path = matches!(
+        crate::cm_types::path_scope_for(level, has_roots),
+        crate::cm_types::PathScope::AllowedRoots
+    );
+    SandboxClamps { net, path }
+}
+
+/// MB-6：把沙盒钳制打进启动日志（`GET /permission` 之外的第二条可见性来源）。
+///
+/// 只在**真的**钳了轴时打一行，避免每次启动都刷噪音。
+pub fn log_sandbox_clamps(level: PermissionLevel, cfg: &AgentConfig) {
+    let clamps = sandbox_clamps(level, cfg);
+    if clamps.any() {
+        log::info!(
+            target: "crabmate",
+            "沙盒钳制（设计 §6.4）：启动期默认档 level={level} net={} path={}\
+             （GET /permission 的 clamped_by 含 sandbox）",
+            clamps.net,
+            clamps.path
+        );
+    }
+}
+
 /// 等级解析的输入（§6.1 的 min 链）。
 ///
 /// 用结构体而非位置参数：字段会随 S5（请求体 / 持久化）继续增长，而仓库门禁限制形参 ≤ 9。
@@ -559,6 +644,9 @@ pub struct PermissionTurnInput<'a> {
 }
 
 /// 收窄的轴（`clamped_by` 的取值，§16.2）。空数组表示未被钳制。
+///
+/// 前三个变体钳的是**等级**；[`PermissionClamp::Sandbox`] 钳的是**轴**（`net_scope` /
+/// `path_scope`）——设计 §6.4 明确要求沙盒钳制出现在同一个 `clamped_by` 列表里（MB-6）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionClamp {
     /// 超过了服务端上限 `permission_level_max`。
@@ -567,6 +655,10 @@ pub enum PermissionClamp {
     Role,
     /// `Ask` / `Plan` 模式把等级钳到 `read`。
     SessionMode,
+    /// Docker 沙盒收窄了 `net_scope` / `path_scope`（§6.4）。
+    ///
+    /// 只在**真的被钳**时出现（典型：L3 + Docker + 未配网络名）。它不影响 `level`。
+    Sandbox,
 }
 
 impl PermissionClamp {
@@ -576,6 +668,7 @@ impl PermissionClamp {
             PermissionClamp::Ceiling => "ceiling",
             PermissionClamp::Role => "role",
             PermissionClamp::SessionMode => "session_mode",
+            PermissionClamp::Sandbox => "sandbox",
         }
     }
 }

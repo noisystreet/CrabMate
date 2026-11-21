@@ -440,6 +440,8 @@ fn derive_tail_sandbox_web_scalars(
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image.as_str(),
     )?;
+    // 设计 §6.4：`unrestricted`（L4）与 Docker 沙盒是拒绝组合，二选一。
+    super::checks::validate_unrestricted_with_docker_sandbox(sync_default_tool_sandbox_mode, b)?;
     let web_api_bearer_token =
         types::SecretString::new(b.web_api.web_api_bearer_token.clone().unwrap_or_default().into());
     // 默认 **false**：允许无密钥启动 `serve`；生产环境请显式 `web_api_require_bearer = true` 并配置非空密钥。
@@ -866,4 +868,28 @@ pub(super) fn derive_session_policy(
     let session_mode = super::checks::parse_builder_default_session_mode(b)?;
     let permission = super::super::permission::derive_permission_config(b)?;
     Ok((session_mode, permission))
+}
+
+#[cfg(all(test, feature = "docker_sandbox"))]
+mod sandbox_permission_tests {
+    use super::*;
+
+    /// 接线回归（#1150）：`derive_tail_sandbox_web_scalars` 里那条「拒绝组合」的调用若被删，
+    /// 这条会红（判据本身由 `cm_config::finalize::checks` 的用例覆盖，这里只钉接线）。
+    ///
+    /// 门控在 `feature = "docker_sandbox"`：未启用该 feature 的构建会先被
+    /// 「不支持 docker」拦下，走不到这条校验。
+    #[test]
+    fn docker_with_explicit_unrestricted_is_rejected_at_tail() {
+        let mut b = crate::cm_config::builder::ConfigBuilder::default();
+        b.sync_tool_sandbox.sync_default_tool_sandbox_mode_str = Some("docker".to_string());
+        b.sync_tool_sandbox.sync_default_tool_sandbox_docker_image = Some("img".to_string());
+        b.permission.permission_level_max_str = Some("unrestricted".to_string());
+
+        let err = match derive_tail_sandbox_web_scalars(&b) {
+            Ok(_) => panic!("显式 L4 + Docker 应被拒"),
+            Err(e) => e,
+        };
+        assert!(err.contains("互斥组合"), "{err}");
+    }
 }

@@ -108,5 +108,11 @@ pub(super) async fn serve_validate_bind_gates(
         target: "crabmate",
         "权限等级上限 ceiling={ceiling} source={source}"
     );
+    // MB-6：沙盒钳制的轴必须出现在启动日志里（另一条可见性来源是 `GET /permission`
+    // 的 `clamped_by`）。只在真的钳了东西时打，避免每次启动都刷一行噪音。
+    {
+        let guard = cfg_holder.read().await;
+        crate::cm_agent::permission::log_sandbox_clamps(guard.permission.permission_level, &guard);
+    }
     Ok(auth_enabled)
 }

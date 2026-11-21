@@ -1,13 +1,11 @@
 # 工具权限等级（Permission Levels）：设计草案
 
-**状态**：**S1–S7 已落地**（等级解析 / 六轴投影 / 路径、命令、网络、
+**状态**：**S1–S8 已落地**（等级解析 / 六轴投影 / 路径、命令、网络、
   外部工具轴接线 / 分级白名单键 / tracing 审计 / `GET /permission` / 会话写读 / `GET /tools` 的 `available_at_level` / 审批与时间线带等级 /
-  `POST /conversation/state` / **S7 多根放行**）。**仍未做**（逐条对应 §12 切片，勿把本节当“全绿”）：
+  `POST /conversation/state` / **S7 多根放行** / **S8 沙盒两轴**）。**仍未做**（逐条对应 §12 切片，勿把本节当“全绿”）：
 
-1. **沙盒两轴（§6.4 / MB-6）**：`project_caps` 不读 `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，
-  `PermissionClamp` 只有 `ceiling` / `role` / `session_mode`，**没有 `sandbox`**；`unrestricted` × Docker 的启动期「拒绝组合」亦未实现；
-2. **R5 工具可见性三处判定合一**（§17.5，原计划另开 PR）；
-3. **S5d 的 Client 部分**（另仓 `crabmate-client`）：等级选择器、`clamped_by` 文案、L4 二次确认，
+1. **R5 工具可见性三处判定合一**（§17.5，原计划另开 PR）；
+2. **S5d 的 Client 部分**（另仓 `crabmate-client`）：等级选择器、`clamped_by` 文案、L4 二次确认，
   以及本仓已出站的 `TOOL_CALL_START.permissionLevel` / `CommandApprovalData.permissionLevel` 的**渲染**。
 
 默认等级取**现状**（`approved`），默认配置下**零行为变化**（等价性核对见 §5.2）。
@@ -348,20 +346,24 @@ effective = min(chosen, ceiling, role.max_permission_level)
 | 轴 | 沙盒下 | 理由 |
 |---|---|---|
 | `level` / `approval` | **不动** | L3 的审批弹窗在宿主侧 SSE，与执行位置无关，容器内同样有效 |
-| `path_scope` | **无需钳**（L0–L3 本就是 `SessionRoot`） | 只有 L4 是 `Any`，而 L4 × 沙盒已在启动期**拒绝组合**；因此不存在“路径被钳”的情形 |
-| `net_scope` | 按 `sync_default_tool_sandbox_docker_network` 收窄 | 这是沙盒**唯一**真正生效的钳制：未配网络名（默认）→ 容器无出网 → `None`；配了则沿用 `Prefixes` |
+| `path_scope` | `AllowedRoots` 钳回 `SessionRoot`（并报 `sandbox`） | 容器只挂 `/workspace`，宿主侧 `workspace_allowed_roots` 在容器里不存在 |
+| `net_scope` | 按 `sync_default_tool_sandbox_docker_network` 收窄 | 未配网络名（默认）→ 容器无出网 → `None`；配了则沿用 `Prefixes`。前提是 `http_fetch` 也经 Docker 执行 |
 
-L4 + 沙盒说不通（要宿主级就别进容器），处理方式是**拒绝组合**（启动期直接报错，二选一），而不是偷偷把 L4 降成 L2。
-  因此 `clamped_by` 里的 `sandbox` **只在 `net_scope` 被收窄时出现**（典型：L3 + Docker + 未配网络名），不静默。
+L4 + 沙盒说不通（要宿主级就别进容器），处理方式是**拒绝组合**，而不是偷偷把 L4 降成 L2：
+  **显式** L4（默认档 `unrestricted`，或显式 `permission_level_max = unrestricted`）⇒ 启动期直接报错；
+  **loopback 自动推导**出来的 L4 ⇒ 把生效上限封顶到 `approved` 并 warn——否则「loopback + 开 Docker
+  沙盒」这个常见组合直接起不来；这一支同样是「运行时到不了 L4」，不是把用户的 L4 悄悄降档。
+  因此 `clamped_by` 里的 `sandbox` **只在真的钳了轴时出现**（`net_scope` 被收窄，或 `path_scope`
+  从 `AllowedRoots` 钳回 `SessionRoot`；典型：L3 + Docker + 未配网络名），不静默。
 
-**落地状态（未做）**：本节三件事在代码里都还找不到落点，登记在 [`docs/待办清单.md`](../待办清单.md) 的权限等级章：
+**落地状态（已落地，#1150）**：本节三件事的落点如下：
 
-1. `cm_agent::permission::project_caps` **不读** `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network`，
-  因此「未配网络名 → `net_scope = None`」当前不发生（投影出来的 `net_scope` 只由 `http_fetch_allowed_prefixes` 决定）；
-2. `PermissionClamp` 只有 `ceiling` / `role` / `session_mode` 三个取值，**没有 `sandbox`**，`clamped_by` 因此报不出沙盒钳制（MB-6 要求的可见性缺失）；
-3. `unrestricted` × Docker 的「启动期拒绝组合」未实现——即当前可以让 L4 配 Docker 沙盒启动，与本节「二选一」的设计不一致。
-
-在补上之前，**沙盒模式下的 `net_scope` 仍按配置原样投影**，运维不能依赖 `GET /permission` 判断容器是否真的断网。
+1. `cm_agent::permission::sandbox_clamps(level, cfg)` 是**唯一**判定（Docker + 未配网络名 ⇒ `net`；
+   Docker + 非空 `workspace_allowed_roots` ⇒ `path`），`project_caps` 与 `GET /permission` 共用；
+2. `PermissionClamp::Sandbox` 已加，`clamped_by` 在**真的钳了轴**时追加 `sandbox`（`build_permission_view`）；
+3. `unrestricted` × Docker 在 `finalize` 期拒绝（`validate_unrestricted_with_docker_sandbox`）——
+   判据只认**显式/生效的 L4**（默认档是 `unrestricted`，或显式 `permission_level_max = unrestricted`）；
+   loopback 隐式推导出的 L4 **不**算（否则「loopback + 开 Docker 沙盒」这个常见组合会直接起不来）。
 
 ---
 
@@ -597,7 +599,7 @@ L0 没有工具，会让“要求工具证据”的编排逻辑反复重试。�
 | **MB-3** | 非 loopback 绑定时 **ceiling 推导值固定为 `approved`**（不因“没配”而变 `unrestricted`）；若**显式**配置 `permission_level_max = "unrestricted"` 而缺少 `CM_ALLOW_UNRESTRICTED_PERMISSION_FOR_NON_LOOPBACK=1`，则**启动失败**。共享 Bearer 的 Web 部署不得默认拿到 L4。 |
 | **MB-4** | **L4 不免除工具自身的确认参数；命令轴没有 argv 门（已结案，不实现）**：确认由工具自身 `confirm` 参数承担——`delete_files` / `delete_dir` 在 `cm_tools::tools::file::mutate` 里硬编码要求 `confirm=true`，与等级无关、也没有配置开关（曾经承诺的清单键因无消费点已按 #1260 移除）。命令轴的「不可逆 argv」门**明确决定不做**（#1259）：`run_command` 的 `git reset --hard` / `git push --force` 在允许它的每一档上都与 `echo` 同路。三条理由——(1) 它们本就是白名单内 `git` 的普通调用，而 `script` 字段、`terminal_session`、`python_snippet_run` 都能达到同样效果，故 argv 门只能算护栏、不是边界；(2) L4 的 `approval = AuditOnly` 没有弹窗，在那里硬拒会让 L4 比 L3 **更弱**，与 §6.1「等级只收窄」不一致；(3) 唯一的现实实现形态是 L2 硬拒 + L3 弹窗 + L4 放行，收益远小于被过度承诺的风险。**已知边界**：`git` 在默认白名单内，因此 L2 下 `git reset --hard` 也是静默执行的；要更窄的命令面就缩小 `allowed_commands`，不要指望等级。 |
 | **MB-5** | **审计必须脱敏**：L4 的 argv / URL 审计走 `src/cm_tools/redact.rs`，不得原样落日志（AGENTS.md → Secrets & logging 为硬约束）。 |
-| **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。**当前未落地**（§6.4 末尾「落地状态」）：`project_caps` 不读沙盒配置、`PermissionClamp` 无 `sandbox`，故这条规则今天是**待实现**而非既有保证。 |
+| **MB-6** | **沙盒钳制的两轴不可静默**：§6.4 被钳的 `path_scope` / `net_scope` 必须出现在启动日志与 `GET /permission` 的 `clamped_by`（含 `sandbox`）。**已落地（#1150）**：`sandbox_clamps` 是唯一判据，投影与 `clamped_by` 共用；启动日志在 `serve` 冻结上限后打一行（仅真被钳时）。 |
 | **MB-7** | **L0 不得被绕过**：即便 `tools` 数组为空，执行侧仍有 early-deny（§8.1）；两层都生效，防止模型伪造 `tool_calls` 直穿。 |
 | **MB-8** | **二级执行面不得回读 cfg**：`workflow_execute` 节点、MCP 代理、动态工具的能力参数必须来自 `caps`，禁止在 `cm_workflow` / `mcp` 里重新从 `AgentConfig` 取 `allowed_commands` / `http_fetch_allowed_prefixes`——否则 L2 的“硬边界”只是第一层装饰。 |
 
@@ -687,6 +689,7 @@ dst.permission.permission_level_max =
 | **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步（见 §14 状态列）；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
 | **S6** | 空闲态写入口 `POST /conversation/state`（§16.1.1；编号原与 S5d 并行，规划期未列在本表，落地时占用 S6） | 空闲态切档立即生效，不必等下一轮 `/chat` 顺带 | ✅ |
 | **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ✅ **已落地**：`project_caps` 对 L2 / L3 + 非空根产出 `AllowedRoots`（分档在 `cm_types::path_scope_for`，与 `self_config_info` / `GET /permission` 同源）；`PathAccess` 是唯一判定点，按最长前缀在 {会话根} ∪ 允许根中选解析基。命令轴（argv / `cwd`）仍未接，见 #1315 |
+| **S8** | 沙盒两轴接线（§6.4 / MB-6，#1150） | 仅 `sync_default_tool_sandbox_mode = docker` 时 | ✅ **已落地**：`cm_agent::permission::sandbox_clamps` 收窄 `net_scope`（未配网络名 ⇒ `None`）与 `path_scope`（`AllowedRoots` ⇒ `SessionRoot`），`clamped_by` 与启动日志报 `sandbox`；`unrestricted` × Docker 在 `finalize` 期拒绝 |
 
 排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，
   外加 file 模块外零星调用点（见 §17.5 实测表）；先做权限再重构等于同一批 call site 改两遍。S1 零行为变化，先把类型与投影固化并用 golden 钉住；

@@ -775,8 +775,11 @@ One knob projects onto six axes (tool visibility / external tools / path / comma
   L1 stays session-root-only and L4 stays unrestricted; an **empty** list fails closed back to `SessionRoot`
   (deliberately the opposite of the Web-selection rule "empty = anywhere").
   The **command axis** (`run_command` / `terminal_session` argv and `cwd`) is not covered — see #1315.
-- **Not implemented yet**: the sandbox axes (`net_scope` narrowing and `clamped_by: "sandbox"`),
-  and the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
+- **S8 landed (#1150)**: the Docker sandbox narrows `net_scope` (no `sync_default_tool_sandbox_docker_network`
+  ⇒ no container egress ⇒ `None`) and `path_scope` (`AllowedRoots` ⇒ session root — sibling roots are not
+  mounted). Both surface in `GET /permission`'s `clamped_by` as `sandbox` **only when really clamped**, plus
+  one startup log line (MB-6). `unrestricted` × Docker is a **rejected combination** (`finalize` fails).
+- **Not implemented yet**: the Client-side selector (separate repo). Tracked in the Chinese TODO list under 权限等级.
 
 ## Multi-role (agent_roles)
 
