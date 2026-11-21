@@ -463,8 +463,12 @@ This document describes built-in tools, common function-calling JSON examples, a
   so lowering the session level invalidates earlier approvals (same for `http_fetch` / `http_request` permanent keys).
 - Timeline entries (`TOOL_CALL_START.permissionLevel`) and approval dialogs (`command_approval.permissionLevel`) carry the level for **display only**;
   no allow/deny decision reads them.
-- **Known gap**: `PathScope::AllowedRoots` is not wired yet, so `workspace_allowed_roots` does not widen `workspace` / `approved` paths;
-  the sandbox does not narrow the network axis yet and `clamped_by` never reports `sandbox`.
+- **Multi-root path scope (S7)**: for `workspace` / `approved`, file tools resolve against
+  `{session root} ∪ workspace_allowed_roots` — a path under any allowed root is admitted, so the sibling
+  `../crabmate-client/...` no longer needs approval. L1 stays session-root-only, L4 stays unrestricted,
+  and an empty list fails closed back to the session root. **The command axis is out of scope**:
+  `run_command` / `terminal_session` argv and `cwd` gates still use the session root (see #1315).
+  The sandbox does not narrow the network axis yet and `clamped_by` never reports `sandbox`.
 
 ---
 

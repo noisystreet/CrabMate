@@ -91,6 +91,11 @@ fn unrestricted_bypasses_all_three_axes() {
 
 /// S3 观测出口：`cm_types::PermissionLevel::caps_view()`（叶子层 `self_config_info` 用）必须
 /// 与权威投影 [`project_caps`] 的 `view()` 逐等级一致——两处轴名映射**不允许漂移**。
+///
+/// **口径 = 空根**：`caps_view()` 等价 `caps_view_with_allowed_roots(false)`。非空
+/// `workspace_allowed_roots` 下的对应关系由
+/// [`allowed_roots_shift_l2_and_l3_path_scope`] 覆盖（`test_cfg()` 走嵌入默认，根为空，
+/// 这也是 `project_caps_matches_golden` 那份 golden 不受 S7 影响的原因）。
 #[test]
 fn level_caps_view_matches_projection() {
     let cfg = test_cfg();
@@ -99,6 +104,45 @@ fn level_caps_view_matches_projection() {
             level.caps_view(),
             project_caps(level, &cfg).view(),
             "{level:?} 的轴名映射与 project_caps 不一致"
+        );
+    }
+}
+
+/// S7：配了非空 `workspace_allowed_roots` 时的路径轴分档——**只有 L2 / L3** 放宽到
+/// `AllowedRoots`；L1 的「工作区内读」承诺不放宽，L4 仍是 `Any`。
+#[test]
+fn allowed_roots_shift_l2_and_l3_path_scope() {
+    let mut cfg = test_cfg();
+    cfg.workspace_roots.workspace_allowed_roots = vec![std::path::PathBuf::from("/tmp/roots")];
+    let expected = [
+        (PermissionLevel::Chat, PathScope::SessionRoot),
+        (PermissionLevel::Read, PathScope::SessionRoot),
+        (PermissionLevel::Workspace, PathScope::AllowedRoots),
+        (PermissionLevel::Approved, PathScope::AllowedRoots),
+        (PermissionLevel::Unrestricted, PathScope::Any),
+    ];
+    for (level, want) in expected {
+        assert_eq!(project_caps(level, &cfg).path_scope, want, "{level:?}");
+        assert_eq!(
+            level.caps_view_with_allowed_roots(true),
+            project_caps(level, &cfg).view(),
+            "{level:?} 的非空根轴名必须与 project_caps 一致"
+        );
+    }
+}
+
+/// S7 fail-closed：`workspace_allowed_roots` 为空时 L2 / L3 **不得**变成 `AllowedRoots`。
+///
+/// 这条与 Web 选址侧「空表 = 任意」故意相反，别当成 bug 修掉。
+#[test]
+fn empty_allowed_roots_keeps_session_root() {
+    let mut cfg = test_cfg();
+    cfg.workspace_roots.workspace_allowed_roots.clear();
+    for level in [PermissionLevel::Workspace, PermissionLevel::Approved] {
+        assert_eq!(
+            project_caps(level, &cfg).path_scope,
+            PathScope::SessionRoot,
+            "空根下 {level:?} 必须退化回 SessionRoot"
         );
     }
 }

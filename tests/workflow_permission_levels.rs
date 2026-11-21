@@ -216,6 +216,7 @@ fn workflow_config_from_cfg(cfg: &AgentConfig) -> WorkflowConfig {
         http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
         http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),
         allowed_commands: cfg.command_exec.allowed_commands.to_vec(),
+        workspace_allowed_roots: cfg.workspace_roots.workspace_allowed_roots.clone(),
         command_max_output_len: cfg.command_exec.command_max_output_len,
         test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
         test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,

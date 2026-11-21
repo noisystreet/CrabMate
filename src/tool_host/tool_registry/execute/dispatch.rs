@@ -69,10 +69,41 @@ pub(in crate::tool_host::tool_registry::execute) fn read_dir_path_is_external(
     None
 }
 
+/// `AllowedRoots` 下「目标是否落在 {会话根} ∪ 允许根内」的三态判定。
+///
+/// - `None`：本档位用不上（`SessionRoot` / `Any`），**或**调用点给不出上下文
+///   （并行批预审批拿不到工作目录与根集合）。两种情况都**不定论**，交给下一个判定点——
+///   否则会对「本来就该放行」的目标先在并行批里弹一次窗，或在 L2 下误判硬拒。
+/// - `Some(true / false)`：明确在根内 / 越界。
+///
+/// 复用 [`crate::cm_tools::tools::PathAccess::is_within_scope`]：根选择与文件工具
+/// 同一套，不另写前缀比较（S7 的「不要第二套」）。
+fn allowed_roots_admits(
+    scope: crate::cm_types::PathScope,
+    ext_path: &str,
+    scope_ctx: Option<(&std::path::Path, &[std::path::PathBuf])>,
+) -> Option<bool> {
+    if scope != crate::cm_types::PathScope::AllowedRoots {
+        return None;
+    }
+    let (working_dir, allowed_roots) = scope_ctx?;
+    Some(
+        crate::cm_tools::tools::PathAccess::with_scope_and_roots(
+            working_dir,
+            scope,
+            allowed_roots,
+        )
+        .is_within_scope(ext_path),
+    )
+}
+
 async fn approve_external_read_dir_if_needed(
     args: &str,
     web_ctx: Option<&dyn crate::cm_approval::ApprovalBroker>,
     permission: Option<&dyn crate::cm_agent::permission::PolicyEngine>,
+    // `Some((工作目录, 允许根集合))` = 调用点能提供 S7 判定所需的上下文；
+    // `None` = 只做 L4 / L2 定论（并行批预审批这一层拿不到工作目录与根集合）。
+    scope_ctx: Option<(&std::path::Path, &[std::path::PathBuf])>,
 ) -> Result<(), String> {
     let Some(ext_path) = read_dir_path_is_external(args) else {
         return Ok(());
@@ -88,6 +119,12 @@ async fn approve_external_read_dir_if_needed(
                 Some("read_dir"),
                 Some(&audit_detail),
             );
+            return Ok(());
+        }
+        // S7：`AllowedRoots`（L2 / L3 + 非空 `workspace_allowed_roots`）下，落在
+        // {会话根} ∪ 允许根内的目标直接放行——不弹窗、**不记 `allowed`**（`allowed` 只由
+        // L4 的 `AuditOnly` 记，设计 §6.3）；越界仍走下面的 `Deny` / 交互审批。
+        if allowed_roots_admits(caps.path_scope(), &ext_path, scope_ctx) == Some(true) {
             return Ok(());
         }
         if caps.approval() == crate::cm_agent::permission::ApprovalPolicy::Deny {
@@ -266,10 +303,24 @@ async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolR
         .permission
         .map(|c| c.path_scope())
         .unwrap_or(crate::cm_types::PathScope::SessionRoot);
+    // S7：根集合只在这一处注入；`AllowedRoots` 档由 `PathAccess` 用它选解析基，
+    // `SessionRoot` / `Any` 档完全忽略它（空切片即现状）。
+    let allowed_roots = cfg
+        .as_ref()
+        .workspace_roots
+        .workspace_allowed_roots
+        .as_slice();
 
     if name == crate::cm_names::READ_DIR {
         let web_ctx = http_tool_approval_context(runtime);
-        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, env.permission).await {
+        if let Err(msg) = approve_external_read_dir_if_needed(
+            args,
+            web_ctx,
+            env.permission,
+            Some((effective_working_dir, allowed_roots)),
+        )
+        .await
+        {
             return ToolRunOutcome::failed(msg, None);
         }
     }
@@ -295,7 +346,7 @@ async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolR
                 .as_ref()
                 .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
         )
-        .with_path_scope(path_scope);
+        .with_path_scope_and_roots(path_scope, allowed_roots);
         let (output, ok, error_code) = tools::run_tool_outcome(name, args, &ctx);
         return ToolRunOutcome {
             output,
@@ -337,7 +388,10 @@ async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolR
                     .as_ref()
                     .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
             )
-            .with_path_scope(path_scope);
+            .with_path_scope_and_roots(
+                path_scope,
+                cfg2.workspace_roots.workspace_allowed_roots.as_slice(),
+            );
             tools::run_tool_outcome(&tool_name, &tool_args, &ctx)
         })
     });
@@ -686,8 +740,15 @@ pub async fn prefetch_parallel_syncdefault_approvals(
             continue;
         }
         if let Err(msg) =
-            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx, permission)
-                .await
+            approve_external_read_dir_if_needed(
+                tc.function.arguments.as_str(),
+                web_ctx,
+                permission,
+                // 并行批预审批拿不到 `effective_working_dir` 与根集合；`AllowedRoots` 档
+                // 在此**不定论**（`None`），交给下面每个工具自己的 `dispatch_tool`。
+                None,
+            )
+            .await
         {
             failures.insert(key, msg);
         }

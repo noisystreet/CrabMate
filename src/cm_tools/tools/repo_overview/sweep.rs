@@ -153,6 +153,8 @@ fn sweep_append_source_trees(
         out.push_str(
             &list_tree_try(
                 &tree_s,
+                // 只读聚合（`repo_overview`）**刻意固定 `SessionRoot`**：它在工作区内枚举
+                // 目录树，跟随 `AllowedRoots` 会把兄弟仓整棵拉进报告。S7 不放宽这里。
                 &crate::cm_tools::tools::file::PathAccess::new(workspace_root),
             )
             .unwrap_or_else(|e| e.message),
@@ -178,6 +180,7 @@ fn sweep_collect_build_paths(workspace_root: &Path, params: &RepoSweepParams) ->
         // 同 `list_tree`：正文照抄错误文本，保持构建路径块的聚合输出逐字不变。
         let block = glob_files_try(
             &gstr,
+            // 同上：构建清单的 glob 只在工作区内扫，固定 `SessionRoot`。
             &crate::cm_tools::tools::file::PathAccess::new(workspace_root),
         )
         .unwrap_or_else(|e| e.message);

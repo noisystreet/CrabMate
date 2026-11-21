@@ -29,6 +29,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Multi-root path scope for file tools (#1149, S7).** `workspace_allowed_roots` now actually widens the
+  file-tool path axis at **`workspace` / `approved`**: resolution uses `{session root} ∪ allowed roots` with
+  longest-prefix root selection, so `read_file ../crabmate-client/...` no longer asks for approval. L1 is
+  unchanged (its promise is "read inside the workspace"), L4 stays unrestricted, and an **empty** list fails
+  closed back to `SessionRoot` — deliberately the opposite of the Web-selection rule ("empty = anywhere").
+  `GET /permission` and `self_config_info` now report `path_scope = allowed_roots` in that configuration.
+  `read_file`'s registered runner also stops dropping `path_scope` (it silently forced `SessionRoot`, so not
+  even L4 ever worked for that tool). The **command axis is not covered**: `run_command` /
+  `terminal_session` argv and `cwd` gates still use the session root (#1315). The Docker sync sandbox keeps
+  `SessionRoot` on purpose — there is no mount for sibling roots.
 - **No business frames after a terminal frame (#1338 E4/S1).** The SSE hub now **refuses to deliver** a turn's
   business frames once `RUN_FINISHED` / `RUN_ERROR` has gone out: the frame is dropped before a `seq` is assigned,
   so it neither enters the resume ring nor reaches HTTP (`stream_resume` therefore has no sequence hole). Two

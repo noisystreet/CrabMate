@@ -138,6 +138,10 @@ pub async fn tool_runner_internal_main() -> Result<(), String> {
         allowed_commands: allowed,
         working_dir: Path::new("/workspace"),
         path_scope: crate::cm_types::PathScope::SessionRoot,
+        // S7：Docker 同步工具沙盒**刻意不读** `workspace_allowed_roots`——容器只挂载
+        // `working_dir`（`/workspace`），宿主侧的多根在这里没有对应挂载点，放宽只会让
+        // 文件工具在容器里指向不存在的路径。设计 §4.3：沙盒只钳路径轴，不跟随放宽。
+        allowed_roots: &[],
         web_search_timeout_secs: snap.web_search_timeout_secs,
         web_search_provider: provider,
         web_search_api_key: key,

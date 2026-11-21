@@ -345,7 +345,15 @@ pub fn read_file(
     working_dir: &Path,
     ctx: &super::super::ToolContext<'_>,
 ) -> String {
-    match read_file_try(args_json, &super::PathAccess::new(working_dir), ctx) {
+    match read_file_try(
+        args_json,
+        &super::PathAccess::with_scope_and_roots(
+            working_dir,
+            ctx.path_scope,
+            ctx.allowed_roots,
+        ),
+        ctx,
+    ) {
         Ok(s) => s,
         Err(e) => e.message,
     }

@@ -40,7 +40,7 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    create_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    create_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
@@ -122,7 +122,7 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    copy_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    copy_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
@@ -180,7 +180,7 @@ pub fn copy_file_try(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    move_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    move_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
@@ -497,7 +497,7 @@ fn modify_file_dispatch_mode(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    modify_file_try(args_json, &PathAccess::new(working_dir), ctx).unwrap_or_else(|e| e.message)
+    modify_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
 }
 
 /// 修改文件：仅在文件已存在时写入。

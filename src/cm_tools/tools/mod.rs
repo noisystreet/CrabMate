@@ -48,6 +48,9 @@ pub use exec::{
 mod file;
 pub use file::canonical_workspace_root;
 pub(crate) use file::resolve_for_read_open;
+// `PathAccess` 的构造需要跨到 `tool_host`（`read_dir` 的外部路径审批要判「是否落在
+// 允许根内」）。只放行 `pub(crate)`：对外仍不是公共 API，避免绕开工具层直接用。
+pub(crate) use file::PathAccess;
 // 审计正文的路径截断：`cm_internal` 的 `read_dir` 工作区外审批也要用它，避免各写一份。
 pub(crate) use file::audit_path_detail;
 mod git;
@@ -163,15 +166,31 @@ pub struct ToolContext<'a> {
     /// 后台任务查询工具（`background_job_status` / `background_job_list`）；主 Agent 路径由 `cm_internal` 注入。
     pub tool_jobs_host: Option<&'a dyn ToolJobsToolHost>,
     /// 文件类工具的路径范围（S3）。默认 [`crate::cm_types::PathScope::SessionRoot`] = 现状；
-    /// 主 Agent 路径由 `dispatch` 按权限等级投影覆盖（见 [`ToolContext::with_path_scope`]）。
+    /// 主 Agent 路径由 `dispatch` 按权限等级投影覆盖（见 [`ToolContext::with_path_scope_and_roots`]）。
     pub path_scope: crate::cm_types::PathScope,
+    /// 多根放行的根集合（S7）——`workspace_allowed_roots` 的**借用**视图。
+    ///
+    /// 仅在 `path_scope = AllowedRoots` 时被 [`file::PathAccess`] 读取；空切片 = fail-closed
+    /// 退化为 `SessionRoot`（见 `cm_types::path_scope_for`）。
+    ///
+    /// 根集合刻意**不进** `PermissionCaps`：后者要保持纯值、可 golden 整比、可序列化
+    /// （设计 §16.2），根集合由本载体沿途注入。
+    pub allowed_roots: &'a [std::path::PathBuf],
 }
 
 impl<'a> ToolContext<'a> {
-    /// 覆盖路径范围（权限等级投影的唯一注入点）。
+    /// 同时覆盖路径范围与允许根集合（S3 / S7 的唯一注入点）。
+    ///
+    /// 两者必须一起给：`AllowedRoots` 配空根会静默退化为 `SessionRoot`，只给其中一个
+    /// 等于让配置看起来生效、实际没放行。
     #[must_use]
-    pub fn with_path_scope(mut self, scope: crate::cm_types::PathScope) -> Self {
+    pub fn with_path_scope_and_roots(
+        mut self,
+        scope: crate::cm_types::PathScope,
+        allowed_roots: &'a [std::path::PathBuf],
+    ) -> Self {
         self.path_scope = scope;
+        self.allowed_roots = allowed_roots;
         self
     }
 
@@ -202,6 +221,7 @@ impl<'a> ToolContext<'a> {
             long_term_memory_host: None,
             tool_jobs_host: None,
             path_scope: crate::cm_types::PathScope::SessionRoot,
+            allowed_roots: &[],
         }
     }
 }
@@ -235,6 +255,8 @@ pub fn tool_context_for<'a>(
         long_term_memory_host: None,
         tool_jobs_host: None,
         path_scope: crate::cm_types::PathScope::SessionRoot,
+        // S7：根集合随上下文借用传递；路径轴本身由 `dispatch` 按等级覆盖。
+        allowed_roots: cfg.workspace_roots.workspace_allowed_roots.as_slice(),
     }
 }
 
