@@ -22,9 +22,9 @@ use std::sync::{Arc, MutexGuard};
 use crate::chat_job_queue::{
     ChatJsonJobFailure, JsonSubmitParams, WebChatJobEnvelope, WebChatLlmOverride, WebChatQueueDeps,
 };
-use crate::cm_agent::run_epoch::RunEpoch;
+use crate::cm_agent::run_epoch::{EpochSnapshot, RunEpoch};
 use crate::cm_agent::task_state::{
-    AutoResumeDecision, TaskPauseReason, decide_auto_resume,
+    AutoResumeDecision, AutoResumeStopReason, TaskPauseReason, decide_auto_resume,
 };
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
@@ -41,6 +41,10 @@ pub(super) struct AutoResumeCtx<'a> {
     pub(super) paused_reason: Option<TaskPauseReason>,
     /// 落盘成功后的**新** revision（`None` = 未成功落盘，不得续跑）。
     pub(super) saved_revision: Option<u64>,
+    /// 本回合是否被用户取消（取消优先于一切，含开关）。
+    pub(super) cancelled: bool,
+    /// 本回合是否**由自动续跑发起**——决定暂停是否计入「连续同因」。
+    pub(super) from_auto_resume: bool,
     pub(super) request_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
     pub(super) request_permission_level: Option<&'a str>,
@@ -54,6 +58,85 @@ pub(super) struct AutoResumeCtx<'a> {
     pub(super) readonly_tool_ttl_cache_secs: Option<u64>,
     pub(super) github_token: Option<String>,
     pub(super) client_sse_protocol: Option<u8>,
+}
+
+/// 自动续跑的**决策结果**（纯函数产出，不含任何 IO）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AutoResumePlan {
+    /// 应续跑，使用这个（写回后的）revision。
+    Resume { new_rev: u64 },
+    /// 不续跑。
+    Skip(AutoResumeSkip),
+}
+
+/// 不续跑的原因。前三个是**前置条件**，最后一个来自 [`decide_auto_resume`]。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AutoResumeSkip {
+    /// 本回合被用户取消——**取消优先级最高**，任何其它条件都不该让它续跑。
+    Cancelled,
+    /// `enabled` 或 `auto_resume` 关闭（默认）。
+    SwitchedOff,
+    /// 本回合不是因预算暂停结束。
+    NotPaused,
+    /// 会话未成功落盘 ⇒ 没有可靠 revision，**不得**退化成 `None`（那会放弃 CAS）。
+    NotSaved,
+    /// 交给 [`decide_auto_resume`] 判定的闸门（审批 / 轮数 / 无进展）。
+    Budget(AutoResumeStopReason),
+}
+
+impl AutoResumeSkip {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Cancelled => "cancelled",
+            Self::SwitchedOff => "switched_off",
+            Self::NotPaused => "not_paused",
+            Self::NotSaved => "not_saved",
+            Self::Budget(r) => r.as_str(),
+        }
+    }
+}
+
+/// 判定「是否应续跑、用哪个 revision」。
+///
+/// **纯函数**：不读时钟、不碰锁、不做 IO——这样每条分支都能被单测钉住，
+/// 也让 `maybe_auto_resume_next_turn` 只剩接线。
+///
+/// 顺序与 [`decide_auto_resume`] 一致地「安全优先」：开关 → 是否真暂停 → **是否已落盘**
+/// → 各闸门。`NotSaved` 排在闸门之前，因为拿不到 revision 时后面判什么都无意义。
+pub(super) fn plan_auto_resume(
+    autonomy: &AgentConfig,
+    paused_reason: Option<TaskPauseReason>,
+    saved_revision: Option<u64>,
+    cancelled: bool,
+    snap: EpochSnapshot,
+) -> AutoResumePlan {
+    // 取消优先于一切：用户刚点了停止，绝不能替他再起一回合。
+    if cancelled {
+        return AutoResumePlan::Skip(AutoResumeSkip::Cancelled);
+    }
+    let a = &autonomy.autonomy;
+    // 生产路径上这条**走不到**：`maybe_auto_resume_next_turn` 在拿锁之前就已短路（零 IO）。
+    // 保留它是因为 plan 是独立纯函数——将来若有调用方绕过那个短路，这里是最后一道闸。
+    // 对应测试 `switched_off_wins_over_everything` 测的是这条防御分支，不是热路径。
+    if !a.enabled || !a.auto_resume {
+        return AutoResumePlan::Skip(AutoResumeSkip::SwitchedOff);
+    }
+    let Some(reason) = paused_reason else {
+        return AutoResumePlan::Skip(AutoResumeSkip::NotPaused);
+    };
+    let Some(new_rev) = saved_revision else {
+        return AutoResumePlan::Skip(AutoResumeSkip::NotSaved);
+    };
+    match decide_auto_resume(
+        a,
+        Some(reason),
+        snap.resumed_turns,
+        snap.consecutive_same_reason,
+        false,
+    ) {
+        AutoResumeDecision::Go => AutoResumePlan::Resume { new_rev },
+        AutoResumeDecision::Stop(why) => AutoResumePlan::Skip(AutoResumeSkip::Budget(why)),
+    }
 }
 
 /// 账本句柄。**锁中毒也要能继续**：续跑是增强功能，不该因一次 panic 永久失效。
@@ -77,35 +160,32 @@ pub(super) async fn maybe_auto_resume_next_turn(ctx: AutoResumeCtx<'_>) {
         return;
     };
 
-    let Some(new_rev) = ctx.saved_revision else {
-        tracing::warn!(
-            target: "crabmate::autonomy",
-            conversation_id = %ctx.conversation_id,
-            "auto-resume skipped: conversation not saved, no usable revision"
-        );
-        return;
-    };
-
-    let (resumed_turns, consecutive) = {
+    // 先记账（`record_pause` 会更新「连续同因」），再取快照交给纯函数判定。
+    let snap = {
         let mut e = epoch(ctx.app);
-        e.record_pause(ctx.conversation_id, reason);
-        let s = e.snapshot(ctx.conversation_id);
-        (s.resumed_turns, s.consecutive_same_reason)
+        e.record_pause(ctx.conversation_id, reason, ctx.from_auto_resume);
+        e.snapshot(ctx.conversation_id)
     };
 
-    match decide_auto_resume(autonomy, Some(reason), resumed_turns, consecutive, false) {
-        AutoResumeDecision::Go => {}
-        AutoResumeDecision::Stop(why) => {
+    let new_rev = match plan_auto_resume(
+        ctx.cfg_snap,
+        Some(reason),
+        ctx.saved_revision,
+        ctx.cancelled,
+        snap,
+    ) {
+        AutoResumePlan::Resume { new_rev } => new_rev,
+        AutoResumePlan::Skip(why) => {
             tracing::info!(
                 target: "crabmate::autonomy",
                 conversation_id = %ctx.conversation_id,
                 reason = reason.as_str(),
-                stop_reason = why.as_str(),
-                "auto-resume stopped"
+                skip = why.as_str(),
+                "auto-resume skipped"
             );
             return;
         }
-    }
+    };
 
     match submit_resumed_turn(&ctx, new_rev).await {
         Ok(job_id) => tracing::info!(
@@ -216,5 +296,142 @@ fn auto_resume_instruction() -> Message {
         tool_calls: None,
         name: Some(crate::cm_types::CRABMATE_AUTO_RESUME_NAME.to_string()),
         tool_call_id: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with(auto_resume: bool, max_turns: u32) -> AgentConfig {
+        let mut c = crate::config::load_config(None).expect("default config");
+        c.autonomy.enabled = true;
+        c.autonomy.auto_resume = auto_resume;
+        c.autonomy.max_autonomous_turns = max_turns;
+        // 默认 true；本组测试关心「默认会不会因为审批而停」。
+        c.autonomy.stop_on_approval_required = true;
+        c
+    }
+
+    fn snap(resumed: u32, consecutive: u32) -> EpochSnapshot {
+        EpochSnapshot {
+            resumed_turns: resumed,
+            consecutive_same_reason: consecutive,
+            last_pause_reason: None,
+        }
+    }
+
+    /// **取消优先于一切**（含开关）：用户刚点了停止，绝不能替他再起一回合。
+    #[test]
+    fn cancelled_wins_even_over_switched_on() {
+        let c = cfg_with(true, 0);
+        assert_eq!(
+            plan_auto_resume(
+                &c,
+                Some(TaskPauseReason::BudgetTokens),
+                Some(5),
+                true,
+                snap(0, 0)
+            ),
+            AutoResumePlan::Skip(AutoResumeSkip::Cancelled)
+        );
+    }
+
+    /// 开关关闭时任何其它条件都不该让它续跑。
+    ///
+    /// 注意：这是 `plan_auto_resume` 的**防御分支**——生产中 `maybe_auto_resume_next_turn`
+    /// 在拿锁前就短路了（零 IO），所以本测试保护的是「有人绕过短路」时的兜底。
+    #[test]
+    fn switched_off_wins_over_everything() {
+        let c = cfg_with(false, 0);
+        assert_eq!(
+            plan_auto_resume(
+                &c,
+                Some(TaskPauseReason::BudgetTokens),
+                Some(7),
+                false,
+                snap(0, 0)
+            ),
+            AutoResumePlan::Skip(AutoResumeSkip::SwitchedOff)
+        );
+    }
+
+    /// 「没暂停」与「没落盘」是**两个不同**的跳过原因——后者是 CAS 安全边界。
+    #[test]
+    fn not_paused_and_not_saved_are_distinct() {
+        let c = cfg_with(true, 0);
+        assert_eq!(
+            plan_auto_resume(&c, None, Some(7), false, snap(0, 0)),
+            AutoResumePlan::Skip(AutoResumeSkip::NotPaused)
+        );
+        // 关键：暂停了但没有写回后的 revision ⇒ 不得退化成 `None` 入队（那会放弃 CAS）。
+        assert_eq!(
+            plan_auto_resume(&c, Some(TaskPauseReason::BudgetLlmCalls), None, false, snap(0, 0)),
+            AutoResumePlan::Skip(AutoResumeSkip::NotSaved)
+        );
+    }
+
+    /// 正常路径：沿用**写回后**的 revision。
+    #[test]
+    fn resumes_with_the_saved_revision() {
+        let c = cfg_with(true, 0);
+        assert_eq!(
+            plan_auto_resume(
+                &c,
+                Some(TaskPauseReason::BudgetTokens),
+                Some(42),
+                false,
+                snap(0, 0)
+            ),
+            AutoResumePlan::Resume { new_rev: 42 }
+        );
+    }
+
+    /// 硬闸与无进展止损都能拦住「本来可以续」的情形。
+    #[test]
+    fn gates_skip_before_resume() {
+        let capped = cfg_with(true, 2);
+        assert_eq!(
+            plan_auto_resume(
+                &capped,
+                Some(TaskPauseReason::BudgetTokens),
+                Some(9),
+                false,
+                snap(2, 0)
+            ),
+            AutoResumePlan::Skip(AutoResumeSkip::Budget(
+                AutoResumeStopReason::MaxTurnsReached
+            ))
+        );
+
+        let uncapped = cfg_with(true, 0);
+        assert_eq!(
+            plan_auto_resume(
+                &uncapped,
+                Some(TaskPauseReason::BudgetTokens),
+                Some(9),
+                false,
+                snap(0, 2)
+            ),
+            AutoResumePlan::Skip(AutoResumeSkip::Budget(AutoResumeStopReason::NoProgress))
+        );
+    }
+
+    /// 审批暂停默认不续（等人是安全边界）。
+    #[test]
+    fn awaiting_approval_stops_by_default() {
+        let c = cfg_with(true, 0);
+        assert_eq!(
+            plan_auto_resume(
+                &c,
+                Some(TaskPauseReason::AwaitingApproval),
+                Some(3),
+                false,
+                snap(0, 0)
+            ),
+            AutoResumePlan::Skip(AutoResumeSkip::Budget(
+                AutoResumeStopReason::AwaitingApproval
+            ))
+        );
     }
 }
