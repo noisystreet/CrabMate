@@ -123,11 +123,8 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 ## Permission levels (`permission_level`)
 
 **Summary**: L0–L4 project onto six axes (tool visibility / external tools / path / command / outbound network / approval). Design and slices:
-  **`docs/design/permission_levels.md`**. S1–S7 are in; the items below are the wrap-up.
+  **`docs/design/permission_levels.md`**. S1–S8 are in; the items below are the wrap-up.
 
-- [ ] **Sandbox axes and MB-6**: `project_caps` ignores `sync_default_tool_sandbox_mode` / `sync_default_tool_sandbox_docker_network` (so "
-  no network name → `net_scope = None`" never happens); `PermissionClamp` has no `sandbox` value, so `clamped_by` cannot report sandbox clamping;
-  the startup-time "`unrestricted` × Docker is rejected" rule is not implemented. See design §6.4 "落地状态" and §9 MB-6.
 - [ ] **R5: fold the three tool-visibility decisions into one**: design §17.5 says "not a prerequisite, open a separate PR";
   S3 already routes everything through `caps`, so this is deduplication.
 - [ ] **Client (separate repo `crabmate-client`) S5d**: level selector (fed by `GET /permission`'s `available` / `clamped_by` / `ceiling_source`),

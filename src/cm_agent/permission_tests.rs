@@ -147,6 +147,99 @@ fn empty_allowed_roots_keeps_session_root() {
     }
 }
 
+/// §6.4：Docker 沙盒 + 未配网络名 ⇒ 容器无出网，`net_scope` 收窄成 `None`。
+#[test]
+fn docker_sandbox_without_network_disables_outbound() {
+    let mut cfg = test_cfg();
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
+        crate::cm_config::SyncDefaultToolSandboxMode::Docker;
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = String::new();
+
+    for level in [
+        PermissionLevel::Read,
+        PermissionLevel::Workspace,
+        PermissionLevel::Approved,
+    ] {
+        assert_eq!(
+            project_caps(level, &cfg).net_scope,
+            NetScope::None,
+            "{level:?} 的出站应被沙盒收窄成 None"
+        );
+        assert!(
+            sandbox_clamps(level, &cfg).any(),
+            "{level:?} 应报 sandbox（MB-6 不可静默）"
+        );
+    }
+    // L4 与沙盒是拒绝组合（启动期报错）；投影层不偷偷把它降级。
+    assert_eq!(
+        project_caps(PermissionLevel::Unrestricted, &cfg).net_scope,
+        NetScope::Any
+    );
+    assert!(
+        !sandbox_clamps(PermissionLevel::Unrestricted, &cfg).any(),
+        "L4 不参与沙盒钳制（二选一，不偷偷降）"
+    );
+    // L0 本来就无出网，不算沙盒钳制。
+    assert!(!sandbox_clamps(PermissionLevel::Chat, &cfg).any());
+}
+
+/// §6.4：配了网络名 ⇒ 沿用配置前缀，沙盒不额外收窄。
+#[test]
+fn docker_sandbox_with_network_keeps_prefixes() {
+    let mut cfg = test_cfg();
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
+        crate::cm_config::SyncDefaultToolSandboxMode::Docker;
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = "bridge".to_string();
+
+    let caps = project_caps(PermissionLevel::Approved, &cfg);
+    assert!(
+        matches!(caps.net_scope, NetScope::Prefixes(_)),
+        "配了 bridge 应沿用前缀表: {:?}",
+        caps.net_scope
+    );
+    assert!(
+        !sandbox_clamps(PermissionLevel::Approved, &cfg).any(),
+        "没钳任何轴时不该报 sandbox"
+    );
+}
+
+/// §6.4：容器里只有工作区 ⇒ `AllowedRoots` 钳回 `SessionRoot`（1149 之后才出现的情形）。
+#[test]
+fn docker_sandbox_clamps_multi_root_back_to_session_root() {
+    let mut cfg = test_cfg();
+    cfg.workspace_roots.workspace_allowed_roots = vec![std::path::PathBuf::from("/tmp/roots")];
+
+    // 基准：非 Docker 时多根生效，且不报 sandbox。
+    assert_eq!(
+        project_caps(PermissionLevel::Approved, &cfg).path_scope,
+        PathScope::AllowedRoots
+    );
+    assert!(!sandbox_clamps(PermissionLevel::Approved, &cfg).any());
+
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
+        crate::cm_config::SyncDefaultToolSandboxMode::Docker;
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = "bridge".to_string();
+
+    let caps = project_caps(PermissionLevel::Approved, &cfg);
+    assert_eq!(
+        caps.path_scope,
+        PathScope::SessionRoot,
+        "容器只挂工作区，宿主多根不存在"
+    );
+    let clamps = sandbox_clamps(PermissionLevel::Approved, &cfg);
+    assert!(clamps.path && !clamps.net, "{clamps:?}");
+    assert!(clamps.any());
+    // L1 / L2 同理不因多根而放宽（L1 本来就不放宽；L2 被沙盒钳回）。
+    assert_eq!(
+        project_caps(PermissionLevel::Workspace, &cfg).path_scope,
+        PathScope::SessionRoot
+    );
+    assert_eq!(
+        project_caps(PermissionLevel::Read, &cfg).path_scope,
+        PathScope::SessionRoot
+    );
+}
+
 /// S3：`command_scope` 三态到白名单的映射（`Any` 必须落成 `*` 哨兵）。
 #[test]
 fn command_allowlist_maps_three_states() {

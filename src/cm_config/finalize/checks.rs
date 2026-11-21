@@ -29,6 +29,48 @@ pub(super) fn validate_docker_sandbox_image(
     Ok(())
 }
 
+/// `unrestricted`（L4）× Docker 沙盒是**拒绝组合**（设计 §6.4）。
+///
+/// L4 的承诺是「不受工作区路径与命令白名单限制、在宿主上跑」，而 Docker 沙盒恰恰把
+/// 路径与网络两轴钳掉——两者同时要就是自相矛盾。设计选了**二选一**（启动期报错），
+/// 而不是偷偷把 L4 降成 L2：那样「我明明开了 L4」会变成一句谎话。
+///
+/// 判据只认**显式/生效的 L4**：
+/// - 默认档 `permission_level = unrestricted`（进程默认就在 L4），或
+/// - 显式 `permission_level_max = unrestricted`（运维明确允许切到 L4）。
+///
+/// **不**把「loopback 自动推导出 L4」算进来：那是绑定地址的副作用，用户并没说要 L4；
+/// 算进来会让「loopback + 开 Docker 沙盒」这个常见组合直接起不来。
+pub(super) fn validate_unrestricted_with_docker_sandbox(
+    mode: types::SyncDefaultToolSandboxMode,
+    b: &ConfigBuilder,
+) -> Result<(), String> {
+    if mode != types::SyncDefaultToolSandboxMode::Docker {
+        return Ok(());
+    }
+    let default_l4 = is_unrestricted(b.permission.permission_level_str.as_deref());
+    let ceiling_l4 = is_unrestricted(b.permission.permission_level_max_str.as_deref());
+    if !default_l4 && !ceiling_l4 {
+        return Ok(());
+    }
+    Err(
+        "配置错误：sync_default_tool_sandbox_mode = \"docker\" 与 unrestricted 权限等级是互斥组合\
+         （设计 §6.4：要宿主级就别进容器，要隔离就别要 L4）。\
+         请二选一：把 sync_default_tool_sandbox_mode 改回 \"none\"，\
+         或把 permission_level / permission_level_max 降到 approved 及以下"
+            .to_string(),
+    )
+}
+
+/// 配置串是否为 `unrestricted`（解析失败按「不是」处理，错误由
+/// [`derive_permission_config`] 在解析阶段报出，不在这里重复）。
+fn is_unrestricted(raw: Option<&str>) -> bool {
+    matches!(
+        crate::cm_types::parse_optional_permission_level(raw),
+        Ok(Some(crate::cm_types::PermissionLevel::Unrestricted))
+    )
+}
+
 /// `subagent_max_depth` 目前只支持 `1`（禁止嵌套）。
 ///
 /// **为什么不是静默忽略**：这个键名（「深度上限」）暗示可以配 > 1，但首版没有嵌套实现
@@ -126,4 +168,50 @@ pub(super) fn resolve_finalize_workspace_paths(
         workspace_allowed_roots,
         web_workspace_pool,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_config::builder::ConfigBuilder;
+
+    fn builder_with_levels(level: Option<&str>, max: Option<&str>) -> ConfigBuilder {
+        let mut b = ConfigBuilder::default();
+        b.permission.permission_level_str = level.map(str::to_string);
+        b.permission.permission_level_max_str = max.map(str::to_string);
+        b
+    }
+
+    /// §6.4：`unrestricted` × Docker 是拒绝组合；但**不**误伤 loopback 隐式推导的 L4。
+    #[test]
+    fn rejects_unrestricted_with_docker_sandbox() {
+        let docker = types::SyncDefaultToolSandboxMode::Docker;
+
+        // 默认档就是 L4 ⇒ 拒。
+        let b = builder_with_levels(Some("unrestricted"), None);
+        assert!(validate_unrestricted_with_docker_sandbox(docker, &b).is_err());
+
+        // 显式把上限设成 L4 ⇒ 拒。
+        let b = builder_with_levels(None, Some("unrestricted"));
+        assert!(validate_unrestricted_with_docker_sandbox(docker, &b).is_err());
+
+        // 默认 approved + 未显式配上限 ⇒ 放行。loopback 会推导出 L4，但那是绑定地址的
+        // 副作用、用户没说要不要 L4；算进来会让「lo + docker 沙盒」直接起不来。
+        let b = builder_with_levels(Some("approved"), None);
+        assert!(validate_unrestricted_with_docker_sandbox(docker, &b).is_ok());
+
+        // 显式更严的等级 ⇒ 放行。
+        let b = builder_with_levels(Some("workspace"), Some("workspace"));
+        assert!(validate_unrestricted_with_docker_sandbox(docker, &b).is_ok());
+
+        // 非 Docker ⇒ 恒放行。
+        let b = builder_with_levels(Some("unrestricted"), Some("unrestricted"));
+        assert!(
+            validate_unrestricted_with_docker_sandbox(
+                types::SyncDefaultToolSandboxMode::None,
+                &b
+            )
+            .is_ok()
+        );
+    }
 }

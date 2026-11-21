@@ -98,13 +98,33 @@ pub(crate) fn build_permission_view(input: PermissionViewInput<'_>) -> Permissio
             .iter()
             .map(|level| level.as_str().to_string())
             .collect(),
-        clamped_by: resolved
-            .clamped_by
-            .iter()
-            .map(|clamp| clamp.as_str().to_string())
-            .collect(),
+        clamped_by: clamped_by_with_sandbox(
+            resolved.projection_level,
+            cfg,
+            &resolved.clamped_by,
+        ),
         caps: caps.view(),
     }
+}
+
+/// `clamped_by` = 等级钳制链 +（沙盒**真的**钳了轴时）`sandbox`。
+///
+/// 沙盒钳的是 `net_scope` / `path_scope` 而不是等级，所以它不在 `resolved.clamped_by` 里；
+/// 但 MB-6 要求同一个列表里能看到（「沙盒钳制的两轴不可静默」），故在此追加。
+fn clamped_by_with_sandbox(
+    level: crate::cm_types::PermissionLevel,
+    cfg: &AgentConfig,
+    level_clamps: &[crate::cm_agent::permission::PermissionClamp],
+) -> Vec<String> {
+    let mut out: Vec<String> = level_clamps.iter().map(|c| c.as_str().to_string()).collect();
+    if crate::cm_agent::permission::sandbox_clamps(level, cfg).any() {
+        out.push(
+            crate::cm_agent::permission::PermissionClamp::Sandbox
+                .as_str()
+                .to_string(),
+        );
+    }
+    out
 }
 
 /// 会话模式：与回合解析同一条优先级（持久化 → 角色默认 → 配置默认）。
@@ -298,6 +318,34 @@ mod tests {
         assert_eq!(
             view.caps,
             PermissionLevel::Approved.caps_view_with_allowed_roots(true)
+        );
+    }
+
+    /// §6.4 / MB-6：沙盒**真的**钳了轴时，`clamped_by` 必须报 `sandbox`，让运维不必靠
+    /// 猜就知道容器是否真的断网；没钳时报出来就是噪音。
+    #[test]
+    fn sandbox_clamp_is_reported_in_clamped_by() {
+        let mut cfg = base_cfg();
+        cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
+            crate::cm_config::SyncDefaultToolSandboxMode::Docker;
+        cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = String::new();
+
+        let view = view_for(&cfg, None);
+        assert!(
+            view.clamped_by.iter().any(|c| c == "sandbox"),
+            "沙盒未配网络名应收窄出站并报 sandbox: {:?}",
+            view.clamped_by
+        );
+        assert_eq!(view.caps.net_scope, "none");
+
+        // 非 Docker：不得出现 `sandbox`。
+        let plain = base_cfg();
+        assert!(
+            !view_for(&plain, None)
+                .clamped_by
+                .iter()
+                .any(|c| c == "sandbox"),
+            "非沙盒配置不该报 sandbox"
         );
     }
 
