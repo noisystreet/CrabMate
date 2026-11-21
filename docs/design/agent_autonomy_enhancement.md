@@ -257,8 +257,11 @@ L6（读三态），且当前实现双向误判（§3.2 实测）。**判定层�
 - 硬闸：`max_autonomous_turns`、累计 Token 上限、`stop_on_approval_required`、用户可随时中断。
   **默认关闭**。
 
-**落点**：`src/cm_config` 新增 `[agent.autonomy]` 节（含 `CM_*` 覆盖与热重载语义，须同步
-`docs/配置说明.md`）；注入点 `src/agent/model_context_view.rs`；触发点 `src/chat_job_queue/`。
+**落点**：`src/cm_config` 新增 `[agent]` 平铺键 `autonomy_enabled` / `autonomy_max_tasks` / `autonomy_task_ttl_secs`
+（含 `CM_AUTONOMY_*` 覆盖）。**不用 `[agent.autonomy]` 子节**：与 #1395 对 `subagent_*` / `completion_judge_*`
+的既有结论一致，省掉 `ConfigFile` 顶层 section 的四处改动。三个键已登记进
+`apply_hot_reload_config_subset` 白名单（该函数逐字段、漏登记只静默无效）；注入点
+`src/agent/model_context_view.rs`；触发点 `src/chat_job_queue/`。
 
 **风险与缓解**（必须写进配置说明，不得淡化）
 
@@ -322,6 +325,17 @@ P3（C 层护栏），**不要跳过 A 直接扩 E 层沉淀面**——否则噪
 | S5 | L5 记忆 A→B→C | 独立 | 与 S2/S3 不同模块，可并行 |
 | S6 | L6 预算再分配 | S0.5、S2 | 依赖三态信号与累计预算 |
 
+**阶段进度**（以 `src/` 代码为准，最后核对于 S2 A 步交付时）
+
+| 阶段 | 状态 |
+|---|---|
+| S0 设计定稿 | ✅ 已落地（#1388） |
+| S0.5 L1 完成判定层重建 | ✅ 已落地：#1390 证据层 → #1391 契约 → #1392 LLM + 配置 → #1393 接入早停门 |
+| S1 验收反接 + 步后抑制接线 | ❌ 已放弃：#1424 删除（生产无消费者） |
+| S2 L2 `TaskState` 与续跑 | 🚧 **A 步（只落盘）已交付**：`cm_agent::task_state` + `autonomy_*` 三键，默认关（#1455）；B / C 待做 |
+| S3 L3 `delegate_task` P1 | ✅ 已落地（#1389 / #1394 / #1395 / #1397），默认关 |
+| S4 / S5 / S6 | ⬜ 未开工 |
+
 **为什么 S0.5 前置**：L2 的 `TaskState` 存的是「子项 → 完成状态」，L6 读的是三态信号。
 判定层判不出（实测）或误判（实测），这两层的正确性都无从谈起。先做 L2 等于在流沙上盖楼。
 
@@ -356,17 +370,26 @@ P3（C 层护栏），**不要跳过 A 直接扩 E 层沉淀面**——否则噪
 
 ## 8. 开放决策（需评审拍板）
 
-1. **L2 的触发者**：由 `chat_job_queue` 内部自驱，还是复用 `scheduled_agent_task` 的 cron 面？
-   前者语义更直接，后者可复用既有审计与开关。
-2. **L2 的暂停边界**：遇到审批请求是「暂停等用户」还是「跳过该项继续其余子项」？前者更安全，后者更自主。
-3. **`TaskState` 的可见性**：仅服务端内部，还是经 HTTP 暴露给 Client 展示（需同步 `cm_api_contract`
-   与 `docs/命令行与路由.md`）？
-4. **L1 判定模型的选型**：复用 `planner_model`（`per_plan_semantic_check` 的既有做法），还是要求
-   「判定模型 ≠ 执行模型」？后者对自评偏差更有效，但多一层部署约束。
-5. **L1 `partial` 的处置**：判出「部分完成」时，是继续跑（消耗预算换完整度），还是停下把 `missing`
-   交给用户？这直接决定 L2 续跑的语义。
-6. **L1 `evidence_refs` 的严格度**：只校验「id 存在」，还是进一步校验「该证据语义上支持结论」？
-   前者可机器校验，后者需二次 LLM，成本翻倍。
+### L2 三项（S2 期间定案）
+
+1. **L2 的触发者**：`chat_job_queue` 内部自驱，还是复用 `scheduled_agent_task` 的 cron 面？
+   → **续跑回合统一经 `chat_job_queue` 入队；调度源复用既有 `[[scheduled_agent_task]]` cron 面轮询 `paused` 任务**。
+   不新造调度器：cron 面已走同一 chat 队列与 `run_agent_turn`，天然继承单飞 / 取消语义与既有审计开关。
+2. **L2 的暂停边界**：遇审批请求是「暂停等用户」还是「跳过该项继续其余子项」？
+   → **暂停等用户**（`stop_on_approval_required` 默认 `true`）。跳过等于让后续子项基于未完成的假设继续烧预算，
+   而这正是本路线要消灭的「凭猜继续」。
+3. **`TaskState` 的可见性**：仅服务端内部，还是经 HTTP 暴露给 Client？
+   → **首版仅服务端内部**。HTTP 暴露要同步 `cm_api_contract` + `docs/命令行与路由.md` + Client 解析器，
+   另开只读端点 issue；排障用日志（`target=crabmate::autonomy`）与 `.crabmate/tasks/` 文件已经够用。
+
+### L1 三项（已定案，#1391 的「三条通用性决议」）
+
+4. **判定模型选型** → **`Option` 默认继承、可覆盖，不硬要求「判定模型 ≠ 执行模型」**。硬约束会让单模型部署
+  （本地 Ollama / 单 model 网关）当场不可用；自评偏差靠「剔除自述 + 锚点」两个机制性约束缓解，不靠换模型。
+5. **`partial` 的处置** → **判定 / 处置分离**：判定层只回 `status`，由编排层按预算余量决定继续或停下。
+   把「继续 or 停下」硬编码进判定层会耦合产品偏好，而资源约束天然通用。
+6. **`evidence_refs` 的严格度** → **id 存在 + 种类约束**（至少一条成功的 `verify` / `write` 证据）。
+   二次 LLM 校验会形成两级级联：延迟叠加、错误放大，且无法金样。
 
 ---
 

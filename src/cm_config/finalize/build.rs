@@ -24,6 +24,11 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
             max_wall_secs: tail.subagent_max_wall_secs,
             max_report_chars: tail.subagent_max_report_chars,
         },
+        autonomy: types::AutonomyConfig {
+            enabled: tail.autonomy_enabled,
+            max_tasks: tail.autonomy_max_tasks,
+            task_ttl_secs: tail.autonomy_task_ttl_secs,
+        },
         roles_prompts: finalize_section_roles_prompts(mid),
         agents_md: finalize_section_agents_md(tail),
         skills: finalize_section_skills(tail),

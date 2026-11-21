@@ -23,6 +23,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Cross-turn task state, persisted only (#1386 S2 / #1455 step A).** With `autonomy_enabled = true` (off by
+  default) a turn that stops because its budget ran out writes `<workspace>/.crabmate/tasks/<conversation>.json`
+  holding `status = "paused"`, the pause reason (`budget_wall_clock` / `budget_llm_calls` / `budget_tokens`), the goal
+  summary, evidence **pointers** (`ev_N` / tool / ok / exit code) and a budget snapshot — no tool stdout, no
+  credentials. **Nothing reads these files yet**: resuming a paused turn is step C, so this changes no turn semantics
+  and issues no extra LLM calls. `autonomy_max_tasks` (200) and `autonomy_task_ttl_secs` (7 days) bound the directory;
+  one conversation always overwrites a single file, and the file name is whitelist-filtered. Write failures only log a
+  warning — they never change the turn outcome.
 - **`crabmate backfill-layout`** — recomputes `layout_meta_json` from stored `messages_json` with
   `layout_meta_from_messages` (same function used when persisting). **Dry-run by default**, `--apply` writes in one
   transaction, `--db FILE` overrides the store path. Rows whose `messages_json` cannot be parsed are counted and

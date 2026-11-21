@@ -1,0 +1,15 @@
+//! `CM_AUTONOMY_*`：L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）的环境覆盖。
+//!
+//! 默认关：`enabled = false` 时预算耗尽后**不落盘**，行为与接线前逐字一致。
+
+use crate::cm_config::builder::ConfigBuilder;
+use crate::cm_config::env_override_apply::{apply_bool, apply_parse};
+
+pub(super) fn apply(b: &mut ConfigBuilder) {
+    apply_bool(&mut b.autonomy.enabled, "CM_AUTONOMY_ENABLED");
+    apply_parse(&mut b.autonomy.max_tasks, "CM_AUTONOMY_MAX_TASKS");
+    apply_parse(
+        &mut b.autonomy.task_ttl_secs,
+        "CM_AUTONOMY_TASK_TTL_SECS",
+    );
+}

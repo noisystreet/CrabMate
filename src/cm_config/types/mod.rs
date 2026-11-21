@@ -1,7 +1,7 @@
 mod agent_config_sections;
 
 pub use agent_config_sections::{
-    AgentsMdConfigSection, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
+    AgentsMdConfigSection, AgentThinkingTraceConfig, AgentToolStatsConfig, AutonomyConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
     ConversationPersistenceConfig, HttpFetchConfigSection,
     LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, PermissionConfig, SubagentConfig,
@@ -253,6 +253,8 @@ pub struct AgentConfig {
     pub http_fetch: HttpFetchConfigSection,
     pub per_plan_policy: PerPlanPolicyConfig,
     pub subagent: SubagentConfig,
+    /// L2 跨回合任务状态（`#1386` S2）；**默认关闭**，开启后仅在预算耗尽时落盘 `paused`。
+    pub autonomy: AutonomyConfig,
     pub roles_prompts: RolesPromptsConfig,
     pub agents_md: AgentsMdConfigSection,
     pub skills: SkillsConfigSection,
