@@ -25,12 +25,7 @@ pub(super) struct FinalizeTailScalars {
     pub(super) subagent_max_llm_calls: u32,
     pub(super) subagent_max_wall_secs: u64,
     pub(super) subagent_max_report_chars: usize,
-    pub(super) autonomy_enabled: bool,
-    pub(super) autonomy_max_tasks: usize,
-    pub(super) autonomy_task_ttl_secs: u64,
-    pub(super) autonomy_max_cumulative_llm_calls: u32,
-    pub(super) autonomy_max_cumulative_tokens: usize,
-    pub(super) autonomy_max_cumulative_secs: u64,
+    pub(super) autonomy: super::autonomy::AutonomyTail,
     pub(super) tool_message_max_chars: usize,
     pub(super) sse_tool_call_include_arguments: bool,
     pub(super) agent_thinking_trace_enabled: bool,
@@ -125,12 +120,7 @@ struct TailPlanToolThinkingScalars {
     subagent_max_llm_calls: u32,
     subagent_max_wall_secs: u64,
     subagent_max_report_chars: usize,
-    autonomy_enabled: bool,
-    autonomy_max_tasks: usize,
-    autonomy_task_ttl_secs: u64,
-    autonomy_max_cumulative_llm_calls: u32,
-    autonomy_max_cumulative_tokens: usize,
-    autonomy_max_cumulative_secs: u64,
+    autonomy: super::autonomy::AutonomyTail,
     tool_message_max_chars: usize,
     sse_tool_call_include_arguments: bool,
     agent_thinking_trace_enabled: bool,
@@ -199,22 +189,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         .min(1_000_000) as usize;
     // L2 跨回合任务状态（`#1386` S2 A 步）：**默认关**。开启后只在预算耗尽时落盘 `paused`，
     // 不产生任何额外 LLM 调用或自主操作面；`max_tasks = 0` / `task_ttl_secs = 0` 各自关闭一种清理。
-    let autonomy_enabled = b.autonomy.enabled.unwrap_or(false);
-    let autonomy_max_tasks = b.autonomy.max_tasks.unwrap_or(200).min(100_000) as usize;
-    let autonomy_task_ttl_secs = b
-        .autonomy
-        .task_ttl_secs
-        .unwrap_or(604_800)
-        .min(31_536_000);
-    // B 步（#1455）：跨回合累计三项上限，**软闸**，`0` = 不限制。
-    let autonomy_max_cumulative_llm_calls = b
-        .autonomy
-        .max_cumulative_llm_calls
-        .unwrap_or(0)
-        .min(u32::MAX as u64) as u32;
-    // Token 上限用 `as usize`（本仓只支持 64 位目标，见 AGENTS.md 工具链要求）。
-    let autonomy_max_cumulative_tokens = b.autonomy.max_cumulative_tokens.unwrap_or(0) as usize;
-    let autonomy_max_cumulative_secs = b.autonomy.max_cumulative_secs.unwrap_or(0);
+    let autonomy = super::autonomy::derive_autonomy_tail(b);
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -261,12 +236,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         subagent_max_llm_calls,
         subagent_max_wall_secs,
         subagent_max_report_chars,
-        autonomy_enabled,
-        autonomy_max_tasks,
-        autonomy_task_ttl_secs,
-        autonomy_max_cumulative_llm_calls,
-        autonomy_max_cumulative_tokens,
-        autonomy_max_cumulative_secs,
+        autonomy,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
@@ -727,12 +697,7 @@ fn assemble_finalize_tail_scalars(
         subagent_max_llm_calls,
         subagent_max_wall_secs,
         subagent_max_report_chars,
-        autonomy_enabled,
-        autonomy_max_tasks,
-        autonomy_task_ttl_secs,
-        autonomy_max_cumulative_llm_calls,
-        autonomy_max_cumulative_tokens,
-        autonomy_max_cumulative_secs,
+        autonomy,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,
@@ -792,12 +757,7 @@ fn assemble_finalize_tail_scalars(
         subagent_max_llm_calls,
         subagent_max_wall_secs,
         subagent_max_report_chars,
-        autonomy_enabled,
-        autonomy_max_tasks,
-        autonomy_task_ttl_secs,
-        autonomy_max_cumulative_llm_calls,
-        autonomy_max_cumulative_tokens,
-        autonomy_max_cumulative_secs,
+        autonomy,
         tool_message_max_chars,
         sse_tool_call_include_arguments,
         agent_thinking_trace_enabled,

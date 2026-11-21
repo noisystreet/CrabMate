@@ -57,6 +57,13 @@ autonomy_task_ttl_secs = 604800
 autonomy_max_cumulative_llm_calls = 0
 autonomy_max_cumulative_tokens = 0
 autonomy_max_cumulative_secs = 0
+# 自动续跑（#1455 C 步）。与 autonomy_enabled 分两层：enabled 只落盘+注入+累计（只读），
+# auto_resume 才会「失败后自己再起一个回合」（烧钱、会动文件）。默认关。
+autonomy_auto_resume = false
+# 单会话自动续跑轮数上限（**硬闸**，进程内计数）。0 = 不限制。
+autonomy_max_autonomous_turns = 0
+# 遇「待审批」暂停时停止自动续跑（默认停：等人是安全边界）。
+autonomy_stop_on_approval_required = true
 
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、

@@ -121,6 +121,9 @@ pub(crate) struct ConfigBuilderAutonomy {
     pub(crate) max_cumulative_llm_calls: Option<u64>,
     pub(crate) max_cumulative_tokens: Option<u64>,
     pub(crate) max_cumulative_secs: Option<u64>,
+    pub(crate) auto_resume: Option<bool>,
+    pub(crate) max_autonomous_turns: Option<u64>,
+    pub(crate) stop_on_approval_required: Option<bool>,
 }
 
 #[derive(Default)]
