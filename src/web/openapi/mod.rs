@@ -200,4 +200,41 @@ mod tests {
             "WebUiConfigResponse from contract"
         );
     }
+
+    /// 分页参数的 `maximum` 必须等于实现里的上限常量。
+    ///
+    /// `slice_messages_for_client_window` 的 `clamp(1, MAX_CONVERSATION_MESSAGES_PAGE_LIMIT)` 与
+    /// OpenAPI 的 `limit.maximum` 一旦各写一遍就会漂移——这种偏差不报错，只会让「按 OpenAPI 做
+    /// 请求校验的客户端」与「静默 clamp 的服务端」互相不认。这里从常量取值比对，改上限就会红。
+    #[test]
+    fn conversation_messages_limit_maximum_matches_impl_constant() {
+        let spec = build_openapi_spec();
+        let params = spec["paths"]["/conversation/messages"]["get"]["parameters"]
+            .as_array()
+            .expect("parameters array");
+        let limit = params
+            .iter()
+            .find(|p| p["name"] == "limit")
+            .expect("limit parameter");
+        assert_eq!(
+            limit["schema"]["maximum"].as_u64(),
+            Some(u64::from(
+                crate::web::conversation_messages_window::MAX_CONVERSATION_MESSAGES_PAGE_LIMIT
+            )),
+            "OpenAPI 的 limit.maximum 必须等于实现的上限常量"
+        );
+        // `before_index` 的说明必须点明它只在带 `limit` 时生效——否则「省略 = 尾部一页」
+        // 会被读成「单独给 before_index 也能翻页」（实现里那种情况走全量分支、参数被忽略）。
+        let before = params
+            .iter()
+            .find(|p| p["name"] == "before_index")
+            .expect("before_index parameter");
+        assert!(
+            before["description"]
+                .as_str()
+                .is_some_and(|d| d.contains("limit")),
+            "before_index 的说明必须写明它依赖 limit，实际：{:?}",
+            before["description"]
+        );
+    }
 }
