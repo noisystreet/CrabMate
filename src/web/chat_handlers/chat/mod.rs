@@ -408,6 +408,9 @@ fn hydration_layout_projection(
     let Some(meta) = layout else {
         return ("legacy", None, None);
     };
+    // 守卫在生产路径上**恒真**：v1 已在 `conversation_store::layout_meta_from_column` 被拒
+    // （#1338 起不再回传 v1），能走到这里的必有 `layout_schema_version >= 2`。保留它只为让纯函数
+    // 边界仍然自洽（对应单测的 v1 输入），S3 删读路径时一并删。
     if !crate::cm_turn_layout::layout_prefers_projection(Some(meta)) {
         return ("legacy", None, None);
     }

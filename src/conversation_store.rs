@@ -13,17 +13,20 @@ use crate::cm_types::StructuralCommit;
 
 mod archive;
 mod backfill;
+mod coverage;
 #[cfg(test)]
 mod coverage_tests;
+mod layout_column;
 #[cfg(test)]
 mod tests;
 
 // A3/A4 接线前，lib 构建下暂无调用方；保留原 `conversation_store::…` 路径。
 #[allow(unused_imports)]
 pub use archive::*;
-// 生产侧只有 CLI 用 `backfill_layout_meta`；`…_in_conn` 与报告类型由测试直接走子模块路径，
-// 不在根上 re-export（避免 `unused_imports` 例外）。
-pub use backfill::backfill_layout_meta;
+// 生产侧：CLI 用 `backfill_layout_meta`，其返回的报告类型也要能命名（`offline.rs` 的判据）。
+// `backfill_layout_meta_in_conn` 仍只走子模块路径（测试用），不在根上 re-export。
+pub use backfill::{LayoutBackfillReport, backfill_layout_meta};
+pub use coverage::layout_coverage;
 
 const TABLE: &str = "crabmate_conversations";
 
@@ -190,20 +193,39 @@ struct ConversationFetchRow {
     active_role: String,
     active_mode: String,
     active_permission_level: String,
-    layout_meta_json: String,
+    layout_meta_json: Option<String>,
 }
 
-fn layout_meta_from_column(conversation_id: &str, raw: &str) -> Option<ConversationLayoutMeta> {
-    let t = raw.trim();
-    if t.is_empty() {
-        return None;
-    }
-    match serde_json::from_str(t) {
-        Ok(meta) => Some(meta),
-        Err(e) => {
+/// 读出该行的布局元数据；不可用（缺失 / 损坏 / v1）一律返回 `None`。
+///
+/// 判定口径见 [`layout_column::classify_layout_column`]（唯一一份）。
+/// **v1 兼容已删（#1338）**：`layout_schema_version < 2` 的行按「不可用」处理，不再回传旧形状——
+/// 服务端给 Web 写的从来都是 v2，库里的 v1 只可能来自手改 / 更早的实验数据，留着第二条读形状
+/// 正是让「库内归零」无法判定的原因。这类行由 `crabmate backfill-layout` 重算成 v2。
+///
+/// 日志分级：`Missing` 是正常状态（不记，否则每个旧会话都刷一条）；`Corrupt` 是数据异常（`warn`）；
+/// `NotV2` 是可预期的历史数据，只留 `info`（`serve` 默认不输出 INFO，靠
+/// `hydration_projection_source=legacy` 观测命中量即可）。
+fn layout_meta_from_column(
+    conversation_id: &str,
+    raw: Option<&str>,
+) -> Option<ConversationLayoutMeta> {
+    match layout_column::classify_layout_column(raw.unwrap_or_default()) {
+        layout_column::LayoutColumnState::Usable(meta) => Some(meta),
+        layout_column::LayoutColumnState::Missing => None,
+        layout_column::LayoutColumnState::Corrupt => {
             log::warn!(
                 target: "crabmate",
-                "会话 layout_meta_json 解析失败，已忽略 conversation_id={} error={e}",
+                "会话 layout_meta_json 是坏 JSON，已忽略 conversation_id={}",
+                conversation_id
+            );
+            None
+        }
+        layout_column::LayoutColumnState::NotV2 { version } => {
+            log::info!(
+                target: "crabmate",
+                "会话 layout_schema_version={} 已不再支持（#1338），已忽略 conversation_id={}",
+                version,
                 conversation_id
             );
             None
@@ -279,7 +301,7 @@ fn load_row_after_fetch(
         active_agent_role: row.active_role,
         active_session_mode: row.active_mode,
         active_permission_level: row.active_permission_level,
-        layout: layout_meta_from_column(id, &row.layout_meta_json),
+        layout: layout_meta_from_column(id, row.layout_meta_json.as_deref()),
     }))
 }
 
@@ -791,72 +813,4 @@ fn truncate_and_clear_archive(
     archive::delete_archive_for_conversation(&tx, id)?;
     tx.commit()?;
     Ok(BranchTruncateOutcome::Saved)
-}
-
-/// 会话库 `layout` 覆盖率（B4/P4 门禁，见 Issue #1333 与 `docs/Turn布局设计.md` §16.5）。
-///
-/// 统计口径与 [`layout_meta_from_column`] 对齐：`layout_meta_json` 为 `NULL`，或**只含空白**
-/// （空格 / 制表 / 换行 / 回车——即 Rust `str::trim` 会去掉的那几个）都算「无 layout」。
-/// 这类行在 `GET /conversation/messages` 上只能走 legacy 读路径；删除该路径前，占比必须低于
-/// 既定阈值。本结构只**测量**，不含判定。
-///
-/// 刻意保持 `pub`：`crabmate doctor` 是当前唯一消费者，但该指标后续要给 Client 仓复用，
-/// 收成 `pub(crate)` 会逼两边各写一份 SQL。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LayoutCoverage {
-    /// 会话总行数。
-    pub total: u64,
-    /// `layout_meta_json` 为空（NULL / 空白）的行数。
-    pub without_layout: u64,
-}
-
-impl LayoutCoverage {
-    /// 无 layout 行占比；`total == 0` 时为 `None`（空库没有「占比」可言，不要报 `0%` 误导）。
-    #[must_use]
-    pub fn legacy_ratio(&self) -> Option<f64> {
-        (self.total > 0).then(|| self.without_layout as f64 / self.total as f64)
-    }
-}
-
-/// 只读统计会话库的 `layout` 覆盖率：**不**建表、不迁移、不写盘。
-///
-/// 表不存在（新库 / 从未落盘过会话）按全零返回而不是报错——诊断命令不该因为「还没用过」而失败。
-///
-/// `SQLITE_OPEN_URI` 只是重申 rusqlite 的 `OpenFlags::default()`；路径来自本地配置，
-/// 若含 `?` / `#` 会被当成 URI 参数——那是既有默认行为，不在这里另立规矩。
-pub fn layout_coverage(path: &Path) -> Result<LayoutCoverage, rusqlite::Error> {
-    let conn = Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-    )?;
-    layout_coverage_from_conn(&conn)
-}
-
-fn layout_coverage_from_conn(conn: &Connection) -> Result<LayoutCoverage, rusqlite::Error> {
-    let has_table = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            params![TABLE],
-            |_r| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !has_table {
-        return Ok(LayoutCoverage::default());
-    }
-    let total: i64 = conn.query_row(&format!("SELECT count(*) FROM {TABLE}"), [], |r| r.get(0))?;
-    // 空白字符集显式列举：SQLite 的 `trim(x)` 默认只删空格，而读路径用的是 Rust
-    // `str::trim()`（还会删 \t\n\r）。不显式对齐，"\n" 会被统计成「有 layout」。
-    let without_layout: i64 = conn.query_row(
-        &format!(
-            "SELECT count(*) FROM {TABLE} WHERE layout_meta_json IS NULL \
-             OR trim(layout_meta_json, ' ' || char(9) || char(10) || char(13)) = ''"
-        ),
-        [],
-        |r| r.get(0),
-    )?;
-    Ok(LayoutCoverage {
-        total: u64::try_from(total).unwrap_or(0),
-        without_layout: u64::try_from(without_layout).unwrap_or(0),
-    })
 }

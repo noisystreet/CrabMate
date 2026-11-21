@@ -20,6 +20,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   silently lose background-job completion notices. `event_after_terminal_count` now counts *rejected* frames, so a
   long-run zero means the gate is idle rather than "nothing happened". Clients need no change (they simply stop
   receiving frames that should never have existed); `SSE_PROTOCOL_VERSION` stays **2**.
+- **One definition of an unusable `layout_meta_json` (#1338 S3 prerequisite).** `crabmate doctor`'s layout
+  coverage, `crabmate backfill-layout`'s candidate selection and the `GET /conversation/messages` read path
+  each carried their own test and disagreed on "empty": SQL `trim(x)` drops spaces only, while Rust
+  `str::trim()` also drops `\t\n\r`. The same row could therefore count as legacy *and* as "has layout",
+  which made "zero legacy rows" both true and false. `conversation_store::layout_column` is now the single
+  judge, and it also covers rows that are **non-empty but not valid JSON** and rows whose
+  `layout_schema_version < 2` — neither used to be a backfill candidate nor counted by doctor, so they
+  would have become unreadable the moment the legacy read path is deleted. Doctor reports the corrupt/v1
+  count separately: "never written" and "written but unusable" differ only in how you fix them, and both
+  block the `#1338 S3` precondition.
+- **`crabmate backfill-layout` no longer certifies itself under dry-run (#1338).** `ready_for_contract()`
+  now requires an actual `--apply` with zero unparsable rows; the command exits **non-zero** when the
+  criterion is unmet (a dry-run that finds unparsable rows exits non-zero too), so a script can gate the
+  legacy-read-path deletion instead of reading a human-oriented summary. Its output grows from three
+  counters to total rows / to-backfill / filled / skipped-unparsable.
+- **`layout_schema_version: 1` rows are no longer served (#1338).** Such a row now yields `layout: null` —
+  the same shape as "never persisted" — and `crabmate backfill-layout` rewrites it as v2. There is no v1
+  compatibility path left **on purpose**: this server has always written v2 for Web, so a v1 row can only come
+  from hand-edited or early experimental data, and keeping a second read shape alive was exactly what made
+  "zero unusable rows" unverifiable. v2 conversations see no change; the shape of `layout` for them is
+  untouched.
 
 ### Added
 
