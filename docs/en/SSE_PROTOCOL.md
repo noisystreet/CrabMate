@@ -345,16 +345,18 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 - **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`)
   → **last** `RUN_FINISHED` / `RUN_ERROR`. The first frame no longer carries `terminal_order`
   (B4/P3 removed that soft field); the terminal order is **always** the new one and `SSE_PROTOCOL_VERSION` is unchanged.
-- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`;
-  also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`,
-  driven by body completion (Client `frontend/src/api/chat_stream/sse_frame.rs`).
-- **Later contract (E4)**: drop post-terminal business-frame compat; see **`docs/Turn布局设计.md` §16**.
-- **Server self-check (telemetry, not contract)**: the SSE hub classifies every frame on the delivery path and
-  only counts/warns on violations (`event_after_terminal_count` / `repeated_terminal`); it never blocks or
-  reorders frames. Per-stream totals are logged as `terminal_order_summary` when the stream closes.
-  `RUN_ERROR` followed by `RUN_FINISHED` (cancel / conflict / failure teardown) is the existing shape and does
-  **not** count as a repeated terminal (tracked separately as `error_then_finished`).
-  See **`docs/Turn布局设计.md` §16.6**.
+- **Official Web (single order)**: still keeps reading after `RUN_FINISHED`;
+  ~~also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`)~~ that compat was removed in
+  `crabmate-client` (#1338 E4/S4). At most one `on_done`, driven by body completion.
+- **Post-terminal gate (E4/S1, `#1338`)**: business frames emitted after a terminal are **no longer delivered** —
+  `sse::stream_hub` decides before allocating `seq`, so a rejected frame takes no sequence number, never enters the
+  resume ring and is never broadcast (`stream_resume` therefore sees no gap). `RUN_ERROR → RUN_FINISHED`
+  (cancel / conflict / failure teardown) and `tool_job_finished` are allow-listed.
+  See **`docs/Turn布局设计.md` §16.5 E4**.
+- **Server self-check (telemetry)**: dropped frames are counted as `event_after_terminal_count` / `repeated_terminal`;
+  per-stream totals are logged as `terminal_order_summary` when the stream closes.
+  `RUN_ERROR` followed by `RUN_FINISHED` does **not** count as a repeated terminal
+  (tracked separately as `error_then_finished`). See **`docs/Turn布局设计.md` §16.6**.
 
 ### Tool calls
 
