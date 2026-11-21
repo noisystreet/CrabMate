@@ -78,6 +78,10 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         approval_session_id,
     } = rt;
 
+    // `#1455` C 步：本回合是否由**自动续跑**发起。必须在 `request_audit` 被 move 进
+    // `TurnRequest` 之前取（续跑入队时把 source 设成 `auto_resume`）。
+    let from_auto_resume = request_audit.is_auto_resume();
+
     // `#1455` C 步：暂停信号回传口。回合结束后从这里读「本回合是否因预算暂停」。
     // 用 `Arc<Mutex<_>>` 与 `run_agent_turn` 共享同一句柄——预算拒绝走 `Err`，
     // `TurnOutcome` 带不出来（见 `RunAgentTurnObs::paused_reason_sink` 的说明）。
@@ -181,6 +185,10 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         conversation_id: conversation_id.as_str(),
         paused_reason,
         saved_revision,
+        // 用户刚点了停止：绝不替他再起一回合（取消优先于一切，含开关）。
+        cancelled,
+        // 本回合是否由续跑发起 —— 决定这次暂停要不要计入「连续无进展」。
+        from_auto_resume,
         request_agent_role: request_agent_role.as_deref(),
         request_session_mode: request_session_mode.as_deref(),
         request_permission_level: request_permission_level.as_deref(),

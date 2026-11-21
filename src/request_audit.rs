@@ -15,7 +15,14 @@ pub struct WebRequestAudit {
     pub client_ip: String,
     /// `Authorization` / `X-API-Key` 与配置 **`web_api_bearer_token`** 的 SHA-256 指纹（hex，前 12 字符）；密钥为空或未携带时为 `None`。
     pub bearer_fp: Option<String>,
-    /// `http`（浏览器/API 客户端）或 `scheduled`（`[[scheduled_agent_task]]`）。
+    /// 回合来源。**目前三值**，均为 `&'static str` 的枚举式取值（便于日志/指标聚合）：
+    ///
+    /// - `http`：浏览器 / API 客户端（`POST /chat`、`/chat/stream`、CLI）；
+    /// - `scheduled`：`[[scheduled_agent_task]]` 定时任务；
+    /// - `auto_resume`：`#1455` C 步的自动续跑——它**没有** HTTP 请求，但继承了某次用户请求的
+    ///   授权，因此与 `scheduled` 分开记（两者的合规含义不同）。
+    ///
+    /// 新增取值等于给下游多一个类目：改这里要同步日志/指标消费方。
     pub source: &'static str,
 }
 
@@ -33,6 +40,14 @@ impl WebRequestAudit {
     ///
     /// 与 [`Self::scheduled_placeholder`] 分开是为了让审计能区分「定时任务」与
     /// 「用户请求的自动续跑」：两者的合规含义不同（后者继承了某次用户请求的授权）。
+    /// 本回合是否由自动续跑发起（`#1455` C 步）。
+    ///
+    /// 用它而不是新增 envelope 字段：`source` 本来就是枚举式取值（`http`/`scheduled`/
+    /// `auto_resume`），续跑入队时就设成 `auto_resume`，收尾处直接读得到。
+    pub(crate) fn is_auto_resume(&self) -> bool {
+        self.source == "auto_resume"
+    }
+
     pub(crate) fn auto_resume_placeholder() -> Self {
         Self {
             peer_ip: IpAddr::from([0, 0, 0, 0]),

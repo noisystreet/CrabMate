@@ -105,11 +105,19 @@ impl RunEpoch {
         e.last_touched = now;
     }
 
-    /// 记录本回合**因预算暂停**：与上次同因则累加连续计数，否则重置为 1。
-    pub fn record_pause(&mut self, scope: &str, reason: TaskPauseReason) {
+    /// 记录本回合**因预算暂停**。
+    ///
+    /// `from_auto_resume` 决定「连续同因」是否计入——这是本方法的语义核心：
+    ///
+    /// - `false`（用户发起）：**清零**。用户手动重试本身就是「情况变了」的信号，
+    ///   把它算进「续跑无进展」会让第 3 次手动重试就被 `NoProgress` 拦下。
+    /// - `true`（自动续跑）：与上次同因则累加，换了原因则从 1 重新计。
+    pub fn record_pause(&mut self, scope: &str, reason: TaskPauseReason, from_auto_resume: bool) {
         let now = Instant::now();
         let e = self.entry_mut(scope, now);
-        e.consecutive_same_reason = if e.last_pause_reason == Some(reason) {
+        e.consecutive_same_reason = if !from_auto_resume {
+            0
+        } else if e.last_pause_reason == Some(reason) {
             e.consecutive_same_reason.saturating_add(1)
         } else {
             1
@@ -185,20 +193,36 @@ mod tests {
     #[test]
     fn consecutive_same_reason_counts_only_when_repeating() {
         let mut e = RunEpoch::new();
-        e.record_pause("s", TaskPauseReason::BudgetTokens);
+        e.record_pause("s", TaskPauseReason::BudgetTokens, true);
         assert_eq!(e.snapshot("s").consecutive_same_reason, 1);
-        e.record_pause("s", TaskPauseReason::BudgetTokens);
+        e.record_pause("s", TaskPauseReason::BudgetTokens, true);
         assert_eq!(e.snapshot("s").consecutive_same_reason, 2);
         // 换原因 → 重新从 1 开始
-        e.record_pause("s", TaskPauseReason::BudgetLlmCalls);
+        e.record_pause("s", TaskPauseReason::BudgetLlmCalls, true);
         assert_eq!(e.snapshot("s").consecutive_same_reason, 1);
+    }
+
+    /// 用户手动重试**不该**计入「续跑无进展」——否则第 3 次手动重试就被 NoProgress 拦下。
+    ///
+    /// 判据：`consecutive_same_reason` 统计的是「自动续跑后仍然同因」，
+    /// 而用户手动重发本身就是「情况变了」的信号。
+    #[test]
+    fn user_initiated_pause_resets_consecutive() {
+        let mut e = RunEpoch::new();
+        e.record_pause("s", TaskPauseReason::BudgetTokens, true);
+        e.record_pause("s", TaskPauseReason::BudgetTokens, true);
+        assert_eq!(e.snapshot("s").consecutive_same_reason, 2);
+
+        // 用户手动再发又失败：清零。
+        e.record_pause("s", TaskPauseReason::BudgetTokens, false);
+        assert_eq!(e.snapshot("s").consecutive_same_reason, 0);
     }
 
     #[test]
     fn progress_resets_consecutive_but_keeps_last_reason_cleared() {
         let mut e = RunEpoch::new();
-        e.record_pause("s", TaskPauseReason::BudgetWallClock);
-        e.record_pause("s", TaskPauseReason::BudgetWallClock);
+        e.record_pause("s", TaskPauseReason::BudgetWallClock, true);
+        e.record_pause("s", TaskPauseReason::BudgetWallClock, true);
         e.clear_progress("s");
         let snap = e.snapshot("s");
         assert_eq!(snap.consecutive_same_reason, 0);

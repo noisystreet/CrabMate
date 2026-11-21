@@ -31,8 +31,12 @@ use crate::cm_agent::turn_budget::TurnBudgetDeny;
 use crate::cm_agent::turn_origin::TurnOrigin;
 use crate::cm_config::AutonomyConfig;
 
-/// 落盘 schema 版本。读取时只接受当前版本，其余视为不可读（不猜测迁移）。
-pub const TASK_STATE_SCHEMA: u32 = 1;
+/// 落盘 schema 版本。
+///
+/// **读取只拒「未来」版本**（`> 本值`），旧版本靠 `#[serde(default)]` 补齐新增字段：
+/// B 步加 `cumulative`、C 步加 `origin`，若按「不等于即拒」处理，旧文件会被整份丢弃，
+/// 累计与发起者一起归零——那是数据损失，不是保守。
+pub const TASK_STATE_SCHEMA: u32 = 2;
 
 /// 工作区数据目录（与 `reminder` / `event` 同一约定）。
 const DATA_DIR: &str = ".crabmate";
@@ -193,13 +197,6 @@ impl TaskState {
     #[must_use]
     pub fn with_cumulative(mut self, cumulative: TaskBudgetSnapshot) -> Self {
         self.cumulative = cumulative;
-        self
-    }
-
-    /// 覆盖本轮发起者（`#1455` C 步接线用；默认 [`TurnOrigin::User`]）。
-    #[must_use]
-    pub fn with_origin(mut self, origin: TurnOrigin) -> Self {
-        self.origin = origin;
         self
     }
 }
@@ -464,7 +461,9 @@ impl<'a> TaskStateStore<'a> {
             Ok(s) => s,
             Err(_) => return Ok(None),
         };
-        if parsed.schema != TASK_STATE_SCHEMA {
+        // 只拒**未来**版本（见 `TASK_STATE_SCHEMA` 的说明）：旧文件的缺失字段由
+        // `#[serde(default)]` 补齐，不该因版本号落后而整份不可用。
+        if parsed.schema > TASK_STATE_SCHEMA {
             return Ok(None);
         }
         Ok(Some(parsed))
