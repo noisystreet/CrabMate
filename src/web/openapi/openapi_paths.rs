@@ -157,7 +157,9 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                         "description": "分页每页条数。省略或 0 表示返回过滤后的全量（兼容旧客户端）；超过单页上限按上限截断（见 maximum）。**服务端没有默认页长**。",
                         "schema": {
                             "type": "integer",
-                            "format": "int32",
+                            // 与 `ConversationMessagesQuery::limit: Option<u32>` 对齐（u32 是 uint32，
+                            // 不是 int32；同文件响应里的 `total_count` 也是 uint32）。
+                            "format": "uint32",
                             "minimum": 0,
                             // 取自实现常量，避免「clamp(1, 200)」与文档各写一遍。
                             "maximum": crate::web::conversation_messages_window::MAX_CONVERSATION_MESSAGES_PAGE_LIMIT
@@ -168,7 +170,8 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                         "in": "query",
                         "required": false,
                         "description": "取该下标之前的更早消息（窗口的右开端点）。**仅当 `limit` > 0 时生效**——`limit` 省略或为 0 时本参数被忽略；超过当前总条数时按尾部一页处理（过期游标不报错）。",
-                        "schema": { "type": "integer", "format": "int32", "minimum": 0 }
+                        // 与 `ConversationMessagesQuery::before_index: Option<u32>` 对齐。
+                        "schema": { "type": "integer", "format": "uint32", "minimum": 0 }
                     },
                     {
                         "name": "include_archive",

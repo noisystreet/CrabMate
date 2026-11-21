@@ -225,16 +225,21 @@ mod tests {
         );
         // `before_index` 的说明必须点明它只在带 `limit` 时生效——否则「省略 = 尾部一页」
         // 会被读成「单独给 before_index 也能翻页」（实现里那种情况走全量分支、参数被忽略）。
+        // 断言钉具体短语而不是「含 limit 字样」：后者对任何提到 limit 的文案都成立，等于没守。
         let before = params
             .iter()
             .find(|p| p["name"] == "before_index")
             .expect("before_index parameter");
+        let desc = before["description"]
+            .as_str()
+            .expect("before_index description");
         assert!(
-            before["description"]
-                .as_str()
-                .is_some_and(|d| d.contains("limit")),
-            "before_index 的说明必须写明它依赖 limit，实际：{:?}",
-            before["description"]
+            desc.contains("仅当 `limit` > 0 时生效"),
+            "before_index 的说明必须点明它依赖 limit，实际：{desc}"
+        );
+        assert!(
+            !desc.contains("省略表示尾部一页"),
+            "不得回退到被否决的旧表述（单独给 before_index 并不能翻页），实际：{desc}"
         );
     }
 }
