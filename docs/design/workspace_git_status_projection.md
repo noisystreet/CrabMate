@@ -135,13 +135,17 @@
 命令固定两条，无参数插值、无 `-C` 透传、不接受任何 rev / path 参数、不加 `--ignored`：
 
 ```text
-git rev-parse --is-inside-work-tree --show-prefix   # 一次调用、两行输出：仓库判据 + 工作区根前缀
+git rev-parse --is-inside-work-tree                 # 仓库判据（true / false，机器值，不受 locale 影响）
 git status --porcelain=v2 --branch                  # 唯一数据源（默认 --untracked-files=normal）
 ```
 
-`rev-parse` 按参数顺序逐行输出（第一行 `true` / `false`，第二行前缀）。合并调用只是省一次 fork，
-判据本身与工具侧 `git::ensure_git_repo_try` **同源**（同一命令、同一输出值）——这条要写进代码注释，
+判据与工具侧 `git::ensure_git_repo_try` **完全同源**（同一命令、同一输出值）——这条已写进代码注释，
 防止将来有人给工具侧加检查时静默漂移（见 §5）。
+
+> **实现期更正（路径基准）**：原方案打算用 `git rev-parse --show-prefix` 做前缀裁剪，
+> 实测（git 2.x）不需要 —— `git status` 在 cwd 下运行时已把 path 转成**相对 cwd**：
+> 根内是 `x` / `./x`，根外是 `../x`，且**仍会列出根外改动**。故裁剪判据改为「丢弃 `../` 开头的记录」，
+> `--show-prefix` 从命令中移除（见 §3.2），探测仍是 2 条命令。
 
 ### 3.1 记录类型与字段偏移
 
@@ -167,12 +171,12 @@ submodule 变更走 `1` / `2` 行，天然覆盖，**不写专用分支**。
 
 ### 3.2 边界裁剪（工作区根 ≠ 仓库根时）
 
-`git status` 覆盖**整个仓库**。若工作区根是仓库子目录，原始输出会包含根外文件，
-原样返回就把工作区根之外的路径泄露给客户端。本投影**裁剪到工作区根子树**：
+`git status` 在 cwd 下运行时**仍会列出工作区根之外的改动**（只是把 path 写成 `../x`），
+原样返回就把根外路径泄露给客户端。本投影**裁剪到工作区根**：
 
-- 前缀为空串（工作区根即仓库根）⇒ 全部记录计入。
-- 前缀形如 `sub/dir/` ⇒ **仅计入 path 以该前缀开头的记录**，并把前缀剥掉后再做后续判据；
-  根外记录不增任何计数。
+- path 以 `../` 开头（或恰为 `..`）⇒ 根外，**不增任何计数**。
+- 其余（`x` / `./x` / `./`）⇒ 根内，正常计入。注意 git 会把整个 untracked 目录**折叠成一条**
+  `? ./`，所以 untracked 是**条目数**不是文件数。
 - `head` / `upstream` / `ahead` / `behind` 是**仓库级**事实，不裁剪（也不含具体路径，无泄露）。
 
 这与工具卡 `git status` 的整仓库输出**有意不同**：工具卡是模型在工作目录里跑命令的原始回显，
@@ -237,7 +241,7 @@ struct CachedWorkspaceGitStatus {
 
 | 现状 | 用途 | 处理 |
 | --- | --- | --- |
-| `git::ensure_git_repo_try`（`pub(super)`） | 仓库判据 | **不改可见性**：本路由用同一命令（`rev-parse --is-inside-work-tree`）的同一输出值自行判定，只是额外带 `--show-prefix`。判据真源是 **git 命令语义**，不是那段 Rust 代码；注释钉「与 `ensure_git_repo_try` 同源」防漂移 |
+| `git::ensure_git_repo_try`（`pub(super)`） | 仓库判据 | **不改可见性**：本路由跑同一命令（`rev-parse --is-inside-work-tree`）、比同一输出值。判据真源是 **git 命令语义**，不是那段 Rust 代码；注释钉「与 `ensure_git_repo_try` 同源」防漂移 |
 | `git::ensure_git_repo`（`pub`） | 同上（`String` 版） | 不用：它把 `ToolError` 压平成 `String`，错误码区分已丢失 |
 | `WorkspacePathError` | 工作区根解析失败 | 复用 `user_message()`；错误分派映射到 `WORKSPACE_NOT_SET` / `WORKSPACE_OUT_OF_ROOTS` |
 | `structured_preview.rs` porcelain 判据 | 工具卡预览 | **不改**；在文件注释 + `docs/命令行与路由.md` 两处写明有意分歧（AGENTS.md §4.8 写法） |
@@ -278,8 +282,8 @@ PR 少一个 refactor commit、少一处跨模块耦合。代价是 web 层有�
 | 10 | `# branch.head` 缺失 / 垃圾行 / 短 `XY` | `Err(GIT_PROBE_UNPARSABLE)`（不 panic、不猜） |
 | 11 | 首提交仓库（`# branch.oid (initial)`） | `head.oid == null` 且 **键存在**，其余正常 |
 | 12 | 尾部空行 / CRLF | 正常解析（不因 `\r` 判死） |
-| 13 | 裁剪：前缀 `sub/`，记录 `other/a.txt` | 计数不增、`dirty` 不受影响 |
-| 14 | 裁剪：前缀 `sub/`，记录 `sub/a.txt` | 计入，且前缀被正确剥离 |
+| 13 | 裁剪：记录 `../outside.txt` | 计数不增、`dirty` 不受影响 |
+| 14 | 裁剪：记录 `inside.txt` / `./` | 计入（`./` 是 untracked 目录折叠形态） |
 | 15 | path 含 `\n` | `Err(GIT_PROBE_UNPARSABLE)` |
 | 16 | `1` / `2` / `u` 行固定字段数不足 | `Err(GIT_PROBE_UNPARSABLE)`，不 panic |
 | 17 | path 含空格（`? my file.txt`） | 整段作 path，不被切成两段（与 #6 共用参数化用例） |
@@ -388,7 +392,7 @@ Client 仓随后升级 pin（不属本仓范围）。
 
 ### 10.3 裁剪到工作区根子树
 
-**裁定**：前缀非空时只统计前缀内的记录；仓库级事实字段（`head` / `upstream` / `ahead` / `behind`）不裁剪。
+**裁定**：只统计工作区根内的记录（丢弃 `../` 开头的根外记录）；仓库级事实字段（`head` / `upstream` / `ahead` / `behind`）不裁剪。
 
 **判据**：任何 `/workspace/*` 端点的**返回内容都不得包含工作区根之外的路径信息**——与
 `resolve_for_read` / `resolve_for_write` / `workspace_fs` 的边界同源（AGENTS.md §4.6）。
