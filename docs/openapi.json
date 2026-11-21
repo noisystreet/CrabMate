@@ -2399,7 +2399,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
+              "format": "uint32",
               "maximum": 200,
               "minimum": 0,
               "type": "integer"
@@ -2411,7 +2411,7 @@
             "name": "before_index",
             "required": false,
             "schema": {
-              "format": "int32",
+              "format": "uint32",
               "minimum": 0,
               "type": "integer"
             }
