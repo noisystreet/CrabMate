@@ -135,6 +135,19 @@ pub struct AutonomyConfig {
     pub max_cumulative_tokens: usize,
     /// 跨回合累计墙钟秒数上限（软闸，`0` = 不限制；**不含**暂停等待时间）。
     pub max_cumulative_secs: u64,
+    /// `#1455` C 步：**自动续跑开关**（默认 `false`）。
+    ///
+    /// 与 `enabled` 分层是刻意的：`enabled` 只管「落盘 + 注入 + 累计」（只读投影）；
+    /// `auto_resume` 管「失败后自己再起一个回合」（会烧钱、会动文件）。两者同时生效后
+    /// 一旦出问题无法二分定位，所以必须是两个开关。
+    pub auto_resume: bool,
+    /// 单会话自动续跑轮数上限（**硬闸**，`0` = 不限制）。
+    ///
+    /// 真源必须是**进程内计数**，不能读状态文件——否则「删掉 `.crabmate/tasks/*.json`
+    /// 就能无限续跑」。闸门强度不能超过其真源的可靠性。
+    pub max_autonomous_turns: u32,
+    /// 遇「待审批」暂停时是否停止自动续跑（默认 **`true`**）。
+    pub stop_on_approval_required: bool,
 }
 
 #[derive(Debug, Clone)]

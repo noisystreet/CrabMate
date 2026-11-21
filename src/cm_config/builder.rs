@@ -270,6 +270,13 @@ impl ConfigBuilder {
         au.max_cumulative_secs = agent
             .autonomy_max_cumulative_secs
             .or(au.max_cumulative_secs);
+        au.auto_resume = agent.autonomy_auto_resume.or(au.auto_resume);
+        au.max_autonomous_turns = agent
+            .autonomy_max_autonomous_turns
+            .or(au.max_autonomous_turns);
+        au.stop_on_approval_required = agent
+            .autonomy_stop_on_approval_required
+            .or(au.stop_on_approval_required);
         let am = &mut self.agents_md;
         am.agents_md_enabled = agent.agents_md_enabled.or(am.agents_md_enabled);
         am.agents_md_max_chars = agent.agents_md_max_chars.or(am.agents_md_max_chars);

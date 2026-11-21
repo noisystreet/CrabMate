@@ -14,6 +14,7 @@ use super::validate;
 use super::workspace_roots;
 use crate::cm_names as tool_names;
 
+mod autonomy;
 mod agent_layers;
 mod checks;
 mod derived;

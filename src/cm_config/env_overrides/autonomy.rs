@@ -25,4 +25,17 @@ pub(super) fn apply(b: &mut ConfigBuilder) {
         &mut b.autonomy.max_cumulative_secs,
         "CM_AUTONOMY_MAX_CUMULATIVE_SECS",
     );
+    // C 步（#1455）：自动续跑开关与硬闸。
+    apply_bool(
+        &mut b.autonomy.auto_resume,
+        "CM_AUTONOMY_AUTO_RESUME",
+    );
+    apply_parse(
+        &mut b.autonomy.max_autonomous_turns,
+        "CM_AUTONOMY_MAX_AUTONOMOUS_TURNS",
+    );
+    apply_bool(
+        &mut b.autonomy.stop_on_approval_required,
+        "CM_AUTONOMY_STOP_ON_APPROVAL_REQUIRED",
+    );
 }

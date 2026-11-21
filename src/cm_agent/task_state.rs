@@ -76,6 +76,11 @@ pub enum TaskPauseReason {
     BudgetLlmCalls,
     /// 触到单轮 Token 粗估上限。
     BudgetTokens,
+    /// `#1455` C 步：卡在工具审批上，等人决定（不是预算问题）。
+    ///
+    /// 与三个 `Budget*` 的区别决定续跑行为：预算暂停**可以**自动续跑，
+    /// 这条**不可以**（`autonomy_stop_on_approval_required` 默认 true）——等人是安全边界。
+    AwaitingApproval,
 }
 
 impl TaskPauseReason {
@@ -86,6 +91,7 @@ impl TaskPauseReason {
             Self::BudgetWallClock => "budget_wall_clock",
             Self::BudgetLlmCalls => "budget_llm_calls",
             Self::BudgetTokens => "budget_tokens",
+            Self::AwaitingApproval => "awaiting_approval",
         }
     }
 }
@@ -184,6 +190,77 @@ impl TaskState {
         self.cumulative = cumulative;
         self
     }
+}
+
+/// 自动续跑的决定（`#1455` C 步）。纯函数产出，便于把八种组合各自钉住。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoResumeDecision {
+    /// 允许自动续跑。
+    Go,
+    /// 不续跑，带上原因（只用于日志与排障，不面向用户）。
+    Stop(AutoResumeStopReason),
+}
+
+/// 不自动续跑的原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoResumeStopReason {
+    /// `enabled` 或 `auto_resume` 关闭（默认）。
+    Disabled,
+    /// 本回合**不是**因预算暂停结束（正常完成或其它失败）。
+    NotPaused,
+    /// 暂停在工具审批上，且配置为「遇审批即停」（默认）。
+    AwaitingApproval,
+    /// 已达单会话自动续跑轮数上限（**硬闸**）。
+    MaxTurnsReached,
+    /// 工作区或权限等级在本回合前后变了——不续跑，避免绕过人工切换。
+    ContextChanged,
+}
+
+impl AutoResumeStopReason {
+    /// 稳定标识（日志 / 排障）。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::NotPaused => "not_paused",
+            Self::AwaitingApproval => "awaiting_approval",
+            Self::MaxTurnsReached => "max_turns_reached",
+            Self::ContextChanged => "context_changed",
+        }
+    }
+}
+
+/// 判定「本回合结束后是否自动再起一个回合」。
+///
+/// 顺序是**安全优先**：先看开关，再看是否真因预算暂停，再看审批边界，最后才是轮数硬闸与
+/// 上下文变化。原因在于：让「开关关闭」永远先于其它判断返回，才能保证默认配置下
+/// 这个函数是纯读、零副作用（不续跑、不计数）。
+///
+/// **硬闸**（`max_autonomous_turns`）的计数由调用方持有且必须是**进程内**的——
+/// 不能读状态文件，否则删文件即可绕过。
+#[must_use]
+pub fn decide_auto_resume(
+    cfg: &AutonomyConfig,
+    paused_reason: Option<TaskPauseReason>,
+    resumed_turns_so_far: u32,
+    context_changed: bool,
+) -> AutoResumeDecision {
+    if !cfg.enabled || !cfg.auto_resume {
+        return AutoResumeDecision::Stop(AutoResumeStopReason::Disabled);
+    }
+    let Some(reason) = paused_reason else {
+        return AutoResumeDecision::Stop(AutoResumeStopReason::NotPaused);
+    };
+    if reason == TaskPauseReason::AwaitingApproval && cfg.stop_on_approval_required {
+        return AutoResumeDecision::Stop(AutoResumeStopReason::AwaitingApproval);
+    }
+    if cfg.max_autonomous_turns > 0 && resumed_turns_so_far >= cfg.max_autonomous_turns {
+        return AutoResumeDecision::Stop(AutoResumeStopReason::MaxTurnsReached);
+    }
+    if context_changed {
+        return AutoResumeDecision::Stop(AutoResumeStopReason::ContextChanged);
+    }
+    AutoResumeDecision::Go
 }
 
 /// 注入给模型的**精简**任务状态摘要字符上限。
@@ -530,6 +607,64 @@ mod tests {
         assert_eq!(messages.len(), 1, "落盘剥离后不应残留注入条");
     }
 
+    /// `#1455` C 步的硬闸决策：八种组合各自钉住，安全优先顺序不可颠倒。
+    #[test]
+    fn auto_resume_decision_covers_every_branch() {
+        let base = cfg(0, 0);
+        let budget = Some(TaskPauseReason::BudgetTokens);
+
+        // 开关分层：enabled 关就停，即便 auto_resume 想开。
+        let mut no_enabled = base.clone();
+        no_enabled.auto_resume = true;
+        assert_eq!(
+            decide_auto_resume(&AutonomyConfig { enabled: false, ..no_enabled }, budget, 0, false),
+            AutoResumeDecision::Stop(AutoResumeStopReason::Disabled)
+        );
+        assert_eq!(
+            decide_auto_resume(&base, budget, 0, false),
+            AutoResumeDecision::Stop(AutoResumeStopReason::Disabled),
+            "auto_resume 默认关"
+        );
+
+        let mut on = base.clone();
+        on.auto_resume = true;
+        // 非预算暂停（正常结束 / 其它失败）不续。
+        assert_eq!(
+            decide_auto_resume(&on, None, 0, false),
+            AutoResumeDecision::Stop(AutoResumeStopReason::NotPaused)
+        );
+        // 遇审批默认停；放宽后才继续。
+        assert_eq!(
+            decide_auto_resume(&on, Some(TaskPauseReason::AwaitingApproval), 0, false),
+            AutoResumeDecision::Stop(AutoResumeStopReason::AwaitingApproval)
+        );
+        let mut relaxed = on.clone();
+        relaxed.stop_on_approval_required = false;
+        assert_eq!(
+            decide_auto_resume(&relaxed, Some(TaskPauseReason::AwaitingApproval), 0, false),
+            AutoResumeDecision::Go
+        );
+        // 轮数硬闸：0 = 不限制；达到上限即停。
+        assert_eq!(decide_auto_resume(&on, budget, 999, false), AutoResumeDecision::Go);
+        let mut capped = on.clone();
+        capped.max_autonomous_turns = 3;
+        assert_eq!(
+            decide_auto_resume(&capped, budget, 2, false),
+            AutoResumeDecision::Go
+        );
+        assert_eq!(
+            decide_auto_resume(&capped, budget, 3, false),
+            AutoResumeDecision::Stop(AutoResumeStopReason::MaxTurnsReached)
+        );
+        // 工作区 / 权限变化即停。
+        assert_eq!(
+            decide_auto_resume(&on, budget, 0, true),
+            AutoResumeDecision::Stop(AutoResumeStopReason::ContextChanged)
+        );
+        // 全绿灯。
+        assert_eq!(decide_auto_resume(&on, budget, 0, false), AutoResumeDecision::Go);
+    }
+
     fn cfg(max_tasks: usize, ttl_secs: u64) -> AutonomyConfig {
         AutonomyConfig {
             enabled: true,
@@ -538,6 +673,9 @@ mod tests {
             max_cumulative_llm_calls: 0,
             max_cumulative_tokens: 0,
             max_cumulative_secs: 0,
+            auto_resume: false,
+            max_autonomous_turns: 0,
+            stop_on_approval_required: true,
         }
     }
 

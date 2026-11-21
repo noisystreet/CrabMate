@@ -211,6 +211,10 @@ pub(super) struct AgentSection {
     pub(super) autonomy_max_cumulative_llm_calls: Option<u64>,
     pub(super) autonomy_max_cumulative_tokens: Option<u64>,
     pub(super) autonomy_max_cumulative_secs: Option<u64>,
+    /// `#1455` C 步：自动续跑开关 / 轮数硬闸 / 遇审批即停。默认 `false` / `0` / `true`。
+    pub(super) autonomy_auto_resume: Option<bool>,
+    pub(super) autonomy_max_autonomous_turns: Option<u64>,
+    pub(super) autonomy_stop_on_approval_required: Option<bool>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）
