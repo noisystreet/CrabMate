@@ -247,6 +247,7 @@ fn openapi_components_schemas_workspace_git() -> Value {
                 "message": { "type": "string" },
                 "head": {
                     "type": "object",
+                    "required": ["kind"],
                     "properties": {
                         "kind": { "type": "string", "enum": ["branch", "detached"] },
                         "name": { "type": "string" },
@@ -259,6 +260,7 @@ fn openapi_components_schemas_workspace_git() -> Value {
                 "dirty": { "type": "boolean" },
                 "counts": {
                     "type": "object",
+                    "required": ["staged", "unstaged", "untracked", "conflicted", "total"],
                     "properties": {
                         "staged": { "type": "integer" },
                         "unstaged": { "type": "integer" },

@@ -130,6 +130,10 @@
 | `cache` | TTL 内复用（§4.3） |
 | `stale_cache` | 重探失败、旧值兜底（§4.3） |
 
+> **`source` 在未探测时无意义**：工作区根层面的失败（`WORKSPACE_NOT_SET` / `WORKSPACE_OUT_OF_ROOTS`）
+> 根本没跑探测，此时 `source` 固定为 `probe`。客户端不要用 `source` 判断「刚探测过」，
+> 一律只看 `state`（这也是不加第四个取值的理由：`state=failed` 已经够了）。
+
 ## 3. 解析规格（严格，宁失败不猜）
 
 命令固定两条，无参数插值、无 `-C` 透传、不接受任何 rev / path 参数、不加 `--ignored`：
@@ -233,6 +237,8 @@ struct CachedWorkspaceGitStatus {
   **先二次检查缓存**（可能已被前一个请求填好）再探，避免 TTL 到期瞬间的并发请求各自 fork 两条命令。
   本仓**没有**通用 single-flight 设施（`per_turn_flight.rs` 是「单回合状态镜像」，不是去重闸），
   故用锁 + 双重检查就地实现，不抽象公共组件——单消费者时抽象没有收益（见 §10.5）。
+- **代价（有意）**：探针锁跨越整个探测，所以一个慢探测会**串行阻塞**其余并发请求（最长 `PROBE_TIMEOUT`）。
+  宁可排队也不要 fork 风暴；客户端侧栏是单路轮询，正常不会触发。
 - **旧值兜底**：TTL 过期后重探失败（`GIT_PROBE_TIMEOUT` / `GIT_PROBE_FAILED` / `GIT_PROBE_UNPARSABLE`）
   且旧条目 `workspace_root` 仍匹配时，返回旧投影 + `source: "stale_cache"`（`computed_at_unix` 保持旧值），
   而不是把侧栏打成 `failed`。`not_a_repo` / `git_unavailable` 属「明确结论」，直接覆盖旧值，**不**兜底。
@@ -306,6 +312,10 @@ PR 少一个 refactor commit、少一处跨模块耦合。代价是 web 层有�
 重探超时 → `source=="stale_cache"` 且 `computed_at_unix` 保持旧值；`not_a_repo` **不**兜底（直接覆盖）；
 TTL 到期瞬间并发两请求只实际探测一次（探针内计数验证 fork 次数）。
 （TTL / 超时做成模块内 `pub(crate) const`，测试用 `#[cfg(test)]` 窄接口注入或直接构造过期条目。）
+
+> **已知缺口**：并发去重（single-flight）没有自动化测试 —— 要验证「只探测一次」得给探针加
+> `#[cfg(test)]` 计数注入点。当前靠「探针锁 + 双重检查」的结构保证，属 §10.5「明确不做」的范围。
+> 缓存读取层（命中 / 过期 / 兜底 / 换工作区不命中）已有单测覆盖。
 
 ### 7.4 HTTP 冒烟（照 `handlers_profile_http_tests.rs` 骨架：`start_test_serve_with_config` + `tempfile`）
 
