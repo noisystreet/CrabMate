@@ -67,20 +67,45 @@ pub(super) fn run_backfill_layout(
         }
     };
     let report = crate::conversation_store::backfill_layout_meta(&path, cmd.apply)?;
-    println!("会话库：{}", path.display());
+    println!("会话库：{}（共 {} 行）", path.display(), report.total);
     println!(
-        "候选（layout_meta_json 为空）：{}；可回填 / 已回填：{}；解析失败跳过：{}",
+        "需要回填（无 layout / 坏 JSON / not v2）：{}；可回填 / 已回填：{}；\
+         messages_json 解析失败跳过：{}",
         report.candidates, report.filled, report.skipped_invalid
     );
     if !report.applied {
         println!("dry-run：未写盘。确认后加 `--apply` 执行。");
-    } else if report.ready_for_contract() {
-        println!("回填完成：库内已无 legacy 行（S3 删读路径的前置满足）。");
-    } else {
-        println!("回填后仍有解析失败的行（未被删除，需人工处理）。");
+        if report.skipped_invalid > 0 {
+            return Err(backfill_bad_rows(&report));
+        }
+        return Ok(());
     }
-    Ok(())
+    if report.ready_for_contract() {
+        println!("回填完成：库内已无不可用的 layout 行（S3 删读路径的前置满足）。");
+        return Ok(());
+    }
+    println!(
+        "[!] 回填后仍有 {} 行不可用（解析失败行未被删除，需人工处理）。",
+        report.remaining_legacy_rows()
+    );
+    Err(backfill_bad_rows(&report))
 }
+
+/// 判据不满足时的错误：带 `EXIT_GENERAL` 退出码，脚本据以拒绝「删读路径」。
+fn backfill_bad_rows(
+    report: &crate::conversation_store::LayoutBackfillReport,
+) -> Box<dyn std::error::Error> {
+    crate::cm_runtime::cli_exit::CliExitError::new(
+        crate::cm_runtime::cli_exit::EXIT_GENERAL,
+        format!(
+            "回填判据未满足：{} 行 messages_json 解析失败（未被删除，需人工处理），另有 {} 行仍未回填",
+            report.skipped_invalid,
+            report.remaining_legacy_rows()
+        ),
+    )
+    .into()
+}
+
 
 /// `crabmate sse-replay`：把录制的 AG-UI 事件回放成 `TurnLayout` 投影。
 pub(super) fn run_sse_replay(cmd: SseReplayCmd) -> Result<(), Box<dyn std::error::Error>> {
@@ -90,4 +115,33 @@ pub(super) fn run_sse_replay(cmd: SseReplayCmd) -> Result<(), Box<dyn std::error
         job_id: cmd.job_id,
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cm_runtime::cli_exit::{CliExitError, EXIT_GENERAL};
+    use crate::conversation_store::LayoutBackfillReport;
+
+    use super::backfill_bad_rows;
+
+    /// 判据未满足必须以 `CliExitError(EXIT_GENERAL)` 结束：裸字符串错误虽同样非零，
+    /// 但 `main` 的 `downcast_ref` 分不出码，脚本也就没法据此区分失败原因。
+    #[test]
+    fn bad_rows_error_carries_general_exit_code() {
+        let report = LayoutBackfillReport {
+            total: 3,
+            candidates: 3,
+            filled: 2,
+            skipped_invalid: 1,
+            applied: true,
+        };
+        let err = backfill_bad_rows(&report);
+        let cli = err
+            .downcast_ref::<CliExitError>()
+            .expect("must be CliExitError");
+        assert_eq!(cli.code, EXIT_GENERAL);
+        assert!(cli.message.contains("解析失败"), "{}", cli.message);
+        // 回填后仍不可用的行 = candidates - filled（skipped 已含在内，不得重复相加）。
+        assert!(cli.message.contains("另有 1 行"), "{}", cli.message);
+    }
 }

@@ -609,6 +609,8 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；
   响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）。
   旧库行若 `layout_meta_json` 为空，GET 曾**省略**该键——B4/P4 起 `layout` 键**总是**出现，未持久化为 `null`。
   服务端**仍有** `layout = null` 分支（S3 未做），Client 的 legacy merge 已删：这段窗口的兜底语义须随 S3 一并确认。
+  `layout_schema_version: 1` 的行**同样**回 `null`（E4 起不再回传 v1 形状，见 `CHANGELOG.md`），
+  由 `crabmate backfill-layout` 重算成 v2。
 - Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；
   流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`；hydration / 冷启动双读 `layout` 但历史行仍是 legacy id，完整同键投影尚未成为权威。
 

@@ -543,19 +543,31 @@ fn print_doctor_conversation_layout_block(cfg: &AgentConfig) {
         return;
     }
     match crate::conversation_store::layout_coverage(path) {
-        Ok(cov) => match cov.legacy_ratio() {
-            Some(ratio) => println!(
-                "  会话行 {} / 无 layout 行 {}（{:.1}% 只能走 legacy 读路径）",
-                cov.total,
-                cov.without_layout,
-                ratio * 100.0
-            ),
-            None => println!("  会话行 0（空库，占比无意义）"),
-        },
+        Ok(cov) => {
+            if cov.total == 0 {
+                println!("  会话行 0（空库，占比无意义）");
+            } else {
+                println!(
+                    "  会话行 {} / 无 layout 行 {}（{:.1}%）/ 损坏或 v1 {}",
+                    cov.total,
+                    cov.without_layout,
+                    cov.legacy_ratio().unwrap_or(0.0) * 100.0,
+                    cov.unusable_layout
+                );
+            }
+            if cov.unusable() == 0 {
+                println!("  [#1338 S3] 库内无不可用 layout 行：删读路径的数据侧前置满足");
+            } else {
+                println!(
+                    "  [#1338 S3] 仍有 {} 行不可用：先跑 `crabmate backfill-layout`",
+                    cov.unusable()
+                );
+            }
+        }
         Err(e) => println!("  [!] 无法读取会话库 {}: {e}", path.display()),
     }
     println!(
-        "  口径: layout_meta_json 为 NULL 或空白；删 legacy 读路径前须低于既定阈值（见 Issue #1333）"
+        "  口径: layout_meta_json 为 NULL / 空白（缺失），或坏 JSON / layout_schema_version < 2（不可用）"
     );
 }
 

@@ -4,6 +4,7 @@
 //! 再加用例就会超标——这本身也说明覆盖率统计不属会话 CRUD 的主测试面。
 
 use super::backfill::backfill_layout_meta_in_conn;
+use super::coverage::{LayoutCoverage, layout_coverage_from_conn};
 use super::*;
 
 #[test]
@@ -115,7 +116,11 @@ fn backfill_layout_meta_dry_run_then_apply() {
     assert_eq!(dry.filled, 2);
     assert_eq!(dry.skipped_invalid, 0);
     assert!(!dry.applied);
-    assert!(dry.ready_for_contract(), "全部可回填");
+    assert!(
+        !dry.ready_for_contract(),
+        "dry-run 没写盘，不能说「库里已无不可用行」——那是上一版自证成立的错误"
+    );
+    assert_eq!(dry.remaining_legacy_rows(), 2, "dry-run 后候选一行都没减");
     // dry-run 真的没写：覆盖率仍是 2 行无 layout。
     assert_eq!(
         layout_coverage_from_conn(&conn)
@@ -127,6 +132,8 @@ fn backfill_layout_meta_dry_run_then_apply() {
     let applied = backfill_layout_meta_in_conn(&conn, true).expect("apply");
     assert_eq!(applied.filled, 2);
     assert!(applied.applied);
+    assert!(applied.ready_for_contract(), "真写盘且无跳过行，判据才成立");
+    assert_eq!(applied.remaining_legacy_rows(), 0);
     assert_eq!(
         layout_coverage_from_conn(&conn)
             .expect("coverage")
@@ -260,4 +267,56 @@ fn backfill_layout_meta_path_dry_run_is_read_only_then_apply_writes() {
     assert_eq!(layout_coverage(&path).expect("coverage").without_layout, 0);
 
     std::fs::remove_file(&path).expect("cleanup");
+}
+
+/// v1 与坏 JSON 行同样是「不可用」：旧实现只挑空 / 空白，doctor 因而报「0 无 layout」，
+/// 而这两类行在纯删读路径后直接读不出来。回填与覆盖率必须给同一个答案。
+#[test]
+fn backfill_and_coverage_treat_v1_and_corrupt_as_unusable() {
+    let conn = Connection::open_in_memory().expect("in-memory db");
+    migrate(&conn).expect("migrate");
+    let msgs = vec![Message::user_only("hi".to_string())];
+    for id in ["v1", "corrupt", "blank"] {
+        assert_eq!(
+            save_if_revision(&conn, id, msgs.clone(), None, None, None, None).expect("save"),
+            SaveConversationOutcome::Saved
+        );
+    }
+    let v1_layout = r#"{"layout_schema_version":1}"#;
+    let corrupt_layout = "{not json";
+    conn.execute(
+        &format!("UPDATE {TABLE} SET layout_meta_json = ?1 WHERE id = 'v1'"),
+        rusqlite::params![v1_layout],
+    )
+    .expect("v1 layout");
+    conn.execute(
+        &format!("UPDATE {TABLE} SET layout_meta_json = ?1 WHERE id = 'corrupt'"),
+        rusqlite::params![corrupt_layout],
+    )
+    .expect("corrupt layout");
+    conn.execute(
+        &format!("UPDATE {TABLE} SET layout_meta_json = '' WHERE id = 'blank'"),
+        [],
+    )
+    .expect("blank layout");
+
+    let cov = layout_coverage_from_conn(&conn).expect("coverage");
+    assert_eq!(cov.total, 3);
+    assert_eq!(cov.without_layout, 1, "只有空白行算「缺失」");
+    assert_eq!(cov.unusable_layout, 2, "v1 与坏 JSON 都算「不可用」");
+    assert_eq!(cov.unusable(), 3, "删读路径的判据看的是这个总数");
+
+    let dry = backfill_layout_meta_in_conn(&conn, false).expect("dry-run");
+    assert_eq!(dry.total, 3);
+    assert_eq!(dry.candidates, 3, "三类都必须进候选，否则「归零」判据失真");
+    assert_eq!(dry.filled, 3);
+
+    let applied = backfill_layout_meta_in_conn(&conn, true).expect("apply");
+    assert!(applied.ready_for_contract(), "三类都回填后判据成立");
+    assert_eq!(
+        layout_coverage_from_conn(&conn)
+            .expect("coverage after")
+            .unusable(),
+        0
+    );
 }
