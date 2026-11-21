@@ -1,4 +1,4 @@
-//! `workspace` 组声明：13 个 `/workspace*` path、19 个 `(path, method)` 操作。
+//! `workspace` 组声明：14 个 `/workspace*` path、20 个 `(path, method)` 操作。
 //!
 //! 来源散在三处手写片段（`openapi_paths_workspace.rs`、`openapi_paths.rs` 的
 //! `openapi_paths_fragment_workspace_list` / `_workspace_file_meta`）。文案逐字照抄，
@@ -506,6 +506,32 @@ static WORKSPACE_DECLS: &[RouteDecl] = &[
                 body: RespBody::None,
             },
         ],
+        override_kind: Override::None,
+    },
+    RouteDecl {
+        path: "/workspace/git",
+        method: HttpMethod::Get,
+        tag: "workspace",
+        summary: "当前工作区 git 状态只读投影（分支 + 脏摘要）",
+        description: Some(
+            "一律 200，用 `state` 表达可用性：`ok` / `not_a_repo` / `git_unavailable` / `failed`（后者看 `reason_code`）。\
+             `dirty` 只代表「当前工作区根下」有未提交改动，**不**代表仓库干净。\
+             `source` 为 `probe` / `cache` / `stale_cache`；`refresh=true` 只跳过缓存读，仍回写缓存。",
+        ),
+        protected: true,
+        params: &[ParamDecl {
+            name: "refresh",
+            location: ParamLocation::Query,
+            required: false,
+            description: Some("跳过缓存读，强制重新探测（仍回写缓存）"),
+            schema: SchemaDecl::Bool,
+        }],
+        request: None,
+        responses: &[RespDecl {
+            status: "200",
+            description: "git 状态投影（四态）",
+            body: RespBody::Json(SchemaDecl::Ref("WorkspaceGitStatusResponse")),
+        }],
         override_kind: Override::None,
     },
     RouteDecl {

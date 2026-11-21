@@ -229,6 +229,51 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
     })
 }
 
+/// `GET /workspace/git` 的响应 schema。
+///
+/// 单独成函数：`openapi_components_schemas_workspace_tasks_config` 已接近 fn nloc ≤ 200 的门禁，
+/// 再塞进去会直接顶到上限。
+fn openapi_components_schemas_workspace_git() -> Value {
+    json!({
+        "WorkspaceGitStatusResponse": {
+            "type": "object",
+            "required": ["state", "computed_at_unix", "source"],
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": ["ok", "not_a_repo", "git_unavailable", "failed"]
+                },
+                "reason_code": { "type": "string" },
+                "message": { "type": "string" },
+                "head": {
+                    "type": "object",
+                    "properties": {
+                        "kind": { "type": "string", "enum": ["branch", "detached"] },
+                        "name": { "type": "string" },
+                        "oid": { "type": "string", "nullable": true }
+                    }
+                },
+                "upstream": { "type": "string", "nullable": true },
+                "ahead": { "type": "integer", "nullable": true },
+                "behind": { "type": "integer", "nullable": true },
+                "dirty": { "type": "boolean" },
+                "counts": {
+                    "type": "object",
+                    "properties": {
+                        "staged": { "type": "integer" },
+                        "unstaged": { "type": "integer" },
+                        "untracked": { "type": "integer" },
+                        "conflicted": { "type": "integer" },
+                        "total": { "type": "integer" }
+                    }
+                },
+                "computed_at_unix": { "type": "integer", "format": "int64" },
+                "source": { "type": "string", "enum": ["probe", "cache", "stale_cache"] }
+            }
+        }
+    })
+}
+
 fn openapi_components_schemas_memory() -> Value {
     json!({
         "MemoryEntryView": {
@@ -275,6 +320,7 @@ pub(super) fn openapi_components_value() -> Value {
         openapi_components_schemas_from_contract(),
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),
+        openapi_components_schemas_workspace_git(),
         openapi_components_schemas_memory(),
         openapi_components_schemas_tool_jobs(),
         openapi_components_user_data::openapi_components_schemas_user_data(),

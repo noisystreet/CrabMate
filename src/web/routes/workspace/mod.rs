@@ -14,7 +14,7 @@ use crate::web::workspace::{
     workspace_clone_stream_handler, workspace_dir_archive_handler, workspace_dir_create_handler,
     workspace_dir_delete_handler, workspace_file_delete_handler, workspace_file_download_handler,
     workspace_file_move_handler, workspace_file_raw_handler, workspace_file_raw_put_handler,
-    workspace_file_read_handler, workspace_file_write_handler,
+    workspace_file_read_handler, workspace_file_write_handler, workspace_git_handler,
     workspace_handler, workspace_pick_handler, workspace_profile_handler,
     workspace_projects_list_handler, workspace_projects_post_handler, workspace_search_handler,
     workspace_set_handler,
@@ -66,6 +66,7 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             "/workspace/dir",
             post(workspace_dir_create_handler).delete(workspace_dir_delete_handler),
         )
+        .route("/workspace/git", get(workspace_git_handler))
         .route("/workspace/profile", get(workspace_profile_handler))
         .route("/workspace/changelog", get(workspace_changelog_handler))
 }

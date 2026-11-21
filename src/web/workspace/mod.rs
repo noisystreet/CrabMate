@@ -2,7 +2,9 @@
 
 mod clone_stream;
 mod clone_validate;
+mod git_projection;
 mod handlers;
+mod handlers_git;
 mod handlers_dir_archive;
 mod handlers_dir_archive_zip;
 mod handlers_dir_tests;
@@ -16,6 +18,8 @@ mod handlers_file_raw_http_tests;
 #[cfg(test)]
 mod handlers_fs_extra_http_tests;
 #[cfg(test)]
+mod handlers_git_http_tests;
+#[cfg(test)]
 mod handlers_profile_http_tests;
 #[cfg(test)]
 mod handlers_workspace_set_http_tests;
@@ -24,6 +28,7 @@ mod projects;
 
 pub use clone_stream::workspace_clone_stream_handler;
 pub use handlers::*;
+pub use handlers_git::workspace_git_handler;
 pub use handlers_file_delete::workspace_file_delete_handler;
 pub use handlers_dir_archive::workspace_dir_archive_handler;
 pub use handlers_file_download::workspace_file_download_handler;

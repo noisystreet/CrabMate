@@ -7,6 +7,14 @@
 //! 或 **`diff --cc`** 起首），或 **`git status`**（命令行解析为 **`git … status`** 且 stdout 符合常见
 //! **`git status`** 形态），则附加与写工具相同的 **`preview: workspace_write_diff`** 头，
 //! Web 工具卡复用既有 diff 预览块（见 `frontend` `workspace_write_diff_section`）。
+//!
+//! **与 `GET /workspace/git` 判据的有意分歧**（设计见 `docs/design/workspace_git_status_projection.md` §3.2）：
+//! 本文件的 `git status` 判据是**宽松启发式**——只判断「这段文本像不像 `git status` 输出」，
+//! 认 human-readable 输出与本机 locale 文案（`位于分支` 等），拿不准就退回纯文本，
+//! 为的是工具卡永远有东西可展示。侧栏投影要的是确定性真源（`--porcelain=v2 --branch`，
+//! 解析不出来就明确失败），因此**刻意不共享**这段代码。两者因此有两处不同：
+//! ① 判据宽严；② 覆盖面（工具卡回显整个仓库，投影裁剪到工作区根）。
+//! 改这里时不要顺手把投影拉过来「对齐」，反之亦然。
 
 use serde_json::{Value, json};
 

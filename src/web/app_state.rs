@@ -56,6 +56,8 @@ pub(crate) struct AppStateHttpCore {
     /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.command_exec.run_command_working_dir
     pub(crate) workspace_override: Arc<tokio::sync::RwLock<Option<String>>>,
     pub(crate) uploads_dir: std::path::PathBuf,
+    /// `GET /workspace/git` 的只读投影缓存（TTL + single-flight，见 `web::workspace::git_projection`）。
+    pub(crate) workspace_git_cache: Arc<WorkspaceGitCache>,
 }
 
 /// 由工作区覆盖 + 共享配置解析当前有效工作区根（空串表示未设置）。
@@ -105,6 +107,25 @@ pub(crate) struct AppStateConversationRuntime {
     pub(crate) conversation_id_counter: Arc<AtomicU64>,
     /// 共享配置快照：保留策略（TTL / 条数上限）在每次落盘与后台 prune 时读取，支持热更。
     pub(crate) cfg: SharedAgentConfig,
+}
+
+/// `GET /workspace/git` 的缓存条目。
+///
+/// **单条即可**：一实例一工作区（#1183），切换工作区后 `workspace_root` 不匹配自然失效。
+#[derive(Clone)]
+pub(crate) struct CachedWorkspaceGitStatus {
+    pub(crate) workspace_root: String,
+    /// 单调钟，用于 TTL；命中缓存时**不**推进 `projection.computed_at_unix`。
+    pub(crate) computed_at: std::time::Instant,
+    pub(crate) projection: crate::cm_api_contract::workspace::WorkspaceGitStatusResponse,
+}
+
+/// git 投影的缓存与探针锁。
+#[derive(Default)]
+pub(crate) struct WorkspaceGitCache {
+    pub(crate) entry: std::sync::Mutex<Option<CachedWorkspaceGitStatus>>,
+    /// 探测串行化：TTL 到期瞬间的并发请求只实际探测一次（最小 single-flight）。
+    pub(crate) probe_lock: tokio::sync::Mutex<()>,
 }
 
 /// `GET /status` tiktoken 新会话基线的缓存条目。

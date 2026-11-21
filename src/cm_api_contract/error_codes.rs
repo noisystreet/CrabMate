@@ -79,3 +79,12 @@ pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
 pub const SKILL_INVOKE_FAILED: &str = "SKILL_INVOKE_FAILED";
 /// `GET /tools` 的 `source` / `category` 查询参数不是受支持的枚举值（或 `limit`/`offset` 非法）。
 pub const INVALID_TOOL_FILTER: &str = "INVALID_TOOL_FILTER";
+
+/// `/workspace/git`：git 探测超出超时预算。
+pub const GIT_PROBE_TIMEOUT: &str = "GIT_PROBE_TIMEOUT";
+/// `/workspace/git`：git 子命令非零退出。
+pub const GIT_PROBE_FAILED: &str = "GIT_PROBE_FAILED";
+/// `/workspace/git`：`--porcelain=v2` 输出不符合约定形状（不猜，直接失败）。
+pub const GIT_PROBE_UNPARSABLE: &str = "GIT_PROBE_UNPARSABLE";
+/// 工作区根无法解析或不在 `workspace_allowed_roots` 内。
+pub const WORKSPACE_OUT_OF_ROOTS: &str = "WORKSPACE_OUT_OF_ROOTS";
