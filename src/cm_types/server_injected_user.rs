@@ -1,10 +1,10 @@
 //! 服务端注入的 **`role: user`** 消息：注册表、识别与落盘剥离（非用户真实发言）。
 
 use crate::cm_types::message::{
-    CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
-    CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME,
-    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
-    message_content_as_str,
+    CRABMATE_AUTO_RESUME_NAME, CRABMATE_CONTEXT_SUMMARY_NAME,
+    CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_LONG_TERM_MEMORY_NAME,
+    CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
+    CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, message_content_as_str,
 };
 
 /// 是否为 **`role: user`** 且非用户真实发言（编排注入、画像、记忆等）。
@@ -31,6 +31,7 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
             | Some(CRABMATE_PLAN_REWRITE_NAME)
             | Some(CRABMATE_CONTEXT_SUMMARY_NAME)
             | Some(CRABMATE_PAUSED_TASK_NAME)
+            | Some(CRABMATE_AUTO_RESUME_NAME)
     )
 }
 
@@ -43,6 +44,8 @@ pub fn is_runtime_refreshed_injection(m: &Message) -> bool {
     crate::cm_types::is_long_term_memory_injection(m)
         || crate::cm_types::is_workspace_changelist_injection(m)
         || crate::cm_types::is_paused_task_injection(m)
+        // 自动续跑指令：每个续跑回合重新生成，落盘副本无意义（且会把「机器代发」写进历史）。
+        || crate::cm_types::is_auto_resume_injection(m)
 }
 
 /// 落盘 / 快照前剥离「运行时刷新类」注入（LTM / 变更集 / 暂停任务摘要）。
