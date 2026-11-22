@@ -9,7 +9,7 @@ use crate::types::{FunctionCall, Message, ToolCall};
 
 use super::ChatJobQueue;
 use super::stream_finish::{
-    StreamEndedOnce, completed_turn_end_reason,
+    StreamEndedOnce, completed_turn_end_reason, ended_missing_for,
     emit_missing_final_response_fallback_if_needed, emit_stream_draining, emit_stream_ended_once,
     sse_payload_has_final_response_timeline,
 };
@@ -508,6 +508,7 @@ async fn conversation_saved_emits_before_stream_ended() {
         &tx,
         99,
         StreamEndReason::Completed,
+        Vec::new(),
         &mut sent,
         "chat_job_queue::tests stream_ended_last",
         None,
@@ -590,6 +591,7 @@ async fn stream_ended_is_emitted_only_once() {
         &tx,
         7,
         StreamEndReason::Completed,
+        Vec::new(),
         &mut ended,
         "chat_job_queue::tests stream_ended_first",
         None,
@@ -602,6 +604,7 @@ async fn stream_ended_is_emitted_only_once() {
         &tx,
         7,
         StreamEndReason::Truncated,
+        Vec::new(),
         &mut ended,
         "chat_job_queue::tests stream_ended_second",
         None,
@@ -622,4 +625,62 @@ async fn stream_ended_is_emitted_only_once() {
         timeout(Duration::from_millis(50), rx.recv()).await.is_err(),
         "第二次调用不得再产帧"
     );
+}
+
+/// #1472：`missing` 只在 `partial` 时透出，其它终态一律为空（fail-open）。
+#[test]
+fn ended_missing_only_for_partial() {
+    use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+    let v = CompletionVerdict::new(
+        CompletionStatus::Partial,
+        Vec::new(),
+        vec!["TUI 仍编译不过".to_string()],
+    );
+    assert_eq!(
+        ended_missing_for(StreamEndReason::Partial, Some(&v)),
+        vec!["TUI 仍编译不过".to_string()],
+        "partial 时应透出 missing"
+    );
+    assert!(
+        ended_missing_for(StreamEndReason::Completed, Some(&v)).is_empty(),
+        "completed 时不得透出"
+    );
+    assert!(
+        ended_missing_for(StreamEndReason::Partial, None).is_empty(),
+        "无 verdict 时为空（fail-open）"
+    );
+}
+
+/// #1472：走完整编码链路，确认 `partial` 帧在**线上**真的带 `missing` 内容。
+#[tokio::test]
+async fn stream_ended_partial_carries_missing_on_wire() {
+    use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+    let (tx, mut rx) = mpsc::channel::<String>(4);
+    let mut ended = StreamEndedOnce::default();
+    let verdict = CompletionVerdict::new(
+        CompletionStatus::Partial,
+        Vec::new(),
+        vec!["还差 B".to_string()],
+    );
+    let missing = ended_missing_for(StreamEndReason::Partial, Some(&verdict));
+    emit_stream_ended_once(
+        &tx,
+        5,
+        StreamEndReason::Partial,
+        missing,
+        &mut ended,
+        "chat_job_queue::tests partial_missing",
+        None,
+    )
+    .await;
+
+    let line = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("应收到终态帧")
+        .expect("终态帧负载");
+    // 解析而非子串匹配：`contains("partial")` 也可能命中 `missing` 里的文本。
+    let v: serde_json::Value = serde_json::from_str(&line).expect("终态帧应是单行 JSON");
+    assert_eq!(v["type"], "RUN_FINISHED", "got: {line}");
+    assert_eq!(v["reason"], "partial", "v2 终态帧必须带 reason");
+    assert_eq!(v["missing"][0], "还差 B", "missing 应原样透出");
 }

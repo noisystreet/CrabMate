@@ -347,11 +347,17 @@ pub struct StreamDrainingBody {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StreamEndedBody {
     pub job_id: u64,
-    /// `completed` | `truncated` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
+    /// `completed` | `truncated` | `cancelled` | `conflict` | `fallback` | `partial` | `no_output` | `gone`
     pub reason: StreamEndReason,
     /// 回合结束时的 prompt token 粗估（成功路径通常已先发 `conversation_saved`；便于底栏即时更新）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
+    /// `reason == partial` 时「还差什么」：第 ② 层判定给出的未覆盖项（上限 8 条 × 120 字）。
+    ///
+    /// **只在 `partial` 时非空**：其它终态一律为空，`skip_serializing_if` 让字段直接缺席，
+    /// 因此对既有帧是纯增量（#1472）。判定不可用 / 证据已变时同样为空（fail-open）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -664,6 +670,7 @@ mod tests {
                     job_id,
                     reason,
                     tiktoken_prompt_tokens: None,
+                    missing: Vec::new(),
                 },
             });
             let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();

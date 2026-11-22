@@ -32,6 +32,15 @@ pub(crate) enum AgUiEvent {
             skip_serializing_if = "Option::is_none"
         )]
         tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
+        /// CrabMate 扩展：与 v1 `stream_ended.reason` 同源（#1472）。
+        ///
+        /// AG-UI 标准的 `RUN_FINISHED` **不携带结束原因**，不补这一字段的话 v2 客户端根本
+        /// 看不到 `partial`（默认编码器就是 v2）。承载方式与上方 `tiktokenPromptTokens` 一致。
+        reason: crate::cm_sse_protocol::StreamEndReason,
+        /// CrabMate 扩展：`reason == partial` 时「还差什么」，与 v1 `stream_ended.missing` 同源。
+        /// 为空时不序列化，因此对既有 v2 帧是纯增量。
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        missing: Vec<String>,
     },
     RunError {
         #[serde(rename = "threadId")]

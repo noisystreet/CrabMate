@@ -224,10 +224,13 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                 &prepared.cfg_snap, &messages,
             );
+        // 兜底补发路径（主路径未发帧时才走到这里）：`missing` 不保证，按空处理——
+        // 该路径拿不到主路径那份 verdict，硬凑会让「没证据」变成「有结论」（#1472）。
         emit_stream_ended_once(
             &sse_tx,
             job_id,
             stream_end_reason,
+            Vec::new(),
             &mut stream_ended_sent,
             "chat_job_queue::stream stream_ended",
             tiktoken_prompt_tokens,
