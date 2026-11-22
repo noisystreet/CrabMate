@@ -10,7 +10,7 @@ use super::run_command::{
     ExecMode, ExternalPathGate, PolicyApproval, approve_external_run_command_paths_if_needed,
     evaluate_policy,
 };
-use super::tests::{parsed_run_command, test_policy_context_with_caps_at};
+use super::tests::{approval_fixture, parsed_run_command, test_policy_context_with_caps_at};
 use crate::cm_agent::permission::project_caps;
 use crate::cm_types::{PathScope, PermissionLevel};
 use std::path::{Path, PathBuf};
@@ -223,4 +223,89 @@ async fn pty_mode_shares_the_same_root_judgement() {
         .into_message()
         .0;
     assert!(msg.contains("不允许工作区外路径参数"), "{msg}");
+}
+
+/// 路径审批**不落持久键**：`workspace_external_path` 的 `allowlist_key` 是 `None`。
+///
+/// issue 矩阵里那条「L3 已 `AllowAlways` 批准的**路径**换到 L2 ⇒ 仍硬拒」的真正机制是这个，
+/// 不是「`l{n}|` 键作用域过期」——路径轴压根没有键。所以要钉住的是：`AllowAlways` 不留任何键
+/// （裸键或带前缀都不行），降档后由 L2 的 `approval = Deny` 硬拒。
+#[tokio::test]
+async fn external_path_allow_always_leaves_no_key_and_l2_still_denies() {
+    let f = Fixture::new("path_allow_always", true);
+    let allowed = ["ls".to_string()];
+    let parsed = parsed_run_command(r#"{"command":"ls","args":["/etc/passwd"]}"#);
+
+    let fixture = approval_fixture(crate::cm_types::CommandApprovalDecision::AllowAlways);
+    let l3 = project_caps(PermissionLevel::Approved, f.cfg.as_ref());
+    let ctx =
+        test_policy_context_with_caps_at(&f.cfg, &l3, Some(&fixture.web), ExecMode::Sync, f.ws());
+    assert_eq!(
+        approve_external_run_command_paths_if_needed(&parsed, &allowed, &ctx)
+            .await
+            .expect("L3 下 AllowAlways 应放行"),
+        ExternalPathGate::Approved
+    );
+    assert!(
+        fixture.web.persistent_allowlist_shared.lock().await.is_empty(),
+        "路径审批没有 allowlist_key，不得写任何键（裸键或 l3| 前缀键）"
+    );
+
+    // 同一持久集合换到 L2：无键可命中，落到 L2 的硬边界。
+    let l2 = project_caps(PermissionLevel::Workspace, f.cfg.as_ref());
+    let ctx =
+        test_policy_context_with_caps_at(&f.cfg, &l2, Some(&fixture.web), ExecMode::Sync, f.ws());
+    let msg = approve_external_run_command_paths_if_needed(&parsed, &allowed, &ctx)
+        .await
+        .expect_err("L2 下越界必须硬拒")
+        .into_message()
+        .0;
+    assert!(msg.contains("不允许工作区外路径参数"), "{msg}");
+}
+
+/// `terminal_session` 端到端：Pty 档、允许根内 exec 真跑一次 PTY。
+///
+/// 策略判定已由 [`pty_mode_shares_the_same_root_judgement`] 覆盖；这里只钉「端到端确实跑通」，
+/// 即 `skip_arg_safety = true`（根内放行）一路传到 PTY spawn 之后仍能执行。
+/// 「不报需要审批通道」是硬断言；路径回显断言在 PTY 不可用的环境里软跳过。
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn pty_exec_end_to_end_inside_allowed_roots() {
+    use crate::tool_host::terminal_session::{TerminalSseSink, execute_terminal_session};
+
+    let f = Fixture::new("pty_e2e", true);
+    let ws = f.ws().to_path_buf();
+    let sink = TerminalSseSink {
+        out_tx: None,
+        control_mirror: None,
+        encoder: None,
+    };
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        execute_terminal_session(
+            &f.cfg,
+            &ws,
+            r#"{"action":"exec","command":"pwd","args":[]}"#,
+            "tc_pty_e2e",
+            sink,
+            &["pwd".to_string()],
+            true,
+            None,
+        ),
+    )
+    .await
+    .expect("PTY exec 不应超时");
+
+    assert!(
+        !out.contains("需要审批通道"),
+        "允许根内的 exec 不该要求审批通道：{out}"
+    );
+    if out.starts_with("错误：") {
+        eprintln!("跳过路径回显断言（本环境 PTY 不可用）：{out}");
+        return;
+    }
+    assert!(
+        out.contains(ws.to_string_lossy().as_ref()),
+        "pwd 应回显会话根：{out}"
+    );
 }
