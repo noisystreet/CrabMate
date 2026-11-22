@@ -1,9 +1,13 @@
 # 每行：标签<TAB>正文<TAB>hide|show
-# 运行 `cargo test -p crabmate-display-rules display_hide_user_golden`
+# 运行 `cargo test -p crabmate display_hide_user_golden`
 
 规划轮拒绝重写 hide	### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）\n请重写	hide
 步级补丁反馈 hide	### 分阶段规划 · 步级反馈（plan_id=p1）\n请输出 JSON	hide
-终答 plan_rewrite hide	你的最终回答缺少**结构化规划**。请在 content 中加入 json 围栏	hide
+规划重写底座 hide	【规划重写】你的最终回答缺少或未通过**结构化规划**校验。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json）	hide
+规划重写带校验反馈 hide	**校验反馈**（请针对修正，勿忽略）：`not_found`\n\n【规划重写】你的最终回答缺少或未通过**结构化规划**校验。	hide
+规划重写语义反馈 hide	侧向校验认为你的 **agent_reply_plan** 与**最近工具执行结果**存在明显矛盾。请根据下方 **violation_codes** 修正。	hide
+历史无标记 plan_rewrite hide	你的最终回答缺少**结构化规划**。请在 content 中加入 json 围栏	hide
+普通用户提到结构化规划 show	请解释一下什么是结构化规划，以及你为什么需要它	show
 外循环纠偏 hide	【编排纠偏】请实际执行 make	hide
 长期记忆召回 hide	以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n- x	hide
 上下文摘要 hide	[较早对话已摘要，以下为压缩要点]\n要点：修了 path_bug	hide

@@ -75,11 +75,16 @@ pub fn user_text_semantic_mismatch_with_feedback(
 }
 
 /// 规划重写 user 的短底座：必填字段 + 最短示例（**不含**完整 [`plan_artifact::PLAN_V1_SCHEMA_RULES`]）。
+///
+/// 正文以 [`crate::cm_display_rules::PLAN_REWRITE_INJECTION_MARKER`] 开头——聊天区据此判定隐藏，
+/// 不再依赖自然语言句子（#1478）。所有包装（`_with_issue` / 语义反馈）都以本函数为底座，
+/// 故标记随继承覆盖全部注入路径。
 pub fn plan_rewrite_user_text_base() -> String {
     format!(
-        "你的最终回答缺少或未通过**结构化规划**校验。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：\n{}\n\n示例：\n```json\n{}\n```\n\n请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。",
+        "{marker}你的最终回答缺少或未通过**结构化规划**校验。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：\n{}\n\n示例：\n```json\n{}\n```\n\n请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。",
         plan_artifact::PLAN_V1_REWRITE_BRIEF_RULES,
-        plan_artifact::PLAN_V1_REWRITE_EXAMPLE_JSON
+        plan_artifact::PLAN_V1_REWRITE_EXAMPLE_JSON,
+        marker = crate::cm_display_rules::PLAN_REWRITE_INJECTION_MARKER,
     )
 }
 
@@ -511,5 +516,29 @@ mod tests {
         assert!(text.contains("not_found"));
         assert!(text.contains("agent_reply_plan"));
         assert!(!text.contains("expect_json_path_equals"));
+    }
+
+    /// #1478：底座必须带隐藏标记，否则聊天区判定会被自然语言句子绑死。
+    #[test]
+    fn rewrite_user_base_carries_display_marker() {
+        let base = plan_rewrite_user_text_base();
+        assert!(
+            base.contains(crate::cm_display_rules::PLAN_REWRITE_INJECTION_MARKER),
+            "base 必须带隐藏标记：{base}"
+        );
+        assert!(
+            crate::cm_display_rules::user_message_should_hide_for_chat_display(&base),
+            "base 必须被聊天区隐藏"
+        );
+    }
+
+    /// 带校验反馈的包装（标记不在最前）同样要能被隐藏——这正是修复前漏掉的那条路径。
+    #[test]
+    fn rewrite_user_with_issue_is_hidden() {
+        let text = plan_rewrite_user_text_with_issue("not_found");
+        assert!(
+            crate::cm_display_rules::user_message_should_hide_for_chat_display(&text),
+            "带校验反馈的重写必须被隐藏：{text}"
+        );
     }
 }

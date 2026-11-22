@@ -38,9 +38,17 @@ pub fn is_staged_patch_feedback_user_content(s: &str) -> bool {
     s.trim_start().starts_with("### 分阶段规划 · 步级反馈")
 }
 
+/// 规划重写注入 user 的**稳定机器标记**（生产与隐藏判定共用同一常量）。
+///
+/// 生产侧 [`crate::cm_agent::plan_rewrite::plan_rewrite_user_text_base`] 在正文开头写入该标记；
+/// 判定侧只认标记，不再逐字匹配自然语言句子——句子一改，隐藏就会静默失效（#1478）。
+pub const PLAN_REWRITE_INJECTION_MARKER: &str = "【规划重写】";
+
 #[must_use]
 pub fn is_plan_rewrite_injected_user_content(s: &str) -> bool {
-    s.contains("你的最终回答缺少**结构化规划**")
+    s.contains(PLAN_REWRITE_INJECTION_MARKER)
+        // 以下三条是**历史会话兼容**：升级前注入的内容没有标记，仍按旧判据隐藏。
+        || s.contains("你的最终回答缺少**结构化规划**")
         || s.contains("crabmate_plan_semantic_feedback")
         || s.contains("侧向校验认为你的 **agent_reply_plan**")
 }
