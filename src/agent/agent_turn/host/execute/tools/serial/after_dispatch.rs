@@ -87,13 +87,30 @@ pub(super) fn serial_clear_run_command_failures_after_workspace_mutation(
     per_coord.clear_all_run_command_failure_state();
 }
 
+/// 旧式（非信封）工具输出里的成功证据：本仓自产的中文 / 工具名标记，或英文 `success` 词。
+///
+/// 英文侧要求**词首边界**：`unsuccessful` 含 `success` 子串但不代表成功（#1478）。
+/// 只卡前边界是刻意的——`successful` / `successfully` / `successes` 仍应命中。
+///
+/// **已知残余**：否定式表述（`not successful`）与非 ASCII 前缀（`一切success`）仍会命中。
+/// 卡两侧会把 `successfully` 误伤，故保留现状；本函数只作「清除失败短路」的宽容证据，
+/// 宁可放宽也不扩大误抑制。
 fn tool_message_has_success_evidence(raw: &str) -> bool {
     let lower = raw.to_lowercase();
     lower.contains("已替换")
         || lower.contains("已写入")
         || lower.contains("已创建文件")
-        || lower.contains("apply_patch")
-        || lower.contains("success")
+        || lower.contains(tool_names::APPLY_PATCH)
+        || has_success_word(&lower)
+}
+
+fn has_success_word(lower: &str) -> bool {
+    lower.match_indices("success").any(|(start, _)| {
+        !lower[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+    })
 }
 
 pub(super) fn serial_maybe_invalidate_codebase_semantic_index(
@@ -225,4 +242,48 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
         name,
         crate::redact::tool_arguments_preview_for_log(args)
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_message_has_success_evidence;
+
+    /// #1478：`unsuccessful` 含 `success` 子串，旧实现会把它当作写成功证据。
+    #[test]
+    fn unsuccessful_is_not_success_evidence() {
+        assert!(!tool_message_has_success_evidence(
+            "patch failed: unsuccessful attempt"
+        ));
+    }
+
+    /// 只卡前边界：常见成功词仍应命中。
+    #[test]
+    fn success_word_forms_are_evidence() {
+        assert!(tool_message_has_success_evidence(
+            "write completed successfully"
+        ));
+        assert!(tool_message_has_success_evidence("Success."));
+    }
+
+    /// 中文标记不受英文词边界改动影响。
+    #[test]
+    fn chinese_markers_still_count() {
+        assert!(tool_message_has_success_evidence("已写入 3 处"));
+        assert!(tool_message_has_success_evidence("已创建文件 a.txt"));
+    }
+
+    /// #1478 已知残余（pin 现状，不是期望行为）：否定式表述仍命中。
+    ///
+    /// 卡两侧会把 `successfully` 误伤，故只卡前边界。本函数只用于「清除 run_command 失败
+    /// 短路」，放宽的代价是少抑制一次重试，不会掩盖真实失败。
+    #[test]
+    fn negated_success_is_a_known_false_positive() {
+        assert!(tool_message_has_success_evidence("step was not successful"));
+    }
+
+    /// 非 ASCII 前缀不构成英文词边界（已知边界，pin 现状）。
+    #[test]
+    fn non_ascii_prefix_does_not_block_the_word() {
+        assert!(tool_message_has_success_evidence("一切success"));
+    }
 }
