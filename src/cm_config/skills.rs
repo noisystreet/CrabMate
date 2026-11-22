@@ -456,6 +456,14 @@ fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
     render_skills_appendix_with_title(std::slice::from_ref(doc), max_chars, &title)
 }
 
+/// `/<id>` 强制技能正文（供注入到**最后一条 user 之后**）。
+///
+/// 有意不进首条 `system`：强制正文只在本回合有效，放进 system 会让该回合整段前缀
+/// 缓存失效（#1475）。返回空串表示无内容或技能未启用。
+pub fn forced_skill_appendix_for_injection(doc: &SkillDoc, max_chars: usize) -> String {
+    render_forced_skill_appendix(doc, max_chars)
+}
+
 fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title: &str) -> String {
     if docs.is_empty() {
         return String::new();

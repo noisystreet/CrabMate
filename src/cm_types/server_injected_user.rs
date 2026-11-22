@@ -2,9 +2,10 @@
 
 use crate::cm_types::message::{
     CRABMATE_AUTO_RESUME_NAME, CRABMATE_CONTEXT_SUMMARY_NAME,
-    CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_LONG_TERM_MEMORY_NAME,
-    CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
-    CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, message_content_as_str,
+    CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_FORCED_SKILL_NAME,
+    CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME,
+    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
+    message_content_as_str,
 };
 
 /// 是否为 **`role: user`** 且非用户真实发言（编排注入、画像、记忆等）。
@@ -27,6 +28,7 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
         Some(CRABMATE_LONG_TERM_MEMORY_NAME)
             | Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
             | Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
+            | Some(CRABMATE_FORCED_SKILL_NAME)
             | Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME)
             | Some(CRABMATE_PLAN_REWRITE_NAME)
             | Some(CRABMATE_CONTEXT_SUMMARY_NAME)
@@ -46,6 +48,12 @@ pub fn is_runtime_refreshed_injection(m: &Message) -> bool {
         || crate::cm_types::is_paused_task_injection(m)
         // 自动续跑指令：每个续跑回合重新生成，落盘副本无意义（且会把「机器代发」写进历史）。
         || crate::cm_types::is_auto_resume_injection(m)
+    // 注意：`/<id>` 强制技能正文（`CRABMATE_FORCED_SKILL_NAME`）**有意不登记在这里**。
+    // 它虽然也是「每回合重建」，但重建点是 `turn_build`（直接写进 `seed.messages`），
+    // 而不是出站前的 prepare 阶段。若登记为本类，
+    // `messages_for_api_stripping_reasoning_skip_ui_separators` 会把正文从出站消息里剔除，
+    // 而没有任何地方负责重新注入它 —— `/<id>` 就会静默失效（#1475）。
+    // 它的落盘剥离由 `is_server_injected_user_message` 承担。
 }
 
 /// 落盘 / 快照前剥离「运行时刷新类」注入（LTM / 变更集 / 暂停任务摘要）。
@@ -67,4 +75,40 @@ fn should_strip_user_before_conversation_store(m: &Message) -> bool {
         && is_server_injected_user_message(m)
         && !crate::cm_types::is_first_turn_workspace_context_injection(m)
         && !crate::cm_types::is_context_summary_injection(m)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_types::Message;
+
+    /// `/<id>` 强制技能正文必须**出现在出站消息里**（否则该注入静默失效），
+    /// 同时仍须在落盘前被剥离（由 [`is_server_injected_user_message`] 承担）。
+    ///
+    /// 回归守卫：#1475 最初把它登记进 [`is_runtime_refreshed_injection`]，结果
+    /// `messages_for_api_stripping_reasoning_skip_ui_separators` 把它从出站消息里剔掉，
+    /// 而没有任何地方负责重新注入 —— 正文根本发不到模型。
+    #[test]
+    fn forced_skill_survives_api_filter_but_is_persist_stripped() {
+        let m = Message::user_forced_skill_injection("FORCED_BODY");
+        assert!(
+            is_server_injected_user_message(&m),
+            "须被识别为服务端注入：UI 不展示、落盘剥离"
+        );
+        assert!(
+            !is_runtime_refreshed_injection(&m),
+            "不得登记为出站剔除类，否则正文发不到模型"
+        );
+
+        let api = crate::cm_types::messages_for_api_stripping_reasoning_skip_ui_separators(
+            std::slice::from_ref(&m),
+            false,
+            false,
+        );
+        assert_eq!(api.len(), 1, "出站消息必须保留 forced skill 注入");
+
+        let mut persisted = vec![m];
+        strip_orchestration_injected_users_for_conversation_store(&mut persisted);
+        assert!(persisted.is_empty(), "落盘前必须剥离");
+    }
 }

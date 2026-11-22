@@ -197,6 +197,54 @@ fn prepare_turn_user_and_forced_skill(
     Ok((prepared.user_message, prepared.forced_skill))
 }
 
+/// 本回合 `/<id>` 强制技能正文的 user 侧注入条（`None` = 无强制技能或技能未启用）。
+///
+/// 放在真实 user 之后而**不是**首条 `system` 里：强制正文只在本回合有效，放进 system
+/// 会让该回合整段前缀缓存失效（#1475）。该注入登记为运行时刷新型，落盘前剥离。
+fn forced_skill_injection_message(
+    cfg: &crate::config::AgentConfig,
+    forced_skill: Option<&crate::config::skills::SkillDoc>,
+) -> Option<crate::types::Message> {
+    let doc = forced_skill.filter(|_| cfg.skills.skills_enabled)?;
+    let appendix =
+        crate::config::skills::forced_skill_appendix_for_injection(doc, cfg.skills.skills_max_chars);
+    if appendix.trim().is_empty() {
+        return None;
+    }
+    Some(crate::types::Message::user_forced_skill_injection(appendix))
+}
+
+/// 新会话首轮 `messages`：`system` + 可选首轮上下文 + 真实 user + 可选 `/<id>` 注入。
+///
+/// 抽成纯函数是为了让**顺序不变量**可单测（注入必须紧跟真实 user，且不得回到 `system`）：
+/// `build_messages_for_turn` 需要完整的 `WebChatTurnAppFacet`（conversation / chat runtime、
+/// SSE hub 等十余个字段），直接构造来测顺序代价过高且易碎（#1475）。
+pub(super) fn compose_new_conversation_turn_messages(
+    system_for_turn: &str,
+    project_context: Option<String>,
+    last_user: crate::types::Message,
+    forced_skill_injection: Option<crate::types::Message>,
+) -> Vec<crate::types::Message> {
+    let mut messages =
+        compose_new_conversation_messages(system_for_turn, project_context, Some(last_user));
+    if let Some(m) = forced_skill_injection {
+        messages.push(m);
+    }
+    messages
+}
+
+/// 续聊：把真实 user 与可选 `/<id>` 注入按固定顺序追加到既有历史末尾。
+pub(super) fn append_turn_user_and_forced_skill(
+    messages: &mut Vec<crate::types::Message>,
+    last_user: crate::types::Message,
+    forced_skill_injection: Option<crate::types::Message>,
+) {
+    messages.push(last_user);
+    if let Some(m) = forced_skill_injection {
+        messages.push(m);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn refresh_existing_turn_system(
     cfg: &crate::config::AgentConfig,
@@ -205,7 +253,7 @@ fn refresh_existing_turn_system(
     session_mode: Option<crate::types::SessionMode>,
     workspace_root: &std::path::Path,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
-    forced_skill: Option<crate::config::skills::SkillDoc>,
+    forced_skill: Option<&crate::config::skills::SkillDoc>,
 ) -> Result<(), String> {
     let persisted = seed.persisted_active_agent_role.clone();
     if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
@@ -245,7 +293,7 @@ fn refresh_existing_turn_system(
             agent_role: role_for_turn.as_deref(),
             skills_base_dir: Some(skills_base),
             workspace_root: Some(workspace_root.to_path_buf()),
-            forced_skill,
+            forced_skill: forced_skill.cloned(),
             role_resolution: RoleSystemResolution::Strict,
             session_mode: Some(mode),
         },
@@ -283,7 +331,7 @@ async fn build_existing_conversation_turn(
     mut seed: ConversationTurnSeed,
     parts: TurnBuildParts<'_>,
 ) -> Result<ConversationTurnSeed, String> {
-    {
+    let forced_skill_injection = {
         let cfg = state.cfg.read().await;
         refresh_existing_turn_system(
             &cfg,
@@ -292,9 +340,10 @@ async fn build_existing_conversation_turn(
             parts.mode_opt,
             parts.root,
             &state.process_handles.tool_outcome_recorder,
-            parts.forced_skill,
+            parts.forced_skill.as_ref(),
         )?;
-    }
+        forced_skill_injection_message(&cfg, parts.forced_skill.as_ref())
+    };
     if let Some(m) = parts.mode_opt {
         seed.persisted_active_session_mode = Some(m.as_str().to_string());
     }
@@ -303,7 +352,12 @@ async fn build_existing_conversation_turn(
     if let Some(level) = parts.permission_level {
         seed.persisted_active_permission_level = Some(level.to_string());
     }
-    seed.messages.push(parts.last_user);
+    // `/<id>` 正文紧跟真实 user：system 与既有历史因此保持逐字节稳定（#1475）。
+    append_turn_user_and_forced_skill(
+        &mut seed.messages,
+        parts.last_user,
+        forced_skill_injection,
+    );
     Ok(seed)
 }
 
@@ -325,6 +379,8 @@ async fn build_new_conversation_turn(
         cfg.roles_prompts.default_session_mode,
     )?;
     let skills_base = resolve_skills_base_dir(parts.root);
+    // 先算出 user 侧注入（需要 `SkillDoc`），再把所有权交给 system 组装（那里只用诊断标签）。
+    let forced_skill_injection = forced_skill_injection_message(&cfg, parts.forced_skill.as_ref());
     let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         &cfg,
         &state.process_handles.tool_outcome_recorder,
@@ -359,8 +415,12 @@ async fn build_new_conversation_turn(
 
     let combined =
         first_turn_project_context_user_message_for_web(parts.root, &cfg, memory_snippet).await;
-    let messages =
-        compose_new_conversation_messages(&system_for_turn, combined, Some(parts.last_user));
+    let messages = compose_new_conversation_turn_messages(
+        &system_for_turn,
+        combined,
+        parts.last_user,
+        forced_skill_injection,
+    );
     Ok(ConversationTurnSeed {
         messages,
         expected_revision: None,
@@ -500,5 +560,115 @@ mod chat_mode_and_permission_level_tests {
         };
         assert_eq!(mode.as_deref(), Some("ask"));
         assert_eq!(level.as_deref(), Some("workspace"));
+    }
+}
+
+/// `/<id>` 正文的**注入位置**不变量（#1475）：必须紧跟真实 user，且不得回到 `system`。
+///
+/// 只测顺序与门控，不构造 `WebChatTurnAppFacet`——那需要 conversation / chat runtime 等
+/// 十余个字段，测的也只是 wiring 而非逻辑。
+#[cfg(test)]
+mod forced_skill_injection_order_tests {
+    use super::*;
+    use crate::cm_config::skills::SkillDoc;
+    use crate::cm_types::{CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_FORCED_SKILL_NAME};
+    use crate::types::{Message, MessageContent};
+
+    fn alpha_doc() -> SkillDoc {
+        SkillDoc {
+            display_path: "skills/alpha.md".to_string(),
+            content: "ALPHA_BODY_ONLY".to_string(),
+            name: Some("alpha".to_string()),
+            description: Some("Alpha desc".to_string()),
+        }
+    }
+
+    fn cfg_with_skills(enabled: bool) -> crate::config::AgentConfig {
+        let mut cfg = crate::cm_config::load_config_test_env::without_cm_env_overrides(|| {
+            crate::cm_config::load_config(None).expect("embed default")
+        });
+        cfg.skills.skills_enabled = enabled;
+        cfg.skills.skills_max_chars = 4000;
+        cfg
+    }
+
+    fn text_of(m: &Message) -> String {
+        match &m.content {
+            Some(MessageContent::Text(t)) => t.clone(),
+            other => panic!("期望文本正文，实际 {other:?}"),
+        }
+    }
+
+    /// 只在「技能启用 + 本轮有 `/<id>`」时才产生注入条。
+    #[test]
+    fn injection_message_only_when_skill_enabled_and_forced() {
+        let on = cfg_with_skills(true);
+        let m = forced_skill_injection_message(&on, Some(&alpha_doc())).expect("应有注入条");
+        assert_eq!(m.role, "user");
+        assert_eq!(m.name.as_deref(), Some(CRABMATE_FORCED_SKILL_NAME));
+        assert!(text_of(&m).contains("ALPHA_BODY_ONLY"));
+
+        let off = cfg_with_skills(false);
+        assert!(
+            forced_skill_injection_message(&off, Some(&alpha_doc())).is_none(),
+            "skills 关闭时不应注入"
+        );
+        assert!(
+            forced_skill_injection_message(&on, None).is_none(),
+            "无 /<id> 时不应注入"
+        );
+    }
+
+    /// 新会话：注入排在真实 user **之后**，且 system 不含正文。
+    #[test]
+    fn new_conversation_injects_after_real_user_not_into_system() {
+        let messages = compose_new_conversation_turn_messages(
+            "SYSTEM_BASE",
+            Some("FIRST_TURN_CTX".to_string()),
+            Message::user_only("真实问题"),
+            Some(Message::user_forced_skill_injection("ALPHA_BODY_ONLY")),
+        );
+
+        let roles: Vec<&str> = messages.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["system", "user", "user", "user"]);
+        assert_eq!(
+            messages[1].name.as_deref(),
+            Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME),
+            "第二条应是首轮工作区上下文"
+        );
+        assert_eq!(messages[2].name, None, "倒数第二条必须是真实 user");
+        assert_eq!(
+            messages[3].name.as_deref(),
+            Some(CRABMATE_FORCED_SKILL_NAME)
+        );
+        assert!(
+            !text_of(&messages[0]).contains("ALPHA_BODY_ONLY"),
+            "system 不得包含强制正文，否则该回合整段前缀失效"
+        );
+    }
+
+    /// 续聊：注入紧跟真实 user；无注入时不追加任何条。
+    #[test]
+    fn existing_turn_appends_injection_right_after_user() {
+        let mut messages = vec![
+            Message::system_only("SYSTEM_BASE"),
+            Message::user_only("旧问题"),
+        ];
+        append_turn_user_and_forced_skill(
+            &mut messages,
+            Message::user_only("新问题"),
+            Some(Message::user_forced_skill_injection("ALPHA_BODY_ONLY")),
+        );
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[2].name, None, "真实 user 不带 name");
+        assert_eq!(
+            messages[3].name.as_deref(),
+            Some(CRABMATE_FORCED_SKILL_NAME)
+        );
+        assert!(!text_of(&messages[0]).contains("ALPHA_BODY_ONLY"));
+
+        let mut plain = vec![Message::system_only("SYSTEM_BASE")];
+        append_turn_user_and_forced_skill(&mut plain, Message::user_only("只读问题"), None);
+        assert_eq!(plain.len(), 2, "无 /<id> 时不得追加注入条");
     }
 }

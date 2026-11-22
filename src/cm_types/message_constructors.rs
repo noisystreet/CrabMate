@@ -11,8 +11,8 @@
 use super::message::{
     CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX, CRABMATE_CONTEXT_SUMMARY_NAME,
     CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
-    CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, FunctionCall, Message,
-    MessageContent, ToolCall,
+    CRABMATE_FORCED_SKILL_NAME, CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
+    FunctionCall, Message, MessageContent, ToolCall,
 };
 
 impl Message {
@@ -99,6 +99,11 @@ impl Message {
     /// 规划轮 tool_calls 拒绝后的一次性重写约束（[`CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME`]）；Web 快照过滤。
     pub fn user_planner_tool_call_reject_injection(content: impl Into<String>) -> Self {
         Self::user_server_injection(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, content)
+    }
+
+    /// `/<id>` 强制技能正文（[`CRABMATE_FORCED_SKILL_NAME`]）；每回合按当前 `/<id>` 重建，落盘剥离。
+    pub fn user_forced_skill_injection(content: impl Into<String>) -> Self {
+        Self::user_server_injection(CRABMATE_FORCED_SKILL_NAME, content)
     }
 
     /// 服务端编排注入 user（`user.name` 须为 `CRABMATE_*` 注册名）。

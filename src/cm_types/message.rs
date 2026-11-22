@@ -297,6 +297,18 @@ pub fn is_execution_constraint_ephemeral_system(m: &Message) -> bool {
     m.role == "system" && m.name.as_deref() == Some(CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME)
 }
 
+/// `/<id>` 强制技能正文注入（`user.name`）。
+///
+/// 正文**不进**首条 `system`：它只在本回合有效，放在 system 里会让该回合整段前缀失效
+/// （前缀缓存要求 system 逐字节稳定，#1475）。由运行时每回合按当前 `/<id>` 重建，
+/// 落盘前剥离、出站前剔除旧副本（登记见 `server_injected_user`）。
+pub const CRABMATE_FORCED_SKILL_NAME: &str = "crabmate_forced_skill";
+
+#[inline]
+pub fn is_forced_skill_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_FORCED_SKILL_NAME)
+}
+
 #[inline]
 pub fn is_long_term_memory_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_LONG_TERM_MEMORY_NAME)
