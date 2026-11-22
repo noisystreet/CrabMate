@@ -1,6 +1,6 @@
 # Prompt Caching 支持 — 设计文档
 
-**状态**：设计草案（v2，审校修正）  
+**状态**：设计草案（v2，审校修正）；Phase 0 已实施，Phase 1/2 与实施状态见 §9
 **日期**：2026-07-09  
 **受众**：维护者、架构决策者  
 **关联**：
@@ -41,7 +41,7 @@ DeepSeek 的上下文缓存是**自动且透明的**[^2]（V4 新增"公共前�
 |------|-----------|---------|
 | 仅可观测化（不改消息结构） | 20-30% | 18-27% |
 | + system prompt 稳定性优化 | 40-60% | 36-54% |
-| + 显式 `cache_control` | 60-80% | 54-72% |
+| ~~+ 显式 `cache_control`~~（已证否，见 3.9） | — | — |
 
 ---
 
@@ -280,6 +280,10 @@ DeepSeek 缓存从 **第 0 个 token 起** 开始匹配。Agent 的 system promp
 
 **不需要消息重排**：工具定义在 `ChatRequest.tools` 字段（不在 `messages` 中），DeepSeek V4 的公共前缀检测已能处理常见前缀变动。
 
+补充（#1475）：对 **Anthropic 风格**网关，断点按 `tools → system → messages` **链式**处理，前一段变化会让后段
+缓存一并失效——那时 `tools` 的**内容与顺序**都必须稳定。本仓已把 MCP / 动态工具按名排序
+（`merge_tool_lists` 只排 extra）：对 DeepSeek 是确定性上的收益，对 Anthropic 是必要条件。
+
 #### 3.7 优化方向：system prompt 内容稳定性
 
 **文件**：`src/cm_llm/vendor_messages.rs`（system prompt 构建处）
@@ -329,11 +333,22 @@ pub struct LlmConnectionConfig {
 
 ### Phase 2：显式 `cache_control`（3-5 天）
 
-#### 3.9 DeepSeek `cache_control` 支持
+#### 3.9 `cache_control`：已判定不适用于 DeepSeek（#1475）
 
-DeepSeek 自 2026 年初支持 `cache_control` 参数（`type: "ephemeral"`，5 分钟窗口）[^3]。通过在 **system 消息**上标记 `cache_control` 可强制缓存该部分。
+原 v2 据 [^3] 认为 DeepSeek 支持 `cache_control`。**该依据无法成立**：DeepSeek 官方 Context Caching
+文档（`https://api-docs.deepseek.com/guides/kv_cache`）通篇没有 `cache_control` 字段，缓存是**自动**
+前缀缓存、按「cache prefix unit」整体匹配，不需要也不接受显式标记。
 
-**注意**：`cache_control` 仅对 `role: "system"` 的消息有意义。`role: "tool"` 是工具执行结果（不断变化），不适合标记。
+因此 `config/llm_vendors.toml` 中 `deepseek` 的 `explicit_cache_control` 已改为 `false`，
+`inject_cache_control_json` 保留但**没有供应商启用**。
+
+若将来接入 Anthropic 风格网关，字段必须挂在 **content block** 上（OpenAI 兼容路径的 `content`
+是字符串，没有 block 概念），且需要多个断点（tools 之后 / system 之后各一个）；单点标在
+message 顶层属于位置错误。详见 #1475。
+
+需要划清一个边界：DeepSeek 同时提供 **Anthropic 兼容端点**（`https://api.deepseek.com/anthropic`）。
+若将来本仓走那条协议，`cache_control` 才会成为相关问题——但那是 **Anthropic 协议层**的语义；
+DeepSeek 自身的缓存仍按 1.2 所述自动前缀机制工作。当前走 OpenAI 兼容 `chat/completions`，故不发送。
 
 **供应商适配器扩展**：
 
@@ -453,7 +468,8 @@ let mut rb = client.post(&url).json(&body);
 
 [^1]: DeepSeek API 上下文硬盘缓存：https://api-docs.deepseek.com/zh-cn/guides/kv_cache
 [^2]: DeepSeek 缓存命中规则：前缀从第 0 个 token 起完全一致；V4 支持公共前缀检测
-[^3]: DeepSeek `cache_control` 支持（2026 年初）：`ephemeral` 类型，5 分钟窗口
+[^3]: ~~DeepSeek `cache_control` 支持（2026 年初）~~ **已证否（#1475）**：官方 kv_cache 文档无该字段，
+缓存为自动前缀缓存。原文保留以便追溯当时的判断依据。
 [^4]: V4-Flash 定价：常规 $0.14/1M，缓存命中 $0.014/1M（90% off）
 
 ---
@@ -499,3 +515,20 @@ data: [DONE]
 | v1 | `reorder_messages_for_cache` 消息重排（价值低） | v2: 移除，改为 system prompt 内容稳定性可观测 |
 | v1 | `cache_control` 注入到 `role: "tool"`（语义混淆） | v2: 仅对 system 消息注入 |
 | v1 | `Message.extensions` 修改核心类型 | v2: JSON 后处理方案，不修改 `Message` |
+
+## 9 实施状态（#1475 / #1476）
+
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| **Phase 0**（可观测化） | ✅ 已实施 | `Usage` 缓存字段、SSE 末帧 usage、`LLM_CACHE_AGGREGATE`、`prompt_cache` 日志 |
+| **Phase 1**（system 稳定性） | 🟡 部分 | `system_prompt_stability` hash 已就位；`/<id>` 强制正文已移出 `system`（#1476）；AGENTS.md / 技能索引的内容级缓存**未做** |
+| **Phase 2**（显式 `cache_control`） | ❌ 已判否 | DeepSeek 自动缓存不需要该字段，已停发（见 3.9） |
+
+尚未做：
+
+- hit ratio 按 `path=web_new/web_existing` 分桶；
+- AGENTS.md / 技能索引「未变则复用上回合文本」的内容级缓存；
+- `agent_tool_stats_enabled` 开启时的缓存代价说明。
+
+**未验证**：本仓尚无以运行中实例做的命中率前后对比。上述收益判断来自官方文档的匹配机制
+（cache prefix unit / 链式断点）与代码层不变量，**不是实测数据**——引用时不要说成「已验证省了多少 token」。

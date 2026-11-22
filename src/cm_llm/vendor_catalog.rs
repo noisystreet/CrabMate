@@ -272,7 +272,8 @@ mod tests {
         let flash = resolved_vendor_caps("deepseek-v4-flash", "https://api.deepseek.com/v1");
         assert_eq!(flash.adapter, VendorAdapterId::Deepseek);
         assert!(!flash.image_url_content_parts);
-        assert!(flash.explicit_cache_control);
+        // DeepSeek 走自动前缀缓存，不需要（也不该发）显式 `cache_control`（#1475）。
+        assert!(!flash.explicit_cache_control);
         let vision = resolved_vendor_caps(
             "deepseek-v4-flash-vision-exp",
             "https://api.deepseek.com/v1",
