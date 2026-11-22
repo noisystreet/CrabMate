@@ -147,6 +147,32 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
     evaluate_turn_redundant_tools(tool_calls, messages, completion_confirmed).is_allow()
 }
 
+/// 旧式文本输出里 `退出码：N` / `exit code: N` 的 N 是否为 0。
+///
+/// 不能写成 `contains("退出码：0")`：`退出码：01`、`exit code: 05` 都以该子串开头，
+/// 会把非零退出判成成功（#1478）。这里取标签后的连续数字再比数值。
+///
+/// **已知残余**（不在本函数内解决）：
+/// - 只看「文本里出现过零退出码」，不区分它是不是**本条结果自己的**退出码；说明性文本
+///   （如 `expected exit code: 0, got 1`）仍会被判成功。
+/// - 标签表只含全角冒号 `退出码：` 与带空格的 `exit code: `；`退出码: 0`（半角）不识别。
+/// - 同一段里既有 0 又有非 0 时取「任一为 0」。
+///
+/// 真正的收敛要等结构化 `error_code` 覆盖到这条路径（#1478 主线）。
+fn text_reports_zero_exit_code(raw: &str) -> bool {
+    const EXIT_CODE_LABELS: &[&str] = &["退出码：", "exit code: "];
+    let lower = raw.to_lowercase();
+    EXIT_CODE_LABELS.iter().any(|label| {
+        lower.match_indices(label).any(|(start, matched)| {
+            let digits: String = lower[start + matched.len()..]
+                .chars()
+                .take_while(|c: &char| c.is_ascii_digit())
+                .collect();
+            digits.parse::<u32>().is_ok_and(|n| n == 0)
+        })
+    })
+}
+
 fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
     let Some(user_idx) = last_real_user_message_index(messages, false) else {
         return false;
@@ -161,8 +187,7 @@ fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
         if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
             return env.ok || env.exit_code == Some(0);
         }
-        let lower = raw.to_lowercase();
-        lower.contains("退出码：0") || lower.contains("exit code: 0")
+        text_reports_zero_exit_code(raw)
     })
 }
 
@@ -480,5 +505,73 @@ mod tests {
             outer_loop_truncated_feedback_if_needed(true, OUTER_LOOP_TRUNCATED_FEEDBACK_MAX)
                 .is_none()
         );
+    }
+
+    /// #1478：`退出码：01` 以 `退出码：0` 开头，旧实现 `contains("退出码：0")` 会判成成功。
+    #[test]
+    fn successful_tool_ignores_nonzero_exit_code_with_zero_prefix() {
+        let messages = vec![
+            msg("user", "跑一下测试"),
+            msg("tool", "退出码：01\n标准输出：\nfailed"),
+        ];
+        assert!(
+            !outer_loop_window_has_any_successful_tool(&messages),
+            "退出码 1 不得判成功"
+        );
+    }
+
+    /// 英文等价形态：`exit code: 01` 同样不得判成功。
+    #[test]
+    fn successful_tool_ignores_nonzero_exit_code_with_zero_prefix_en() {
+        let messages = vec![
+            msg("user", "run the tests"),
+            msg("tool", "exit code: 01\nstdout:\nfailed"),
+        ];
+        assert!(
+            !outer_loop_window_has_any_successful_tool(&messages),
+            "exit code 1 不得判成功"
+        );
+    }
+
+    /// 真 0 仍要认，防止判据被改成永假。
+    #[test]
+    fn successful_tool_detects_real_zero_exit_code() {
+        let messages = vec![
+            msg("user", "跑一下测试"),
+            msg("tool", "退出码：0\n标准输出：\nok"),
+        ];
+        assert!(outer_loop_window_has_any_successful_tool(&messages));
+    }
+
+    /// #1478 已知残余（pin 现状，不是期望行为）：说明性文本里的零退出码仍会被采信。
+    ///
+    /// 判据是「文本里出现过零退出码」而非「本条结果自己的退出码」。这条测试挡住两种误改：
+    /// 把 helper 换回裸 `contains` 不会变红因而无人察觉；以及有人改严后忘了同步这里记录的
+    /// 已知边界。真正的收敛等结构化 `error_code` 覆盖该路径。
+    #[test]
+    fn zero_exit_code_in_prose_is_a_known_false_positive() {
+        assert!(text_reports_zero_exit_code(
+            "cargo: expected exit code: 0, got 1"
+        ));
+    }
+
+    /// 标签表只认全角冒号与带空格的英文形态；半角 `退出码: 0` 不识别（已知边界）。
+    #[test]
+    fn half_width_colon_is_not_recognized() {
+        assert!(!text_reports_zero_exit_code("退出码: 0"));
+    }
+
+    /// 数字按数值比较：`01` / `10` 拒绝，`00` 语义即 0。
+    #[test]
+    fn exit_code_digits_are_compared_numerically() {
+        assert!(!text_reports_zero_exit_code("退出码：01"));
+        assert!(!text_reports_zero_exit_code("退出码：10"));
+        assert!(text_reports_zero_exit_code("退出码：00"));
+    }
+
+    /// 同一段里既有 0 又有非 0：取「任一为 0」（已知边界，pin 现状）。
+    #[test]
+    fn any_zero_in_text_wins_over_nonzero() {
+        assert!(text_reports_zero_exit_code("退出码：1\n退出码：0"));
     }
 }
