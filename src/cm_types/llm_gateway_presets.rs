@@ -27,7 +27,7 @@ pub const LLM_API_BASE_PRESETS: &[LlmApiBasePreset] = &[
     LlmApiBasePreset {
         id: "deepseek",
         url: "https://api.deepseek.com/v1",
-        suggested_model: Some("deepseek-v4-flash"),
+        suggested_model: Some("deepseek-flash"),
     },
     LlmApiBasePreset {
         id: "minimax",
@@ -134,7 +134,7 @@ mod tests {
     fn resolve_preset_id_and_literal_url() {
         let (url, model) = resolve_api_base_set_arg("deepseek").unwrap();
         assert_eq!(url, "https://api.deepseek.com/v1");
-        assert_eq!(model, Some("deepseek-v4-flash"));
+        assert_eq!(model, Some("deepseek-flash"));
         assert!(resolve_api_base_set_arg("server").is_none());
         let (u2, m2) = resolve_api_base_set_arg("https://example.com/v1").unwrap();
         assert_eq!(u2, "https://example.com/v1");

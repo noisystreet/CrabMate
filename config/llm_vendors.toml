@@ -93,18 +93,23 @@ canonical_api_bases = [
     "https://api.deepseek.com",
     "https://api.deepseek.com/v1",
 ]
-# 官方当前三模型；`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 停用。
+# 官方当前两模型（https://api-docs.deepseek.com/zh-cn/quick_start/pricing）：
+# - `deepseek-flash` → DeepSeek-V4.1-Flash-1017，**支持图像理解**；
+# - `deepseek-v4-pro` → DeepSeek-V4-Pro-0813，不支持图像。
+# 旧名 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 仍可调用，但对应模型已下线，
+# 由 V4.1-Flash 提供服务并按 Flash 价格计费；`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 停用。
 models = [
-    "deepseek-v4-flash",
+    "deepseek-flash",
     "deepseek-v4-pro",
-    "deepseek-v4-flash-vision-exp",
 ]
 # DeepSeek 的上下文缓存是**自动**的前缀缓存（官方 kv_cache 文档里并没有 `cache_control` 字段），
 # 显式标记既不产生额外收益，又可能被严格校验的网关判成非法参数（#1475）。
 explicit_cache_control = false
 image_url_content_parts = false
 
+# `deepseek-flash` 自 V4.1 起原生支持图像理解（`deepseek-v4-pro` 不支持）。
+# `id_contains = ["-vision"]` 保留，以兼容仍可调用的旧名 `deepseek-v4-flash-vision-exp`。
 [[vendor.model_caps]]
-id_equals = ["deepseek-v4-flash-vision-exp"]
+id_equals = ["deepseek-flash"]
 id_contains = ["-vision"]
 image_url_content_parts = true

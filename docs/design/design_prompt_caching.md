@@ -481,7 +481,7 @@ let mut rb = client.post(&url).json(&body);
 ```json
 {
   "id": "chatcmpl-xxx",
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-flash",
   "usage": {
     "input_tokens": 1500,
     "output_tokens": 300,
@@ -500,7 +500,7 @@ let mut rb = client.post(&url).json(&body);
 ### 流式响应末尾帧
 
 ```
-data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","created":...,"model":"deepseek-v4-flash","choices":[],"usage":{"input_tokens":1500,"output_tokens":300,"prompt_cache_hit_tokens":1200,"prompt_cache_miss_tokens":300}}
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","created":...,"model":"deepseek-flash","choices":[],"usage":{"input_tokens":1500,"output_tokens":300,"prompt_cache_hit_tokens":1200,"prompt_cache_miss_tokens":300}}
 data: [DONE]
 ```
 
