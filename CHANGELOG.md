@@ -176,6 +176,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **Plan-rewrite injections are hidden again — the rule was matching a sentence nobody produces (#1478).**
+  `is_plan_rewrite_injected_user_content` looked for `你的最终回答缺少**结构化规划**`, but the only producer
+  (`plan_rewrite_user_text_base`, which also backs `_with_issue`) emits
+  `…缺少**或未通过**结构化规划**校验…`. So every "missing field / parse failed" rewrite prompt leaked into the
+  chat transcript. The display golden was pinned to a third, hand-written wording and never caught it.
+  Producers now write a stable machine marker (`PLAN_REWRITE_INJECTION_MARKER = 【规划重写】`) at the head of the
+  base text, and the rule keys off that marker instead of prose. The three legacy substring checks stay
+  **only** to keep already-stored turns hidden, and the golden gains a `show` case for a plain user message that
+  merely mentions 结构化规划, so the rule cannot quietly widen back into substring matching.
+  User-visible: those prompts disappear from the transcript. **Client must bump its `crabmate` rev** — the
+  frontend calls `cm_display_rules::user_message_should_hide_for_chat_display` directly and keeps no copy.
 - **A failed `git clone` now says why (#1440 K4).** `CLONE_GIT_FAILED` used to carry only
   `git clone 失败（退出码 Some(128)）` — the `Option` Debug form, and no cause at all. It now renders the exit
   code as `128` (or `被信号终止` when the process was signalled) and appends the last 3 **redacted** stderr

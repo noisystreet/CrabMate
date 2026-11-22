@@ -182,6 +182,13 @@ mod api_messages_strip_tests {
             (plain.clone(), true),
             (
                 Message::user_plan_rewrite_injection(
+                    "【规划重写】你的最终回答缺少或未通过**结构化规划**校验。请加入 agent_reply_plan JSON",
+                ),
+                false,
+            ),
+            // 历史会话兼容：升级前注入的内容没有标记，仍须隐藏（#1478）。
+            (
+                Message::user_plan_rewrite_injection(
                     "你的最终回答缺少**结构化规划**。请加入 agent_reply_plan JSON",
                 ),
                 false,
