@@ -116,6 +116,9 @@ fn load_files(working_dir: &Path) -> Vec<(DynamicToolFile, PathBuf)> {
         }
         out.push((spec, path));
     }
+    // 目录遍历顺序由文件系统决定，跨机器 / 目录重建都可能不同；排序后工具表才可复现。
+    // 集合相同而顺序不同同样会让 prompt 前缀缓存失效（#1475）。
+    out.sort_by(|a, b| a.1.cmp(&b.1));
     out
 }
 

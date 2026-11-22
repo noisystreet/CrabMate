@@ -141,10 +141,10 @@ pub fn compose_system_from_base(
     base_system: &str,
     cfg: &AgentConfig,
     tool_recorder: &ToolOutcomeRecorder,
-    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
+    _forced_skill: Option<crate::cm_config::skills::SkillDoc>,
 ) -> String {
-    let augmented = tool_recorder.augment_system_prompt(base_system, cfg);
-    merge_skills_into_system_with_meta(augmented, cfg, forced_skill).0
+    // `/<id>` 强制正文已不参与 system 组装（#1475），改由调用方注入到最后一条 user 之后。
+    tool_recorder.augment_system_prompt(base_system, cfg)
 }
 
 /// 从配置解析 L3，再叠加 L4 + 可选 L5。
@@ -231,9 +231,11 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     };
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
-    let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, forced_skill);
+    // L5 强制技能正文**不进 system**（#1475）：它只在本回合有效，放进 system 会让该回合
+    // 整段前缀缓存失效。正文改由 `turn_build` 以 user 侧注入；这里只保留诊断标签。
+    let skills_meta = forced_skill_meta_for_diagnostics(cfg, forced_skill.as_ref());
     let mode = session_mode.unwrap_or(cfg.roles_prompts.default_session_mode);
-    let merged = append_session_mode_appendix(merged, mode);
+    let merged = append_session_mode_appendix(augmented, mode);
     let chars_final = merged.chars().count();
     let mut layers = vec!["L3".to_string()];
     if has_agents_md {
@@ -241,7 +243,8 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     }
     layers.push("L4".to_string());
     if !skills_meta.selected_labels.is_empty() {
-        layers.push("L5".to_string());
+        // 正文不在 system 内（改由 user 侧注入），标签只用于日志归因与既有调用方解读。
+        layers.push("L5→user".to_string());
     }
     layers.push("mode".to_string());
     Ok((
@@ -308,30 +311,22 @@ fn merge_skills_index_lenient(
     }
 }
 
-fn merge_skills_into_system_with_meta(
-    system_prompt: String,
+/// 只产出诊断标签（本回合 `/<id>` 命中的技能），**不修改 `system`**（#1475）。
+fn forced_skill_meta_for_diagnostics(
     cfg: &AgentConfig,
-    forced_skill: Option<crate::cm_config::skills::SkillDoc>,
-) -> (String, crate::cm_config::skills::SkillsSelectionMeta) {
-    let Some(doc) = forced_skill else {
-        // 没 `/<id>` 就不动 `system`：正文只来自 `skill_read`。（旧的按轮打分预注入已删除，#1326）
-        return (
-            system_prompt,
-            crate::cm_config::skills::SkillsSelectionMeta::default(),
-        );
+    forced_skill: Option<&crate::cm_config::skills::SkillDoc>,
+) -> crate::cm_config::skills::SkillsSelectionMeta {
+    let Some(doc) = forced_skill.filter(|_| cfg.skills.skills_enabled) else {
+        return crate::cm_config::skills::SkillsSelectionMeta::default();
     };
-    crate::cm_config::skills::merge_system_prompt_with_skills_selected_with_meta(
-        system_prompt.clone(),
-        crate::cm_config::skills::SkillsSelectedMergeOpts {
-            skills_enabled: cfg.skills.skills_enabled,
-            skills_max_chars: cfg.skills.skills_max_chars,
-            forced_skill: Some(&doc),
-        },
-    )
-    .unwrap_or((
-        system_prompt,
-        crate::cm_config::skills::SkillsSelectionMeta::default(),
-    ))
+    crate::cm_config::skills::SkillsSelectionMeta {
+        total_docs: 1,
+        selected_labels: vec![format!(
+            "{} ({}) [forced→user]",
+            crate::cm_config::skills_slash::skill_callable_id(doc),
+            doc.display_path
+        )],
+    }
 }
 
 #[cfg(test)]
@@ -471,15 +466,16 @@ mod tests {
                 agent_role: None,
                 skills_base_dir: Some(tmp.path().to_path_buf()),
                 workspace_root: Some(tmp.path().to_path_buf()),
-                forced_skill: Some(forced),
+                forced_skill: Some(forced.clone()),
                 role_resolution: RoleSystemResolution::Strict,
                 session_mode: None,
             },
         )
         .expect("compose");
+        // #1475：正文**不进 system**——它只在本回合有效，放进 system 会让该回合整段前缀失效。
         assert!(
-            system.contains("ALPHA_BODY_ONLY"),
-            "forced skill body should be injected"
+            !system.contains("ALPHA_BODY_ONLY"),
+            "forced skill body must NOT live in system (prefix cache, #1475)"
         );
         assert!(
             !system.contains("BETA_BODY_ONLY"),
@@ -489,7 +485,20 @@ mod tests {
             system.contains("Beta desc"),
             "L2 index still lists every skill's description"
         );
-        assert!(diag.skills_selected_labels[0].contains("[forced]"));
+        assert!(
+            diag.layers_applied.iter().any(|l| l == "L5→user"),
+            "diagnostics should record that L5 moved to the user side"
+        );
+        assert!(diag.skills_selected_labels[0].contains("[forced→user]"));
+        // 正文本身仍可取得，供 `turn_build` 注入到最后一条 user 之后。
+        let appendix = crate::cm_config::skills::forced_skill_appendix_for_injection(
+            &forced,
+            cfg.skills.skills_max_chars,
+        );
+        assert!(
+            appendix.contains("ALPHA_BODY_ONLY"),
+            "forced skill appendix must still carry the body"
+        );
     }
 
     /// L2 索引是**发现面**：不注入任何正文，但必须列出全部技能及其描述。

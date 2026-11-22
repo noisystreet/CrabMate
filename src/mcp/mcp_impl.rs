@@ -205,6 +205,11 @@ fn remote_tool_summaries(mcp_tools: &[rmcp::model::Tool]) -> Vec<McpRemoteToolSu
 /// 合并内建工具与 MCP 工具（MCP 名冲突时跳过并打日志）。
 pub fn merge_tool_lists(base: Vec<Tool>, extra: Vec<Tool>) -> Vec<Tool> {
     use std::collections::HashSet;
+    // `extra`（MCP / 动态工具）的顺序取决于服务端返回顺序与目录遍历，均无稳定保证。
+    // 这里**只排 extra、不动 base**：内建工具表在 Web 是进程级建一次的，保持原序可避免
+    // 工具表 golden 漂移；extra 排序已足够让整张表可复现（#1475，前缀缓存要求逐字节一致）。
+    let mut extra = extra;
+    extra.sort_by(|a, b| a.function.name.cmp(&b.function.name));
     let mut seen: HashSet<String> = base.iter().map(|t| t.function.name.clone()).collect();
     let mut merged = base;
     for t in extra {

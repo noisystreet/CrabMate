@@ -43,6 +43,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Prompt prefix stability: `/<skill-id>` body moved out of the first `system`, deterministic tool-table
+  order (#1475).** The forced skill body used to be appended to the first `system` message, which made the
+  *entire* prompt prefix (system + all history) uncacheable for that turn — DeepSeek's disk cache matches
+  whole "cache prefix units", so a single mismatch costs at least two turns (the miss itself, plus the round
+  where the common prefix is re-persisted). It is now injected as a dedicated `user` message
+  (`crabmate_forced_skill`, a server-injected `user` message: hidden from the Web transcript and stripped
+  before persistence, rebuilt every turn) placed right after the real user message. The `system` message is therefore
+  byte-identical for the whole session as long as `AGENTS.md`, the skills index and the session mode are
+  unchanged; diagnostics keep reporting the hit as `L5→user`. Separately, MCP / dynamic tool lists are now
+  sorted by name before merging (`merge_tool_lists` sorts only `extra`, so the built-in table order — and its
+  golden — is untouched) and `dynamic_tools::load_files` sorts its `read_dir` result: tool order previously
+  depended on server return order and directory iteration order, and a pure reordering is just as fatal to
+  prefix caching as a content change (Anthropic-style gateways chain `tools → system → messages`, so a tools
+  change invalidates the rest).
+
 - **Sandbox axes reach the permission projection (#1150, MB-6).** `sync_default_tool_sandbox_mode = docker`
   now actually narrows two axes instead of being silently ignored at the caps layer: with no
   `sync_default_tool_sandbox_docker_network` the container has no egress (`net_scope = none`), and a
