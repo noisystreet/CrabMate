@@ -72,7 +72,7 @@ rmcp = { version = "3.0", default-features = false }
 tower-http = { version = "0.7" }
 
 # Unix-only
-nix = { version = "0.31", default-features = false }
+nix = { version = "0.32", default-features = false }
 
 [package]
 name = "crabmate"
