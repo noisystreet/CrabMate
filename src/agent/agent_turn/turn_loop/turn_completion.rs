@@ -73,10 +73,17 @@ pub(crate) async fn turn_early_stop_allowed_with_judge(
     if !per_coord.take_completion_judge_slot(evidence_fingerprint(&ev)) {
         return false;
     }
-    let satisfied = match judge_and_validate(&judge, build_judge_input_from(window, &ev)).await {
+    let verdict = judge_and_validate(&judge, build_judge_input_from(window, &ev)).await;
+    let satisfied = match &verdict {
         Some(v) => v.status == CompletionStatus::Satisfied,
         None => false,
     };
+    // #1472：把**结构化结论**（`status` + `missing`）留给收尾层，供 `stream_ended.reason`
+    // 区分「正常完成」与「有终答但未完成」。此前这一行只留 `== Satisfied` 一个 bool，
+    // `Partial` 与 `missing` 直接丢失。写入只影响终态标注，不改变本门的 stop / continue。
+    if let Some(v) = verdict {
+        per_coord.record_completion_verdict(v);
+    }
     // 缓存结论：冗余探针抑制等同步门拿不到 judge，靠它对齐口径。
     if satisfied {
         per_coord.mark_completion_confirmed();

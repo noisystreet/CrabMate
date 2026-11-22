@@ -12,6 +12,7 @@ use crate::cm_types::Message;
 use std::collections::HashMap;
 
 use crate::cm_agent::plan_rewrite;
+use crate::cm_agent::completion_judge::CompletionVerdict;
 
 /// 外循环 Gate **前**纠偏计数（R 轨 3：`OuterLoopReflectPreGateReason`）。
 ///
@@ -79,6 +80,12 @@ pub(crate) struct PerTurnCounters {
     /// 「早停门放行、抑制门不放行」的分裂（#1415 删掉关键词门后尤其明显）。
     /// 结论由判定方写入，同步方只读，两边口径因此天然一致。
     pub(crate) completion_confirmed: bool,
+    /// 本回合完成判定第 ② 层的**结构化结论**（#1472）。
+    ///
+    /// 与 `completion_confirmed` 的区别：后者只回答「是否确认完成」，本字段保留
+    /// `Partial` 与 `missing`（还差什么），供收尾层区分「正常完成」与「有终答但未完成」。
+    /// 不参与早停门的 stop / continue 决策。
+    pub(crate) completion_verdict: Option<CompletionVerdict>,
 }
 
 /// 每回合最多询问完成判定第 ② 层的次数。
@@ -95,6 +102,7 @@ impl PerTurnCounters {
             completion_judge_evidence_fingerprint: None,
             completion_judge_calls: 0,
             completion_confirmed: false,
+            completion_verdict: None,
         }
     }
 
@@ -141,6 +149,19 @@ impl PerTurnCounters {
 
     pub(crate) fn outer_loop_truncated_feedback_injected(&self) -> u32 {
         self.outer_loop_reflect.truncated_feedback_injected()
+    }
+
+    /// 记录第 ② 层判定结论（含 `partial` / `missing`，见 #1472）。
+    ///
+    /// 只由判定方（早停门）写入；收尾时经 [`Self::take_completion_verdict`] 搬去
+    /// `PerTurnFlight`，不与 `completion_confirmed` 互相影响。
+    pub(crate) fn record_completion_verdict(&mut self, verdict: CompletionVerdict) {
+        self.completion_verdict = Some(verdict);
+    }
+
+    /// 取出第 ② 层判定结论（收尾时搬去 `PerTurnFlight`；取出后本回合不再持有）。
+    pub(crate) fn take_completion_verdict(&mut self) -> Option<CompletionVerdict> {
+        self.completion_verdict.take()
     }
 }
 

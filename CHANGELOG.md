@@ -12,6 +12,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **`stream_ended.reason=partial` — distinguish "answered but unfinished" from `completed` (#1472).**
+  The `stream_ended` reason set gains one **additive soft value**: when a turn has a visible final answer
+  but the tier-2 completion judge reported `partial` / `unsatisfied`, the terminal frame now says
+  `partial` instead of `completed`. The judge's structured `CompletionVerdict` (`status` + `missing`)
+  was previously collapsed to a single `status == Satisfied` bool inside the early-stop gate and
+  thrown away; it is now carried through `PerTurnFlight` to `chat_job_queue::stream_finish`.
+  Deliberately **no** keyword heuristics: a verdict produced only because anchor validation downgraded
+  a `satisfied` answer (`degraded`) still counts as `completed`, and a missing verdict is **fail-open**
+  (`completed`) — a judge that is disabled / failed / stale never turns a finished turn into an
+  unfinished one. `SSE_PROTOCOL_VERSION` is **not** bumped (old clients ignore unknown reasons).
 - **`GET /workspace/git` — read-only git status projection (#1457).** New protected route in the
   `/workspace/*` family for the Client sidebar (branch + dirty summary). Always **200**: availability
   lives in **`state`** (`ok` / `not_a_repo` / `git_unavailable` / `failed` + `reason_code`), so

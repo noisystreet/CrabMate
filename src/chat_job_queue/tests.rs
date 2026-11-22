@@ -323,7 +323,7 @@ fn turn_end_reason_fallback_wins_over_visible_output() {
         Message::assistant_only("有正文"),
     ];
     assert_eq!(
-        completed_turn_end_reason(true, false, &messages),
+        completed_turn_end_reason(true, false, &messages, None),
         StreamEndReason::Fallback,
         "层 4 兜底已补发终答时应返回 Fallback"
     );
@@ -336,7 +336,7 @@ fn turn_end_reason_completed_for_assistant_answer() {
         Message::assistant_only("这是正文回答。"),
     ];
     assert_eq!(
-        completed_turn_end_reason(false, false, &messages),
+        completed_turn_end_reason(false, false, &messages, None),
         StreamEndReason::Completed,
         "本轮有正文终答应返回 Completed"
     );
@@ -357,7 +357,7 @@ fn turn_end_reason_completed_for_tool_calls_only() {
     }]);
     let messages = vec![Message::user_only("问"), tool_only];
     assert_eq!(
-        completed_turn_end_reason(false, false, &messages),
+        completed_turn_end_reason(false, false, &messages, None),
         StreamEndReason::Completed,
         "仅工具调用也算可见输出，应返回 Completed"
     );
@@ -371,7 +371,7 @@ fn turn_end_reason_no_output_for_reasoning_only_without_fallback() {
     reasoning_only.reasoning_content = Some("只思考未作答".to_string());
     let messages = vec![Message::user_only("问"), reasoning_only];
     assert_eq!(
-        completed_turn_end_reason(false, false, &messages),
+        completed_turn_end_reason(false, false, &messages, None),
         StreamEndReason::NoOutput,
         "仅思维链且未兜底时不得判为 completed"
     );
@@ -383,7 +383,7 @@ fn turn_end_reason_no_output_for_empty_assistant() {
     empty.content = None;
     let messages = vec![Message::user_only("问"), empty];
     assert_eq!(
-        completed_turn_end_reason(false, false, &messages),
+        completed_turn_end_reason(false, false, &messages, None),
         StreamEndReason::NoOutput,
         "无任何输出时应返回 NoOutput"
     );
@@ -397,14 +397,93 @@ fn turn_end_reason_truncated_wins_over_fallback_and_visible_output() {
         Message::assistant_only("被截断的半句正文"),
     ];
     assert_eq!(
-        completed_turn_end_reason(true, true, &messages),
+        completed_turn_end_reason(true, true, &messages, None),
         StreamEndReason::Truncated,
         "截断标志应优先于兜底与可见输出，返回 Truncated"
     );
     assert_eq!(
-        completed_turn_end_reason(false, true, &messages),
+        completed_turn_end_reason(false, true, &messages, None),
         StreamEndReason::Truncated,
         "无兜底但被截断时也应返回 Truncated"
+    );
+}
+
+// #1472：完成判定第 ② 层判「未完成」时，终态须为 Partial（有终答但没做完）。
+#[test]
+fn turn_end_reason_partial_when_judge_says_incomplete() {
+    use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+    let messages = vec![
+        Message::user_only("改代码"),
+        Message::assistant_only("我只做了前半段，代码现在编译不过。"),
+    ];
+    let partial = CompletionVerdict::new(
+        CompletionStatus::Partial,
+        Vec::new(),
+        vec!["TUI 仍编译不过".to_string()],
+    );
+    assert_eq!(
+        completed_turn_end_reason(false, false, &messages, Some(&partial)),
+        StreamEndReason::Partial,
+        "judge 判 partial 时终态应为 Partial"
+    );
+    let unsat = CompletionVerdict::new(CompletionStatus::Unsatisfied, Vec::new(), Vec::new());
+    assert_eq!(
+        completed_turn_end_reason(false, false, &messages, Some(&unsat)),
+        StreamEndReason::Partial,
+        "judge 判 unsatisfied 时终态也应为 Partial"
+    );
+}
+
+// #1472 防误报：模型说 satisfied、仅因锚点校验被降级 → 仍按 Completed。
+#[test]
+fn turn_end_reason_completed_when_verdict_degraded_by_anchor() {
+    use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+    let messages = vec![
+        Message::user_only("改代码"),
+        Message::assistant_only("改完并跑通测试了。"),
+    ];
+    let degraded = CompletionVerdict::new(CompletionStatus::Satisfied, Vec::new(), Vec::new())
+        .degraded("anchor: satisfied 但未给出 evidence_refs");
+    assert!(degraded.degraded, "前提：该结论应带 degraded 标记");
+    assert_eq!(
+        completed_turn_end_reason(false, false, &messages, Some(&degraded)),
+        StreamEndReason::Completed,
+        "锚点降级只是引用格式问题，不得把已完成误报成未完成"
+    );
+}
+
+// #1472 fail-open：无判定结论（judge 未跑 / 开关关 / 失败 / 证据已变）→ 维持 Completed。
+#[test]
+fn turn_end_reason_completed_when_verdict_absent() {
+    let messages = vec![
+        Message::user_only("问"),
+        Message::assistant_only("这是正文回答。"),
+    ];
+    assert_eq!(
+        completed_turn_end_reason(false, false, &messages, None),
+        StreamEndReason::Completed,
+        "无判定结论时必须 fail-open，按 Completed 处理"
+    );
+}
+
+// #1472 优先级：截断 / 兜底都优先于 Partial。
+#[test]
+fn turn_end_reason_truncated_and_fallback_win_over_partial() {
+    use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+    let messages = vec![
+        Message::user_only("改代码"),
+        Message::assistant_only("被截断的正文"),
+    ];
+    let partial = CompletionVerdict::new(CompletionStatus::Partial, Vec::new(), Vec::new());
+    assert_eq!(
+        completed_turn_end_reason(true, false, &messages, Some(&partial)),
+        StreamEndReason::Fallback,
+        "兜底已补发终答时优先 Fallback"
+    );
+    assert_eq!(
+        completed_turn_end_reason(false, true, &messages, Some(&partial)),
+        StreamEndReason::Truncated,
+        "截断优先于 Partial"
     );
 }
 

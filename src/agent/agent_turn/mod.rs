@@ -98,5 +98,16 @@ pub(crate) async fn run_agent_turn_common(
     ));
 
     log_orchestration_transition(TurnOrchestrationTransition::DispatchReAct, None, &[]);
-    run_dispatch::dispatch_react_turn(p, &mut per_coord).await
+    let res = run_dispatch::dispatch_react_turn(p, &mut per_coord).await;
+    // #1472：把完成判定第 ② 层的**结构化结论**搬到本回合共享镜像，供 `stream_finish`
+    // 决定 `stream_ended.reason`。放在这里而不是判定处，是因为 `PerCoordinator` 是本函数
+    // 的局部变量，而消费方在 `chat_job_queue`，只认识 `PerTurnFlight`。
+    // 这里用 `let res = …` 接住结果，所以 **`Ok` 与 `Err` 两条路径都会执行这次搬运**；
+    // 失败回合的终态走 SSE error 帧、不读本字段（`stream_job_outcome_after_agent_turn`
+    // 的 `Err` 分支），写入因此无害。无 flight（CLI 路径）时写入被跳过，
+    // 消费方本来就按 fail-open 处理。
+    if let Some(flight) = p.ctx.attach.per_flight.as_ref() {
+        flight.set_completion_verdict(per_coord.take_completion_verdict());
+    }
+    res
 }

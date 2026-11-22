@@ -89,12 +89,17 @@
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（必有旧字段 `prompt_tokens` + `tiktoken_model`；Phase 3 可选软字段见下） | Leptos：更新 `revision`；优先用 Server `used_input_tokens / max_input_tokens` 更新底栏 |
 | `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
 | `stream_draining` | 非终态收尾：模型/工具已结束、正在落盘；`job_id` | Web：可提前进入 Draining 文案；**不**置 `saw_stream_ended` |
-| `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`）。**`truncated`**：上游 `finish_reason == "length"`（token 上限）或流在 `[DONE]` 前被切断（无正常收尾）；层 1 截断识别，优先级高于 `fallback` / `completed` / `no_output` | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
+| `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `partial` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`）。**`truncated`**：上游 `finish_reason == "length"`（token 上限）或流在 `[DONE]` 前被切断（无正常收尾）；层 1 截断识别，优先级高于 `fallback` / `completed` / `no_output` | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
 **`reason == "fallback"`**：本轮没有任何 `final_response` 时间线，服务端已合成终答补发。来源可能是末条助手的思维链，
 也可能是**最后一次工具结果摘要**（早停门的「终答缺失」纠偏预算耗尽后仍无正文时，见 #1414）。客户端按普通终答渲染，
 不要据此断定模型「正常作答」。
+
+**`reason == "partial"`**：本轮**有**终答，但完成判定第 ② 层（LLM，`completion_judge`）判 `partial` / `unsatisfied`——
+即「说了话，但没做完」（#1472）。与 `fallback` 的区别是正文来自模型本身而非服务端合成；与 `completed` 的区别
+只在第 ② 层结论。以下情形仍为 `completed`：判 `satisfied`；`satisfied` 仅因锚点校验被降级（引用格式问题，
+不是没做完）；以及**没有任何判定结论**（judge 未跑 / 开关关 / 失败 / 证据已变）——判定缺失一律 fail-open。
 
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，

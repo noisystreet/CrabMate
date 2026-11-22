@@ -225,3 +225,4 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 | 2026-10-18 | `0.7.0`：公开协议面无新增符号；本体为工具面收敛（大量薄封装 CLI 工具移除并改走 `run_command`，默认白名单相应扩充），按 §2.2 在 `0.y.z` 以 **minor** 表破坏；SSE wire 仍 v2，未打 `client-contract-v*` 展示契约 tag |
 | 2026-11-01 | `0.8.0`：新增 `crabmatectl` 本地多实例管理器（独立 binary，不进 `protocol` 六模块公开面）；工具面完成类型化收敛（工具合并 / 移除属 **server** 面 BREAKING），按 §2.2 在 `0.y.z` 以 **minor** 表破坏；SSE wire 仍 v2，未打 `client-contract-v*` 展示契约 tag |
 | 2026-10-11 | `stream_ended.reason=truncated`：层 1 截断识别（上游 `finish_reason == "length"` 或 `[DONE]` 前断流）新增一个 `reason` 枚举值，属 **additive 软值**，旧客户端按未知 reason 忽略即可；`SSE_PROTOCOL_VERSION` 与展示契约 tag 均**不** bump（§2.1）；中英 `SSE协议.md` / `SSE_PROTOCOL.md` 的 `stream_ended` 行已对齐 |
+| 2026-11-22 | `stream_ended.reason=partial`：#1472 新增一个 `reason` 枚举值（有终答但第 ② 层完成判定判未完成），属 **additive 软值**，旧客户端按未知 reason 忽略即可；`SSE_PROTOCOL_VERSION` 与展示契约 tag 均**不** bump（§2.1）；中英 `SSE协议.md` / `SSE_PROTOCOL.md` 的 `stream_ended` 行已对齐 |
