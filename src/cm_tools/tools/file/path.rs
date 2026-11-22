@@ -318,7 +318,7 @@ impl<'a> PathAccess<'a> {
     /// `is_within_allowed_roots` 的「空表 = 任意」**故意不同**：一处是「工作区能选在哪」，
     /// 一处是「进到哪一级路径轴」。不要把它当 bug 修成放宽。
     #[must_use]
-    fn allowed_roots_active(&self) -> bool {
+    pub fn allowed_roots_active(&self) -> bool {
         matches!(self.scope, crate::cm_types::PathScope::AllowedRoots)
             && !self.allowed_roots.is_empty()
     }
@@ -433,6 +433,29 @@ impl<'a> PathAccess<'a> {
         unrestricted_target(&base, sub.trim())
             .canonicalize()
             .is_ok_and(|p| p.starts_with(&base))
+    }
+
+    /// 命令轴（`run_command` / `terminal_session`）的参数落点判定（S7-cmd）。
+    ///
+    /// 与 [`Self::is_within_scope`] 有两处刻意不同，都是命令轴特有的：
+    ///
+    /// - **只在 [`Self::allowed_roots_active`] 时给结论**：`SessionRoot` / `Any` / 空根集合一律
+    ///   `false`，由调用方保持原有「`..` / 绝对路径即不安全」的判定。空根的 fail-closed 与
+    ///   `#1149` 一致，不要在这里放宽。
+    /// - **目标允许不存在**：命令参数常是输出目标（`-o ../out/a.o`、`--out-dir ../sibling/target`），
+    ///   用读语义（`must_exist = true`）会一律判越界。存在性由本函数探测——目标存在时严格
+    ///   canonicalize（防允许根内的软链指向根外），不存在时退化为「最近已存在祖先 + 后缀」。
+    ///
+    /// `absolute` 应是**已按调用侧锚点拼好**的路径（例如 `effective_working_dir.join(arg)`）；
+    /// 相对路径虽会按会话根拼接，但命令轴不该依赖这条回退。
+    #[must_use]
+    pub fn is_arg_within_allowed_roots(&self, absolute: &Path) -> bool {
+        if !self.allowed_roots_active() {
+            return false;
+        }
+        let must_exist = absolute.exists();
+        self.resolve_within_allowed_roots(absolute.to_string_lossy().as_ref(), must_exist)
+            .is_ok()
     }
 
     /// 见 [`resolve_for_read`]。

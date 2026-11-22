@@ -262,8 +262,11 @@ pub(in crate::tool_host::tool_registry::execute) async fn evaluate_policy<'a>(
     .await?;
     approvals.extend(approval);
     let gate = approve_external_run_command_paths_if_needed(parsed, &allowed_commands, ctx).await?;
-    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
-    if skip_arg_safety {
+    // `skip_arg_safety` 仍只由 gate 派生（语义未变）：L4 放宽 / 审批通过 / 允许根内全落都算。
+    let skip_arg_safety = gate.is_approved();
+    // 只有**审批**才记 `ExternalPath`：允许根内是常规放行，记成审批会让 `approvals` 谎报
+    // 一次并不存在的弹窗。
+    if matches!(gate, ExternalPathGate::Approved) {
         approvals.push(PolicyApproval::ExternalPath);
     }
 
@@ -580,21 +583,38 @@ pub(in crate::tool_host::tool_registry::execute) async fn approve_posix_shell_wr
     }
 }
 
-/// 工作区外路径 / `..` 预检三态：仅 [`ExternalPathGate::Approved`] 可置 `skip_arg_safety`。
+/// 工作区外路径 / `..` 预检三态：`is_approved()` 为真才置 `skip_arg_safety`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::tool_host::tool_registry::execute) enum ExternalPathGate {
     NotNeeded,
+    /// L4 直接放宽，或用户批准（`AllowOnce` / `AllowAlways`）。
     Approved,
+    /// `AllowedRoots` 档下**全部**形态危险参数都落在允许根集合内：放行，但既不是审批、
+    /// 也不是 L4 放宽——不弹窗、不记 `allowed`、不产 `PolicyApproval::ExternalPath`。
+    ApprovedWithinRoots,
 }
 
-/// 权限等级对「工作区外路径参数」的**直接结论**（S3）：
+impl ExternalPathGate {
+    /// 是否等价于 `skip_arg_safety = true`。
+    ///
+    /// `prepare_run_command_spec` 侧整体跳过 `validate_args` 仍成立：能走到
+    /// `ApprovedWithinRoots` 的前提就是**每个**形态危险参数都被证明落在允许根集合内。
+    fn is_approved(self) -> bool {
+        matches!(self, Self::Approved | Self::ApprovedWithinRoots)
+    }
+}
+
+/// 权限等级对「工作区外参数」的**直接结论**（S3）：
 /// `None` = 继续走现状（配置开关 + 交互审批），`Some(Ok/Err)` = 不弹窗直接定论。
 ///
 /// - L4（`path_scope = Any`）：路径面已放宽，直接 `Approved`（等价 `skip_arg_safety`）。
 /// - L2（`approval = Deny`）：硬拒，不弹审批。
+///
+/// `AllowedRoots` 档不在这里判：调用方先过 [`rooted_args_gate`]（全部参数在根内 ⇒ 放行），
+/// 剩下的越界参数才落进这里。因此 `escaping` 只含**没被证明在根内**的参数。
 pub(in crate::tool_host::tool_registry::execute) fn external_path_gate_by_caps(
     ctx: &PolicyContext<'_>,
-    unsafe_args: &[String],
+    escaping: &[String],
 ) -> Option<Result<ExternalPathGate, PolicyError>> {
     let caps = ctx.permission?;
     if caps.path_scope().is_unrestricted() {
@@ -619,7 +639,7 @@ pub(in crate::tool_host::tool_registry::execute) fn external_path_gate_by_caps(
             message: format!(
                 "错误：当前权限等级（{}）下不允许工作区外路径参数（{}）：{}。",
                 caps.level().as_str(),
-                unsafe_args.join(", "),
+                escaping.join(", "),
                 caps.level().promise_zh()
             ),
         }));
@@ -627,67 +647,78 @@ pub(in crate::tool_host::tool_registry::execute) fn external_path_gate_by_caps(
     None
 }
 
-/// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
-/// `async` 模式拒绝需要交互审批的工作区外路径。
-pub(in crate::tool_host::tool_registry::execute) async fn approve_external_run_command_paths_if_needed(
-    parsed: &ParsedRunCommandJson,
-    allowed_commands: &[String],
+/// `AllowedRoots` 档的「全部参数在允许根内」结论。
+///
+/// 只在 `had_pattern_unsafe && escaping.is_empty()` 时给出 `ApprovedWithinRoots`：「压根没有
+/// 形态危险参数」必须留给 [`ExternalPathGate::NotNeeded`]，否则 `skip_arg_safety` 会从
+/// `false` 变成 `true`（行为回归）。
+fn rooted_args_gate(scan: &tools::UnsafeArgScan) -> Option<ExternalPathGate> {
+    scan.all_within_allowed_roots()
+        .then_some(ExternalPathGate::ApprovedWithinRoots)
+}
+
+/// 当前执行能力下「需要交互审批但拿不到通道」的拒绝（Docker / 无通道 / async）。
+///
+/// 单独成函数压 [`approve_external_run_command_paths_if_needed`] 的 CCN（棘轮 ≤ 10）。
+fn external_path_approval_unavailable(
     ctx: &PolicyContext<'_>,
-) -> Result<ExternalPathGate, PolicyError> {
-    if !ctx.cfg.command_exec.allow_external_path_with_approval {
-        return Ok(ExternalPathGate::NotNeeded);
-    }
-    let unsafe_args = match tools::scan_run_command_unsafe_args_spec(
-        &parsed.spec,
-        ctx.workspace,
-        allowed_commands,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            return Err(PolicyError::InvalidArgs {
-                reason: PolicyReason::ExternalPath,
-                message: e.extended_user_message(),
-            });
-        }
-    };
-    if unsafe_args.is_empty() {
-        return Ok(ExternalPathGate::NotNeeded);
-    }
-    if let Some(gate) = external_path_gate_by_caps(ctx, &unsafe_args) {
-        return gate;
-    }
+    escaping: &[String],
+) -> Option<PolicyError> {
     let capabilities = ctx.capabilities();
+    let detail = escaping.join(", ");
     if capabilities.mode == ExecMode::Docker {
-        return Err(PolicyError::ApprovalUnavailable {
+        return Some(PolicyError::ApprovalUnavailable {
             reason: PolicyReason::ExternalPath,
             message: format!(
-                "错误：Docker 同步工具沙盒模式下不支持工作区外路径参数（{}）。请改用宿主模式或去掉外部路径 / 路径穿越形 \"..\"。",
-                unsafe_args.join(", ")
+                "错误：Docker 同步工具沙盒模式下不支持工作区外路径参数（{detail}）。请改用宿主模式或去掉外部路径 / 路径穿越形 \"..\"。"
             ),
         });
     }
     if !capabilities.has_approval_channel {
-        return Err(PolicyError::ApprovalUnavailable {
+        return Some(PolicyError::ApprovalUnavailable {
             reason: PolicyReason::ExternalPath,
             message: format!(
-                "错误：{} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
-                ctx.sse_command,
-                unsafe_args.join(", ")
+                "错误：{} 访问工作区外路径（{detail}）需要审批通道（当前无可用会话）。",
+                ctx.sse_command
             ),
         });
     }
     if capabilities.mode == ExecMode::Async {
-        return Err(PolicyError::ApprovalUnavailable {
+        return Some(PolicyError::ApprovalUnavailable {
             reason: PolicyReason::ExternalPath,
             message: format!(
-                "错误：后台任务（async）不支持工作区外路径（{}）的交互审批；请去掉外部路径 / 路径穿越形 \"..\"，或去掉 async 参数。",
-                unsafe_args.join(", ")
+                "错误：后台任务（async）不支持工作区外路径（{detail}）的交互审批；请去掉外部路径 / 路径穿越形 \"..\"，或去掉 async 参数。"
             ),
         });
     }
-    let detail_paths = unsafe_args.join(", ");
-    let spec =
-        tool_approval::approval_spec_workspace_external_path(ctx.sse_command, &detail_paths);
+    None
+}
+
+/// 参数扫描：把「权限路径范围 + 允许根集合」交给 [`tools::PathAccess`] 判落点。
+fn scan_external_path_args(
+    parsed: &ParsedRunCommandJson,
+    allowed_commands: &[String],
+    ctx: &PolicyContext<'_>,
+) -> Result<tools::UnsafeArgScan, tools::RunCommandError> {
+    let scope = ctx
+        .permission
+        .map(|c| c.path_scope())
+        .unwrap_or(crate::cm_types::PathScope::SessionRoot);
+    let access = tools::PathAccess::with_scope_and_roots(
+        ctx.workspace,
+        scope,
+        ctx.cfg.as_ref().workspace_roots.workspace_allowed_roots.as_slice(),
+    );
+    tools::scan_run_command_unsafe_args_spec(&parsed.spec, ctx.workspace, allowed_commands, access)
+}
+
+/// 交互审批一段（文案与顺序与改动前逐字一致，只是抽出来压 CCN）。
+async fn request_external_path_interactive_approval(
+    ctx: &PolicyContext<'_>,
+    escaping: &[String],
+) -> Result<ExternalPathGate, PolicyError> {
+    let detail_paths = escaping.join(", ");
+    let spec = tool_approval::approval_spec_workspace_external_path(ctx.sse_command, &detail_paths);
     let allow_handles = tool_approval::shared_allowlist_handles_web(
         ctx.web_ctx,
         ctx.permission.map(|c| c.level()),
@@ -710,4 +741,42 @@ pub(in crate::tool_host::tool_registry::execute) async fn approve_external_run_c
             message: e.user_message_zh().to_string(),
         }),
     }
+}
+
+/// 命令轴参数的路径判定（S7-cmd）。
+///
+/// 次序**刻意**是「scan → 根内全落放行 → 配置开关 → 等级 gate → 环境/审批」：
+///
+/// 1. 先扫，因为「开关关 + 根内参数」也必须放行——`allow_external_path_with_approval` 只约束
+///    **工作区外**路径的交互审批，不该拦住运维显式写进允许根的目录（issue 语义 1）。
+/// 2. 反之，开关关 + **确有越界参数**时仍回 `NotNeeded`，而不是在这里硬拒：拒绝由
+///    `prepare_run_command_spec` 的 `validate_run_command_args_safety` 报 `UnsafeArg`，与改动前
+///    逐字等价。在 gate 层新增硬拒会让未配审批的 L3 实例静默变严。
+pub(in crate::tool_host::tool_registry::execute) async fn approve_external_run_command_paths_if_needed(
+    parsed: &ParsedRunCommandJson,
+    allowed_commands: &[String],
+    ctx: &PolicyContext<'_>,
+) -> Result<ExternalPathGate, PolicyError> {
+    let scan = match scan_external_path_args(parsed, allowed_commands, ctx) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(PolicyError::InvalidArgs {
+                reason: PolicyReason::ExternalPath,
+                message: e.extended_user_message(),
+            });
+        }
+    };
+    if let Some(gate) = rooted_args_gate(&scan) {
+        return Ok(gate);
+    }
+    if !ctx.cfg.command_exec.allow_external_path_with_approval || scan.escaping.is_empty() {
+        return Ok(ExternalPathGate::NotNeeded);
+    }
+    if let Some(gate) = external_path_gate_by_caps(ctx, &scan.escaping) {
+        return gate;
+    }
+    if let Some(err) = external_path_approval_unavailable(ctx, &scan.escaping) {
+        return Err(err);
+    }
+    request_external_path_interactive_approval(ctx, &scan.escaping).await
 }

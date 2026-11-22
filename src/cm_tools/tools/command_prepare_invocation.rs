@@ -43,11 +43,11 @@ pub fn parse_command_spec(
     let value = super::parse_run_command_value_with_repair(args_json)?;
     let script = read_optional_string_field(&value, "script")?;
     let cwd = read_optional_string_field(&value, "cwd")?;
-    if let Some(cwd) = cwd.as_deref()
-        && !is_arg_safe("cd", cwd)
-    {
-        return Err(RunCommandError::UnsafeArg);
-    }
+    // `cwd` 的路径判定**不在这里**：本函数拿不到权限路径范围与允许根集合，早拒会把
+    // 「落在 `workspace_allowed_roots` 内的 `../sibling`」当成越界（#1315）。正式判定在
+    // `scan_run_command_unsafe_args_spec`（按根集合）与 `prepare_run_command_spec` 的
+    // `resolve_cd_prefix_dir`（`skip_arg_safety = false` 时仍用 `is_arg_safe` + 会话根锚）
+    // 两处；未接线路径因此只是报错点后移一个阶段，`UnsafeArg` 与错误码不变。
     if let Some(script) = script {
         if script_conflicts_with_command_or_args(&value)? {
             return Err(RunCommandError::ScriptCommandConflict);
@@ -246,59 +246,154 @@ fn validate_run_command_args_safety(
     Ok(())
 }
 
-fn collect_unsafe_cmd_args(
-    cmd_name: &str,
-    cmd_args: &[String],
-    has_workspace_exec: bool,
-) -> Vec<String> {
-    cmd_args
-        .iter()
-        .filter(|a| arg_is_unsafe_for_cmd(cmd_name, a, has_workspace_exec))
-        .cloned()
-        .collect()
+/// 命令轴路径判定上下文（S7-cmd）：把「会话根 + 权限路径范围 + 允许根集合」收成一个载体。
+///
+/// 根集合只在 `AllowedRoots` **实际生效**（非空）时参与判定；否则退回「canonical 后
+/// `starts_with(会话根)`」的既有语义——空根 fail-closed，与 `#1149` 一致。
+struct CommandPathScope<'a> {
+    access: crate::cm_tools::tools::PathAccess<'a>,
+    /// canonical 后的会话根（既有判定锚）。
+    anchor: PathBuf,
+    rooted: bool,
 }
 
+impl<'a> CommandPathScope<'a> {
+    fn new(
+        workspace_root: &Path,
+        access: crate::cm_tools::tools::PathAccess<'a>,
+    ) -> Result<Self, RunCommandError> {
+        let anchor = workspace_root
+            .canonicalize()
+            .map_err(|e| RunCommandError::SpawnOther {
+                cmd: "canonicalize(workspace)".to_string(),
+                source: e,
+            })?;
+        let rooted = access.allowed_roots_active();
+        Ok(Self {
+            access,
+            anchor,
+            rooted,
+        })
+    }
+
+    /// 已 canonicalize 的目标是否在允许范围内。
+    fn within_canonical(&self, canon: &Path) -> bool {
+        if self.rooted {
+            self.access.is_arg_within_allowed_roots(canon)
+        } else {
+            canon.starts_with(&self.anchor)
+        }
+    }
+
+    /// 形态危险的参数是否**已证明**落在允许范围内。
+    ///
+    /// 根集合未生效时恒 `false`——与改动前逐字等价：扫描只判形态，形态危险即不安全。
+    /// 抽不出候选路径时同样按「未证明」处理，方向保守。
+    fn arg_within(&self, arg: &str, effective_working_dir: &Path) -> bool {
+        if !self.rooted {
+            return false;
+        }
+        let Some(candidate) = candidate_path_of_arg(arg) else {
+            return false;
+        };
+        self.access
+            .is_arg_within_allowed_roots(&effective_working_dir.join(candidate))
+    }
+}
+
+/// 从「形态危险」的参数里抽出候选路径片段。
+///
+/// 只认两种形态：整 token 即路径（`../x`、`/abs/x`），以及 `--opt=../x` 的 `=` 右侧。
+/// 粘写形态（`-C../sibling`）不在候选之列——`arg_has_parent_dir_ref` 本来就不把它当穿越，
+/// 保持现状（见 issue「已知偏差 A」）。
+fn candidate_path_of_arg(arg: &str) -> Option<&str> {
+    let a = arg.trim();
+    if a.is_empty() {
+        return None;
+    }
+    if !a.starts_with('-') {
+        return Some(a);
+    }
+    let (_, value) = a.split_once('=')?;
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
+}
+
+/// 参数扫描结果（S7-cmd）。
+///
+/// 两个字段回答两个不同问题，缺一不可：
+///
+/// - `had_pattern_unsafe`：**有没有**形态危险参数（`..` 穿越 / 绝对路径）。用来把
+///   「压根没危险参数」（必须 `skip_arg_safety = false`）与「危险参数全在允许根内」区分开。
+/// - `escaping`：哪些参数**没能证明**落在允许根集合内。非空 ⇒ L2 硬拒 / L3 交互审批，
+///   且拒因与审批正文只列这几个（不再笼统喊「工作区外路径参数」）。
+///
+/// 根集合未生效时 `escaping` == 全部形态危险参数，与改动前逐字等价。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct UnsafeArgScan {
+    /// 形态危险且**未证明**在允许根集合内的参数（去重、保持出现顺序）。
+    pub escaping: Vec<String>,
+    /// 是否存在形态危险参数（不论落点）。
+    pub had_pattern_unsafe: bool,
+}
+
+impl UnsafeArgScan {
+    /// 记一个形态危险参数；`within` = 「已证明落在允许根集合内」。
+    fn note(&mut self, raw: &str, within: bool) {
+        self.had_pattern_unsafe = true;
+        if within || self.escaping.iter().any(|u| u == raw) {
+            return;
+        }
+        self.escaping.push(raw.to_string());
+    }
+
+    /// 「有形态危险参数，但全部落在允许根内」——等价于 `skip_arg_safety = true` 的那一档。
+    ///
+    /// `had_pattern_unsafe == false`（压根没有危险参数）刻意**不**算：那条路必须走
+    /// `NotNeeded`，`skip_arg_safety` 保持 `false`。
+    #[must_use]
+    pub fn all_within_allowed_roots(&self) -> bool {
+        self.had_pattern_unsafe && self.escaping.is_empty()
+    }
+}
+
+/// `cd` / `cwd` 目标的落点判定；`false` = 逃出允许范围。
+///
+/// 与改动前的差别只在判据：`AllowedRoots` 生效时按根集合判，否则仍是
+/// `canonical.starts_with(会话根)`。目标不是目录时不做逃逸判定（交给执行侧的
+/// `resolve_cd_prefix_dir` 报 `CdPrefixInvalid`）。
 fn scan_cd_join_escape(
     candidate: &Path,
-    anchor: &Path,
+    scope: &CommandPathScope<'_>,
     pattern_unsafe: bool,
     effective_working_dir: &mut PathBuf,
 ) -> Result<bool, RunCommandError> {
     if !candidate.is_dir() {
-        return Ok(false);
+        return Ok(true);
     }
-    match candidate.canonicalize() {
-        Ok(canon_cand) => {
-            if !canon_cand.starts_with(anchor) {
-                Ok(true)
-            } else {
-                if !pattern_unsafe {
-                    *effective_working_dir = canon_cand;
-                }
-                Ok(false)
-            }
-        }
-        Err(e) => Err(RunCommandError::SpawnOther {
+    let canon_cand = candidate
+        .canonicalize()
+        .map_err(|e| RunCommandError::SpawnOther {
             cmd: format!("canonicalize({})", candidate.display()),
             source: e,
-        }),
+        })?;
+    let within = scope.within_canonical(&canon_cand);
+    if within && !pattern_unsafe {
+        *effective_working_dir = canon_cand;
     }
+    Ok(within)
 }
 
-/// 扫描用：推进 `cd … &&` 前缀；不安全的 `cd` 目录记入 `unsafe_out` 后仍合成推进以便继续扫后续 argv。
+/// 扫描用：推进 `cd … &&` 前缀；**未能证明在允许范围内**的 `cd` 目录记入 `scan` 后仍合成推进，
+/// 以便继续扫后续 argv——`cd ../crabmate-client && cat /etc/shadow` 里两个目标各自定论，
+/// 不会因为 `cd` 合法就整体放过。
 fn advance_cd_prefixes_collecting_unsafe(
-    workspace_root: &Path,
+    scope: &CommandPathScope<'_>,
     effective_working_dir: &mut PathBuf,
     cmd_raw: &mut String,
     cmd_args: &mut Vec<String>,
-    unsafe_out: &mut Vec<String>,
+    scan: &mut UnsafeArgScan,
 ) -> Result<(), RunCommandError> {
-    let anchor = workspace_root
-        .canonicalize()
-        .map_err(|e| RunCommandError::SpawnOther {
-            cmd: "canonicalize(workspace)".to_string(),
-            source: e,
-        })?;
     loop {
         if !cmd_raw.eq_ignore_ascii_case("cd") {
             break;
@@ -311,10 +406,9 @@ fn advance_cd_prefixes_collecting_unsafe(
         let mut rest = rest.to_vec();
         let pattern_unsafe = !is_arg_safe("cd", &dir);
         let candidate = effective_working_dir.join(&dir);
-        let escape_unsafe =
-            scan_cd_join_escape(&candidate, &anchor, pattern_unsafe, effective_working_dir)?;
-        if (pattern_unsafe || escape_unsafe) && !unsafe_out.iter().any(|u| u == &dir) {
-            unsafe_out.push(dir);
+        let within = scan_cd_join_escape(&candidate, scope, pattern_unsafe, effective_working_dir)?;
+        if pattern_unsafe || !within {
+            scan.note(&dir, within);
         }
         *cmd_raw = rest.remove(0);
         *cmd_args = rest;
@@ -323,23 +417,20 @@ fn advance_cd_prefixes_collecting_unsafe(
     Ok(())
 }
 
-/// `cwd` 字段的越界判定；命中时由调用方把原始 `cwd` 记入不安全参数。
+/// `cwd` 字段的越界判定；未能证明在允许范围内时记入 `scan`。
 fn scan_explicit_cwd_unsafe(
     cwd: &str,
-    working_dir: &Path,
+    scope: &CommandPathScope<'_>,
     effective_working_dir: &mut PathBuf,
-) -> Result<bool, RunCommandError> {
-    let anchor = working_dir
-        .canonicalize()
-        .map_err(|e| RunCommandError::SpawnOther {
-            cmd: "canonicalize(workspace)".to_string(),
-            source: e,
-        })?;
+    scan: &mut UnsafeArgScan,
+) -> Result<(), RunCommandError> {
     let pattern_unsafe = !is_arg_safe("cd", cwd);
     let candidate = effective_working_dir.join(cwd);
-    let escape_unsafe =
-        scan_cd_join_escape(&candidate, &anchor, pattern_unsafe, effective_working_dir)?;
-    Ok(pattern_unsafe || escape_unsafe)
+    let within = scan_cd_join_escape(&candidate, scope, pattern_unsafe, effective_working_dir)?;
+    if pattern_unsafe || !within {
+        scan.note(cwd, within);
+    }
+    Ok(())
 }
 
 /// 命令名解析 + argv 危险参数收集（扫描阶段；命令未在白名单时仍收集）。
@@ -348,7 +439,8 @@ fn collect_unsafe_after_resolve(
     cmd_args: &[String],
     effective_working_dir: &Path,
     allowed_commands: &[String],
-    unsafe_args: &mut Vec<String>,
+    scope: &CommandPathScope<'_>,
+    scan: &mut UnsafeArgScan,
 ) -> Result<(), RunCommandError> {
     let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
     let workspace_exec = is_workspace_executable
@@ -361,50 +453,61 @@ fn collect_unsafe_after_resolve(
             Err(RunCommandError::DisallowedCommand { .. }) => (fallback_name, workspace_exec),
             Err(e) => return Err(e),
         };
-    for a in collect_unsafe_cmd_args(&cmd_name, cmd_args, has_exec) {
-        if !unsafe_args.iter().any(|u| u == &a) {
-            unsafe_args.push(a);
+    for a in cmd_args {
+        if !arg_is_unsafe_for_cmd(&cmd_name, a, has_exec) {
+            continue;
         }
+        let within = scope.arg_within(a, effective_working_dir);
+        scan.note(a, within);
     }
     Ok(())
 }
 
-/// 与 `prepare_run_command_spec` 同源解析后，返回按 validate 规则判定为不安全的参数。
-/// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 `is_arg_safe` 一致）。
+/// 与 `prepare_run_command_spec` 同源解析后，给出参数级的路径判定（S7-cmd）。
+///
+/// `access` 携带**权限投影出的路径范围 + 允许根集合**：`AllowedRoots` 生效时，形态危险参数
+/// 再判一次落点（落在任一允许根内即安全）；否则退回改动前的「只判形态」。
+///
+/// 与 `prepare_run_command_spec` 的分工：`skip_arg_safety` 仍只由调用方的三态 gate 派生，
+/// 本函数不自己决定放行——它只回答「哪些参数没被证明在根内」。
 pub fn scan_run_command_unsafe_args_spec(
     spec: &CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
-) -> Result<Vec<String>, RunCommandError> {
+    access: crate::cm_tools::tools::PathAccess<'_>,
+) -> Result<UnsafeArgScan, RunCommandError> {
+    let scope = CommandPathScope::new(working_dir, access)?;
     let mut cmd_raw = spec.command.clone();
     let mut cmd_args = spec.args.clone();
     let mut effective_working_dir = working_dir.to_path_buf();
-    let mut unsafe_args = Vec::new();
-    if let Some(cwd) = spec.cwd.as_deref()
-        && scan_explicit_cwd_unsafe(cwd, working_dir, &mut effective_working_dir)?
-    {
-        unsafe_args.push(cwd.to_string());
+    let mut scan = UnsafeArgScan::default();
+    if let Some(cwd) = spec.cwd.as_deref() {
+        scan_explicit_cwd_unsafe(cwd, &scope, &mut effective_working_dir, &mut scan)?;
     }
-    // 显式 `script` 的正文由 shell 审批覆盖，不再逐 argv 扫描。
+    // 显式 `script` 的正文由 shell 审批覆盖，不再逐 argv 扫描。`AllowedRoots` 下**不放宽**：
+    // 正文不受参数级根判定约束（issue「难点 4」的定论）。
     if spec.script.is_some() {
-        return Ok(unsafe_args);
+        return Ok(scan);
     }
     advance_cd_prefixes_collecting_unsafe(
-        working_dir,
+        &scope,
         &mut effective_working_dir,
         &mut cmd_raw,
         &mut cmd_args,
-        &mut unsafe_args,
+        &mut scan,
     )?;
     // 扫描阶段不拦截 glob/`$VAR`：展开改由 bash -c 或异步审批处理。
+    // 会改变后续参数锚点的选项（`git -C`、`cargo --manifest-path`、`tar -C`）**不推进**
+    // `effective_working_dir`：结果只会多拒 / 多弹一次窗，不会偏松（issue「已知偏差 B」）。
     collect_unsafe_after_resolve(
         &cmd_raw,
         &cmd_args,
         &effective_working_dir,
         allowed_commands,
-        &mut unsafe_args,
+        &scope,
+        &mut scan,
     )?;
-    Ok(unsafe_args)
+    Ok(scan)
 }
 
 fn skip_shell_variable_check(cmd_raw: &str, cmd_args: &[String], allowed: &[String]) -> bool {
@@ -607,6 +710,11 @@ mod tests {
         parse_command_spec, prepare_run_command_spec, scan_run_command_unsafe_args_spec,
     };
 
+
+    /// 未配多根的 `PathAccess`（`SessionRoot` + 空根）：命令轴退回改动前的「只判形态」。
+    fn session_access() -> crate::cm_tools::tools::PathAccess<'static> {
+        crate::cm_tools::tools::PathAccess::new(Path::new("."))
+    }
     fn test_allowed() -> Vec<String> {
         vec![
             "cat".into(),
@@ -627,28 +735,34 @@ mod tests {
             &spec(r#"{"command":"cat","args":["/etc/passwd"]}"#),
             Path::new("."),
             &test_allowed(),
+            session_access(),
         )
         .expect("scan");
-        assert_eq!(u, vec!["/etc/passwd".to_string()]);
+        assert_eq!(u.escaping, vec!["/etc/passwd".to_string()]);
+        assert!(u.had_pattern_unsafe);
 
         let u = scan_run_command_unsafe_args_spec(
             &spec(r#"{"command":"cmake","args":[".."]}"#),
             Path::new("."),
             &test_allowed(),
+            session_access(),
         )
         .expect("scan");
-        assert!(u.is_empty(), "{u:?}");
+        assert!(u.escaping.is_empty(), "{u:?}");
+        assert!(!u.had_pattern_unsafe, "cmake .. 不算形态危险：{u:?}");
 
         let u = scan_run_command_unsafe_args_spec(
             &spec(r#"{"command":"git","args":["log","main..HEAD"]}"#),
             Path::new("."),
             &test_allowed(),
+            session_access(),
         )
         .expect("scan");
         assert!(
-            u.is_empty(),
+            u.escaping.is_empty(),
             "git A..B must not look like path traversal: {u:?}"
         );
+        assert!(!u.had_pattern_unsafe, "{u:?}");
     }
 
     #[test]
@@ -657,9 +771,11 @@ mod tests {
             &spec(r#"{"command":"cd","args":["..","&&","ls"]}"#),
             Path::new("."),
             &test_allowed(),
+            session_access(),
         )
         .expect("scan");
-        assert!(u.iter().any(|a| a == ".."), "{u:?}");
+        assert!(u.escaping.iter().any(|a| a == ".."), "{u:?}");
+        assert!(u.had_pattern_unsafe);
     }
 
     #[test]
@@ -735,9 +851,15 @@ mod tests {
 
     #[test]
     fn explicit_cwd_must_be_relative_and_within_workspace() {
+        // `parse_command_spec` 不判 `cwd` 越界（它拿不到根集合，见 `#1315`）：解析仍成功，
+        // 由 `skip_arg_safety = false` 的 prepare 阶段报 `UnsafeArg`。
         for cwd in ["../x", "/tmp"] {
             let args_json = format!(r#"{{"command":"ls","cwd":"{cwd}"}}"#);
-            let err = parse_command_spec(&args_json, Path::new(".")).expect_err("unsafe cwd");
+            let spec = parse_command_spec(&args_json, Path::new(".")).expect("parse 不判 cwd 越界");
+            let Err(err) = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
+            else {
+                panic!("unsafe cwd 应被拒：{cwd}");
+            };
             assert!(
                 matches!(err, RunCommandError::UnsafeArg),
                 "cwd {cwd}: {err:?}"
