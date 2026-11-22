@@ -22,6 +22,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   a `satisfied` answer (`degraded`) still counts as `completed`, and a missing verdict is **fail-open**
   (`completed`) — a judge that is disabled / failed / stale never turns a finished turn into an
   unfinished one. `SSE_PROTOCOL_VERSION` is **not** bumped (old clients ignore unknown reasons).
+  The v2 (AG-UI) **`RUN_FINISHED`** frame now also carries `reason` and `missing` as CrabMate extension
+  fields, following the existing `tiktokenPromptTokens` precedent — the AG-UI standard frame has **no**
+  reason, so before this the `partial` value was invisible to every v2 client (the default encoder).
+  `missing` is only present when `reason == "partial"` (max 8 items × 120 chars) and is omitted otherwise.
 - **`GET /workspace/git` — read-only git status projection (#1457).** New protected route in the
   `/workspace/*` family for the Client sidebar (branch + dirty summary). Always **200**: availability
   lives in **`state`** (`ok` / `not_a_repo` / `git_unavailable` / `failed` + `reason_code`), so

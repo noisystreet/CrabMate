@@ -250,6 +250,7 @@ pub(crate) async fn emit_stream_ended_once(
     sse_tx: &mpsc::Sender<String>,
     job_id: u64,
     reason: StreamEndReason,
+    missing: Vec<String>,
     stream_ended_sent: &mut StreamEndedOnce,
     log_context: &'static str,
     tiktoken_prompt_tokens: Option<crate::types::TiktokenPromptTokensSnapshot>,
@@ -262,10 +263,25 @@ pub(crate) async fn emit_stream_ended_once(
             job_id,
             reason,
             tiktoken_prompt_tokens,
+            missing,
         },
     });
     let _ = crate::sse::send_string_logged(sse_tx, end_line, log_context).await;
     stream_ended_sent.mark_sent();
+}
+
+/// 终态帧要透出的「还差什么」（#1472）。
+///
+/// 只有 `partial` 才带；其余终态一律为空，`StreamEndedBody.missing` 的
+/// `skip_serializing_if = "Vec::is_empty"` 会让字段在线上直接缺席。
+pub(super) fn ended_missing_for(
+    reason: StreamEndReason,
+    verdict: Option<&crate::cm_agent::completion_judge::CompletionVerdict>,
+) -> Vec<String> {
+    match (reason, verdict) {
+        (StreamEndReason::Partial, Some(v)) => v.missing.clone(),
+        _ => Vec::new(),
+    }
 }
 
 /// 非终态：模型/工具已结束、正在落盘；官方 Web 可提前进入 Draining 文案。
@@ -606,12 +622,15 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
             let fallback_emitted =
                 emit_missing_final_response_fallback_if_needed(flight, sse_tx, job_id, messages)
                     .await;
+            // #1472：verdict 先绑成变量，终态帧要用它的 `missing`。
+            let verdict = flight.completion_verdict();
             let end_reason = completed_turn_end_reason(
                 fallback_emitted,
                 truncated,
                 messages,
-                flight.completion_verdict().as_ref(),
+                verdict.as_ref(),
             );
+            let ended_missing = ended_missing_for(end_reason, verdict.as_ref());
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,
@@ -682,6 +701,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         sse_tx,
                         job_id,
                         end_reason,
+                        ended_missing,
                         stream_ended_sent,
                         "chat_job_queue::stream stream_ended",
                         tiktoken_prompt_tokens.clone(),

@@ -38,6 +38,7 @@ mod tests {
                 job_id: 1,
                 reason: StreamEndReason::Completed,
                 tiktoken_prompt_tokens: None,
+                missing: Vec::new(),
             },
         });
         // 应为单行 RUN_FINISHED

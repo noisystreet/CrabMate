@@ -106,6 +106,21 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
   by anchor validation (`degraded` — a citation-format problem, not unfinished work); and **no verdict at
   all** (judge skipped / disabled / failed / evidence changed) — a missing verdict is always fail-open.
 
+**`missing`**: only when `reason == partial`, listing what the tier-2 judge found uncovered (max 8 items ×
+120 chars); other reasons never carry it. **Exception — the fallback re-emit path**: when the main path never
+emitted the frame and the worker re-emits it, `missing` is always empty (that path has no access to the main
+path's verdict). Treat `partial` with an empty `missing` as a legal combination, not as "nothing left to do".
+
+**Production emits v2, not v1**: `encode_message` delegates to `default_encoder()` (`V2Encoder`); the v1
+`stream_ended` shape only serves tests and legacy consumers. So "unfinished" can only be observed through the
+v2 `RUN_FINISHED` — the AG-UI standard frame has **no** reason field, and this repo adds two extension fields
+following the existing `tiktokenPromptTokens` precedent:
+
+- `reason` is **not optional — every terminal frame carries it** (same values as v1 `stream_ended.reason`);
+- `missing` is omitted when empty and only appears for `partial`.
+
+`type` alone cannot distinguish "finished" from "unfinished"; older clients that ignore these keys are unaffected.
+
 Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`,
   `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`,
   `max_input_tokens`, `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`,

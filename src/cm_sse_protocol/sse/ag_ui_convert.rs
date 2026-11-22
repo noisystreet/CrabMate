@@ -48,6 +48,8 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
             thread_id: String::new(),
             run_id: ended.job_id.to_string(),
             tiktoken_prompt_tokens: ended.tiktoken_prompt_tokens.clone(),
+            reason: ended.reason,
+            missing: ended.missing.clone(),
         }],
 
         // ── 错误 → RunError ──
@@ -290,6 +292,7 @@ mod tests {
                 job_id: 42,
                 reason: StreamEndReason::Completed,
                 tiktoken_prompt_tokens: None,
+                missing: Vec::new(),
             },
         });
         assert_eq!(events.len(), 1);
@@ -298,10 +301,13 @@ mod tests {
                 thread_id,
                 run_id,
                 tiktoken_prompt_tokens,
+                reason,
+                missing,
             } => {
                 assert_eq!(run_id, "42");
                 assert_eq!(thread_id, "");
                 assert!(tiktoken_prompt_tokens.is_none());
+                assert!(*reason == StreamEndReason::Completed && missing.is_empty());
             }
             other => panic!("expected RunFinished, got {other:?}"),
         }
@@ -319,6 +325,7 @@ mod tests {
                 job_id: 7,
                 reason: StreamEndReason::Completed,
                 tiktoken_prompt_tokens: Some(snap.clone()),
+                missing: Vec::new(),
             },
         });
         match &events[0] {
@@ -879,6 +886,7 @@ mod golden_tests {
                         job_id: 1,
                         reason: crate::cm_sse_protocol::StreamEndReason::Completed,
                         tiktoken_prompt_tokens: None,
+                        missing: Vec::new(),
                     },
                 },
                 "RUN_FINISHED",

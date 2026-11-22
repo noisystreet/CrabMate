@@ -101,6 +101,19 @@
 只在第 ② 层结论。以下情形仍为 `completed`：判 `satisfied`；`satisfied` 仅因锚点校验被降级（引用格式问题，
 不是没做完）；以及**没有任何判定结论**（judge 未跑 / 开关关 / 失败 / 证据已变）——判定缺失一律 fail-open。
 
+**`missing` 字段**：只在 `reason == partial` 时出现，是第 ② 层判定给出的「还差什么」清单（最多 8 条 × 每条 120 字）；
+其它终态不带该键。**兜底补发路径例外**：主路径未发帧、由 worker 兜底补发时 `missing` 恒为空——那条路径拿不到
+主路径的判定结论。因此「`partial` + 空 `missing`」是合法组合，消费方不要当成「没有未完成项」。
+
+**生产发的是 v2，不是 v1**：`encode_message` 委托 `default_encoder()`（`V2Encoder`）；v1 的 `stream_ended` 形状
+只用于测试与遗留消费者。所以判断「未完成」在生产上只能读 v2 的 `RUN_FINISHED`——AG-UI 标准帧本身**不含**
+结束原因，本仓按 `tiktokenPromptTokens` 的同一先例加了 `reason` 与 `missing` 两个扩展字段：
+
+- `reason` **非可选，每个终态帧都有**（取值与 v1 `stream_ended.reason` 相同）；
+- `missing` 为空则省略，只在 `partial` 时出现。
+
+只看 `type` 是分不出「做完」与「没做完」的；忽略这两个键的旧客户端行为不变。
+
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；
   `approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，
   未知 kind 应忽略）。
