@@ -75,6 +75,15 @@ fn log_cache_usage(usage: Option<&Usage>, model: &str) {
 
 /// 在序列化后的请求 JSON 中对 system 消息注入 `cache_control: {"type": "ephemeral"}`。
 /// 不修改 `Message` 类型，通过 JSON 后处理实现最小侵入。
+///
+/// **当前没有任何供应商启用它**（`config/llm_vendors.toml` 里全为 `false`）：
+///
+/// - DeepSeek 的上下文缓存是**自动**的前缀缓存，官方 kv_cache 文档里没有 `cache_control`
+///   字段，显式标记没有额外收益（#1475）；
+/// - 若将来要支持 Anthropic 风格网关，该字段应挂在 **content block** 上而不是消息对象顶层，
+///   并且需要多个断点（tools 之后、system 之后各一个）才划算。走 OpenAI 兼容
+///   `chat/completions` 时 `content` 是字符串、没有 block 概念，所以这里**不应**直接启用，
+///   须先在类型层解决「断点放哪」的问题。
 fn inject_cache_control_json(mut body: serde_json::Value) -> serde_json::Value {
     let Some(messages) = body.get_mut("messages").and_then(|m| m.as_array_mut()) else {
         return body;
