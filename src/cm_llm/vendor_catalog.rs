@@ -268,24 +268,37 @@ mod tests {
     }
 
     #[test]
-    fn deepseek_text_vs_vision_image_url() {
-        let flash = resolved_vendor_caps("deepseek-v4-flash", "https://api.deepseek.com/v1");
+    fn deepseek_models_and_image_url() {
+        // 当前主模型 `deepseek-flash` 自 V4.1 起**原生支持**图像理解；
+        // 它走自动前缀缓存，不需要（也不该发）显式 `cache_control`（#1475）。
+        let flash = resolved_vendor_caps("deepseek-flash", "https://api.deepseek.com/v1");
         assert_eq!(flash.adapter, VendorAdapterId::Deepseek);
-        assert!(!flash.image_url_content_parts);
-        // DeepSeek 走自动前缀缓存，不需要（也不该发）显式 `cache_control`（#1475）。
+        assert!(flash.image_url_content_parts);
         assert!(!flash.explicit_cache_control);
-        let vision = resolved_vendor_caps(
+
+        // `deepseek-v4-pro` 不支持图像。
+        let pro = resolved_vendor_caps("deepseek-v4-pro", "https://api.deepseek.com/v1");
+        assert!(!pro.image_url_content_parts);
+
+        // 旧名仍可调用（由 V4.1-Flash 提供服务）：`-vision` 后缀仍按视觉处理。
+        let legacy_vision = resolved_vendor_caps(
             "deepseek-v4-flash-vision-exp",
             "https://api.deepseek.com/v1",
         );
-        assert!(vision.image_url_content_parts);
-        let models = matched_vendor_models("deepseek-v4-flash", "https://api.deepseek.com/v1");
-        assert_eq!(models[0], "deepseek-v4-flash");
-        assert!(models.iter().any(|m| m == "deepseek-v4-flash-vision-exp"));
+        assert!(legacy_vision.image_url_content_parts);
+        let legacy_text = resolved_vendor_caps("deepseek-v4-flash", "https://api.deepseek.com/v1");
+        assert_eq!(legacy_text.adapter, VendorAdapterId::Deepseek);
+
+        // `models` 只列官方当前两模型；旧名不再出现。
+        let models = matched_vendor_models("deepseek-flash", "https://api.deepseek.com/v1");
+        assert_eq!(models[0], "deepseek-flash");
+        assert!(models.iter().any(|m| m == "deepseek-v4-pro"));
+        assert!(!models.iter().any(|m| m == "deepseek-v4-flash"));
         assert!(!models.iter().any(|m| m == "deepseek-chat"));
-        let via_model = resolved_vendor_caps("deepseek-v4-flash", "https://llm.example.com/v1");
+
+        // 换 api_base 仍能按模型名前缀识别厂商（此时 image 能力跟随默认值）。
+        let via_model = resolved_vendor_caps("deepseek-flash", "https://llm.example.com/v1");
         assert_eq!(via_model.adapter, VendorAdapterId::Deepseek);
-        assert!(!via_model.image_url_content_parts);
     }
 
     #[test]

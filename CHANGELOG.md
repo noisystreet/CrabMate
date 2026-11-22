@@ -43,6 +43,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **DeepSeek model ids migrated to the current catalog.** The vendor catalog and the embedded default `model`
+  now use the two ids DeepSeek actually serves — `deepseek-flash` (DeepSeek-V4.1-Flash-1017, **image
+  understanding supported**) and `deepseek-v4-pro` (no image support) — instead of `deepseek-v4-flash` /
+  `deepseek-v4-flash-vision-exp`. Those legacy ids still work (requests are served by V4.1-Flash and billed at
+  Flash rates) but no longer name a distinct model, so keeping them as advertised defaults was misleading.
+  `deepseek-flash` now takes the image-capable path (`image_url_content_parts`); `id_contains = ["-vision"]`
+  stays so callers still on the legacy ids keep the vision treatment. `--api-base-set deepseek` suggests
+  `deepseek-flash`.
 - **Prompt prefix stability: `/<skill-id>` body moved out of the first `system`, deterministic tool-table
   order (#1475).** The forced skill body used to be appended to the first `system` message, which made the
   *entire* prompt prefix (system + all history) uncacheable for that turn — DeepSeek's disk cache matches
