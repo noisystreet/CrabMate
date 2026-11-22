@@ -122,10 +122,15 @@ impl PerTurnCounters {
     /// 两道闸：① 每回合总次数不超过 [`MAX_COMPLETION_JUDGE_CALLS_PER_TURN`]（成本上限）；
     /// ② 证据指纹与上次相同则跳过（同一份事实重复问没意义）。任一不满足即不调用 LLM。
     pub(crate) fn take_completion_judge_slot(&mut self, fingerprint: u64) -> bool {
-        if self.completion_judge_calls >= MAX_COMPLETION_JUDGE_CALLS_PER_TURN {
+        // 证据没变 → 上次结论仍然成立，也不必再问（去重）。
+        if self.completion_judge_evidence_fingerprint == Some(fingerprint) {
             return false;
         }
-        if self.completion_judge_evidence_fingerprint == Some(fingerprint) {
+        // 证据已变但本回合判定预算耗尽 → 之后不会再判，旧结论**可能已过期**
+        // （典型形态：判过 `unsatisfied` 后模型又干活并成功）。#1472 要求这种情形按
+        // fail-open 回到 `completed`，绝不能用过期结论把已完成的回合报成 `partial`。
+        if self.completion_judge_calls >= MAX_COMPLETION_JUDGE_CALLS_PER_TURN {
+            self.completion_verdict = None;
             return false;
         }
         self.completion_judge_evidence_fingerprint = Some(fingerprint);
@@ -367,6 +372,44 @@ mod completion_judge_slot_tests {
             allowed,
             super::MAX_COMPLETION_JUDGE_CALLS_PER_TURN,
             "证据持续变化时也必须停在每回合上限"
+        );
+    }
+
+    /// #1472：预算耗尽后旧结论必须失效——否则「判过 `unsatisfied`、之后又干活干完」的回合
+    /// 会被过期结论误报成 `partial`。因此「证据变了」+「预算尽」时必须清结论（fail-open）。
+    #[test]
+    fn exhausted_budget_invalidates_stale_verdict() {
+        use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+        let mut c = PerTurnCounters::new();
+        let unsat = || CompletionVerdict::new(CompletionStatus::Unsatisfied, Vec::new(), Vec::new());
+        for fp in 0..super::MAX_COMPLETION_JUDGE_CALLS_PER_TURN as u64 {
+            if c.take_completion_judge_slot(fp) {
+                c.record_completion_verdict(unsat());
+            }
+        }
+        // 预算已尽，又来新证据 → 不再判定，且旧结论必须失效
+        assert!(!c.take_completion_judge_slot(999));
+        assert!(
+            c.take_completion_verdict().is_none(),
+            "预算耗尽后过期结论必须失效（fail-open 回到 completed）"
+        );
+    }
+
+    /// #1472：证据**未变**时去重，但已有结论仍然成立，不得被清除。
+    #[test]
+    fn same_fingerprint_keeps_verdict() {
+        use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
+        let mut c = PerTurnCounters::new();
+        assert!(c.take_completion_judge_slot(7));
+        c.record_completion_verdict(CompletionVerdict::new(
+            CompletionStatus::Partial,
+            Vec::new(),
+            Vec::new(),
+        ));
+        assert!(!c.take_completion_judge_slot(7), "同一指纹应跳过");
+        assert!(
+            c.take_completion_verdict().is_some(),
+            "证据没变时结论仍然成立，不得被清除"
         );
     }
 }
