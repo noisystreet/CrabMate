@@ -172,6 +172,28 @@ async fn cwd_and_cd_prefix_use_the_same_root_set() {
     assert!(msg.contains("不允许工作区外路径参数"), "{msg}");
 }
 
+/// `cd` 到**不存在**的目标：gate 不下结论（确认不了落点），但执行期必定拒。
+///
+/// 这条钉住一个容易误判的语义：`scan_cd_join_escape` 对「不是目录」的目标返回 `within`，
+/// 因此它不会被列进 `escaping`——但 `prepare_run_command_spec` 的 `resolve_cd_prefix_dir`
+/// 仍要求目录已存在，报 `CdPrefixInvalid`。也就是说放宽的只是「根内**已存在**目录」，
+/// 不是「任何路径前缀」。
+#[tokio::test]
+async fn cd_to_missing_dir_is_not_guessed_by_gate() {
+    let f = Fixture::new("cd_missing", true);
+    let allowed = ["cd".to_string(), "ls".to_string()];
+    let l2 = project_caps(PermissionLevel::Workspace, f.cfg.as_ref());
+    let ctx = test_policy_context_with_caps_at(&f.cfg, &l2, None, ExecMode::Sync, f.ws());
+    let parsed = parsed_run_command(r#"{"command":"cd","args":["../nope","&&","ls"]}"#);
+
+    assert_eq!(
+        approve_external_run_command_paths_if_needed(&parsed, &allowed, &ctx)
+            .await
+            .expect("目标不存在不由 gate 定论"),
+        ExternalPathGate::ApprovedWithinRoots
+    );
+}
+
 /// `terminal_session` 与 `run_command` 共用 `evaluate_policy`：Pty 档同样受益。
 #[tokio::test]
 async fn pty_mode_shares_the_same_root_judgement() {

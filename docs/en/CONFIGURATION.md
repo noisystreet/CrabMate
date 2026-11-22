@@ -774,9 +774,10 @@ One knob projects onto six axes (tool visibility / external tools / path / comma
   `{session root} ∪ workspace_allowed_roots` (a path under any allowed root is admitted; `../crabmate-client` no longer prompts).
   L1 stays session-root-only and L4 stays unrestricted; an **empty** list fails closed back to `SessionRoot`
   (deliberately the opposite of the Web-selection rule "empty = anywhere").
-  The **command axis** is covered too (#1315): `run_command` / `terminal_session` judge argv and `cwd`
-  against the same root set, and only an all-in-root call is treated as having no external path
-  (`script` bodies still go through shell approval; the Docker sandbox still clamps to the session root).
+  The **command axis** is covered too (#1315): `run_command` (argv and `cwd`) and the argv of a new
+  `terminal_session` are judged against the same root set, and only an all-in-root call is treated as having
+  no external path (`script` bodies still go through shell approval; the Docker sandbox still clamps to the
+  session root; `input` typed into a running session stays on the shell side).
 - **S8 landed (#1150)**: the Docker sandbox narrows `net_scope` (no `sync_default_tool_sandbox_docker_network`
   ⇒ no container egress ⇒ `None`) and `path_scope` (`AllowedRoots` ⇒ session root — sibling roots are not
   mounted). Both surface in `GET /permission`'s `clamped_by` as `sandbox` **only when really clamped**, plus
