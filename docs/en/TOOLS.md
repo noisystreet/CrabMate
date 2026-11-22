@@ -467,14 +467,16 @@ This document describes built-in tools, common function-calling JSON examples, a
   against `{session root} ∪ workspace_allowed_roots` — a path under any allowed root is admitted, so the
   sibling `../crabmate-client/...` no longer needs approval. L1 stays session-root-only, L4 stays
   unrestricted, and an empty list fails closed back to the session root.
-- **Command axis (#1315)**: `run_command` / `terminal_session` judge argv and `cwd` against the same root
-  set. A path-shaped arg (`..` traversal / absolute) landing under an allowed root counts as safe; only when
-  **every** candidate arg is in-root does the level treat the call as having no external path, otherwise it
-  stays hard-deny / approval, and the message lists **only** the escaping args.
-  Kept on purpose: `script` bodies still go through shell approval (no per-arg root check); the Docker
-  sandbox still uses the session root (only `working_dir` is mounted); options that move the anchor for later
-  args (`git -C`, `cargo --manifest-path`, `tar -C`) do not advance it — that can only over-deny, never
-  under-deny.
+- **Command axis (#1315)**: `run_command` (argv and `cwd`) and `terminal_session` (argv of a new session)
+  judge args against the same root set — `terminal_session` has no `cwd` field, and `input` typed into a
+  running session stays on the shell-approval side. A path-shaped arg (`..` traversal / absolute) landing
+  under an allowed root counts as safe; only when **every** candidate arg is in-root does the level treat
+  the call as having no external path, otherwise it stays hard-deny / approval, and the message lists
+  **only** the escaping args.
+  Kept on purpose: `run_command` `script` bodies still go through shell approval (no per-arg root check);
+  the Docker sandbox still uses the session root (only `working_dir` is mounted); options that move the
+  anchor for later args (`git -C`, `cargo --manifest-path`, `tar -C`) do not advance it — that can only
+  over-deny, never under-deny.
 - Approval granularity is **per call**: an `approved`-level `AllowAlways` key is a level-scoped whole-tool
   switch, not a per-path allowlist — approving a call that had escaping args releases all of its args.
 - The Docker sandbox narrows both axes further: with no `sync_default_tool_sandbox_docker_network` the

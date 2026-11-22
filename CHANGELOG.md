@@ -48,8 +48,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   even L4 ever worked for that tool), and user-message `@path` expansion now follows the same axis instead of
   staying pinned to `SessionRoot`. The Docker sync sandbox keeps `SessionRoot` on purpose — there is no
   mount for sibling roots.
-- **Multi-root path scope now also covers the command axis (#1315).** `run_command` / `terminal_session`
-  judge argv and `cwd` against `{session root} ∪ workspace_allowed_roots`: a `..` / absolute path arg under
+- **Multi-root path scope now also covers the command axis (#1315).** `run_command` (argv and `cwd`) and
+  the argv of a new `terminal_session` are judged against `{session root} ∪ workspace_allowed_roots`: a
+  `..` / absolute path arg under
   any allowed root counts as safe, so `cargo --manifest-path ../crabmate-client/Cargo.toml` and
   `git -C ../crabmate-client status` stop prompting at `approved` and stop hard-failing at `workspace`.
   Only when **every** path-shaped arg is in-root is the call treated as having no external path; otherwise

@@ -692,7 +692,7 @@ dst.permission.permission_level_max =
 | **S5c** | `GET /status` 两个默认值 + `StatusShellView` golden 更新 + `GET /tools` 的 `available_at_level`（§16.4） | 无 | ✅ |
 | **S5d** | 文档同步（§14）+ Client（另仓）等级选择器、`clamped_by` 文案与 L4 二次确认 | 无 | **部分**：本仓文档已同步（见 §14 状态列）；Client（另仓）的选择器 / 文案 / L4 二次确认未做 |
 | **S6** | 空闲态写入口 `POST /conversation/state`（§16.1.1；编号原与 S5d 并行，规划期未列在本表，落地时占用 S6） | 空闲态切档立即生效，不必等下一轮 `/chat` 顺带 | ✅ |
-| **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ✅ **已落地**：`project_caps` 对 L2 / L3 + 非空根产出 `AllowedRoots`（分档在 `cm_types::path_scope_for`，与 `self_config_info` / `GET /permission` 同源）；`PathAccess` 是唯一判定点，按最长前缀在 {会话根} ∪ 允许根中选解析基。命令轴（argv / `cwd`）同档覆盖（#1315）：逐参数按根集合判；`script` 正文与 Docker 沙盒保持原边界 |
+| **S7** | 可选 `PathScope::AllowedRoots`（见 §15 Q4；**原编号 S6**，因 S6 已被 `POST /conversation/state` 占用而改号） | 仅显式配置多根时 | ✅ **已落地**：`project_caps` 对 L2 / L3 + 非空根产出 `AllowedRoots`（分档在 `cm_types::path_scope_for`，与 `self_config_info` / `GET /permission` 同源）；`PathAccess` 是唯一判定点，按最长前缀在 {会话根} ∪ 允许根中选解析基。命令轴同档覆盖（#1315）：`run_command` 的 argv / `cwd` 与 `terminal_session` 的 argv 逐参数按根集合判；`script` 正文与 Docker 沙盒保持原边界 |
 | **S8** | 沙盒两轴接线（§6.4 / MB-6，#1150） | 仅 `sync_default_tool_sandbox_mode = docker` 时 | ✅ **已落地**：`cm_agent::permission::sandbox_clamps` 收窄 `net_scope`（未配网络名 ⇒ `None`）与 `path_scope`（`AllowedRoots` ⇒ `SessionRoot`），`clamped_by` 与启动日志报 `sandbox`；`unrestricted` × Docker 在 `finalize` 期拒绝 |
 
 排序理由：**R1–R3（§17）先于 S1**——它们是纯等价重构，把 S3 在文件类工具上的改动面从 20+ 调用点压到「1 个载体 + 2 个构造宏」，
@@ -754,7 +754,7 @@ dst.permission.permission_level_max =
 | **Q1** | 默认等级是否在**新装**环境从 `approved` 改为 `workspace`？ | **已结案**：保持 `approved`（= 现状）；“更安全”诉求由显式 `permission_level_max = "workspace"` 表达，不动默认等级 |
 | **Q2** | L4 是否允许出现在 Web？ | **已结案**：loopback 默认允许（推导 `unrestricted`，客户端可自由切）；非 loopback 需显式配置 + `CM_ALLOW_…` 开关（§5.3 / MB-3） |
 | **Q3** | `session_mode` 是否折进等级？ | **已结案：不折**（§4.3）。二者职责不同（一个决定提示词附录与编排姿态，一个决定能力天花板），`min()` 组合足够 |
-| **Q4** | 是否实现 `PathScope::AllowedRoots`（S7，原编号 S6）？ | **已结案并落地**：L2 / L3 + 非空 `workspace_allowed_roots` 产出 `AllowedRoots`，消掉 `../crabmate-client` 兄弟仓每次都要审批的摩擦（AGENTS.md 明确要求本地同级仓）。**命令轴同档覆盖**（#1315）：`run_command` / `terminal_session` 的 argv 与 `cwd` 按同一根集合逐参数判，`script` 正文仍走 shell 审批、Docker 沙盒仍按会话根 |
+| **Q4** | 是否实现 `PathScope::AllowedRoots`（S7，原编号 S6）？ | **已结案并落地**：L2 / L3 + 非空 `workspace_allowed_roots` 产出 `AllowedRoots`，消掉 `../crabmate-client` 兄弟仓每次都要审批的摩擦（AGENTS.md 明确要求本地同级仓）。**命令轴同档覆盖**（#1315）：`run_command` 的 argv 与 `cwd`、`terminal_session` 新会话的 argv 按同一根集合逐参数判，`script` 正文仍走 shell 审批、Docker 沙盒仍按会话根 |
 | **Q5** | L4 下是否保留 `permission_deny_system_paths`？ | **默认清空**（§8.3）：`unrestricted` 名实要相符；加固由运维显式填写 |
 | **Q6** | `AllowAlways` 的等级作用域用前缀键还是结构化元组存储？ | **已结案：前缀键**（§6.3），作为**第一优先级方案**：沿用现有 `HashSet<String>`，不加新类型、不改序列化、不动调用方签名；集合是内存态，零迁移 |
 | **Q7** | `GET /tools` 用每项 `available_at_level: bool`，还是 `?permission_level=` 过滤？ | **已结案：`available_at_level: bool`**（§16.4）：`GET /tools` 是“枚举 + 策略投影”，不是“本回合可用集” |
