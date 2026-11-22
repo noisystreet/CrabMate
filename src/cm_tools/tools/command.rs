@@ -27,7 +27,7 @@ use prepare_invocation::prepare_run_command_spec;
 #[cfg(test)]
 pub use command_rate_limit::reset_run_command_rate_limit_for_tests;
 pub use prepare_invocation::{CommandSpec, parse_command_spec};
-pub use prepare_invocation::scan_run_command_unsafe_args_spec;
+pub use prepare_invocation::{UnsafeArgScan, scan_run_command_unsafe_args_spec};
 pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
 pub use command_shell_script::{

@@ -46,9 +46,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `GET /permission` and `self_config_info` now report `path_scope = allowed_roots` in that configuration.
   `read_file`'s registered runner also stops dropping `path_scope` (it silently forced `SessionRoot`, so not
   even L4 ever worked for that tool), and user-message `@path` expansion now follows the same axis instead of
-  staying pinned to `SessionRoot`. The **command axis is not covered**: `run_command` /
-  `terminal_session` argv and `cwd` gates still use the session root (#1315). The Docker sync sandbox keeps
-  `SessionRoot` on purpose — there is no mount for sibling roots.
+  staying pinned to `SessionRoot`. The Docker sync sandbox keeps `SessionRoot` on purpose — there is no
+  mount for sibling roots.
+- **Multi-root path scope now also covers the command axis (#1315).** `run_command` / `terminal_session`
+  judge argv and `cwd` against `{session root} ∪ workspace_allowed_roots`: a `..` / absolute path arg under
+  any allowed root counts as safe, so `cargo --manifest-path ../crabmate-client/Cargo.toml` and
+  `git -C ../crabmate-client status` stop prompting at `approved` and stop hard-failing at `workspace`.
+  Only when **every** path-shaped arg is in-root is the call treated as having no external path; otherwise
+  the deny / approval message lists just the escaping args rather than the whole argv. Two behaviours stay
+  put: `script` bodies still require shell approval, and the Docker sandbox still clamps to `SessionRoot`.
+  Granularity is unchanged — an `approved` `AllowAlways` key is a level-scoped whole-tool switch, so
+  approving a partially escaping call releases all of its args. `cwd` is no longer rejected at parse time
+  (that check could not see the root set); the decision moved to the scan gate plus
+  `prepare_run_command_spec`, keeping the same `UnsafeArg`.
 - **No business frames after a terminal frame (#1338 E4/S1).** The SSE hub now **refuses to deliver** a turn's
   business frames once `RUN_FINISHED` / `RUN_ERROR` has gone out: the frame is dropped before a `seq` is assigned,
   so it neither enters the resume ring nor reaches HTTP (`stream_resume` therefore has no sequence hole). Two

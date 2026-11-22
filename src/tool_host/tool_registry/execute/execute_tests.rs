@@ -123,6 +123,27 @@ pub(super) fn test_policy_context_with_caps<'a>(
     }
 }
 
+/// 同 [`test_policy_context_with_caps`]，但可指定工作目录。
+///
+/// S7-cmd（命令轴根集合）用例需要真实的 `session` 目录：`"."` 下「根内 / 根外」失去区分度，
+/// 且 `../sibling` 会指到仓库外面去。
+pub(super) fn test_policy_context_with_caps_at<'a>(
+    cfg: &'a Arc<AgentConfig>,
+    permission: &'a dyn crate::cm_agent::permission::PolicyEngine,
+    web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    mode: ExecMode,
+    workspace: &'a std::path::Path,
+) -> PolicyContext<'a> {
+    PolicyContext {
+        cfg,
+        workspace,
+        web_ctx,
+        mode,
+        sse_command: "run_command",
+        permission: Some(permission),
+    }
+}
+
 /// 测试专用的 owned 评估结果。
 ///
 /// R3 后 [`PolicyDecision`] 只**借用** [`RunCommandCaps`]（借用生命周期绑不住

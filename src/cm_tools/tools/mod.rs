@@ -19,8 +19,8 @@ pub use command_outcome::CommandDigest;
 #[cfg(test)]
 pub use command_outcome::ExitStatusKind;
 pub use command::{
-    CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, allowlist_allows_all,
-    argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
+    CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, UnsafeArgScan,
+    allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
     dash_c_script_body, is_shell_dash_c_invocation,
     join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
