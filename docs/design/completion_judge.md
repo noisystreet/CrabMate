@@ -83,10 +83,17 @@ pub struct CompletionVerdict {
     pub status: CompletionStatus,
     pub evidence_refs: Vec<String>,
     pub missing: Vec<String>,   // 截断到上限
+    /// 本次结论是**锚点校验降级**来的（模型原本给 `satisfied`，见 §4），而非模型自己判否。
+    pub degraded: bool,
 }
 ```
 
 `missing` 为空时序列化省略；`evidence_refs` 上限 16 条、`missing` 上限 8 条、单条 120 字符。
+
+`degraded == true` **只可能与** `unsatisfied` **同现**：§4 的降级只作用于 `satisfied`，
+`partial` 不受锚点校验影响。终态层据此区分「引用格式不合规」与「任务真没做完」——只有后者
+才把 `stream_ended.reason` 记成 `partial`（#1472）。若将来锚点校验开始改写 `partial`/
+`satisfied` 以外的状态，`chat_job_queue::stream_finish::verdict_marks_incomplete` 与本节需同步。
 
 ---
 

@@ -96,8 +96,15 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** (legacy required fields plus Phase 3 soft fields below) | Updates `revision`; context meter prefers Server `used_input_tokens / max_input_tokens` |
 | `stream_draining` | Non-terminal wrap-up: model/tools done, persisting; `job_id` | Web: may enter Draining UI early; does **not** set `saw_stream_ended` |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
-| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`); optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`). **`truncated`**: upstream `finish_reason == "length"` (token cap) or the stream was cut off before `[DONE]` (no clean finish); layer-1 truncation detection, which takes precedence over `fallback` / `completed` / `no_output` | Web: extract first and swallow (independent of other control-plane branches); update context meter; stop auto-reconnect |
+| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `truncated` / `cancelled` / `conflict` / `fallback` / `partial` / `no_output` / `gone`); optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`). **`truncated`**: upstream `finish_reason == "length"` (token cap) or the stream was cut off before `[DONE]` (no clean finish); layer-1 truncation detection, which takes precedence over `fallback` / `completed` / `no_output` | Web: extract first and swallow (independent of other control-plane branches); update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
+
+**`reason == "partial"`**: the turn **has** a visible final answer, but the tier-2 completion judge
+  (`completion_judge`) returned `partial` / `unsatisfied` — "it spoke, but it did not finish" (#1472).
+  Differs from `fallback` (the text here comes from the model, not from a server-side synthesis) and from
+  `completed` only in the tier-2 verdict. Still `completed`: verdict `satisfied`; a `satisfied` downgraded
+  by anchor validation (`degraded` — a citation-format problem, not unfinished work); and **no verdict at
+  all** (judge skipped / disabled / failed / evidence changed) — a missing verdict is always fail-open.
 
 Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`,
   `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`,

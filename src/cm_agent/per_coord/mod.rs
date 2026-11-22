@@ -19,6 +19,7 @@ use crate::cm_types::Message;
 use crate::cm_agent::plan_artifact;
 use crate::cm_agent::plan_rewrite;
 use crate::cm_agent::workflow_reflection_controller::{self, WorkflowReflectionController};
+use crate::cm_agent::completion_judge::CompletionVerdict;
 use serde_json::Value;
 
 pub use plan_rewrite::PlanRewriteExhaustedReason;
@@ -131,6 +132,16 @@ impl PerCoordinator {
     /// 本回合是否已确认完成（供冗余探针抑制等同步门读取）。
     pub(crate) fn completion_confirmed(&self) -> bool {
         self.counters.completion_confirmed()
+    }
+
+    /// 记录第 ② 层判定结论（#1472）：早停门写入，收尾时搬去 `PerTurnFlight`。
+    pub(crate) fn record_completion_verdict(&mut self, verdict: CompletionVerdict) {
+        self.counters.record_completion_verdict(verdict);
+    }
+
+    /// 取出第 ② 层判定结论（收尾搬运用；取出后本回合不再持有）。
+    pub(crate) fn take_completion_verdict(&mut self) -> Option<CompletionVerdict> {
+        self.counters.take_completion_verdict()
     }
 }
 

@@ -97,6 +97,12 @@ pub struct CompletionVerdict {
     pub evidence_refs: Vec<String>,
     /// 还差什么（`partial` / 降级原因）。
     pub missing: Vec<String>,
+    /// 是否由**锚点校验**降级而来：模型原本给 `satisfied`，但 `evidence_refs` 引用了
+    /// 不存在 / 非硬证据的 id，被 [`Self::validate_against`] 降级为 `unsatisfied`。
+    ///
+    /// 与「模型自己判 `partial` / `unsatisfied`」的语义**不同**：前者只是引用格式不合规，
+    /// 并不代表任务没做完。终态层据此避免把「已完成但引用不规范」误报成未完成（#1472）。
+    pub degraded: bool,
 }
 
 impl CompletionVerdict {
@@ -126,6 +132,7 @@ impl CompletionVerdict {
             status,
             evidence_refs: refs,
             missing,
+            degraded: false,
         }
     }
 
@@ -133,6 +140,7 @@ impl CompletionVerdict {
     #[must_use]
     pub fn degraded(mut self, reason: impl Into<String>) -> Self {
         self.status = CompletionStatus::Unsatisfied;
+        self.degraded = true;
         let reason = reason.into();
         if !reason.trim().is_empty() && self.missing.len() < Self::MAX_MISSING {
             self.missing.push(truncate_chars(reason.trim(), Self::MAX_MISSING_CHARS));

@@ -430,21 +430,53 @@ fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
         .any(|m| assistant_output_kind(m).counts_as_visible_output())
 }
 
+/// 判定第 ② 层结论是否表示「未完成」（#1472）。
+///
+/// 只认模型**自己**给出的结论：
+///
+/// - `partial` → 未完成；
+/// - `unsatisfied` → 未完成，**除非**它是锚点降级来的（`degraded`）：那说明模型本来判
+///   `satisfied`，只是 `evidence_refs` 引用不合规，属格式问题而非任务没做完；
+/// - `satisfied` / `None`（judge 未跑 / 开关关 / 失败 / 证据已变）→ 不算，保持 fail-open。
+///
+/// **为什么只对 `unsatisfied` 看 `degraded`**：`CompletionVerdict::validate_against` 开头
+/// 即 `if self.status != Satisfied { return self; }`，锚点校验只降级 `satisfied`，所以
+/// `degraded == true` 只会与 `unsatisfied` 同现。对 `partial` 再判一次 `degraded` 是死条件。
+/// 这里改成穷举 `match` 而非 `if`/`matches!`，是为了让将来新增 `CompletionStatus` 变体时
+/// 编译期就会报错，而不是静默落进「不算未完成」。
+fn verdict_marks_incomplete(
+    verdict: Option<&crate::cm_agent::completion_judge::CompletionVerdict>,
+) -> bool {
+    use crate::cm_agent::completion_judge::CompletionStatus;
+    match verdict {
+        Some(v) => match v.status {
+            CompletionStatus::Partial => true,
+            CompletionStatus::Unsatisfied => !v.degraded,
+            CompletionStatus::Satisfied => false,
+        },
+        None => false,
+    }
+}
+
 /// 层 2/4/1：一轮成功收尾时的 `stream_ended` 终态判定（单一事实来源，便于单独测试）。
 ///
 /// - `truncated==true` → [`StreamEndReason::Truncated`]（层 1：上游 `finish_reason=="length"` 或流被切断）；
 /// - `fallback_emitted==true` → [`StreamEndReason::Fallback`]（层 4 兜底已补发终答）；
+/// - 完成判定第 ② 层判「未完成」→ [`StreamEndReason::Partial`]（#1472：有终答但没做完）；
 /// - 否则本轮存在可见助手输出（正文或工具调用）→ [`StreamEndReason::Completed`]；
 /// - 否则（仅思维链 / 空）→ [`StreamEndReason::NoOutput`]。
 pub(crate) fn completed_turn_end_reason(
     fallback_emitted: bool,
     truncated: bool,
     messages: &[Message],
+    verdict: Option<&crate::cm_agent::completion_judge::CompletionVerdict>,
 ) -> StreamEndReason {
     if truncated {
         StreamEndReason::Truncated
     } else if fallback_emitted {
         StreamEndReason::Fallback
+    } else if verdict_marks_incomplete(verdict) {
+        StreamEndReason::Partial
     } else if current_turn_has_visible_assistant_output(messages) {
         StreamEndReason::Completed
     } else {
@@ -574,7 +606,12 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
             let fallback_emitted =
                 emit_missing_final_response_fallback_if_needed(flight, sse_tx, job_id, messages)
                     .await;
-            let end_reason = completed_turn_end_reason(fallback_emitted, truncated, messages);
+            let end_reason = completed_turn_end_reason(
+                fallback_emitted,
+                truncated,
+                messages,
+                flight.completion_verdict().as_ref(),
+            );
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,

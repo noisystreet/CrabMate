@@ -7,6 +7,9 @@ pub enum StreamEndReason {
     Cancelled,
     Conflict,
     Fallback,
+    /// 有终答，但完成判定第 ② 层（LLM）认为**未完成**（`partial` / `unsatisfied`，且非锚点降级）。
+    /// 与 `Completed` 的区别仅此一点；消费方应按「未完成」展示（#1472）。
+    Partial,
     NoOutput,
     Gone,
 }
@@ -20,6 +23,7 @@ impl StreamEndReason {
             Self::Conflict => "conflict",
             Self::Fallback => "fallback",
             Self::NoOutput => "no_output",
+            Self::Partial => "partial",
             Self::Gone => "gone",
         }
     }
@@ -32,6 +36,7 @@ impl StreamEndReason {
             "conflict" => Some(Self::Conflict),
             "fallback" => Some(Self::Fallback),
             "no_output" => Some(Self::NoOutput),
+            "partial" => Some(Self::Partial),
             "gone" => Some(Self::Gone),
             _ => None,
         }
@@ -45,6 +50,7 @@ impl StreamEndReason {
             Self::Conflict => "会话冲突",
             Self::Fallback => "补偿收尾",
             Self::NoOutput => "无输出结束",
+            Self::Partial => "未完成",
             Self::Gone => "流已回收",
         }
     }
@@ -57,6 +63,7 @@ impl StreamEndReason {
             Self::Conflict => "conflict",
             Self::Fallback => "fallback",
             Self::NoOutput => "no output",
+            Self::Partial => "partial",
             Self::Gone => "gone",
         }
     }
@@ -89,6 +96,7 @@ mod tests {
             StreamEndReason::Conflict,
             StreamEndReason::Fallback,
             StreamEndReason::NoOutput,
+            StreamEndReason::Partial,
             StreamEndReason::Gone,
         ];
         for reason in all {
