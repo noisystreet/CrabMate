@@ -2,7 +2,7 @@ fn drain_pending_decoder_lines<F>(
     line_no: &mut usize,
     pending: &mut String,
     on_line: &mut F,
-) -> Result<std::ops::ControlFlow<()>, String>
+) -> Result<std::ops::ControlFlow<()>, TextDecodeError>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {

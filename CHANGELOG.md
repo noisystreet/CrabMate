@@ -197,6 +197,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   config case to the structured kind. Being reachable at all is what changes two outputs for a server with
   **neither** `command` nor `url` (`mcp list --probe`, `GET /user-data/mcp-servers/status`): `last_error` goes
   from `command 为空` to 「须配置 command 或 url 之一」and `last_error_kind` from `unknown` to `config`.
+- **Text-decode errors are typed, so `read_file`'s error code no longer depends on wording (#1478).**
+  `cm_tools::text_encoding` returned `Result<_, String>`, and `read_file_pipeline` recovered the category from
+  that very string (`contains("UTF-8")` / `contains("非法字节")` / `contains("解码")` / `contains("非法序列")`),
+  which is what chose between `read_file_utf8_decode`, `read_file_io` and `read_file_internal`. The module now
+  returns `TextDecodeError` (`UnsupportedEncoding` / `Utf8Invalid` / `DecoderInvalid` / `InvalidBytes` / `Io` /
+  `Internal`); `From<TextDecodeError> for ReadFileBodyError` maps **variant → code**, and
+  `read_file_body_error_from_pipeline_string` — documented as the pipeline's last wording-dependent branch — is
+  deleted. `Display` reproduces every existing Chinese message byte-for-byte (including the two
+  UTF-8-with-BOM flavors and the decoder's malformed / truncated split), so user-visible text and the
+  `read_file_*` codes are unchanged; the `web/workspace` callers just adapt with `.to_string()`.
 
 ### Added
 

@@ -6,8 +6,8 @@ use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::cm_tools::text_encoding::{
-    DecodedFileNote, ResolvedTextEncoding, SNIFF_MAX_BYTES, TextEncodingName, count_decoded_lines,
-    for_each_decoded_line_from_file_with_head, open_file_and_read_head,
+    DecodedFileNote, ResolvedTextEncoding, SNIFF_MAX_BYTES, TextDecodeError, TextEncodingName,
+    count_decoded_lines, for_each_decoded_line_from_file_with_head, open_file_and_read_head,
     open_file_and_read_head_from, resolve_text_encoding,
 };
 
@@ -20,7 +20,7 @@ pub(super) const READ_FILE_COUNT_TOTAL_MAX_BYTES: u64 = 32 * 1024 * 1024;
 pub(super) fn sniff_head_bytes_from(
     file: std::fs::File,
     enc_name: TextEncodingName,
-) -> Result<(std::fs::File, Vec<u8>), String> {
+) -> Result<(std::fs::File, Vec<u8>), TextDecodeError> {
     let cap = match enc_name {
         TextEncodingName::Utf8 => 0usize,
         TextEncodingName::Utf8Sig => 3,
@@ -35,7 +35,7 @@ pub(super) fn sniff_head_bytes_from(
 pub(super) fn count_lines_for_read(
     path: &Path,
     enc_name: TextEncodingName,
-) -> Result<usize, String> {
+) -> Result<usize, TextDecodeError> {
     let cap = match enc_name {
         TextEncodingName::Utf8 => 0usize,
         TextEncodingName::Utf8Sig => 3,
@@ -55,11 +55,11 @@ pub(super) fn count_lines_for_read(
     }
 }
 
-fn count_lines_utf8_strict(path: &Path, skip: usize) -> Result<usize, String> {
-    let mut f = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+fn count_lines_utf8_strict(path: &Path, skip: usize) -> Result<usize, TextDecodeError> {
+    let mut f = File::open(path).map_err(|e| TextDecodeError::io(format!("打开文件失败: {}", e)))?;
     if skip > 0 {
         f.seek(SeekFrom::Start(skip as u64))
-            .map_err(|e| format!("定位文件失败: {}", e))?;
+            .map_err(|e| TextDecodeError::io(format!("定位文件失败: {}", e)))?;
     }
     let mut reader = BufReader::new(f);
     let mut count = 0usize;
@@ -69,12 +69,11 @@ fn count_lines_utf8_strict(path: &Path, skip: usize) -> Result<usize, String> {
         let n = match reader.read_line(&mut buf) {
             Ok(n) => n,
             Err(e) if e.kind() == ErrorKind::InvalidData => {
-                return Err(
-                    "按 UTF-8 统计行数失败：文件含非法字节序列。请指定 encoding（如 gb18030、big5）或使用 auto。"
-                        .to_string(),
-                );
+                return Err(TextDecodeError::invalid_bytes(
+                    "按 UTF-8 统计行数失败：文件含非法字节序列。请指定 encoding（如 gb18030、big5）或使用 auto。",
+                ));
             }
-            Err(e) => return Err(format!("读取失败: {}", e)),
+            Err(e) => return Err(TextDecodeError::io(format!("读取失败: {}", e))),
         };
         if n == 0 {
             break;
@@ -149,22 +148,17 @@ pub(super) struct ReadFileLinesResult {
     pub(super) has_more: bool,
 }
 
-/// 将仍返回 `String` 的下层（如 `text_encoding`）错误归为结构化类别；**唯一**依赖启发式子串之处。
-fn read_file_body_error_from_pipeline_string(message: String) -> ReadFileBodyError {
-    if message.contains("内部错误") {
-        ReadFileBodyError::Internal(message)
-    } else if message.starts_with("错误：start_line=")
-        || message.starts_with("错误：未读取到任何行")
-    {
-        ReadFileBodyError::InvalidRange(message)
-    } else if message.contains("UTF-8")
-        || message.contains("非法字节")
-        || message.contains("解码")
-        || message.contains("非法序列")
-    {
-        ReadFileBodyError::Utf8Decode(message)
-    } else {
-        ReadFileBodyError::Io(message)
+impl From<TextDecodeError> for ReadFileBodyError {
+    /// 类别只看变体：编码类 → `read_file_utf8_decode`，IO → `read_file_io`，内部 → `read_file_internal`。
+    fn from(e: TextDecodeError) -> Self {
+        match &e {
+            TextDecodeError::UnsupportedEncoding { .. }
+            | TextDecodeError::Utf8Invalid { .. }
+            | TextDecodeError::DecoderInvalid { .. }
+            | TextDecodeError::InvalidBytes { .. } => Self::Utf8Decode(e.to_string()),
+            TextDecodeError::Io { .. } => Self::Io(e.to_string()),
+            TextDecodeError::Internal { .. } => Self::Internal(e.to_string()),
+        }
     }
 }
 
@@ -207,9 +201,10 @@ pub(super) fn sniff_opened_file_encoding(
     enc_name: TextEncodingName,
 ) -> Result<(ResolvedTextEncoding, DecodedFileNote, File, Vec<u8>), crate::cm_tools::tool_result::ToolError> {
     let (file, head) = sniff_head_bytes_from(file, enc_name)
-        .map_err(|e| crate::cm_tools::tool_result::ToolError::external_code("read_file_io", e))?;
-    let (resolved, decode_note) = resolve_text_encoding(&head, enc_name)
-        .map_err(|e| crate::cm_tools::tool_result::ToolError::external_code("read_file_encoding", e))?;
+        .map_err(|e| crate::cm_tools::tool_result::ToolError::external_code("read_file_io", e.to_string()))?;
+    let (resolved, decode_note) = resolve_text_encoding(&head, enc_name).map_err(|e| {
+        crate::cm_tools::tool_result::ToolError::external_code("read_file_encoding", e.to_string())
+    })?;
     Ok((resolved, decode_note, file, head))
 }
 
@@ -223,7 +218,7 @@ pub(super) fn maybe_count_total_lines_for_read(
         return Ok(None);
     }
     count_lines_for_read(target, enc_name)
-        .map_err(|e| read_file_body_error_from_pipeline_string(e).into_tool_error())
+        .map_err(|e| ReadFileBodyError::from(e).into_tool_error())
         .map(Some)
 }
 
@@ -522,8 +517,7 @@ fn read_file_decoded_lines(
     let mut collected: Vec<(usize, String)> = Vec::new();
     let mut last_line_no = 0usize;
     let mut has_more = false;
-    let (resolved, _) = resolve_text_encoding(&head, enc_name)
-        .map_err(read_file_body_error_from_pipeline_string)?;
+    let (resolved, _) = resolve_text_encoding(&head, enc_name).map_err(ReadFileBodyError::from)?;
     let ResolvedTextEncoding::Decoder { .. } = resolved else {
         return Err(ReadFileBodyError::Internal(
             "内部错误：read_file_decoded_lines 需要解码器路径".to_string(),
@@ -541,7 +535,7 @@ fn read_file_decoded_lines(
             &mut has_more,
         )
     })
-    .map_err(read_file_body_error_from_pipeline_string)?;
+    .map_err(ReadFileBodyError::from)?;
 
     finalize_decoded_line_collection(
         working_dir,
@@ -611,4 +605,48 @@ fn assemble_read_output(p: AssembleReadOutputParams<'_>) -> String {
         ));
     }
     out.trim_end().to_string()
+}
+
+#[cfg(test)]
+mod body_error_mapping_tests {
+    use super::ReadFileBodyError;
+    use crate::cm_tools::text_encoding::TextDecodeError;
+
+    /// 类别只由变体决定：这些用例钉住 `read_file_*` 错误码，改文案不会改判定。
+    #[test]
+    fn text_decode_error_variants_pick_the_body_error_codes() {
+        // 经 `Vec` 传字节：直接写字面量会触发 `invalid_from_utf8` 的编译期 lint。
+        let invalid_utf8 = vec![0x41u8, 0xFF];
+        let utf8_err = std::str::from_utf8(&invalid_utf8).expect_err("测试输入应是非法 UTF-8");
+        let cases = [
+            (
+                TextDecodeError::unsupported_encoding("koi8-r"),
+                "read_file_utf8_decode",
+            ),
+            (
+                TextDecodeError::utf8_invalid(utf8_err, None),
+                "read_file_utf8_decode",
+            ),
+            (
+                TextDecodeError::decoder_malformed("GBK"),
+                "read_file_utf8_decode",
+            ),
+            (
+                TextDecodeError::invalid_bytes("按 UTF-8 统计行数失败：…"),
+                "read_file_utf8_decode",
+            ),
+            (
+                TextDecodeError::io("打开文件失败: 权限不足".to_string()),
+                "read_file_io",
+            ),
+            (
+                TextDecodeError::internal("内部错误：x"),
+                "read_file_internal",
+            ),
+        ];
+        for (err, expected_code) in cases {
+            let tool_err = ReadFileBodyError::from(err).into_tool_error();
+            assert_eq!(tool_err.code, expected_code);
+        }
+    }
 }

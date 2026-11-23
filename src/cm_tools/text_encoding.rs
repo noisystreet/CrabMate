@@ -44,8 +44,134 @@ pub struct DecodedFileNote {
     pub auto_detected: bool,
 }
 
+/// 读 / 解码文本文件的结构化错误。
+///
+/// 这些函数的失败类别此前只有 `String` 承载，上层要靠 `contains("UTF-8")` /
+/// `contains("解码")` 猜「是不是编码问题」。类别现在留在变体里，`Display` 逐字
+/// 复现原有中文文案（用户可见报错不变），调用方只按变体判定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextDecodeError {
+    /// `encoding` 参数值不受支持。
+    UnsupportedEncoding { raw: String },
+    /// UTF-8 严格解码遇非法序列；`skipped_bom` 非空表示已跳过该字节数的 BOM。
+    Utf8Invalid {
+        detail: String,
+        valid_up_to: usize,
+        skipped_bom: Option<usize>,
+    },
+    /// `encoding_rs` 解码器遇非法序列；`at_eof` 表示出现在流末尾的不完整序列。
+    DecoderInvalid {
+        label: &'static str,
+        at_eof: bool,
+    },
+    /// 其它解码类失败：调用点已渲染完整文案（`BufRead::read_line` 只给 `InvalidData`，无结构信息）。
+    InvalidBytes { detail: String },
+    /// 打开 / 读取 / 定位文件失败（`detail` 已含上下文前缀）。
+    Io { detail: String },
+    /// 内部不一致（例如把非解码器路径交给 `for_each_decoded_line`）。
+    Internal { detail: String },
+}
+
+impl TextDecodeError {
+    /// `encoding` 参数不受支持（`raw` 是调用方原样传入的值）。
+    pub fn unsupported_encoding(raw: &str) -> Self {
+        Self::UnsupportedEncoding {
+            raw: raw.to_string(),
+        }
+    }
+
+    /// UTF-8 严格解码失败；`skipped_bom` 非空表示先跳过了该字节数的 BOM。
+    pub fn utf8_invalid(err: std::str::Utf8Error, skipped_bom: Option<usize>) -> Self {
+        Self::Utf8Invalid {
+            detail: err.to_string(),
+            valid_up_to: err.valid_up_to(),
+            skipped_bom,
+        }
+    }
+
+    /// 解码器遇到非法字节序列（`encoding_rs` 的 `Malformed`）。
+    pub fn decoder_malformed(label: &'static str) -> Self {
+        Self::DecoderInvalid {
+            label,
+            at_eof: false,
+        }
+    }
+
+    /// 流末尾残留不完整序列（`encoding_rs` flush 时的 `Malformed`）。
+    pub fn decoder_truncated(label: &'static str) -> Self {
+        Self::DecoderInvalid { label, at_eof: true }
+    }
+
+    /// 其它解码类失败（调用点已渲染完整文案）。
+    pub fn invalid_bytes(detail: impl Into<String>) -> Self {
+        Self::InvalidBytes {
+            detail: detail.into(),
+        }
+    }
+
+    /// IO 失败（`detail` 由调用点拼好上下文，与历史措辞一致）。
+    pub fn io(detail: String) -> Self {
+        Self::Io { detail }
+    }
+
+    /// 内部不一致。
+    pub fn internal(detail: impl Into<String>) -> Self {
+        Self::Internal {
+            detail: detail.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for TextDecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedEncoding { raw } => write!(
+                f,
+                "错误：不支持的 encoding「{}」。可选：utf-8、utf-8-sig、gb18030、gbk、gb2312、big5、utf-16le、utf-16be、auto",
+                raw
+            ),
+            Self::Utf8Invalid {
+                detail,
+                valid_up_to,
+                skipped_bom: None,
+            } => write!(
+                f,
+                "按 UTF-8 解码失败：{}（字节偏移 {}）。请指定 encoding（如 gb18030、big5）或使用 auto。",
+                detail, valid_up_to
+            ),
+            Self::Utf8Invalid {
+                detail,
+                valid_up_to,
+                skipped_bom: Some(skip),
+            } => write!(
+                f,
+                "按 UTF-8（已跳过 {} 字节 BOM）解码失败：{}（相对切片偏移 {}）。请改用其它 encoding 或 auto。",
+                skip, detail, valid_up_to
+            ),
+            Self::DecoderInvalid {
+                label,
+                at_eof: false,
+            } => write!(
+                f,
+                "解码失败：检测到非法字节序列或与声明编码不一致（{}）。可尝试 encoding=auto，或改用 gb18030 / big5 / utf-8-sig 等。",
+                label
+            ),
+            Self::DecoderInvalid { label, at_eof: true } => write!(
+                f,
+                "解码失败：流末尾存在不完整或非法序列（{}）。",
+                label
+            ),
+            Self::InvalidBytes { detail } | Self::Io { detail } | Self::Internal { detail } => {
+                f.write_str(detail)
+            }
+        }
+    }
+}
+
+impl std::error::Error for TextDecodeError {}
+
 /// 解析工具 / API 传入的 `encoding` 字符串（大小写不敏感，`_` 与 `-` 等价）。
-pub fn parse_text_encoding_name(raw: Option<&str>) -> Result<TextEncodingName, String> {
+pub fn parse_text_encoding_name(raw: Option<&str>) -> Result<TextEncodingName, TextDecodeError> {
     let s = raw.unwrap_or("utf-8").trim();
     if s.is_empty() {
         return Ok(TextEncodingName::Utf8);
@@ -60,10 +186,7 @@ pub fn parse_text_encoding_name(raw: Option<&str>) -> Result<TextEncodingName, S
         "utf-16le" | "utf16le" => Ok(TextEncodingName::Utf16Le),
         "utf-16be" | "utf16be" => Ok(TextEncodingName::Utf16Be),
         "auto" => Ok(TextEncodingName::Auto),
-        _ => Err(format!(
-            "错误：不支持的 encoding「{}」。可选：utf-8、utf-8-sig、gb18030、gbk、gb2312、big5、utf-16le、utf-16be、auto",
-            s
-        )),
+        _ => Err(TextDecodeError::unsupported_encoding(s)),
     }
 }
 
@@ -102,7 +225,7 @@ fn static_label(enc: &'static Encoding) -> &'static str {
 pub fn resolve_text_encoding(
     head: &[u8],
     hint: TextEncodingName,
-) -> Result<(ResolvedTextEncoding, DecodedFileNote), String> {
+) -> Result<(ResolvedTextEncoding, DecodedFileNote), TextDecodeError> {
     let bom = bom_encoding_and_skip(head);
 
     match hint {
@@ -222,8 +345,11 @@ pub fn resolve_text_encoding(
 }
 
 /// 打开文件并读取不超过 `max_head` 的前缀（用于嗅探）；文件指针位于已读字节之后。
-pub fn open_file_and_read_head(path: &Path, max_head: usize) -> Result<(File, Vec<u8>), String> {
-    let file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+pub fn open_file_and_read_head(
+    path: &Path,
+    max_head: usize,
+) -> Result<(File, Vec<u8>), TextDecodeError> {
+    let file = File::open(path).map_err(|e| TextDecodeError::io(format!("打开文件失败: {}", e)))?;
     open_file_and_read_head_from(file, max_head)
 }
 
@@ -231,16 +357,16 @@ pub fn open_file_and_read_head(path: &Path, max_head: usize) -> Result<(File, Ve
 pub fn open_file_and_read_head_from(
     mut file: File,
     max_head: usize,
-) -> Result<(File, Vec<u8>), String> {
+) -> Result<(File, Vec<u8>), TextDecodeError> {
     let len = file
         .metadata()
-        .map_err(|e| format!("读取元数据失败: {}", e))?
+        .map_err(|e| TextDecodeError::io(format!("读取元数据失败: {}", e)))?
         .len() as usize;
     let take = max_head.min(len);
     let mut head = vec![0u8; take];
     if take > 0 {
         file.read_exact(&mut head)
-            .map_err(|e| format!("读取文件失败: {}", e))?;
+            .map_err(|e| TextDecodeError::io(format!("读取文件失败: {}", e)))?;
     }
     Ok((file, head))
 }
@@ -250,17 +376,14 @@ fn feed_decoder_strict(
     mut src: &[u8],
     pending: &mut String,
     last: bool,
-    label: &str,
-) -> Result<(), String> {
+    label: &'static str,
+) -> Result<(), TextDecodeError> {
     while !src.is_empty() {
         pending.reserve(READ_CHUNK.clamp(256, 4096));
         let (result, read) = decoder.decode_to_string_without_replacement(src, pending, false);
         match result {
             DecoderResult::Malformed(_, _) => {
-                return Err(format!(
-                    "解码失败：检测到非法字节序列或与声明编码不一致（{}）。可尝试 encoding=auto，或改用 gb18030 / big5 / utf-8-sig 等。",
-                    label
-                ));
+                return Err(TextDecodeError::decoder_malformed(label));
             }
             DecoderResult::OutputFull => continue,
             DecoderResult::InputEmpty => src = &src[read..],
@@ -272,10 +395,7 @@ fn feed_decoder_strict(
             let (result, _read) = decoder.decode_to_string_without_replacement(b"", pending, true);
             match result {
                 DecoderResult::Malformed(_, _) => {
-                    return Err(format!(
-                        "解码失败：流末尾存在不完整或非法序列（{}）。",
-                        label
-                    ));
+                    return Err(TextDecodeError::decoder_truncated(label));
                 }
                 DecoderResult::OutputFull => continue,
                 DecoderResult::InputEmpty => break,
@@ -289,29 +409,18 @@ fn feed_decoder_strict(
 pub fn decode_bytes_strict(
     bytes: &[u8],
     hint: TextEncodingName,
-) -> Result<(String, DecodedFileNote), String> {
+) -> Result<(String, DecodedFileNote), TextDecodeError> {
     let (resolved, note) = resolve_text_encoding(bytes, hint)?;
     match resolved {
         ResolvedTextEncoding::Utf8Strict => {
-            let s = std::str::from_utf8(bytes).map_err(|e| {
-                format!(
-                    "按 UTF-8 解码失败：{}（字节偏移 {}）。请指定 encoding（如 gb18030、big5）或使用 auto。",
-                    e,
-                    e.valid_up_to()
-                )
-            })?;
+            let s = std::str::from_utf8(bytes)
+                .map_err(|e| TextDecodeError::utf8_invalid(e, None))?;
             Ok((s.to_string(), note))
         }
         ResolvedTextEncoding::Utf8Sig { skip_bom } => {
             let slice = bytes.get(skip_bom..).unwrap_or(bytes);
-            let s = std::str::from_utf8(slice).map_err(|e| {
-                format!(
-                    "按 UTF-8（已跳过 {} 字节 BOM）解码失败：{}（相对切片偏移 {}）。请改用其它 encoding 或 auto。",
-                    skip_bom,
-                    e,
-                    e.valid_up_to()
-                )
-            })?;
+            let s = std::str::from_utf8(slice)
+                .map_err(|e| TextDecodeError::utf8_invalid(e, Some(skip_bom)))?;
             Ok((s.to_string(), note))
         }
         ResolvedTextEncoding::Decoder { encoding, label } => {
@@ -333,11 +442,11 @@ pub fn for_each_decoded_line<F>(
     path: &Path,
     hint: TextEncodingName,
     on_line: F,
-) -> Result<(usize, DecodedFileNote), String>
+) -> Result<(usize, DecodedFileNote), TextDecodeError>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {
-    let file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let file = File::open(path).map_err(|e| TextDecodeError::io(format!("打开文件失败: {}", e)))?;
     for_each_decoded_line_from_file(file, hint, on_line)
 }
 
@@ -349,14 +458,16 @@ pub fn for_each_decoded_line_from_file_with_head<F>(
     head: Vec<u8>,
     hint: TextEncodingName,
     mut on_line: F,
-) -> Result<(usize, DecodedFileNote), String>
+) -> Result<(usize, DecodedFileNote), TextDecodeError>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {
     let (resolved, note) = resolve_text_encoding(&head, hint)?;
 
     let ResolvedTextEncoding::Decoder { encoding, label } = resolved else {
-        return Err("内部错误：for_each_decoded_line 仅用于非 UTF-8 解码路径".to_string());
+        return Err(TextDecodeError::internal(
+            "内部错误：for_each_decoded_line 仅用于非 UTF-8 解码路径",
+        ));
     };
 
     let skip_bom = bom_encoding_and_skip(&head)
@@ -396,8 +507,8 @@ fn read_decoder_chunks<F>(
     pending: &mut String,
     line_no: &mut usize,
     on_line: &mut F,
-    label: &str,
-) -> Result<bool, String>
+    label: &'static str,
+) -> Result<bool, TextDecodeError>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {
@@ -405,7 +516,7 @@ where
     loop {
         let n = file
             .read(&mut chunk)
-            .map_err(|e| format!("读取文件失败: {}", e))?;
+            .map_err(|e| TextDecodeError::io(format!("读取文件失败: {}", e)))?;
         if n == 0 {
             feed_decoder_strict(decoder, b"", pending, true, label)?;
             return Ok(false);
@@ -422,7 +533,7 @@ pub fn for_each_decoded_line_from_file<F>(
     file: File,
     hint: TextEncodingName,
     on_line: F,
-) -> Result<(usize, DecodedFileNote), String>
+) -> Result<(usize, DecodedFileNote), TextDecodeError>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {
@@ -431,8 +542,72 @@ where
 }
 
 /// 解码后的总行数（与 `read_file` 行语义一致）。
-pub fn count_decoded_lines(path: &Path, hint: TextEncodingName) -> Result<usize, String> {
+pub fn count_decoded_lines(
+    path: &Path,
+    hint: TextEncodingName,
+) -> Result<usize, TextDecodeError> {
     let (last_no, _) =
         for_each_decoded_line(path, hint, |_, _| std::ops::ControlFlow::Continue(()))?;
     Ok(last_no)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TextDecodeError, TextEncodingName, decode_bytes_strict, parse_text_encoding_name};
+
+    #[test]
+    fn unsupported_encoding_is_a_variant_not_a_substring() {
+        let err = parse_text_encoding_name(Some("koi8-r")).expect_err("不支持的编码必须报错");
+        assert!(matches!(err, TextDecodeError::UnsupportedEncoding { .. }));
+        // Display 仍是历史文案（用户可见报错口径不变）。
+        assert!(err.to_string().starts_with("错误：不支持的 encoding「koi8-r」"));
+    }
+
+    #[test]
+    fn invalid_utf8_carries_offset_structurally() {
+        let err = decode_bytes_strict(&[0x41, 0xFF], TextEncodingName::Utf8)
+            .expect_err("非法 UTF-8 必须报错");
+        assert_eq!(
+            err,
+            TextDecodeError::Utf8Invalid {
+                detail: err_utf8_detail(&[0x41, 0xFF]),
+                valid_up_to: 1,
+                skipped_bom: None,
+            }
+        );
+    }
+
+    #[test]
+    fn bom_signal_flavour_keeps_its_own_wording() {
+        let err = decode_bytes_strict(b"\xEF\xBB\xBF\xFF", TextEncodingName::Utf8Sig)
+            .expect_err("非法 UTF-8 必须报错");
+        assert!(
+            matches!(
+                err,
+                TextDecodeError::Utf8Invalid {
+                    skipped_bom: Some(3),
+                    ..
+                }
+            ),
+            "got: {err:?}"
+        );
+        assert!(err.to_string().contains("已跳过 3 字节 BOM"), "{err}");
+    }
+
+    #[test]
+    fn decoder_malformed_is_reported_as_decoder_invalid() {
+        let err = decode_bytes_strict(&[0xFF, 0xFF], TextEncodingName::Gbk)
+            .expect_err("GBK 非法序列必须报错");
+        assert!(
+            matches!(err, TextDecodeError::DecoderInvalid { label: "GBK", at_eof: false }),
+            "got: {err:?}"
+        );
+    }
+
+    /// `Utf8Error` 的 `Display` 文案由 std 决定；用同一输入复算，避免把文案抄进断言。
+    fn err_utf8_detail(bytes: &[u8]) -> String {
+        std::str::from_utf8(bytes)
+            .expect_err("测试输入应是非法 UTF-8")
+            .to_string()
+    }
 }

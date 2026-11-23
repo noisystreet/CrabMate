@@ -84,10 +84,10 @@ async fn workspace_file_read_resolve(
         };
     let enc_name = match parse_text_encoding_name(query.encoding.as_deref()) {
         Ok(n) => n,
-        Err(msg) => {
+        Err(e) => {
             return Err(Json(WorkspaceFileReadResponse {
                 content: String::new(),
-                error: Some(msg),
+                error: Some(e.to_string()),
             }));
         }
     };
@@ -531,7 +531,7 @@ async fn workspace_file_read_non_unix(
             content,
             error: None,
         }),
-        Err(msg) => workspace_file_read_err(msg),
+        Err(e) => workspace_file_read_err(e.to_string()),
     }
 }
 

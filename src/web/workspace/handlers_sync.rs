@@ -120,7 +120,7 @@ pub(crate) fn workspace_read_file_sync_unix(
     })?;
     crate::text_encoding::decode_bytes_strict(&raw, enc_name)
         .map(|(s, _)| s)
-        .map_err(WorkspaceFileIoError::Decode)
+        .map_err(|e| WorkspaceFileIoError::Decode(e.to_string()))
 }
 
 #[cfg(unix)]
