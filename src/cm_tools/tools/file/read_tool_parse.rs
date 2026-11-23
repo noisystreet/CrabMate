@@ -52,7 +52,7 @@ pub(super) fn parse_read_file_args(v: &serde_json::Value) -> Result<ReadFilePars
         }
     };
     let enc_name = parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str()))
-        .map_err(ToolError::invalid_args)?;
+        .map_err(|e| ToolError::invalid_args(e.to_string()))?;
 
     let max_lines = v
         .get("max_lines")
