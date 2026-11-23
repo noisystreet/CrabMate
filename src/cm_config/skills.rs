@@ -448,9 +448,25 @@ fn merge_skills_layer(out: &mut Vec<SkillDoc>, layer: Vec<SkillDoc>) {
     out.extend(layer);
 }
 
+/// 技能注入标题 / 行前缀（生产侧与消费侧共用）。
+///
+/// 这些是 `system` 里的中文小标题，曾由生产方与消费者各写一份字面量：改文案时消费者既不
+/// 编译失败、也不测试失败，只是静默失效——正是 #1478 要收敛的那类契约。
+///
+/// - [`SKILLS_FORCED_TITLE_PREFIX`]：`/<id>` 强制注入的标题前缀，后接 callable id 与 `）】`；
+/// - [`SKILLS_BODY_TITLE`]：**正文形态**技能附录的标题。两处用途——历史会话的 `system` 里仍是这种形态，
+///   `/skills` 的字符预算估算（`web::chat_handlers::chat::builtin_skills`）也按同一模板计长度；
+/// - [`SKILLS_INDEX_TITLE`]：**索引形态**标题（现行生产：只列 id 与描述，正文由 `skill_read` 取）；
+/// - [`SKILLS_FILE_LINE_PREFIX`]：每份技能前的路径行前缀。
+pub const SKILLS_FORCED_TITLE_PREFIX: &str = "【用户显式选用技能（/";
+pub const SKILLS_BODY_TITLE: &str = "【项目技能（skills）】";
+pub const SKILLS_INDEX_TITLE: &str = "【项目技能索引（skills）】";
+pub const SKILLS_FILE_LINE_PREFIX: &str = "技能文件: ";
+
 fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
     let title = format!(
-        "【用户显式选用技能（/{}）】\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
+        "{}{}）】\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
+        SKILLS_FORCED_TITLE_PREFIX,
         crate::cm_config::skills_slash::skill_callable_id(doc)
     );
     render_skills_appendix_with_title(std::slice::from_ref(doc), max_chars, &title)
@@ -471,7 +487,7 @@ fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title:
     let mut body = String::from(title);
     for d in docs {
         body.push_str("\n\n---\n");
-        body.push_str(&format!("技能文件: {}\n\n", d.display_path));
+        body.push_str(&format!("{}{}\n\n", SKILLS_FILE_LINE_PREFIX, d.display_path));
         body.push_str(d.content.trim());
     }
     if body.chars().count() <= max_chars {
@@ -493,7 +509,8 @@ fn render_skills_index_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
         return String::new();
     }
     let mut body = format!(
-        "【项目技能索引（skills）】\n当前共 {} 条技能。需要某条技能的条文时，用 `skill_read` 按 `id` 按需读取；正文不在本 system 中。\n",
+        "{}\n当前共 {} 条技能。需要某条技能的条文时，用 `skill_read` 按 `id` 按需读取；正文不在本 system 中。\n",
+        SKILLS_INDEX_TITLE,
         docs.len()
     );
     for d in docs {

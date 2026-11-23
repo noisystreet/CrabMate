@@ -1,6 +1,8 @@
 //! Web 内置 `/skills` 命令：扫描 skills 目录并生成回复文本。
 
-use crate::config::skills::{SkillDoc, list_skills, skill_ui_description};
+use crate::config::skills::{
+    SKILLS_BODY_TITLE, SKILLS_FILE_LINE_PREFIX, SkillDoc, list_skills, skill_ui_description,
+};
 use crate::config::skills_slash::skill_callable_id;
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
 use crate::web::app_state_facets::WebChatTurnAppFacet;
@@ -44,14 +46,18 @@ fn split_loaded_skills_by_budget(
     max_chars: usize,
 ) -> (Vec<SkillDoc>, Vec<SkillDoc>) {
     // 与 `config::skills::render_skills_appendix` 的模板保持一致。
-    let mut used = "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n"
-        .chars()
-        .count();
+    let mut used = format!(
+        "{}\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n",
+        SKILLS_BODY_TITLE
+    )
+    .chars()
+    .count();
     let mut loaded: Vec<SkillDoc> = Vec::new();
     let mut skipped: Vec<SkillDoc> = Vec::new();
     for f in files {
         let per_file = format!(
-            "\n\n---\n技能文件: {}\n\n{}",
+            "\n\n---\n{}{}\n\n{}",
+            SKILLS_FILE_LINE_PREFIX,
             f.display_path,
             f.content.trim()
         );

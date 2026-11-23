@@ -13,6 +13,9 @@ use crate::cm_types::{
     CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, is_chat_timeline_marker, message_content_as_str,
     user_message_counts_for_branch_truncation,
 };
+use crate::cm_config::skills::{
+    SKILLS_BODY_TITLE, SKILLS_FILE_LINE_PREFIX, SKILLS_FORCED_TITLE_PREFIX,
+};
 
 mod detail;
 pub use detail::{ContextTimelineDetail, InjectDetail, TrimDetail};
@@ -369,9 +372,12 @@ fn skill_hint_from_messages(messages: &[Message]) -> SkillHint {
             forced: false,
         };
     };
-    let forced = body.contains("【用户显式选用技能（/");
-    let l5 = body.contains("【项目技能（skills）】");
-    if !forced && !l5 {
+    // 生产方与消费者共用常量（#1478）：此前两边各写一份中文小标题，改文案时消费侧静默失效。
+    let forced = body.contains(SKILLS_FORCED_TITLE_PREFIX);
+    // 索引形态（现行生产）只列 id 与描述、无正文档位，**刻意**不触发 hint（见
+    // `skill_index_only_is_not_applied`）；这里只认正文形态，它属历史会话兼容路径。
+    let body_form = body.contains(SKILLS_BODY_TITLE);
+    if !forced && !body_form {
         return SkillHint {
             ids: Vec::new(),
             forced: false,
@@ -388,8 +394,7 @@ fn skill_hint_from_messages(messages: &[Message]) -> SkillHint {
 }
 
 fn forced_skill_id(body: &str) -> Option<String> {
-    const PREFIX: &str = "【用户显式选用技能（/";
-    let rest = body.split_once(PREFIX)?.1;
+    let rest = body.split_once(SKILLS_FORCED_TITLE_PREFIX)?.1;
     let id = rest.split_once('）')?.0.trim();
     (!id.is_empty()).then(|| id.to_string())
 }
@@ -398,7 +403,7 @@ fn skill_file_ids(body: &str) -> Vec<String> {
     let mut ids = Vec::new();
     for line in body.lines() {
         let t = line.trim();
-        let Some(path) = t.strip_prefix("技能文件: ") else {
+        let Some(path) = t.strip_prefix(SKILLS_FILE_LINE_PREFIX) else {
             continue;
         };
         let path = path.trim();
@@ -432,6 +437,7 @@ pub fn timeline_marker(event: &ContextTimelineEvent) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cm_config::skills::SKILLS_INDEX_TITLE;
     use crate::cm_types::{Message, MessageContent};
 
     fn named_user(name: &str, text: &str) -> Message {
@@ -742,16 +748,54 @@ mod tests {
         assert!(hint.ids.iter().any(|s| s == "rust-build"));
     }
 
+    /// 索引形态（现行生产）：只列 id 与描述、没有正文档位 ⇒ **刻意**不产出 hint。
+    ///
+    /// 用生产真实串（`SKILLS_INDEX_TITLE` + 「当前共 N 条技能」）钉住，避免测试文案与生产文案各自正确、
+    /// 合起来失效——#1478 发现 1 就是金样用了不存在的第三种文案。
     #[test]
     fn skill_index_only_is_not_applied() {
-        let msgs = vec![Message::system_only(
-            "【项目技能索引（skills）】\n当前检测到 3 条技能\n",
-        )];
+        let msgs = vec![Message::system_only(format!(
+            "{}\n当前共 3 条技能。需要某条技能的条文时，用 `skill_read` 按 `id` 按需读取；正文不在本 system 中。\n",
+            SKILLS_INDEX_TITLE
+        ))];
         let hint = skill_hint_from_messages(&msgs);
         assert!(!hint.forced);
         assert!(hint.ids.is_empty());
     }
 
+    /// 正文形态（历史会话）：升级前 `system` 里存着技能正文与 `技能文件:` 行，仍要能收集 id。
+    #[test]
+    fn skill_body_form_title_is_recognized_for_legacy_sessions() {
+        let msgs = vec![Message::system_only(format!(
+            "{}\n\n---\n{}.crabmate/skills/legacy.md\n\n正文\n",
+            SKILLS_BODY_TITLE, SKILLS_FILE_LINE_PREFIX
+        ))];
+        let hint = skill_hint_from_messages(&msgs);
+        assert!(!hint.forced, "正文形态不带 /<id> 标题，forced 应为 false");
+        assert!(hint.ids.iter().any(|s| s == ".crabmate/skills/legacy.md"));
+    }
+
+    /// 跨模块契约：生产侧（`cm_config::skills`）真实产出的强制技能附录必须能被消费侧解析。
+    /// 共享常量只解决「各写一份」；形状若被改动（标题尾部 `）】`、路径行前缀），这里会红（#1478）。
+    #[test]
+    fn forced_skill_appendix_from_producer_is_parsed_by_consumer() {
+        use crate::cm_config::skills::{SkillDoc, forced_skill_appendix_for_injection};
+        let doc = SkillDoc {
+            display_path: ".crabmate/skills/rust-build.md".to_string(),
+            content: "正文".to_string(),
+            name: Some("rust-build".to_string()),
+            description: None,
+        };
+        let appendix = forced_skill_appendix_for_injection(&doc, 8_000);
+        let hint = skill_hint_from_messages(&[Message::system_only(appendix)]);
+        assert!(hint.forced, "生产侧强制注入必须被识别为 forced");
+        assert!(hint.ids.iter().any(|s| s == "rust-build"), "{:?}", hint.ids);
+        assert!(
+            hint.ids.iter().any(|s| s == ".crabmate/skills/rust-build.md"),
+            "{:?}",
+            hint.ids
+        );
+    }
 
     /// 旧 canonical marker 的 `detail` 是字符串化 JSON（S4a 不改写历史数据）：
     /// 读侧必须能从**最老形状**解析出 `TrimDetail`，缺字段按默认值补而不是解析失败。

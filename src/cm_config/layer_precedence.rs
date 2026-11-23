@@ -279,6 +279,14 @@ impl LayerTrace {
     }
 }
 
+/// doctor 行里「未设置」的统一写法（密钥与非密钥共用）。
+///
+/// 提到常量**不是**为了「改文案会红」——引用常量的测试永远跟着新值通过。它消掉的是
+/// 「测试与生产各写一份字面量、各自都过」的不同步风险（#1478 发现 6：该断言原本只是回读自己打印的中文行）。
+pub const VALUE_UNSET: &str = "未设置";
+/// 密钥已设置时的写法：只报状态，**不**输出任何值信息。
+pub const SECRET_SET_HIDDEN: &str = "已设置（值已隐藏）";
+
 fn describe_value(cfg: &AgentConfig, key: WatchedKey) -> String {
     match key {
         WatchedKey::LlmContextTokens => cfg.llm_sampling.llm_context_tokens.to_string(),
@@ -288,7 +296,7 @@ fn describe_value(cfg: &AgentConfig, key: WatchedKey) -> String {
             .tool_registry_policy
             .tool_registry_disabled_tools
             .as_ref()
-            .map_or_else(|| "未设置".to_string(), |set| format!("{} 个", set.len())),
+            .map_or_else(|| VALUE_UNSET.to_string(), |set| format!("{} 个", set.len())),
         WatchedKey::WebApiBearer => {
             if cfg
                 .web_api
@@ -297,9 +305,9 @@ fn describe_value(cfg: &AgentConfig, key: WatchedKey) -> String {
                 .trim()
                 .is_empty()
             {
-                "未设置".to_string()
+                VALUE_UNSET.to_string()
             } else {
-                "已设置（值已隐藏）".to_string()
+                SECRET_SET_HIDDEN.to_string()
             }
         }
     }

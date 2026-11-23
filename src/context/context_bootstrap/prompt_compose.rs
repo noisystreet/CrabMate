@@ -48,18 +48,7 @@ fn locale_output_language_label(locale: &str) -> Option<String> {
         .unwrap_or(t)
         .to_ascii_lowercase();
     let label = match primary.as_str() {
-        "zh" => {
-            let lower = t.to_ascii_lowercase();
-            if lower.contains("hant")
-                || lower.contains("tw")
-                || lower.contains("hk")
-                || lower.contains("mo")
-            {
-                "繁體中文"
-            } else {
-                "简体中文"
-            }
-        }
+        "zh" => zh_variant_label(t),
         "en" => "English",
         "ja" => "日本語",
         "ko" => "한국어",
@@ -72,6 +61,27 @@ fn locale_output_language_label(locale: &str) -> Option<String> {
         _ => return Some(t.to_string()),
     };
     Some(label.to_string())
+}
+
+/// `zh` 的简繁判定：按 BCP-47 **subtag** 精确比对，不做子串包含。
+///
+/// 先看 script（`hant` / `hans`），无 script 再看 region（`tw` / `hk` / `mo` 用繁体，其余简体）。
+/// 子串匹配会把 `zh-Hans-TW` / `zh-Hans-MO` 误判成繁体（#1478）。
+fn zh_variant_label(tag: &str) -> &'static str {
+    let mut region_suggests_hant = false;
+    for part in tag.split(['-', '_']) {
+        match part.to_ascii_lowercase().as_str() {
+            "hant" => return "繁體中文",
+            "hans" => return "简体中文",
+            "tw" | "hk" | "mo" => region_suggests_hant = true,
+            _ => {}
+        }
+    }
+    if region_suggests_hant {
+        "繁體中文"
+    } else {
+        "简体中文"
+    }
 }
 
 /// 按环境/界面语言追加面向用户输出语言指令；`locale` 为空时不追加（退回 base 原行为）。
@@ -697,6 +707,31 @@ mod tests {
             Some("xx-YY")
         );
         assert_eq!(locale_output_language_label("  "), None);
+    }
+
+    /// 简繁按 subtag 精确判定：`zh-Hans-*` 一律简体，`zh-Hant-*` / `TW` / `HK` / `MO` 繁体（#1478）。
+    #[test]
+    fn zh_variant_uses_subtags_not_substrings() {
+        for (tag, want) in [
+            ("zh", "简体中文"),
+            ("zh-CN", "简体中文"),
+            ("zh-Hans", "简体中文"),
+            ("zh-Hans-TW", "简体中文"),
+            ("zh-Hans-MO", "简体中文"),
+            ("zh-TW", "繁體中文"),
+            ("zh-HK", "繁體中文"),
+            ("zh-MO", "繁體中文"),
+            ("zh-Hant", "繁體中文"),
+            ("zh-Hant-TW", "繁體中文"),
+            ("zh_CN", "简体中文"),
+            ("zh_TW", "繁體中文"),
+        ] {
+            assert_eq!(
+                locale_output_language_label(tag).as_deref(),
+                Some(want),
+                "{tag}"
+            );
+        }
     }
 
     #[test]
