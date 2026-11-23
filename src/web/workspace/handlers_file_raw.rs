@@ -8,7 +8,7 @@ use axum::Json;
 
 use super::handlers::effective_workspace_base_canonical;
 #[cfg(unix)]
-use super::handlers_sync::workspace_read_file_bytes_sync_unix;
+use super::handlers_sync::{WorkspaceFileIoError, workspace_read_file_bytes_sync_unix};
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::chat::ApiError;
 use crate::cm_api_contract::workspace::WorkspaceFileQuery;
@@ -189,7 +189,7 @@ async fn read_workspace_bytes(
                 format!("读取文件任务失败: {e}"),
             )
         })?
-        .map_err(|msg| map_read_msg_to_status(msg, read_code))
+        .map_err(|err| map_read_err_to_status(err, read_code))
     }
     #[cfg(not(unix))]
     {
@@ -198,15 +198,15 @@ async fn read_workspace_bytes(
     }
 }
 
-fn map_read_msg_to_status(msg: String, code: &'static str) -> RawErr {
-    let status = if msg.contains("过大") {
-        StatusCode::PAYLOAD_TOO_LARGE
-    } else if msg.contains("目录") {
-        StatusCode::BAD_REQUEST
-    } else {
-        StatusCode::NOT_FOUND
+/// 结构化读失败 → HTTP 状态码（不再从中文消息里 `contains` 猜，#1478 B-β）。
+#[cfg(unix)]
+fn map_read_err_to_status(err: WorkspaceFileIoError, code: &'static str) -> RawErr {
+    let status = match &err {
+        WorkspaceFileIoError::TooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+        WorkspaceFileIoError::IsDirectory => StatusCode::BAD_REQUEST,
+        _ => StatusCode::NOT_FOUND,
     };
-    raw_err(status, code, msg)
+    raw_err(status, code, err.to_string())
 }
 
 #[cfg(not(unix))]

@@ -129,13 +129,14 @@ fn read_member_under_root(
             canon,
             max_b,
         )
-        .map_err(|msg| {
-            if msg.contains("过大") {
-                ZipDirError::too_large(msg)
+        .map_err(|err| {
+            // 结构化判定（#1478 B-β）：不再从中文消息里 `contains("过大")`。
+            if matches!(err, super::handlers_sync::WorkspaceFileIoError::TooLarge { .. }) {
+                ZipDirError::too_large(err.to_string())
             } else {
                 ZipDirError {
                     code: "WORKSPACE_ARCHIVE_READ",
-                    message: msg,
+                    message: err.to_string(),
                 }
             }
         })
