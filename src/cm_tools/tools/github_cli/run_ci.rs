@@ -51,6 +51,8 @@ fn summarize_failed_checks_json(stdout: &str) -> Option<String> {
             format!("- **{name}**: {display} ({link})")
         };
         // `bucket` 优先、精确匹配；与 `web_api::summarize_checks` 共用同一份判定。
+        // 注意：无法解析的状态会落到 `Pending`（旧实现是「其它」= 不列出），
+        // 即未知状态现在会出现在「进行中 / 等待」里——这是有意的透明化（#1478 B-α）。
         match CheckBucket::of(state, bucket) {
             CheckBucket::Fail => failed.push(line),
             CheckBucket::Pending => pending.push(line),

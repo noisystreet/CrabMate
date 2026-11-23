@@ -245,6 +245,25 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
+    /// 合法 `read_file` 工具输出头：只留正文（#1478 之后按 serde 头判定）。
+    #[test]
+    fn strips_legal_read_file_header() {
+        let body = "{\"kind\":\"crabmate_tool_output\",\"tool\":\"read_file\",\"version\":1}\n正文";
+        assert_eq!(strip_read_file_output_header(body), "正文");
+    }
+
+    /// 畸形头 / 别的工具的头不再被误剥（旧实现凭子串就会剥）。
+    #[test]
+    fn keeps_malformed_or_foreign_header() {
+        for body in [
+            "kind=crabmate_tool_output tool=read_file\n正文",
+            "{\"kind\":\"crabmate_tool_output\"}\n正文",
+            "{\"kind\":\"crabmate_tool_output\",\"tool\":\"read_dir\",\"version\":1}\n正文",
+        ] {
+            assert_eq!(strip_read_file_output_header(body), body, "{body}");
+        }
+    }
+
     #[test]
     fn expand_inserts_snippet_for_existing_file() {
         let tmp = tempdir().expect("tempdir");
