@@ -1,5 +1,6 @@
 //! `gh run rerun` 与失败 CI 摘要（只读排障）。
 
+use super::check_bucket::CheckBucket;
 use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use serde_json::Value as JsonValue;
@@ -36,45 +37,30 @@ fn summarize_failed_checks_json(stdout: &str) -> Option<String> {
     let mut pending = Vec::new();
     for item in arr {
         let name = item.get("name").and_then(|x| x.as_str()).unwrap_or("?");
-        let state = item
-            .get("state")
-            .or_else(|| item.get("bucket"))
-            .and_then(|x| x.as_str())
-            .unwrap_or("?");
+        let state = item.get("state").and_then(|x| x.as_str()).unwrap_or("");
+        let bucket = item.get("bucket").and_then(|x| x.as_str());
+        let display = if state.is_empty() {
+            bucket.unwrap_or("?")
+        } else {
+            state
+        };
         let link = item.get("link").and_then(|x| x.as_str()).unwrap_or("");
         let line = if link.is_empty() {
-            format!("- **{name}**: {state}")
+            format!("- **{name}**: {display}")
         } else {
-            format!("- **{name}**: {state} ({link})")
+            format!("- **{name}**: {display} ({link})")
         };
-        match check_state_bucket(state) {
-            CheckStateBucket::Failed => failed.push(line),
-            CheckStateBucket::Pending => pending.push(line),
-            CheckStateBucket::Other => {}
+        // `bucket` 优先、精确匹配；与 `web_api::summarize_checks` 共用同一份判定。
+        match CheckBucket::of(state, bucket) {
+            CheckBucket::Fail => failed.push(line),
+            CheckBucket::Pending => pending.push(line),
+            _ => {}
         }
     }
     if failed.is_empty() && pending.is_empty() {
         return None;
     }
     Some(render_checks_summary(failed, pending))
-}
-
-/// 检查状态归类：失败 / 进行中 / 其它。
-enum CheckStateBucket {
-    Failed,
-    Pending,
-    Other,
-}
-
-fn check_state_bucket(state: &str) -> CheckStateBucket {
-    let st = state.to_ascii_lowercase();
-    if st.contains("fail") {
-        CheckStateBucket::Failed
-    } else if st.contains("pend") || st.contains("progress") || st.contains("queued") {
-        CheckStateBucket::Pending
-    } else {
-        CheckStateBucket::Other
-    }
 }
 
 /// 渲染失败 / 进行中检查列表。

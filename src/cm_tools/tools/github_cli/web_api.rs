@@ -1,5 +1,6 @@
 //! GitHub Web API 共享逻辑：结构化 JSON，供 HTTP handler 与日后 CLI/TUI 复用。
 
+use super::check_bucket::CheckBucket;
 use super::common::GhCtx;
 use std::path::Path;
 
@@ -254,19 +255,13 @@ fn summarize_checks(items: &[GithubPrCheckItemData]) -> GithubChecksSummaryData 
         ..Default::default()
     };
     for item in items {
-        let st = item.state.to_ascii_lowercase().replace(['_', '-'], "");
-        if st.contains("fail") {
-            summary.failing += 1;
-        } else if st.contains("pend")
-            || st.contains("progress")
-            || st.contains("queued")
-            || st.contains("waiting")
-        {
-            summary.pending += 1;
-        } else if st.contains("pass") || st.contains("success") || st.contains("ok") {
-            summary.passing += 1;
-        } else {
-            summary.pending += 1;
+        // `bucket` 优先（稳定机器枚举），`state` 只作 fallback；见 `CheckBucket` 模块文档。
+        match CheckBucket::of(&item.state, item.bucket.as_deref()) {
+            CheckBucket::Fail => summary.failing += 1,
+            CheckBucket::Pending => summary.pending += 1,
+            CheckBucket::Pass => summary.passing += 1,
+            // 跳过 / 取消既不算通过也不算待完成：`total` 仍计入，故 `total >= 三者之和`。
+            CheckBucket::Skipping | CheckBucket::Cancel => {}
         }
     }
     summary
@@ -279,13 +274,16 @@ fn parse_check_items(v: &JsonValue) -> Vec<GithubPrCheckItemData> {
     arr.iter()
         .filter_map(|item| {
             let name = json_str(item, "name")?;
+            // 两个字段各读各的：`bucket` 是稳定枚举（判定优先用它），`state` 只用于展示；
+            // 之前把 `state.or(bucket)` 揉成一份，等于让易变字段当主依据（#1478 B-α）。
+            let bucket = json_str(item, "bucket");
             let state = json_str(item, "state")
-                .or_else(|| json_str(item, "bucket"))
+                .or_else(|| bucket.clone())
                 .unwrap_or_else(|| "?".to_string());
             Some(GithubPrCheckItemData {
                 name,
-                state: state.clone(),
-                bucket: json_str(item, "bucket"),
+                state,
+                bucket,
                 link: json_str(item, "link"),
             })
         })
