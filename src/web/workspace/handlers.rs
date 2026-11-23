@@ -494,7 +494,7 @@ async fn workspace_file_read_unix(
             content,
             error: None,
         }),
-        Ok(Err(msg)) => workspace_file_read_err(msg),
+        Ok(Err(err)) => workspace_file_read_err(err.to_string()),
         Err(e) => workspace_file_read_err(format!("读取文件任务失败: {}", e)),
     }
 }
@@ -626,7 +626,7 @@ async fn workspace_file_write_resolved(
         .await
         {
             Ok(Ok(())) => Json(WorkspaceFileWriteResponse { error: None }),
-            Ok(Err(msg)) => workspace_file_write_err(msg),
+            Ok(Err(err)) => workspace_file_write_err(err.to_string()),
             Err(e) => workspace_file_write_err(format!("写入文件任务失败: {}", e)),
         }
     }
