@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 
 use super::handlers::effective_workspace_base_canonical;
 #[cfg(unix)]
-use super::handlers_sync::workspace_file_write_sync_unix;
+use super::handlers_sync::{WorkspaceFileIoError, workspace_file_write_sync_unix};
 use super::handlers_file_raw::{raw_err, reject_unsafe_rel_path, RawErr};
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::validate_workspace_file_write_payload;
@@ -79,7 +79,7 @@ async fn write_raw_bytes(
                 format!("写入文件任务失败: {e}"),
             )
         })?
-        .map_err(map_write_msg)
+        .map_err(map_write_err)
     }
     #[cfg(not(unix))]
     {
@@ -88,14 +88,15 @@ async fn write_raw_bytes(
     }
 }
 
-fn map_write_msg(msg: String) -> RawErr {
-    if msg.contains("已存在") {
-        return raw_err(StatusCode::CONFLICT, "WORKSPACE_FILE_EXISTS", msg);
-    }
-    if msg.contains("不存在") {
-        return raw_err(StatusCode::NOT_FOUND, "WORKSPACE_FILE_MISSING", msg);
-    }
-    raw_err(StatusCode::BAD_REQUEST, "WORKSPACE_FILE_WRITE", msg)
+/// 结构化写失败 → HTTP 状态码（不再从中文消息里 `contains` 猜，#1478 B-β）。
+#[cfg(unix)]
+fn map_write_err(err: WorkspaceFileIoError) -> RawErr {
+    let (status, code) = match &err {
+        WorkspaceFileIoError::AlreadyExists => (StatusCode::CONFLICT, "WORKSPACE_FILE_EXISTS"),
+        WorkspaceFileIoError::NotFound => (StatusCode::NOT_FOUND, "WORKSPACE_FILE_MISSING"),
+        _ => (StatusCode::BAD_REQUEST, "WORKSPACE_FILE_WRITE"),
+    };
+    raw_err(status, code, err.to_string())
 }
 
 #[cfg(not(unix))]
