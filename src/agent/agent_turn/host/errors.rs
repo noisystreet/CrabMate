@@ -135,11 +135,13 @@ impl RunAgentTurnError {
         }
     }
 
+    /// 只按**变体**判定（[`Self::is_user_flow_cancelled`]），不把 `Display` 文案丢进字符串比对（#1478）。
+    ///
+    /// 原来还多一条 `is_user_cancelled_run_agent_error(&self.to_string())` 兜底：它要求
+    /// `Other { message }` 恰好等于取消串，而生产代码从不那样构造（只有测试会），
+    /// 既是死代码、又会随文案改动静默失效。
     fn job_queue_outcome_kind_inner(&self) -> AgentTurnJobOutcomeKind {
-        let text = self.to_string();
-        if self.is_user_flow_cancelled()
-            || crate::agent_errors::is_user_cancelled_run_agent_error(&text)
-        {
+        if self.is_user_flow_cancelled() {
             AgentTurnJobOutcomeKind::UserCancelled
         } else {
             AgentTurnJobOutcomeKind::FailureEmitSseError
@@ -567,14 +569,29 @@ mod tests {
     }
 
     #[test]
-    fn job_queue_json_cancelled_string_matches_user_flow() {
-        let e = RunAgentTurnError::Other {
+    /// 反向守卫（#1478）：`Display` 文案**不参与**分流判定。
+    ///
+    /// 改动前这里断言「`Other { message: 取消串 }` 被当作取消」——那正是文案启发式；生产代码
+    /// 从不这样构造，删掉兜底后该错误正确落回 `FailureEmitSseError`，而结构化取消路径照常命中。
+    fn job_queue_outcome_kind_ignores_display_text() {
+        let text_only = RunAgentTurnError::Other {
             phase: AgentTurnSubPhase::Planner,
             message: LLM_CANCELLED_ERROR.to_string(),
         };
         assert_eq!(
-            e.job_queue_json_outcome_kind(),
-            AgentTurnJobOutcomeKind::UserCancelled
+            text_only.job_queue_json_outcome_kind(),
+            AgentTurnJobOutcomeKind::FailureEmitSseError,
+            "文案不参与判定"
+        );
+
+        let cancelled = RunAgentTurnError::TurnAborted {
+            phase: AgentTurnSubPhase::Planner,
+            reason: TurnAbortReason::UserCancelled,
+        };
+        assert_eq!(
+            cancelled.job_queue_json_outcome_kind(),
+            AgentTurnJobOutcomeKind::UserCancelled,
+            "结构化取消路径仍然命中"
         );
     }
 
