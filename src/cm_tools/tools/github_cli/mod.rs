@@ -10,6 +10,7 @@
 #![allow(clippy::result_large_err)]
 
 mod api;
+mod check_bucket;
 mod common;
 mod issue_create;
 mod pr_body;
