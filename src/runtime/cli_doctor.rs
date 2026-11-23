@@ -650,7 +650,8 @@ mod tests {
             .find(|line| line.contains("web_api_bearer_token"))
             .expect("溯源块必须列出 bearer 一行");
         assert!(
-            bearer_line.contains("未设置") || bearer_line.contains("已设置（值已隐藏）"),
+            bearer_line.contains(crate::config::layer_precedence::VALUE_UNSET)
+                || bearer_line.contains(crate::config::layer_precedence::SECRET_SET_HIDDEN),
             "bearer 只允许这两种展示: {bearer_line}"
         );
         // 值描述与外层括号曾叠成 `（未设置）（未覆盖（沿用内嵌默认））`——这里正面守住。

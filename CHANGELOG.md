@@ -43,6 +43,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Prose-substring contracts from the A-class list are now shared constants (#1478).** The skill-injection
+  system headings and the `技能文件: ` line prefix lived as separate literals on the producing side
+  (`cm_config::skills`, `web/chat_handlers/chat/builtin_skills`) and the consuming side
+  (`cm_agent::context_timeline`), so rewording one silently stopped the other from matching. They now come
+  from one set of `pub const`s, and the index-only form stays deliberately non-triggering (pinned by a test
+  using the **real** production string rather than a hand-written variant).
+  `locale_output_language_label` classifies `zh` by **BCP-47 subtag** (script first, then region) instead of
+  `contains("tw"/"hk"/"mo")`: `zh-Hans-TW` / `zh-Hans-MO` / `zh-Hans-HK` are Simplified (previously
+  misread as Traditional),
+  while `zh-TW` / `zh-HK` / `zh-MO` stay Traditional. The `plan_artifact` display heuristic and the doctor
+  provenance lines keep their behaviour, but their magic numbers and the secret `未设置` /
+  `已设置（值已隐藏）` labels are now named constants the tests reference.
 - **DeepSeek model ids migrated to the current catalog.** The vendor catalog and the embedded default `model`
   now use the two ids DeepSeek actually serves — `deepseek-flash` (DeepSeek-V4.1-Flash-1017, **image
   understanding supported**) and `deepseek-v4-pro` (no image support) — instead of `deepseek-v4-flash` /
