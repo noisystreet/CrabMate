@@ -10,6 +10,7 @@ use std::fmt;
 use axum::http::StatusCode;
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::cm_agent::turn_budget::TurnBudgetDeny;
 use crate::llm::LlmCompleteError;
 use crate::sse::SseErrorBody;
 use crate::text_util::truncate_chars_with_ellipsis;
@@ -94,14 +95,15 @@ pub enum RunAgentTurnError {
         phase: AgentTurnSubPhase,
         message: String,
     },
-    /// 墙钟超时
-    TimeLimitExhausted {
+    /// 单轮预算耗尽（墙钟 / LLM 调用次数 / Token 粗估）。
+    ///
+    /// 用**一个**变体携带 [`TurnBudgetDeny`]，而不是每种原因一个变体：新增预算维度时只需给
+    /// [`TurnBudgetDeny`] 加变体，本枚举的穷举 match 不必各加一臂；`delegation` 侧只要 `..`
+    /// 就能覆盖（子任务视角只有「超预算」一种语义）。
+    TurnBudgetExhausted {
         phase: AgentTurnSubPhase,
-        message: String,
-    },
-    /// Token消耗上限达到
-    TokenLimitExhausted {
-        phase: AgentTurnSubPhase,
+        deny: TurnBudgetDeny,
+        /// 面向用户的短消息（构造点为 `deny.user_message(cfg)`，含具体数值）。
         message: String,
     },
 }
@@ -161,8 +163,7 @@ impl RunAgentTurnError {
             Self::Other { .. } => "INTERNAL_ERROR",
             Self::StepRetryExhausted { .. } => "STEP_RETRY_EXHAUSTED",
             Self::ReplanExhausted { .. } => "REPLAN_EXHAUSTED",
-            Self::TimeLimitExhausted { .. } => "TIME_LIMIT_EXHAUSTED",
-            Self::TokenLimitExhausted { .. } => "TOKEN_LIMIT_EXHAUSTED",
+            Self::TurnBudgetExhausted { deny, .. } => budget_deny_error_code(*deny),
         }
     }
 
@@ -182,10 +183,12 @@ impl RunAgentTurnError {
                 "本步重试次数已用尽，请简化任务或稍后重试".to_string()
             }
             Self::ReplanExhausted { .. } => "重规划次数已用尽，请简化任务或稍后重试".to_string(),
-            Self::TimeLimitExhausted { .. } => "本轮对话已超时，请缩短输入或稍后重试".to_string(),
-            Self::TokenLimitExhausted { .. } => {
-                "本轮 token 预算已用尽，请缩短上下文或稍后重试".to_string()
+            Self::TurnBudgetExhausted { deny, .. } => match deny {
+                TurnBudgetDeny::WallClock => "本轮对话已超时，请缩短输入或稍后重试",
+                TurnBudgetDeny::LlmCalls => "本轮模型调用次数已用尽，请简化任务或稍后重试",
+                TurnBudgetDeny::Tokens => "本轮 token 预算已用尽，请缩短上下文或稍后重试",
             }
+            .to_string(),
         }
     }
 
@@ -217,8 +220,7 @@ impl RunAgentTurnError {
             Self::Other { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::StepRetryExhausted { .. }
             | Self::ReplanExhausted { .. }
-            | Self::TimeLimitExhausted { .. }
-            | Self::TokenLimitExhausted { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            | Self::TurnBudgetExhausted { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
@@ -268,8 +270,7 @@ impl RunAgentTurnError {
             | Self::TurnAborted { phase, .. }
             | Self::StepRetryExhausted { phase, .. }
             | Self::ReplanExhausted { phase, .. }
-            | Self::TimeLimitExhausted { phase, .. }
-            | Self::TokenLimitExhausted { phase, .. }
+            | Self::TurnBudgetExhausted { phase, .. }
             | Self::Other { phase, .. } => *phase,
         }
     }
@@ -368,17 +369,11 @@ impl RunAgentTurnError {
                 sub_phase,
                 request_id: None,
             },
-            Self::TimeLimitExhausted { message, .. } => SseErrorBody {
+            Self::TurnBudgetExhausted {
+                deny, message, ..
+            } => SseErrorBody {
                 error: self.public_user_message(),
-                code: Some("TIME_LIMIT_EXHAUSTED".to_string()),
-                reason_code: Some(truncate_reason(message.clone())),
-                turn_id,
-                sub_phase,
-                request_id: None,
-            },
-            Self::TokenLimitExhausted { message, .. } => SseErrorBody {
-                error: self.public_user_message(),
-                code: Some("TOKEN_LIMIT_EXHAUSTED".to_string()),
+                code: Some(budget_deny_error_code(*deny).to_string()),
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
@@ -429,6 +424,15 @@ impl RunAgentTurnError {
     }
 }
 
+/// 预算原因 → 对外 `code`。HTTP 与 SSE 共用同一份映射，避免两处漂移。
+const fn budget_deny_error_code(deny: TurnBudgetDeny) -> &'static str {
+    match deny {
+        TurnBudgetDeny::WallClock => "TIME_LIMIT_EXHAUSTED",
+        TurnBudgetDeny::LlmCalls => "LLM_CALL_LIMIT_EXHAUSTED",
+        TurnBudgetDeny::Tokens => "TOKEN_LIMIT_EXHAUSTED",
+    }
+}
+
 fn truncate_reason(s: String) -> String {
     const MAX: usize = 200;
     if s.chars().count() <= MAX {
@@ -447,8 +451,7 @@ impl fmt::Display for RunAgentTurnError {
             Self::Other { message, .. }
             | Self::StepRetryExhausted { message, .. }
             | Self::ReplanExhausted { message, .. }
-            | Self::TimeLimitExhausted { message, .. }
-            | Self::TokenLimitExhausted { message, .. } => f.write_str(message),
+            | Self::TurnBudgetExhausted { message, .. } => f.write_str(message),
         }
     }
 }
@@ -460,8 +463,7 @@ impl Error for RunAgentTurnError {
             Self::TurnAborted { .. }
             | Self::StepRetryExhausted { .. }
             | Self::ReplanExhausted { .. }
-            | Self::TimeLimitExhausted { .. }
-            | Self::TokenLimitExhausted { .. }
+            | Self::TurnBudgetExhausted { .. }
             | Self::Other { .. } => None,
         }
     }

@@ -43,6 +43,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **BREAKING (Rust API): budget exhaustion collapses into one `RunAgentTurnError::TurnBudgetExhausted` (#1478).**
+  `TimeLimitExhausted` and `TokenLimitExhausted` are removed; their role is taken by a single variant carrying
+  `TurnBudgetDeny` (`WallClock` / `LlmCalls` / `Tokens`) plus the user-facing message. Two reasons:
+  one-variant-per-cause scaled as `1 + 7 × N` (seven exhaustive `match` sites in `errors.rs`), and
+  `TokenLimitExhausted` was **never constructed** by production code — `Tokens` was silently mapped to `Other`,
+  which is exactly what forced `delegation` to sniff `message.contains("LLM 调用次数上限")`.
+  Now `delegation` matches `TurnBudgetExhausted { .. }` and the text scan is gone; SSE code / HTTP status /
+  user message are all dispatched from `deny` in one place. New SSE code **`LLM_CALL_LIMIT_EXHAUSTED`**
+  (HTTP 422, same shape as `TIME_LIMIT_EXHAUSTED`); `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` keep
+  their codes. Client is unaffected (it references neither `RunAgentTurnError` nor any of these codes).
 - **BREAKING (soft field): `context_inject.detail` is now `kinds` only (#1478).**
   `skills` / `forced` are **deleted outright**, not deprecated: both were derived by matching Chinese
   headings inside the `system` text (`【项目技能（skills）】` / `【用户显式选用技能（/…）】`), and after the

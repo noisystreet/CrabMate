@@ -80,13 +80,20 @@ fn build_turn_error(case: &Value) -> RunAgentTurnError {
             phase,
             message: case["message"].as_str().unwrap_or("replan").to_string(),
         },
-        "time_limit" => RunAgentTurnError::TimeLimitExhausted {
+        "time_limit" => RunAgentTurnError::TurnBudgetExhausted {
             phase,
+            deny: crate::agent::turn_budget::TurnBudgetDeny::WallClock,
             message: case["message"].as_str().unwrap_or("time").to_string(),
         },
-        "token_limit" => RunAgentTurnError::TokenLimitExhausted {
+        "token_limit" => RunAgentTurnError::TurnBudgetExhausted {
             phase,
+            deny: crate::agent::turn_budget::TurnBudgetDeny::Tokens,
             message: case["message"].as_str().unwrap_or("token").to_string(),
+        },
+        "llm_call_limit" => RunAgentTurnError::TurnBudgetExhausted {
+            phase,
+            deny: crate::agent::turn_budget::TurnBudgetDeny::LlmCalls,
+            message: case["message"].as_str().unwrap_or("llm calls").to_string(),
         },
         other => panic!("unknown turn variant {other}"),
     }
