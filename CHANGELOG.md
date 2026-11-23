@@ -166,6 +166,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `cm_turn_layout::layout_prefers_projection` is gone with it, and the `hydration_projection_source` log value
   is now always `layout_v2` (`legacy` can no longer occur). v2 conversations see no shape change other than
   "there is no longer a null case".
+- **`/health` dependency probes and the `serve` startup summary stop judging by wording (#1478).**
+  The dependency check used to flatten "not installed" and "installed but exited non-zero" into one
+  human-readable string, then re-derive the meaning in the startup summary by matching that string
+  (`contains("No such file")` / `contains("not found")` / `starts_with("exit=")`, plus
+  `contains("低于建议最低")` for version incompatibility) — a judgement whose truth depended on the text it
+  had just formatted. `capture_probe` now returns a structured `ProbeResult`
+  (`Ok` / `Missing` / `SpawnFailed` / `Failed { code, stderr }`), `health_item_from_probe` pairs it with a
+  `ProbeKind` (`Ok` / `Missing` / `Broken` / `VersionIncompat`), and `HealthReport` carries the kinds in a
+  `#[serde(skip)]` side table, so `GET /health`'s JSON shape is unchanged (`detail` stays display-only).
+  Both string predicates are deleted. **Behaviour change in the startup log only**: a dep CLI that is
+  present but exits non-zero is `Broken` and lands in 【其他】 instead of being reported as
+  「可选 CLI 未安装」; its `detail` now also carries the first stderr line (`exit=3: …`, capped at 160 chars).
 
 ### Added
 

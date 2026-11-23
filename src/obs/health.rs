@@ -11,6 +11,7 @@ use std::time::Instant;
 use reqwest::Client;
 
 use crate::cm_config::LlmHttpAuthMode;
+use crate::cm_tools::health_dep_compat::{ProbeKind, capture_probe};
 
 /// 单项检查结果（与 HTTP JSON 字段一致）。
 #[derive(Debug, Clone, Serialize)]
@@ -25,6 +26,12 @@ pub struct HealthCheckItem {
 pub struct HealthReport {
     pub status: String,
     pub checks: BTreeMap<String, HealthCheckItem>,
+    /// 依赖项探测的**结构化**结论（键与 `checks` 里的 `dep_*` 同名）。
+    ///
+    /// 只在进程内用于 `serve` 启动摘要分桶；`detail` 是对外展示字段，
+    /// 不能反过来当判定依据。**不**进 HTTP JSON（`#[serde(skip)]`）。
+    #[serde(skip)]
+    pub dep_probe_kinds: BTreeMap<String, crate::cm_tools::health_dep_compat::ProbeKind>,
 }
 
 /// 进程内缓存的上一次 **GET …/models** 健康探测结果（供 [`append_llm_models_endpoint_probe`] 复用）。
@@ -180,47 +187,28 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
     );
 
     let deps = tokio::task::spawn_blocking(|| {
-        fn check_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
-            match std::process::Command::new(cmd).args(args).output() {
-                Ok(out) => {
-                    let status = out.status.code().unwrap_or(-1);
-                    if status == 0 {
-                        let s = if !out.stdout.is_empty() {
-                            String::from_utf8_lossy(&out.stdout).trim().to_string()
-                        } else {
-                            String::from_utf8_lossy(&out.stderr).trim().to_string()
-                        };
-                        Ok(if s.is_empty() { "ok".to_string() } else { s })
-                    } else {
-                        Err(format!("exit={}", status))
-                    }
-                }
-                Err(e) => Err(e.to_string()),
-            }
-        }
-
         let mut m = BTreeMap::new();
 
-        m.insert("rustc", check_cmd("rustc", &["-V"]));
-        m.insert("cargo", check_cmd("cargo", &["-V"]));
+        m.insert("rustc", capture_probe("rustc", &["-V"]));
+        m.insert("cargo", capture_probe("cargo", &["-V"]));
 
-        m.insert("rustfmt", check_cmd("rustfmt", &["--version"]));
-        m.insert("clang_format", check_cmd("clang-format", &["--version"]));
-        m.insert("cmake", check_cmd("cmake", &["--version"]));
-        m.insert("ctest", check_cmd("ctest", &["--version"]));
-        m.insert("cxxfilt", check_cmd("c++filt", &["--version"]));
+        m.insert("rustfmt", capture_probe("rustfmt", &["--version"]));
+        m.insert("clang_format", capture_probe("clang-format", &["--version"]));
+        m.insert("cmake", capture_probe("cmake", &["--version"]));
+        m.insert("ctest", capture_probe("ctest", &["--version"]));
+        m.insert("cxxfilt", capture_probe("c++filt", &["--version"]));
         // GNU Binutils（或兼容实现）：供 run_command 白名单内 ELF/目标文件只读分析
-        m.insert("objdump", check_cmd("objdump", &["--version"]));
-        m.insert("nm", check_cmd("nm", &["--version"]));
-        m.insert("readelf", check_cmd("readelf", &["--version"]));
-        m.insert("strings_binutils", check_cmd("strings", &["--version"]));
-        m.insert("size", check_cmd("size", &["--version"]));
-        m.insert("ar", check_cmd("ar", &["--version"]));
-        m.insert("npm", check_cmd("npm", &["--version"]));
-        m.insert("python3", check_cmd("python3", &["--version"]));
-        m.insert("docker", check_cmd("docker", &["--version"]));
+        m.insert("objdump", capture_probe("objdump", &["--version"]));
+        m.insert("nm", capture_probe("nm", &["--version"]));
+        m.insert("readelf", capture_probe("readelf", &["--version"]));
+        m.insert("strings_binutils", capture_probe("strings", &["--version"]));
+        m.insert("size", capture_probe("size", &["--version"]));
+        m.insert("ar", capture_probe("ar", &["--version"]));
+        m.insert("npm", capture_probe("npm", &["--version"]));
+        m.insert("python3", capture_probe("python3", &["--version"]));
+        m.insert("docker", capture_probe("docker", &["--version"]));
         // GitHub CLI：默认 run_command 白名单含 `gh`；未安装时工具调用会失败
-        m.insert("gh", check_cmd("gh", &["version"]));
+        m.insert("gh", capture_probe("gh", &["version"]));
 
         m
     })
@@ -228,6 +216,7 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
     .ok()
     .unwrap_or_default();
 
+    let mut dep_probe_kinds = BTreeMap::new();
     for (k, v) in deps {
         let key = match k {
             "rustc" => "dep_toolchain_rustc",
@@ -249,18 +238,21 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
             "gh" => "dep_gh",
             _ => continue,
         };
-        checks.insert(key.to_string(), {
-            let raw = crate::cm_tools::health_dep_compat::health_item_from_cmd_result(k, v);
+        let (raw, kind) = crate::cm_tools::health_dep_compat::health_item_from_probe(k, v);
+        dep_probe_kinds.insert(key.to_string(), kind);
+        checks.insert(
+            key.to_string(),
             HealthCheckItem {
                 ok: raw.ok,
                 detail: raw.detail,
-            }
-        });
+            },
+        );
     }
 
     HealthReport {
         status: health_report_status(&checks),
         checks,
+        dep_probe_kinds,
     }
 }
 
@@ -274,14 +266,6 @@ fn dep_check_label(check_key: &str) -> String {
         "docker_cli" => "docker".to_string(),
         other => other.replace('_', "-"),
     }
-}
-
-fn is_missing_cli_detail(detail: &str) -> bool {
-    detail.contains("No such file") || detail.contains("not found") || detail.starts_with("exit=")
-}
-
-fn is_version_incompat_detail(detail: &str) -> bool {
-    detail.contains("低于建议最低")
 }
 
 struct StartupHealthBuckets {
@@ -309,14 +293,16 @@ fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBucke
             b.toolchain
                 .push(format!("{} — {detail}", dep_check_label(check_key)));
         } else if check_key.starts_with("dep_") {
-            if is_version_incompat_detail(detail) {
-                b.toolchain
-                    .push(format!("{} — {detail}", dep_check_label(check_key)));
-            } else if is_missing_cli_detail(detail) {
-                b.optional_missing.push(dep_check_label(check_key));
-            } else {
-                b.other
-                    .push(format!("{} — {detail}", dep_check_label(check_key)));
+            // 分桶只认探测时留下的结构化成因；`detail` 是对外展示文案，不能反过来当依据。
+            match report.dep_probe_kinds.get(check_key) {
+                Some(ProbeKind::VersionIncompat) => b
+                    .toolchain
+                    .push(format!("{} — {detail}", dep_check_label(check_key))),
+                Some(ProbeKind::Missing) => b.optional_missing.push(dep_check_label(check_key)),
+                // `Broken`（装了但跑不起来）/ 无记录：不能凭文案猜成「未安装」
+                _ => b
+                    .other
+                    .push(format!("{} — {detail}", dep_check_label(check_key))),
             }
         } else {
             b.other.push(format!("{check_key}: {detail}"));
@@ -374,7 +360,22 @@ mod health_status_tests {
     use super::{
         HealthCheckItem, HealthReport, format_startup_health_summary, health_report_status,
     };
+    use crate::cm_tools::health_dep_compat::ProbeKind;
     use std::collections::BTreeMap;
+
+    fn report_with(
+        checks: BTreeMap<String, HealthCheckItem>,
+        kinds: &[(&str, ProbeKind)],
+    ) -> HealthReport {
+        HealthReport {
+            status: "degraded".into(),
+            checks,
+            dep_probe_kinds: kinds
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), *v))
+                .collect(),
+        }
+    }
 
     #[test]
     fn status_ok_when_required_and_all_checks_ok() {
@@ -440,13 +441,40 @@ mod health_status_tests {
                 detail: Some("No such file or directory (os error 2)".into()),
             },
         );
-        let summary = format_startup_health_summary(&HealthReport {
-            status: "degraded".into(),
+        let summary = format_startup_health_summary(&report_with(
             checks,
-        });
+            &[("dep_gh", ProbeKind::Missing), ("dep_npm", ProbeKind::Missing)],
+        ));
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
         assert!(summary.contains("gh"));
         assert!(summary.contains("npm"));
+    }
+
+    #[test]
+    fn broken_dep_does_not_land_in_optional_missing() {
+        // 装了但跑不起来（`ProbeKind::Broken`）以前凭 `starts_with("exit=")` 被算成「未安装」。
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "workspace_writable".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_rustfmt".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("exit=1: broken pipe".into()),
+            },
+        );
+        let summary = format_startup_health_summary(&report_with(
+            checks,
+            &[("dep_rustfmt", ProbeKind::Broken)],
+        ));
+        assert!(!summary.contains("可选 CLI 未安装"), "summary={summary}");
+        assert!(summary.contains("【其他】"), "summary={summary}");
+        assert!(summary.contains("rustfmt"), "summary={summary}");
     }
 
     #[test]
@@ -466,10 +494,7 @@ mod health_status_tests {
                 detail: Some("rustc 1.84.0 (abc)（版本 1.84.0 低于建议最低 1.85.0）".into()),
             },
         );
-        let summary = format_startup_health_summary(&HealthReport {
-            status: "degraded".into(),
-            checks,
-        });
+        let summary = format_startup_health_summary(&report_with(checks, &[]));
         assert!(summary.contains("【工具链】"));
         assert!(summary.contains("rustc"));
         assert!(summary.contains("1.85.0"));

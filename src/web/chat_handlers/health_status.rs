@@ -544,7 +544,6 @@ pub(crate) async fn status_handler(
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
         planner_executor_mode: "single_agent",
-        // 运行模式已固定为单 agent ReAct，不再由配置决定。
         orchestration_profile: "react",
         effective_orchestration_path,
         sync_default_tool_sandbox_mode: cfg
@@ -657,6 +656,7 @@ mod health_view_tests {
         let report = HealthReport {
             status: "degraded".into(),
             checks,
+            dep_probe_kinds: BTreeMap::new(),
         };
 
         let before = serde_json::to_value(&report).expect("internal serialize");
