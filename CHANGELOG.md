@@ -215,6 +215,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `write_workspace_temp_markdown`'s error directly, like the other four callers. **Behaviour**: that path's code
   returns to `gh_temp_file_failed` (from `invalid_args`) and its text regains the label prefix
   (「错误：PR 正文 临时文件路径非 UTF-8」).
+- **Plan-rewrite injections without the machine marker are no longer hidden in the chat area (#1494).**
+  `cm_display_rules::is_plan_rewrite_injected_user_content` used to fall back to three **prompt sentences**
+  (`你的最终回答缺少**结构化规划**` / `crabmate_plan_semantic_feedback` / `侧向校验认为你的 **agent_reply_plan**`)
+  as a compatibility shim for sessions persisted before the marker existed. All three are deleted; the
+  judgement is now `contains(PLAN_REWRITE_INJECTION_MARKER)` and nothing else. Safe because **every** producer
+  goes through `cm_agent::plan_rewrite::plan_rewrite_user_text_base`, whose body starts with the marker (both the
+  `_with_issue` and the semantic-feedback wrappers embed that base). **Behaviour**: a `role: user` message that
+  carries the rewrite text but neither the marker nor `name = CRABMATE_PLAN_REWRITE_NAME` is now shown
+  (previously hidden). Messages built by `Message::user_plan_rewrite_injection` are unaffected — they are
+  identified by `name` before any text is consulted. `fixtures/display_hide_user_golden.jsonl` flipped its two
+  shim samples to `show`, and `plan_rewrite_hidden_only_by_marker` pins both directions.
 
 ### Added
 

@@ -186,7 +186,11 @@ mod api_messages_strip_tests {
                 ),
                 false,
             ),
-            // 历史会话兼容：升级前注入的内容没有标记，仍须隐藏（#1478）。
+            // 无标记的旧文案：这里仍隐藏，但依据是 `name = CRABMATE_PLAN_REWRITE_NAME`
+            // （`is_server_injected_user_message` 先按 name 判定），**不是**文案匹配。
+            // #1494 删除 `cm_display_rules` 的三条提示词原句兼容不会影响本路径；
+            // 只有「丢了 name 的裸文案」才依赖 `user_message_should_hide_for_chat_display`，
+            // 那种情况现在按设计不再隐藏（见 `cm_display_rules` 的 `plan_rewrite_hidden_only_by_marker`）。
             (
                 Message::user_plan_rewrite_injection(
                     "你的最终回答缺少**结构化规划**。请加入 agent_reply_plan JSON",
