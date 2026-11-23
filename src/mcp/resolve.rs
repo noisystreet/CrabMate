@@ -57,6 +57,18 @@ impl ResolvedMcpServer {
             || self.cwd.as_ref().is_some_and(|c| !c.trim().is_empty())
     }
 
+    /// 传输配置自相矛盾或缺失时给出**结构化**结论（`None` = 配置合法）。
+    ///
+    /// 判定只读 `command` / `url` 两个字段是否为空，产出 [`McpConfigError`]；
+    /// 下游按变体取 `kind`，不再对中文校验文案做子串匹配。
+    pub fn config_error(&self) -> Option<McpConfigError> {
+        match (self.has_stdio(), self.has_remote_url()) {
+            (true, true) => Some(McpConfigError::BothStdioAndUrl),
+            (false, false) => Some(McpConfigError::NeitherStdioNorUrl),
+            _ => None,
+        }
+    }
+
     /// 解析为可直接 `Command::new` 的启动规格。
     pub fn stdio_launch(&self) -> Result<McpStdioLaunch, String> {
         let cmd = self.command.trim();
@@ -86,6 +98,36 @@ impl ResolvedMcpServer {
             env: BTreeMap::new(),
             cwd: None,
         })
+    }
+}
+
+/// 本仓**自产**的 MCP 配置校验失败。
+///
+/// 与外部握手 / DNS / TLS 错误分开：这些结论在产出点就是确定的，展示文案只是它的渲染结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpConfigError {
+    /// `command` 与 `url` 同时非空。
+    BothStdioAndUrl,
+    /// 两者都为空（启用但没有传输）。
+    NeitherStdioNorUrl,
+}
+
+impl McpConfigError {
+    /// status / CLI 用的稳定英文 kind（与旧 `classify_mcp_connect_error` 的 `config` 同名）。
+    pub const KIND: &'static str = "config";
+
+    /// 用户可见文案；`BothStdioAndUrl` 与历史字符串逐字一致。
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::BothStdioAndUrl => "不能同时配置 command 与 url",
+            Self::NeitherStdioNorUrl => "须配置 command 或 url 之一",
+        }
+    }
+}
+
+impl std::fmt::Display for McpConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
     }
 }
 
@@ -153,7 +195,11 @@ impl ResolvedMcpConfig {
     }
 }
 
-/// 将连接/握手类错误文案归类，供 status / CLI 展示（稳定英文 kind）。
+/// 将**外部**连接/握手类错误文案归类，供 status / CLI 展示（稳定英文 kind）。
+///
+/// 只处理外部错误（DNS / TLS / 鉴权 / 握手…）。本仓自产的配置错误不在这里：
+/// [`ResolvedMcpServer::config_error`] 在产出点就给出 [`McpConfigError`]，
+/// 调用方直接取 [`McpConfigError::KIND`]，不参与下面的子串匹配。
 pub fn classify_mcp_connect_error(msg: &str) -> &'static str {
     let lower = msg.to_ascii_lowercase();
     for (kind, needles) in MCP_CONNECT_ERROR_RULES {
@@ -161,14 +207,10 @@ pub fn classify_mcp_connect_error(msg: &str) -> &'static str {
             return kind;
         }
     }
-    if lower.contains("command") && lower.contains("url") && lower.contains("须") {
-        return "config";
-    }
     "unknown"
 }
 
 const MCP_CONNECT_ERROR_RULES: &[(&str, &[&str])] = &[
-    ("config", &["不能同时"]),
     (
         "url_invalid",
         &[
@@ -265,6 +307,49 @@ mod tests {
         assert_eq!(launch.program, "sh");
         assert_eq!(launch.args.first().map(String::as_str), Some("-c"));
         assert!(launch.args.get(1).is_some_and(|s| s.contains("fanalyzer")));
+    }
+
+    fn server_with(command: &str, url: Option<&str>) -> ResolvedMcpServer {
+        ResolvedMcpServer {
+            id: "1".into(),
+            name: "F".into(),
+            slug: "f".into(),
+            command: command.into(),
+            args: vec![],
+            env: BTreeMap::new(),
+            cwd: None,
+            url: url.map(str::to_string),
+            headers: BTreeMap::new(),
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn config_error_comes_from_fields_not_from_message() {
+        assert_eq!(
+            server_with("fanalyzer", Some("https://x/mcp")).config_error(),
+            Some(McpConfigError::BothStdioAndUrl)
+        );
+        assert_eq!(
+            server_with("", None).config_error(),
+            Some(McpConfigError::NeitherStdioNorUrl)
+        );
+        assert_eq!(server_with("fanalyzer", None).config_error(), None);
+        assert_eq!(
+            server_with("", Some("https://x/mcp")).config_error(),
+            None
+        );
+        // 展示文案保持历史口径（用户已在日志/CLI 里见过这句）。
+        assert_eq!(
+            McpConfigError::BothStdioAndUrl.to_string(),
+            "不能同时配置 command 与 url"
+        );
+        assert_eq!(McpConfigError::KIND, "config");
+        // 文案匹配只服务外部错误：自产配置文案不再被规则表命中。
+        assert_eq!(
+            classify_mcp_connect_error(&McpConfigError::BothStdioAndUrl.to_string()),
+            "unknown"
+        );
     }
 
     #[test]

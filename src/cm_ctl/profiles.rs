@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::CtlError;
 use super::paths;
@@ -40,7 +40,7 @@ pub struct ProfilesFile {
 }
 
 /// 一个预设方案（固定菜单里的一项）。
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
     /// 交给子 serve 的 `--config`。实例不能再单独给 `config`（两者互斥）。
@@ -136,21 +136,37 @@ pub fn load_optional(path: &Path) -> Result<ProfilesFile, CtlError> {
     let parsed: ProfilesFile = toml::from_str(&text).map_err(|e| {
         CtlError::usage(
             "profiles_file_invalid",
-            invalid_message(path, &e.to_string()),
+            invalid_message(path, &text, &e.to_string()),
         )
     })?;
     validate(&parsed)?;
     Ok(parsed)
 }
 
-fn invalid_message(path: &Path, detail: &str) -> String {
-    let quoted = |k: &str| detail.contains(&format!("`{k}`")) || detail.contains(&format!("'{k}'"));
-    let hint = if quoted("workspace") {
-        "（`workspace` 只能由实例声明提供，profile 不得携带）"
-    } else if quoted("yes") || quoted("--yes") {
-        "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）"
-    } else {
-        ""
+/// `Profile` 接受的键名（`deny_unknown_fields` 白名单的镜像）。
+///
+/// 由 `profile_keys_match_struct` 钉住：新增字段会让那个「填满所有字段」的
+/// 结构体字面量编译失败，从而强制同步本表。
+const PROFILE_KEYS: &[&str] = &[
+    "config",
+    "allowed_commands",
+    "permission_level",
+    "no_tools",
+    "llm_model",
+    "llm_api_base",
+    "env",
+];
+
+fn invalid_message(path: &Path, text: &str, detail: &str) -> String {
+    // 提示按**文档里真实出现的未知键名**选，不靠 error 文案里的 `unknown field \`x\``。
+    let hint = match super::toml_unknown::first_unknown_entry_key(text, "profiles", PROFILE_KEYS)
+        .as_deref()
+    {
+        Some("workspace") => "（`workspace` 只能由实例声明提供，profile 不得携带）",
+        Some("yes") | Some("--yes") => {
+            "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）"
+        }
+        _ => "",
     };
     format!("解析 profiles 文件失败 {}：{detail}{hint}", path.display())
 }
@@ -306,6 +322,31 @@ GIT_SSH_COMMAND = "ssh -i k"
         assert_eq!(err.error_code, "profiles_file_insecure");
         assert!(err.message.contains("chmod 600"), "{}", err.message);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn profile_keys_match_struct() {
+        // 填满每个可选字段（序列化会跳过未填的键），再与白名单比对。
+        let full = Profile {
+            config: Some(String::new()),
+            allowed_commands: Some(vec![String::new()]),
+            permission_level: Some(String::new()),
+            no_tools: Some(false),
+            llm_model: Some(String::new()),
+            llm_api_base: Some(String::new()),
+            env: BTreeMap::from([("K".to_string(), "V".to_string())]),
+        };
+        let serialized = toml::Value::try_from(&full).expect("Profile 可序列化");
+        let mut keys: Vec<&str> = serialized
+            .as_table()
+            .expect("预设应序列化为表")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected = PROFILE_KEYS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "`PROFILE_KEYS` 与 `Profile` 字段必须一致");
     }
 
     #[test]

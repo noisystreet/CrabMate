@@ -105,7 +105,10 @@ pub fn load(path: &Path) -> Result<InstancesFile, CtlError> {
         )
     })?;
     let parsed: InstancesFile = toml::from_str(&text).map_err(|e| {
-        CtlError::usage("instances_file_invalid", invalid_message(path, &e.to_string()))
+        CtlError::usage(
+            "instances_file_invalid",
+            invalid_message(path, &text, &e.to_string()),
+        )
     })?;
     validate(&parsed)?;
     Ok(parsed)
@@ -213,13 +216,28 @@ pub fn set_enabled(path: &Path, name: &str, enabled: bool) -> Result<Option<bool
     Ok(Some(true))
 }
 
-fn invalid_message(path: &Path, detail: &str) -> String {
-    let hint = if detail.contains("unknown field `workspace`") || detail.contains("unknown field 'workspace'") {
-        "（`workspace` 只能由实例声明提供，profile 不得携带）"
-    } else if detail.contains("unknown field `yes`") || detail.contains("unknown field 'yes'") {
-        "（`yes` 必须由实例级显式决定，不得藏在 profile 里）"
-    } else {
-        ""
+/// `Declaration` 接受的键名（`deny_unknown_fields` 白名单的镜像）。
+///
+/// 由 `declaration_keys_match_struct` 钉住：新增字段会让那个「填满所有字段」的
+/// 结构体字面量编译失败，从而强制同步本表。
+const DECLARATION_KEYS: &[&str] = &[
+    "workspace",
+    "config",
+    "profile",
+    "port",
+    "enabled",
+    "env",
+    "env_file",
+];
+
+fn invalid_message(path: &Path, text: &str, detail: &str) -> String {
+    // 提示按**文档里真实出现的未知键名**选，不靠 error 文案里的 `unknown field \`x\``。
+    let hint = match super::toml_unknown::first_unknown_entry_key(text, "instances", DECLARATION_KEYS)
+        .as_deref()
+    {
+        Some("workspace") => "（`workspace` 只能由实例声明提供，profile 不得携带）",
+        Some("yes") | Some("--yes") => "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）",
+        _ => "",
     };
     format!("解析声明文件失败 {}：{detail}{hint}", path.display())
 }
@@ -315,6 +333,31 @@ mod tests {
 workspace = "/tmp/proj-a"
 port = 8080
 "#;
+
+    #[test]
+    fn declaration_keys_match_struct() {
+        // 填满每个可选字段（`skip_serializing_if` 会漏掉没填的键），再与白名单比对。
+        let full = Declaration {
+            workspace: Some(String::new()),
+            config: Some(String::new()),
+            profile: Some(String::new()),
+            port: Some(0),
+            enabled: false,
+            env: BTreeMap::from([("K".to_string(), "V".to_string())]),
+            env_file: Some(String::new()),
+        };
+        let serialized = toml::Value::try_from(&full).expect("Declaration 可序列化");
+        let mut keys: Vec<&str> = serialized
+            .as_table()
+            .expect("声明应序列化为表")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected = DECLARATION_KEYS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "`DECLARATION_KEYS` 与 `Declaration` 字段必须一致");
+    }
 
     #[test]
     fn loads_minimal_declaration_with_enabled_default_true() {
