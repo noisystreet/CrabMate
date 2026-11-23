@@ -33,7 +33,24 @@ pub fn is_quota_or_rate_limit_llm_message(msg: &str) -> bool {
     QUOTA_OR_RATE_LIMIT_NEEDLES.iter().any(|n| msg.contains(n))
 }
 
-/// 把 LLM / `run_agent_turn` 错误文案归类为 CLI 退出码（启发式，与 `llm::api` 用户可见串对齐）。
+/// 把 LLM / `run_agent_turn` 错误文案归类为 CLI 退出码。
+///
+/// **已知缺口（#1494 第 1 项，尚未结构化）**：下面四条 needle 是**跨模块文案依赖** ——
+/// 分别由 `llm::stream_host_impl`（「模型接口返回错误」/「模型返回内容无法解析」）、
+/// `cm_llm::api`（「非流式响应 choices 为空」）与
+/// `agent::agent_turn::turn_loop::outer_loop`（「无 tool_calls」）产出。
+/// CLI 路径到这一层只剩 `String`（没有 HTTP status / 失败类型），所以只能匹配文案：
+/// 改那四处的措辞会让 `EXIT_MODEL_ERROR` **静默**退化为 `EXIT_GENERAL`，脚本的分支随之失效。
+///
+/// **守卫强度有限（别当成上游契约）**：`model_error_needles_are_pinned` 只钉住
+/// 「这四条字面量 → `EXIT_MODEL_ERROR`」的**映射表**；它喂的是本文件内的字符串副本，**没有**在
+/// 上游产出上断言。因此上游改了措辞（例：把「模型接口返回错误」改成「模型 API 返回错误」）时，
+/// 该用例**不会红**，运行时只是静默退化成 `EXIT_GENERAL`。
+///
+/// 真正防漂移要么在产出点上断言（参照
+/// `cm_agent::plan_rewrite` 的 `rewrite_user_base_carries_display_marker`），要么等结构化：
+/// 让错误带 `LlmFailureKind`（见 #1494，先例 `RunAgentTurnError::TurnBudgetExhausted`）。
+/// `docs/待办清单.md` 已按「当前 pin 不覆盖上游漂移」登记该缺口。
 pub fn classify_model_error_message(msg: &str) -> i32 {
     use crate::cm_runtime::cli_exit::{EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT};
 
@@ -73,6 +90,40 @@ mod tests {
     fn classify_model_error_maps_generic_model_line() {
         let got = classify_model_error_message("模型接口返回错误（HTTP 401）：bad key");
         assert_eq!(got, crate::cm_runtime::cli_exit::EXIT_MODEL_ERROR);
+    }
+
+    /// #1494 第 1 项：四条 needle 各有一条正例，钉住「这四条字面量 → `EXIT_MODEL_ERROR`」的映射表。
+    ///
+    /// **注意这里钉的是什么**：字符串是**本文件内的副本**，不是 `llm::stream_host_impl` /
+    /// `cm_llm::api` / `outer_loop` 的产出。所以上游改措辞时本用例**不会红**，运行时只会静默退化；
+    /// 它只能防「有人动了本函数的 needle 列表」。真漂移守卫要么在产出点上断言
+    /// （如 `plan_rewrite::rewrite_user_base_carries_display_marker`），要么等 `LlmFailureKind`。
+    #[test]
+    fn model_error_needles_are_pinned() {
+        use crate::cm_runtime::cli_exit::EXIT_MODEL_ERROR;
+        for msg in [
+            "模型接口返回错误（HTTP 400）：bad request",
+            "模型返回内容无法解析为预期格式，请稍后重试",
+            "非流式响应 choices 为空",
+            "无 tool_calls",
+        ] {
+            assert_eq!(
+                classify_model_error_message(msg),
+                EXIT_MODEL_ERROR,
+                "needle 失配（本文件的 needle 列表被改动了？）: {msg}"
+            );
+        }
+    }
+
+    /// 兜底不得被上面四条吞掉：未识别的文案仍是 `EXIT_GENERAL`。
+    ///
+    /// 与 `model_error_needles_are_pinned` 成对 —— 只有两者都绿，才能说"分类既命中又不过宽"。
+    #[test]
+    fn unknown_model_message_falls_back_to_general() {
+        assert_eq!(
+            classify_model_error_message("模型返回了一句全新的、未登记过的文案"),
+            crate::cm_runtime::cli_exit::EXIT_GENERAL
+        );
     }
 
     /// #1422 C4：喂给 needle 表的 HTTP 状态片段全覆盖（这些是「真命中」）。

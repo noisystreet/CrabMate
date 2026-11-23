@@ -48,6 +48,11 @@ pub const PLAN_REWRITE_INJECTION_MARKER: &str = "【规划重写】";
 pub fn is_plan_rewrite_injected_user_content(s: &str) -> bool {
     s.contains(PLAN_REWRITE_INJECTION_MARKER)
         // 以下三条是**历史会话兼容**：升级前注入的内容没有标记，仍按旧判据隐藏。
+        //
+        // 它们匹配的是**提示词原句**，属 #1478 口径下的已知尾巴（#1494 第 4 项）：
+        // 只在读旧会话时生效，新写入一律带 `PLAN_REWRITE_INJECTION_MARKER`。
+        // **退出条件**：待所有仍可能被读到、且不含标记的历史会话过期（或迁移）后，整块删除，
+        // 并由 `plan_rewrite_hidden_only_by_marker` 一类负向用例钉住"无标记即不隐藏"。
         || s.contains("你的最终回答缺少**结构化规划**")
         || s.contains("crabmate_plan_semantic_feedback")
         || s.contains("侧向校验认为你的 **agent_reply_plan**")
