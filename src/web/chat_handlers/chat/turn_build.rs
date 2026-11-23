@@ -431,6 +431,54 @@ async fn build_new_conversation_turn(
     })
 }
 
+/// `build_messages_for_turn` 的失败原因。
+///
+/// 三个分支各自对应一个 HTTP `code`，调用方**按变体**选错误码；以前是拿
+/// `e.contains("session_mode")` 反推，文案一改就静默落到 `INVALID_AGENT_ROLE`。
+#[derive(Debug)]
+pub(super) enum TurnBuildError {
+    /// `/<skill-id>` 技能调用失败（`TURN_ERR_TAG` 已在构造处剥掉）。
+    Skill(String),
+    /// `session_mode` 非法（来自 `parse_optional_session_mode`）。
+    SessionMode(String),
+    /// 其余（角色、会话种子、上下文组装等）。
+    Other(String),
+}
+
+impl TurnBuildError {
+    /// 技能错误靠 `SkillSlashError::strip_turn_err` 判定（结构化前缀），不靠猜文案。
+    fn from_turn_prepare(raw: String) -> Self {
+        match crate::config::skills_slash::SkillSlashError::strip_turn_err(&raw) {
+            Some(msg) => Self::Skill(msg.to_string()),
+            None => Self::Other(raw),
+        }
+    }
+
+    /// 契约错误码（常量见 `cm_api_contract::error_codes`）。
+    pub(super) fn code(&self) -> &'static str {
+        match self {
+            Self::Skill(_) => crate::cm_api_contract::error_codes::SKILL_INVOKE_FAILED,
+            Self::SessionMode(_) => crate::cm_api_contract::error_codes::INVALID_SESSION_MODE,
+            // `Other` 实际还涵盖会话种子 / 上下文组装失败，但回包仍沿用
+            // `INVALID_AGENT_ROLE`：这是 `POST /chat*` 既有契约（客户端可能按此码提示
+            // 「角色不存在」），本轮只把判定从文案改成变体，**不**顺手改码。细分值得另开 Issue。
+            Self::Other(_) => crate::cm_api_contract::error_codes::INVALID_AGENT_ROLE,
+        }
+    }
+
+    pub(super) fn message(&self) -> &str {
+        match self {
+            Self::Skill(m) | Self::SessionMode(m) | Self::Other(m) => m,
+        }
+    }
+
+    pub(super) fn into_message(self) -> String {
+        match self {
+            Self::Skill(m) | Self::SessionMode(m) | Self::Other(m) => m,
+        }
+    }
+}
+
 pub(super) async fn build_messages_for_turn(
     state: &WebChatTurnAppFacet,
     conversation_id: &str,
@@ -439,7 +487,7 @@ pub(super) async fn build_messages_for_turn(
     agent_role: Option<&str>,
     session_mode: Option<&str>,
     permission_level: Option<&str>,
-) -> Result<ConversationTurnSeed, String> {
+) -> Result<ConversationTurnSeed, TurnBuildError> {
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
     // 存盘 / 水合 / UI：`last_user` 保留含 `/<skill-id>` 的原文（及上游已展开的 file 附录）。
@@ -448,14 +496,16 @@ pub(super) async fn build_messages_for_turn(
     let raw_user_for_store = user_msg.to_string();
     let (_stripped_user, forced_skill) = {
         let cfg = state.cfg.read().await;
-        prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)?
+        prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)
+            .map_err(TurnBuildError::from_turn_prepare)?
     };
     let last_user = if image_urls.is_empty() {
         Message::user_only(raw_user_for_store)
     } else {
         Message::user_with_images(&raw_user_for_store, image_urls)
     };
-    let mode_opt = crate::types::parse_optional_session_mode(session_mode)?;
+    let mode_opt = crate::types::parse_optional_session_mode(session_mode)
+        .map_err(TurnBuildError::SessionMode)?;
     let parts = TurnBuildParts {
         agent_role,
         mode_opt,
@@ -465,9 +515,13 @@ pub(super) async fn build_messages_for_turn(
         last_user,
     };
     if let Some(seed) = state.load_conversation_seed(conversation_id).await {
-        return build_existing_conversation_turn(state, seed, parts).await;
+        return build_existing_conversation_turn(state, seed, parts)
+            .await
+            .map_err(TurnBuildError::Other);
     }
-    build_new_conversation_turn(state, parts).await
+    build_new_conversation_turn(state, parts)
+        .await
+        .map_err(TurnBuildError::Other)
 }
 
 #[cfg(test)]

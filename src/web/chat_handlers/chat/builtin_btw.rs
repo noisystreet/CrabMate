@@ -152,7 +152,7 @@ async fn answer_btw(
         None,
     )
     .await
-    .map_err(BtwFailure::Other)?;
+    .map_err(|e| BtwFailure::Other(e.into_message()))?;
     let mut messages = seed.messages;
     let model_override = req.llm_override.and_then(|o| o.model.as_deref());
     // 旁路提问同样受「上下文窗口」约束：走只读 dry-run 压缩（不落盘）。

@@ -36,6 +36,7 @@ pub(crate) mod run;
 pub(crate) mod signal;
 pub(crate) mod spawn;
 pub(crate) mod supervise;
+pub(crate) mod toml_unknown;
 
 pub use run::run;
 

@@ -178,6 +178,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Both string predicates are deleted. **Behaviour change in the startup log only**: a dep CLI that is
   present but exits non-zero is `Broken` and lands in 【其他】 instead of being reported as
   「可选 CLI 未安装」; its `detail` now also carries the first stderr line (`exit=3: …`, capped at 160 chars).
+- **Unknown-key and bad-argument errors are identified structurally, not by matching wording (#1478).**
+  Four call sites branched on the text of an error the process had just produced.
+  `POST /chat` guessed `INVALID_SESSION_MODE` from `e.contains("session_mode")`: `build_messages_for_turn`
+  now returns a typed `TurnBuildError` (`Skill` / `SessionMode` / `Other`) whose variant picks the code, so
+  `/chat/stream` also gains the `INVALID_SESSION_MODE` answer it never had. `cm_config::source`'s tests could
+  only assert `contains("unknown field")` because `toml::de::Error` exposes just `span()`, never the field
+  name: parsing now goes through `ConfigSourceError::UnknownKey { table, key }`, and the key is located by
+  comparing `toml::Value` keys against the type's own key set (derived from a fully populated value, pinned by
+  a test, so it cannot drift). `cm_ctl`'s `instances.toml` / `profiles.toml` hints matched
+  ``unknown field `workspace` `` with both quote styles — the hint now comes from that same key-name lookup
+  (`cm_ctl::toml_unknown`). `deny_unknown_fields` still decides accept/reject; only the *naming* changed, and a
+  bad `config.toml` key now reads 「未知配置键 `x`（agent 段拒绝未知字段…）」 instead of serde's English
+  `unknown field …` — the serde original (which carries the `expected one of …` candidate list) is still
+  appended, because that list is exactly what a typo needs. MCP: `McpConfigError::{BothStdioAndUrl, NeitherStdioNorUrl}` (from
+  `ResolvedMcpServer::config_error`) replaces the `contains("不能同时")` rule inside
+  `classify_mcp_connect_error`, which now classifies **external** errors only and leaves the self-produced
+  config case to the structured kind. Being reachable at all is what changes two outputs for a server with
+  **neither** `command` nor `url` (`mcp list --probe`, `GET /user-data/mcp-servers/status`): `last_error` goes
+  from `command 为空` to 「须配置 command 或 url 之一」and `last_error_kind` from `unknown` to `config`.
 
 ### Added
 

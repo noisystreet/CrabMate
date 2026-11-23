@@ -443,8 +443,8 @@ fn launch_for_log(server: &ResolvedMcpServer) -> String {
 }
 
 async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheEntry, String> {
-    if server.has_stdio() && server.has_remote_url() {
-        return Err("不能同时配置 command 与 url".to_string());
+    if let Some(err) = server.config_error() {
+        return Err(err.to_string());
     }
     log::info!(
         target: "crabmate",
@@ -617,8 +617,17 @@ pub struct McpServerRuntimeStatus {
     pub openai_tool_names: Vec<String>,
     pub remote_tools: Vec<McpRemoteToolSummary>,
     pub last_error: Option<String>,
-    /// 稳定英文 kind（见 `classify_mcp_connect_error`）；无错误时为 `None`。
+    /// 稳定英文 kind：配置矛盾由 [`ResolvedMcpServer::config_error`] 直接给出，
+    /// 其余外部错误见 `classify_mcp_connect_error`；无错误时为 `None`。
     pub last_error_kind: Option<String>,
+}
+
+/// 错误归因：服务器自身配置矛盾由**形状**判定，外部错误才走文案规则表。
+fn classify_server_error(server: &ResolvedMcpServer, err: &str) -> String {
+    if server.config_error().is_some() {
+        return crate::mcp::resolve::McpConfigError::KIND.to_string();
+    }
+    crate::mcp::resolve::classify_mcp_connect_error(err).to_string()
 }
 
 fn runtime_status_connected(
@@ -641,8 +650,8 @@ fn runtime_status_connected(
         last_error: entry.last_error.clone(),
         last_error_kind: entry
             .last_error
-            .as_ref()
-            .map(|e| crate::mcp::resolve::classify_mcp_connect_error(e).to_string()),
+            .as_deref()
+            .map(|e| classify_server_error(server, e)),
     }
 }
 
@@ -651,8 +660,8 @@ fn runtime_status_disconnected(
     last_error: Option<String>,
 ) -> McpServerRuntimeStatus {
     let last_error_kind = last_error
-        .as_ref()
-        .map(|e| crate::mcp::resolve::classify_mcp_connect_error(e).to_string());
+        .as_deref()
+        .map(|e| classify_server_error(server, e));
     McpServerRuntimeStatus {
         id: server.id.clone(),
         name: server.name.clone(),

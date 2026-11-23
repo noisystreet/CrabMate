@@ -1,8 +1,9 @@
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ConfigFile {
     pub(super) agent: Option<AgentSection>,
@@ -18,7 +19,7 @@ pub(super) struct ConfigFile {
 }
 
 /// `[[scheduled_agent_task]]` 单行（用户 `config.toml` 顶层表数组）
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Default, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ScheduledAgentTaskRow {
     /// 任务标识（日志与固定会话 `conversation_id` 派生用）
@@ -42,7 +43,7 @@ fn scheduled_agent_task_enabled_default() -> bool {
 }
 
 /// `config/tools.toml` / 用户 `config.toml` 中 **`[tool_registry]`** 段（与 `[agent]` 并列）。
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ToolRegistrySection {
     /// `http_fetch` / `http_request` 在 **`spawn_blocking` 外圈** `tokio::time::timeout` 上限（秒）；省略则 `max(command_timeout_secs, http_fetch_timeout_secs)`。
@@ -121,7 +122,7 @@ pub(super) struct ToolRegistrySection {
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AgentRoleRow {
     pub(super) id: String,
@@ -140,7 +141,7 @@ pub(super) struct AgentRoleRow {
     pub(super) max_permission_level: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AgentSection {
     pub(super) api_base: Option<String>,
@@ -366,10 +367,142 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_hybrid_semantic_pool: Option<u64>,
 }
 
+/// 配置 TOML 的解析失败。
+///
+/// `deny_unknown_fields` 拒绝未知键时，`toml::de::Error` 只暴露 `span()`，
+/// 拿不到字段名——所以键名由 [`find_unknown_key`] 在 `toml::Value` 上结构化比对得出，
+/// 而不是从 serde 的英文文案里抠。
+#[derive(Debug)]
+pub(super) enum ConfigSourceError {
+    /// 某个表里出现了结构体未声明的键。
+    ///
+    /// `serde_detail` 是 serde 原始文案（含 `expected one of …` 候选键列表）：键名拼错时
+    /// 那是用户最需要的信息，不能因为换成结构化判定就丢掉。
+    UnknownKey {
+        table: &'static str,
+        key: String,
+        serde_detail: String,
+    },
+    /// 其它 TOML / 类型错误。
+    Toml(toml::de::Error),
+}
+
+impl ConfigSourceError {
+    /// 未知键 `(表名, 键名)`；非未知键错误返回 `None`。
+    ///
+    /// 生产路径只经 `Display`；本方法给测试（及将来的调用方）一个结构化入口。
+    #[cfg(test)]
+    pub(super) fn unknown_key(&self) -> Option<(&'static str, &str)> {
+        match self {
+            Self::UnknownKey { table, key, .. } => Some((table, key.as_str())),
+            Self::Toml(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigSourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownKey {
+                table,
+                key,
+                serde_detail,
+            } => write!(
+                f,
+                "未知配置键 `{key}`（{table} 段拒绝未知字段，见 docs/配置说明.md）：{serde_detail}"
+            ),
+            Self::Toml(e) => f.write_str(&e.to_string()),
+        }
+    }
+}
+
+/// 某类型接受的键名集合：由**默认值序列化**得到，因此不会与结构体字段漂移。
+fn known_keys<T: Default + Serialize>() -> BTreeSet<String> {
+    match serde_json::to_value(T::default()) {
+        Ok(serde_json::Value::Object(m)) => m.into_iter().map(|(k, _)| k).collect(),
+        // 默认值不可序列化时退化为空集：只影响报错里点名的键，不影响接受 / 拒绝判定。
+        _ => BTreeSet::new(),
+    }
+}
+
+fn first_unknown<'a>(
+    mut keys: impl Iterator<Item = &'a String>,
+    known: &BTreeSet<String>,
+) -> Option<String> {
+    keys.find(|k| !known.contains(*k)).cloned()
+}
+
+/// 表段（`[agent]` / `[tool_registry]`）里的第一个未知键。
+fn unknown_in_section(
+    root: &toml::map::Map<String, toml::Value>,
+    table: &'static str,
+    known: &BTreeSet<String>,
+) -> Option<(&'static str, String)> {
+    let section = root.get(table)?.as_table()?;
+    let key = first_unknown(section.keys(), known)?;
+    Some((table, key))
+}
+
+/// 表数组（`[[agent_roles]]` / `[[scheduled_agent_task]]`）任一行的第一个未知键。
+fn unknown_in_rows(
+    root: &toml::map::Map<String, toml::Value>,
+    table: &'static str,
+    known: &BTreeSet<String>,
+) -> Option<(&'static str, String)> {
+    for row in root.get(table)?.as_array()? {
+        let Some(row) = row.as_table() else {
+            continue;
+        };
+        if let Some(key) = first_unknown(row.keys(), known) {
+            return Some((table, key));
+        }
+    }
+    None
+}
+
+/// 在 `toml::Value` 上定位第一个未知键（`(表名, 键名)`）。
+fn find_unknown_key(s: &str) -> Option<(&'static str, String)> {
+    let value: toml::Value = toml::from_str(s).ok()?;
+    let root = value.as_table()?;
+    if let Some(key) = first_unknown(root.keys(), &known_keys::<ConfigFile>()) {
+        return Some(("顶层", key));
+    }
+    unknown_in_section(root, "agent", &known_keys::<AgentSection>())
+        .or_else(|| {
+            unknown_in_section(root, "tool_registry", &known_keys::<ToolRegistrySection>())
+        })
+        .or_else(|| unknown_in_rows(root, "agent_roles", &known_keys::<AgentRoleRow>()))
+        .or_else(|| {
+            unknown_in_rows(
+                root,
+                "scheduled_agent_task",
+                &known_keys::<ScheduledAgentTaskRow>(),
+            )
+        })
+}
+
+/// 严格解析：serde 拒绝后，若是未知键则换成带键名的 [`ConfigSourceError::UnknownKey`]。
+fn parse_strict<T: serde::de::DeserializeOwned + Default + Serialize>(
+    s: &str,
+) -> Result<T, ConfigSourceError> {
+    match toml::from_str::<T>(s) {
+        Ok(v) => Ok(v),
+        Err(e) => match find_unknown_key(s) {
+            // 未知键：类别结构化，但**保留** serde 原文（含候选键列表）。
+            Some((table, key)) => Err(ConfigSourceError::UnknownKey {
+                table,
+                key,
+                serde_detail: e.to_string(),
+            }),
+            None => Err(ConfigSourceError::Toml(e)),
+        },
+    }
+}
+
 /// 读取 [agent] 段，缺失字段保持为 None。
 /// TOML 解析失败时返回 `Err`，便于调用方区分「合法 TOML 但无 [agent]」与「格式错误」。
-pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, toml::de::Error> {
-    Ok(toml::from_str::<ConfigFile>(s)?.agent)
+pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, ConfigSourceError> {
+    Ok(parse_strict::<ConfigFile>(s)?.agent)
 }
 
 /// `parse_config_file_roles` 的解析结果：`[agent]`、角色行、`[tool_registry]`、定时任务行。
@@ -381,8 +514,8 @@ pub(super) type ParsedConfigFileRoles = (
 );
 
 /// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]` + 可选 `[tool_registry]` + 可选 `[[scheduled_agent_task]]`）；`agent` 缺失时仍返回角色行供合并。
-pub(super) fn parse_config_file_roles(s: &str) -> Result<ParsedConfigFileRoles, toml::de::Error> {
-    let f: ConfigFile = toml::from_str(s)?;
+pub(super) fn parse_config_file_roles(s: &str) -> Result<ParsedConfigFileRoles, ConfigSourceError> {
+    let f = parse_strict::<ConfigFile>(s)?;
     Ok((
         f.agent,
         f.agent_roles,
@@ -394,8 +527,8 @@ pub(super) fn parse_config_file_roles(s: &str) -> Result<ParsedConfigFileRoles, 
 /// 解析 **`config/tools.toml`** 形文件（`[agent]` + 可选 `[tool_registry]`，无 `agent_roles`）。
 pub(super) fn parse_tools_config_bundle(
     s: &str,
-) -> Result<(Option<AgentSection>, Option<ToolRegistrySection>), toml::de::Error> {
-    let f: ConfigFile = toml::from_str(s)?;
+) -> Result<(Option<AgentSection>, Option<ToolRegistrySection>), ConfigSourceError> {
+    let f = parse_strict::<ConfigFile>(s)?;
     Ok((f.agent, f.tool_registry))
 }
 
@@ -442,10 +575,7 @@ model = "deepseek-chat"
 key = "value"
 "#;
         let err = parse_agent_section(toml).expect_err("unknown top-level table should fail");
-        assert!(
-            err.to_string().contains("unknown field") || err.to_string().contains("other"),
-            "expected unknown field error, got: {err}"
-        );
+        assert_eq!(err.unknown_key(), Some(("顶层", "other")), "got: {err}");
     }
 
     #[test]
@@ -470,16 +600,16 @@ model = "m"
 typo_unknown_key = 1
 "#;
         let err = parse_agent_section(toml).expect_err("unknown key should fail");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("unknown field") || msg.contains("unknown"),
-            "expected serde unknown field error, got: {msg}"
+        assert_eq!(
+            err.unknown_key(),
+            Some(("agent", "typo_unknown_key")),
+            "got: {err}"
         );
     }
 
     #[test]
     fn parse_rejects_removed_compat_keys_in_agent_section() {
-        for key in [
+        for line in [
             "llm_fold_system_into_user = true",
             "intent_mode_bias_enabled = false",
             "intent_l2_enabled = false",
@@ -514,16 +644,17 @@ typo_unknown_key = 1
 [agent]
 api_base = "https://api.example.com"
 model = "m"
-{key}
+{line}
 "#
             );
+            let expected = line.split('=').next().unwrap_or(line).trim();
             let err = parse_agent_section(&toml)
                 .expect_err("removed compat key should fail deny_unknown_fields");
-            let msg = err.to_string();
-            assert!(
-                msg.contains("unknown field") || msg.contains("unknown"),
-                "expected unknown field for `{key}`, got: {msg}"
-            );
+            let (table, found) = err
+                .unknown_key()
+                .unwrap_or_else(|| panic!("expected UnknownKey for `{line}`, got: {err}"));
+            assert_eq!(table, "agent", "got: {err}");
+            assert_eq!(found, expected, "got: {err}");
         }
     }
 
