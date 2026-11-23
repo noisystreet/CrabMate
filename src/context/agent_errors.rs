@@ -1,11 +1,8 @@
-//! Web / CLI 共用的 `run_agent_turn` 与 LLM 错误串**启发式**分类（避免多处子串判断漂移）。
-
-use crate::cm_types::LLM_CANCELLED_ERROR;
-
-/// 与协作取消等路径返回的 [`LLM_CANCELLED_ERROR`] 对齐。
-pub fn is_user_cancelled_run_agent_error(s: &str) -> bool {
-    s.trim() == LLM_CANCELLED_ERROR
-}
+//! CLI / 契约层共用的 LLM 错误串**启发式**分类（避免多处子串判断漂移）。
+//!
+//! 只服务**拿不到结构化信息**的路径（CLI 退出码、契约测试）；SSE / HTTP / 队列分流都已改为
+//! 按 `RunAgentTurnError` 变体判定。曾经的 `is_user_cancelled_run_agent_error`（取消串比对）
+//! 已随 #1478 删除——取消现在只看变体。
 
 const QUOTA_OR_RATE_LIMIT_NEEDLES: &[&str] = &[
     "HTTP 429",
@@ -56,16 +53,6 @@ pub fn classify_model_error_message(msg: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_types::LLM_CANCELLED_ERROR;
-
-    #[test]
-    fn user_cancelled_trim_matches() {
-        assert!(is_user_cancelled_run_agent_error(LLM_CANCELLED_ERROR));
-        assert!(is_user_cancelled_run_agent_error(&format!(
-            "  {}  ",
-            LLM_CANCELLED_ERROR
-        )));
-    }
 
     #[test]
     fn quota_heuristic_429() {
