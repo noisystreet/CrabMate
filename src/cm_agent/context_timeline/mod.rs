@@ -13,9 +13,6 @@ use crate::cm_types::{
     CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, is_chat_timeline_marker, message_content_as_str,
     user_message_counts_for_branch_truncation,
 };
-use crate::cm_config::skills::{
-    SKILLS_BODY_TITLE, SKILLS_FILE_LINE_PREFIX, SKILLS_FORCED_TITLE_PREFIX,
-};
 
 mod detail;
 pub use detail::{ContextTimelineDetail, InjectDetail, TrimDetail};
@@ -88,8 +85,6 @@ pub struct ContextTimelineSnapshot<'a> {
 #[derive(Debug, Default)]
 pub struct ContextTimelineAcc {
     inject_kinds: Vec<String>,
-    skill_ids: Vec<String>,
-    skill_forced: bool,
     n_before: Option<usize>,
     n_after: usize,
     count_hit: bool,
@@ -141,11 +136,6 @@ impl ContextTimelineAcc {
         for kind in inject_kinds_in_messages(messages) {
             push_unique(&mut self.inject_kinds, kind);
         }
-        let skills = skill_hint_from_messages(messages);
-        for id in skills.ids {
-            push_unique(&mut self.skill_ids, id);
-        }
-        self.skill_forced = self.skill_forced || skills.forced;
     }
 
     fn merge_pipeline(&mut self, snap: ContextTimelineSnapshot<'_>) {
@@ -189,7 +179,7 @@ impl ContextTimelineAcc {
     }
 
     fn has_inject(&self) -> bool {
-        !self.inject_kinds.is_empty() || !self.skill_ids.is_empty() || self.skill_forced
+        !self.inject_kinds.is_empty()
     }
 
     fn has_trim(&self) -> bool {
@@ -239,8 +229,6 @@ impl ContextTimelineAcc {
             title: TITLE_INJECT.to_string(),
             detail: ContextTimelineDetail::Inject(InjectDetail {
                 kinds: self.inject_kinds.clone(),
-                skills: self.skill_ids.clone(),
-                forced: self.skill_forced,
             }),
         }
     }
@@ -352,69 +340,6 @@ pub fn strip_context_window_timeline_markers(messages: &mut Vec<Message>) {
     messages.retain(|m| context_window_timeline_kind(m).is_none());
 }
 
-struct SkillHint {
-    ids: Vec<String>,
-    forced: bool,
-}
-
-fn skill_hint_from_messages(messages: &[Message]) -> SkillHint {
-    let Some(sys) = messages.iter().find(|m| {
-        m.role == "system" && !is_chat_timeline_marker(m) && m.name.is_none()
-    }) else {
-        return SkillHint {
-            ids: Vec::new(),
-            forced: false,
-        };
-    };
-    let Some(body) = message_content_as_str(&sys.content) else {
-        return SkillHint {
-            ids: Vec::new(),
-            forced: false,
-        };
-    };
-    // 生产方与消费者共用常量（#1478）：此前两边各写一份中文小标题，改文案时消费侧静默失效。
-    let forced = body.contains(SKILLS_FORCED_TITLE_PREFIX);
-    // 索引形态（现行生产）只列 id 与描述、无正文档位，**刻意**不触发 hint（见
-    // `skill_index_only_is_not_applied`）；这里只认正文形态，它属历史会话兼容路径。
-    let body_form = body.contains(SKILLS_BODY_TITLE);
-    if !forced && !body_form {
-        return SkillHint {
-            ids: Vec::new(),
-            forced: false,
-        };
-    }
-    let mut ids = Vec::new();
-    if let Some(id) = forced_skill_id(body) {
-        push_unique(&mut ids, id);
-    }
-    for id in skill_file_ids(body) {
-        push_unique(&mut ids, id);
-    }
-    SkillHint { ids, forced }
-}
-
-fn forced_skill_id(body: &str) -> Option<String> {
-    let rest = body.split_once(SKILLS_FORCED_TITLE_PREFIX)?.1;
-    let id = rest.split_once('）')?.0.trim();
-    (!id.is_empty()).then(|| id.to_string())
-}
-
-fn skill_file_ids(body: &str) -> Vec<String> {
-    let mut ids = Vec::new();
-    for line in body.lines() {
-        let t = line.trim();
-        let Some(path) = t.strip_prefix(SKILLS_FILE_LINE_PREFIX) else {
-            continue;
-        };
-        let path = path.trim();
-        if path.is_empty() {
-            continue;
-        }
-        push_unique(&mut ids, path.to_string());
-    }
-    ids
-}
-
 pub fn timeline_marker(event: &ContextTimelineEvent) -> Message {
     // `detail` 仍写成**字符串**：canonical 与 SSE 同形状（S4a 不改 wire，见 `detail` 模块文档）。
     let content = serde_json::json!({
@@ -437,7 +362,6 @@ pub fn timeline_marker(event: &ContextTimelineEvent) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_config::skills::SKILLS_INDEX_TITLE;
     use crate::cm_types::{Message, MessageContent};
 
     fn named_user(name: &str, text: &str) -> Message {
@@ -604,7 +528,7 @@ mod tests {
     fn inject_and_trim_merge_to_at_most_two_sse() {
         let mut acc = ContextTimelineAcc::default();
         let msgs = vec![
-            Message::system_only("s\n\n【项目技能（skills）】\n技能文件: foo.md\n"),
+            Message::system_only("s"),
             named_user(CRABMATE_LONG_TERM_MEMORY_NAME, "mem"),
             named_user(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, "ws"),
         ];
@@ -628,7 +552,6 @@ mod tests {
         assert_eq!(first[1].title, TITLE_TRIM);
         let inject = first[0].detail.as_inject().expect("inject detail");
         assert!(inject.kinds.iter().any(|k| k == "memory"));
-        assert!(inject.skills.iter().any(|s| s == "foo.md"));
         assert!(first[1].detail.as_trim().expect("trim detail").summarized);
         let second = acc.merge(ContextTimelineSnapshot {
             messages: &msgs,
@@ -738,65 +661,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn forced_skill_id_parsed() {
-        let msgs = vec![Message::system_only(
-            "sys\n【用户显式选用技能（/rust-build）】\n技能文件: .crabmate/skills/rust-build.md\n",
-        )];
-        let hint = skill_hint_from_messages(&msgs);
-        assert!(hint.forced);
-        assert!(hint.ids.iter().any(|s| s == "rust-build"));
-    }
-
-    /// 索引形态（现行生产）：只列 id 与描述、没有正文档位 ⇒ **刻意**不产出 hint。
-    ///
-    /// 用生产真实串（`SKILLS_INDEX_TITLE` + 「当前共 N 条技能」）钉住，避免测试文案与生产文案各自正确、
-    /// 合起来失效——#1478 发现 1 就是金样用了不存在的第三种文案。
-    #[test]
-    fn skill_index_only_is_not_applied() {
-        let msgs = vec![Message::system_only(format!(
-            "{}\n当前共 3 条技能。需要某条技能的条文时，用 `skill_read` 按 `id` 按需读取；正文不在本 system 中。\n",
-            SKILLS_INDEX_TITLE
-        ))];
-        let hint = skill_hint_from_messages(&msgs);
-        assert!(!hint.forced);
-        assert!(hint.ids.is_empty());
-    }
-
-    /// 正文形态（历史会话）：升级前 `system` 里存着技能正文与 `技能文件:` 行，仍要能收集 id。
-    #[test]
-    fn skill_body_form_title_is_recognized_for_legacy_sessions() {
-        let msgs = vec![Message::system_only(format!(
-            "{}\n\n---\n{}.crabmate/skills/legacy.md\n\n正文\n",
-            SKILLS_BODY_TITLE, SKILLS_FILE_LINE_PREFIX
-        ))];
-        let hint = skill_hint_from_messages(&msgs);
-        assert!(!hint.forced, "正文形态不带 /<id> 标题，forced 应为 false");
-        assert!(hint.ids.iter().any(|s| s == ".crabmate/skills/legacy.md"));
-    }
-
-    /// 跨模块契约：生产侧（`cm_config::skills`）真实产出的强制技能附录必须能被消费侧解析。
-    /// 共享常量只解决「各写一份」；形状若被改动（标题尾部 `）】`、路径行前缀），这里会红（#1478）。
-    #[test]
-    fn forced_skill_appendix_from_producer_is_parsed_by_consumer() {
-        use crate::cm_config::skills::{SkillDoc, forced_skill_appendix_for_injection};
-        let doc = SkillDoc {
-            display_path: ".crabmate/skills/rust-build.md".to_string(),
-            content: "正文".to_string(),
-            name: Some("rust-build".to_string()),
-            description: None,
-        };
-        let appendix = forced_skill_appendix_for_injection(&doc, 8_000);
-        let hint = skill_hint_from_messages(&[Message::system_only(appendix)]);
-        assert!(hint.forced, "生产侧强制注入必须被识别为 forced");
-        assert!(hint.ids.iter().any(|s| s == "rust-build"), "{:?}", hint.ids);
-        assert!(
-            hint.ids.iter().any(|s| s == ".crabmate/skills/rust-build.md"),
-            "{:?}",
-            hint.ids
-        );
-    }
-
     /// 旧 canonical marker 的 `detail` 是字符串化 JSON（S4a 不改写历史数据）：
     /// 读侧必须能从**最老形状**解析出 `TrimDetail`，缺字段按默认值补而不是解析失败。
     #[test]
@@ -818,7 +682,7 @@ mod tests {
     /// 这条测两个方向都能落到正确变体——它是 `deny_unknown_fields` 的回归守卫。
     #[test]
     fn detail_json_dispatches_by_shape() {
-        let inject_json = r#"{"kinds":["memory"],"skills":["foo.md"],"forced":false}"#;
+        let inject_json = r#"{"kinds":["memory"]}"#;
         let detail: ContextTimelineDetail =
             serde_json::from_str(inject_json).expect("parse inject detail");
         assert!(
@@ -891,9 +755,9 @@ mod tests {
             "trim detail 的字节形状必须与类型化前一致"
         );
 
-        // inject：kinds + skills + forced（`skills` 来自系统提示里的「技能文件:」行）。
+        // inject：只剩 `kinds`（技能统计已删除；`skills`/`forced` 是历史兼容壳、不再序列化）。
         let msgs = vec![
-            Message::system_only("s\n\n【项目技能（skills）】\n技能文件: foo.md\n"),
+            Message::system_only("s"),
             named_user(CRABMATE_LONG_TERM_MEMORY_NAME, "mem"),
         ];
         let mut acc = ContextTimelineAcc::default();

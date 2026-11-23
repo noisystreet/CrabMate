@@ -66,11 +66,10 @@ pub struct TrimDetail {
 #[serde(default, deny_unknown_fields)]
 pub struct InjectDetail {
     /// 本轮注入的上下文种类（`workspace_profile` / `memory` / `changelist` / `execution_constraint`）。
+    ///
+    /// 曾经还有 `skills` / `forced`：都靠匹配 `system` 文本里的中文标题反推，索引化（#1475）后
+    /// 一个恒为空、一个只是复述调用方已知的事实，已随 `skill_hint_from_messages` 整块删除（#1478）。
     pub kinds: Vec<String>,
-    /// 本轮系统提示里出现的技能 id。
-    pub skills: Vec<String>,
-    /// 是否由用户显式选用技能（`/<skill-id>`）。
-    pub forced: bool,
 }
 
 /// 两类 `detail` 的判别联合。
@@ -78,7 +77,7 @@ pub struct InjectDetail {
 /// `untagged` 是为了让 wire 保持「字符串化 JSON 对象」——detail 里不含 `kind`，
 /// 判别只能靠字段集合。**判别能成立的前提是两个 struct 都 `deny_unknown_fields`**：
 /// 它们全字段有默认值，所以「允许未知字段」时第一个变体会无条件吞下任何对象。
-/// 加了 `deny_unknown_fields` 后，Trim 侧遇到 `kinds`/`skills`/`forced` 直接失败、
+/// 加了 `deny_unknown_fields` 后，Trim 侧遇到 `kinds` 直接失败、
 /// Inject 侧遇到 token 字段直接失败，互斥成立（`{}` 仍落到 `Trim`，空 detail 无意义，可接受）。
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]

@@ -43,6 +43,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **BREAKING (soft field): `context_inject.detail` is now `kinds` only (#1478).**
+  `skills` / `forced` are **deleted outright**, not deprecated: both were derived by matching Chinese
+  headings inside the `system` text (`【项目技能（skills）】` / `【用户显式选用技能（/…）】`), and after the
+  skills **index** moved into `system` (#1475) the first was always empty while the second only re-derived
+  what the caller already knew. The whole text scan (`skill_hint_from_messages` / `forced_skill_id` /
+  `skill_file_ids`) is gone. Two consequences for readers: `detail.skills` / `detail.forced` no longer
+  appear (historical `detail` strings still contain them — ignore unknown keys), and a turn whose **only**
+  injection was a skill no longer emits a `context_inject` event at all, since `has_inject` is now driven
+  solely by `kinds`.
+- **Plan display no longer lifts a breakdown sentence out of the first step (#1478).**
+  `format_agent_reply_plan_for_display` used to guess whether `steps[0].description` began with a
+  「以下是…拆解」 lead and splice it above the bubble (`contains("以下") && contains("拆解")` plus a
+  72/4/80-char heuristic). It judged free-form model prose with no structured signal available to replace
+  it (`agent_reply_plan` has no `goal` field), so the heuristic is deleted rather than renamed: the bubble
+  now shows the pre-fence prose plus the step list only.
 - **Prose-substring contracts from the A-class list are now shared constants (#1478).** The skill-injection
   system headings and the `技能文件: ` line prefix lived as separate literals on the producing side
   (`cm_config::skills`, `web/chat_handlers/chat/builtin_skills`) and the consuming side
