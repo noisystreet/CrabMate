@@ -120,7 +120,9 @@
   **`detail` 是字符串化 JSON**（先 `JSON.parse` 再取键），服务端已把 `context_*` 的字段集类型化为
   `ContextTimelineDetail`（见 [design/context_timeline_detail.md](design/context_timeline_detail.md)）；
   线格式保持字符串以便旧会话 / 旧 Client 双读，改 object 属独立决策且当前**不做**。
-  `context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；
+  `context_inject` 的 `detail` 为 JSON：`kinds`（**仅此一个键**）。`skills` / `forced` 已删除（#1478）——
+  它们靠匹配 `system` 里的中文标题反推，索引化之后不再有意义。旧会话落盘的 detail 字符串里可能仍有这两个键，
+  读侧应忽略未知键（服务端只写不读，也不再产生它们）。
   `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `history_removed` / `tail_kept`，
     并可选携带 `tool_compressed` / `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` /
     `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` /

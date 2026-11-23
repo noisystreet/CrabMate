@@ -448,19 +448,20 @@ fn merge_skills_layer(out: &mut Vec<SkillDoc>, layer: Vec<SkillDoc>) {
     out.extend(layer);
 }
 
-/// 技能注入标题 / 行前缀（生产侧与消费侧共用）。
+/// 技能注入标题 / 行前缀（生产方共用）。
 ///
-/// 这些是 `system` 里的中文小标题，曾由生产方与消费者各写一份字面量：改文案时消费者既不
-/// 编译失败、也不测试失败，只是静默失效——正是 #1478 要收敛的那类契约。
+/// 这些是 `system` 里的中文小标题。集中成一处是为了消掉「同一模板在几个生产点各手抄一份」
+/// 的不同步风险（`/skills` 的字符预算估算曾手抄正文形态模板）。消费侧过去读这些标题反推
+/// 「注入了哪些技能」，那套判定已随 `context_inject` 字段收窄整块删除（#1478）。
 ///
 /// - [`SKILLS_FORCED_TITLE_PREFIX`]：`/<id>` 强制注入的标题前缀，后接 callable id 与 `）】`；
-/// - [`SKILLS_BODY_TITLE`]：**正文形态**技能附录的标题。两处用途——历史会话的 `system` 里仍是这种形态，
-///   `/skills` 的字符预算估算（`web::chat_handlers::chat::builtin_skills`）也按同一模板计长度；
+/// - [`SKILLS_BODY_TITLE`]：**正文形态**技能附录的标题；`/skills` 的字符预算估算
+///   （`web::chat_handlers::chat::builtin_skills`）按同一模板计长度（跨模块使用，故 `pub`）；
 /// - [`SKILLS_INDEX_TITLE`]：**索引形态**标题（现行生产：只列 id 与描述，正文由 `skill_read` 取）；
 /// - [`SKILLS_FILE_LINE_PREFIX`]：每份技能前的路径行前缀。
-pub const SKILLS_FORCED_TITLE_PREFIX: &str = "【用户显式选用技能（/";
+const SKILLS_FORCED_TITLE_PREFIX: &str = "【用户显式选用技能（/";
 pub const SKILLS_BODY_TITLE: &str = "【项目技能（skills）】";
-pub const SKILLS_INDEX_TITLE: &str = "【项目技能索引（skills）】";
+const SKILLS_INDEX_TITLE: &str = "【项目技能索引（skills）】";
 pub const SKILLS_FILE_LINE_PREFIX: &str = "技能文件: ";
 
 fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {

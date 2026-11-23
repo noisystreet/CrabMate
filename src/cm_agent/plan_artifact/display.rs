@@ -2,24 +2,6 @@ use super::fence::strip_optional_json_fence_label;
 use super::parse;
 use super::types::AgentReplyPlanV1;
 
-/// 「以下是…拆解」类引导语的**最长**字符数：再长更像正文，拼进气泡会把主内容淹掉。
-const TASK_BREAKDOWN_LEAD_MAX_CHARS: usize = 72;
-/// 截断后短于该长度的片段没有信息量（如只剩「以下是」），不当作引导语。
-const TASK_BREAKDOWN_LEAD_MIN_CHARS: usize = 4;
-/// 拼进气泡的引导语字符上限。
-///
-/// 只对 `contains("以下是任务拆解")` 这条**无长度上限**的分支生效：走「以下 + 拆解」分支时
-/// 已在 `TASK_BREAKDOWN_LEAD_MAX_CHARS`(72) 处被挡下，够不到这里。
-const TASK_BREAKDOWN_LEAD_CAP_CHARS: usize = 80;
-
-/// 启发式：同时出现「以下」与「拆解」才算任务拆解引导语。
-///
-/// 判的是模型自由文本，没有结构化信号可替代，属**有意保留**的启发式——与 `context/agent_errors.rs`
-/// 的样板一致：已知误判按启发式接受并钉住用例，而不是硬造一个更脆的判据（#1478）。
-fn looks_like_breakdown_lead(t: &str) -> bool {
-    t.contains("以下") && t.contains("拆解")
-}
-
 /// 首个 \`\`\` 代码围栏之前的正文（模型常在此写任务概括），与 JSON 块合读作「目标」。
 fn prose_before_first_fence(content: &str) -> String {
     if !content.contains("```") {
@@ -51,96 +33,13 @@ fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     out.trim_end().to_string()
 }
 
-/// 模型常把「以下是任务拆解」写在首步 `description`，围栏前只有开场白；隐藏 JSON 时该句会随步骤列表一并从主气泡消失。若围栏前 goal 未同时含「以下」与「拆解」，则从首步描述里取**一行**简短引导拼到 goal 前。
-fn augment_agent_reply_plan_goal_for_display(goal: &str, plan: &AgentReplyPlanV1) -> String {
-    let goal = goal.trim();
-    let lead = breakdown_lead_line_from_first_step_description(plan);
-    let Some(lead) = lead else {
-        return goal.to_string();
-    };
-    if looks_like_breakdown_lead(goal) {
-        return goal.to_string();
-    }
-    if goal.is_empty() {
-        return lead;
-    }
-    if goal.contains(&lead) {
-        return goal.to_string();
-    }
-    format!("{lead}\n\n{goal}")
-}
-
-fn breakdown_lead_line_from_first_step_description(plan: &AgentReplyPlanV1) -> Option<String> {
-    let st = plan.steps.first()?;
-    let desc = crate::cm_agent::text_sanitize::naturalize_plan_step_description(&st.description);
-    let desc = desc.trim();
-    if desc.is_empty() {
-        return None;
-    }
-    for line in desc.lines() {
-        let t = line.trim();
-        if t.is_empty() {
-            continue;
-        }
-        if let Some(frag) = extract_task_breakdown_lead_fragment(t) {
-            return Some(frag);
-        }
-    }
-    None
-}
-
-/// 从首步描述的一行里取出「以下是…拆解」类短引导，在句末标点或冒号处截断，避免把整步描述拼进主气泡。
-fn extract_task_breakdown_lead_fragment(line: &str) -> Option<String> {
-    let t = line.trim();
-    if t.is_empty() {
-        return None;
-    }
-    let candidate = t.contains("以下是任务拆解")
-        || (looks_like_breakdown_lead(t) && t.chars().count() <= TASK_BREAKDOWN_LEAD_MAX_CHARS);
-    if !candidate {
-        return None;
-    }
-    let start = t.find("以下")?;
-    let tail = t[start..].trim_start();
-    let clipped = clip_task_breakdown_lead_at_punct(tail);
-    let clipped = clipped.trim();
-    if clipped.chars().count() < TASK_BREAKDOWN_LEAD_MIN_CHARS {
-        return None;
-    }
-    Some(cap_display_fragment(clipped, TASK_BREAKDOWN_LEAD_CAP_CHARS))
-}
-
-fn clip_task_breakdown_lead_at_punct(s: &str) -> &str {
-    for (i, c) in s.char_indices() {
-        if matches!(c, '。' | '！' | '？') {
-            return &s[..i + c.len_utf8()];
-        }
-    }
-    for (i, c) in s.char_indices() {
-        if c == '：' {
-            return &s[..i + c.len_utf8()];
-        }
-    }
-    s
-}
-
-fn cap_display_fragment(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(max_chars).collect();
-        out.push('…');
-        out
-    }
-}
-
 /// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
 /// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
 pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
     let plan = parse::parse_agent_reply_plan_v1(content).ok()?;
     let raw_goal = prose_before_first_fence(content);
     let goal = crate::cm_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
-    let goal_t = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
+    let goal_t = goal.trim().to_string();
     let steps = format_plan_steps_markdown(&plan);
     let mut out = String::new();
     if !goal_t.is_empty() {
@@ -204,45 +103,17 @@ pub fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String 
 mod tests {
     use super::*;
 
-    /// 短引导语被采纳，并在冒号处截断（不把整步描述拼进气泡）。
+    /// 首步描述里的「以下是任务拆解」**不再**被搬到气泡顶部（启发式已删除，#1478）。
+    /// 用例存在的意义是防后人"顺手"把它加回来。
     #[test]
-    fn short_breakdown_lead_is_adopted() {
-        let frag = extract_task_breakdown_lead_fragment("以下是任务拆解：1) 读代码 2) 改实现");
-        assert_eq!(frag.as_deref(), Some("以下是任务拆解："));
-    }
-
-    /// 超过 `TASK_BREAKDOWN_LEAD_MAX_CHARS` 的长句更像正文，不当作引导语。
-    #[test]
-    fn overlong_sentence_is_not_a_lead() {
-        let line = format!("以下拆解{}", "很长的正文说明".repeat(20));
-        assert!(line.chars().count() > TASK_BREAKDOWN_LEAD_MAX_CHARS);
-        assert_eq!(extract_task_breakdown_lead_fragment(&line), None);
-    }
-
-    /// 判据是「以下」与「拆解」**两词与**：缺任一都不算引导语。
-    #[test]
-    fn needs_both_keywords() {
-        assert_eq!(
-            extract_task_breakdown_lead_fragment("以下是执行计划："),
-            None
-        );
-        assert_eq!(
-            extract_task_breakdown_lead_fragment("我拆解一下这个问题"),
-            None
-        );
-    }
-
-    /// `以下是任务拆解` 分支没有长度上限，靠 `TASK_BREAKDOWN_LEAD_CAP_CHARS` 兜住（72 分支够不到它）。
-    #[test]
-    fn canonical_lead_over_cap_is_truncated_with_ellipsis() {
-        let line = format!("以下是任务拆解{}", "很长的正文说明".repeat(30));
-        assert!(line.chars().count() > TASK_BREAKDOWN_LEAD_MAX_CHARS + TASK_BREAKDOWN_LEAD_CAP_CHARS);
-        let frag = extract_task_breakdown_lead_fragment(&line).expect("无标点的长句仍应取到引导语");
-        assert_eq!(
-            frag.chars().count(),
-            TASK_BREAKDOWN_LEAD_CAP_CHARS + 1,
-            "上限 + 省略号：{frag}"
-        );
-        assert!(frag.ends_with('…'), "截断必须带省略号：{frag}");
+    fn breakdown_sentence_in_first_step_is_not_lifted_to_goal() {
+        let step_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"以下是任务拆解。创建 hello.cpp"}]}"#;
+        let content = format!("让我先规划一下任务步骤：\n```json\n{step_json}\n```\n");
+        let out = format_agent_reply_plan_for_display(&content).expect("plan display");
+        // 引导句可以留在步骤行里，但不允许出现在步骤列表**之前**（那才是"上浮到气泡顶部"）。
+        let head = out.split("1. `s1`").next().unwrap_or("");
+        assert!(!head.contains("以下是任务拆解"), "引导句不应上浮：{out}");
+        assert!(out.contains("让我先规划"), "{out}");
+        assert!(out.contains("s1"), "步骤列表仍要保留：{out}");
     }
 }

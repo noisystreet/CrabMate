@@ -255,19 +255,6 @@ mod tests {
     }
 
     #[test]
-    fn augment_goal_prepends_breakdown_lead_when_only_in_first_step() {
-        let step_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"以下是任务拆解。创建 hello.cpp"}]}"#;
-        let content = format!("让我先规划一下任务步骤：\n```json\n{step_json}\n```\n");
-        // 走公开入口：它在内部取围栏前正文、并把首步里的拆解引导句拼回目标段。
-        let out = format_agent_reply_plan_for_display(&content).expect("plan display");
-        assert!(
-            out.contains("以下是任务拆解"),
-            "应拼回首步里的拆解引导句: {out}"
-        );
-        assert!(out.contains("让我先规划"), "{out}");
-    }
-
-    #[test]
     fn parses_raw_json_only_message() {
         let p = parse_agent_reply_plan_v1(&sample_json()).unwrap();
         assert_eq!(p.plan_type, "agent_reply_plan");
