@@ -89,4 +89,14 @@ mod tests {
         assert_eq!(CheckBucket::of("", Some("pass")), CheckBucket::Pass);
         assert_eq!(CheckBucket::of("?", None), CheckBucket::Pending);
     }
+
+    #[test]
+    fn unparsable_bucket_falls_back_to_state() {
+        // bucket 存在但取值未知（gh 将来加档位 / 空串）时，仍要能用 state 判出来。
+        assert_eq!(
+            CheckBucket::of("SUCCESS", Some("garbage")),
+            CheckBucket::Pass
+        );
+        assert_eq!(CheckBucket::of("FAILURE", Some("")), CheckBucket::Fail);
+    }
 }

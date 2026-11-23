@@ -378,6 +378,34 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    /// `Skipping` / `Cancel` 不计入 passing / pending / failing（`total` 仍计入），
+    /// 且 `bucket` 优先于 `state` —— #1478 B-α 的核心语义。
+    #[test]
+    fn summarize_checks_counts_by_bucket_and_ignores_skips() {
+        let item = |state: &str, bucket: Option<&str>, name: &str| GithubPrCheckItemData {
+            name: name.to_string(),
+            state: state.to_string(),
+            bucket: bucket.map(str::to_string),
+            link: None,
+        };
+        let items = vec![
+            item("SUCCESS", Some("pass"), "a"),
+            // state 说 SUCCESS，但 bucket 说 skipping → 以 bucket 为准，不计数。
+            item("SUCCESS", Some("skipping"), "b"),
+            item("NEUTRAL", None, "c"),
+            item("FAILURE", Some("fail"), "d"),
+            item("IN_PROGRESS", Some("pending"), "e"),
+            item("CANCELLED", Some("cancel"), "f"),
+        ];
+        let s = summarize_checks(&items);
+        assert_eq!(s.total, 6);
+        assert_eq!(s.passing, 1, "只有 a");
+        assert_eq!(s.failing, 1, "只有 d");
+        assert_eq!(s.pending, 1, "只有 e");
+        // 跳过 / 取消不进任何一档：三档之和可以小于 total。
+        assert!(s.total > s.passing + s.failing + s.pending);
+    }
+
     #[test]
     fn github_web_from_remote_url_parses_common_forms() {
         let cases = [
