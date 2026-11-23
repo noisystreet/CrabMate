@@ -236,17 +236,14 @@ fn last_assistant_text(messages: &[Message]) -> String {
 /// 关键：**超预算不是失败**。它表示「子任务被掐断」，父回合照常结束即可（设计 §7）。
 fn status_for_error(err: &RunAgentTurnError) -> SubTaskStatus {
     match err {
-        RunAgentTurnError::TimeLimitExhausted { .. } => SubTaskStatus::BudgetExhausted,
+        // 子任务视角只有「超预算」一种语义，具体是墙钟 / 调用次数 / token 由 `deny` 携带，
+        // 本层不关心（`..` 覆盖，新增预算维度无需改这里）。
+        RunAgentTurnError::TurnBudgetExhausted { .. } => SubTaskStatus::BudgetExhausted,
         RunAgentTurnError::TurnAborted { reason, .. } => match reason {
             TurnAbortReason::UserCancelled | TurnAbortReason::SseDisconnected => {
                 SubTaskStatus::Cancelled
             }
         },
-        // LLM 次数上限经 `Other { message }` 透传（turn_budget 的既定映射）；
-        // 注意不要嗅探任意 `Other` 文案，只认这一个明确前缀。
-        RunAgentTurnError::Other { message, .. } if message.contains("LLM 调用次数上限") => {
-            SubTaskStatus::BudgetExhausted
-        }
         _ => SubTaskStatus::Failed,
     }
 }
@@ -470,8 +467,9 @@ mod tests {
     #[tokio::test]
     async fn budget_exhausted_does_not_propagate_to_parent() {
         let engine = Arc::new(FixedEngine(Err(Box::new(|| {
-            RunAgentTurnError::TimeLimitExhausted {
+            RunAgentTurnError::TurnBudgetExhausted {
                 phase: AgentTurnSubPhase::Planner,
+                deny: crate::agent::turn_budget::TurnBudgetDeny::WallClock,
                 message: "已达到单轮墙钟时间上限 (300秒)".to_string(),
             }
         }))));
@@ -496,12 +494,15 @@ mod tests {
         assert_eq!(report.status, SubTaskStatus::Cancelled);
     }
 
-    /// LLM 次数上限走 `Other` 文案，必须映射为 `BudgetExhausted` 而非 `Failed`。
+    /// LLM 次数上限必须映射为 `BudgetExhausted` 而非 `Failed`（原来靠嗅探 `Other` 文案，已改结构化）。
     #[tokio::test]
     async fn llm_call_limit_maps_to_budget_exhausted() {
-        let engine = Arc::new(FixedEngine(Err(Box::new(|| RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: "已达到单轮 LLM 调用次数上限 (8)".to_string(),
+        let engine = Arc::new(FixedEngine(Err(Box::new(|| {
+            RunAgentTurnError::TurnBudgetExhausted {
+                phase: AgentTurnSubPhase::Planner,
+                deny: crate::agent::turn_budget::TurnBudgetDeny::LlmCalls,
+                message: "已达到单轮 LLM 调用次数上限 (8)".to_string(),
+            }
         }))));
         let d = CrabmateDelegator::new(parts_with(engine));
         let report = d.run(request()).await.expect("Ok");

@@ -48,24 +48,20 @@ use crate::cm_agent::task_state::{
     TaskBudgetSnapshot, TaskEvidenceRef, TaskPauseReason, TaskState, TaskStateStore,
 };
 
-/// 预算拒绝 → 回合错误：墙钟单独映射为 [`RunAgentTurnError::TimeLimitExhausted`]（SSE `TIME_LIMIT_EXHAUSTED`），
-/// 其余（LLM 次数 / Token）为 [`RunAgentTurnError::Other`]。
+/// 预算拒绝 → 回合错误：统一映射为 [`RunAgentTurnError::TurnBudgetExhausted`]，原因由 `deny` 携带。
 ///
-/// 独立成纯函数以便单测三分支映射：`check_shared_turn_budget` 依赖 `RunLoopParams`（字段繁多、含运行期状态）不便构造。
+/// 不按原因分变体：对外码 / HTTP 状态 / 用户文案的分流集中在 `errors.rs` 一处，调用方只需知道
+/// 「这是预算耗尽」（`delegation` 就是这种视角）。
+///
+/// 独立成纯函数以便单测映射：`check_shared_turn_budget` 依赖 `RunLoopParams`（字段繁多、含运行期状态）不便构造。
 fn turn_budget_deny_to_turn_error(
     deny: TurnBudgetDeny,
     cfg: &crate::cm_config::TurnBudgetConfig,
 ) -> RunAgentTurnError {
-    let message = deny.user_message(cfg);
-    match deny {
-        TurnBudgetDeny::WallClock => RunAgentTurnError::TimeLimitExhausted {
-            phase: AgentTurnSubPhase::Planner,
-            message,
-        },
-        TurnBudgetDeny::LlmCalls | TurnBudgetDeny::Tokens => RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message,
-        },
+    RunAgentTurnError::TurnBudgetExhausted {
+        phase: AgentTurnSubPhase::Planner,
+        deny,
+        message: deny.user_message(cfg),
     }
 }
 
@@ -717,34 +713,31 @@ mod tests {
     };
     use crate::types::{FunctionCall, ToolCall};
 
+    /// 三种预算原因映射到**同一个**变体，原因由 `deny` 携带、消息来自 `deny.user_message`。
+    ///
+    /// 这条用例同时钉住「新增预算维度不必改本函数」：循环遍历 `TurnBudgetDeny` 全部分支。
     #[test]
-    fn turn_budget_deny_maps_wall_clock_to_time_limit_exhausted() {
+    fn turn_budget_deny_maps_every_reason_to_budget_exhausted() {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
         cfg.turn_budget.max_turn_duration_seconds = 33;
-        match turn_budget_deny_to_turn_error(TurnBudgetDeny::WallClock, &cfg.turn_budget) {
-            RunAgentTurnError::TimeLimitExhausted { phase, message } => {
-                assert_eq!(phase, AgentTurnSubPhase::Planner);
-                assert_eq!(message, turn_wall_clock_limit_user_message(33));
-            }
-            other => panic!("WallClock 应映射为 TimeLimitExhausted，实际：{other:?}"),
-        }
-    }
-
-    #[test]
-    fn turn_budget_deny_maps_counts_and_tokens_to_other() {
-        let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
         cfg.turn_budget.max_llm_calls_per_turn = 7;
         cfg.turn_budget.max_turn_tokens = 4096;
         for (deny, expected_message) in [
+            (TurnBudgetDeny::WallClock, turn_wall_clock_limit_user_message(33)),
             (TurnBudgetDeny::LlmCalls, turn_llm_calls_limit_user_message(7)),
             (TurnBudgetDeny::Tokens, turn_tokens_limit_user_message(4096)),
         ] {
             match turn_budget_deny_to_turn_error(deny, &cfg.turn_budget) {
-                RunAgentTurnError::Other { phase, message } => {
+                RunAgentTurnError::TurnBudgetExhausted {
+                    phase,
+                    deny: got,
+                    message,
+                } => {
                     assert_eq!(phase, AgentTurnSubPhase::Planner);
+                    assert_eq!(got, deny, "原因必须原样透传");
                     assert_eq!(message, expected_message);
                 }
-                other => panic!("{deny:?} 应映射为 Other，实际：{other:?}"),
+                other => panic!("{deny:?} 应映射为 TurnBudgetExhausted，实际：{other:?}"),
             }
         }
     }

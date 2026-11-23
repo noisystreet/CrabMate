@@ -211,6 +211,7 @@
 | `REPLAN_EXHAUSTED` | `agent_turn` | 全局重规划耗尽（同上） |
 | `TIME_LIMIT_EXHAUSTED` | `agent_turn` | 墙钟超时（同上） |
 | `TOKEN_LIMIT_EXHAUSTED` | `agent_turn` | Token 预算耗尽（同上） |
+| `LLM_CALL_LIMIT_EXHAUSTED` | `agent_turn` | LLM 调用次数预算耗尽（同上；`sub_phase` / `reason_code` 形状同 `TIME_LIMIT_EXHAUSTED`） |
 | `LLM_REQUEST_FAILED` | `chat_job_queue`（由 `agent_turn` 映射） | 模型 HTTP/传输失败（**`error`** 为脱敏后的网关说明；配额 / 限流见 **`LLM_RATE_LIMIT`**） |
 | `LLM_RATE_LIMIT` | `chat_job_queue`（由 `agent_turn` 映射） | 配额 / 限流（服务端**结构化判定**：HTTP **429/402**，或上游响应体带配额语义；**不看**展示文案） |
 | `turn_aborted` | `chat_job_queue`（由 `agent_turn` 映射） | 编排早停（如 **SSE 接收端已关闭**仍尝试继续）；**`error`** 为用户可读说明 |
@@ -256,7 +257,7 @@
 | `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | 澄清问卷作答体非法（见 `clarification_questionnaire`） |
 | `LLM_RATE_LIMIT` | 429 | **`POST /chat`** 模型限流/配额类（与 SSE 同源码） |
 | `LLM_REQUEST_FAILED` | 502 等 | **`POST /chat`** 模型 HTTP/传输失败（与上游状态对齐时可能为其它 5xx） |
-| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` | 422 | 编排预算类失败（**`message`** 为通用用户文案；**`reason_code`** 省略） |
+| `STEP_RETRY_EXHAUSTED` / `REPLAN_EXHAUSTED` / `TIME_LIMIT_EXHAUSTED` / `TOKEN_LIMIT_EXHAUSTED` / `LLM_CALL_LIMIT_EXHAUSTED` | 422 | 编排预算类失败（**`message`** 为通用用户文案；**`reason_code`** 省略） |
 | `INTERNAL_ERROR` | 500 | 其它编排失败（**`message`** 为通用用户文案；**`reason_code`** 为截断内部摘要，**仅**此类码在 JSON 中带该字段） |
 | `STREAM_CANCELLED` | 499 | 用户/协作取消（非标准状态码，与 SSE 同源码；部分客户端可能按 4xx 处理） |
 

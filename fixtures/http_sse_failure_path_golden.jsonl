@@ -7,7 +7,7 @@
 #
 # turn.case 字段：
 #   variant: llm_cancelled | llm_transport | llm_other | turn_aborted_sse | turn_aborted_user
-#            | other | step_retry | replan | time_limit | token_limit
+#            | other | step_retry | replan | time_limit | token_limit | llm_call_limit
 #   phase: planner | executor | reflect
 #   http_status?: u16（仅 llm_transport）
 #   user_message?: string（llm_transport）
@@ -36,6 +36,7 @@
 {"id":"replan_exhausted","kind":"turn","case":{"variant":"replan","phase":"reflect","message":"replan out"},"expect":{"public_code":"REPLAN_EXHAUSTED","http_status":422,"sse_code":"REPLAN_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
 {"id":"time_limit_exhausted","kind":"turn","case":{"variant":"time_limit","phase":"planner","message":"wall clock"},"expect":{"public_code":"TIME_LIMIT_EXHAUSTED","http_status":422,"sse_code":"TIME_LIMIT_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
 {"id":"token_limit_exhausted","kind":"turn","case":{"variant":"token_limit","phase":"executor","message":"tokens out"},"expect":{"public_code":"TOKEN_LIMIT_EXHAUSTED","http_status":422,"sse_code":"TOKEN_LIMIT_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
+{"id":"llm_call_limit_exhausted","kind":"turn","case":{"variant":"llm_call_limit","phase":"planner","message":"llm calls out"},"expect":{"public_code":"LLM_CALL_LIMIT_EXHAUSTED","http_status":422,"sse_code":"LLM_CALL_LIMIT_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
 
 {"id":"sse_protocol_omit_ok","kind":"sse_protocol","case":{"client_sse_protocol":null},"expect":{"ok":true}}
 {"id":"sse_protocol_match_ok","kind":"sse_protocol","case":{"client_sse_protocol":"supported"},"expect":{"ok":true}}
