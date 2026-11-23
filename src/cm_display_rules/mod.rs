@@ -44,18 +44,18 @@ pub fn is_staged_patch_feedback_user_content(s: &str) -> bool {
 /// 判定侧只认标记，不再逐字匹配自然语言句子——句子一改，隐藏就会静默失效（#1478）。
 pub const PLAN_REWRITE_INJECTION_MARKER: &str = "【规划重写】";
 
+/// 规划重写注入的隐藏判定：**只认机器标记**。
+///
+/// 三条「提示词原句」历史兼容（`你的最终回答缺少**结构化规划**` / `crabmate_plan_semantic_feedback` /
+/// `侧向校验认为你的 **agent_reply_plan**`）已于 #1494 删除：所有注入路径都以
+/// `cm_agent::plan_rewrite::plan_rewrite_user_text_base` 为底座，标记随继承覆盖
+/// （含 `_with_issue` 与语义反馈两种包装），因此不需要再按句子兜底。
+///
+/// 现在**无标记即不隐藏** —— 由 `plan_rewrite_hidden_only_by_marker` 与
+/// `fixtures/display_hide_user_golden.jsonl` 的双向样例钉住。
 #[must_use]
 pub fn is_plan_rewrite_injected_user_content(s: &str) -> bool {
     s.contains(PLAN_REWRITE_INJECTION_MARKER)
-        // 以下三条是**历史会话兼容**：升级前注入的内容没有标记，仍按旧判据隐藏。
-        //
-        // 它们匹配的是**提示词原句**，属 #1478 口径下的已知尾巴（#1494 第 4 项）：
-        // 只在读旧会话时生效，新写入一律带 `PLAN_REWRITE_INJECTION_MARKER`。
-        // **退出条件**：待所有仍可能被读到、且不含标记的历史会话过期（或迁移）后，整块删除，
-        // 并由 `plan_rewrite_hidden_only_by_marker` 一类负向用例钉住"无标记即不隐藏"。
-        || s.contains("你的最终回答缺少**结构化规划**")
-        || s.contains("crabmate_plan_semantic_feedback")
-        || s.contains("侧向校验认为你的 **agent_reply_plan**")
 }
 
 /// Web / TUI 默认：服务端注入 user 在聊天区隐藏。
@@ -76,6 +76,35 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    /// #1494：历史兼容的三条「提示词原句」已删除 —— 判定**只看机器标记**。
+    ///
+    /// 负向半边是重点：无标记时一律不隐藏，否则「用户正文恰好提到这些词」会被误吞。
+    #[test]
+    fn plan_rewrite_hidden_only_by_marker() {
+        assert!(is_plan_rewrite_injected_user_content(
+            "【规划重写】你的最终回答缺少或未通过**结构化规划**校验。"
+        ));
+
+        for legacy_without_marker in [
+            // 升级前注入的底座（无标记）
+            "你的最终回答缺少**结构化规划**。请加入 agent_reply_plan JSON",
+            // 语义反馈正文（真实注入里它后面会拼上带标记的底座）
+            "侧向校验认为你的 **agent_reply_plan** 与**最近工具执行结果**存在明显矛盾。",
+            // 机器可读行本身
+            "{\"kind\":\"crabmate_plan_semantic_feedback\",\"version\":1}",
+        ] {
+            assert!(
+                !is_plan_rewrite_injected_user_content(legacy_without_marker),
+                "无标记不应隐藏: {legacy_without_marker}"
+            );
+        }
+
+        // 用户自己提到这些字段名，也不得被聊天区吞掉。
+        assert!(!user_message_should_hide_for_chat_display(
+            "请把 crabmate_plan_semantic_feedback 这个字段名换成别的"
+        ));
+    }
 
     #[test]
     fn display_hide_user_golden() {
