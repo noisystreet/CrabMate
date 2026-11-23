@@ -14,6 +14,7 @@ use std::path::Path;
 
 use regex::Regex;
 
+use crate::cm_tools::tool_result::CrabmateToolOutputMeta;
 use crate::cm_tools::tools::{self, ToolContext};
 use crate::cm_config::AgentConfig;
 
@@ -59,14 +60,21 @@ fn strip_read_file_output_header(body: &str) -> &str {
     let Some((first, rest)) = body.split_once('\n') else {
         return body;
     };
-    if first.contains("crabmate_tool_output")
-        && first.contains("\"tool\":\"read_file\"")
-        && !rest.is_empty()
-    {
+    if is_read_file_output_header(first) && !rest.is_empty() {
         rest
     } else {
         body
     }
+}
+
+/// 首行是不是 `read_file` 的工具输出头。
+///
+/// 用 serde 真源 [`CrabmateToolOutputMeta`]，不再手写
+/// `contains("crabmate_tool_output") && contains("\"tool\":\"read_file\"")` ——
+/// 后者在引号内加空格、键序变化或改用其它分隔符时静默失效（#1478）。
+fn is_read_file_output_header(first: &str) -> bool {
+    CrabmateToolOutputMeta::parse_line(first)
+        .is_some_and(|m| m.tool.as_deref() == Some(crate::cm_names::READ_FILE))
 }
 
 fn fenced_block(lang: &str, body: &str) -> String {

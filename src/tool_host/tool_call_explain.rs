@@ -10,6 +10,8 @@ use crate::cm_types::Tool;
 /// 与发给模型的工具说明一致；须为 JSON 字符串字段。
 pub const EXPLAIN_WHY_KEY: &str = "crabmate_explain_why";
 
+// 字段名在这段文案里只能写成字面量：`concat!` 不接受常量拼接。
+// 取值与 [`EXPLAIN_WHY_KEY`] 必须一致——改字段名时两处都要改。
 const EXPLAIN_APPEND_ZH: &str = concat!(
     "\n\n【解释卡】本工具可能修改工作区或执行命令。",
     "当服务端启用 tool_call_explain_enabled 时，",
@@ -31,9 +33,12 @@ pub fn annotate_tool_defs_for_explain_card(tools: &mut [Tool], cfg: &AgentConfig
         {
             continue;
         }
-        if !t.function.description.contains("crabmate_explain_why") {
-            t.function.description.push_str(EXPLAIN_APPEND_ZH);
-        }
+        // 不检测「是否已追加过」：`Tool.description` 是协议里唯一的载体，检测只能靠子串，
+        // 而 `contains(字段名)` 会被「描述里自然提到该字段名」误判成已追加（#1478）。
+        // 契约：本函数只对 `build_tools()` 的新鲜结果调用一次（两个调用点都如此），
+        // 幂等性由控制流保证。若将来真出现重复调用，请改为携带「已标注」集合，
+        // 不要退回文本判定。
+        t.function.description.push_str(EXPLAIN_APPEND_ZH);
     }
 }
 
@@ -132,7 +137,7 @@ mod tests {
         let err =
             require_explain_for_mutation(&cfg, "create_file", r#"{"path":"x","content":"y"}"#)
                 .expect_err("need explain");
-        assert!(err.contains("crabmate_explain_why"), "{}", err);
+        assert!(err.contains(EXPLAIN_WHY_KEY), "{}", err);
     }
 
     #[test]
@@ -140,7 +145,7 @@ mod tests {
         let cfg = cfg_on();
         let args = r#"{"path":"x","content":"y","crabmate_explain_why":"创建占位文件用于测试"}"#;
         let got = require_explain_for_mutation(&cfg, "create_file", args).expect("ok");
-        assert!(!got.contains("crabmate_explain_why"));
+        assert!(!got.contains(EXPLAIN_WHY_KEY));
         let v: serde_json::Value = serde_json::from_str(got.as_ref()).unwrap();
         assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("x"));
     }
