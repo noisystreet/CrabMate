@@ -137,6 +137,10 @@ fn now_rfc3339() -> String {
 ///
 /// 只读尾巴：这条路径在 `up` 的就绪收尾里，日志涨到 GB 级时整份读入会把
 /// ctl 自己拖垮（与 `logs` 是同一个坑，见 #1213）。
+///
+/// **`contains("\"web_ready\"")` 是 C 类（#1494 第 3 项）**：子进程横幅只经由日志文本到达 ctl，
+/// 没有结构化通道，只能文本嗅探；且失败降级为 `None`（不会被误判成「就绪」）。
+/// 若将来 `--web-ready-json` 改成独立 fd / 就绪文件，这里应一并改成读结构体。
 fn ready_json_from_log(log: &Path) -> Option<serde_json::Value> {
     let text = logio::tail_lines(log, READY_JSON_TAIL_LINES).ok()?;
     text.lines()

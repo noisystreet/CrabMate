@@ -207,6 +207,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   deleted. `Display` reproduces every existing Chinese message byte-for-byte (including the two
   UTF-8-with-BOM flavors and the decoder's malformed / truncated split), so user-visible text and the
   `read_file_*` codes are unchanged; the `web/workspace` callers just adapt with `.to_string()`.
+- **`gh pr create`'s temp-file failure is no longer re-judged from its own message (#1494).**
+  `write_pr_create_body_temp` received a typed `ToolError`, then re-derived the category from that error's
+  `message` (`contains("临时文件路径非 UTF-8")`) and re-emitted it as `invalid_args` with a hard-coded sentence —
+  which additionally contradicted the contract recorded further below (`--body-file` / `--notes-file` temp
+  failures are **`gh_temp_file_failed`**). The wrapper is deleted; the call site propagates
+  `write_workspace_temp_markdown`'s error directly, like the other four callers. **Behaviour**: that path's code
+  returns to `gh_temp_file_failed` (from `invalid_args`) and its text regains the label prefix
+  (「错误：PR 正文 临时文件路径非 UTF-8」).
 
 ### Added
 

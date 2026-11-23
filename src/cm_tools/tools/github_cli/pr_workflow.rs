@@ -170,20 +170,6 @@ fn gh_pr_create_inputs(
     Ok((v, title, body_str))
 }
 
-fn write_pr_create_body_temp(
-    working_dir: &Path,
-    body: &[u8],
-) -> Result<(tempfile::TempDir, String), ToolError> {
-    // 与历史文案对齐：路径非 UTF-8 时固定为「临时文件路径非 UTF-8」（不用带 label 的通用句）。
-    match write_workspace_temp_markdown(working_dir, "crabmate_pr_body.md", body, "PR 正文") {
-        Ok(x) => Ok(x),
-        Err(e) if e.message.contains("临时文件路径非 UTF-8") => {
-            Err(ToolError::invalid_args("错误：临时文件路径非 UTF-8".to_string()))
-        }
-        Err(e) => Err(e),
-    }
-}
-
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
 pub fn gh_pr_create_try(
     args_json: &str,
@@ -191,7 +177,10 @@ pub fn gh_pr_create_try(
 ) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
     let (v, title, body_str) = gh_pr_create_inputs(args_json, ctx.working_dir)?;
-    let (dir, body_path_str) = write_pr_create_body_temp(ctx.working_dir, body_str.as_bytes())?;
+    // 临时文件失败的类别与文案统一由 `write_workspace_temp_markdown` 给出
+    // （`gh_temp_file_failed` + 「错误：{label} …」），此处**不再**按 message 二次判类别（#1494）。
+    let (dir, body_path_str) =
+        write_workspace_temp_markdown(ctx.working_dir, "crabmate_pr_body.md", body_str.as_bytes(), "PR 正文")?;
     let argv = gh_pr_create_build_argv(&v, &title, body_path_str)?;
     // 失败时仍要追加「如何自救」的提示，所以走 match 而不是 `?`。
     let out = match run_gh_vec(argv, ctx) {
