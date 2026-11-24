@@ -1,7 +1,7 @@
 # 移交摘要（handoff brief）：DTO 形状与上界
 
-> **状态**：设计稿（Proposed）；**实现已落地**（`TaskState.files` + 分区预算 brief + 4 条单测），待评审合并。
-> **受众**：维护者、后续实现者。实现前先结清 §9 的两条开放问题。
+> **状态**：**已落地**（`e40f0f29`）：`TaskState.files`（schema 2 → 3）+ 分区预算 brief + 6 条单测，CI 全绿。
+> **受众**：维护者、后续实现者。§9 的两条开放问题已结清（一条不做、一条转为可调常量）。
 > **关联**：[context_window_compaction.md](context_window_compaction.md)（ADR：压缩 + 基线化 + 归档）、
 > [subagent_delegation.md](subagent_delegation.md)（L2 已落地的窄契约）、
 > [multi_agent_collaboration.md](multi_agent_collaboration.md) §0-1 / §5（`context_slice` 的目标形状）。
@@ -143,7 +143,9 @@ pub struct TaskState {
 已改动文件（最近 5 个）：src/a.rs、src/b.rs、…（另 3 个，完整清单见会话变更集）
 ```
 
-段内先按 `TASK_BRIEF_FILES_MAX_CHARS` 装填、再按 `TASK_BRIEF_FILE_ITEMS` 收口；任一触发都记「（已压缩）」。
+段内先按 `TASK_BRIEF_FILES_MAX_CHARS` 装填、再按 `TASK_BRIEF_FILE_ITEMS` 收口；被收口的条数以
+「（另 N 个，完整清单见会话变更集）」如实告知（**不是**静默截断）。「（已压缩）」只用于 §8 第 5 条那种
+整段都塞不下的硬截断，不标记正常收口。
 
 ## 6. 接线点
 
@@ -156,8 +158,12 @@ pub struct TaskState {
 
 写入侧取快照用 `context::agent_turn_prep::workspace_changelist_for_turn(cfg, process_handles, scope)`——
 已有现成函数，**不要**给 `RunLoopCore` 加字段（那是公开面）。
-实现时确认 `RunAgentTurnAttach` 是否已暴露 `process_handles`；`record_budget_paused` 已能读
-`attach.long_term_memory_scope_id`，说明 attach 可达。若未暴露，加一个只读句柄即可。
+落地后确认：`record_budget_paused` 直接读 `p.ctx.obs.process_handles`，**无需**给 `RunAgentTurnAttach`
+新句柄。
+
+**已知边界（不是缺陷，登记以免误判覆盖面）**：`TaskState::new_paused` 的生产调用点只有预算拒绝这一处
+（`turn_loop/outer_loop.rs`），因此只有**预算暂停**会落 `files`；`TaskPauseReason::AwaitingApproval`
+的暂停不写 `TaskState`，自然也没有 `files`。将来若把审批暂停也纳入续跑（#1386 S2），需在同一路径补取快照。
 
 ## 7. 与 `messages` 的边界
 
@@ -175,18 +181,23 @@ pub struct TaskState {
 
 1. `files` 超 20 条 → 保留尾部 20；`cap_files` 有单测。
 2. 旧 schema 文件（无 `files` 键）读入 → 空列表、brief 正常渲染。
-3. changelist 关闭 / 工作区未设置 → `files` 为空、**不 panic**（fail-open，与落盘同口径）。
-4. brief 总长 ≤ 800，由 20 条长路径强制触发截断。
-5. files 段超 200 字符 → 条数回退且附「（已压缩）」；**证据段不被挤掉**（用 `goal` 取满 400 的用例）。
-6. 触发 files 段压缩时，「最近证据」仍保留 ≥1 条。
+3. changelist 关闭 / 工作区未设置 → `files` 为空、**不 panic**（fail-open，与落盘同口径）：
+   写入侧用 `unwrap_or_default()`，无独立单测；「无 `files` 时 brief 不多出一段」由
+   `legacy_schema_without_files_still_loads` 覆盖。
+4. brief 总长 ≤ 800：`long_goal_never_crowds_out_evidence_line` 用取满 `goal` 的用例钉住。
+5. files 段超 200 字符 → 条数回退并附「另 N 个」，**证据段不被挤掉**
+   （`files_segment_is_char_bounded_before_item_cap` / `files_segment_total_length_respects_char_cap`）。
+6. 触发 files 段压缩时，「最近证据」仍保留 ≥1 条（降级循环的下界写死为 1）。
 7. 手工：预算耗尽后 `.crabmate/tasks/<scope>.json` 含 `files`，brief 含「已改动文件」行。
 
-## 9. 开放问题（实现前需结清）
+## 9. 开放问题（已结清）
 
-1. **是否本期一并做 §7 的 P2**（子回合注入快照）？倾向：不做，单独 PR 并同步改契约文本。
-2. **200 字符 / 5 条这组数需实测校准**：拿一个预算耗尽的长会话，量 changelist 的路径长度分布，
-   先调字符主闸、条数副闸只作兜底。**不照抄** Aider 的 1k tokens 或 Claude Code 的 100k——
-   前者是整仓 repo map、后者是压缩触发点，与「跨回合 brief」语义不同。
+1. **§7 的 P2 本期不做**：它是**契约文本变更**（要改 `subagent_delegation.md` §5 / §8），
+   必须单独评审、单独 PR，不能夹带在实现 PR 里。边界记在 §7 与 §10。
+2. **200 字符 / 5 条仍未经实测校准**，按主流做法取的是**初始值**：字符为主闸、条数为副闸。
+   两者都是 `task_state.rs` 的常量（`TASK_BRIEF_FILES_MAX_CHARS` / `TASK_BRIEF_FILE_ITEMS`），
+   实测路径长度分布后直接改常量即可，**不需要**动 schema 或契约。**不照抄** Aider 的 1k tokens
+   或 Claude Code 的 100k——前者是整仓 repo map、后者是压缩触发点，与「跨回合 brief」语义不同。
 
 ## 10. 不做
 
