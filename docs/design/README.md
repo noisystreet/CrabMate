@@ -70,7 +70,7 @@
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
 | [tool_body_compression_staging.md](tool_body_compression_staging.md) | 工具正文压缩分档（#1327）：**方案待评审**；最新一条也被压、且不看窗口余量 |
-| [handoff_brief.md](handoff_brief.md) | 移交摘要（#1496）：`TaskState.files` + brief 渲染；**设计稿（Proposed）、未实现** |
+| [handoff_brief.md](handoff_brief.md) | 移交摘要（#1496）：`TaskState.files` + 分区预算 brief；**已落地**（`e40f0f29`） |
 
 ## 6. 记忆 / 会话（5）
 
