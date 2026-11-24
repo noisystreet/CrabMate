@@ -12,6 +12,7 @@
 //! | [`chat`] | `/chat*` 与队列入队 |
 //! | [`workspace_changelog`] | `GET /workspace/changelog` |
 //! | [`health_status`] | `GET /health`、`GET /status` |
+//! | [`tiktoken_baseline`] | 新会话 Token 基线（按角色并行计算） |
 //! | [`config_reload`] | `POST /config/reload` |
 //! | [`session_conversation_store`] | `POST /config/session/conversation-store` |
 
@@ -22,6 +23,7 @@ mod conflict;
 mod health_status;
 mod parse;
 mod session_conversation_store;
+mod tiktoken_baseline;
 mod upload;
 mod workspace_changelog;
 

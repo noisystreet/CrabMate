@@ -13,6 +13,7 @@ use crate::chat_job_queue;
 use crate::health;
 use crate::tool_registry;
 use crate::web::app_state_facets::{WebHealthAppFacet, WebStatusAppFacet};
+use super::tiktoken_baseline::tiktoken_new_session_baselines_by_role;
 
 pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> impl IntoResponse {
     let eff = facet.effective_workspace_path().await;
@@ -242,63 +243,6 @@ fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView 
     }
 }
 
-fn tiktoken_new_session_baselines_by_role(
-    cfg: &crate::AgentConfig,
-    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
-    workspace_root: &std::path::Path,
-    agent_role_ids: &[String],
-) -> std::collections::BTreeMap<String, u32> {
-    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
-        crate::memory::agent_memory::load_memory_snippet(
-            workspace_root,
-            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
-            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
-        )
-    } else {
-        None
-    };
-    let mut tiktoken_new_session_baseline_by_agent_role = std::collections::BTreeMap::new();
-    let push_baseline = |map: &mut std::collections::BTreeMap<String, u32>,
-                         key: String,
-                         role: Option<&str>| {
-        let system = match crate::context_bootstrap::conversation_turn_bootstrap::augmented_system_for_new_conversation(
-            cfg,
-            role,
-            tool_recorder,
-            Some(workspace_root),
-        ) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let messages =
-            crate::context_bootstrap::conversation_turn_bootstrap::new_session_prompt_baseline_messages(
-                cfg,
-                &system,
-                workspace_root,
-                memory_snippet.clone(),
-            );
-        if let Some(snap) =
-            crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
-                cfg, &messages,
-            )
-        {
-            map.insert(key, snap.prompt_tokens);
-        }
-    };
-    push_baseline(
-        &mut tiktoken_new_session_baseline_by_agent_role,
-        String::new(),
-        None,
-    );
-    for id in agent_role_ids {
-        push_baseline(
-            &mut tiktoken_new_session_baseline_by_agent_role,
-            id.clone(),
-            Some(id.as_str()),
-        );
-    }
-    tiktoken_new_session_baseline_by_agent_role
-}
 
 /// 缓存 TTL：fingerprint 只覆盖 `AgentConfig`，工作区文件内容变化不主动失效，到期重算。
 const BASELINE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
@@ -819,6 +763,7 @@ mod tiktoken_baseline_cache_tests {
             );
         }
     }
+
 }
 
 #[cfg(test)]
