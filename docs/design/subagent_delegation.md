@@ -1,7 +1,11 @@
 # 隔离上下文的子 Agent 委托（`delegate_task`）设计稿
 
-> **状态**：设计已定稿（§9 的 5 个问题已落结论）；**P0 四项前置重构已落地**（#839），P1 功能未开始
+> **状态**：设计已定稿（§9 的 5 个问题已落结论）；**P0 四项前置重构已落地**（#839）；
+> **P1 已落地且默认关闭**（#1389 / #1394 / #1395 / #1397）；契约与接线点见 §4.2 / §6。
 > **跟踪**：[#839](https://github.com/noisystreet/CrabMate/issues/839) · **路线图**：`docs/待办清单.md`「多 Agent 协作」
+> **与 `context_slice` 的关系**：本稿 §4.2 的 `summary` + `key_paths` 是**刻意窄化**的 L2 契约；
+> [`multi_agent_collaboration.md`](multi_agent_collaboration.md) §5 的 `context_slice` 留到 L3（#1496），
+> 读作「L2 未完成」是误判。
 
 ## 1. 问题与目标
 
@@ -61,22 +65,28 @@ trait object、直接调 `run_agent_turn(...)` 时才需手写 `Box::pin` ——
 ```rust
 pub enum SubTaskStatus { Ok, BudgetExhausted, Cancelled, Denied, Failed }
 
-pub struct SubTaskRequest {
-    pub prompt: String,              // 唯一入口：任务描述；父上下文一概不传
-    pub depth: u8,                   // 调用方透传的第几层（0 = 父回合直接派）
-    pub allowed_tools: Option<Vec<String>>,  // None = 按只读性派生（见 §9 Q4）
+/// 三个闸**额外**叠在子回合自己的 `TurnBudgetCounter` 之上（§7）。
+pub struct SubTaskLimits {
     pub max_llm_calls: u32,
     pub max_tool_calls: u32,
     pub max_wall_secs: u64,
 }
 
+pub struct SubTaskRequest {
+    pub prompt: String,              // 唯一入口：任务描述；父上下文一概不传
+    pub depth: u8,                   // 调用方透传的第几层（0 = 父回合直接派）
+    pub allowed_tools: Option<Vec<String>>,  // None = 按只读性派生（见 §9 Q4）
+    pub limits: SubTaskLimits,       // 三个硬上限收进一组，不散成三个平铺字段
+    pub max_report_chars: usize,     // 回传正文上限（字符）；0 = 不截断
+}
+
 pub struct SubTaskReport {
     pub status: SubTaskStatus,
     pub summary: String,             // 截断到 max_report_chars
-    pub key_paths: Vec<String>,      // 上限 20 条
+    pub key_paths: Vec<String>,      // 上限 20 条；由 changelist 前后差集填充（非工具入参解析）
     pub stats: SubTaskStats,         // llm_calls / tool_calls / elapsed_secs / estimated_tokens
-    pub truncated: bool,
-    pub error_code: Option<&'static str>,
+    pub truncated: bool,             // 由 `SubTaskReport::bounded` 自行判定，不接受调用方自述
+    pub error_code: Option<String>,  // 与工具信封 error_code 对齐的短码
 }
 ```
 
@@ -138,6 +148,8 @@ pub struct SubTaskReport {
 - **路径与审批**：子回合走的是同一条 `dispatch_tool`，因此 `PathAccess` 与 `tool_approval` 自动沿用；
   但 `--yes` / 高权限等级**不随子任务放大**（`min` 链）。
 - **回传有界**：`summary` 截断、`key_paths` ≤ 20、产物只回**引用**（§9 Q5），**绝不**回传子 messages 或工具原文。
+  这就是 §4.2 的 **L2 刻意窄化契约**：`multi_agent_collaboration.md` §5 设想的 `context_slice`
+  （`facts[]` / `files[]` / `input_artifacts[]`）**留到 L3**（#1496），**不要**按「L2 缺字段」去补。
 
 
 **P1 决策（已定）**：子回合 `web_tool_ctx = None`，即**需审批的工具调用直接失败**。理由：
