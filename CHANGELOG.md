@@ -43,6 +43,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Cache-stability observability splits into first-system vs all-system hash (#1475).**
+  `system_prompt_stability` used to hash **every** `system` message concatenated, so the metric drifted whenever a
+  trailing `system` message appeared (`system_execution_constraint_hint`) — those live at the end of history and only
+  cost a tail miss, never a prefix break. The log now emits `first_system_hash` / `first_system_chars` (the segment
+  prefix caching actually matches) plus `all_system_hash` / `all_system_chars` (diagnostic only), and
+  `prompt_cache … hit= miss= ratio=` gains the same `first_system_hash`. Hit ratio can therefore be correlated with
+  Web's `first_system_compose path=web_new|web_existing` line and attributed per entry point. `path` is deliberately
+  **not** threaded into `cm_llm`: it is a Web-entry concept and the shared layer stays structural-change-free.
+  The `chars` counts are now real characters (previously byte length). The legacy `hash=` / `chars=` keys on that
+  line are **gone**, so grep-based dashboards must switch to `first_system_hash`. The hash uses `DefaultHasher`
+  (std does not guarantee a stable algorithm across Rust releases): compare it **within one build only**.
 - **BREAKING (Rust API): budget exhaustion collapses into one `RunAgentTurnError::TurnBudgetExhausted` (#1478).**
   `TimeLimitExhausted` and `TokenLimitExhausted` are removed; their role is taken by a single variant carrying
   `TurnBudgetDeny` (`WallClock` / `LlmCalls` / `Tokens`) plus the user-facing message. Two reasons:

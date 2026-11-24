@@ -4,8 +4,21 @@ use std::hash::{Hash, Hasher};
 
 use crate::cm_types::Message;
 
-fn system_prompt_stability_info(messages: &[Message]) -> (u64, usize) {
-    let sys_content: String = messages
+/// 缓存口径的文本 hash：**唯一**实现。
+///
+/// 出站日志（`prompt_cache`）与 Web 组装日志（`first_system_compose`）必须用同一函数算
+/// `first_system_hash`，否则两处对不上、按 `path=web_new / web_existing` 分桶就失效（#1475）。
+///
+/// 用 `DefaultHasher`——std 明确**不保证**算法跨 Rust 版本稳定，因此这个 hash
+/// 只能在同一构建内比较：别拿今天的日志去对昨天的日志判「有没有变」。
+pub fn hash_text_for_cache(text: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn system_texts(messages: &[Message]) -> impl Iterator<Item = &str> {
+    messages
         .iter()
         .filter(|m| m.role == "system")
         .filter_map(|m| m.content.as_ref())
@@ -13,21 +26,44 @@ fn system_prompt_stability_info(messages: &[Message]) -> (u64, usize) {
             crate::cm_types::MessageContent::Text(s) => Some(s.as_str()),
             _ => None,
         })
-        .collect();
-    let len = sys_content.len();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    sys_content.hash(&mut hasher);
-    (hasher.finish(), len)
 }
 
-/// 记录 system prompt 稳定性信息（hash + 字符数），辅助判断前缀缓存稳定性。
+/// **首条文本** `system`（`Text` 内容）的 (hash, 字符数)——前缀缓存真正匹配的那一段（#1475）。
+///
+/// 取「首条**文本**」而不是「首条 `system` 消息」：`system_texts` 会跳过非 `Text` 内容
+/// （分片形态）。当前 compose 产物恒为 `Text`，所以两者等价；若将来出现分片 system，
+/// 这里的口径会跟着变；改实现时请同步本文与 `all_system_stability_info`。
+///
+/// 与 [`all_system_stability_info`] 分开：历史尾部还会有独立的 `system` 消息
+/// （`Message::system_execution_constraint_hint` 等），它们逐轮可增可减，但位于末尾，
+/// 只让尾部 miss、不打断前缀。把全量 hash 当稳定性指标会得到「每轮都在抖」的假阳性。
+#[must_use]
+pub fn first_system_stability_info(messages: &[Message]) -> (u64, usize) {
+    let text = system_texts(messages).next().unwrap_or("");
+    (hash_text_for_cache(text), text.chars().count())
+}
+
+/// **全部** `system` 消息拼接后的 (hash, 字符数)：诊断用，**不要**当作前缀稳定性指标。
+#[must_use]
+pub fn all_system_stability_info(messages: &[Message]) -> (u64, usize) {
+    let joined: String = system_texts(messages).collect();
+    (hash_text_for_cache(&joined), joined.chars().count())
+}
+
+/// 记录 system prompt 稳定性信息，辅助判断前缀缓存稳定性。
+///
+/// 两个 hash 用途不同（见 [`first_system_stability_info`] / [`all_system_stability_info`]）：
+/// 前者恒定才是「前缀没断」；后者变了只说明末尾多了条临时 `system` 消息。
 pub fn log_system_prompt_stability(messages: &[Message]) {
-    let (hash, len) = system_prompt_stability_info(messages);
+    let (first_hash, first_chars) = first_system_stability_info(messages);
+    let (all_hash, all_chars) = all_system_stability_info(messages);
     log::info!(
         target: "crate::cm_llm",
-        "system_prompt_stability hash={:x} chars={}",
-        hash,
-        len
+        "system_prompt_stability first_system_hash={:x} first_system_chars={} all_system_hash={:x} all_system_chars={}",
+        first_hash,
+        first_chars,
+        all_hash,
+        all_chars
     );
 }
 
@@ -187,5 +223,53 @@ mod tests {
             .expect("assistant");
         assert_eq!(v[assistant_idx + 1].role, "tool");
         assert_eq!(v[assistant_idx + 1].tool_call_id.as_deref(), Some("call_1"));
+    }
+
+    /// `#1475`：尾部临时 `system`（执行约束 hint 等）逐轮可增可减，但位于历史末尾，
+    /// 只让尾部 miss。若把它算进「稳定性 hash」，归因会得到「每轮都在抖」的假阳性。
+    #[test]
+    fn first_system_hash_ignores_trailing_system_messages() {
+        let base = vec![
+            Message::system_execution_constraint_hint("基底 system"),
+            Message::user_only("做点事"),
+        ];
+        let with_hint = vec![
+            Message::system_execution_constraint_hint("基底 system"),
+            Message::user_only("做点事"),
+            Message::system_execution_constraint_hint("本轮：只读"),
+        ];
+        let (base_first, base_chars) = first_system_stability_info(&base);
+        let (hint_first, hint_chars) = first_system_stability_info(&with_hint);
+        assert_eq!(base_first, hint_first, "首条 system 未变 ⇒ hash 必须一致");
+        assert_eq!(base_chars, hint_chars);
+        assert_ne!(
+            all_system_stability_info(&base).0,
+            all_system_stability_info(&with_hint).0,
+            "全量 hash 应反映尾部追加（仅作诊断）"
+        );
+    }
+
+    /// `#1475`：Web 侧 `first_system_compose` 日志对 `String` 算 hash，出站侧对 `Message` 算；
+    /// 两处必须同值，否则按 `first_system_hash` 关联起来的命中率分桶失效。
+    #[test]
+    fn first_system_hash_matches_compose_text_hash() {
+        let system = "L3 基底\n## 项目规则（AGENTS.md）\n…";
+        let messages = vec![
+            Message::system_execution_constraint_hint(system),
+            Message::user_only("u"),
+        ];
+        assert_eq!(
+            first_system_stability_info(&messages).0,
+            hash_text_for_cache(system)
+        );
+    }
+
+    /// 无 `system` 消息（如某个不走首条 system 的内部调用）不得 panic。
+    #[test]
+    fn no_system_message_yields_empty_hash_without_panic() {
+        let messages = vec![Message::user_only("u")];
+        let (hash, chars) = first_system_stability_info(&messages);
+        assert_eq!(chars, 0);
+        assert_eq!(hash, hash_text_for_cache(""));
     }
 }

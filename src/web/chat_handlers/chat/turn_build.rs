@@ -300,7 +300,8 @@ fn refresh_existing_turn_system(
     )?;
     debug!(
         target: "crabmate",
-        "first_system_compose path=web_existing conversation_id_refresh=true layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        "first_system_compose path=web_existing conversation_id_refresh=true first_system_hash={:x} layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        crate::cm_llm::vendor_messages::hash_text_for_cache(&system_for_turn),
         diag.layers_applied,
         diag.chars_l3_base,
         diag.chars_l4_augmented,
@@ -395,7 +396,8 @@ async fn build_new_conversation_turn(
     )?;
     debug!(
         target: "crabmate",
-        "first_system_compose path=web_new conversation_id_refresh=false layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        "first_system_compose path=web_new conversation_id_refresh=false first_system_hash={:x} layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        crate::cm_llm::vendor_messages::hash_text_for_cache(&system_for_turn),
         diag.layers_applied,
         diag.chars_l3_base,
         diag.chars_l4_augmented,
