@@ -56,9 +56,9 @@
 | [per_state_machine_consolidation.md](per_state_machine_consolidation.md) | PER 编排：用显式状态机收拢分支 |
 | [audience_critic_role.md](audience_critic_role.md) | 观众角色（侧向点评）：设计草案 |
 | [multi_agent_collaboration.md](multi_agent_collaboration.md) | 多 Agent 协作：分层演进设计草案（L0–L4 与 A2A 定位） |
-| [subagent_delegation.md](subagent_delegation.md) | 隔离上下文的子 Agent 委托（#839）：**设计定稿、实现未开始**；P0 前置重构见该文 §12 |
+| [subagent_delegation.md](subagent_delegation.md) | 隔离上下文的子 Agent 委托（#839）：**P1 已落地、默认关**（#1389/#1394/#1395/#1397） |
 
-## 5. 上下文 / 提示词（8）
+## 5. 上下文 / 提示词（9）
 
 | 文档 | 说明 |
 |---|---|
@@ -70,6 +70,7 @@
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
 | [tool_body_compression_staging.md](tool_body_compression_staging.md) | 工具正文压缩分档（#1327）：**方案待评审**；最新一条也被压、且不看窗口余量 |
+| [handoff_brief.md](handoff_brief.md) | 移交摘要（#1496）：`TaskState.files` + brief 渲染；**设计稿（Proposed）、未实现** |
 
 ## 6. 记忆 / 会话（5）
 
