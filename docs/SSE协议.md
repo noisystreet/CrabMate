@@ -120,9 +120,17 @@
   **`detail` 是字符串化 JSON**（先 `JSON.parse` 再取键），服务端已把 `context_*` 的字段集类型化为
   `ContextTimelineDetail`（见 [design/context_timeline_detail.md](design/context_timeline_detail.md)）；
   线格式保持字符串以便旧会话 / 旧 Client 双读，改 object 属独立决策且当前**不做**。
-  `context_inject` 的 `detail` 为 JSON：`kinds`（**仅此一个键**）。`skills` / `forced` 已删除（#1478）——
-  它们靠匹配 `system` 里的中文标题反推，索引化之后不再有意义。旧会话落盘的 detail 字符串里可能仍有这两个键，
-  读侧应忽略未知键（服务端只写不读，也不再产生它们）。
+  `context_inject` 的 `detail` 为 JSON：`kinds`（注入种类），以及**可选** `skills`——
+  本轮强制调用（`/<id>`）的技能数组，元素 `{ id, source }`，`source` 当前恒为 `forced`。
+  `skills` 为空时**不出现该键**，所以没有 `/<id>` 的回合 `detail` 字节与 #1478 之后的形态一致。
+  **来源**：注入条自己生成的固定标题行（`cm_config::skills::forced_skill_id_from_injection_text`，
+  生成与解析共用同一组常量），不是嗅探模型输出，也不是 #1478 删掉的那套 system 中文小标题匹配。
+  **事件触发**：只有技能注入、没有任何 `kinds` 的回合**也会**发 `context_inject`（`has_inject` 已把
+  `skills` 计入）——这是对 #1478 中「这类回合一条事件都不发」的修正。
+  **兼容性（重要）**：`skills` 与 #1478 **之前的同名键类型不同**——旧的是字符串数组 `["rust-style"]`，
+  新的是对象数组 `[{ "id": …, "source": "forced" }]`。沿用旧解析器会解析失败，务必按新形状读；
+  旧会话落盘的 detail 里还可能留着历史 `skills` / `forced`，读侧应忽略未知键与类型不匹配的旧值
+  （服务端只写不读）。
   `context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `history_removed` / `tail_kept`，
     并可选携带 `tool_compressed` / `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` /
     `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` /

@@ -73,6 +73,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   appear (historical `detail` strings still contain them — ignore unknown keys), and a turn whose **only**
   injection was a skill no longer emits a `context_inject` event at all, since `has_inject` is now driven
   solely by `kinds`.
+- **`context_inject.detail` re-gains a *structured* `skills` array (#1478 follow-up, crabmate-client#581).**
+  Unlike the pre-#1478 field (which matched Chinese headings inside `system` text), `skills` is
+  `[{ id, source }]` with `source: "forced"`, derived from the fixed title line of the `/<id>` injection message
+  we generate ourselves (`cm_config::skills::forced_skill_id_from_injection_text`; generation and parsing share
+  the same constants). It is **omitted when empty**, so turns without `/<id>` keep byte-identical details (the
+  golden fixture is unchanged). This also fixes the second consequence recorded in the #1478 entry above: a turn
+  whose only injection was a skill **does** emit `context_inject` again, because `has_inject` now counts `skills`.
 - **Plan display no longer lifts a breakdown sentence out of the first step (#1478).**
   `format_agent_reply_plan_for_display` used to guess whether `steps[0].description` began with a
   「以下是…拆解」 lead and splice it above the bubble (`contains("以下") && contains("拆解")` plus a

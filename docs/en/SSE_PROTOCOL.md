@@ -121,6 +121,17 @@ following the existing `tiktokenPromptTokens` precedent:
 
 `type` alone cannot distinguish "finished" from "unfinished"; older clients that ignore these keys are unaffected.
 
+A **`context_inject`** detail object carries `kinds` (injection categories) plus an **optional** `skills` array
+  (`[{ id, source }]`, `source` currently always `forced`) listing the skills force-invoked via `/<id>` in this
+  turn. `skills` is **omitted when empty**, so turns without `/<id>` keep byte-identical details. Its `id` comes
+  from the fixed title line of the injection message we generate ourselves — not from sniffing `system` text, and
+  not the pre-#1478 heading match. A turn whose **only** injection is a skill **does** emit `context_inject` again:
+  `has_inject` now counts `skills`, fixing the "no event at all" behaviour introduced in #1478.
+  **Compatibility (important)**: `skills` shares its name with the pre-#1478 field but **not its type** — that one
+  was a string array (`["rust-style"]`), this one is an array of objects (`[{ "id": …, "source": "forced" }]`).
+  An old parser will fail; read the new shape. Historical `detail` strings may still carry the old `skills` /
+  `forced` keys — ignore unknown keys and type-mismatched legacy values (the server only writes, never reads them).
+
 Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`,
   `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`,
   `max_input_tokens`, `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`,
