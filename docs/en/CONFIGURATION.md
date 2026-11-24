@@ -422,8 +422,13 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 
 **`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`,
   `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`);
-  **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). In-process **`chat` / `repl` /
+  **no** tool args or full outputs stored. Web attaches the stats appendix on **every** first-`system` compose
+  (new chats **and** follow-up refreshes — `refresh_existing_turn_system` re-composes each turn), not only for new chats.
+  In-process **`chat` / `repl` /
     TUI** entries and **`workspace_session::initial_workspace_messages`** are removed (Client shell / D2.2).
+  **Cache cost (#1475)**: when enabled the hints are appended to the **first `system`**, which Web re-composes on
+  every follow-up turn — any change to the hints invalidates that conversation's prefix cache (DeepSeek matches
+  whole prefix units, so one drift costs at least two rounds). Default is **`false`**.
 
 **Skills discovery (default)**: with **`skills_enabled`**, the first **`system`** carries a **full** `id — description` index of the
   **merged three-layer skills catalog**, and bodies come on demand via **`skill_read`** (or forced by **`/<skill-id>`**). The old
