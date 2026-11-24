@@ -289,20 +289,20 @@ DeepSeek 缓存从 **第 0 个 token 起** 开始匹配。Agent 的 system promp
 **文件**：`src/cm_llm/vendor_messages.rs`（system prompt 构建处）
 
 ```rust
-/// 记录 system prompt 的 hash/长度，用于日志比对。
-pub fn log_system_prompt_stability(messages: &[Message]) {
-    let sys_len: usize = messages
-        .iter()
-        .filter(|m| m.role == "system")
-        .map(|m| m.content.as_ref().map_or(0, |c| message_content_as_str(c).map_or(0, |s| s.len())))
-        .sum();
-    // 仅日志记录，不做截断
-    log::info!(
-        target: "crabmate_llm",
-        "system_prompt_total_chars={}",
-        sys_len
-    );
-}
+// 实际实现（src/cm_llm/vendor_messages.rs；`#1475` 后拆成两个口径）
+/// 缓存口径的文本 hash：**唯一**实现，出站与 Web compose 日志共用。
+pub fn hash_text_for_cache(text: &str) -> u64;
+
+/// **首条** `system`：前缀缓存真正匹配的那一段。
+pub fn first_system_stability_info(messages: &[Message]) -> (u64, usize);
+
+/// **全部** `system` 拼接：仅供诊断，**不要**当作前缀稳定性指标（尾部追加会改它但不断前缀）。
+pub fn all_system_stability_info(messages: &[Message]) -> (u64, usize);
+
+// 出站每次构造 `messages` 都打两对字段（仅日志，不截断）：
+// system_prompt_stability first_system_hash=… first_system_chars=… all_system_hash=… all_system_chars=…
+// 并在 usage 收尾处带上 same hash：
+// prompt_cache model=… first_system_hash=… hit=… miss=… ratio=…%
 ```
 
 **优化措施**：
@@ -526,9 +526,17 @@ data: [DONE]
 
 尚未做：
 
-- hit ratio 按 `path=web_new/web_existing` 分桶；
-- AGENTS.md / 技能索引「未变则复用上回合文本」的内容级缓存；
-- `agent_tool_stats_enabled` 开启时的缓存代价说明。
+- AGENTS.md / 技能索引「未变则复用上回合文本」的内容级缓存。注意口径：内容不变时重算结果**逐字节相同**，
+  前缀本来就命中——这项省的是每回合一次文件读 + 目录扫描 + 索引渲染，属 **CPU / IO 收益**，
+  **不会提高 hit ratio**，别按「命中率优化」验收它。
+
+已完成（`#1475`）：
+
+- **命中率分桶**：出站 `prompt_cache … first_system_hash=… hit=… miss=…` 与 Web 侧
+  `first_system_compose path=web_new|web_existing first_system_hash=…` 用同一个 hash 对起来，
+  即可把命中率按入口分桶、归因到 `system_prompt_assembly.md` 的「逐段可变性与前缀缓存」表某一段。
+  刻意**不**改结构（不加 `path` 参数、不改聚合类型）：`path` 只是 Web 入口概念，不属共享 LLM 层。
+- **`agent_tool_stats_enabled` 的缓存代价**：已写进 `docs/配置说明.md` 与 `docs/en/CONFIGURATION.md`。
 
 **未验证**：本仓尚无以运行中实例做的命中率前后对比。上述收益判断来自官方文档的匹配机制
 （cache prefix unit / 链式断点）与代码层不变量，**不是实测数据**——引用时不要说成「已验证省了多少 token」。
