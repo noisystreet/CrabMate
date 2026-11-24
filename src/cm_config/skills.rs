@@ -452,23 +452,30 @@ fn merge_skills_layer(out: &mut Vec<SkillDoc>, layer: Vec<SkillDoc>) {
 ///
 /// 这些是 `system` 里的中文小标题。集中成一处是为了消掉「同一模板在几个生产点各手抄一份」
 /// 的不同步风险（`/skills` 的字符预算估算曾手抄正文形态模板）。消费侧过去读这些标题反推
-/// 「注入了哪些技能」，那套判定已随 `context_inject` 字段收窄整块删除（#1478）。
+/// 「注入了哪些技能」，那套判定已随 `context_inject` 字段收窄整块删除（#1478）——
+/// 现在唯一允许读标题的地方是 [`forced_skill_id_from_injection_text`]，且只读我们自己的强制注入条。
 ///
 /// - [`SKILLS_FORCED_TITLE_PREFIX`]：`/<id>` 强制注入的标题前缀，后接 callable id 与 `）】`；
 /// - [`SKILLS_BODY_TITLE`]：**正文形态**技能附录的标题；`/skills` 的字符预算估算
 ///   （`web::chat_handlers::chat::builtin_skills`）按同一模板计长度（跨模块使用，故 `pub`）；
-/// - [`SKILLS_INDEX_TITLE`]：**索引形态**标题（现行生产：只列 id 与描述，正文由 `skill_read` 取）；
+/// - `SKILLS_INDEX_TITLE`（私有）：**索引形态**标题（现行生产：只列 id 与描述，正文由 `skill_read` 取）；
 /// - [`SKILLS_FILE_LINE_PREFIX`]：每份技能前的路径行前缀。
-const SKILLS_FORCED_TITLE_PREFIX: &str = "【用户显式选用技能（/";
+pub const SKILLS_FORCED_TITLE_PREFIX: &str = "【用户显式选用技能（/";
+/// 强制注入标题里 callable id 之后的固定结尾。
+///
+/// 与前缀成对：**生成**（`render_forced_skill_appendix`）与**解析**
+/// （[`forced_skill_id_from_injection_text`]）共用它们，改模板必须让单测同步变红。
+const SKILLS_FORCED_TITLE_SUFFIX: &str = "）】";
 pub const SKILLS_BODY_TITLE: &str = "【项目技能（skills）】";
 const SKILLS_INDEX_TITLE: &str = "【项目技能索引（skills）】";
 pub const SKILLS_FILE_LINE_PREFIX: &str = "技能文件: ";
 
 fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
     let title = format!(
-        "{}{}）】\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
+        "{}{}{}\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
         SKILLS_FORCED_TITLE_PREFIX,
-        crate::cm_config::skills_slash::skill_callable_id(doc)
+        crate::cm_config::skills_slash::skill_callable_id(doc),
+        SKILLS_FORCED_TITLE_SUFFIX
     );
     render_skills_appendix_with_title(std::slice::from_ref(doc), max_chars, &title)
 }
@@ -479,6 +486,21 @@ fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
 /// 缓存失效（#1475）。返回空串表示无内容或技能未启用。
 pub fn forced_skill_appendix_for_injection(doc: &SkillDoc, max_chars: usize) -> String {
     render_forced_skill_appendix(doc, max_chars)
+}
+
+/// 从 `/<id>` 强制注入正文的**标题行**取回 callable id。
+///
+/// 只读我们自己生成的那条注入消息（`Message::user_forced_skill_injection`）的固定首行，
+/// **不**在 `system` 或模型输出里嗅探——那正是 #1478 删掉的脆弱做法（当时靠匹配 system 里的
+/// 中文小标题反推：索引化后一个恒空、一个是冗余）。
+///
+/// 用途：`context_inject.detail.skills` 的结构化来源（client 侧「本轮用了哪个 skill」）。
+#[must_use]
+pub fn forced_skill_id_from_injection_text(text: &str) -> Option<String> {
+    let first = text.lines().next()?;
+    let rest = first.strip_prefix(SKILLS_FORCED_TITLE_PREFIX)?;
+    let id = rest.strip_suffix(SKILLS_FORCED_TITLE_SUFFIX)?;
+    (!id.is_empty()).then(|| id.to_string())
 }
 
 fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title: &str) -> String {
@@ -596,6 +618,39 @@ pub(crate) fn merge_system_prompt_with_skills_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 生成 / 解析同源：`/<id>` 注入正文的标题行能还原成 callable id。
+    ///
+    /// 钉的是模板常量与解析函数的一对关系：谁改标题格式，这里就红。
+    #[test]
+    fn forced_skill_appendix_title_roundtrips_to_callable_id() {
+        let doc = SkillDoc {
+            display_path: "skills/rust-style/SKILL.md".to_string(),
+            content: "正文".to_string(),
+            name: Some("rust-style".to_string()),
+            description: None,
+        };
+        let body = forced_skill_appendix_for_injection(&doc, 10_000);
+        assert_eq!(
+            forced_skill_id_from_injection_text(&body).as_deref(),
+            Some("rust-style"),
+            "注入正文的标题行必须能回解出 callable id"
+        );
+    }
+
+    /// 解析器不得把别的标题或残缺标题误当成 id（前缀对、结尾缺也不能吞整段）。
+    #[test]
+    fn forced_skill_id_parser_rejects_foreign_or_broken_text() {
+        assert_eq!(forced_skill_id_from_injection_text(""), None);
+        assert_eq!(
+            forced_skill_id_from_injection_text("【项目技能索引（skills）】\n"),
+            None
+        );
+        assert_eq!(
+            forced_skill_id_from_injection_text("【用户显式选用技能（/x\n"),
+            None
+        );
+    }
     use std::io::Write;
 
     fn write_skill(dir: &Path, file: &str, body: &str) {
