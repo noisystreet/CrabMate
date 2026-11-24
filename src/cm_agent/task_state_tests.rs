@@ -414,3 +414,153 @@
         }
         assert_eq!(s.schema, TASK_STATE_SCHEMA);
     }
+
+    /// `#1496`：`files` 落盘受 20 条上界，且保留**最后**碰过的（与证据裁剪同向）。
+    #[test]
+    fn task_files_are_capped_keeping_the_tail() {
+        let files: Vec<String> = (1..=25).map(|i| format!("src/f{i}.rs")).collect();
+        let s = TaskState::new_paused(
+            "s1",
+            "目标",
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            Vec::new(),
+        )
+        .with_files(files);
+        assert_eq!(s.files.len(), MAX_TASK_FILES);
+        assert_eq!(
+            s.files.first().map(String::as_str),
+            Some("src/f6.rs"),
+            "应丢弃最早的 5 条"
+        );
+        assert_eq!(s.files.last().map(String::as_str), Some("src/f25.rs"));
+    }
+
+    /// `#1496`：旧 schema（无 `files` 键）必须能读回——空列表、不报错、不迁移。
+    #[test]
+    fn legacy_schema_without_files_still_loads() {
+        let legacy = r#"{
+            "schema": 2,
+            "scope_id": "s1",
+            "goal": "旧任务",
+            "status": "paused",
+            "pause_reason": "budget_tokens",
+            "budget": {"llm_calls":1,"outer_loop_iterations":2,"estimated_tokens":3,"elapsed_secs":4},
+            "evidence": [],
+            "updated_at": "2026-01-01T00:00:00Z"
+        }"#;
+        let state: TaskState = serde_json::from_str(legacy).expect("旧 schema 应能读回");
+        assert!(state.files.is_empty(), "缺键应落空，而不是整份读失败");
+        let brief = render_task_brief(&state);
+        assert!(brief.contains("旧任务"));
+        assert!(
+            !brief.contains("已改动文件"),
+            "无 files 时不该凭空造出一段：{brief}"
+        );
+    }
+
+    /// `#1496` D3：files 段以**字符**为主闸——超长路径不会把 5 条硬塞进 brief。
+    #[test]
+    fn files_segment_is_char_bounded_before_item_cap() {
+        let long = "d/".repeat(50); // 100 字符/条
+        let files: Vec<String> = (1..=5).map(|i| format!("{long}{i}.rs")).collect();
+        let s = TaskState::new_paused(
+            "s1",
+            "目标",
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            Vec::new(),
+        )
+        .with_files(files);
+        let brief = render_task_brief(&s);
+        assert!(
+            brief.contains("已改动文件（最近 1 个）"),
+            "字符闸应先于条数闸生效：{brief}"
+        );
+        assert!(brief.contains("另 4 个"), "剩余条数要如实告知：{brief}");
+    }
+
+    /// `#1496` D3：`goal` 取满时**不得**静默挤掉证据行。
+    ///
+    /// 这是改造前「拼完再截 800」的真实降级路径：新增段吃掉预算尾部，
+    /// 被截掉的恰是续跑最需要的「哪次失败了」。
+    #[test]
+    fn long_goal_never_crowds_out_evidence_line() {
+        let evidence = (1..=3)
+            .map(|i| TaskEvidenceRef {
+                id: format!("ev_{i}"),
+                kind: "verify".to_string(),
+                tool: "cargo_test".to_string(),
+                ok: false,
+                exit_code: Some(1),
+            })
+            .collect();
+        let files: Vec<String> = (1..=10)
+            .map(|i| format!("src/some/deep/path/f{i}.rs"))
+            .collect();
+        let s = TaskState::new_paused(
+            "s1",
+            &"很长的目标描述".repeat(60), // 构造时会被截到 GOAL_MAX_CHARS
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            evidence,
+        )
+        .with_files(files);
+        let brief = render_task_brief(&s);
+        assert!(brief.chars().count() <= TASK_BRIEF_MAX_CHARS);
+        assert!(
+            brief.contains("最近证据"),
+            "证据行是续跑关键依据，不能被 files 段挤掉：{brief}"
+        );
+    }
+
+    /// `#1496` 回归：files 段取**最近**触碰的（尾部），与 `cap_files` 方向一致。
+    ///
+    /// 方向反了会列出「会话开头改过哪些文件」——与「最近 N 个」的文案相反，
+    /// 而「刚才改到哪」恰是本功能要解决的问题。
+    #[test]
+    fn files_segment_lists_the_most_recent_paths() {
+        let files: Vec<String> = (1..=12).map(|i| format!("src/f{i}.rs")).collect();
+        let s = TaskState::new_paused(
+            "s1",
+            "目标",
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            Vec::new(),
+        )
+        .with_files(files);
+        let brief = render_task_brief(&s);
+        assert!(brief.contains("src/f8.rs"), "应含最近 5 条之一：{brief}");
+        assert!(brief.contains("src/f12.rs"), "应含最新一条：{brief}");
+        assert!(!brief.contains("src/f1.rs"), "不该列最早的：{brief}");
+        assert!(!brief.contains("src/f7.rs"), "只列最近 5 条：{brief}");
+        assert!(brief.contains("另 7 个"), "剩余条数要如实告知：{brief}");
+    }
+
+    /// `#1496` 回归：files 段**整行**（含前缀与「另 N 个」后缀）不超字符闸。
+    ///
+    /// 只把路径算进闸、不算固定开销，会让「段 ≤200 字符」悄悄变成「路径 ≤200」。
+    #[test]
+    fn files_segment_total_length_respects_char_cap() {
+        let files: Vec<String> = (1..=5)
+            .map(|i| format!("{}{i}.rs", "d/".repeat(18))) // 约 40 字符/条
+            .collect();
+        let s = TaskState::new_paused(
+            "s1",
+            "目标",
+            TaskPauseReason::BudgetTokens,
+            TaskBudgetSnapshot::default(),
+            Vec::new(),
+        )
+        .with_files(files);
+        let brief = render_task_brief(&s);
+        let line = brief
+            .lines()
+            .find(|l| l.contains("已改动文件"))
+            .expect("应有 files 段");
+        assert!(
+            line.chars().count() <= TASK_BRIEF_FILES_MAX_CHARS,
+            "整行 {} 字符超闸：{line}",
+            line.chars().count()
+        );
+    }

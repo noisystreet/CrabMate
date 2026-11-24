@@ -131,6 +131,16 @@ fn record_budget_paused(p: &RunLoopParams<'_>, deny: TurnBudgetDeny) {
             .saturating_sub(base.estimated_tokens),
         elapsed_secs: cumulative.elapsed_secs.saturating_sub(base.elapsed_secs),
     };
+    // `#1496`：把「本会话被工具写过的路径」一并落盘。来源与 `SubTaskReport.key_paths` 同源
+    // （changelist 的 `record_mutation` 累积），不解析工具入参——那条路每加一个写工具就要
+    // 同步一次提取器。未启用 changelist / 工作区未设置 ⇒ 空列表（fail-open，与其它字段同口径）。
+    let files = crate::context::agent_turn_prep::workspace_changelist_for_turn(
+        agent_cfg,
+        &p.ctx.obs.process_handles,
+        Some(scope_id),
+    )
+    .map(|changelist| changelist.touched_paths())
+    .unwrap_or_default();
     let state = TaskState::new_paused(
         scope_id,
         &goal,
@@ -138,7 +148,8 @@ fn record_budget_paused(p: &RunLoopParams<'_>, deny: TurnBudgetDeny) {
         this_turn,
         task_evidence_refs(p.turn.messages_buf),
     )
-    .with_cumulative(cumulative);
+    .with_cumulative(cumulative)
+    .with_files(files);
     let store = TaskStateStore::new(p.ctx.core.effective_working_dir, &agent_cfg.autonomy);
     match store.save(&state) {
         Ok(path) => debug!(
