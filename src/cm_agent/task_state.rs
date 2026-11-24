@@ -34,9 +34,9 @@ use crate::cm_config::AutonomyConfig;
 /// 落盘 schema 版本。
 ///
 /// **读取只拒「未来」版本**（`> 本值`），旧版本靠 `#[serde(default)]` 补齐新增字段：
-/// B 步加 `cumulative`、C 步加 `origin`，若按「不等于即拒」处理，旧文件会被整份丢弃，
-/// 累计与发起者一起归零——那是数据损失，不是保守。
-pub const TASK_STATE_SCHEMA: u32 = 2;
+/// B 步加 `cumulative`、C 步加 `origin`、`#1496` 加 `files`，若按「不等于即拒」处理，
+/// 旧文件会被整份丢弃，累计与发起者一起归零——那是数据损失，不是保守。
+pub const TASK_STATE_SCHEMA: u32 = 3;
 
 /// 工作区数据目录（与 `reminder` / `event` 同一约定）。
 const DATA_DIR: &str = ".crabmate";
@@ -49,6 +49,9 @@ const FILE_EXT: &str = "json";
 pub const GOAL_MAX_CHARS: usize = 400;
 /// 证据条目上限（超出保留**最新**的 N 条：续跑要先知道刚才试到哪、哪次失败了）。
 pub const MAX_EVIDENCE_ITEMS: usize = 40;
+/// `files` 条数上限（`#1496`）。与 `SubTaskReport::MAX_KEY_PATHS` 对齐：
+/// 两处都是「这一轮改过哪些文件」，口径一致才好对账。
+pub const MAX_TASK_FILES: usize = 20;
 /// 文件名字符上限（`scope` 截断阈值）。
 pub const SCOPE_MAX_CHARS: usize = 64;
 
@@ -160,6 +163,12 @@ pub struct TaskState {
     /// 本轮是怎么发起的（`#1455` C 步）。与「发了什么」正交；旧文件缺省为 `User`。
     #[serde(default)]
     pub origin: TurnOrigin,
+    /// 本会话内**被工具写入触碰过**的工作区相对路径（`#1496`）：按首次写入顺序。
+    ///
+    /// 只存路径、不含内容——与模块不变量 1 同源（证据/文件都是**指针**，不是产出）。
+    /// 旧文件（schema ≤ 2）没有该键 ⇒ serde 落空，brief 少一行，不报错、不迁移。
+    #[serde(default)]
+    pub files: Vec<String>,
     pub evidence: Vec<TaskEvidenceRef>,
     /// 最后写入时刻（RFC3339，UTC）。
     pub updated_at: String,
@@ -188,6 +197,7 @@ impl TaskState {
             // 首次暂停时「累计」自然等于「本次」——没有更早的历史。
             cumulative: budget,
             origin: TurnOrigin::User,
+            files: Vec::new(),
             evidence: cap_evidence(evidence),
             updated_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -197,6 +207,16 @@ impl TaskState {
     #[must_use]
     pub fn with_cumulative(mut self, cumulative: TaskBudgetSnapshot) -> Self {
         self.cumulative = cumulative;
+        self
+    }
+
+    /// 附上「本会话被工具写过的路径」（`#1496`）。
+    ///
+    /// 与 [`Self::with_cumulative`] 同一理由：构造器签名不动（避免波及全部调用点），
+    /// 上界在**唯一**赋值路径上施加，调用点写不出超界的 `files`。
+    #[must_use]
+    pub fn with_files(mut self, files: Vec<String>) -> Self {
+        self.files = cap_files(files);
         self
     }
 }
@@ -291,13 +311,54 @@ pub fn decide_auto_resume(
 pub const TASK_BRIEF_MAX_CHARS: usize = 800;
 /// 摘要里列出的最近证据条数（取**最新**，与证据裁剪方向一致）。
 pub const TASK_BRIEF_EVIDENCE_ITEMS: usize = 3;
+/// brief 里 files 段的**字符**上限（主闸）。
+///
+/// 主流一律用**预算**（token / 字符）而不是条数表达上限（见 `docs/design/handoff_brief.md` §3）：
+/// 条数在长路径仓库里不可移植。条数只作副闸，防少数超长路径撑爆本段。
+pub const TASK_BRIEF_FILES_MAX_CHARS: usize = 200;
+/// brief 里 files 段的**条数**上限（副闸）。brief 是「别从头重做」，不是清单。
+pub const TASK_BRIEF_FILE_ITEMS: usize = 5;
 
 /// 渲染注入模型的任务状态摘要。
 ///
-/// 只含目标、暂停原因、累计预算与最近证据**指针**——不含任何工具原始输出
-/// （与模块不变量 1 同源，因此从 [`TaskState`] 渲染天然不泄露凭据/用户数据）。
+/// 只含目标、暂停原因、累计预算、已改动文件**路径**与最近证据**指针**——不含任何工具原始
+/// 输出（与模块不变量 1 同源，因此从 [`TaskState`] 渲染天然不泄露凭据/用户数据）。
+///
+/// **分区预算**（`#1496` D3）：不再「拼完再截 800」。`goal` 取满 400 时，拼完再截会让新增的
+/// files 段静默挤掉末尾的「最近证据」行——那正是续跑最需要的失败线索。降级顺序固定为
+/// 缩 files 条数 → 缩证据条数 → 全都不够才标「（已压缩）」硬截断。
 #[must_use]
 pub fn render_task_brief(state: &TaskState) -> String {
+    let head = render_brief_head(state);
+    let evidence = render_evidence_items(state);
+    let mut files_cap = state.files.len().min(TASK_BRIEF_FILE_ITEMS);
+    let mut evidence_cap = evidence.len();
+    loop {
+        let candidate = compose_brief(&head, &state.files, files_cap, &evidence, evidence_cap);
+        if candidate.chars().count() <= TASK_BRIEF_MAX_CHARS {
+            return candidate;
+        }
+        if files_cap > 0 {
+            files_cap -= 1;
+        } else if evidence_cap > 1 {
+            evidence_cap -= 1;
+        } else {
+            break;
+        }
+    }
+    // 连「只剩一行证据」都超界（极端长路径 / 超长目标）。标记必须留在**末尾**：
+    // 先给标记预留长度再截断，否则 `truncate_chars` 会先把它砍掉，又变成静默降级。
+    const MARK: &str = "（已压缩）";
+    let out = compose_brief(&head, &state.files, 0, &evidence, 1);
+    let limit = TASK_BRIEF_MAX_CHARS.saturating_sub(MARK.chars().count() + 1);
+    let mut truncated = truncate_chars(&out, limit);
+    truncated.push_str(MARK);
+    truncated.push('\n');
+    truncated
+}
+
+/// brief 的固定头部（目标 / 原因 / 累计用量）。与 `files` / 证据分开，便于按段计预算。
+fn render_brief_head(state: &TaskState) -> String {
     let mut out = String::new();
     out.push_str("[任务上下文] 本会话此前因预算中断，进度如下。请据此继续，不要从头重做。\n");
     out.push_str(&format!("目标：{}\n", state.goal));
@@ -308,23 +369,87 @@ pub fn render_task_brief(state: &TaskState) -> String {
         state.cumulative.estimated_tokens,
         state.cumulative.elapsed_secs
     ));
-    if !state.evidence.is_empty() {
-        let tail: Vec<String> = state
-            .evidence
-            .iter()
-            .rev()
-            .take(TASK_BRIEF_EVIDENCE_ITEMS)
-            .map(|e| {
-                let code = e
-                    .exit_code
-                    .map(|c| format!(" exit_code={c}"))
-                    .unwrap_or_default();
-                format!("{} {} ok={} tool={}{}", e.id, e.kind, e.ok, e.tool, code)
-            })
-            .collect();
-        out.push_str(&format!("最近证据：{}\n", tail.join("；")));
+    out
+}
+
+/// 取**最新**的 N 条证据，渲染成可直接 join 的短串。
+fn render_evidence_items(state: &TaskState) -> Vec<String> {
+    state
+        .evidence
+        .iter()
+        .rev()
+        .take(TASK_BRIEF_EVIDENCE_ITEMS)
+        .map(|e| {
+            let code = e
+                .exit_code
+                .map(|c| format!(" exit_code={c}"))
+                .unwrap_or_default();
+            format!("{} {} ok={} tool={}{}", e.id, e.kind, e.ok, e.tool, code)
+        })
+        .collect()
+}
+
+/// 按给定配额拼出 brief（纯函数，供降级循环反复试算）。
+fn compose_brief(
+    head: &str,
+    files: &[String],
+    files_cap: usize,
+    evidence: &[String],
+    evidence_cap: usize,
+) -> String {
+    let mut out = String::from(head);
+    if let Some(segment) = files_segment(files, files_cap) {
+        out.push_str(&segment);
     }
-    truncate_chars(&out, TASK_BRIEF_MAX_CHARS)
+    if evidence_cap > 0 && !evidence.is_empty() {
+        let take = evidence_cap.min(evidence.len());
+        out.push_str(&format!("最近证据：{}\n", evidence[..take].join("；")));
+    }
+    out
+}
+
+/// files 段的固定开销（前缀「已改动文件（最近 N 个）：」+ 后缀「（另 M 个，…）」）保守估计。
+///
+/// 单列常量而不是散着相加：字符闸是**整段**上限；不把固定开销算进去，
+/// 「段 ≤200 字符」就退化成「路径部分 ≤200」，与 `docs/design/handoff_brief.md` D3 不符。
+const FILES_SEGMENT_OVERHEAD_CHARS: usize = 60;
+
+/// files 段：先按**字符**闸装填，再受**条数**闸约束（`#1496` D3）。
+///
+/// 字符为主闸是因为路径长度因仓库而异（monorepo 深路径 / 中文文件名），条数不可移植；
+/// 条数为副闸，防「5 条超长路径」把段撑爆。
+fn files_segment(files: &[String], cap: usize) -> Option<String> {
+    if cap == 0 || files.is_empty() {
+        return None;
+    }
+    // 取**尾部** `cap` 条：`cap_files` 保留的也是尾部（最近触碰过的），两处方向必须一致；
+    // 取头部会列出「会话开头改过哪些文件」，与「最近 N 个」的文案正好相反。
+    let window = &files[files.len().saturating_sub(cap)..];
+    let budget = TASK_BRIEF_FILES_MAX_CHARS.saturating_sub(FILES_SEGMENT_OVERHEAD_CHARS);
+    let mut listed: Vec<&str> = Vec::new();
+    let mut used = 0usize;
+    for path in window {
+        let cost = path.chars().count() + 2; // 分隔符「、」+ 余量
+        if used + cost > budget {
+            break;
+        }
+        used += cost;
+        listed.push(path.as_str());
+    }
+    // 第一条就超字符闸时仍列一条：否则「改过文件」会退化成「看起来没改」，
+    // 而这两种状态在续跑时含义完全不同。
+    if listed.is_empty()
+        && let Some(first) = window.first()
+    {
+        listed.push(first.as_str());
+    }
+    let hidden = files.len().saturating_sub(listed.len());
+    let mut line = format!("已改动文件（最近 {} 个）：{}", listed.len(), listed.join("、"));
+    if hidden > 0 {
+        line.push_str(&format!("（另 {hidden} 个，完整清单见会话变更集）"));
+    }
+    line.push('\n');
+    Some(line)
 }
 
 /// 供 `prepare_messages_for_model`：先移除旧注入条，再视需要插入最新摘要。
@@ -398,6 +523,19 @@ fn cap_evidence(mut evidence: Vec<TaskEvidenceRef>) -> Vec<TaskEvidenceRef> {
         evidence.drain(..drop_count);
     }
     evidence
+}
+
+/// 路径裁剪：保留**最后**碰过的 N 条（与 [`cap_evidence`] 同方向）。
+///
+/// 注意 `WorkspaceChangelist` 的 `order` 是**首次**触碰顺序、重复写入不重排，
+/// 所以这里是「最后新出现的路径」，而不是严格「最近修改」——不为此新增时间戳字段
+/// （见 `docs/design/handoff_brief.md` D3）。
+fn cap_files(mut files: Vec<String>) -> Vec<String> {
+    if files.len() > MAX_TASK_FILES {
+        let drop_count = files.len() - MAX_TASK_FILES;
+        files.drain(..drop_count);
+    }
+    files
 }
 
 /// `.crabmate/tasks/` 的读写与清理。

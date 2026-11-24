@@ -1,6 +1,6 @@
 # 移交摘要（handoff brief）：DTO 形状与上界
 
-> **状态**：设计稿（Proposed），**未实现**。对应 #1496 的 ①。
+> **状态**：设计稿（Proposed）；**实现已落地**（`TaskState.files` + 分区预算 brief + 4 条单测），待评审合并。
 > **受众**：维护者、后续实现者。实现前先结清 §9 的两条开放问题。
 > **关联**：[context_window_compaction.md](context_window_compaction.md)（ADR：压缩 + 基线化 + 归档）、
 > [subagent_delegation.md](subagent_delegation.md)（L2 已落地的窄契约）、
@@ -100,8 +100,11 @@ Gemini CLI 的压缩阈值、LangChain `trim_messages` 的默认参数。
 ### D4 schema 演进走既有惯例
 
 `TASK_STATE_SCHEMA` 2 → 3；`files` 带 `#[serde(default)]`。读取仍只拒未来版本，
-旧文件读出空列表 ⇒ brief 少一行、不报错、不迁移。上界在 `new_paused` 里施加，
-与 `cap_evidence` 同范式（写出去的永远不超界）。
+旧文件读出空列表 ⇒ brief 少一行、不报错、不迁移。
+
+上界在**唯一赋值路径**施加：新增 `with_files(files)`（与 `with_cumulative` 同风格），内部走
+`cap_files`——**不改 `new_paused` 签名**（那会波及测试等既有调用点，且让构造器继续单参）。
+与 `cap_evidence` 同范式：写出去的永远不超界。
 
 ### D5 父→子不改契约（本期）
 
@@ -146,7 +149,7 @@ pub struct TaskState {
 
 | 阶段 | 位置 | 改动 |
 |---|---|---|
-| 写 | `turn_loop/outer_loop.rs::record_budget_paused` | 取 changelist 快照传给 `new_paused` |
+| 写 | `turn_loop/outer_loop.rs::record_budget_paused` | 取 changelist 快照 → `.with_files(files)` |
 | 渲染 | `cm_agent/task_state.rs::render_task_brief` | 增「已改动文件」行 |
 | 读 | `run_agent_turn.rs`（读 `state` → 渲染 brief） | 不变 |
 | 剥落盘 | `server_injected_user::strip_runtime_refreshed_injections` | 不变 |
