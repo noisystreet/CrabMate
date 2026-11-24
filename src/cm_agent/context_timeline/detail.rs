@@ -70,6 +70,25 @@ pub struct InjectDetail {
     /// 曾经还有 `skills` / `forced`：都靠匹配 `system` 文本里的中文标题反推，索引化（#1475）后
     /// 一个恒为空、一个只是复述调用方已知的事实，已随 `skill_hint_from_messages` 整块删除（#1478）。
     pub kinds: Vec<String>,
+    /// 本轮**强制调用**的技能（`/<id>`），结构化来源见 [`SkillRef`]。
+    ///
+    /// 空时**不序列化**（`skip_serializing_if`）：没有 `/<id>` 的回合，`detail` 字节与 #1478
+    /// 之后的形态逐字一致，金样与线上都不会出现第二种形状。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<SkillRef>,
+}
+
+/// 一次技能调用的结构化引用（#1478 之后**重新**引入，但来源不同）。
+///
+/// 与已删除的旧 `skills` 字段的区别：旧的是从 `system` 文本里的中文小标题反推；
+/// 这里的 `id` 由 `/<id>` 注入条自己生成的固定标题行解析——生成与解析共用同一组常量
+/// （`cm_config::skills::forced_skill_id_from_injection_text`），不嗅探模型输出。
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SkillRef {
+    /// callable id（`/<id>` 里的 `id`）。
+    pub id: String,
+    /// 来源。当前恒为 `forced`；将来若把模型主动 `skill_read` 也纳入时间线，可复用该字段。
+    pub source: String,
 }
 
 /// 两类 `detail` 的判别联合。

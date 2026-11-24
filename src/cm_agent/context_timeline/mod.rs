@@ -15,7 +15,7 @@ use crate::cm_types::{
 };
 
 mod detail;
-pub use detail::{ContextTimelineDetail, InjectDetail, TrimDetail};
+pub use detail::{ContextTimelineDetail, InjectDetail, SkillRef, TrimDetail};
 
 pub const KIND_CONTEXT_INJECT: &str = "context_inject";
 pub const KIND_CONTEXT_TRIM: &str = "context_trim";
@@ -85,6 +85,7 @@ pub struct ContextTimelineSnapshot<'a> {
 #[derive(Debug, Default)]
 pub struct ContextTimelineAcc {
     inject_kinds: Vec<String>,
+    inject_skills: Vec<detail::SkillRef>,
     n_before: Option<usize>,
     n_after: usize,
     count_hit: bool,
@@ -136,6 +137,11 @@ impl ContextTimelineAcc {
         for kind in inject_kinds_in_messages(messages) {
             push_unique(&mut self.inject_kinds, kind);
         }
+        for skill in skill_refs_in_messages(messages) {
+            if !self.inject_skills.iter().any(|s| s.id == skill.id) {
+                self.inject_skills.push(skill);
+            }
+        }
     }
 
     fn merge_pipeline(&mut self, snap: ContextTimelineSnapshot<'_>) {
@@ -178,8 +184,12 @@ impl ContextTimelineAcc {
         }
     }
 
+    /// 有注入就发——**包括只有技能注入的回合**。
+    ///
+    /// #1478 之后这里只看 `kinds`，于是「只用了 `/<id>`、没有其它注入」的回合完全不发
+    /// `context_inject`，客户端因此拿不到技能行（crabmate-client#581）。技能也算注入。
     fn has_inject(&self) -> bool {
-        !self.inject_kinds.is_empty()
+        !self.inject_kinds.is_empty() || !self.inject_skills.is_empty()
     }
 
     fn has_trim(&self) -> bool {
@@ -229,6 +239,7 @@ impl ContextTimelineAcc {
             title: TITLE_INJECT.to_string(),
             detail: ContextTimelineDetail::Inject(InjectDetail {
                 kinds: self.inject_kinds.clone(),
+                skills: self.inject_skills.clone(),
             }),
         }
     }
@@ -285,6 +296,39 @@ fn push_unique(dest: &mut Vec<String>, item: String) {
     if !dest.iter().any(|s| s == &item) {
         dest.push(item);
     }
+}
+
+/// 把「本轮强制调用的技能」收成结构化引用（`/<id>`）。
+///
+/// 只认 [`crate::cm_types::is_forced_skill_injection`] 这条**专用注入消息**，并解析它自己生成
+/// 的固定标题行（`cm_config::skills::forced_skill_id_from_injection_text`）——不读 `system`、
+/// 不读模型输出，那是 #1478 删掉的嗅探路径。
+fn skill_refs_in_messages(messages: &[Message]) -> Vec<detail::SkillRef> {
+    // 只看「最后一个真实 user 之后」的窗口（与 `turn_completion` 的证据窗口同一先例）：
+    // 上一回合的 `/<id>` 注入条若在失败 / 取消路径上没被 strip 掉，全量扫描会把它算进本轮。
+    let window = crate::cm_types::messages_slice_since_last_real_user(messages, false)
+        .unwrap_or(messages);
+    // 每回合至多一条强制注入：只取**最后一条**，天然去重。
+    let Some(m) = window
+        .iter()
+        .rev()
+        .find(|m| crate::cm_types::is_forced_skill_injection(m))
+    else {
+        return Vec::new();
+    };
+    let Some(text) = m.content.as_ref().and_then(|c| match c {
+        crate::cm_types::MessageContent::Text(s) => Some(s.as_str()),
+        _ => None,
+    }) else {
+        return Vec::new();
+    };
+    let Some(id) = crate::cm_config::skills::forced_skill_id_from_injection_text(text) else {
+        return Vec::new();
+    };
+    vec![detail::SkillRef {
+        id,
+        source: "forced".to_string(),
+    }]
 }
 
 fn inject_kinds_in_messages(messages: &[Message]) -> Vec<String> {
@@ -777,5 +821,55 @@ mod tests {
             fixture["inject_detail"].as_str().unwrap_or("<missing>"),
             "inject detail 的字节形状必须与类型化前一致"
         );
+    }
+
+    /// 只有 `/<id>` 注入、没有任何 `kinds` 的回合**也必须发** `context_inject`（crabmate-client#581）。
+    ///
+    /// #1478 之后 `has_inject` 只看 `kinds`，这类回合一条事件都不发，客户端因此永远拿不到技能行。
+    #[test]
+    fn forced_skill_only_turn_emits_inject_event_with_skills() {
+        let appendix = format!(
+            "{}rust-style）】\n以下内容由用户通过斜杠命令强制注入；…\n",
+            crate::cm_config::skills::SKILLS_FORCED_TITLE_PREFIX
+        );
+        let msgs = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            Message::user_forced_skill_injection(appendix),
+        ];
+        let mut acc = ContextTimelineAcc::default();
+        let events = acc.merge(ContextTimelineSnapshot {
+            messages: &msgs,
+            pipeline: MessagePipelineDelta::default(),
+            summarized: false,
+            summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
+        });
+        let inject = events
+            .iter()
+            .find(|e| e.kind == KIND_CONTEXT_INJECT)
+            .expect("只有技能注入也必须发 context_inject");
+        assert_eq!(
+            inject.detail.to_json_string(),
+            r#"{"kinds":[],"skills":[{"id":"rust-style","source":"forced"}]}"#
+        );
+    }
+
+    /// 没有 `/<id>` 时 `detail` 不得冒出 `skills` 键——线下字节与 #1478 之后的形态一致。
+    #[test]
+    fn inject_detail_omits_skills_key_when_not_forced() {
+        let detail = ContextTimelineDetail::Inject(InjectDetail {
+            kinds: vec!["memory".to_string()],
+            skills: Vec::new(),
+        });
+        assert_eq!(detail.to_json_string(), r#"{"kinds":["memory"]}"#);
+    }
+
+    /// 旧 `detail`（只有 `kinds`）仍可反序列化：`skills` 走 `default` 落空（过渡期线上旧客户端/旧落盘）。
+    #[test]
+    fn legacy_inject_detail_deserializes_without_skills() {
+        let d: ContextTimelineDetail =
+            serde_json::from_str(r#"{"kinds":["memory"]}"#).expect("legacy detail 必须可读");
+        assert_eq!(d.as_inject().map(|i| i.skills.len()), Some(0));
     }
 }
