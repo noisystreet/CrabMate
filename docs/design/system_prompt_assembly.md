@@ -28,6 +28,30 @@
 | **L7** | Act 句启发式 hint（`system_execution_constraint_hint`；形如「【执行约束】本轮：…。勿越过。」） | 外循环 P 步前 |
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |
 
+### 逐段可变性与前缀缓存（#1475）
+
+前缀缓存按**最长公共前缀**匹配，而首条 `system` 位于 token 序列最前端：其中任一字节变化，
+其后全部历史一起 miss。续聊每轮都会重算首条 `system`（`refresh_existing_turn_system`），
+所以下表回答的是「重算能容忍什么」——以及变化时代价落在哪一段。
+
+| 段落 | 何时变 | 缓存影响 |
+|---|---|---|
+| L0 / L0b / L3 基底 | 改配置 / 换角色 | 换角色虽是显式操作，但一次变化至少亏两轮 |
+| L3 + locale 指令 | 切换界面语言 | 低频，可接受 |
+| L2 技能索引 | 增删技能 / 改 description / 换工作区 | 打断前缀（索引在首条 `system` 内） |
+| L1' `AGENTS.md` | 工作区该文件改动（含 agent 自己写入） | 打断前缀；**规则下一回合生效优先**，不为命中率牺牲（非目标） |
+| L4 工具统计 hints | 开启 `agent_tool_stats_enabled` 后随最近窗口抖动 | **代价最大**：一变就打断前缀；默认关闭，不开则无此段 |
+| L5 技能正文 | 该回合用了 `/<skill-id>` | **不影响前缀**：已注入到真实 user 之后（#1475 移出 `system`） |
+| L6 首轮上下文 | 仅新会话一次 | 一次 |
+| L7 执行约束 hint | Act 句命中时 | 独立 `system` 消息、追加在末尾 ⇒ 只让尾部 miss |
+| L8 记忆 / 变更集 | 每轮随注入刷新 | 同样位于尾部，只让尾部 miss |
+
+**观测口径**：`first_system_hash` 只取**首条** `system`
+（`vendor_messages::first_system_stability_info`）。它与 Web 侧
+`first_system_compose path=web_new|web_existing` 日志同值，可与出站
+`prompt_cache … first_system_hash=… hit=… miss=…` 关联——命中率因此能按入口分桶、归因到上表某一段。
+**不要**用「全部 `system` 拼接后的 `all_system_hash`」判断前缀是否断裂：L7 这类末尾追加会改它，但不断前缀。
+
 运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，
   由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令；其后由 `prompt_compose` 按**会话工作区根**拼 **L2**（技能索引）与
   **`AGENTS.md`**（L1'，受 `agents_md_*` 约束），再叠 L4。**L5 正文不进 `system`**，
