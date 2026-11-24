@@ -9,6 +9,9 @@
 **本次修订（2026-10-31）**：补齐 L2→L4 的三处落地缺口——新增 **§8.1 传输选型**（跨进程走本仓 HTTP 任务面，**不**把 MCP 服务端加固当前置）、
   新增 **§8.2 跨进程预算 / 撤销 / 取消**（`Arc` 不能跨进程，记账权必须显式化为租约）、收紧 **§5 `input_required` 在单进程内的落地限制**，
   并同步 §0 风险表、§4 的 L4 前置条件、§9 硬约束（12 / 13 条）与 §10 分期验收。
+**本次修订（2026-11）**：登记 **L2 落地口径的刻意窄化**——本稿 §5 的 `context_slice` **代码零实现**，
+  已上线的 L2 委托契约是更窄的 `summary` + `key_paths`（[`subagent_delegation.md`](subagent_delegation.md) §4.2）。
+  两者都成立，差的是**分期**而非完成度；落地口径见 §5 与 #1496。
 
 **关联文档**：
 
@@ -31,7 +34,7 @@
 
 | # | 强调点 | 结论 |
 |---|---|---|
-| 1 | **契约不承载内部表示** | `context_slice` 是**结构化 DTO**，**不是** `messages`。`messages` 是后端内部表示（MiniMax 网关会把 `system` 合入 `user`），跨后端 / 跨进程不稳定；渲染成 `messages` 是**子 Agent 侧**的责任。 |
+| 1 | **契约不承载内部表示** | `context_slice` 是**结构化 DTO**，**不是** `messages`。`messages` 是后端内部表示（MiniMax 网关会把 `system` 合入 `user`），跨后端 / 跨进程不稳定；渲染成 `messages` 是**子 Agent 侧**的责任。**注**：`context_slice` 在 L2 **未实现**（落地口径见 §5）。 |
 | 2 | **粒度先于委托** | 先过 **§6.6 门限**，不满足就自己做。委托只对「预期 ≥3 次工具调用 / 需上下文隔离 / 可并行」的任务；单次读文件、单次检索**禁止**委托。 |
 | 3 | **验收必须可判定** | `Task.acceptance`；`Result.status == ok` **不**由自述决定。**注**：`step_verifier` 已随 `staged-removal` 删除（#1429），实现时需另定判定器。 |
 | 4 | **权限裁决链唯一** | 按 **§6.5** 的固定顺序取交。`allowed_tools`（**名字集合**）与 `node_tool_role`（**类别枚举**）粒度不同，**不可互相替代**。 |
@@ -114,6 +117,8 @@
 
 内部委托（L2/L3）与将来的 A2A `task` **共用同一份语义**；A2A 层只做字段映射与传输包装。
 
+**读法**：下表是**目标契约**（L3/L4 的完整形状）；L2 只落地了其中一个**子集**，差异见本节末「落地口径」。
+
 **`Task`（父 → 子）**
 
 | 字段 | 类型 | 说明 |
@@ -142,6 +147,22 @@
 | `usage` | `{ llm_calls, estimated_tokens, wall_clock_secs }` | 已计入父 `TurnBudgetCounter` 的份额；取委托前后**快照差值**（计数器只有累加与读取，**无** drain / 重置语义）。 |
 | `trace_id` | `string` | 与 `parent_trace_id` 串联。 |
 | `deny_reason` | `string?` | 复用 `TurnBudgetDeny` 语义（`wall_clock` / `llm_calls` / `tokens`）。 |
+
+**落地口径（L2 已实现，与上表的差是「分期」不是「未完成」）**：已上线的 `delegate_task` 契约
+（`SubTaskRequest` / `SubTaskReport`，见 [`subagent_delegation.md`](subagent_delegation.md) §4.2）
+**有意窄化**为：父→子只有 `prompt`（父上下文一概不传），子→父只有 `summary` + `key_paths`（≤20）+ `stats`。
+L2 落地的是上表的一个**子集**，差异分两种情形：
+
+- **上表有、L2 完全没有**：`context_slice`、`acceptance`、`expected_output`、`model_hint`、`artifacts`——留到 L3。
+- **字段在、请求期不可自定义**：`depth`（恒 `0`，首版禁止嵌套）、`tool_allowlist`（恒 `None`，由只读性派生）、
+  `budget`（由 `subagent_*` 配置决定，模型无法放大）——委托参数面刻意只有 `prompt`。
+
+因此：
+
+- **不要**把「`context_slice` 无实现」读成「L2 未完成」——L2 是上表子集的实现，且默认关闭；
+- **不要**为补上表这个格子回头改 L2 契约（那会把已验收的边界重新打开）；
+- 真正待办的是 #1496：先出「移交摘要」DTO 设计稿（`files[]` / `facts[]` 的归属、与 `messages` 的边界、
+  截断上界、消费方），定稿后再动实现。
 
 ```json
 {

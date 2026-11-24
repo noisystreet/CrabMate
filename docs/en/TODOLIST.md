@@ -78,6 +78,9 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 - [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration;
   document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/开发文档.md`).
+  **Sub-agent delegation has shipped** (design `docs/design/subagent_delegation.md`, #839; implementation
+  #1389 / #1394 / #1395 / #1397, off by default); remaining work is the L3 workflow agent node and
+  structured handoff slices (`context_slice`-style, #1496).
 - [ ] **Plan–execute–verify loop**: Explicit sub-task decomposition, result validation, reflection/retry,
   reducing reliance on one-shot model improvisation; align with `plan_artifact` / staged planning and clarify verification + auto-replan boundaries.
 - [ ] **Interactive code execution / controlled REPL**: Beyond `run_command` allowlists and sandbox policy, consider interpreted execution,
