@@ -73,6 +73,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **`/workspace/git` cache hits stop deep-copying the file list (#1507).** The cache entry used to
+  hold the whole assembled response, so every hit cloned it — harmless when that meant a few
+  counters, but after `?files` it meant up to 500 `String` paths copied and then immediately
+  thrown away by the file-stripping step. Sidebar polling runs every 2 s and mostly without the
+  flag, so that copy was pure waste. The entry is now a `skeleton` (a response whose `files` is
+  **always** `None`) plus `files: Option<Arc<WorkspaceGitFileList>>`: a flag-free hit clones only
+  the skeleton, `?files=true` copies the list once (ownership has to move to the response), and
+  writing the cache **moves** the list into the `Arc` instead of copying it. No contract change —
+  JSON shape, `source`, TTL and `refresh` semantics are untouched.
 - **Cache-stability observability splits into first-system vs all-system hash (#1475).**
   `system_prompt_stability` used to hash **every** `system` message concatenated, so the metric drifted whenever a
   trailing `system` message appeared (`system_execution_constraint_hint`) — those live at the end of history and only

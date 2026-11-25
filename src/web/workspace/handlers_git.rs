@@ -3,13 +3,15 @@
 //! 解析、探测与状态映射都在 [`super::git_projection`]；这里只负责工作区根解析、
 //! 缓存读写（TTL + 最小 single-flight）与响应组装。
 
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{Query, State};
 
 use crate::cm_api_contract::error_codes;
 use crate::cm_api_contract::workspace::{
-    WorkspaceGitQuery, WorkspaceGitSource, WorkspaceGitState, WorkspaceGitStatusResponse,
-    WorkspaceGitUntrackedMode,
+    WorkspaceGitFileList, WorkspaceGitQuery, WorkspaceGitSource, WorkspaceGitState,
+    WorkspaceGitStatusResponse, WorkspaceGitUntrackedMode,
 };
 use crate::web::app_state::{AppStateHttpCore, CachedWorkspaceGitStatus, WorkspaceGitCache};
 use crate::web::workspace::git_projection::{
@@ -54,18 +56,18 @@ pub async fn workspace_git_handler(
     let force = query.refresh.unwrap_or(false);
 
     if !force
-        && let Some(hit) = read_fresh(&cache, &root_key)
+        && let Some(hit) = read_fresh(&cache, &root_key, want_files)
     {
-        return Json(with_files_visibility(hit, want_files));
+        return Json(hit);
     }
 
     // 最小 single-flight：TTL 到期瞬间的并发请求不应各自 fork 两条 git 命令。
     // 本仓没有通用 single-flight 设施（`per_turn_flight` 是单回合状态镜像），锁 + 双重检查足够。
     let _probe_guard = cache.probe_lock.lock().await;
     if !force
-        && let Some(hit) = read_fresh(&cache, &root_key)
+        && let Some(hit) = read_fresh(&cache, &root_key, want_files)
     {
-        return Json(with_files_visibility(hit, want_files));
+        return Json(hit);
     }
 
     let outcome = probe_with_timeout(root, mode).await;
@@ -78,40 +80,56 @@ pub async fn workspace_git_handler(
                 mode,
             );
             // 明确结论（含 not_a_repo / git_unavailable）写缓存，省掉 TTL 内的重复 fork。
-            write_cache(&cache, &root_key, &response);
-            Json(with_files_visibility(response, want_files))
+            // 写缓存时清单被**搬进** `Arc`（不复制），出站再按 `?files` 决定是否复制一份。
+            let (skeleton, files) = write_cache(&cache, &root_key, response);
+            Json(attach_files(skeleton, files.as_deref(), want_files))
         }
         ProbeOutcome::Failed { .. } => {
             // 重探失败时优先沿用旧值，避免一次超时把侧栏打成 failed。
-            if let Some(stale) = read_stale(&cache, &root_key) {
-                return Json(with_files_visibility(stale, want_files));
+            if let Some(stale) = read_stale(&cache, &root_key, want_files) {
+                return Json(stale);
             }
             // 无旧值可兜底：不写缓存，避免把一次瞬时失败固化一整个 TTL。
-            Json(with_files_visibility(
+            // 不可用态本来就没有清单，`None` 即「没有列表可给」。
+            Json(attach_files(
                 response_from_outcome(
                     outcome,
                     git_projection::now_unix(),
                     WorkspaceGitSource::Probe,
                     mode,
                 ),
+                None,
                 want_files,
             ))
         }
     }
 }
 
-/// 按 `?files` 决定清单是否随响应返回。
+/// 按 `?files` 把清单挂到出站响应上：`false` 时置 `None`（字段缺失 = 本次没要列表）。
 ///
-/// **缓存里永远是全量**（探测阶段就产出列表），只有出站这一刻才剥离。这么做是因为缓存条目
-/// 存的是装配好的响应：若「要列表」与「不要列表」各写一份，就会出现
-/// 「先无参请求写缓存 → 再 `?files=true` 命中缓存」拿到**没有列表**的响应，
-/// 于是 `counts` 说 3 条、列表为空（#1498 明确要防的回归）。
-fn with_files_visibility(
+/// 清单以 `&WorkspaceGitFileList` 传入，只有真要返回时才 `.cloned()` 一次 ——
+/// 无参请求因此**一次都不复制**清单（#1507）。
+fn attach_files(
     mut response: WorkspaceGitStatusResponse,
+    files: Option<&WorkspaceGitFileList>,
     want_files: bool,
 ) -> WorkspaceGitStatusResponse {
-    if !want_files {
-        response.files = None;
+    response.files = if want_files { files.cloned() } else { None };
+    response
+}
+
+/// 从缓存条目装配出站响应：改 `source`，按 `?files` 决定是否挂上清单。
+///
+/// 无参命中只克隆骨架（`files` 本来就是 `None`），不碰 `Arc` 里的清单。
+fn materialize(
+    entry: &CachedWorkspaceGitStatus,
+    want_files: bool,
+    source: WorkspaceGitSource,
+) -> WorkspaceGitStatusResponse {
+    let mut response = entry.skeleton.clone();
+    response.source = source;
+    if want_files {
+        response.files = entry.files.as_deref().cloned();
     }
     response
 }
@@ -168,38 +186,57 @@ async fn probe_with_timeout(root: std::path::PathBuf, mode: UntrackedMode) -> Pr
 }
 
 /// TTL 内的缓存命中（`source` 改写为 `cache`，`computed_at_unix` 保持探测时刻）。
-fn read_fresh(cache: &WorkspaceGitCache, root_key: &str) -> Option<WorkspaceGitStatusResponse> {
+fn read_fresh(
+    cache: &WorkspaceGitCache,
+    root_key: &str,
+    want_files: bool,
+) -> Option<WorkspaceGitStatusResponse> {
     let guard = cache.entry.lock().ok()?;
     let entry = guard.as_ref()?;
     if entry.workspace_root != root_key || entry.computed_at.elapsed() >= CACHE_TTL {
         return None;
     }
-    let mut response = entry.projection.clone();
-    response.source = WorkspaceGitSource::Cache;
-    Some(response)
+    Some(materialize(entry, want_files, WorkspaceGitSource::Cache))
 }
 
 /// 任意时长的旧值（供重探失败时兜底），`source` 改写为 `stale_cache`。
-fn read_stale(cache: &WorkspaceGitCache, root_key: &str) -> Option<WorkspaceGitStatusResponse> {
+fn read_stale(
+    cache: &WorkspaceGitCache,
+    root_key: &str,
+    want_files: bool,
+) -> Option<WorkspaceGitStatusResponse> {
     let guard = cache.entry.lock().ok()?;
     let entry = guard.as_ref()?;
     if entry.workspace_root != root_key {
         return None;
     }
-    let mut response = entry.projection.clone();
-    response.source = WorkspaceGitSource::StaleCache;
-    Some(response)
+    Some(materialize(entry, want_files, WorkspaceGitSource::StaleCache))
 }
 
-/// 写入缓存。锁中毒时静默跳过：缓存坏掉不该让只读端点失败。
-fn write_cache(cache: &WorkspaceGitCache, root_key: &str, response: &WorkspaceGitStatusResponse) {
+/// 写入缓存，并把清单**搬进** `Arc`（不复制）。
+///
+/// 返回「骨架 + 那份 `Arc`」：调用方按 `?files` 决定要不要为出站再复制一次清单——
+/// 无参请求因此一次都不复制（#1507）。锁中毒时静默跳过：缓存坏掉不该让只读端点失败，
+/// 此时返回的 `files` 仍可用于本次出站。
+fn write_cache(
+    cache: &WorkspaceGitCache,
+    root_key: &str,
+    mut response: WorkspaceGitStatusResponse,
+) -> (
+    WorkspaceGitStatusResponse,
+    Option<Arc<WorkspaceGitFileList>>,
+) {
+    // 骨架里 `files` 恒为 `None`，清单只留在 `Arc` 里，避免每次命中都深拷贝。
+    let files = response.files.take().map(Arc::new);
     if let Ok(mut guard) = cache.entry.lock() {
         *guard = Some(CachedWorkspaceGitStatus {
             workspace_root: root_key.to_string(),
             computed_at: std::time::Instant::now(),
-            projection: response.clone(),
+            skeleton: response.clone(),
+            files: files.clone(),
         });
     }
+    (response, files)
 }
 
 #[cfg(test)]
@@ -240,13 +277,32 @@ mod tests {
         }
     }
 
+    /// 写一条缓存条目，形态与生产路径一致：骨架里 `files = None`，清单在 `Arc` 里。
     fn store(cache: &WorkspaceGitCache, root: &str, computed_at: std::time::Instant) {
+        let mut skeleton = sample();
+        let files = skeleton.files.take().map(Arc::new);
         let mut guard = cache.entry.lock().expect("cache lock");
         *guard = Some(CachedWorkspaceGitStatus {
             workspace_root: root.to_string(),
             computed_at,
-            projection: sample(),
+            skeleton,
+            files,
         });
+    }
+
+    /// 结构约定（#1507）：骨架**永不**携带清单，清单只存在于 `Arc` 里。
+    ///
+    /// 这条锁住「无参命中不深拷贝清单」的前提——一旦有人把 `files` 塞回骨架，
+    /// 每次命中又会恢复成整份复制的旧行为。
+    #[test]
+    fn cache_skeleton_never_carries_files() {
+        let cache = WorkspaceGitCache::default();
+        store(&cache, "/w", std::time::Instant::now());
+
+        let guard = cache.entry.lock().expect("cache lock");
+        let entry = guard.as_ref().expect("entry");
+        assert!(entry.skeleton.files.is_none(), "骨架不得携带清单");
+        assert!(entry.files.is_some(), "清单应放在 Arc 里");
     }
 
     #[test]
@@ -254,10 +310,11 @@ mod tests {
         let cache = WorkspaceGitCache::default();
         store(&cache, "/w", std::time::Instant::now());
 
-        let hit = read_fresh(&cache, "/w").expect("fresh hit");
+        let hit = read_fresh(&cache, "/w", false).expect("fresh hit");
         assert_eq!(hit.source, WorkspaceGitSource::Cache);
         assert_eq!(hit.computed_at_unix, 1234, "命中缓存不应推进探测时刻");
-        assert!(read_fresh(&cache, "/other").is_none(), "换工作区不应命中");
+        assert!(hit.files.is_none(), "无参命中不带清单");
+        assert!(read_fresh(&cache, "/other", false).is_none(), "换工作区不应命中");
     }
 
     #[test]
@@ -268,22 +325,25 @@ mod tests {
             .expect("单调钟当前时刻必然大于 CACHE_TTL*2");
         store(&cache, "/w", old);
 
-        assert!(read_fresh(&cache, "/w").is_none(), "过期条目不算命中");
+        assert!(
+            read_fresh(&cache, "/w", false).is_none(),
+            "过期条目不算命中"
+        );
 
-        let stale = read_stale(&cache, "/w").expect("stale fallback");
+        let stale = read_stale(&cache, "/w", false).expect("stale fallback");
         assert_eq!(stale.source, WorkspaceGitSource::StaleCache);
         assert_eq!(stale.computed_at_unix, 1234, "兜底沿用旧探测时刻");
-        assert!(read_stale(&cache, "/other").is_none(), "换工作区不应兜底");
+        assert!(read_stale(&cache, "/other", false).is_none(), "换工作区不应兜底");
     }
 
     #[test]
     fn empty_cache_never_hits() {
         let cache = WorkspaceGitCache::default();
-        assert!(read_fresh(&cache, "/w").is_none());
-        assert!(read_stale(&cache, "/w").is_none());
+        assert!(read_fresh(&cache, "/w", true).is_none());
+        assert!(read_stale(&cache, "/w", true).is_none());
     }
 
-    /// #1498 回归点：缓存里存的是**全量**，`?files` 只在出站剥离。
+    /// #1498 回归点：缓存里始终留有**全量**清单，`?files` 只在出站剥离。
     ///
     /// 如果哪天有人按 `files` 布尔把响应写进缓存（或缓存写入用了已剥离的响应），
     /// 「先无参请求 → 再 `?files=true`」就会拿到 `counts` 有、列表空 的响应。
@@ -292,13 +352,12 @@ mod tests {
         let cache = WorkspaceGitCache::default();
         store(&cache, "/w", std::time::Instant::now());
 
-        // 第一次：无参请求，出站剥离列表。
-        let plain = with_files_visibility(read_fresh(&cache, "/w").expect("fresh hit"), false);
+        // 第一次：无参请求，出站不带清单。
+        let plain = read_fresh(&cache, "/w", false).expect("fresh hit");
         assert!(plain.files.is_none(), "无参请求不应带列表");
 
         // 第二次：`?files=true` 命中同一缓存，必须仍能给出列表。
-        let with_files =
-            with_files_visibility(read_fresh(&cache, "/w").expect("fresh hit"), true);
+        let with_files = read_fresh(&cache, "/w", true).expect("fresh hit");
         assert!(with_files.files.is_some(), "缓存不得被前一次无参请求污染");
         assert_eq!(with_files.source, WorkspaceGitSource::Cache);
         assert_eq!(
@@ -317,7 +376,7 @@ mod tests {
             .expect("单调钟当前时刻必然大于 CACHE_TTL*2");
         store(&cache, "/w", old);
 
-        let stale = with_files_visibility(read_stale(&cache, "/w").expect("stale"), true);
+        let stale = read_stale(&cache, "/w", true).expect("stale");
         assert_eq!(stale.source, WorkspaceGitSource::StaleCache);
         assert_eq!(
             stale.files.expect("stale 也要带列表").items.len(),
@@ -325,8 +384,8 @@ mod tests {
             "旧值里的列表必须完整保留"
         );
 
-        // 无参请求同样从 stale 剥离。
-        let plain = with_files_visibility(read_stale(&cache, "/w").expect("stale"), false);
+        // 无参请求同样不带清单。
+        let plain = read_stale(&cache, "/w", false).expect("stale");
         assert!(plain.files.is_none());
         assert_eq!(plain.source, WorkspaceGitSource::StaleCache);
     }
