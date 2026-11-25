@@ -70,14 +70,18 @@ fn background_async_gate_launch_and_deny_matrix() {
         gate_with(true, &["cargo_test"], "cargo_test", r#"{"async":true}"#),
         BackgroundAsyncGate::Launch
     ));
-    let BackgroundAsyncGate::Deny(m) = gate_with(true, &[], "cargo_test", r#"{"async":true}"#) else {
+    let BackgroundAsyncGate::Deny(m) = gate_with(true, &[], "cargo_test", r#"{"async":true}"#)
+    else {
         panic!("装配表内、白名单外应拒绝");
     };
     assert!(m.contains("background_job_async_tools"), "{m}");
     // 白名单内、装配表外 → 拒绝（样本用装配表之外的工具）。
-    let BackgroundAsyncGate::Deny(m) =
-        gate_with(true, &["docs_health_sweep"], "docs_health_sweep", r#"{"async":true}"#)
-    else {
+    let BackgroundAsyncGate::Deny(m) = gate_with(
+        true,
+        &["docs_health_sweep"],
+        "docs_health_sweep",
+        r#"{"async":true}"#,
+    ) else {
         panic!("白名单内、装配表外应拒绝");
     };
     assert!(m.contains("暂不支持后台执行"), "{m}");
@@ -136,18 +140,20 @@ fn background_async_assembly_cargo_check_clippy_run_reuse_foreground_argv() {
     assert_eq!(spawn.program, "cargo");
     assert_eq!(
         spawn.args,
-        vec!["check", "--release", "--all-targets", "--package", "crabmate"]
+        vec![
+            "check",
+            "--release",
+            "--all-targets",
+            "--package",
+            "crabmate"
+        ]
     );
     // cwd 与前台 `build_cargo_subcommand_command` 一致（工作区根，不做 canonicalize）。
     assert_eq!(spawn.cwd, dir.path());
 
-    let spawn = assemble_background_job_spawn(
-        &cfg,
-        "cargo_clippy",
-        r#"{"all_targets":true}"#,
-        dir.path(),
-    )
-    .expect("装配 cargo clippy");
+    let spawn =
+        assemble_background_job_spawn(&cfg, "cargo_clippy", r#"{"all_targets":true}"#, dir.path())
+            .expect("装配 cargo clippy");
     assert_eq!(spawn.args, vec!["clippy", "--all-targets"]);
 
     // `cargo_run` 用 `CargoRunArgs`：`args` 透传在 `--` 之后。
@@ -158,10 +164,7 @@ fn background_async_assembly_cargo_check_clippy_run_reuse_foreground_argv() {
         dir.path(),
     )
     .expect("装配 cargo run");
-    assert_eq!(
-        spawn.args,
-        vec!["run", "--bin", "probe", "--", "--help"]
-    );
+    assert_eq!(spawn.args, vec!["run", "--bin", "probe", "--", "--help"]);
     assert!(
         !spawn.args.iter().any(|a| a == "async"),
         "async 不得进入 cargo argv：{:?}",
@@ -221,10 +224,11 @@ fn background_async_assembly_pytest_uses_python3_module_pytest() {
 #[tokio::test]
 async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
-    cfg.tool_registry_policy.tool_registry_background_job_async_tools = Arc::new(
-        std::collections::HashSet::from(["cargo_test".to_string()]),
-    );
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy
+        .tool_registry_background_job_async_tools =
+        Arc::new(std::collections::HashSet::from(["cargo_test".to_string()]));
     let cfg = Arc::new(cfg);
     let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let dir = cargo_workspace();

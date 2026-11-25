@@ -74,8 +74,7 @@ async fn prefetch_http_fetch_blocks_without_channel_when_prefix_miss() {
 #[tokio::test]
 async fn prefetch_http_fetch_skips_approval_when_prefix_matches() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.http_fetch.http_fetch_allowed_prefixes =
-        vec!["https://example.com/".to_string()];
+    cfg.http_fetch.http_fetch_allowed_prefixes = vec!["https://example.com/".to_string()];
     let cfg = Arc::new(cfg);
     let args = r#"{"url":"https://example.com/api/v1"}"#;
     let calls = vec![tool_call("http_fetch", args)];
@@ -296,9 +295,7 @@ async fn unknown_cmd_gate_decision_matrix() {
     let cfg = Arc::new(cfg);
     let cmd = "crabmate_unknown_gate_cmd";
     // `$HOME` 触发 shell 包装需求，批准后应同时把 bash 纳入生效白名单。
-    let parsed = parsed_run_command(&format!(
-        r#"{{"command":"{cmd}","args":["$HOME"]}}"#
-    ));
+    let parsed = parsed_run_command(&format!(r#"{{"command":"{cmd}","args":["$HOME"]}}"#));
 
     let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
     let (msg, _) = evaluate_for_test(&parsed, &ctx)
@@ -325,14 +322,32 @@ async fn unknown_cmd_gate_decision_matrix() {
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
     let d = evaluate_for_test(&parsed, &ctx).await.expect("allow once");
-    assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
-    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
+    assert!(
+        contains_cmd(&d.allowed_commands, cmd),
+        "{:?}",
+        d.allowed_commands
+    );
+    assert!(
+        contains_cmd(&d.allowed_commands, "bash"),
+        "{:?}",
+        d.allowed_commands
+    );
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
-    assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
-    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
+    let d = evaluate_for_test(&parsed, &ctx)
+        .await
+        .expect("allow always");
+    assert!(
+        contains_cmd(&d.allowed_commands, cmd),
+        "{:?}",
+        d.allowed_commands
+    );
+    assert!(
+        contains_cmd(&d.allowed_commands, "bash"),
+        "{:?}",
+        d.allowed_commands
+    );
     // `test_policy_context` 不带 `caps`（`permission = None`），所以这里断言的是
     // 「未接线路径写裸键」——与引入等级前的行为一致。若将来该 fixture 接上 caps，
     // 断言须改成 `scoped_allowlist_key(Some(level), cmd)`。
@@ -359,12 +374,22 @@ async fn shell_wrap_gate_decision_matrix() {
     let fixture = approval_fixture(AllowOnce);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
     let d = evaluate_for_test(&parsed, &ctx).await.expect("allow once");
-    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
+    assert!(
+        contains_cmd(&d.allowed_commands, "bash"),
+        "{:?}",
+        d.allowed_commands
+    );
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
-    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
+    let d = evaluate_for_test(&parsed, &ctx)
+        .await
+        .expect("allow always");
+    assert!(
+        contains_cmd(&d.allowed_commands, "bash"),
+        "{:?}",
+        d.allowed_commands
+    );
 
     let fixture = approval_fixture(Deny);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
@@ -399,7 +424,9 @@ async fn external_path_gate_decision_matrix() {
 
     let fixture = approval_fixture(AllowAlways);
     let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
-    let d = evaluate_for_test(&parsed, &ctx).await.expect("allow always");
+    let d = evaluate_for_test(&parsed, &ctx)
+        .await
+        .expect("allow always");
     assert!(d.skip_arg_safety);
 
     let fixture = approval_fixture(Deny);
@@ -479,8 +506,7 @@ async fn run_command_chunk_try_send_full_does_not_bump_seq() {
     assert_eq!(seq.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-pub(super) fn async_test_sandbox(
-) -> Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend> {
+pub(super) fn async_test_sandbox() -> Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend> {
     crate::tool_sandbox::default_sync_default_sandbox_backend()
 }
 
@@ -524,7 +550,8 @@ pub(super) async fn run_command_impl_for_test<'a>(
 async fn run_command_async_disabled_returns_invalid_args() {
     // 总开关默认已为 `true`，此处显式关闭以验证「关闭时返回 invalid_args」语义。
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = false;
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = false;
     let cfg = Arc::new(cfg);
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
@@ -545,7 +572,8 @@ async fn run_command_async_disabled_returns_invalid_args() {
 #[tokio::test]
 async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = true;
     let cfg = Arc::new(cfg);
     let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let sandbox = async_test_sandbox();
@@ -595,7 +623,8 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
     use tokio::sync::{Mutex as TokioMutex, mpsc};
 
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = true;
     // `sleep` 不在默认白名单；加入以让长任务在取消前保持非终态（避免触发审批路径）。
     let mut allowed: Vec<String> = cfg.command_exec.allowed_commands.to_vec();
     allowed.push("sleep".to_string());
@@ -660,7 +689,8 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
 #[tokio::test]
 async fn run_command_async_rejects_allow_once_requiring_command() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = true;
     // 同 `unknown_cmd_gate_decision_matrix`：外部 `CM_ALLOWED_COMMANDS=*` 会让「未知命令」
     // 变成放行、断言失真；固定成窄白名单（`definitely_not_allowlisted_cmd_xyz` 不在其中）。
     cfg.command_exec.allowed_commands = vec!["cargo".to_string()].into();
