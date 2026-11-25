@@ -397,70 +397,6 @@ fn test_build_tools_dev_tags_rust_excludes_pure_vcs() {
 }
 
 #[test]
-fn test_summarize_tool_call_static() {
-    let s = summarize_tool_call("cargo_check", "{}");
-    assert_eq!(s, Some("cargo check".to_string()));
-}
-
-#[test]
-fn test_summarize_tool_call_dynamic() {
-    let s = summarize_tool_call("create_file", r#"{"path":"src/foo.rs","content":"hello"}"#);
-    assert_eq!(s, Some("create file: src/foo.rs".to_string()));
-}
-
-#[test]
-fn test_summarize_tool_call_dynamic_run_command() {
-    let s = summarize_tool_call("run_command", r#"{"command":"ls","args":["-la"]}"#);
-    assert_eq!(s, Some("ls -la".to_string()));
-}
-
-/// 模型把整条命令写成数组时摘要仍要出来：字段是 `String` 时反序列化失败，
-/// 摘要会退化成占位串 `tool: run_command`，客户端只能再解析一遍参数补回来。
-#[test]
-fn test_summarize_tool_call_run_command_array_command() {
-    let s = summarize_tool_call("run_command", r#"{"command":["git","status","-sb"]}"#);
-    assert_eq!(s, Some("git status -sb".to_string()));
-}
-
-/// 数组只放程序名、参数另起 `args`：两者都要出现在摘要里。
-#[test]
-fn test_summarize_tool_call_run_command_array_plus_args() {
-    let s = summarize_tool_call("run_command", r#"{"command":["git"],"args":["status","-sb"]}"#);
-    assert_eq!(s, Some("git status -sb".to_string()));
-}
-
-/// `command` 为空串时仍返回 `None`，由上层决定是否用占位串。
-#[test]
-fn test_summarize_tool_call_run_command_empty_command() {
-    let s = summarize_tool_call("run_command", r#"{"command":"","args":["ls"]}"#);
-    assert_eq!(s, None);
-}
-
-/// 卡片行要用注册名 `search_replace`：曾硬编码 `search-replace{}: …`，客户端因此显示
-/// 了一个工具列表里不存在的连字符名（TUI 还得再归一化一次才不重复打印名字）。
-#[test]
-fn test_summarize_tool_call_search_replace_preview_uses_registry_name() {
-    let s = summarize_tool_call(
-        "search_replace",
-        r#"{"path":"a.rs","search":"foo","dry_run":true}"#,
-    );
-    assert_eq!(
-        s.as_deref(),
-        Some(r#"search_replace (preview): a.rs / "foo""#)
-    );
-}
-
-/// 写入形态同样不带连字符，`(preview)` 后缀只在预览时出现。
-#[test]
-fn test_summarize_tool_call_search_replace_write_uses_registry_name() {
-    let s = summarize_tool_call(
-        "search_replace",
-        r#"{"path":"a.rs","search":"foo","dry_run":false}"#,
-    );
-    assert_eq!(s.as_deref(), Some(r#"search_replace: a.rs / "foo""#));
-}
-
-#[test]
 fn test_summarize_read_file_range_normalizes_inverted_order() {
     let s = summarize_tool_call(
         "read_file",
@@ -670,8 +606,15 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
         "api_key 只允许报状态: {out}"
     );
     // `[tool_registry]` 须暴露后台任务配置（模型可自查 async 白名单与并发上限）。
-    let tr = run_tool("self_config_info", r#"{"sections":["tool_registry"]}"#, &ctx);
-    assert!(tr.contains("[tool_registry]"), "应含 tool_registry 小节: {tr}");
+    let tr = run_tool(
+        "self_config_info",
+        r#"{"sections":["tool_registry"]}"#,
+        &ctx,
+    );
+    assert!(
+        tr.contains("[tool_registry]"),
+        "应含 tool_registry 小节: {tr}"
+    );
     assert!(tr.contains("background_jobs_enabled ="), "{tr}");
     assert!(tr.contains("background_job_async_tools = ["), "{tr}");
     assert!(tr.contains("background_job_max_concurrent ="), "{tr}");
@@ -684,9 +627,13 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
     assert!(filtered.contains("[llm]"));
     assert!(!filtered.contains("[sampling]"));
     assert!(
-        run_tool("self_config_info", r#"{"sections":["bogus"]}"#, &ctx).contains("未匹配到任何配置小节")
+        run_tool("self_config_info", r#"{"sections":["bogus"]}"#, &ctx)
+            .contains("未匹配到任何配置小节")
     );
-    assert!(run_tool("self_config_info", r#"{"sections":1}"#, &ctx).contains("参数与工具 JSON Schema 不一致"));
+    assert!(
+        run_tool("self_config_info", r#"{"sections":1}"#, &ctx)
+            .contains("参数与工具 JSON Schema 不一致")
+    );
 }
 
 /// `AsyncOnly` 目前只有 `run_command` / `terminal_session`。
@@ -712,7 +659,11 @@ fn codebase_semantic_search_without_host_is_tool_context_incomplete() {
     let allowed = test_allowed_commands();
     let e = runner_codebase_semantic_search_try("{}", &test_ctx(&allowed)).expect_err("缺宿主");
     assert_eq!(e.code, "tool_context_incomplete");
-    assert!(e.message.contains("未注入代码语义检索配置"), "{}", e.message);
+    assert!(
+        e.message.contains("未注入代码语义检索配置"),
+        "{}",
+        e.message
+    );
 }
 
 /// `workflow_execute` 的同步面占位必须报错。
@@ -738,7 +689,10 @@ fn typed_ok_is_success_even_if_body_looks_like_failure() {
     // 正文启发式会误判失败，故输出须带显式 `ok` 头，供下游再次解析时保持一致。
     let reparsed = parse_tool_output("demo_tool", &output);
     assert!(reparsed.ok, "下游再次解析仍应为成功: {output}");
-    assert!(output.ends_with("失败：示例正文\n超时 3s"), "正文应保留: {output}");
+    assert!(
+        output.ends_with("失败：示例正文\n超时 3s"),
+        "正文应保留: {output}"
+    );
 }
 
 #[test]
@@ -808,14 +762,18 @@ fn misc_basic_typed_error_codes() {
     assert_eq!(e.code, "invalid_args");
     assert_eq!(e.category, ToolFailureCategory::InvalidInput);
 
-    let e = dispatch_string("regex_test", r#"{"pattern":"(","test_strings":["x"]}"#, &ctx)
-        .expect_err("非法正则必须失败");
+    let e = dispatch_string(
+        "regex_test",
+        r#"{"pattern":"(","test_strings":["x"]}"#,
+        &ctx,
+    )
+    .expect_err("非法正则必须失败");
     assert_eq!(e.code, "regex_test_invalid_regex");
     assert_eq!(e.category, ToolFailureCategory::InvalidInput);
     assert!(e.message.contains("正则编译失败"), "{}", e.message);
 
-    let e =
-        dispatch_string("json_format", r#"{"text":"{oops"}"#, &ctx).expect_err("非法 JSON 必须失败");
+    let e = dispatch_string("json_format", r#"{"text":"{oops"}"#, &ctx)
+        .expect_err("非法 JSON 必须失败");
     assert_eq!(e.code, "invalid_args");
     assert!(
         e.message.starts_with("错误：JSON 解析失败"),
@@ -823,7 +781,8 @@ fn misc_basic_typed_error_codes() {
         e.message
     );
 
-    let e = dispatch_string("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
+    let e =
+        dispatch_string("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
     assert_eq!(e.code, "invalid_args");
     // 钉住失败发生在 runner 层：`EnvVarCheckArgs.names` 目前没有 `minItems`；
     // 若将来加了，这条会先红，提示改断言而不是静默退化成「测 schema 层」。

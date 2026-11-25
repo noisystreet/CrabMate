@@ -34,7 +34,7 @@
 ### 1.2 作用域（scope）
 
 - **`scope_id` 就是 Web 的 `conversation_id`**：
-  `long_term_memory_scope_id: Some(conversation_id.to_string())`（[lib_server.rs](../../src/lib_server.rs#L297)）。
+  `long_term_memory_scope_id: Some(conversation_id.to_string())`（[src/lib.rs](../../src/lib.rs)）。
 - 非 Web 路径传 `None` 时不挂记忆宿主（[tool_context_memory_extras](../../src/cm_memory/memory/long_term_memory.rs#L883-L899)）。
 - LTM 表**与外层无外键**，`scope_id` 是普通列；因此记忆行可以**比会话行活得更久**。
 

@@ -2,17 +2,19 @@
 
 use super::tests::{
     approval_fixture, async_test_env, async_test_sandbox, contains_cmd, evaluate_for_test,
-    parsed_run_command, run_command_impl_for_test, test_policy_context, test_policy_context_with_caps,
+    parsed_run_command, run_command_impl_for_test, test_policy_context,
+    test_policy_context_with_caps,
 };
 // #1198：`run_command` 的显式接口不再打平进 `execute`，测试按模块路径取。
 use super::run_command::{
     ExecMode, ExternalPathGate, ParsedRunCommandJson, PolicyApproval, PolicyCapabilities,
     PolicyDecision, RunCommandCapabilities, RunCommandCaps, RunCommandFacadeInvoke,
     approve_external_run_command_paths_if_needed, approve_posix_shell_wrap_if_needed,
-    evaluate_policy, execute_run_command_facade,
+    evaluate_policy, execute_run_command_facade, parse_run_command_json,
 };
 use crate::cm_config::SyncDefaultToolSandboxMode;
 use crate::cm_types::CommandApprovalDecision;
+use std::path::Path;
 use std::sync::Arc;
 
 /// 直接调用 shell-wrap gate，避免前置未知命令 gate 掩盖本 gate 的回归。
@@ -388,4 +390,33 @@ async fn posix_shell_wrap_gate_errs_without_channel() {
         .into_message();
     assert!(msg.contains("无审批通道"), "{msg}");
     assert!(msg.contains("echo $HOME"), "{msg}");
+}
+
+// ── 审批侧与执行侧共用同一 argv 解析（含裸 token 修复）──────────────────────
+
+#[test]
+fn parse_run_command_json_repairs_bare_arg_tokens() {
+    let parsed = parse_run_command_json(r#"{"command":"ls","args":[-la]}"#, Path::new("."))
+        .expect("裸 token 应可修复");
+    assert_eq!(parsed.cmd, "ls");
+    assert_eq!(parsed.spec.args, vec!["-la".to_string()]);
+    assert_eq!(parsed.script, "ls -la");
+}
+
+#[test]
+fn parse_run_command_json_reports_invalid_json() {
+    let err = parse_run_command_json("{not json", Path::new("."))
+        .err()
+        .expect("非法 JSON 必须显式报错");
+    assert_eq!(err.kind(), "json_parse");
+    assert!(
+        err.extended_user_message().contains("参数解析错误"),
+        "{}",
+        err.extended_user_message()
+    );
+    assert_eq!(
+        err.into_tool_error().code,
+        "json_parse",
+        "JSON 解析失败应有独立 error_code，而非通用 invalid_args"
+    );
 }

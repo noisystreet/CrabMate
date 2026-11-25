@@ -1011,7 +1011,7 @@ impl PathAccess<'_> {
   写成 `tool_origin != Dynamic` 只会更难读。
 - 附带发现（已随 R2 后续清理）：转换后 `mcp/stub.rs` / `mcp/mcp_impl.rs` / `src/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，
   **三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
-- 清理时的额外发现（**未处理**，属更大范围的死分支）：`mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），
+- 清理时的额外发现（**未处理**，属更大范围的死分支）：`mcp` 只在 `feature = "server"` 下 `mod`（`src/lib.rs`），
   而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。
   删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
 

@@ -15,20 +15,20 @@ mod command;
 mod command_error;
 mod command_exec;
 mod command_outcome;
-pub use command_outcome::CommandDigest;
-#[cfg(test)]
-pub use command_outcome::ExitStatusKind;
+pub(crate) use command::parse_run_command_payload_lenient;
 pub use command::{
     CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, UnsafeArgScan,
-    allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
-    dash_c_script_body, is_shell_dash_c_invocation,
+    allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
+    argv_needs_shell_expansion, dash_c_script_body, is_shell_dash_c_invocation,
     join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
     prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run_async,
     scan_run_command_unsafe_args_spec,
 };
 pub use command_error::RunCommandError;
-pub(crate) use command::parse_run_command_payload_lenient;
+pub use command_outcome::CommandDigest;
+#[cfg(test)]
+pub use command_outcome::ExitStatusKind;
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod contract_map;
@@ -36,10 +36,10 @@ mod date_calc;
 mod diagnostics;
 mod docs_health_sweep;
 pub use diagnostics::capture_trimmed;
-pub use tool_param_types::DelegateTaskArgs;
 pub use parse_args::parse_args_from_value;
 pub use parse_args::parse_args_json;
 pub use parse_args::parse_args_typed;
+pub use tool_param_types::DelegateTaskArgs;
 mod env_var_check;
 mod exec;
 pub use exec::{
@@ -105,14 +105,14 @@ pub(crate) use registry_macro::builtin_tool;
 
 use std::sync::Arc;
 
+use crate::cm_config::{AgentConfig, ExposeSecret};
+use crate::cm_names as tool_names;
 use crate::cm_tools::memory_tool_host::{
     CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
 };
 use crate::cm_tools::tool_result::{ToolError, ToolResult};
 use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
-use crate::cm_config::{AgentConfig, ExposeSecret};
 use crate::cm_types::{FunctionDef, Tool};
-use crate::cm_names as tool_names;
 
 /// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -593,15 +593,9 @@ fn async_only_sync_error(name: &str) -> String {
 /// 主 Agent 路径（[`run_tool`]）丢失了 [`ToolError`]，下游 `dispatch_tool` 重试判定、
 /// timeline / 模型信封、统计与验收又都用 `parse_tool_output` 重新推断。正文一致时
 /// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败与 `error_code`。
-fn typed_outcome_output(
-    name: &str,
-    ok: bool,
-    error_code: Option<&str>,
-    output: String,
-) -> String {
+fn typed_outcome_output(name: &str, ok: bool, error_code: Option<&str>, output: String) -> String {
     let parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
-    if parsed.ok == ok
-        && (ok || error_code.is_none() || parsed.error_code.as_deref() == error_code)
+    if parsed.ok == ok && (ok || error_code.is_none() || parsed.error_code.as_deref() == error_code)
     {
         return output;
     }
@@ -650,8 +644,6 @@ fn finish_dispatch_text(
         Err(ToolError::from_parsed(name, &parsed, output))
     }
 }
-
-
 
 /// 执行本地工具并返回结构化结果（兼容既有字符串输出）。
 pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> ToolResult {
@@ -888,6 +880,9 @@ mod tests;
 
 #[cfg(test)]
 mod tests_write_effect;
+
+#[cfg(test)]
+mod tests_summarize;
 
 #[cfg(test)]
 mod testing;

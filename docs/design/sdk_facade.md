@@ -39,11 +39,11 @@
 | 事实 | 位置（以符号为准） | 核对 |
 |---|---|---|
 | `protocol` 六个模块与 `server` 组合面已按 feature 分离 | `src/lib.rs:29-43` | ✅ |
-| 根上一次性 `pub(crate) use` `cm_internal` 的 **27** 项 | `src/lib_server.rs:33` | ✅ 逐项数 |
-| `RunAgentTurnParams` 分 6 组，其中**只有 3 组带 `'a`**（`shared` / `session` / `transport`），另 3 组**已经 owned**（`llm` / `attach` / `obs`） | `src/lib_server.rs:179` | ✅ |
-| ~~`WebChatStreamBuildArgs` **25** 字段 / `WebChatJsonBuildArgs` **22** 字段~~ | ~~`src/lib_server.rs:190` / `:223`~~ | ✅ **已消解**：合成 `WebTurnInputs`（#1379） |
+| 根上一次性 `pub(crate) use` `cm_internal` 的 **27** 项 | `src/lib.rs` | ✅ 逐项数 |
+| `RunAgentTurnParams` 分 6 组，其中**只有 3 组带 `'a`**（`shared` / `session` / `transport`），另 3 组**已经 owned**（`llm` / `attach` / `obs`） | `src/lib.rs` | ✅ |
+| ~~`WebChatStreamBuildArgs` **25** 字段 / `WebChatJsonBuildArgs` **22** 字段~~ | ~~`src/lib.rs` / `:223`~~ | ✅ **已消解**：合成 `WebTurnInputs`（#1379） |
 | `TurnRunner` 注入点的参数袋仍是 `RunAgentTurnParams<'_>` | `src/turn_runner.rs:19` | ✅ |
-| `conversation_store` 是 **13 个 `pub fn` 收 `&Connection`**（`migrate`:51、`open_file`:137、`load`:210、`save_if_revision`:307、`set_active_state`:389、`save_with_archive_if_revision`:427……），且被 `web` feature 门控 | `src/conversation_store.rs`；`src/lib_server.rs:53` | ✅ |
+| `conversation_store` 是 **13 个 `pub fn` 收 `&Connection`**（`migrate`:51、`open_file`:137、`load`:210、`save_if_revision`:307、`set_active_state`:389、`save_with_archive_if_revision`:427……），且被 `web` feature 门控 | `src/conversation_store.rs`；`src/lib.rs` | ✅ |
 | ~~`cm_internal` 暴露 **25** 个 `pub mod` + 多组再导出~~ | ~~`src/cm_internal/mod.rs:11-43`~~ | ✅ **已消解**：S4 四桶搬空后 P4 删除该模块 |
 | 全仓 **66** 个文件引用 `crate::cm_internal`，其中**外部（非 `cm_internal/` 内）20 个** | `grep -rln crate::cm_internal src --include=*.rs` | ✅ 勘察时快照；S4 完成后为 **0** |
 | 外部 20 个的分布：`web/` 6、`src/` 根 4、`agent/agent_turn/host/` 系 5、`chat_job_queue/worker` 2、`user_data` 1、`cm_llm` 1、`cm_config` 1 | 同上 | ✅ 决定 S4 的拆分粒度，见 §10 |
@@ -104,9 +104,9 @@ crabmate::{  TurnEngine / TurnRequest / TurnEvent / TurnOutcome   ← 回合执�
 
 | 事实 | 位置 | 含义 |
 |---|---|---|
-| 根上已公开 `pub mod agent;` 与 `pub mod llm;` | `src/lib_server.rs:29`、`:55` | `sdk::agent` / `sdk::llm` **直接撞名**，读者得记「哪个 `agent` 才是承诺面」——前缀本想省认知税，结果制造了它 |
-| 根上已有扁平 re-export 惯例：`pub use llm::{ChatCompletionsBackend, StreamChatParams, …}`、`pub use crate::cm_config as config`、`pub use crate::cm_types as types` | `src/lib_server.rs:48-50`、`:532` | 「公开模块 + 根上扁平导出」**已经在跑**；`sdk::` 会在 `crabmate::llm::X` 之外再造 `crabmate::sdk::llm::X` |
-| `tools` 亦近名占用（`pub use tools::{build_tools, …}`） | `src/lib_server.rs:543-544` | 同上 |
+| 根上已公开 `pub mod agent;` 与 `pub mod llm;` | `src/lib.rs`、`:55` | `sdk::agent` / `sdk::llm` **直接撞名**，读者得记「哪个 `agent` 才是承诺面」——前缀本想省认知税，结果制造了它 |
+| 根上已有扁平 re-export 惯例：`pub use llm::{ChatCompletionsBackend, StreamChatParams, …}`、`pub use crate::cm_config as config`、`pub use crate::cm_types as types` | `src/lib.rs-50`、`:532` | 「公开模块 + 根上扁平导出」**已经在跑**；`sdk::` 会在 `crabmate::llm::X` 之外再造 `crabmate::sdk::llm::X` |
+| `tools` 亦近名占用（`pub use tools::{build_tools, …}`） | `src/lib.rs-544` | 同上 |
 
 理由：**Rust 的命名空间惯例是标记「要藏的」，不是「要露的」**——公开面天然是默认，需要提醒的只有内部。所以 `internal::` 保留（标记内部），根上不加伞；
   承诺面由 §11 Q2 的显式清单兜住（`fixtures/public_api_golden.txt` + `scripts/check-public-api.py`，S6 已落地，见 #1297），而不是靠名字。
@@ -344,7 +344,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 | 阶段 | 内容 | 验证锚点 | 依赖 / 回退 |
 |---|---|---|---|
 | **S5-a**（先做） | `cli_run.rs` 减行，纯搬移一分为三 | 见 §12.3 | 见 §12.2；**唯一有硬截止的一步** |
-| **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `lib_server.rs`；**`SessionStore` trait ✅**（#1284 / #1286；S6-d 起与伴生类型一并进承诺面） |
+| **S1** | 会话存储面从 `web` feature 解绑（P5） | `cargo check --no-default-features --features protocol,sqlite` **真的编译**存储（此前只跑 `--features protocol` 不编译它，证明不了什么）；`--features protocol` 单独不引入存储 | **S1-a ✅**（#1279）：`ConversationBacking` 收拢为唯一分派点、`AppStateConversationRuntime` 变薄委托，`app_state.rs` 920 → 480（业务行）；**S1-b 解绑 ✅**（#1279）：新建 `sqlite` feature、`StructuralCommit` 上移 `cm_types`、模块移出 `src/lib.rs` 的 `server` 段；**`SessionStore` trait ✅**（#1284 / #1286；S6-d 起与伴生类型一并进承诺面） |
 | **S2** | `TurnRequest` / `TurnEvent` / `TurnEngine`；旧 BuildArgs 转 `#[deprecated]` 封装（P2） | `fixtures/sse_ag_ui_golden.jsonl`、`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl` **不改即绿** | **无前置**（2026-11-04 已核销：`RunAgentTurnSession<'a>` 只有 3 个字段、**不含** store 句柄 ⇒ S1/S2/S3 互不阻塞）；按「一组一组搬」，每组一次提交。**进度**：**S2-0 / S2-1 / S2-4 ✅**：三项正名已落地（`TurnRequest` / `TurnEngine` / `TurnOutcome`；`RunAgentTurnParams` 留 `#[deprecated]` 别名，因它经 `include!` 落在 crate 根属公开 API）；`TurnOutcome` 已 struct 化为 `{ commit, stats: TurnStats }`，六个聚合字段**全部取自既有账本**（`TurnBudgetCounter` × 5 + `PerTurnFlight::last_assistant_finish_truncated`），**刻意不含「本轮工具调用次数」**（`ToolOutcomeRecorder` 是进程级累计，无单轮维度）；`run_agent_turn` `nloc` 197 → 177 → 185；**S2-2 ✅**：投影口径见 §5.1.1（三层结构 + 映射表 A/B + `ToolResult` 必须带 `partial` + 缺口 G1/G2 + 三态 `Dropped`/`Unknown`），代码落在 `cm_sdk_event`，`replay` 的静默兜底改为 debug 诊断；`messages` owned 化经核销**建议放弃**（`&mut` 仅跨 3 行，且 `ModelContextView::derive` 已 `to_vec()`） |
 | **S3** | 工具执行面三端口（`ToolHost`）；`WebToolRuntime` 降为实现（P3） | `command_approval` 相关金样 + `execute_tests` | **S3-a ✅**（#1280）：`ApprovalBroker` 端口落地，执行面签名改为 `Option<&dyn ApprovalBroker>`，`WebToolRuntime` 成为其实现之一，`src/agent/` 内不再出现该具体类型。**S3-b ✅**（#1282/S3-b）：`PolicyEngine` 端口已落地（`cm_agent::permission::PolicyEngine`，执行面签名由 `Option<&PermissionCaps>` 改为 `Option<&dyn PolicyEngine>`，并加「端口 ≡ 自由函数」等价性测试）；**`ToolSandbox` 早已是端口**（`Arc<dyn SyncDefaultSandboxBackend>`，`cm_internal::tool_sandbox`），**`ToolHost` 本体也已存在**（`ToolExecutionHost` + `ToolDispatch`）。**端口收窄已完成**：`ApprovalBroker` 从 5 个方法收到 **4**（`cancel()` 全仓 0 调用点，能力已由 `approval_sink().cancel` 送达，详见 §7.2）；`ports` 命名收口**主动不做**（收益在 S4 的禁边表，单独落只是无消费者的间接层，见 §8）。全程只包现有代码，**不新增审批语义** |
 | **S4** | `cm_internal` 拆桶；禁边改为**零引用 + 白名单为空**（P1） | `scripts/check-crate-deps.sh` 白名单式规则；`crate::cm_internal` 长路径 **40 → 0**、根上短名 **306 → 118**；根面 96 → 95 项 | ✅ **已完成（#1300，2026-11-08）**：P1a/P1b（#1301）、P1c（#1302）、P2-0（#1307）、P2-1（#1308）、P2-2 + P2-3（#1309）、P2-4 + P2-5（#1310）、P3 + P4（#1311），`cm_internal` 整体删除。**偏差**：设计原本要求的「上层只准引用 `ports`」未以 `src/ports` 命名空间落地（§7.2 末段 / #1300 §4.2） |
@@ -363,7 +363,7 @@ pub async fn dispatch(args: CliArgs) -> Result<ExitCode, CliError> {
 ### 7.1 S1-b 的 `SessionStore` trait 为什么当时没有跟着解绑一起做（已解决）
 
 解绑本身已落地（#1279）：新建 `sqlite` feature（`web = ["sqlite"]`）、`StructuralCommit` 从 `agent::model_context_view` 上移到 `cm_types`、
-  `conversation_store` 从 `lib_server.rs` 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
+  `conversation_store` 从 `src/lib.rs` 的 `server` 段 移到 `lib.rs` 的 `#[cfg(feature = "sqlite")]`。
   `conversation_store` 现在**结构上**不依赖 Axum 与回合编排——`cargo check --no-default-features --features protocol,sqlite` 会**真的编译**它（59 条
     `dead_code` 警告就是它进了编译图、而消费者都在 `server` 的证据），而 `--features protocol` 不会。
 
@@ -476,8 +476,8 @@ trait 没实现，是因为它对应两个互斥目标，产物不同：
 
 | 原「实施前必查」项 | 核对结果 | 决策影响 |
 |---|---|---|
-| `SessionStore` 与 `web/app_state.rs` 的 `ConversationBacking` 是否重复抽象 | **确实重复，且不止「两套」**：`ConversationBacking` 已是 `Memory(HashMap)` / `Sqlite(Connection)` 双态门面（`src/web/app_state.rs:211`，`app_state.rs` 与 `app_state_facets.rs` 合计 10+ 处 `match`），`conversation_store` 的 13 个自由函数又在它下面加了一层；且 `mod conversation_store` 被 `#[cfg(feature = "web")]` 门控（`src/lib_server.rs:53`） | **S1 必须拆成 S1-a + S1-b**（见 §7 表）。按原计划「纯新增 trait」会造出第三套存储门面 |
-| S2 与 S1 的耦合：`RunAgentTurnSession<'a>` 是否含 store 句柄 | **不含**：`src/lib_server.rs:141` 的 `RunAgentTurnSession<'a>` 只有 3 个字段——`messages: &'a mut Vec<types::Message>`、`effective_working_dir: &'a std::path::Path`、`workspace_is_set: bool` | **不耦合**：§7 表里 S2 的 ⚠️ 解除，S1 / S2 / S3 可并行排序 |
+| `SessionStore` 与 `web/app_state.rs` 的 `ConversationBacking` 是否重复抽象 | **确实重复，且不止「两套」**：`ConversationBacking` 已是 `Memory(HashMap)` / `Sqlite(Connection)` 双态门面（`src/web/app_state.rs:211`，`app_state.rs` 与 `app_state_facets.rs` 合计 10+ 处 `match`），`conversation_store` 的 13 个自由函数又在它下面加了一层；且 `mod conversation_store` 被 `#[cfg(feature = "web")]` 门控（`src/lib.rs`） | **S1 必须拆成 S1-a + S1-b**（见 §7 表）。按原计划「纯新增 trait」会造出第三套存储门面 |
+| S2 与 S1 的耦合：`RunAgentTurnSession<'a>` 是否含 store 句柄 | **不含**：`src/lib.rs` 的 `RunAgentTurnSession<'a>` 只有 3 个字段——`messages: &'a mut Vec<types::Message>`、`effective_working_dir: &'a std::path::Path`、`workspace_is_set: bool` | **不耦合**：§7 表里 S2 的 ⚠️ 解除，S1 / S2 / S3 可并行排序 |
 | `docs/design/crates_io_single_package.md:103`（承诺「模块存在」） | **成立**：§2.4「首发 `0.4.0` 的 semver 承诺」表（实测位于 `:95-112`）明确 `server` 面只承诺「组合面模块名的**存在**」+ 根上显式 `pub use` | S6 的前提不变，引用行号改为 `:95-112` |
 | `docs/design/crate_dep_policy.md:42-51`（禁边只覆盖 5 个模块） | **成立**：「禁止边（门禁）」表（实测位于 `:42-51`）只列 `cm_workflow` / `cm_tools` / `cm_agent` / `cm_approval` / `cm_web_host` 五条，且只针对 `crate::cm_internal` | S4 的前提不变 |
 | §3 P3 说的「`web_tool_ctx` / `tool_job_registry` 泄进 `tool_registry`」 | **结论成立、位置写错**：`src/cm_tools/` 内这两个名字命中 **0** 处；真实渗漏点是执行面 **trait 签名**——`src/agent/agent_turn/host/execute/tool_execution_trait.rs:24` 的 `pub web_tool_ctx: Option<&'a WebToolRuntime>`（`WebToolRuntime` 定义在 `src/cm_tools/tool_runtime.rs:16`） | **S3 的切口改为执行面 trait**，不是 `cm_tools` 内部；P3 行已相应修正 |
