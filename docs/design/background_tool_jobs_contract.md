@@ -24,7 +24,8 @@
 - **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` / `timeout_secs` 会被旧服务端拒绝（unknown field）
   ——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §8）。
 
-**同名字段亦加入「装配表」内工具**（§1.3）：`CargoTestArgs`（`cargo_test`）与 `PytestRunArgs`（`pytest_run`）
+**同名字段亦加入「装配表」内工具**（§1.3）：`CargoCommonCliArgs`（`cargo_check` / `cargo_clippy` 共用一份）、
+  `CargoTestArgs`（`cargo_test`）、`CargoRunArgs`（`cargo_run`）与 `PytestRunArgs`（`pytest_run`）
   各增 `#[serde(rename = "async")] pub async_: Option<bool>`，默认 `false`，语义与 `RunCommandArgs.async` 一致。
 
 ### 1.2 语义
@@ -61,7 +62,10 @@
 
 | 工具 | 装配来源 | 与前台一致性 |
 |------|----------|--------------|
+| `cargo_check` | `cargo_subcommand_background_argv("check", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
 | `cargo_test` | `cargo_subcommand_background_argv("test", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
+| `cargo_clippy` | `cargo_subcommand_background_argv("clippy", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
+| `cargo_run` | `cargo_subcommand_background_argv("run", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
 | `pytest_run` | `pytest_run_background_argv(…)` | 与同步路径共用 `build_pytest_command`，argv 逐项相同 |
 
 - 装配方式：前台先构造 `std::process::Command`，
@@ -74,6 +78,9 @@
   后台路径（`cargo_subcommand_background_argv`）既不读缓存也不写缓存——命中/写入语义完全落在前台。
 - **Docker 同步工具沙盒模式**（`sync_default_tool_sandbox_mode = "docker"`）下拒绝：沙盒包装需走宿主 `run_command` 路径，返回 `invalid_args` 提示改用宿主模式。
 - 新增支持工具 = 在装配表登记一个 `(program, args)` 装配函数 + 参数类型加 `async` 字段；白名单仍是独立的运行时闸门。
+- **长驻进程占名额**：后台任务在终态前一直占用一个 `background_job_max_concurrent` 名额，
+  故 `cargo_run`（常启动 dev server 之类）在取消 / 超时 / TTL 前不会释放；需要并发多个 job 时须把
+  `background_job_max_concurrent` 与 `background_job_max_queued` 一起评估。
 
 ---
 
@@ -229,8 +236,8 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 
-`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，
-  须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。
+`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因装配表扩到 cargo 家族 / `pytest_run` 而放宽）：要用这些工具的后台执行，
+  须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "cargo_clippy"]`。
   默认不含它们是为保持既有部署行为不变（总开关默认 `true`，但模型仍须显式传 `async=true` 才走后台）。
 
 ---
@@ -255,7 +262,8 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
   - [ ] Client：`parser_v2.rs` / `sse_dispatch/types.rs` + `cargo test golden_ag_ui_v2_parser_matches_expected`
   - [ ] `docs/SSE协议.md` 控制面变体一览与 `tool_result` 字段表
 - HTTP 新端点：`docs/命令行契约.md` / OpenAPI 同步；错误码表同步。
-- 工具契约：`docs/工具说明.md`（`run_command` / `cargo_test` / `pytest_run` 的 `async`）、工具 JSON Schema（`tool_parameters_schema_value::<…>` 自动含新字段）。
+- 工具契约：`docs/工具说明.md`（`run_command` / `cargo_check` / `cargo_test` / `cargo_clippy` / `cargo_run` / `pytest_run` 的 `async`）、
+  工具 JSON Schema（`tool_parameters_schema_value::<…>` 自动含新字段）。
 
 ---
 
@@ -264,7 +272,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | 面 | 后端 | Client |
 |----|------|--------|
 | 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`run_command_dispatch_async`（`cm_tools/tools/mod.rs`）/ `run_command/async_invocation.rs` | 参数表单 |
-| 装配表（`cargo_test` / `pytest_run`） | `tool_registry/execute/background_job.rs`（`background_async_gate` 门闩 + `background_async_argv_assembler` 装配表 + `assemble_background_job_spawn` + `launch_background_job` 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs`（`AssembledCommand` + `command_program_and_args`） | 参数表单（`async`） |
+| 装配表（`cargo_check` / `cargo_test` / `cargo_clippy` / `cargo_run` / `pytest_run`） | `tool_registry/execute/background_job.rs`（`background_async_gate` 门闩 + `background_async_argv_assembler` 装配表 + `assemble_background_job_spawn` + `launch_background_job` 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs`（`AssembledCommand` + `command_program_and_args`） | 参数表单（`async`） |
 | job 注册表 + worker | 新模块（建议 `src/jobs/tool_jobs/`，复用 `subprocess_session`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |

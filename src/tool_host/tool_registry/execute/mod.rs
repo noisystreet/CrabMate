@@ -268,6 +268,10 @@ mod allowlist_scope_tests;
 mod read_dir_gate_tests;
 
 #[cfg(test)]
+#[path = "execute_background_async_tests.rs"]
+mod background_async_tests;
+
+#[cfg(test)]
 #[path = "execute_run_command_allowed_roots_tests.rs"]
 mod run_command_allowed_roots_tests;
 

@@ -14,6 +14,12 @@ pub struct CargoCommonCliArgs {
     pub package: Option<String>,
     pub bin: Option<String>,
     pub features: Option<String>,
+    /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
+    /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
+    /// 需 `[tool_registry] background_jobs_enabled` 且该工具（`cargo_check` / `cargo_clippy`）
+    /// 在 `background_job_async_tools` 白名单内。
+    #[serde(rename = "async")]
+    pub async_: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
@@ -40,6 +46,13 @@ pub struct CargoRunArgs {
     pub bin: Option<String>,
     pub features: Option<String>,
     pub args: Option<Vec<String>>,
+    /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
+    /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
+    /// 需 `[tool_registry] background_jobs_enabled` 且 `cargo_run` 在 `background_job_async_tools` 白名单内。
+    /// `cargo run` 常是长期运行的程序：后台发起后请用 `background_job_wait` 等到终态或命中日志，
+    /// 不要反复 `background_job status` 轮询。
+    #[serde(rename = "async")]
+    pub async_: Option<bool>,
 }
 
 /// `rust_analyzer` 入参：`action` 选择器 + 各动作字段的并集（按 action 取用，多余字段被忽略）。
