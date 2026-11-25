@@ -237,7 +237,7 @@ fn openapi_components_schemas_workspace_git() -> Value {
     json!({
         "WorkspaceGitStatusResponse": {
             "type": "object",
-            "required": ["state", "computed_at_unix", "source"],
+            "required": ["state", "untracked_mode", "computed_at_unix", "source"],
             "properties": {
                 "state": {
                     "type": "string",
@@ -269,8 +269,47 @@ fn openapi_components_schemas_workspace_git() -> Value {
                         "total": { "type": "integer" }
                     }
                 },
+                "files": {
+                    "type": "object",
+                    "required": ["items", "truncated", "limit"],
+                    "description": "未提交改动的文件清单；仅 ?files=true 且 state=ok 时出现，\\
+                                  字段缺失即「本次没要列表 / 没有列表可给」",
+                    "properties": {
+                        "items": {
+                            "type": "array",
+                            "items": { "$ref": "#/components/schemas/WorkspaceGitFileEntry" }
+                        },
+                        "truncated": {
+                            "type": "boolean",
+                            "description": "为真时 items 只是前 limit 条，counts.total 才是全量"
+                        },
+                        "limit": { "type": "integer" }
+                    }
+                },
+                "untracked_mode": {
+                    "type": "string",
+                    "enum": ["folded"],
+                    "description": "本轮取数口径；当前恒为 folded，\\
+                                  将来若出 --untracked-files=all 会新增取值且 counts 语义随之改变"
+                },
                 "computed_at_unix": { "type": "integer", "format": "int64" },
                 "source": { "type": "string", "enum": ["probe", "cache", "stale_cache"] }
+            }
+        },
+        "WorkspaceGitFileEntry": {
+            "type": "object",
+            "required": ["path", "kind", "staged", "unstaged", "untracked", "conflicted"],
+            "description": "一条未提交改动 = 一条 porcelain v2 记录；四个布尔与 counts 四桶一一对应",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "工作区根相对路径，从不带引号或转义；折叠目录的尾斜杠已去掉"
+                },
+                "kind": { "type": "string", "enum": ["file", "dir"] },
+                "staged": { "type": "boolean" },
+                "unstaged": { "type": "boolean" },
+                "untracked": { "type": "boolean" },
+                "conflicted": { "type": "boolean" }
             }
         }
     })

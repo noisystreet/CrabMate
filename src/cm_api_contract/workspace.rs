@@ -269,11 +269,16 @@ pub struct WorkspaceChangelogResponse {
 }
 
 /// `GET /workspace/git` 查询参数：`refresh=true` 只跳过缓存读（仍回写缓存）。
+///
+/// `files=true` 才返回文件清单：侧栏高频轮询用不到列表，默认不在响应体里搬它。
+/// 两条参数互不影响（`refresh` 管时效，`files` 管体积）。
 #[derive(Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceGitQuery {
     #[serde(default)]
     pub refresh: Option<bool>,
+    #[serde(default)]
+    pub files: Option<bool>,
 }
 
 /// `GET /workspace/git` 的可用性状态。
@@ -318,6 +323,68 @@ pub struct WorkspaceGitCounts {
     pub total: u32,
 }
 
+/// 清单条目的节点类型。
+///
+/// git 会把整个未跟踪目录折叠成**一条**带尾斜杠的记录（`? newdir/`、`? ./`），
+/// 与普通文件记录混在一张列表里；不给类型判别，客户端只能靠尾斜杠猜，
+/// 而 `path` 已按契约去掉尾斜杠（见 [`WorkspaceGitFileEntry::path`]）。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceGitFileKind {
+    File,
+    /// git 折叠的未跟踪目录（**不是**目录下每个文件各一条）。
+    Dir,
+}
+
+/// 未跟踪口径（本条投影的取数模式）。
+///
+/// 当前服务端恒为 [`WorkspaceGitUntrackedMode::Folded`]（= `--untracked-files=normal`，
+/// 与 `counts.untracked` 同口径）。回显它是为了让客户端明确「这轮数字是按哪种口径数的」，
+/// 将来若新增 `all`（目录展开成文件，`counts` 语义会变）也不会被误当成同一种。
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceGitUntrackedMode {
+    /// 未跟踪目录折叠成一条 `kind=dir` 记录。
+    #[default]
+    Folded,
+}
+
+/// 单条未提交改动 = **一条** `--porcelain=v2` 记录。
+///
+/// 四个布尔与 [`WorkspaceGitCounts`] 的四个桶**一一对应**：同一文件可同时
+/// staged 与 unstaged（`XY = MM`），此时两条布尔同时为 `true` 而仍只占一条记录。
+/// 未截断时「各桶求和 == `items.len()` == `counts.total`」是一条被单测锁住的不变式。
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceGitFileEntry {
+    /// 工作区根**相对**路径，**从不**带引号 / 转义（服务端取数时已钉死 `core.quotePath=false` + `-z`）。
+    ///
+    /// 归一规则（进契约，勿随意改）：`newdir/` → `newdir`（`kind=dir`）、`./` → `.`（`kind=dir`）。
+    pub path: String,
+    pub kind: WorkspaceGitFileKind,
+    /// index（暂存区）相对 HEAD 有改动：`XY` 的 `X != '.'`。
+    pub staged: bool,
+    /// 工作树相对 index 有改动：`Y != '.'`。
+    pub unstaged: bool,
+    /// `?` 记录。
+    pub untracked: bool,
+    /// `u` 记录（未解决的合并冲突）。
+    pub conflicted: bool,
+}
+
+/// `GET /workspace/git?files=true` 的文件清单。
+///
+/// **`truncated` 必须与 `limit` 一起读**：为真时 `items` 只是前 `limit` 条，
+/// `counts.total` 才是全量；此时不承诺「哪 N 条」跨次稳定。未截断时 `items` 按
+/// `path` 字节序升序，完全确定。
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceGitFileList {
+    pub items: Vec<WorkspaceGitFileEntry>,
+    /// 是否因 `limit` 截断（`counts.total > items.len()`）。
+    pub truncated: bool,
+    /// 本次生效的条数上限，回显给客户端写「仅显示前 N 条」，不必写死数字。
+    pub limit: u32,
+}
+
 /// 响应值的来源，替代 `cached` + `stale` 两个布尔（后者存在 `stale=true` 而 `cached=false` 的非法组合）。
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -354,6 +421,13 @@ pub struct WorkspaceGitStatusResponse {
     pub dirty: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub counts: Option<WorkspaceGitCounts>,
+    /// 未提交改动的文件清单；**仅** `?files=true` 且 `state=ok` 时出现。
+    ///
+    /// 字段缺失即「本次没要列表 / 没有列表可给」（不可用态），客户端不要据此推断工作区干净。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<WorkspaceGitFileList>,
+    /// 本轮取数用的未跟踪口径（当前恒为 `folded`）。与 `state` 无关，恒存在。
+    pub untracked_mode: WorkspaceGitUntrackedMode,
     /// 上次**真实探测**完成的服务端 unix 秒；命中缓存时不推进。
     pub computed_at_unix: u64,
     pub source: WorkspaceGitSource,

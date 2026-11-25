@@ -91,7 +91,7 @@
 | [web_api_integration.md](web_api_integration.md) | Web API 第三方集成：架构备忘与增强方向 |
 | [web_theme_presets.md](web_theme_presets.md) | Web 前端：多套预设主题（扩展 `data-theme`） |
 | [web_tui_stream_to_opencode_style.md](web_tui_stream_to_opencode_style.md) | Web 聊天：OpenCode / OpenClaw 式流式跟底演进 |
-| [workspace_git_status_projection.md](workspace_git_status_projection.md) | #1457：`/workspace/git` 只读 git 状态投影（四态 + 脏摘要；**设计定稿、未实现**） |
+| [workspace_git_status_projection.md](workspace_git_status_projection.md) | #1457 / #1498：`/workspace/git` 只读 git 状态投影（四态 + 脏摘要 + `?files=true` 文件清单；**已实施**，增补见该文 §12） |
 
 ## 8. 工程 / 基础设施（8）
 

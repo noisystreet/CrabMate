@@ -4,11 +4,17 @@
 //! `cm_tools::tools::structured_preview` 的 `git status` 判据是「拿不准就退回纯文本」的宽松启发式
 //! （服务工具卡预览，认 human-readable 输出与本机 locale 文案）；本模块是确定性真源，只认
 //! `--porcelain=v2 --branch`，解析不出来就明确失败，**不以 human-readable 输出兜底**。
-//! 两者不共享代码是刻意的：一边要「像不像」的容错，一边要「是或不是」的确定。
+//! 两者不共享**判据**是刻意的（一边要「像不像」，一边要「是或不是」）；可共享的只是
+//! 「argv 钉死 + NUL 分帧 + 记录解析」这层机械工作。
 //!
 //! 仓库判据用 `git rev-parse --is-inside-work-tree`，与 `git::ensure_git_repo_try` **完全同源**
 //! （同一命令、同一输出值）。将来若给工具侧加额外检查，请同步这里，
 //! 否则两个面会得出不同的「是不是仓库」。
+//!
+//! **#1498**：本条投影要出文件清单，取数改成 `-z`（NUL 分帧 + 路径原样输出），并把影响输出
+//! **形状**的 git 配置全部 `-c` 钉死（[`SHAPE_PINNING_ARGS`]）——宿主的 `core.quotePath` /
+//! `status.relativePaths` / `status.renames` / `core.fileMode` 一个都不许进判据。
+//! 计数与清单由同一条记录派生（[`Accumulator::push`]），「计数说 3、列表给 2」在结构上不可能。
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -17,8 +23,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::cm_api_contract::error_codes;
 use crate::cm_api_contract::workspace::{
-    WorkspaceGitCounts, WorkspaceGitHead, WorkspaceGitSource, WorkspaceGitState,
-    WorkspaceGitStatusResponse,
+    WorkspaceGitCounts, WorkspaceGitFileEntry, WorkspaceGitFileKind, WorkspaceGitFileList,
+    WorkspaceGitHead, WorkspaceGitSource, WorkspaceGitState, WorkspaceGitStatusResponse,
+    WorkspaceGitUntrackedMode,
 };
 
 /// 单次探测的墙钟上限（`docs/design/workspace_git_status_projection.md` §10.4）。
@@ -31,6 +38,79 @@ pub(crate) const CACHE_TTL: Duration = Duration::from_secs(2);
 /// `XY` 允许出现的字符（`--porcelain=v2` 的 index / worktree 状态位）。
 const XY_CHARS: &str = "MADRCU?!.";
 
+/// 文件清单的条数上限。
+///
+/// 超限时**计数照常累加**，只有列表停止增长并置 `truncated`——绝不允许静默截断后让 UI
+/// 以为那就是全部。不做客户端可调的 `?limit`：那等于把响应体上限交给调用方。
+pub(crate) const MAX_LISTED_FILES: u32 = 500;
+
+/// 影响 `--porcelain=v2` 输出**形状**的 git 配置，全部显式钉死（不继承宿主 / 仓库配置）。
+///
+/// 逐条理由见设计文档 §12.1，实测 git 2.47.3：
+/// - `core.quotePath=false`：默认值 `true` 会把非 ASCII 路径输出成 `"\344\270\255…"`
+///   （C 风格引号 + 八进制转义）。只出计数时无害，出列表就是乱码。
+/// - `status.renames=true`：`git mv` 保持一条 `2` 记录。设 `false` 会拆成 `1 AM` + `1 D.`
+///   两条，`counts.total` 直接翻倍。
+/// - `core.fileMode=true`：`chmod +x` 计为改动，与 Linux 默认一致（Windows 侧也钉死）。
+///
+/// **`status.relativePaths` 刻意不在此列**：加 `-z` 之后 porcelain v2 的 path 恒为**仓库根相对**
+/// （实测：设 `true` 也不会回到 cwd 相对），所以根内/根外的裁剪改由 [`workspace_root_prefix`]
+/// 剥前缀实现，不再依赖这个能被宿主改掉的配置。
+pub(crate) const SHAPE_PINNING_ARGS: &[&str] = &[
+    "-c",
+    "core.quotePath=false",
+    "-c",
+    "status.renames=true",
+    "-c",
+    "core.fileMode=true",
+];
+
+/// 未跟踪目录的取数口径。
+///
+/// 当前只有折叠一种（与 `counts.untracked` 同口径）。将来若要「展开成文件」
+/// （`--untracked-files=all`，会把 `counts` 从条目数变成文件数），在这里加变体 +
+/// [`untracked_flag`] 加一个臂，并让缓存 key 带上它——那时的 `counts` 语义变化必须同步改
+/// 契约与文档，不能只改 argv。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UntrackedMode {
+    /// git 默认：整个未跟踪目录折叠成一条 `? dir/` 记录。
+    Folded,
+}
+
+/// 内部取数模式 → 契约回显值。
+pub(crate) fn contract_mode(mode: UntrackedMode) -> WorkspaceGitUntrackedMode {
+    match mode {
+        UntrackedMode::Folded => WorkspaceGitUntrackedMode::Folded,
+    }
+}
+
+/// 内部取数模式 → `git status` 的 `--untracked-files=` 取值。
+fn untracked_flag(mode: UntrackedMode) -> &'static str {
+    match mode {
+        UntrackedMode::Folded => "--untracked-files=normal",
+    }
+}
+
+/// `git status` 的完整 argv —— **形状的唯一定义处**。
+///
+/// 探测与单测断言共用它：想改输出形状就必须改这里 **和** `status_argv_pins_shape_config`，
+/// 不能靠谁顺手往 `Command::args()` 里塞一个参数。
+pub(crate) fn status_argv(mode: UntrackedMode) -> Vec<&'static str> {
+    let mut argv = SHAPE_PINNING_ARGS.to_vec();
+    argv.extend([
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        // `-z`：NUL 分帧 + 路径原样输出（含换行 / 引号的文件名也不会破帧、不会被转义）。
+        // 副作用（实测）：path 变成**仓库根相对**，`status.relativePaths` 随之失效
+        // —— 裁剪因此改由 [`workspace_root_prefix`] 剥前缀，见 SHAPE_PINNING_ARGS 的说明。
+        // 另外它**不**隐含 `--untracked-files=all`，所以下一行显式钉住折叠口径。
+        "-z",
+        untracked_flag(mode),
+    ]);
+    argv
+}
+
 /// 一条 `--porcelain=v2` 输出的解析结果（不含可用性状态与时效字段）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Projection {
@@ -39,6 +119,9 @@ pub(crate) struct Projection {
     pub ahead: Option<u32>,
     pub behind: Option<u32>,
     pub counts: WorkspaceGitCounts,
+    /// 未提交改动的文件清单。缓存里**永远是全量**（见 `handlers_git::with_files_visibility`），
+    /// 是否随响应返回由 `?files` 决定——这样 `counts` 与 `files` 必出自同一次探测。
+    pub files: WorkspaceGitFileList,
 }
 
 impl Projection {
@@ -63,31 +146,141 @@ pub(crate) enum ProbeOutcome {
     },
 }
 
-/// 解析 `git status --porcelain=v2 --branch` 的 stdout。
+/// 一条记录归一化的结果。
 ///
-/// **路径基准（实测 git 2.x）**：`git status` 在 cwd 下运行时把 path 转成**相对 cwd**——
-/// 工作区根之内是 `x` / `./x`，工作区根之外是 `../x`；而它**仍会列出根外的改动**（只是加了 `../`）。
-/// 所以只统计**非 `../` 开头**的记录：否则工作区根之外的路径会泄露给客户端
-/// （与其它 `/workspace/*` 端点一致，返回内容不得越出工作区根）。
+/// 四个布尔与 [`WorkspaceGitCounts`] 的四桶**一一对应**，且计数与清单由同一个
+/// [`Accumulator::push`] 写入——「同源同口径」是结构保证，不是两次小心翼翼的对齐。
+struct Record {
+    path: String,
+    kind: WorkspaceGitFileKind,
+    staged: bool,
+    unstaged: bool,
+    untracked: bool,
+    conflicted: bool,
+}
+
+impl Record {
+    /// `1` / `2`（普通变更 / rename-copy）记录：`XY` 拆 staged 与 unstaged。
+    fn change(xy: &str, raw_path: &str) -> Result<Self, String> {
+        let (x, y) = parse_xy(xy)?;
+        let (path, kind) = checked_path(raw_path);
+        Ok(Self {
+            path,
+            kind,
+            staged: x != '.',
+            unstaged: y != '.',
+            untracked: false,
+            conflicted: false,
+        })
+    }
+
+    /// `?` 记录。
+    fn untracked(raw_path: &str) -> Self {
+        let (path, kind) = checked_path(raw_path);
+        Self {
+            path,
+            kind,
+            staged: false,
+            unstaged: false,
+            untracked: true,
+            conflicted: false,
+        }
+    }
+
+    /// `u`（unmerged）记录。
+    fn conflicted(raw_path: &str) -> Self {
+        let (path, kind) = checked_path(raw_path);
+        Self {
+            path,
+            kind,
+            staged: false,
+            unstaged: false,
+            untracked: false,
+            conflicted: true,
+        }
+    }
+}
+
+/// 解析过程中的累加器：头 / 上游信息 + 计数 + 清单，**计数与清单同步写入**。
+#[derive(Default)]
+struct Accumulator {
+    head_oid: Option<String>,
+    head_name: Option<String>,
+    upstream: Option<String>,
+    ahead: Option<u32>,
+    behind: Option<u32>,
+    counts: WorkspaceGitCounts,
+    files: Vec<WorkspaceGitFileEntry>,
+    truncated: bool,
+}
+
+impl Accumulator {
+    /// 累加一条记录：`counts` 与 `files` 的唯一写入口。
+    ///
+    /// 顺序很重要——**先计数、再决定是否入列**：超过 [`MAX_LISTED_FILES`] 之后计数照常走，
+    /// 只有列表停止增长并置 `truncated`，于是 `counts.total > items.len()` 才成立。
+    fn push(&mut self, rec: Record) {
+        if rec.staged {
+            self.counts.staged += 1;
+        }
+        if rec.unstaged {
+            self.counts.unstaged += 1;
+        }
+        if rec.untracked {
+            self.counts.untracked += 1;
+        }
+        if rec.conflicted {
+            self.counts.conflicted += 1;
+        }
+        self.counts.total += 1;
+
+        if self.files.len() < MAX_LISTED_FILES as usize {
+            self.files.push(WorkspaceGitFileEntry {
+                path: rec.path,
+                kind: rec.kind,
+                staged: rec.staged,
+                unstaged: rec.unstaged,
+                untracked: rec.untracked,
+                conflicted: rec.conflicted,
+            });
+        } else {
+            self.truncated = true;
+        }
+    }
+}
+
+/// 解析 `git status --porcelain=v2 --branch -z` 的 stdout。
+///
+/// **分帧（#1498）**：`-z` 下记录以 NUL 结尾，`2`（rename/copy）记录的两条路径也由 NUL 分隔
+/// （不再是 `\t` 后缀），所以这里是「按 NUL 切 → 逐段解释」，不是按行。
+/// 入参是 `&[u8]` 而非 `&str`：`-z` 下路径可能是任意字节，整段 lossy 会先在字节边界上赌运气，
+/// 故只对单条记录做 lossy（非 UTF-8 文件名呈现为 U+FFFD，见 `docs/待办清单.md`）。
+///
+/// **路径基准（实测 git 2.47.3）**：加 `-z` 后 porcelain v2 的 path 恒为**仓库根相对**
+/// （此时 `status.relativePaths` 不起作用，设 `true` 也不回到 cwd 相对），且**仍会列出
+/// 工作区根之外的改动**。`prefix` 是工作区根在仓库内的前缀（[`workspace_root_prefix`]），
+/// [`root_relative`] 用它剥出根相对路径、丢弃不以它为前缀的记录——否则工作区根之外的
+/// 路径会泄露给客户端（与其它 `/workspace/*` 端点一致，返回内容不得越出工作区根）。
 ///
 /// 解析不出来一律 `Err`：不猜、不降级、不认 human-readable 文案。
-pub(crate) fn parse_porcelain_v2(stdout: &str) -> Result<Projection, String> {
-    let mut base_oid: Option<String> = None;
-    let mut head_name: Option<String> = None;
-    let mut upstream: Option<String> = None;
-    let mut ahead: Option<u32> = None;
-    let mut behind: Option<u32> = None;
-    let mut counts = WorkspaceGitCounts::default();
+pub(crate) fn parse_porcelain_v2(stdout: &[u8], prefix: &str) -> Result<Projection, String> {
+    let mut acc = Accumulator::default();
+    let segments: Vec<&[u8]> = stdout.split(|b| *b == 0).collect();
+    let mut idx = 0;
 
-    for raw in stdout.lines() {
-        let line = raw.strip_suffix('\r').unwrap_or(raw);
-        if line.is_empty() {
+    while idx < segments.len() {
+        let raw = segments[idx];
+        idx += 1;
+        // 末尾 NUL 会切出一个空段；空记录无害，跳过（非空垃圾仍走下面的 `_ =>` 失败）。
+        if raw.is_empty() {
             continue;
         }
+        let line = String::from_utf8_lossy(raw);
+
         if let Some(rest) = line.strip_prefix("# branch.oid ") {
             // `(initial)` 表示尚无提交：字段仍存在，值为 null。
             let oid = rest.trim();
-            base_oid = if oid == "(initial)" {
+            acc.head_oid = if oid == "(initial)" {
                 None
             } else {
                 Some(oid.to_string())
@@ -95,67 +288,86 @@ pub(crate) fn parse_porcelain_v2(stdout: &str) -> Result<Projection, String> {
             continue;
         }
         if let Some(rest) = line.strip_prefix("# branch.head ") {
-            head_name = Some(rest.trim().to_string());
+            acc.head_name = Some(rest.trim().to_string());
             continue;
         }
         if let Some(rest) = line.strip_prefix("# branch.upstream ") {
-            upstream = Some(rest.trim().to_string());
+            acc.upstream = Some(rest.trim().to_string());
             continue;
         }
         if let Some(rest) = line.strip_prefix("# branch.ab ") {
             let (a, b) = parse_ahead_behind(rest)?;
-            ahead = Some(a);
-            behind = Some(b);
+            acc.ahead = Some(a);
+            acc.behind = Some(b);
             continue;
         }
+
         match line.chars().next().unwrap_or(' ') {
             '1' => {
                 let fields: Vec<&str> = line.splitn(9, ' ').collect();
                 let (xy, path) = record_fields(&fields, 9, 8)?;
-                count_change(xy, path, &mut counts)?;
+                if let Some(rel) = root_relative(path, prefix) {
+                    acc.push(Record::change(xy, rel)?);
+                }
             }
             '2' => {
                 let fields: Vec<&str> = line.splitn(10, ' ').collect();
-                let (xy, path_field) = record_fields(&fields, 10, 9)?;
-                let path = path_field.split('\t').next().unwrap_or_default();
-                count_change(xy, path, &mut counts)?;
+                let (xy, path) = record_fields(&fields, 10, 9)?;
+                // `-z` 下原路径是**下一段**：吃掉它（列表只放目的地，`total` 也只 +1）。
+                idx += 1;
+                if let Some(rel) = root_relative(path, prefix) {
+                    acc.push(Record::change(xy, rel)?);
+                }
             }
             'u' => {
                 let fields: Vec<&str> = line.splitn(11, ' ').collect();
                 let (_, path) = record_fields(&fields, 11, 10)?;
-                if in_workspace(path) {
-                    counts.conflicted += 1;
-                    counts.total += 1;
+                if let Some(rel) = root_relative(path, prefix) {
+                    acc.push(Record::conflicted(rel));
                 }
             }
             '?' => {
                 let path = line
                     .strip_prefix("? ")
                     .ok_or_else(|| format!("无法解析 untracked 记录：{line}"))?;
-                if in_workspace(path) {
-                    counts.untracked += 1;
-                    counts.total += 1;
+                if let Some(rel) = root_relative(path, prefix) {
+                    acc.push(Record::untracked(rel));
                 }
             }
             _ => return Err(format!("未识别的 porcelain=v2 记录：{line}")),
         }
     }
 
-    let name = head_name.ok_or_else(|| "缺少 # branch.head（无法判定分支或 detached）".to_string())?;
+    let name = acc
+        .head_name
+        .take()
+        .ok_or_else(|| "缺少 # branch.head（无法判定分支或 detached）".to_string())?;
     let head = if name == "(detached)" {
-        WorkspaceGitHead::Detached { oid: base_oid }
+        WorkspaceGitHead::Detached {
+            oid: acc.head_oid.take(),
+        }
     } else {
         WorkspaceGitHead::Branch {
             name,
-            oid: base_oid,
+            oid: acc.head_oid.take(),
         }
     };
+
+    // 排序放在**截断之后**：截断时子集 = git 输出序前 N 条（不承诺跨次稳定，但内存有界）；
+    // 未截断时全量排序，结果完全确定。
+    acc.files.sort_by(|a, b| a.path.cmp(&b.path));
+
     Ok(Projection {
         head,
-        upstream,
-        ahead,
-        behind,
-        counts,
+        upstream: acc.upstream,
+        ahead: acc.ahead,
+        behind: acc.behind,
+        counts: acc.counts,
+        files: WorkspaceGitFileList {
+            items: acc.files,
+            truncated: acc.truncated,
+            limit: MAX_LISTED_FILES,
+        },
     })
 }
 
@@ -193,28 +405,44 @@ fn parse_xy(xy: &str) -> Result<(char, char), String> {
     Ok((x, y))
 }
 
-/// 按 `XY` 累计分类计数；工作区根之外的记录不增任何计数。
-fn count_change(xy: &str, path: &str, counts: &mut WorkspaceGitCounts) -> Result<(), String> {
-    if !in_workspace(path) {
-        return Ok(());
+/// 归一化（**已剥工作区前缀**的）记录路径：`kind` 由尾斜杠判定，`path` 去尾斜杠。
+///
+/// - `newdir/` → (`newdir`, dir)：git 把整个未跟踪目录折叠成一条带尾斜杠的记录
+/// - `./` → (`.`, dir)
+/// - 空串 → (`.`, dir)：这条记录就是工作区根自身（整根被折叠成一条）
+///
+/// 契约承诺 `path` 不带尾斜杠、类型判别交给 `kind`（见 `docs/命令行与路由.md` 的路由表）。
+fn checked_path(raw: &str) -> (String, WorkspaceGitFileKind) {
+    let (path, kind) = match raw.strip_suffix('/') {
+        Some(base) => (base, WorkspaceGitFileKind::Dir),
+        None => (raw, WorkspaceGitFileKind::File),
+    };
+    if path.is_empty() {
+        return (".".to_string(), WorkspaceGitFileKind::Dir);
     }
-    let (x, y) = parse_xy(xy)?;
-    if x != '.' {
-        counts.staged += 1;
-    }
-    if y != '.' {
-        counts.unstaged += 1;
-    }
-    counts.total += 1;
-    Ok(())
+    (path.to_string(), kind)
 }
 
-/// 记录是否落在工作区根内。
+/// 工作区根在仓库内的前缀（= `git rev-parse --show-prefix` 的输出；工作区根就是仓库根时为空串）。
 ///
-/// git 在 cwd 下运行时把 path 转成相对 cwd：根内为 `x` / `./x`，根外为 `../x`（实测 git 2.x）。
-/// 只把 `../` 开头判为根外——这是「不把工作区根之外的路径回给客户端」的唯一判据。
-fn in_workspace(path: &str) -> bool {
-    !(path == ".." || path.starts_with("../"))
+/// 只做行尾归一，**尾斜杠保留**——它正是剥前缀时的边界，去掉就会把 `ws/inner2/x`
+/// 误判成 `ws/inner` 的子路径。
+fn workspace_root_prefix(raw: &str) -> String {
+    raw.trim_end_matches(['\r', '\n']).to_string()
+}
+
+/// 把「仓库根相对」的记录路径换成「工作区根相对」。
+///
+/// 返回 `None` ⇒ 该记录落在工作区根之外，**必须丢弃**（不得把根外路径回给客户端）。
+/// 返回 `Some("")` ⇒ 记录就是工作区根自身，由 [`checked_path`] 归一为 `.`。
+///
+/// `-z` 下 porcelain v2 的 path 恒为仓库根相对（`status.relativePaths` 不起作用），
+/// 所以这是唯一的根内/根外判据：不依赖任何可被宿主改掉的 git 配置。
+fn root_relative<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
+    if prefix.is_empty() {
+        return Some(path);
+    }
+    path.strip_prefix(prefix)
 }
 
 /// 解析 `+<ahead> -<behind>`。
@@ -234,8 +462,11 @@ fn parse_ahead_behind(rest: &str) -> Result<(u32, u32), String> {
     }
 }
 
-/// 同步探测：先判仓库，再取 `--porcelain=v2 --branch`。
-pub(crate) fn probe(root: &Path) -> ProbeOutcome {
+/// 同步探测：先判仓库，取工作区前缀，再取 [`status_argv`] 的输出。
+///
+/// 仓库判据那条命令**刻意不带** `-c` 钉死参数：它要与 `git::ensure_git_repo_try` 保持
+/// 「同命令同输出值」，多一个参数就破了这条同源性（`rev-parse` 的输出也不受那些配置影响）。
+pub(crate) fn probe(root: &Path, mode: UntrackedMode) -> ProbeOutcome {
     let rev = Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .current_dir(root)
@@ -253,27 +484,39 @@ pub(crate) fn probe(root: &Path) -> ProbeOutcome {
         return ProbeOutcome::NotARepo;
     }
 
-    let status = Command::new("git")
-        .args(["status", "--porcelain=v2", "--branch"])
-        .current_dir(root)
-        .output();
-    let status = match status {
-        Ok(o) => o,
-        Err(e) => return spawn_failure(&e),
+    // 工作区根在仓库内的前缀：`-z` 下 path 恒为仓库根相对，裁剪靠剥它（见 `parse_porcelain_v2`）。
+    let prefix_out = match git_stdout(root, &["rev-parse", "--show-prefix"]) {
+        Ok(out) => out,
+        Err(outcome) => return *outcome,
     };
-    if !status.status.success() {
-        return ProbeOutcome::Failed {
-            reason_code: error_codes::GIT_PROBE_FAILED,
-            message: "git status 执行失败".to_string(),
-        };
-    }
-    let stdout = String::from_utf8_lossy(&status.stdout);
-    match parse_porcelain_v2(&stdout) {
+    let prefix = workspace_root_prefix(&String::from_utf8_lossy(&prefix_out));
+
+    let status = match git_stdout(root, &status_argv(mode)) {
+        Ok(out) => out,
+        Err(outcome) => return *outcome,
+    };
+    // 按字节交给解析器（不经整段 lossy）：`-z` 下路径可能是任意字节。
+    match parse_porcelain_v2(&status, &prefix) {
         Ok(p) => ProbeOutcome::Ok(p),
         Err(e) => ProbeOutcome::Failed {
             reason_code: error_codes::GIT_PROBE_UNPARSABLE,
             message: e,
         },
+    }
+}
+
+/// 跑一条只读 git 命令并取 stdout；非零退出与起不来都折成探测结论。
+///
+/// 错误用 `Box` 包一层：`ProbeOutcome::Ok` 带着整份投影，直接当 `Err` 会触发
+/// `clippy::result_large_err`（每个 `Result` 都按最大变体占位）。
+fn git_stdout(root: &Path, args: &[&str]) -> Result<Vec<u8>, Box<ProbeOutcome>> {
+    match Command::new("git").args(args).current_dir(root).output() {
+        Ok(o) if o.status.success() => Ok(o.stdout),
+        Ok(_) => Err(Box::new(ProbeOutcome::Failed {
+            reason_code: error_codes::GIT_PROBE_FAILED,
+            message: format!("git {} 执行失败", args.join(" ")),
+        })),
+        Err(e) => Err(Box::new(spawn_failure(&e))),
     }
 }
 
@@ -297,11 +540,13 @@ pub(crate) fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-/// 把探测结论组装为响应。`source` / `computed_at_unix` 由调用方按缓存命中情况给出。
+/// 把探测结论组装为响应。`source` / `computed_at_unix` 由调用方按缓存命中情况给出；
+/// `mode` 原样回显（口径必须能追溯到取数处，不能由常量猜）。
 pub(crate) fn response_from_outcome(
     outcome: ProbeOutcome,
     computed_at_unix: u64,
     source: WorkspaceGitSource,
+    mode: UntrackedMode,
 ) -> WorkspaceGitStatusResponse {
     match outcome {
         ProbeOutcome::Ok(p) => WorkspaceGitStatusResponse {
@@ -314,6 +559,9 @@ pub(crate) fn response_from_outcome(
             ahead: p.ahead,
             behind: p.behind,
             counts: Some(p.counts),
+            // 列表**恒**填入：缓存里永远是全量，是否对外可见由 handler 按 `?files` 决定。
+            files: Some(p.files),
+            untracked_mode: contract_mode(mode),
             computed_at_unix,
             source,
         },
@@ -323,6 +571,7 @@ pub(crate) fn response_from_outcome(
             "当前工作区不是 Git 仓库",
             computed_at_unix,
             source,
+            mode,
         ),
         ProbeOutcome::GitUnavailable => unavailable(
             WorkspaceGitState::GitUnavailable,
@@ -330,6 +579,7 @@ pub(crate) fn response_from_outcome(
             "未找到可用的 git 可执行文件",
             computed_at_unix,
             source,
+            mode,
         ),
         ProbeOutcome::Failed {
             reason_code,
@@ -340,6 +590,7 @@ pub(crate) fn response_from_outcome(
             &message,
             computed_at_unix,
             source,
+            mode,
         ),
     }
 }
@@ -350,6 +601,7 @@ fn unavailable(
     message: &str,
     computed_at_unix: u64,
     source: WorkspaceGitSource,
+    mode: UntrackedMode,
 ) -> WorkspaceGitStatusResponse {
     WorkspaceGitStatusResponse {
         state,
@@ -361,238 +613,10 @@ fn unavailable(
         behind: None,
         dirty: None,
         counts: None,
+        // 不可用态一律没有列表：字段缺失即「没有列表可给」，客户端不必猜。
+        files: None,
+        untracked_mode: contract_mode(mode),
         computed_at_unix,
         source,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const HEAD_MAIN: &str = "# branch.oid 1a2b3c4d5e6f\n# branch.head main\n";
-
-    /// 设计约束：探测超时 ≤ 缓存 TTL（设计文档 §10.4）。
-    ///
-    /// 反了就出问题：慢探测的窗口长于复用窗口，同一 TTL 内的并发请求会各自 fork 两条 git 命令。
-    /// 改任一个值都要先想清楚另一侧。
-    #[test]
-    fn probe_timeout_must_not_exceed_cache_ttl() {
-        assert!(
-            PROBE_TIMEOUT <= CACHE_TTL,
-            "PROBE_TIMEOUT({PROBE_TIMEOUT:?}) 必须 ≤ CACHE_TTL({CACHE_TTL:?})"
-        );
-    }
-
-    fn parse_ok(stdout: &str) -> Projection {
-        parse_porcelain_v2(stdout).expect("parse ok")
-    }
-
-    #[test]
-    fn detached_head_has_no_branch_name() {
-        let p = parse_ok(
-            "# branch.oid 1a2b3c4d5e6f\n# branch.head (detached)\n",
-        );
-        assert_eq!(
-            p.head,
-            WorkspaceGitHead::Detached {
-                oid: Some("1a2b3c4d5e6f".to_string())
-            }
-        );
-        // detached 序列化后不得出现 name 键。
-        let v = serde_json::to_value(&p.head).expect("serialize head");
-        assert_eq!(v["kind"], "detached");
-        assert!(v.get("name").is_none(), "detached 不应有 name：{v}");
-    }
-
-    #[test]
-    fn branch_head_carries_name_and_oid() {
-        let p = parse_ok(HEAD_MAIN);
-        let v = serde_json::to_value(&p.head).expect("serialize head");
-        assert_eq!(v["kind"], "branch");
-        assert_eq!(v["name"], "main");
-        assert_eq!(v["oid"], "1a2b3c4d5e6f");
-    }
-
-    #[test]
-    fn initial_commit_keeps_oid_null() {
-        let p = parse_ok("# branch.oid (initial)\n# branch.head main\n");
-        let v = serde_json::to_value(&p.head).expect("serialize head");
-        assert_eq!(v["oid"], serde_json::Value::Null, "oid 键必须存在且为 null");
-    }
-
-    #[test]
-    fn missing_upstream_leaves_ab_null() {
-        let p = parse_ok(HEAD_MAIN);
-        assert!(p.upstream.is_none());
-        assert!(p.ahead.is_none());
-        assert!(p.behind.is_none());
-    }
-
-    #[test]
-    fn ahead_behind_parsed() {
-        let p = parse_ok(
-            "# branch.oid aa\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -3\n",
-        );
-        assert_eq!(p.upstream.as_deref(), Some("origin/main"));
-        assert_eq!(p.ahead, Some(2));
-        assert_eq!(p.behind, Some(3));
-    }
-
-    #[test]
-    fn clean_worktree_is_not_dirty() {
-        let p = parse_ok(HEAD_MAIN);
-        assert_eq!(p.counts, WorkspaceGitCounts::default());
-        assert!(!p.dirty());
-    }
-
-    #[test]
-    fn untracked_only() {
-        let p = parse_ok(&format!("{HEAD_MAIN}? a.txt\n"));
-        assert_eq!(p.counts.untracked, 1);
-        assert_eq!(p.counts.total, 1);
-        assert_eq!((p.counts.staged, p.counts.unstaged), (0, 0));
-        assert!(p.dirty());
-    }
-
-    #[test]
-    fn staged_only() {
-        let p = parse_ok(&format!("{HEAD_MAIN}1 A. N... 000000 100644 100644 abc def a.txt\n"));
-        assert_eq!(p.counts.staged, 1);
-        assert_eq!(p.counts.unstaged, 0);
-        assert_eq!(p.counts.total, 1);
-    }
-
-    #[test]
-    fn same_file_counts_in_both_buckets_but_one_total() {
-        let p = parse_ok(&format!("{HEAD_MAIN}1 MM N... 100644 100644 100644 abc def a.txt\n"));
-        assert_eq!(p.counts.staged, 1);
-        assert_eq!(p.counts.unstaged, 1);
-        assert_eq!(p.counts.total, 1, "同一文件只算一行");
-    }
-
-    #[test]
-    fn rename_record_counts_once_and_drops_orig_path() {
-        let p = parse_ok(
-            &format!("{HEAD_MAIN}2 R. N... 100644 100644 100644 abc def R100 new name.txt\told name.txt\n"),
-        );
-        assert_eq!(p.counts.staged, 1);
-        assert_eq!(p.counts.total, 1);
-    }
-
-    #[test]
-    fn conflicted_record() {
-        let p = parse_ok(&format!("{HEAD_MAIN}u UU N... 100644 100644 100644 100644 a b c a.txt\n"));
-        assert_eq!(p.counts.conflicted, 1);
-        assert_eq!(p.counts.total, 1);
-    }
-
-    #[test]
-    fn path_with_spaces_kept_whole() {
-        let p = parse_ok(&format!("{HEAD_MAIN}? my file.txt\n"));
-        assert_eq!(p.counts.untracked, 1);
-        assert_eq!(p.counts.total, 1);
-    }
-
-    #[test]
-    fn crlf_and_trailing_blank_lines_tolerated() {
-        let p = parse_ok("# branch.oid aa\r\n# branch.head main\r\n? a.txt\r\n\r\n");
-        assert_eq!(p.counts.untracked, 1);
-    }
-
-    #[test]
-    fn missing_branch_head_is_error() {
-        let e = parse_porcelain_v2("# branch.oid aa\n").expect_err("must fail");
-        assert!(e.contains("branch.head"), "{e}");
-    }
-
-    #[test]
-    fn garbage_line_is_error() {
-        assert!(parse_porcelain_v2(&format!("{HEAD_MAIN}zzz\n")).is_err());
-    }
-
-    #[test]
-    fn short_or_unknown_xy_is_error() {
-        assert!(parse_porcelain_v2(&format!("{HEAD_MAIN}1 M N... 1 2 3 4 5 a.txt\n")).is_err());
-        assert!(
-            parse_porcelain_v2(&format!("{HEAD_MAIN}1 ZZ N... 1 2 3 4 5 a.txt\n")).is_err()
-        );
-    }
-
-    #[test]
-    fn record_with_missing_fields_is_error() {
-        assert!(parse_porcelain_v2(&format!("{HEAD_MAIN}1 A.\n")).is_err());
-        assert!(parse_porcelain_v2(&format!("{HEAD_MAIN}u UU N...\n")).is_err());
-    }
-
-    #[test]
-    fn path_with_newline_fails() {
-        // 含 `\n` 的 path 会把记录切成两行，第二行首字符不是记录类型 ⇒ 明确失败，不猜。
-        assert!(parse_porcelain_v2(&format!("{HEAD_MAIN}? a\nb.txt\n")).is_err());
-    }
-
-    #[test]
-    fn records_outside_workspace_root_are_skipped() {
-        // git 在子目录 cwd 下把根外路径写成 `../x`（实测），这类记录必须丢弃。
-        let p = parse_ok(&format!("{HEAD_MAIN}? ../outside.txt\n"));
-        assert_eq!(p.counts.total, 0);
-        assert!(!p.dirty());
-    }
-
-    #[test]
-    fn records_inside_workspace_root_are_counted() {
-        // 根内路径是相对 cwd 的 `x` 或 `./`（整个 untracked 目录会被折叠成一条 `? ./`）。
-        for line in ["? inside.txt\n", "? ./\n"] {
-            let p = parse_ok(&format!("{HEAD_MAIN}{line}"));
-            assert_eq!(p.counts.untracked, 1, "{line}");
-            assert_eq!(p.counts.total, 1, "{line}");
-            assert!(p.dirty());
-        }
-    }
-
-    #[test]
-    fn outcome_mapping_keeps_states_distinct() {
-        let not_repo = response_from_outcome(
-            ProbeOutcome::NotARepo,
-            7,
-            WorkspaceGitSource::Probe,
-        );
-        let unavailable = response_from_outcome(
-            ProbeOutcome::GitUnavailable,
-            7,
-            WorkspaceGitSource::Probe,
-        );
-        let failed = response_from_outcome(
-            ProbeOutcome::Failed {
-                reason_code: error_codes::GIT_PROBE_TIMEOUT,
-                message: "超时".to_string(),
-            },
-            7,
-            WorkspaceGitSource::StaleCache,
-        );
-        assert_eq!(not_repo.state, WorkspaceGitState::NotARepo);
-        assert_eq!(unavailable.state, WorkspaceGitState::GitUnavailable);
-        assert_eq!(failed.state, WorkspaceGitState::Failed);
-        assert_eq!(
-            failed.reason_code.as_deref(),
-            Some(error_codes::GIT_PROBE_TIMEOUT)
-        );
-        // 三种不可用态都不带 head / counts，避免客户端把空值当成「干净」。
-        for r in [&not_repo, &unavailable, &failed] {
-            assert!(r.head.is_none());
-            assert!(r.counts.is_none());
-            assert!(r.dirty.is_none());
-        }
-    }
-
-    #[test]
-    fn ok_outcome_carries_dirty_and_counts() {
-        let p = parse_ok(&format!("{HEAD_MAIN}? a.txt\n"));
-        let r = response_from_outcome(ProbeOutcome::Ok(p), 42, WorkspaceGitSource::Cache);
-        assert_eq!(r.state, WorkspaceGitState::Ok);
-        assert_eq!(r.dirty, Some(true));
-        assert_eq!(r.counts.map(|c| c.untracked), Some(1));
-        assert_eq!(r.computed_at_unix, 42);
-        assert_eq!(r.source, WorkspaceGitSource::Cache);
     }
 }

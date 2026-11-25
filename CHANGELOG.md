@@ -40,6 +40,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   tool-card's fuzzy `git status` heuristic (`structured_preview`), which must stay lenient for
   previews; both divergences are documented on both sides. Contract tag: `client-contract-v0.4.0`
   (marked after merge, not inside the feature PR).
+- **`GET /workspace/git?files=true` — list the dirty files, not just their counts (#1498).** The
+  projection used to stop at `counts` (`staged` / `unstaged` / `untracked` / `conflicted` /
+  `total`), so a sidebar could only say "3 uncommitted changes". `?files=true` now adds
+  **`files`** (`items` / `truncated` / `limit`=500) plus **`untracked_mode`** (`folded`), and it is
+  **opt-in**: without the flag the response body is unchanged. Each entry is one porcelain v2
+  record with `path` + `kind` (`file` / `dir`) + the four booleans, so `counts` and `items` are two
+  views of the same parse (`items.len() == counts.total` whenever `truncated` is false) — one
+  code path writes both, they cannot disagree. A folded untracked directory stays one `kind=dir`
+  entry (counts semantics untouched); a rename stays one entry; `truncated` is explicit rather
+  than a silent crop, and `counts.total` remains the full number. The cache always stores the
+  **full** list and `files` is stripped on the way out, so a plain request never poisons a later
+  `?files=true`. Contract tag: `client-contract-v0.5.0` (additive; mark **after**
+  `client-contract-v0.4.0`).
+
+### Fixed
+
+- **`/workspace/git` returned paths from outside the workspace root when `status.relativePaths`
+  was off (#1498).** The old root-vs-outside test was "path starts with `../`", which silently
+  depended on `git status` emitting cwd-relative paths. With `status.relativePaths=false`
+  (per-user or per-repo config) the paths become repo-root-relative, so `outside.txt` no longer
+  started with `../` and was counted as inside — `counts` inflated, and once a file list exists
+  it would have leaked concrete out-of-root paths. The projection now asks git for its own
+  ground truth (`rev-parse --show-prefix`) and crops by prefix, which no git config can move.
+  While there, the probe pins the remaining shape-affecting configs with `-c`
+  (`core.quotePath`, `status.renames`, `core.fileMode`) and reads `--porcelain=v2 --branch -z`:
+  the record framing becomes NUL-separated and paths come back verbatim, so non-ASCII, spaced,
+  quoted or newline-containing filenames survive intact (previously non-ASCII paths were
+  C-quoted with octal escapes, harmless for counts but garbage in a list).
+  `--untracked-files=normal` is spelled out explicitly: `-z` does **not** imply `-uall`, so the
+  `counts` semantics did not change.
 
 ### Changed
 

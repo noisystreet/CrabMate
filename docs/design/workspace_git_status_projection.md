@@ -168,8 +168,17 @@ v2 记录按**空格**分词，而 path 可含空格 ⇒ 必须「固定字段�
 | `? <path>` | 2 | 第 2 段起 | untracked +1 |
 | 空行 | — | — | 跳过 |
 
-不加 `-z`：NUL 分隔对含换行的文件名更严谨，但本投影只出计数不出列表，而含 `\n` 的路径会让
-「一行一记录」失效——故**遇到 path 含 `\n` 直接判 `GIT_PROBE_UNPARSABLE`**，不猜（见 §3.3）。
+**#1498 起加 `-z`**（原方案不加，那条理由已失效）：投影要出文件清单，而 porcelain v2 默认会用
+C 风格引号 + 八进制转义非 ASCII 路径（`"\344\270\255…"`），只出计数时无害、出列表就是乱码。
+`-z` 带来三件事，均已实测（git 2.47.3）：
+
+- 记录改为 **NUL 分帧**，`2`（rename/copy）记录的两条路径也由 NUL 分隔（不再是 `\t` 后缀）。
+- path **原样输出**（含换行 / 引号的文件名不再被转义），于是含 `\n` 的路径不必再判 UNPARSABLE。
+- path 基准变成**仓库根相对**，`status.relativePaths` 随之失效 ⇒ 根内裁剪改由
+  `git rev-parse --show-prefix` 剥前缀完成（见 §12.2）。
+
+**不变**：它**不**隐含 `--untracked-files=all`（untracked 目录仍折叠），所以 `counts` 口径一字未改；
+参数里仍显式写出 `--untracked-files=normal`，不赌版本行为。
 
 submodule 变更走 `1` / `2` 行，天然覆盖，**不写专用分支**。
 
@@ -191,7 +200,9 @@ submodule 变更走 `1` / `2` 行，天然覆盖，**不写专用分支**。
 - `# branch.head` 缺失 → `failed` / `GIT_PROBE_UNPARSABLE`（bare 仓库本就会被第一条命令判掉）。
 - `# branch.ab` 缺失 = 无 upstream（正常，不是错误）。
 - `XY` 长度不足 2 或字符不在 `MADRCU?!.` 内 → `GIT_PROBE_UNPARSABLE`。
-- `1` / `2` / `u` 行固定字段数不足、path 为空、path 含 `\n` → `GIT_PROBE_UNPARSABLE`。
+- `1` / `2` / `u` 行固定字段数不足 → `GIT_PROBE_UNPARSABLE`。
+  **#1498 起**：`-z` 下 path 可含 `\n`，不再据此失败；剥前缀后为空串是**合法**的「工作区根自身」
+  记录，归一为 `.`（`kind=dir`）。
 - **不以 human-readable 输出兜底**。locale 文案（`位于分支`、`尚未暂存以备提交的变更`）一律不认 ——
   这正是与工具卡判据的分界。
 
@@ -425,7 +436,10 @@ issue「脏摘要随缓存窗口变化」的期望。超时、TTL、轮询频率
 
 - 不抽象 single-flight 公共组件（单消费者，锁 + 双重检查就地实现，见 §4.3）。
 - 不改 `git_status` 工具默认的 `porcelain=false`（那会连带改变工具对外输出形状，属另一件事）。
-- 不加 `--ignored`、不加文件列表字段（issue 只要摘要；列表留给将来独立端点，届时另定分页与上限）。
+- 不加 `--ignored`。
+- ~~不加文件列表字段~~（原裁定「列表留给将来独立端点」）**已由 #1498 推翻**：改为在
+  `GET /workspace/git` 上加 `?files=true`（不新开独立端点，共享同一份缓存），上限固定 500 +
+  `truncated` 标志，见 §12。
 - 不放宽 `git::ensure_git_repo_try` 的可见性（本版已不需要，见 §5）。
 
 ## 11. 对照 issue 验收
@@ -442,3 +456,91 @@ issue「脏摘要随缓存窗口变化」的期望。超时、TTL、轮询频率
 | 文档同步 | §8（中英双份路由表） |
 | 契约 tag | `client-contract-v0.4.0`，合入后由维护者打 |
 | `SSE_PROTOCOL_VERSION` 不受影响 | 非流式，不触碰 SSE |
+
+## 12. #1498 增补：文件清单（`?files=true`）
+
+> 本节记录 #1498 相对 §1–§11 的**增补与推翻**；上文未特别标注处，以本节为准。
+
+### 12.1 取数与「形状钉死」
+
+命令固定三条。第一条**不带** `-c`：它要与 `git::ensure_git_repo_try` 保持「同命令同输出值」。
+
+```text
+git rev-parse --is-inside-work-tree              # 仓库判据（与工具侧同源）
+git rev-parse --show-prefix                      # 工作区根在仓库内的前缀
+git -c core.quotePath=false -c status.renames=true -c core.fileMode=true \
+    status --porcelain=v2 --branch -z --untracked-files=normal
+```
+
+「形状钉死」原则：能改变解析结果的宿主 / 仓库配置，要么显式 `-c` 固定，要么不依赖。
+实测（git 2.47.3）的四个漂移源：
+
+| 配置 | 不钉死时的后果 |
+| --- | --- |
+| `core.quotePath=true`（默认） | 非 ASCII 路径被转成 `"\344\270\255…"`，列表变乱码 |
+| `status.renames=false` | `git mv` 拆成 `1 AM` + `1 D.` 两条，`counts.total` 翻倍 |
+| `core.fileMode=false` | `chmod +x` 不计改动，`dirty` / `counts` 随宿主变 |
+| `status.relativePaths=false` | 旧 `../` 裁剪失效 → **根外路径被当根内返回**（#1498 一并修的缺陷） |
+
+前三者用 `-c` 钉死；最后一个由 §12.2 的前缀裁剪从根上消掉：`-z` 下该配置本身也不再生效。
+
+### 12.2 路径基准与前缀裁剪
+
+加 `-z` 后 porcelain v2 的 path **恒为仓库根相对**：`status.relativePaths` 被忽略，
+实测把它设回 `true` 也不会退回 cwd 相对。同时 git **仍会列出工作区根之外的改动**。所以：
+
+- `prefix = git rev-parse --show-prefix`：仓库根自身为空串，否则形如 `ws/inner/`。
+- 记录 path **以 prefix 开头** ⇒ 根内，剥掉前缀得到「工作区根相对」路径；否则 ⇒ 根外，丢弃。
+- **尾斜杠必须保留**在 prefix 里，否则 `ws/inner2/x` 会被误判成 `ws/inner` 的子路径。
+- 剥完为空串 ⇒ 记录就是工作区根自身（整根被折叠），归一为 `.` + `kind=dir`。
+
+这条判据不依赖任何可被宿主改掉的 git 配置，比原先的 `../` 前缀判据稳。
+
+### 12.3 JSON 契约增补
+
+```json
+{
+  "state": "ok",
+  "files": { "items": [], "truncated": false, "limit": 500 },
+  "untracked_mode": "folded"
+}
+```
+
+- `files`：**仅** `?files=true` 且 `state=ok` 时出现；字段缺失 = 本次没要列表 / 没有列表可给。
+- 条目 `{ path, kind, staged, unstaged, untracked, conflicted }`：一条 = 一条 porcelain 记录，
+  四个布尔与 `counts` 四桶**一一对应**（同一文件 `MM` 时 staged 与 unstaged 同时为真、仍只占一条）。
+- `truncated`：为真时 `items` 只是前 `limit` 条，`counts.total` 才是全量，且不承诺哪 N 条跨次稳定。
+  内存有界：解析时最多收集 `MAX_LISTED_FILES = 500` 条，计数照常累加。
+  未截断时 `items` 按 `path` 字节序升序，完全确定。
+- `untracked_mode`：回显取数口径，当前恒 `folded`。将来若加 `all`（`--untracked-files=all`，
+  `counts` 从条目数变文件数）属**语义变更**，必须同改契约与文档。
+
+`counts` / `dirty` / `head` 语义**不变**：untracked 目录仍折叠成一条，`counts.untracked` 仍是条目数。
+
+### 12.4 缓存不分叉
+
+`WorkspaceGitCache` 存的是**含全量列表**的响应，handler 在出站时按 `?files` 剥离。
+若改成「按 `files` 存两份」，就会出现「先无参请求写缓存 → 再 `?files=true`」拿到没有列表的缓存
+（`counts` 说 3、列表空）。HTTP 与缓存单测各有一条回归用例钉住这点。
+
+### 12.5 测试矩阵增补
+
+| 用例 | 位置 |
+| --- | --- |
+| `status_argv` 逐字钉死参数表 | `status_argv_pins_shape_config` |
+| 不变量：未截断时 `items.len() == counts.total` 且四桶求和相等 | `file_list_matches_counts_invariant` |
+| 501 条 → 500 条 + `truncated` | `truncation_sets_flag_and_caps_items` |
+| 折叠目录 → `kind=dir`；根自身 → `.` | `collapsed_untracked_dir_becomes_dir_entry` / `root_self_record_becomes_dot` |
+| 前缀边界：`sub/` 不匹配 `sub2/` | `prefix_boundary_is_a_directory` |
+| rename 只一条且吃掉 orig 段 | `rename_record_counts_once_and_swallows_orig_segment` |
+| 缓存不被无参请求污染 | `plain_request_must_not_poison_cache_for_files_request` |
+| 宿主 `quotePath=true` 下路径保真 | `path_kept_verbatim_under_default_quotepath` |
+| `relativePaths=false` 不泄露根外记录（bug 回归） | `relative_paths_false_does_not_leak_outside_records` |
+| `renames=false` 下仍只一条 | `renames_pinned_true_keeps_one_record` |
+| 先无参再 `?files=true` 仍拿到列表 | `files_served_after_plain_request_hit_cache` |
+
+### 12.6 文档与契约同步
+
+`docs/命令行与路由.md` / `docs/en/CLI.md`（路由表）· `docs/openapi.json`（快照）·
+`CHANGELOG` 的 `[Unreleased]`。契约 tag：`client-contract-v0.5.0`（加字段 = minor，
+排在 `v0.4.0` 之后，合入后由维护者打，不在功能 PR 内）。

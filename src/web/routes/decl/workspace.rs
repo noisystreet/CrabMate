@@ -512,20 +512,31 @@ static WORKSPACE_DECLS: &[RouteDecl] = &[
         path: "/workspace/git",
         method: HttpMethod::Get,
         tag: "workspace",
-        summary: "当前工作区 git 状态只读投影（分支 + 脏摘要）",
+        summary: "当前工作区 git 状态只读投影（分支 + 脏摘要 + 可选文件清单）",
         description: Some(
             "一律 200，用 `state` 表达可用性：`ok` / `not_a_repo` / `git_unavailable` / `failed`（后者看 `reason_code`）。\
              `dirty` 只代表「当前工作区根下」有未提交改动，**不**代表仓库干净。\
-             `source` 为 `probe` / `cache` / `stale_cache`；`refresh=true` 只跳过缓存读，仍回写缓存。",
+             `source` 为 `probe` / `cache` / `stale_cache`；`refresh=true` 只跳过缓存读，仍回写缓存。\
+             `files=true` 才带 `files`（`items` / `truncated` / `limit`），与 `counts` 同一次探测同口径；\
+             `path` 为工作区根相对、不带引号或转义，未跟踪目录折叠成一条 `kind=dir`。",
         ),
         protected: true,
-        params: &[ParamDecl {
-            name: "refresh",
-            location: ParamLocation::Query,
-            required: false,
-            description: Some("跳过缓存读，强制重新探测（仍回写缓存）"),
-            schema: SchemaDecl::Bool,
-        }],
+        params: &[
+            ParamDecl {
+                name: "refresh",
+                location: ParamLocation::Query,
+                required: false,
+                description: Some("跳过缓存读，强制重新探测（仍回写缓存）"),
+                schema: SchemaDecl::Bool,
+            },
+            ParamDecl {
+                name: "files",
+                location: ParamLocation::Query,
+                required: false,
+                description: Some("返回未提交改动的文件清单（默认不返回，避免高频轮询搬整份列表）"),
+                schema: SchemaDecl::Bool,
+            },
+        ],
         request: None,
         responses: &[RespDecl {
             status: "200",
