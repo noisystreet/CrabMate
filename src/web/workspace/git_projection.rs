@@ -306,7 +306,7 @@ pub(crate) fn parse_porcelain_v2(stdout: &[u8], prefix: &str) -> Result<Projecti
             '1' => {
                 let fields: Vec<&str> = line.splitn(9, ' ').collect();
                 let (xy, path) = record_fields(&fields, 9, 8)?;
-                if let Some(rel) = root_relative(path, prefix) {
+                if let Some(rel) = root_relative(path, prefix)? {
                     acc.push(Record::change(xy, rel)?);
                 }
             }
@@ -315,14 +315,14 @@ pub(crate) fn parse_porcelain_v2(stdout: &[u8], prefix: &str) -> Result<Projecti
                 let (xy, path) = record_fields(&fields, 10, 9)?;
                 // `-z` 下原路径是**下一段**：吃掉它（列表只放目的地，`total` 也只 +1）。
                 idx += 1;
-                if let Some(rel) = root_relative(path, prefix) {
+                if let Some(rel) = root_relative(path, prefix)? {
                     acc.push(Record::change(xy, rel)?);
                 }
             }
             'u' => {
                 let fields: Vec<&str> = line.splitn(11, ' ').collect();
                 let (_, path) = record_fields(&fields, 11, 10)?;
-                if let Some(rel) = root_relative(path, prefix) {
+                if let Some(rel) = root_relative(path, prefix)? {
                     acc.push(Record::conflicted(rel));
                 }
             }
@@ -330,7 +330,7 @@ pub(crate) fn parse_porcelain_v2(stdout: &[u8], prefix: &str) -> Result<Projecti
                 let path = line
                     .strip_prefix("? ")
                     .ok_or_else(|| format!("无法解析 untracked 记录：{line}"))?;
-                if let Some(rel) = root_relative(path, prefix) {
+                if let Some(rel) = root_relative(path, prefix)? {
                     acc.push(Record::untracked(rel));
                 }
             }
@@ -433,16 +433,21 @@ fn workspace_root_prefix(raw: &str) -> String {
 
 /// 把「仓库根相对」的记录路径换成「工作区根相对」。
 ///
-/// 返回 `None` ⇒ 该记录落在工作区根之外，**必须丢弃**（不得把根外路径回给客户端）。
-/// 返回 `Some("")` ⇒ 记录就是工作区根自身，由 [`checked_path`] 归一为 `.`。
+/// - `Ok(None)` ⇒ 该记录落在工作区根之外，**必须丢弃**（不得把根外路径回给客户端）。
+/// - `Ok(Some(""))` ⇒ 记录就是工作区根自身，由 [`checked_path`] 归一为 `.`。
+/// - `Err` ⇒ 记录自带空 path（畸形输入）：**不猜**，按 `GIT_PROBE_UNPARSABLE` 失败。
+///   注意与上一条的区别：`Some("")` 是**剥完前缀**才空，`Err` 是**原始**就空。
 ///
 /// `-z` 下 porcelain v2 的 path 恒为仓库根相对（`status.relativePaths` 不起作用），
 /// 所以这是唯一的根内/根外判据：不依赖任何可被宿主改掉的 git 配置。
-fn root_relative<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
-    if prefix.is_empty() {
-        return Some(path);
+fn root_relative<'a>(path: &'a str, prefix: &str) -> Result<Option<&'a str>, String> {
+    if path.is_empty() {
+        return Err("记录 path 为空".to_string());
     }
-    path.strip_prefix(prefix)
+    if prefix.is_empty() {
+        return Ok(Some(path));
+    }
+    Ok(path.strip_prefix(prefix))
 }
 
 /// 解析 `+<ahead> -<behind>`。
@@ -512,10 +517,28 @@ pub(crate) fn probe(root: &Path, mode: UntrackedMode) -> ProbeOutcome {
 fn git_stdout(root: &Path, args: &[&str]) -> Result<Vec<u8>, Box<ProbeOutcome>> {
     match Command::new("git").args(args).current_dir(root).output() {
         Ok(o) if o.status.success() => Ok(o.stdout),
-        Ok(_) => Err(Box::new(ProbeOutcome::Failed {
-            reason_code: error_codes::GIT_PROBE_FAILED,
-            message: format!("git {} 执行失败", args.join(" ")),
-        })),
+        Ok(o) => {
+            // argv 与 stderr 只进日志：`message` 会**原样回给客户端**，用户文案必须笼统
+            // （AGENTS §4.5），否则等于把内部命令行与 stderr 送到浏览器。
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            let first_line: String = stderr
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect();
+            tracing::debug!(
+                ?args,
+                code = o.status.code(),
+                stderr = %first_line,
+                "workspace git: 子命令非零退出"
+            );
+            Err(Box::new(ProbeOutcome::Failed {
+                reason_code: error_codes::GIT_PROBE_FAILED,
+                message: "git 子命令执行失败".to_string(),
+            }))
+        }
         Err(e) => Err(Box::new(spawn_failure(&e))),
     }
 }

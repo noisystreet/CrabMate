@@ -338,6 +338,14 @@ fn root_self_record_becomes_dot() {
     assert_eq!(p.counts.untracked, 1);
 }
 
+/// 记录**原始** path 为空（`? ` 后无内容）⇒ 明确失败，不猜成 `.`。
+///
+/// 与上一条的区别：`Some("")` 是**剥完前缀**才空（合法），这里是**原始**就空（畸形）。
+#[test]
+fn empty_record_path_is_error() {
+    assert!(parse_porcelain_v2(format!("{HEAD_MAIN}? \0").as_bytes(), "").is_err());
+}
+
 /// 工作区根是仓库子目录时：不以 `sub/` 为前缀的记录属于根外，必须丢弃。
 #[test]
 fn records_outside_workspace_root_are_skipped() {
