@@ -741,10 +741,19 @@ mod tests {
             tag: Some("uil"),
             ..Default::default()
         };
-        assert_eq!(count_projected_for_scope(&conn, "s1", &tag_math).unwrap(), 1);
-        assert_eq!(count_projected_for_scope(&conn, "s1", &tag_build).unwrap(), 2);
+        assert_eq!(
+            count_projected_for_scope(&conn, "s1", &tag_math).unwrap(),
+            1
+        );
+        assert_eq!(
+            count_projected_for_scope(&conn, "s1", &tag_build).unwrap(),
+            2
+        );
         // 部分词不应命中（需整段 `"tag"` 匹配）。
-        assert_eq!(count_projected_for_scope(&conn, "s1", &tag_partial).unwrap(), 0);
+        assert_eq!(
+            count_projected_for_scope(&conn, "s1", &tag_partial).unwrap(),
+            0
+        );
 
         let q_pct = MemoryListFilter {
             q: Some("100%"),

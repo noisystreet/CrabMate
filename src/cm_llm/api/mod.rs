@@ -58,7 +58,9 @@ fn tool_calls_from_sse_accum(
 /// 真的没变」的依据，也是把本行日志与 Web 侧 `first_system_compose path=…` 日志对起来的
 /// 唯一关联键——`path` 概念只属于 Web 入口，不属共享 LLM 层，故不新增参数也不改结构（#1475）。
 fn log_cache_usage(usage: Option<&Usage>, model: &str, first_system_hash: u64) {
-    let Some(u) = usage else { return; };
+    let Some(u) = usage else {
+        return;
+    };
     let hit = u.prompt_cache_hit_tokens.unwrap_or(0);
     let miss = u.prompt_cache_miss_tokens.unwrap_or(0);
     let total = hit + miss;
@@ -217,9 +219,7 @@ async fn non_stream_chat_response(
     cancel: Option<&AtomicBool>,
     model: &str,
     first_system_hash: u64,
-    provider_usage_sink: Option<
-        &std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
-    >,
+    provider_usage_sink: Option<&std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(LLM_CANCELLED_ERROR.into());
@@ -367,9 +367,7 @@ pub async fn stream_chat(
     let model = req.model.clone();
     let api_base_owned = api_base.to_string();
     let uploads = params.chat_uploads_dir.map(std::path::Path::to_path_buf);
-    let workspace = params
-        .chat_workspace_root
-        .map(std::path::Path::to_path_buf);
+    let workspace = params.chat_workspace_root.map(std::path::Path::to_path_buf);
     let mut messages = std::mem::take(&mut req.messages);
     req.messages = tokio::task::spawn_blocking(move || {
         crate::cm_llm::outbound_images::rewrite_messages_for_vendor(

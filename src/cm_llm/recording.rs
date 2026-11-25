@@ -397,8 +397,8 @@ fn chrono_now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::cm_types::{ChatRequest, Message};
+    use async_trait::async_trait;
 
     /// 测试用的 stub 后端：按序返回预设响应（仅用于 `build_e2e_backend` 的 real/record 模式参数）。
     /// 不在单元测试里调用其 `stream_chat`，因为构造 `StreamChatParams` 需要完整 `StreamChatHost`

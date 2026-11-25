@@ -101,23 +101,28 @@ pub(crate) fn workspace_read_file_sync_unix(
     max_b: u64,
 ) -> Result<String, WorkspaceFileIoError> {
     use std::io::Read;
-    let opened = open_existing_file_under_root(&base, &can).map_err(|e| WorkspaceFileIoError::Io {
-        context: "无法读取文件信息",
-        detail: e.to_string(),
-    })?;
+    let opened =
+        open_existing_file_under_root(&base, &can).map_err(|e| WorkspaceFileIoError::Io {
+            context: "无法读取文件信息",
+            detail: e.to_string(),
+        })?;
     if opened.metadata.is_dir() {
         return Err(WorkspaceFileIoError::IsDirectory);
     }
     let len = opened.metadata.len();
     if len > max_b {
-        return Err(WorkspaceFileIoError::TooLarge { len, max_bytes: max_b });
+        return Err(WorkspaceFileIoError::TooLarge {
+            len,
+            max_bytes: max_b,
+        });
     }
     let mut f = opened.file;
     let mut raw = Vec::new();
-    f.read_to_end(&mut raw).map_err(|e| WorkspaceFileIoError::Io {
-        context: "读取文件失败",
-        detail: e.to_string(),
-    })?;
+    f.read_to_end(&mut raw)
+        .map_err(|e| WorkspaceFileIoError::Io {
+            context: "读取文件失败",
+            detail: e.to_string(),
+        })?;
     crate::text_encoding::decode_bytes_strict(&raw, enc_name)
         .map(|(s, _)| s)
         .map_err(|e| WorkspaceFileIoError::Decode(e.to_string()))
@@ -130,23 +135,28 @@ pub(crate) fn workspace_read_file_bytes_sync_unix(
     max_b: u64,
 ) -> Result<Vec<u8>, WorkspaceFileIoError> {
     use std::io::Read;
-    let opened = open_existing_file_under_root(&base, &can).map_err(|e| WorkspaceFileIoError::Io {
-        context: "无法读取文件信息",
-        detail: e.to_string(),
-    })?;
+    let opened =
+        open_existing_file_under_root(&base, &can).map_err(|e| WorkspaceFileIoError::Io {
+            context: "无法读取文件信息",
+            detail: e.to_string(),
+        })?;
     if opened.metadata.is_dir() {
         return Err(WorkspaceFileIoError::IsDirectory);
     }
     let len = opened.metadata.len();
     if len > max_b {
-        return Err(WorkspaceFileIoError::TooLarge { len, max_bytes: max_b });
+        return Err(WorkspaceFileIoError::TooLarge {
+            len,
+            max_bytes: max_b,
+        });
     }
     let mut f = opened.file;
     let mut raw = Vec::new();
-    f.read_to_end(&mut raw).map_err(|e| WorkspaceFileIoError::Io {
-        context: "读取文件失败",
-        detail: e.to_string(),
-    })?;
+    f.read_to_end(&mut raw)
+        .map_err(|e| WorkspaceFileIoError::Io {
+            context: "读取文件失败",
+            detail: e.to_string(),
+        })?;
     Ok(raw)
 }
 

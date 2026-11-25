@@ -25,8 +25,8 @@ pub(crate) fn validate_chat_request_payload_limits(
 
 #[cfg(test)]
 mod workspace_file_write_directory_tests {
-    use crate::cm_api_contract::workspace::WorkspaceFileWriteBody;
     use super::validate_workspace_file_write_request;
+    use crate::cm_api_contract::workspace::WorkspaceFileWriteBody;
 
     #[test]
     fn create_directory_allows_empty_content() {
@@ -61,7 +61,6 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::super::chat::ChatRequestBody;
-    use crate::cm_api_contract::workspace::WorkspaceSearchBody;
     use super::{
         clamp_workspace_search_max_results, validate_workspace_query_encoding_optional,
         workspace_search_pattern_or_error,
@@ -69,6 +68,7 @@ mod tests {
     use crate::cm_api_contract::chat_keys::{
         CHAT_REQUEST_BODY_ALLOWED_KEYS, reject_unknown_chat_body_keys,
     };
+    use crate::cm_api_contract::workspace::WorkspaceSearchBody;
     use crate::cm_web_host::http_types::limits::{
         WORKSPACE_QUERY_ENCODING_MAX_BYTES, WORKSPACE_SEARCH_MAX_RESULTS_CAP,
         WORKSPACE_SEARCH_PATTERN_MAX_BYTES, validate_clarify_answers_json_budget,

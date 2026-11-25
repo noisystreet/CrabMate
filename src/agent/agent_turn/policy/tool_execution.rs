@@ -6,12 +6,12 @@ use crate::cm_config::AgentConfig;
 use crate::cm_tools::tool_dispatch::HandlerLookupTable;
 use crate::cm_types::ToolCall;
 
+use crate::agent_role_turn::{
+    tool_allowed_for_turn, tool_calls_allow_parallel_for_role, turn_tool_denied_message,
+};
 use crate::cm_agent::plan_artifact::PlanStepExecutorKind;
 use crate::cm_agent::step_executor_policy::{
     executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
-};
-use crate::agent_role_turn::{
-    tool_allowed_for_turn, tool_calls_allow_parallel_for_role, turn_tool_denied_message,
 };
 
 /// 一批 tool 调用结束后的外层循环语义（与根包 `execute_tools` 对齐）。

@@ -9,15 +9,14 @@ mod validate;
 pub use types::{
     AgentReplyPlanV1, PLAN_V1_EXAMPLE_JSON, PLAN_V1_REWRITE_BRIEF_RULES,
     PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, PlanArtifactError, PlanStepExecutorKind,
-    PlanStepV1, agent_reply_plan_v1_to_json_string,
-    plan_artifact_error_log_summary,
+    PlanStepV1, agent_reply_plan_v1_to_json_string, plan_artifact_error_log_summary,
 };
 
-pub use display::{format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display};
-
-pub use parse::{
-    parse_agent_reply_plan_v1_with_validate_only_binding_ids,
+pub use display::{
+    format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display,
 };
+
+pub use parse::parse_agent_reply_plan_v1_with_validate_only_binding_ids;
 pub use parse::{parse_agent_reply_plan_v1, parse_agent_reply_plan_v1_from_assistant_message};
 
 pub use validate::{

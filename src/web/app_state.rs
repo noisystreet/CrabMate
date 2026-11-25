@@ -159,8 +159,7 @@ pub(crate) struct AppStateWebAux {
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
     /// `GET /status` tiktoken 新会话基线缓存（大工作区同步分词可达数十秒，见 `health_status`）。
-    pub(crate) tiktoken_baseline_cache:
-        Arc<std::sync::Mutex<Option<CachedTiktokenBaseline>>>,
+    pub(crate) tiktoken_baseline_cache: Arc<std::sync::Mutex<Option<CachedTiktokenBaseline>>>,
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
@@ -417,7 +416,11 @@ mod tests {
         // 内存后端不持久化归档：恒为空（C2 语义）。
         let mem = runtime(false).await;
         save(&mem, "c1").await;
-        assert!(mem.load_conversation_archive_messages("c1").await.is_empty());
+        assert!(
+            mem.load_conversation_archive_messages("c1")
+                .await
+                .is_empty()
+        );
 
         // SQLite 后端：带归档行保存后可读回（按 seq 升序）。
         let sq = runtime(true).await;
@@ -444,7 +447,11 @@ mod tests {
         assert_eq!(archive.len(), 1);
         assert_eq!(archive[0].role, "user");
         // 未归档 / 不存在的会话返回空。
-        assert!(sq.load_conversation_archive_messages("nope").await.is_empty());
+        assert!(
+            sq.load_conversation_archive_messages("nope")
+                .await
+                .is_empty()
+        );
     }
 
     /// §9.2 item6：被归档消息引用的 `/uploads/<filename>` 不得被清理逻辑判为孤儿。

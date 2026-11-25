@@ -28,7 +28,8 @@ struct Fixture {
 
 impl Fixture {
     fn new(tag: &str, allow_external: bool) -> Self {
-        let base = std::env::temp_dir().join(format!("crabmate_cmd_s7_{tag}_{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("crabmate_cmd_s7_{tag}_{}", std::process::id()));
         std::fs::remove_dir_all(&base).ok();
         std::fs::create_dir_all(base.join("session")).expect("session");
         std::fs::create_dir_all(base.join("sibling")).expect("sibling");
@@ -37,7 +38,8 @@ impl Fixture {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default");
         cfg.workspace_roots.workspace_allowed_roots = vec![base.clone()];
         // 外部 shell 可能设了 `CM_ALLOWED_COMMANDS=*`：两处开关都显式钉住。
-        cfg.command_exec.allowed_commands = vec!["ls".to_string(), "cargo".to_string(), "cd".to_string()].into();
+        cfg.command_exec.allowed_commands =
+            vec!["ls".to_string(), "cargo".to_string(), "cd".to_string()].into();
         cfg.command_exec.allow_external_path_with_approval = allow_external;
         Self {
             base,
@@ -63,8 +65,9 @@ async fn all_args_within_allowed_roots_allow_without_prompting() {
     let f = Fixture::new("within", true);
     let allowed = ["cargo".to_string()];
     // `=` 形态与空格形态各一例；后者顺带覆盖「输出目标不存在也不误判越界」。
-    let equal_form =
-        parsed_run_command(r#"{"command":"cargo","args":["--manifest-path=../sibling/Cargo.toml"]}"#);
+    let equal_form = parsed_run_command(
+        r#"{"command":"cargo","args":["--manifest-path=../sibling/Cargo.toml"]}"#,
+    );
     let spaced_form = parsed_run_command(
         r#"{"command":"cargo","args":["--manifest-path","../sibling/Cargo.toml","-o","../sibling/target/not-built.o"]}"#,
     );
@@ -127,8 +130,9 @@ async fn disabled_switch_still_allows_in_roots_but_does_not_add_denials() {
     let l2 = project_caps(PermissionLevel::Workspace, f.cfg.as_ref());
     let ctx = test_policy_context_with_caps_at(&f.cfg, &l2, None, ExecMode::Sync, f.ws());
 
-    let in_roots =
-        parsed_run_command(r#"{"command":"cargo","args":["--manifest-path=../sibling/Cargo.toml"]}"#);
+    let in_roots = parsed_run_command(
+        r#"{"command":"cargo","args":["--manifest-path=../sibling/Cargo.toml"]}"#,
+    );
     assert_eq!(
         approve_external_run_command_paths_if_needed(&in_roots, &allowed, &ctx)
             .await
@@ -247,7 +251,12 @@ async fn external_path_allow_always_leaves_no_key_and_l2_still_denies() {
         ExternalPathGate::Approved
     );
     assert!(
-        fixture.web.persistent_allowlist_shared.lock().await.is_empty(),
+        fixture
+            .web
+            .persistent_allowlist_shared
+            .lock()
+            .await
+            .is_empty(),
         "路径审批没有 allowlist_key，不得写任何键（裸键或 l3| 前缀键）"
     );
 

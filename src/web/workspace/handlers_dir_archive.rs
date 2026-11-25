@@ -4,13 +4,13 @@
 //! 归档工具按 feature 裁剪时，本端点仍须可用。
 
 use axum::extract::{Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::Response;
 
 use super::handlers::effective_workspace_base_canonical;
-use super::handlers_file_raw::{bytes_ok_response, raw_err, reject_unsafe_rel_path, RawErr};
-use crate::web::app_state::AppStateHttpCore;
+use super::handlers_file_raw::{RawErr, bytes_ok_response, raw_err, reject_unsafe_rel_path};
 use crate::cm_api_contract::workspace::WorkspaceDirArchiveQuery;
+use crate::web::app_state::AppStateHttpCore;
 use crate::workspace::path::resolve_web_workspace_read_path;
 
 /// 打包工作区目录为 zip；失败为 JSON `ApiError`。
@@ -77,13 +77,9 @@ async fn resolve_archive_dir(
     let sub = if rel.is_empty() { None } else { Some(rel) };
     let canonical = resolve_web_workspace_read_path(&base, sub)
         .map_err(|e| map_workspace_rel_read_err(e, "WORKSPACE_DIR_MISSING"))?;
-    let meta = tokio::fs::metadata(&canonical).await.map_err(|_| {
-        raw_err(
-            StatusCode::NOT_FOUND,
-            "WORKSPACE_DIR_MISSING",
-            "目录不存在",
-        )
-    })?;
+    let meta = tokio::fs::metadata(&canonical)
+        .await
+        .map_err(|_| raw_err(StatusCode::NOT_FOUND, "WORKSPACE_DIR_MISSING", "目录不存在"))?;
     if !meta.is_dir() {
         return Err(raw_err(
             StatusCode::BAD_REQUEST,

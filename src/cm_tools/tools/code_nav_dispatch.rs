@@ -23,7 +23,8 @@ use crate::cm_tools::tools::{
 };
 
 /// 缺 / 未知 `action` 的报错里列出的可选值。
-pub const CODE_NAV_ACTIONS: &str = "find_symbol / find_references / file_outline / call_graph_sketch";
+pub const CODE_NAV_ACTIONS: &str =
+    "find_symbol / find_references / file_outline / call_graph_sketch";
 
 /// `code_nav` 唯一入口：按 `action` 分派到四个只读实现。
 ///
@@ -230,6 +231,10 @@ mod tests {
                 action.as_str()
             );
         }
-        assert_eq!(CODE_NAV_ACTIONS.matches(" / ").count(), 3, "{CODE_NAV_ACTIONS}");
+        assert_eq!(
+            CODE_NAV_ACTIONS.matches(" / ").count(),
+            3,
+            "{CODE_NAV_ACTIONS}"
+        );
     }
 }

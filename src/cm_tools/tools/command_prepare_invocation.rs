@@ -11,9 +11,9 @@ use super::super::command_line_prepare::{
 use super::{
     PreparedRunCommand, RunCommandError, check_shell_variable_references,
     command_shell_script::{
-        allowlist_allows_all, argv_needs_posix_shell_wrap, glob_tokens_suppressed_by_quoting,
-        is_shell_dash_c_invocation, maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
-        ShellWrap,
+        ShellWrap, allowlist_allows_all, argv_needs_posix_shell_wrap,
+        glob_tokens_suppressed_by_quoting, is_shell_dash_c_invocation,
+        maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
     },
 };
 
@@ -120,7 +120,10 @@ pub fn parse_run_command_payload_lenient(args_json: &str) -> Option<(String, Vec
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        return Some(("bash".to_string(), vec!["-c".to_string(), script.to_string()]));
+        return Some((
+            "bash".to_string(),
+            vec!["-c".to_string(), script.to_string()],
+        ));
     }
     let command = v.get("command")?.as_str()?.trim().to_string();
     let args = v
@@ -561,7 +564,10 @@ fn initial_invocation(
         Some(script) => {
             let shell = posix_shell_on_allowlist(allowed_commands)
                 .ok_or(RunCommandError::ScriptShellUnavailable)?;
-            Ok((shell.to_string(), vec!["-c".to_string(), script.to_string()]))
+            Ok((
+                shell.to_string(),
+                vec!["-c".to_string(), script.to_string()],
+            ))
         }
         None => Ok((spec.command.clone(), spec.args.clone())),
     }
@@ -706,10 +712,7 @@ mod tests {
     use std::path::Path;
 
     use super::super::RunCommandError;
-    use super::{
-        parse_command_spec, prepare_run_command_spec, scan_run_command_unsafe_args_spec,
-    };
-
+    use super::{parse_command_spec, prepare_run_command_spec, scan_run_command_unsafe_args_spec};
 
     /// 未配多根的 `PathAccess`（`SessionRoot` + 空根）：命令轴退回改动前的「只判形态」。
     fn session_access() -> crate::cm_tools::tools::PathAccess<'static> {

@@ -306,8 +306,8 @@ fn push_unique(dest: &mut Vec<String>, item: String) {
 fn skill_refs_in_messages(messages: &[Message]) -> Vec<detail::SkillRef> {
     // 只看「最后一个真实 user 之后」的窗口（与 `turn_completion` 的证据窗口同一先例）：
     // 上一回合的 `/<id>` 注入条若在失败 / 取消路径上没被 strip 掉，全量扫描会把它算进本轮。
-    let window = crate::cm_types::messages_slice_since_last_real_user(messages, false)
-        .unwrap_or(messages);
+    let window =
+        crate::cm_types::messages_slice_since_last_real_user(messages, false).unwrap_or(messages);
     // 每回合至多一条强制注入：只取**最后一条**，天然去重。
     let Some(m) = window
         .iter()
@@ -472,10 +472,7 @@ mod tests {
             }],
             "detail 应带被压条目明细"
         );
-        assert!(
-            !trim.history_removed,
-            "纯工具截断不得声称动过历史（#1345）"
-        );
+        assert!(!trim.history_removed, "纯工具截断不得声称动过历史（#1345）");
     }
 
     /// #1345：`history_removed` 是四条「真动历史」路径的并集，任一条成立即 `true`。
@@ -485,16 +482,27 @@ mod tests {
     #[test]
     fn history_removed_covers_every_real_trim_path() {
         let msgs = vec![Message::system_only("s"), Message::user_only("hi")];
-        let cases: [(&str, MessagePipelineDelta, bool, ContextCompactionTimelineSnapshot); 4] = [
+        let cases: [(
+            &str,
+            MessagePipelineDelta,
+            bool,
+            ContextCompactionTimelineSnapshot,
+        ); 4] = [
             (
                 "count_hit",
-                MessagePipelineDelta { trim_count_hit: true, ..Default::default() },
+                MessagePipelineDelta {
+                    trim_count_hit: true,
+                    ..Default::default()
+                },
                 false,
                 ContextCompactionTimelineSnapshot::default(),
             ),
             (
                 "char_hit",
-                MessagePipelineDelta { trim_char_hit: true, ..Default::default() },
+                MessagePipelineDelta {
+                    trim_char_hit: true,
+                    ..Default::default()
+                },
                 false,
                 ContextCompactionTimelineSnapshot::default(),
             ),
@@ -508,7 +516,10 @@ mod tests {
                 "removed_turn_groups",
                 MessagePipelineDelta::default(),
                 false,
-                ContextCompactionTimelineSnapshot { removed_turn_groups: 2, ..Default::default() },
+                ContextCompactionTimelineSnapshot {
+                    removed_turn_groups: 2,
+                    ..Default::default()
+                },
             ),
         ];
         for (label, pipeline, summarized, compaction) in cases {
@@ -520,7 +531,9 @@ mod tests {
                 summary_tail_kept: summarized.then_some(6),
                 compaction,
             });
-            let ev = events.first().unwrap_or_else(|| panic!("{label} 应产生事件"));
+            let ev = events
+                .first()
+                .unwrap_or_else(|| panic!("{label} 应产生事件"));
             assert_eq!(ev.kind, KIND_CONTEXT_TRIM, "{label}");
             assert_eq!(ev.title, TITLE_TRIM, "{label} 应展示为真裁剪");
             assert!(
@@ -693,11 +706,16 @@ mod tests {
         msgs.extend(acc2.persist_markers());
         let markers: Vec<_> = msgs.iter().filter(|m| is_chat_timeline_marker(m)).collect();
         assert_eq!(markers.len(), 2);
-        assert!(markers.iter().any(|m| context_window_timeline_kind(m)
-            == Some(KIND_CONTEXT_INJECT)));
-        assert!(markers
-            .iter()
-            .any(|m| context_window_timeline_kind(m) == Some(KIND_CONTEXT_TRIM)));
+        assert!(
+            markers
+                .iter()
+                .any(|m| context_window_timeline_kind(m) == Some(KIND_CONTEXT_INJECT))
+        );
+        assert!(
+            markers
+                .iter()
+                .any(|m| context_window_timeline_kind(m) == Some(KIND_CONTEXT_TRIM))
+        );
         let snap = crate::cm_types::filter_messages_for_web_client_snapshot(&msgs);
         assert_eq!(
             snap.iter().filter(|m| is_chat_timeline_marker(m)).count(),

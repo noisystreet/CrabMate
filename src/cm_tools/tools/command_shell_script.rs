@@ -426,7 +426,11 @@ mod tests {
             &["commit".into(), "-m".into(), "fix `id`".into()]
         ));
         let mut cmd = "git".to_string();
-        let mut args = vec!["commit".to_string(), "-m".to_string(), "fix `id`".to_string()];
+        let mut args = vec![
+            "commit".to_string(),
+            "-m".to_string(),
+            "fix `id`".to_string(),
+        ];
         let allowed = vec!["git".to_string(), "bash".to_string()];
         assert!(
             maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &allowed).is_none(),
@@ -598,25 +602,21 @@ mod tests {
         ));
         assert!(argv_invokes_nested_shell(
             "env",
-            &[
-                "-i".into(),
-                "bash".into(),
-                "-c".into(),
-                "echo $HOME".into()
-            ]
+            &["-i".into(), "bash".into(), "-c".into(), "echo $HOME".into()]
         ));
         assert!(argv_invokes_nested_shell(
             "timeout",
-            &[
-                "10".into(),
-                "bash".into(),
-                "-c".into(),
-                "echo $HOME".into()
-            ]
+            &["10".into(), "bash".into(), "-c".into(), "echo $HOME".into()]
         ));
         assert!(argv_invokes_nested_shell(
             "nice",
-            &["-n".into(), "5".into(), "bash".into(), "-c".into(), "x".into()]
+            &[
+                "-n".into(),
+                "5".into(),
+                "bash".into(),
+                "-c".into(),
+                "x".into()
+            ]
         ));
     }
 

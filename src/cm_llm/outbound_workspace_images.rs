@@ -3,14 +3,14 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::context::user_message_file_refs::{
-    collect_ordered_rel_paths_lenient, is_workspace_chat_image_rel,
-};
 use crate::cm_llm::outbound_images::{
-    bytes_to_data_url, omit_note, InlineFail, FLATTEN_PLACEHOLDER,
+    FLATTEN_PLACEHOLDER, InlineFail, bytes_to_data_url, omit_note,
 };
 use crate::cm_tools::tools::resolve_for_read_open;
 use crate::cm_types::{Message, MessageContent};
+use crate::context::user_message_file_refs::{
+    collect_ordered_rel_paths_lenient, is_workspace_chat_image_rel,
+};
 
 pub(super) fn attach_workspace_image_refs(
     msg: &mut Message,
@@ -38,16 +38,18 @@ pub(super) fn attach_workspace_image_refs(
     };
     let extra = rels
         .into_iter()
-        .map(|rel| match read_workspace_image_data_url(root, &rel, budget) {
-            Ok(data_url) => serde_json::json!({
-                "type": "image_url",
-                "image_url": {"url": data_url}
-            }),
-            Err(fail) => serde_json::json!({
-                "type": "text",
-                "text": omit_note(fail, &format!("@{rel}"))
-            }),
-        })
+        .map(
+            |rel| match read_workspace_image_data_url(root, &rel, budget) {
+                Ok(data_url) => serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {"url": data_url}
+                }),
+                Err(fail) => serde_json::json!({
+                    "type": "text",
+                    "text": omit_note(fail, &format!("@{rel}"))
+                }),
+            },
+        )
         .collect::<Vec<_>>();
     append_content_parts(msg, extra);
 }
@@ -56,7 +58,9 @@ fn message_has_image_url_parts(msg: &Message) -> bool {
     let Some(MessageContent::Parts(parts)) = msg.content.as_ref() else {
         return false;
     };
-    parts.iter().any(|p| p.get("type").and_then(|v| v.as_str()) == Some("image_url"))
+    parts
+        .iter()
+        .any(|p| p.get("type").and_then(|v| v.as_str()) == Some("image_url"))
 }
 
 fn workspace_image_rels_in_message(msg: &Message) -> Vec<String> {
@@ -110,10 +114,7 @@ fn read_workspace_image_data_url(
 }
 
 fn append_text_note(msg: &mut Message, note: &str) {
-    append_content_parts(
-        msg,
-        vec![serde_json::json!({"type": "text", "text": note})],
-    );
+    append_content_parts(msg, vec![serde_json::json!({"type": "text", "text": note})]);
 }
 
 fn append_content_parts(msg: &mut Message, extra: Vec<serde_json::Value>) {

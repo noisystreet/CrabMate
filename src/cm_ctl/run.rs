@@ -7,9 +7,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::config::cli::ctl::{
-    CtlCmd, CtlSubCmd, StopCmd, GcCmd, LogsCmd, RestartArg, RunCmd, SuperviseCmd, StartCmd,
+    CtlCmd, CtlSubCmd, GcCmd, LogsCmd, RestartArg, RunCmd, StartCmd, StopCmd, SuperviseCmd,
 };
 
+use super::CtlError;
 use super::control;
 use super::decl;
 use super::env_file::{self, CredEnv};
@@ -17,7 +18,7 @@ use super::gc;
 use super::identity;
 use super::instances;
 use super::notify;
-use super::ops::{self, Ctx, Origin, UpArgs, DEFAULT_GRACE};
+use super::ops::{self, Ctx, DEFAULT_GRACE, Origin, UpArgs};
 use super::paths;
 use super::preflight;
 use super::query;
@@ -26,7 +27,6 @@ use super::render;
 use super::restart;
 use super::spawn::{self, SpawnSpec};
 use super::supervise;
-use super::CtlError;
 
 /// `ctl` 入口：`workspace_cli` 来自全局 `--workspace`。
 pub fn run(cmd: &CtlCmd, workspace_cli: Option<&str>) -> Result<(), CtlError> {
@@ -687,7 +687,6 @@ fn follow_file(path: &std::path::Path) -> ! {
         }
     }
 }
-
 
 #[cfg(test)]
 #[path = "run_tests.rs"]

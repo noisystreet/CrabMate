@@ -297,7 +297,10 @@ mod tests {
     #[test]
     fn parse_legacy_text_fails_open() {
         let o = parse_plan_semantic_side_reply("INCONSISTENT 与工具结果矛盾");
-        assert!(o.consistent, "JSON-only: legacy INCONSISTENT must fail-open");
+        assert!(
+            o.consistent,
+            "JSON-only: legacy INCONSISTENT must fail-open"
+        );
         let o2 = parse_plan_semantic_side_reply("CONSISTENT");
         assert!(o2.consistent);
     }

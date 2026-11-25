@@ -5,12 +5,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cm_names as tool_names;
+use crate::cm_config::{AgentConfig, ExposeSecret, WebSearchProvider};
 use crate::cm_memory::memory::codebase_semantic_index::CodebaseSemanticToolParams;
-use crate::tool_host::memory_tool_hosts::CodebaseSemanticHost;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tools::http_fetch;
 use crate::cm_tools::tools::{ToolContext, run_tool_async};
-use crate::cm_config::{AgentConfig, ExposeSecret, WebSearchProvider};
+use crate::tool_host::memory_tool_hosts::CodebaseSemanticHost;
 
 fn default_test_result_cache_enabled() -> bool {
     true

@@ -30,8 +30,7 @@ fn apply_stream_cancel(
             "流式任务已结束或不在本进程内存中，无法取消",
         ));
     }
-    let background_tools_cancelled =
-        tool_job_registry.cancel_non_terminal_for_source_turn(job_id);
+    let background_tools_cancelled = tool_job_registry.cancel_non_terminal_for_source_turn(job_id);
     Ok(ChatStreamCancelResponseBody {
         job_id,
         cancelled: true,
@@ -97,7 +96,10 @@ mod tests {
         let q = ChatJobQueue::new(1, 1);
         let reg = ToolJobRegistry::new(tool_limits());
         let err = apply_stream_cancel(&q, &reg, 7).expect_err("gone");
-        assert_eq!(err.code, crate::cm_api_contract::error_codes::STREAM_JOB_GONE);
+        assert_eq!(
+            err.code,
+            crate::cm_api_contract::error_codes::STREAM_JOB_GONE
+        );
     }
 
     #[tokio::test]
@@ -123,9 +125,8 @@ mod tests {
                 None,
             )
             .expect("stop");
-        let body = apply_stream_cancel(&q, &reg, 7).unwrap_or_else(|e| {
-            panic!("expected Ok, got code={}", e.code)
-        });
+        let body = apply_stream_cancel(&q, &reg, 7)
+            .unwrap_or_else(|e| panic!("expected Ok, got code={}", e.code));
         assert!(body.cancelled);
         assert_eq!(body.job_id, 7);
         assert_eq!(body.background_tools_cancelled, 1);

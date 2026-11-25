@@ -26,8 +26,14 @@ use crate::web::normalize_client_conversation_id;
 const DEFAULT_LIST_LIMIT: usize = 50;
 const MAX_LIST_LIMIT: usize = 200;
 
-fn bad_request(code: &'static str, message: impl Into<String>) -> (StatusCode, Json<MemoryErrorBody>) {
-    (StatusCode::BAD_REQUEST, Json(MemoryErrorBody::new(code, message)))
+fn bad_request(
+    code: &'static str,
+    message: impl Into<String>,
+) -> (StatusCode, Json<MemoryErrorBody>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(MemoryErrorBody::new(code, message)),
+    )
 }
 
 fn internal_error(message: impl Into<String>) -> (StatusCode, Json<MemoryErrorBody>) {
@@ -48,7 +54,12 @@ fn disabled() -> (StatusCode, Json<MemoryErrorBody>) {
 async fn require_runtime(
     state: &MemoryAppFacet,
 ) -> Result<Arc<LongTermMemoryRuntime>, (StatusCode, Json<MemoryErrorBody>)> {
-    let enabled = state.cfg.read().await.long_term_memory.long_term_memory_enabled;
+    let enabled = state
+        .cfg
+        .read()
+        .await
+        .long_term_memory
+        .long_term_memory_enabled;
     enabled
         .then(|| state.long_term_memory.clone())
         .flatten()
@@ -103,7 +114,10 @@ pub(crate) async fn memory_list_handler(
     let runtime = require_runtime(&state).await?;
     let scope = require_scope(q.conversation_id.as_deref())?;
     let kind = parse_kind_filter(q.kind.as_deref())?;
-    let limit = q.limit.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIST_LIMIT);
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_LIST_LIMIT)
+        .clamp(1, MAX_LIST_LIMIT);
     let offset = q.offset.unwrap_or(0);
     let tag = trimmed_owned(q.tag);
     let text = trimmed_owned(q.q);
@@ -158,12 +172,10 @@ pub(crate) async fn memory_delete_handler(
 ) -> Result<StatusCode, (StatusCode, Json<MemoryErrorBody>)> {
     let runtime = require_runtime(&state).await?;
     let scope = require_scope(q.conversation_id.as_deref())?;
-    let memory_id: i64 = id.trim().parse().map_err(|_| {
-        bad_request(
-            error_codes::INVALID_MEMORY_ID,
-            "memory id 必须是十进制整数",
-        )
-    })?;
+    let memory_id: i64 = id
+        .trim()
+        .parse()
+        .map_err(|_| bad_request(error_codes::INVALID_MEMORY_ID, "memory id 必须是十进制整数"))?;
 
     let scope_for_closure = scope.clone();
     let deleted = tokio::task::spawn_blocking(move || {
@@ -197,7 +209,8 @@ mod tests {
             crate::cm_config::load_config(None).expect("加载测试默认配置")
         });
         cfg.long_term_memory.long_term_memory_enabled = enabled;
-        cfg.long_term_memory.long_term_memory_vector_backend = LongTermMemoryVectorBackend::Disabled;
+        cfg.long_term_memory.long_term_memory_vector_backend =
+            LongTermMemoryVectorBackend::Disabled;
         MemoryAppFacet {
             cfg: Arc::new(tokio::sync::RwLock::new(cfg)),
             long_term_memory: runtime,
@@ -246,7 +259,10 @@ mod tests {
             long_term_memory_store::insert_chunk(&c, "s2", "other scope", "user", None, None)
                 .unwrap();
         }
-        let state = facet(true, Some(LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(&conn))));
+        let state = facet(
+            true,
+            Some(LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(&conn))),
+        );
 
         let mut q = list_query(Some("s1"));
         q.limit = Some(2);
@@ -368,9 +384,10 @@ mod tests {
         let runtime = LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(&conn));
 
         // 配置开启但运行时未装配。
-        let no_runtime = memory_list_handler(State(facet(true, None)), Query(list_query(Some("s1"))))
-            .await
-            .unwrap_err();
+        let no_runtime =
+            memory_list_handler(State(facet(true, None)), Query(list_query(Some("s1"))))
+                .await
+                .unwrap_err();
         assert_eq!(no_runtime.0, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(no_runtime.1.0.code, error_codes::LONG_TERM_MEMORY_DISABLED);
         assert_eq!(no_runtime.1.0.enabled, Some(false));
@@ -391,8 +408,10 @@ mod tests {
         let conn = test_conn();
         let id = {
             let c = conn.lock().unwrap();
-            long_term_memory_store::insert_explicit_chunk(&c, "s1", "m1", "explicit", "[]", None, None)
-                .unwrap()
+            long_term_memory_store::insert_explicit_chunk(
+                &c, "s1", "m1", "explicit", "[]", None, None,
+            )
+            .unwrap()
         };
         let state = facet(
             true,
@@ -461,7 +480,9 @@ mod tests {
         let no_scope = memory_delete_handler(
             State(state),
             Path("1".to_string()),
-            Query(MemoryDeleteQuery { conversation_id: None }),
+            Query(MemoryDeleteQuery {
+                conversation_id: None,
+            }),
         )
         .await
         .unwrap_err();

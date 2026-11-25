@@ -319,12 +319,7 @@ impl ChatJobQueue {
 
         let metrics_loop = metrics.clone();
         let recent_loop = recent.clone();
-        tokio::spawn(dispatcher_loop(
-            rx,
-            sem.clone(),
-            metrics_loop,
-            recent_loop,
-        ));
+        tokio::spawn(dispatcher_loop(rx, sem.clone(), metrics_loop, recent_loop));
 
         Self {
             inner: Arc::new(Inner {

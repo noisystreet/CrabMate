@@ -14,10 +14,10 @@
 //!
 //! 所以这里的谓词是 `pid_alive && identity.is_match()`，与 `down` 用的是同一套事实。
 
+use super::CtlError;
 use super::ops::Ctx;
 use super::probe::{self, Observed, Probe};
 use super::record::{self, InstanceRecord};
-use super::CtlError;
 
 /// 记录指向的进程仍活着且身份校验通过时，返回**拒绝理由**（反之 `None`）。
 ///
@@ -52,7 +52,10 @@ pub(crate) fn ensure_not_live(ctx: &Ctx, name: &str) -> Result<(), CtlError> {
     // 退出码走 `conflict`（与 `port_in_use` 同类）：重跑 `up` 不会有不同结果。
     Err(CtlError::conflict(
         "instance_already_live",
-        format!("拒绝启动实例 {name}：{reason}。\n{}", next_step(name, p.observed)),
+        format!(
+            "拒绝启动实例 {name}：{reason}。\n{}",
+            next_step(name, p.observed)
+        ),
     ))
 }
 
@@ -130,10 +133,7 @@ mod tests {
                 .stderr(stderr)
                 .spawn()
                 .expect("起替身进程");
-            Self {
-                child,
-                stderr_path,
-            }
+            Self { child, stderr_path }
         }
 
         fn pid(&self) -> u32 {

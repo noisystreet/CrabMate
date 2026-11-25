@@ -5,7 +5,9 @@ use secrecy::SecretString;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{LlmEndpointOverride, load_llm_overrides, load_tool_overrides, read_secret_web_api_bearer};
+use super::{
+    LlmEndpointOverride, load_llm_overrides, load_tool_overrides, read_secret_web_api_bearer,
+};
 
 fn fill_nonempty_string(dst: &mut String, src: Option<&String>) {
     if let Some(s) = src.map(|x| x.trim()).filter(|x| !x.is_empty()) {

@@ -1,11 +1,11 @@
 //! `gh pr merge` / `gh pr review` / `gh pr comment`（写远端 PR 状态）。
 
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
 use super::common::{
     gh_allowed, push_extra_args_from_json, push_repo_arg, run_gh_vec, validate_pr_body,
     validate_pr_ref_token, validate_pr_title, write_workspace_temp_markdown,
 };
+use crate::cm_tools::tool_result::ToolError;
 
 fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, ToolError> {
     match v.get("number") {
@@ -15,7 +15,9 @@ fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, Too
                 .as_u64()
                 .ok_or_else(|| ToolError::invalid_args("错误：number 须为正整数".to_string()))?;
             if num == 0 || num > 999_999 {
-                return Err(ToolError::invalid_args("错误：number 须为 1～999999 的正整数或省略".to_string()));
+                return Err(ToolError::invalid_args(
+                    "错误：number 须为 1～999999 的正整数或省略".to_string(),
+                ));
             }
             Ok(Some(num.to_string()))
         }
@@ -23,13 +25,9 @@ fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, Too
 }
 
 /// `gh pr merge`（写远端：合并 PR）
-pub fn gh_pr_merge_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_merge_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let mut argv = vec!["pr".into(), "merge".into()];
     if let Ok(Some(num)) = parse_optional_pr_number(&v) {
         argv.push(num);
@@ -45,7 +43,11 @@ pub fn gh_pr_merge_try(
         "merge" => argv.push("--merge".into()),
         "squash" => argv.push("--squash".into()),
         "rebase" => argv.push("--rebase".into()),
-        _ => return Err(ToolError::invalid_args("错误：merge_method 须为 merge、squash 或 rebase".to_string())),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：merge_method 须为 merge、squash 或 rebase".to_string(),
+            ));
+        }
     }
     if v.get("auto").and_then(|x| x.as_bool()) == Some(true) {
         argv.push("--auto".into());
@@ -63,7 +65,11 @@ pub fn gh_pr_merge_try(
 fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, ToolError> {
     let event = match v.get("event").and_then(|x| x.as_str()) {
         Some(s) => s.trim().to_ascii_lowercase(),
-        None => return Err(ToolError::invalid_args("错误：缺少 event（approve / request-changes / comment）".to_string())),
+        None => {
+            return Err(ToolError::invalid_args(
+                "错误：缺少 event（approve / request-changes / comment）".to_string(),
+            ));
+        }
     };
     let mut argv = vec!["pr".into(), "review".into()];
     if let Ok(Some(num)) = parse_optional_pr_number(v) {
@@ -74,7 +80,11 @@ fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, ToolError> {
         "approve" => argv.push("--approve".into()),
         "request-changes" | "request_changes" => argv.push("--request-changes".into()),
         "comment" => argv.push("--comment".into()),
-        _ => return Err(ToolError::invalid_args("错误：event 须为 approve、request-changes 或 comment".to_string())),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：event 须为 approve、request-changes 或 comment".to_string(),
+            ));
+        }
     }
     if let Some(b) = v.get("body").and_then(|x| x.as_str()) {
         validate_pr_body(b)?;
@@ -86,20 +96,18 @@ fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, ToolError> {
         event.as_str(),
         "comment" | "request-changes" | "request_changes"
     ) {
-        return Err(ToolError::invalid_args("错误：comment / request-changes 须提供 body".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：comment / request-changes 须提供 body".to_string(),
+        ));
     }
     push_extra_args_from_json(v, &mut argv)?;
     Ok(argv)
 }
 
 /// `gh pr review`（写远端：审批 / 请求修改 / 评论）
-pub fn gh_pr_review_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_review_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     match gh_pr_review_argv(&v) {
         Ok(argv) => run_gh_vec(argv, ctx),
         Err(e) => Err(e),
@@ -107,13 +115,9 @@ pub fn gh_pr_review_try(
 }
 
 /// `gh pr comment`（写远端：在 PR 上评论）
-pub fn gh_pr_comment_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_comment_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let body = match v.get("body").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => s,
         _ => return Err(ToolError::invalid_args("错误：缺少 body".to_string())),
@@ -131,13 +135,9 @@ pub fn gh_pr_comment_try(
 }
 
 /// `gh pr edit`（写远端：编辑 PR 标题 / 正文 / 标签 / reviewer / assignee / 基线分支 / 草稿状态）。
-pub fn gh_pr_edit_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_edit_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     // 若提供 body，先写入工作区内临时文件（与 `gh_pr_create` 一致），
     // 再统一构建 argv，使 body 可与标签 / base / draft 等编辑项组合，避免提前返回丢弃其余编辑项。

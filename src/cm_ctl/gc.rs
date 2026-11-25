@@ -21,6 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use super::CtlError;
 use super::guard;
 use super::lock;
 use super::logio;
@@ -29,7 +30,6 @@ use super::paths;
 use super::probe::{Observed, Probe};
 use super::query;
 use super::record::InstanceRecord;
-use super::CtlError;
 
 /// `gc` 的筛选条件。
 #[derive(Debug, Clone, Copy, Default)]
@@ -269,7 +269,12 @@ fn dir_bytes(root: &Path) -> Result<u64, CtlError> {
 /// 不新增 `stopped_at` 字段是刻意的：状态文件字段集是客户端契约（`fixtures/ctl_contract.json`），
 /// 为了一个筛选条件去扩契约不值。代价是 mtime 会被 `rsync` / `touch` 干扰，故文档写明
 /// 「按文件时间，不保证等于精确停机时刻」。
-fn age_gate(ctx: &Ctx, rec: &InstanceRecord, targets: &[GcTarget], opts: &GcOpts) -> Option<String> {
+fn age_gate(
+    ctx: &Ctx,
+    rec: &InstanceRecord,
+    targets: &[GcTarget],
+    opts: &GcOpts,
+) -> Option<String> {
     let min = opts.older_than?;
     let mut idle = UNIX_EPOCH_FALLBACK;
     let record = ctx.record_path(&rec.name).ok();
@@ -436,8 +441,14 @@ mod tests {
     #[test]
     fn parse_age_reads_units_and_rejects_garbage() {
         assert_eq!(parse_age("30m").expect("应解析"), Duration::from_secs(1800));
-        assert_eq!(parse_age("24h").expect("应解析"), Duration::from_secs(86400));
-        assert_eq!(parse_age("7d").expect("应解析"), Duration::from_secs(604800));
+        assert_eq!(
+            parse_age("24h").expect("应解析"),
+            Duration::from_secs(86400)
+        );
+        assert_eq!(
+            parse_age("7d").expect("应解析"),
+            Duration::from_secs(604800)
+        );
         assert_eq!(parse_age("5s").expect("应解析"), Duration::from_secs(5));
         // 单位必填：缺单位、单位非法、非数字都要报 usage
         for raw in ["7", "", "10x", "abc", "-3d"] {
@@ -546,10 +557,7 @@ mod tests {
 
         purge(&ctx, &GcOpts::default(), true).expect("应成功");
         assert!(!home.symlink_metadata().is_ok(), "软链本身应被删除");
-        assert!(
-            victim.join("keep.txt").exists(),
-            "链接目标绝不能被跟随删除"
-        );
+        assert!(victim.join("keep.txt").exists(), "链接目标绝不能被跟随删除");
     }
 
     /// 没有记录的残留只报告、不删：那种情形无法判断里面是否还跑着 serve。
@@ -564,7 +572,11 @@ mod tests {
         std::fs::write(ctx.paths.log_path("old-lane"), "旧日志\n").expect("写残留日志");
 
         let plan = purge(&ctx, &GcOpts::default(), true).expect("应成功");
-        assert!(plan.items.is_empty(), "没有记录就不进候选：{:?}", plan.items);
+        assert!(
+            plan.items.is_empty(),
+            "没有记录就不进候选：{:?}",
+            plan.items
+        );
         assert_eq!(plan.orphans.len(), 1);
         assert_eq!(plan.orphans[0].name, "old-lane");
         assert_eq!(plan.orphans[0].paths.len(), 2, "目录与日志应归到同一组");

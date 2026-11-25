@@ -49,14 +49,16 @@ async fn readonly_entry_bounds_tokens_without_summary_or_persistence() {
 
     let mut messages = vec![Message::system_only("sys")];
     for turn in 0..30 {
-        messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+        messages.push(Message::user_only(format!(
+            "u{turn}: {}",
+            "x".repeat(1_500)
+        )));
         messages.push(Message::assistant_only(format!("a{turn}")));
     }
     let budget = crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg)
         .expect("token budget enabled");
-    let before = crate::agent::context_compaction::estimate_final_request_tokens(
-        &cfg, &messages, &[], None,
-    );
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &messages, &[], None);
     assert!(before.used_input_tokens > budget.trigger_tokens);
 
     let delta = prepare_readonly_model_messages(&cfg, &mut messages, &[], None, None)
@@ -302,7 +304,10 @@ fn run_multi_turn_once(
     canonical: &mut Vec<Message>,
     turn: usize,
 ) -> (u32, Vec<Message>) {
-    canonical.push(Message::user_only(format!("u{turn}: {}", "x".repeat(2_000))));
+    canonical.push(Message::user_only(format!(
+        "u{turn}: {}",
+        "x".repeat(2_000)
+    )));
     let mut view = crate::agent::model_context_view::ModelContextView::derive(canonical);
     let (_pipeline, before) =
         sync_trim_and_estimate_before(cfg, view.messages_mut(), &[], None, None);
@@ -317,7 +322,8 @@ fn run_multi_turn_once(
             summary_tail_kept: None,
         },
     );
-    view.messages_mut().push(Message::assistant_only(format!("a{turn}")));
+    view.messages_mut()
+        .push(Message::assistant_only(format!("a{turn}")));
     let commit = view.commit_current_turn_to(canonical);
     assert!(commit.archived_artifacts.is_empty());
     (report.before.used_input_tokens, commit.archived_prefix)
@@ -436,8 +442,12 @@ fn finalize_uses_actual_summary_tail_as_group_removal_floor() {
     };
 
     let mut with_actual_tail = build();
-    let before =
-        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &with_actual_tail, &[], None);
+    let before = crate::agent::context_compaction::estimate_final_request_tokens(
+        &cfg,
+        &with_actual_tail,
+        &[],
+        None,
+    );
     let actual_tail = finalize_token_budget_compaction(
         &cfg,
         &mut with_actual_tail,
@@ -451,8 +461,12 @@ fn finalize_uses_actual_summary_tail_as_group_removal_floor() {
     );
 
     let mut with_config_tail = build();
-    let before =
-        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &with_config_tail, &[], None);
+    let before = crate::agent::context_compaction::estimate_final_request_tokens(
+        &cfg,
+        &with_config_tail,
+        &[],
+        None,
+    );
     let config_tail = finalize_token_budget_compaction(
         &cfg,
         &mut with_config_tail,
@@ -563,16 +577,18 @@ async fn readonly_entry_uses_the_same_compaction_plan_as_main_path() {
     let build = || {
         let mut messages = vec![Message::system_only("sys")];
         for turn in 0..30 {
-            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+            messages.push(Message::user_only(format!(
+                "u{turn}: {}",
+                "x".repeat(1_500)
+            )));
             messages.push(Message::assistant_only(format!("a{turn}")));
         }
         messages
     };
 
     let mut readonly = build();
-    let before = crate::agent::context_compaction::estimate_final_request_tokens(
-        &cfg, &readonly, &[], None,
-    );
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &readonly, &[], None);
     let plan = crate::agent::context_compaction::policy::plan_compaction(
         &crate::agent::context_compaction::policy::CompactionProbe {
             budget: crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg),
@@ -634,7 +650,10 @@ fn context_notice_reports_group_removal_but_not_summary_path() {
     let build = || {
         let mut messages = vec![Message::system_only("sys")];
         for turn in 0..30 {
-            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+            messages.push(Message::user_only(format!(
+                "u{turn}: {}",
+                "x".repeat(1_500)
+            )));
             messages.push(Message::assistant_only(format!("a{turn}")));
         }
         messages
@@ -666,7 +685,10 @@ fn context_notice_reports_group_removal_but_not_summary_path() {
     );
     assert!(report.removed_turn_groups > 0, "夹具应触发删组");
     let body = system_text(&messages);
-    assert!(body.contains("已压缩"), "纯删组应在 system 留一行提示：{body}");
+    assert!(
+        body.contains("已压缩"),
+        "纯删组应在 system 留一行提示：{body}"
+    );
     assert!(
         body.contains(&report.removed_turn_groups.to_string()),
         "{body}"
@@ -790,7 +812,10 @@ fn notice_keeps_turn_input_usage_as_the_single_source() {
     let mut messages = vec![Message::system_only("sys"), Message::user_only("u")];
     let mut compaction = crate::agent::context_compaction::ContextCompactionReport {
         after: crate::agent::context_compaction::estimate_final_request_tokens(
-            &cfg, &messages, &[], None,
+            &cfg,
+            &messages,
+            &[],
+            None,
         ),
         ..Default::default()
     };

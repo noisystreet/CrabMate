@@ -50,12 +50,7 @@ fn pick_mode(pid: u32, pgid: Option<i32>) -> TerminateMode {
     }
 }
 
-fn send(
-    mode: TerminateMode,
-    pid: u32,
-    pgid: Option<i32>,
-    sig: Signal,
-) -> Result<(), CtlError> {
+fn send(mode: TerminateMode, pid: u32, pgid: Option<i32>, sig: Signal) -> Result<(), CtlError> {
     let res = match mode {
         TerminateMode::Group => {
             let group = Pid::from_raw(pgid.unwrap_or(pid as i32));
@@ -101,7 +96,10 @@ pub fn terminate(
     // pid 0 是非法的目标；超出 i32 范围的值转 `Pid` 会溢出成负数，内核会报
     // EINVAL 而不是 ESRCH —— 都不可能是真实的 serve，直接视为「已达成」。
     if pid == 0 || pid > i32::MAX as u32 {
-        return Ok(TerminateSummary { mode, forced: false });
+        return Ok(TerminateSummary {
+            mode,
+            forced: false,
+        });
     }
 
     let mut forced = false;

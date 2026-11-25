@@ -11,8 +11,8 @@
 use crate::cm_types::Message;
 use std::collections::HashMap;
 
-use crate::cm_agent::plan_rewrite;
 use crate::cm_agent::completion_judge::CompletionVerdict;
+use crate::cm_agent::plan_rewrite;
 
 /// 外循环 Gate **前**纠偏计数（R 轨 3：`OuterLoopReflectPreGateReason`）。
 ///
@@ -342,10 +342,7 @@ mod completion_judge_slot_tests {
         assert!(c.take_completion_judge_slot(fp), "首次应放行");
         assert!(!c.take_completion_judge_slot(fp), "同一指纹第二次必须跳过");
         assert!(!c.take_completion_judge_slot(fp), "仍然跳过");
-        assert!(
-            c.take_completion_judge_slot(fp + 1),
-            "证据变化后应重新放行"
-        );
+        assert!(c.take_completion_judge_slot(fp + 1), "证据变化后应重新放行");
     }
 
     /// 新回合从「未问过」开始。
@@ -381,7 +378,8 @@ mod completion_judge_slot_tests {
     fn exhausted_budget_invalidates_stale_verdict() {
         use crate::cm_agent::completion_judge::{CompletionStatus, CompletionVerdict};
         let mut c = PerTurnCounters::new();
-        let unsat = || CompletionVerdict::new(CompletionStatus::Unsatisfied, Vec::new(), Vec::new());
+        let unsat =
+            || CompletionVerdict::new(CompletionStatus::Unsatisfied, Vec::new(), Vec::new());
         for fp in 0..super::MAX_COMPLETION_JUDGE_CALLS_PER_TURN as u64 {
             if c.take_completion_judge_slot(fp) {
                 c.record_completion_verdict(unsat());

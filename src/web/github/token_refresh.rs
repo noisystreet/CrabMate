@@ -138,8 +138,12 @@ pub(crate) async fn github_oauth_token_refresh_handler(
         } else {
             format!("GitHub 错误：{err}")
         };
-        return err_json(StatusCode::UNAUTHORIZED, "GITHUB_REFRESH_TOKEN_REJECTED", &msg)
-            .into_response();
+        return err_json(
+            StatusCode::UNAUTHORIZED,
+            "GITHUB_REFRESH_TOKEN_REJECTED",
+            &msg,
+        )
+        .into_response();
     };
 
     // GitHub 轮换 refresh_token；未返回时沿用原值。
@@ -152,14 +156,16 @@ pub(crate) async fn github_oauth_token_refresh_handler(
         scope: grant.scope,
     })
     .into_response();
-    if let Some(cookie) = set_token_cookie_header(GITHUB_TOKEN_COOKIE_NAME, &grant.access_token, &headers)
+    if let Some(cookie) =
+        set_token_cookie_header(GITHUB_TOKEN_COOKIE_NAME, &grant.access_token, &headers)
     {
         res.headers_mut().append(header::SET_COOKIE, cookie);
     }
     if let Some(r) = new_refresh.as_deref()
         && let Some(cookie) = set_token_cookie_header(GITHUB_REFRESH_COOKIE_NAME, r, &headers)
     {
-        res.headers_mut().append(axum::http::header::SET_COOKIE, cookie);
+        res.headers_mut()
+            .append(axum::http::header::SET_COOKIE, cookie);
     }
     res
 }

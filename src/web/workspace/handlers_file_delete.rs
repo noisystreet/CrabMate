@@ -9,11 +9,11 @@ use axum::{
 use super::handlers::effective_workspace_base_canonical;
 #[cfg(unix)]
 use super::handlers_sync::workspace_delete_file_sync_unix;
-use crate::web::app_state::AppStateHttpCore;
-use crate::web::http_types::validation::validate_workspace_query_encoding_optional;
 use crate::cm_api_contract::workspace::{
     WorkspaceFileDeleteFailure, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
 };
+use crate::web::app_state::AppStateHttpCore;
+use crate::web::http_types::validation::validate_workspace_query_encoding_optional;
 use crate::workspace::path::resolve_web_workspace_read_path;
 
 fn workspace_file_delete_err(msg: String) -> Json<WorkspaceFileDeleteResponse> {
@@ -169,10 +169,8 @@ async fn workspace_file_delete_one(
     canonical: std::path::PathBuf,
 ) -> Result<(), String> {
     let base = base_canonical.to_path_buf();
-    match tokio::task::spawn_blocking(move || {
-        workspace_delete_file_sync_unix(base, canonical)
-    })
-    .await
+    match tokio::task::spawn_blocking(move || workspace_delete_file_sync_unix(base, canonical))
+        .await
     {
         Ok(Ok(())) => Ok(()),
         Ok(Err(msg)) => Err(msg),

@@ -442,7 +442,6 @@ pub fn run_plugin_validate_command(
     Ok(())
 }
 
-
 fn print_plugin_list_human_row(checked: &PluginCheckResult, status: &str) {
     let name = checked.name.as_deref().unwrap_or("-");
     let cmd = checked.command.as_deref().unwrap_or("-");
@@ -491,7 +490,9 @@ pub fn run_plugin_list_command(
             errors: checked.errors,
         });
     }
-    print_plugin_machine_output("list", cli.jsonl, cli.json, "汇总", &rows, ok_count, fail_count)?;
+    print_plugin_machine_output(
+        "list", cli.jsonl, cli.json, "汇总", &rows, ok_count, fail_count,
+    )?;
     Ok(())
 }
 

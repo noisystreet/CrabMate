@@ -10,8 +10,14 @@ use super::model::ForEachPendingSpec;
 const MAX_STEPS: usize = 64;
 const MAX_REPEAT_COUNT: usize = 5;
 
-fn map_required_id(obj: &Map<String, Value>, step_index: usize, ctx: &str) -> Result<String, String> {
-    trimmed_str_field(obj, "id").map(str::to_string).ok_or_else(|| format!("steps[{step_index}] {ctx}"))
+fn map_required_id(
+    obj: &Map<String, Value>,
+    step_index: usize,
+    ctx: &str,
+) -> Result<String, String> {
+    trimmed_str_field(obj, "id")
+        .map(str::to_string)
+        .ok_or_else(|| format!("steps[{step_index}] {ctx}"))
 }
 
 fn map_tool_name(obj: &Map<String, Value>, step_index: usize) -> Result<String, String> {
@@ -306,7 +312,13 @@ fn expand_repeat_step_nodes(
         };
         let mut node =
             compile_plain_step_node(&step_base, step_index, Some(&node_id), Some(&deps))?;
-        apply_repeat_node_run_if(&mut node, i, &when_run_if, repeat.stop_on, prev_id.as_deref());
+        apply_repeat_node_run_if(
+            &mut node,
+            i,
+            &when_run_if,
+            repeat.stop_on,
+            prev_id.as_deref(),
+        );
         prev_id = Some(node_id);
         out.push(node);
     }

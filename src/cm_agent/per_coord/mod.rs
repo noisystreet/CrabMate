@@ -16,10 +16,10 @@ pub use crate::cm_config::FinalPlanRequirementMode;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
 
+use crate::cm_agent::completion_judge::CompletionVerdict;
 use crate::cm_agent::plan_artifact;
 use crate::cm_agent::plan_rewrite;
 use crate::cm_agent::workflow_reflection_controller::{self, WorkflowReflectionController};
-use crate::cm_agent::completion_judge::CompletionVerdict;
 use serde_json::Value;
 
 pub use plan_rewrite::PlanRewriteExhaustedReason;

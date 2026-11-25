@@ -8,7 +8,7 @@ use crate::cm_tools::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::cm_tools::tool_result::ToolError;
 use log::warn;
 use serde::Deserialize;
-use worbrow::{search, BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind};
+use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind, search};
 
 use super::ToolContext;
 
@@ -306,9 +306,15 @@ fn web_search_api_error(text: String) -> ToolError {
 /// reqwest 发送失败：超时归 `timeout`（瞬时、可重试），其余归 `web_search_api_error`（外部、不重试）。
 fn format_search_network_error(provider: &str, e: &reqwest::Error) -> ToolError {
     if e.is_timeout() {
-        ToolError::with_code("timeout", format!("错误[timeout]：{provider} 搜索请求超时：{}", e))
+        ToolError::with_code(
+            "timeout",
+            format!("错误[timeout]：{provider} 搜索请求超时：{}", e),
+        )
     } else {
-        web_search_api_error(format!("错误[web_search_api_error]：{provider} 搜索请求失败：{}", e))
+        web_search_api_error(format!(
+            "错误[web_search_api_error]：{provider} 搜索请求失败：{}",
+            e
+        ))
     }
 }
 
@@ -345,7 +351,10 @@ fn search_brave(
     }
 
     let parsed: BraveWebSearchResponse = res.json().map_err(|e| {
-        web_search_api_error(format!("错误[web_search_api_error]：解析 Brave 响应失败：{}", e))
+        web_search_api_error(format!(
+            "错误[web_search_api_error]：解析 Brave 响应失败：{}",
+            e
+        ))
     })?;
 
     let results = parsed.web.and_then(|w| w.results).unwrap_or_default();
@@ -409,7 +418,10 @@ fn search_tavily(
     }
 
     let parsed: TavilySearchResponse = res.json().map_err(|e| {
-        web_search_api_error(format!("错误[web_search_api_error]：解析 Tavily 响应失败：{}", e))
+        web_search_api_error(format!(
+            "错误[web_search_api_error]：解析 Tavily 响应失败：{}",
+            e
+        ))
     })?;
 
     let results = parsed.results.unwrap_or_default();
@@ -445,7 +457,7 @@ fn truncate_output(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worbrow::{search, BrowserKind, Config as WorbrowConfig};
+    use worbrow::{BrowserKind, Config as WorbrowConfig, search};
 
     #[test]
     fn worbrow_fake_formats_non_empty_results() {

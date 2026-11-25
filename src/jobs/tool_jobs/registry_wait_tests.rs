@@ -71,7 +71,11 @@ fn terminal_job_returns_immediately() {
         }
     );
     // 已终态必须零等待返回（事件唤醒路径的第一步检查）。
-    assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[test]

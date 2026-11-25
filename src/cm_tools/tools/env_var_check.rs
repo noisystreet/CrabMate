@@ -49,9 +49,7 @@ pub fn run_try(args_json: &str) -> Result<String, ToolError> {
         .map_err(|e| ToolError::invalid_args(format!("参数 JSON 无效: {e}")))?;
     let names: Vec<&str> = args.names.iter().map(String::as_str).collect();
     if names.is_empty() {
-        return Err(ToolError::invalid_args(
-            "错误：names 不能为空".to_string(),
-        ));
+        return Err(ToolError::invalid_args("错误：names 不能为空".to_string()));
     }
     if names.len() > 50 {
         return Err(ToolError::invalid_args(

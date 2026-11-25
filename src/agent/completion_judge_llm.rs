@@ -144,7 +144,10 @@ fn render_user_body(input: &CompletionJudgeInput) -> String {
         out.push('\n');
     }
     if input.evidence.len() > MAX_EVIDENCE_ITEMS {
-        out.push_str(&format!("…（另有 {} 条证据未列出）\n", input.evidence.len() - MAX_EVIDENCE_ITEMS));
+        out.push_str(&format!(
+            "…（另有 {} 条证据未列出）\n",
+            input.evidence.len() - MAX_EVIDENCE_ITEMS
+        ));
     }
     out
 }
@@ -196,7 +199,7 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
                 code: "completion_judge_cancelled".to_string(),
                 message: "完成判定被取消".to_string(),
                 retryable: false,
-                                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -240,19 +243,21 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
         )
         .with_turn_budget(self.ctx.turn_budget);
 
-        let (reply, _finish) = complete_chat_retrying(&cc, &req).await.map_err(|e| ToolError {
-            category: ToolFailureCategory::External,
-            code: "completion_judge_llm_failed".to_string(),
-            message: format!("完成判定 LLM 调用失败：{e}"),
-            retryable: true,
-                            parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+        let (reply, _finish) = complete_chat_retrying(&cc, &req)
+            .await
+            .map_err(|e| ToolError {
+                category: ToolFailureCategory::External,
+                code: "completion_judge_llm_failed".to_string(),
+                message: format!("完成判定 LLM 调用失败：{e}"),
+                retryable: true,
+                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
                     stderr: String::new(),
                     error_code: None,
                 },
-        })?;
+            })?;
         let text = crate::types::message_content_as_str(&reply.content)
             .unwrap_or("")
             .trim()
@@ -265,13 +270,13 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
                 crate::redact::preview_chars(&text, 120)
             ),
             retryable: false,
-                            parsed: crate::cm_tools::tool_result::ParsedToolOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: None,
-                },
+            parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                ok: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error_code: None,
+            },
         })
     }
 }
@@ -359,7 +364,9 @@ mod tests {
     async fn judge_short_circuits_when_cancelled() {
         let cancel = AtomicBool::new(true);
         let backend = StubBackend(Err("不应被调用".to_string()));
-        let code = run_judge(&backend, Some(&cancel)).await.expect_err("应失败");
+        let code = run_judge(&backend, Some(&cancel))
+            .await
+            .expect_err("应失败");
         assert_eq!(code, "completion_judge_cancelled");
     }
 
@@ -409,7 +416,10 @@ mod tests {
         )
         .expect("parse");
         assert_eq!(v.status, CompletionStatus::Partial);
-        assert_eq!(v.missing, vec!["未验证边界".to_string(), "补测试".to_string()]);
+        assert_eq!(
+            v.missing,
+            vec!["未验证边界".to_string(), "补测试".to_string()]
+        );
     }
 
     #[test]
@@ -420,8 +430,10 @@ mod tests {
 
     #[test]
     fn tolerates_leading_prose() {
-        let v = parse_verdict("判定如下：{\"status\":\"satisfied\",\"evidence_refs\":[\"ev_2\"]} 以上。")
-            .expect("parse");
+        let v = parse_verdict(
+            "判定如下：{\"status\":\"satisfied\",\"evidence_refs\":[\"ev_2\"]} 以上。",
+        )
+        .expect("parse");
         assert_eq!(v.status, CompletionStatus::Satisfied);
     }
 

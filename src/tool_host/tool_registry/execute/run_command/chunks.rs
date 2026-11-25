@@ -5,7 +5,6 @@
 
 use std::path::Path;
 
-
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
 use super::super::*;
 // 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::tool_host::tool_registry::execute) use` 出来的显式接口。
@@ -16,13 +15,18 @@ pub(in crate::tool_host::tool_registry::execute) struct RunCommandHostInvoke<'a>
     pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
     pub(in crate::tool_host::tool_registry::execute) workspace_changed: &'a mut bool,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
     pub(in crate::tool_host::tool_registry::execute) tool_call_id: &'a str,
-    pub(in crate::tool_host::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    pub(in crate::tool_host::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    pub(in crate::tool_host::tool_registry::execute) tool_jobs: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
+        Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror:
+        Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::tool_host::tool_registry::execute) cancel:
+        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::tool_host::tool_registry::execute) tool_jobs:
+        Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
 }
 
 pub(in crate::tool_host::tool_registry::execute) fn run_command_chunk_sink(

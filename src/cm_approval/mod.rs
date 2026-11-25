@@ -350,9 +350,6 @@ mod tests {
             cli_detail: String::new(),
             web_timeline_prefix_zh: "p",
         };
-        assert_eq!(
-            web_timeline_detail(&spec),
-            "curl -s -L https://example.com"
-        );
+        assert_eq!(web_timeline_detail(&spec), "curl -s -L https://example.com");
     }
 }

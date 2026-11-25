@@ -15,8 +15,8 @@ use super::read_file_pipeline::{
 #[path = "read_tool_parse.rs"]
 mod read_tool_parse;
 
-use read_tool_parse::{ReadFileParsedArgs, parse_read_file_args};
 use crate::cm_names as tool_names;
+use read_tool_parse::{ReadFileParsedArgs, parse_read_file_args};
 
 /// 路径不存在或无法解析时追加，减少误猜 `foo.rs` / `src/lib.rs` 等布局。
 const READ_FILE_NOT_FOUND_LAYOUT_HINT: &str = "\n\n提示：若路径不存在，常见于误猜 Rust 布局——模块多为 `…/模块名/mod.rs` 而非同级 `…/模块名.rs`；workspace 子 crate 入口可能在包根 `lib.rs`（或 `Cargo.toml` 的 `[lib] path`），未必有 `src/lib.rs`。请先用 read_dir / glob_files / list_tree 确认真实路径后再 read_file。";
@@ -31,7 +31,9 @@ fn read_file_missing_path_hint_eligible(e: &WorkspacePathError) -> bool {
     }
 }
 
-fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::cm_tools::tool_result::ToolError {
+fn read_file_workspace_tool_error(
+    e: WorkspacePathError,
+) -> crate::cm_tools::tool_result::ToolError {
     let code: &'static str = match e.kind() {
         "empty_path" => "read_file_workspace_empty_path",
         "absolute_path_not_allowed" => "read_file_workspace_absolute_path_not_allowed",
@@ -51,7 +53,10 @@ fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::cm_tools::too
         "no_existing_ancestor" => "read_file_workspace_no_existing_ancestor",
         _ => "read_file_workspace_other",
     };
-    crate::cm_tools::tool_result::ToolError::external_code(code, tool_user_error_from_workspace_path(e))
+    crate::cm_tools::tool_result::ToolError::external_code(
+        code,
+        tool_user_error_from_workspace_path(e),
+    )
 }
 
 fn read_file_workspace_tool_error_maybe_hint(
@@ -300,7 +305,8 @@ pub fn read_file_try(
     let parsed = parse_read_file_args(&v)?;
     let path = parsed.path.as_str();
 
-    let mut opened = access.for_read_open(path)
+    let mut opened = access
+        .for_read_open(path)
         .map_err(read_file_workspace_tool_error_maybe_hint)?;
     read_file_require_regular_file(&opened.metadata)?;
 
@@ -334,8 +340,7 @@ pub fn read_file_try(
     // 与原先一致：在 sniff 前用已知长度做 count_total 体积守卫。
     guard_read_file_count_total_size(meta.len(), parsed.count_total)?;
 
-    let out =
-        read_file_pipeline_body(working_dir, &target, path, &revision, &parsed, opened.file)?;
+    let out = read_file_pipeline_body(working_dir, &target, path, &revision, &parsed, opened.file)?;
     read_file_turn_cache_put(ctx, &target, cache_key, &meta, &revision, &out);
     Ok(out)
 }
@@ -347,11 +352,7 @@ pub fn read_file(
 ) -> String {
     match read_file_try(
         args_json,
-        &super::PathAccess::with_scope_and_roots(
-            working_dir,
-            ctx.path_scope,
-            ctx.allowed_roots,
-        ),
+        &super::PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
         ctx,
     ) {
         Ok(s) => s,

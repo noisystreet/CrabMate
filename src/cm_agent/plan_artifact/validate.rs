@@ -216,7 +216,11 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，且存在 validate-only 绑定上下文，
     // 允许多步交由 `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
     if p.steps.len() > PLAN_FIXED_MAX_STEPS
-        && !plan_allows_workflow_bound_multi_step(p, validate_only_binding_ids, PLAN_FIXED_MAX_STEPS)
+        && !plan_allows_workflow_bound_multi_step(
+            p,
+            validate_only_binding_ids,
+            PLAN_FIXED_MAX_STEPS,
+        )
     {
         return Err(PlanArtifactError::TooManySteps {
             max: PLAN_FIXED_MAX_STEPS,

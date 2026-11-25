@@ -28,10 +28,13 @@ fn builtin_retry_denied() -> &'static std::collections::HashSet<String> {
     static DENIED: std::sync::OnceLock<std::collections::HashSet<String>> =
         std::sync::OnceLock::new();
     DENIED.get_or_init(|| {
-        [tool_names::CODEBASE_SEMANTIC_SEARCH, tool_names::BACKGROUND_JOB_WAIT]
-            .into_iter()
-            .map(str::to_string)
-            .collect()
+        [
+            tool_names::CODEBASE_SEMANTIC_SEARCH,
+            tool_names::BACKGROUND_JOB_WAIT,
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
     })
 }
 
@@ -163,14 +166,9 @@ mod tests {
         let mut cfg = cfg_with_retry_enabled();
         // 默认嵌入 `*` → 任意 http/https 直接执行 → 可重试
         let spec = ToolRetrySpec::from_config(&cfg);
-        assert!(spec.tool_retry_eligible(
-            &cfg,
-            "http_fetch",
-            r#"{"url":"https://example.com/a"}"#
-        ));
+        assert!(spec.tool_retry_eligible(&cfg, "http_fetch", r#"{"url":"https://example.com/a"}"#));
         // 收紧前缀后未匹配 → 需审批 → 不重试
-        cfg.http_fetch.http_fetch_allowed_prefixes =
-            vec!["https://doc.rust-lang.org/".to_string()];
+        cfg.http_fetch.http_fetch_allowed_prefixes = vec!["https://doc.rust-lang.org/".to_string()];
         let spec = ToolRetrySpec::from_config(&cfg);
         assert!(!spec.tool_retry_eligible(
             &cfg,
@@ -201,7 +199,8 @@ mod tests {
     #[test]
     fn eligible_respects_denied_tools() {
         let mut cfg = cfg_with_retry_enabled();
-        cfg.tool_registry_policy.tool_registry_tool_retry_denied_tools =
+        cfg.tool_registry_policy
+            .tool_registry_tool_retry_denied_tools =
             Arc::new(["json_format".to_string()].into_iter().collect());
         let spec = ToolRetrySpec::from_config(&cfg);
         assert!(!spec.tool_retry_eligible(&cfg, "json_format", "{}"));

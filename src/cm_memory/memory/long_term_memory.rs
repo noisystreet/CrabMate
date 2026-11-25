@@ -18,12 +18,12 @@ use fastembed::TextEmbedding;
 use log::{debug, info, warn};
 use rusqlite::Connection;
 
+use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_memory::memory::long_term_memory_recall as recall;
 use crate::cm_memory::memory::long_term_memory_store::{
     self, MemoryListFilter, MemoryProjectionRow, MemoryRow,
 };
 use crate::cm_memory::memory::vector_math::cosine_sim;
-use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_types::text_utils::preview_chars;
 use crate::cm_types::{
     CRABMATE_LONG_TERM_MEMORY_NAME, Message, is_chat_ui_separator, is_long_term_memory_injection,
@@ -76,7 +76,6 @@ pub(super) fn chunk_text(s: &str, max_chunk: usize) -> Vec<String> {
     }
     out
 }
-
 
 fn validate_explicit_remember_scope_and_text<'a>(
     cfg: &AgentConfig,
@@ -293,29 +292,26 @@ impl LongTermMemoryRuntime {
         let mut scored = Vec::with_capacity(rows.len());
         let mut keyword_fallback = false;
         for row in rows {
-            let (base, from_keywords) = match row
-                .embedding
-                .as_ref()
-                .and_then(|b| bytes_to_f32_slice(b))
-            {
-                Some(ev) => {
-                    let b = cosine_sim(qv, &ev);
-                    // 阈值须判 base：boost 是加性的，用总分判定会让无关经验条靠 boost 越过门槛。
-                    if b < recall::MIN_RECALL_BASE_SCORE {
-                        continue;
+            let (base, from_keywords) =
+                match row.embedding.as_ref().and_then(|b| bytes_to_f32_slice(b)) {
+                    Some(ev) => {
+                        let b = cosine_sim(qv, &ev);
+                        // 阈值须判 base：boost 是加性的，用总分判定会让无关经验条靠 boost 越过门槛。
+                        if b < recall::MIN_RECALL_BASE_SCORE {
+                            continue;
+                        }
+                        (b, false)
                     }
-                    (b, false)
-                }
-                // 无向量（旧数据被配方迁移作废 / 嵌入失败）的行回退关键词打分；
-                // 否则这些行在向量路径下会被整体丢弃，关键词路径才是它们唯一的召回机会。
-                None => {
-                    let kw = recall::keyword_overlap_score(query, &row.chunk_text);
-                    if kw <= 0.0 && !recall::tag_hit_in_query(row, query) {
-                        continue;
+                    // 无向量（旧数据被配方迁移作废 / 嵌入失败）的行回退关键词打分；
+                    // 否则这些行在向量路径下会被整体丢弃，关键词路径才是它们唯一的召回机会。
+                    None => {
+                        let kw = recall::keyword_overlap_score(query, &row.chunk_text);
+                        if kw <= 0.0 && !recall::tag_hit_in_query(row, query) {
+                            continue;
+                        }
+                        (kw, true)
                     }
-                    (kw, true)
-                }
-            };
+                };
             keyword_fallback |= from_keywords;
             let score = recall::score_row(base, row, query, prioritize, from_keywords);
             scored.push((score, base, row.clone()));
@@ -496,7 +492,9 @@ impl LongTermMemoryRuntime {
         messages: &[Message],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let Some((experience, tags)) =
-            crate::cm_memory::memory::auto_summarize_experience::draft_auto_experience_from_turn(messages)
+            crate::cm_memory::memory::auto_summarize_experience::draft_auto_experience_from_turn(
+                messages,
+            )
         else {
             return Ok(());
         };
@@ -674,15 +672,21 @@ impl LongTermMemoryRuntime {
             .conn
             .lock()
             .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
-        let rows = long_term_memory_store::list_projected_for_scope(&conn, scope_id, filter, limit, offset)
-            .map_err(|e| format!("读取长期记忆列表失败: {e}"))?;
+        let rows = long_term_memory_store::list_projected_for_scope(
+            &conn, scope_id, filter, limit, offset,
+        )
+        .map_err(|e| format!("读取长期记忆列表失败: {e}"))?;
         let total = long_term_memory_store::count_projected_for_scope(&conn, scope_id, filter)
             .map_err(|e| format!("统计长期记忆条数失败: {e}"))?;
         Ok((rows, total))
     }
 
     /// Web `DELETE /memory/{id}`：按 `(scope_id, id)` 删除，返回删除行数（0 表示不存在，幂等）。
-    pub fn delete_by_id_for_scope_blocking(&self, scope_id: &str, id: i64) -> Result<usize, String> {
+    pub fn delete_by_id_for_scope_blocking(
+        &self,
+        scope_id: &str,
+        id: i64,
+    ) -> Result<usize, String> {
         let conn = self
             .conn
             .lock()

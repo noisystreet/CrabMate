@@ -18,8 +18,8 @@ pub(super) fn axum_route_ops_from_source(manifest_dir: &Path) -> BTreeSet<(Strin
     );
     let mut ops = BTreeSet::new();
     for path in files {
-        let src = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let src =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         for (route_path, methods) in parse_route_invocations(&src) {
             for method in methods {
                 ops.insert((route_path.clone(), method));

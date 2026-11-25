@@ -179,8 +179,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_version() {
-        let root =
-            json!({ "version": 1, "workflow": {}, "steps": [{"id":"a","tool":"json_format","args":{}}] });
+        let root = json!({ "version": 1, "workflow": {}, "steps": [{"id":"a","tool":"json_format","args":{}}] });
         let err = validate_workflow_author_document(&root).unwrap_err();
         assert!(err.contains("不支持 version"));
     }

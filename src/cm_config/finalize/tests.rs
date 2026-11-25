@@ -27,21 +27,23 @@ mod background_job_defaults_tests {
 
         let mut b = ConfigBuilder::default();
         b.tool_registry_policy.tool_registry_background_jobs_enabled = Some(true);
-        b.tool_registry_policy.tool_registry_background_job_max_concurrent = Some(999);
+        b.tool_registry_policy
+            .tool_registry_background_job_max_concurrent = Some(999);
         b.tool_registry_policy.tool_registry_background_job_ttl_secs = Some(1_000_000);
-        b.tool_registry_policy.tool_registry_background_job_output_buffer_bytes = Some(30_000_000);
+        b.tool_registry_policy
+            .tool_registry_background_job_output_buffer_bytes = Some(30_000_000);
         let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 256);
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 604_800);
         assert_eq!(
-            tr.tool_registry_background_job_output_buffer_bytes,
-            16_777_216,
+            tr.tool_registry_background_job_output_buffer_bytes, 16_777_216,
             "输出缓冲上限应钳制到 16 MiB"
         );
 
         // 白名单清洗：trim + 滤空串。
-        b.tool_registry_policy.tool_registry_background_job_async_tools =
+        b.tool_registry_policy
+            .tool_registry_background_job_async_tools =
             Some(vec![" cargo_test ".to_string(), String::new()]);
         let tr = super::derived::derive_tool_registry_fields(&b);
         assert_eq!(
@@ -53,7 +55,8 @@ mod background_job_defaults_tests {
         );
 
         // 显式空数组 = 全部禁用（区别于 `None` 落默认白名单）。
-        b.tool_registry_policy.tool_registry_background_job_async_tools = Some(Vec::new());
+        b.tool_registry_policy
+            .tool_registry_background_job_async_tools = Some(Vec::new());
         let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_job_async_tools.is_empty());
     }
@@ -91,8 +94,11 @@ background_job_output_buffer_bytes = 524288
         let tr = super::derived::derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
         assert!(
-            tr.tool_registry_background_job_async_tools.contains("cargo_test")
-                && tr.tool_registry_background_job_async_tools.contains("run_command")
+            tr.tool_registry_background_job_async_tools
+                .contains("cargo_test")
+                && tr
+                    .tool_registry_background_job_async_tools
+                    .contains("run_command")
                 && tr.tool_registry_background_job_async_tools.len() == 2
         );
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 6);
@@ -166,12 +172,14 @@ tool_retry_denied_tools = ["http_fetch"]
         assert!(tr.tool_registry_tool_retry_enabled);
         assert_eq!(tr.tool_registry_tool_retry_max_attempts, 3);
         assert_eq!(tr.tool_registry_tool_retry_backoff_ms, 500);
-        assert!(tr
-            .tool_registry_tool_retry_error_codes
-            .contains("http_timeout"));
-        assert!(tr
-            .tool_registry_tool_retry_denied_tools
-            .contains("http_fetch"));
+        assert!(
+            tr.tool_registry_tool_retry_error_codes
+                .contains("http_timeout")
+        );
+        assert!(
+            tr.tool_registry_tool_retry_denied_tools
+                .contains("http_fetch")
+        );
     }
 }
 

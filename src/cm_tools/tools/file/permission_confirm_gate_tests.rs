@@ -105,7 +105,10 @@ fn l4_delete_files_still_requires_confirm_outside_workspace() {
     let err = delete_files_try(r#"{"paths":["../outside/a.txt"]}"#, &access, &ctx)
         .expect_err("L4 不得免除不可逆操作确认");
     assert!(err.message.contains("需要 confirm=true"), "{}", err.message);
-    assert!(td.join("outside/a.txt").is_file(), "缺 confirm 时不得删除文件");
+    assert!(
+        td.join("outside/a.txt").is_file(),
+        "缺 confirm 时不得删除文件"
+    );
 
     let _ = std::fs::remove_dir_all(&td);
 }

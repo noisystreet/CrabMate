@@ -31,8 +31,11 @@ async fn get_raw(client: &reqwest::Client, base: &str, path: &str) -> reqwest::R
 async fn workspace_file_raw_http_smoke() {
     let root = tempfile::tempdir().expect("tempdir");
     std::fs::write(root.path().join("ok.png"), MIN_PNG).expect("write png");
-    std::fs::write(root.path().join("x.svg"), b"<svg xmlns='http://www.w3.org/2000/svg'/>")
-        .expect("write svg");
+    std::fs::write(
+        root.path().join("x.svg"),
+        b"<svg xmlns='http://www.w3.org/2000/svg'/>",
+    )
+    .expect("write svg");
 
     let handle = start_test_serve(None).await;
     let client = loopback_http_client();
@@ -105,7 +108,10 @@ async fn workspace_file_download_http_smoke() {
     assert!(set.status().is_success(), "set workspace");
 
     let raw_pdf = get_raw(&client, &handle.base_url, "说明.pdf").await;
-    assert_eq!(raw_pdf.status(), reqwest::StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(
+        raw_pdf.status(),
+        reqwest::StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
 
     let dl = get_download(&client, &handle.base_url, "说明.pdf").await;
     assert_eq!(dl.status(), reqwest::StatusCode::OK);

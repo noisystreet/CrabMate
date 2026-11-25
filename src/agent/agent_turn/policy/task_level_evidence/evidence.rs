@@ -128,7 +128,6 @@ impl EvidenceSet {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
-
 }
 
 /// 验证性执行的**专用**工具：自身输出带结构化退出码，无需文本推断。
@@ -137,7 +136,9 @@ impl EvidenceSet {
 fn is_dedicated_verify_tool(name: &str) -> bool {
     matches!(
         name,
-        tool_names::CARGO_TEST | tool_names::CARGO_CHECK | tool_names::CARGO_CLIPPY
+        tool_names::CARGO_TEST
+            | tool_names::CARGO_CHECK
+            | tool_names::CARGO_CLIPPY
             | tool_names::CARGO_RUN
             | tool_names::PYTEST_RUN
     )
@@ -226,7 +227,9 @@ pub(crate) fn is_env_assignment(token: &str) -> bool {
     let Some((name, _)) = token.split_once("=") else {
         return false;
     };
-    !name.is_empty() && !name.starts_with("-") && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == 95)
+    !name.is_empty()
+        && !name.starts_with("-")
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == 95)
 }
 
 /// 单条命令（已切段）是否在跑构建/测试。
@@ -327,7 +330,6 @@ fn first_verb<'a>(rest: &[&'a str]) -> Option<&'a str> {
         .copied()
         .find(|t| !t.is_empty() && !t.starts_with('+') && !t.starts_with('-'))
 }
-
 
 /// 按 Unicode scalar 截断并压成单行，避免证据正文塞满上下文。
 fn summarize_output(s: &str) -> String {
@@ -466,7 +468,11 @@ mod tests {
     fn write_tool_is_structured_write_evidence() {
         let messages = vec![
             user("改常量"),
-            tool_env(tool_names::MODIFY_FILE, "修改 src/x.rs", "已修改文件: src/x.rs"),
+            tool_env(
+                tool_names::MODIFY_FILE,
+                "修改 src/x.rs",
+                "已修改文件: src/x.rs",
+            ),
         ];
         let ev = EvidenceSet::collect(&messages);
         let item = &ev.items()[0];
@@ -552,7 +558,9 @@ mod tests {
     #[test]
     fn run_command_verify_requires_structured_invocation() {
         assert!(run_command_is_verify(Some("cargo test")));
-        assert!(run_command_is_verify(Some("cargo +nightly clippy --all-targets")));
+        assert!(run_command_is_verify(Some(
+            "cargo +nightly clippy --all-targets"
+        )));
         assert!(run_command_is_verify(Some("python -m pytest -q")));
         // 早退短路文案解析不出命令行：一律不算 verify。
         assert!(!run_command_is_verify(None));
@@ -608,7 +616,10 @@ mod tests {
         }
 
         // 命令是 `cargo nextest`：输出文本里没有任何构建特征，只有读命令才能判对。
-        let messages = vec![user("跑一下"), envelope("cargo nextest run", "Running tests…")];
+        let messages = vec![
+            user("跑一下"),
+            envelope("cargo nextest run", "Running tests…"),
+        ];
         assert_eq!(
             EvidenceSet::collect(&messages).items()[0].kind,
             EvidenceKind::Verify,

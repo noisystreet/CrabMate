@@ -10,8 +10,8 @@ use serde_json::json;
 use super::decl;
 use super::gc::{GcItem, GcPlan, GcTargetKind};
 use super::ops::{DownOutcome, UpOutcome};
-use super::query::PruneItem;
 use super::probe::{Observed, Probe};
+use super::query::PruneItem;
 use super::record::InstanceRecord;
 use super::supervise::Step;
 
@@ -19,7 +19,11 @@ use super::supervise::Step;
 fn uptime_secs(rec: &InstanceRecord) -> Option<i64> {
     let started = rec.started_at.as_deref()?;
     let t = chrono::DateTime::parse_from_rfc3339(started).ok()?;
-    Some((chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_seconds().max(0))
+    Some(
+        (chrono::Utc::now() - t.with_timezone(&chrono::Utc))
+            .num_seconds()
+            .max(0),
+    )
 }
 
 fn human_uptime(secs: Option<i64>) -> String {
@@ -123,17 +127,29 @@ pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
         return;
     }
     println!("实例: {}", rec.name);
-    println!("  状态: {}{}", state_marker(p.observed), p.observed.as_str());
+    println!(
+        "  状态: {}{}",
+        state_marker(p.observed),
+        p.observed.as_str()
+    );
     println!("  期望态: {}", rec.desired_state.as_str());
     println!("  base_url: {}", rec.base_url.as_deref().unwrap_or("-"));
-    println!("  端口: {}", rec.port.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+    println!(
+        "  端口: {}",
+        rec.port
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".into())
+    );
     println!("  pid/pgid: {:?}/{:?}", rec.pid, rec.pgid);
     println!("  已运行: {}", human_uptime(uptime_secs(rec)));
     println!("  进程身份: {}", identity_str(p));
     println!("  TCP 可达: {}", p.tcp_ok);
     println!("  workspace: {}", rec.workspace.as_deref().unwrap_or("-"));
     println!("  声明 config: {}", rec.config.as_deref().unwrap_or("-"));
-    println!("  实际 config: {}", rec.config_in_use.as_deref().unwrap_or("-"));
+    println!(
+        "  实际 config: {}",
+        rec.config_in_use.as_deref().unwrap_or("-")
+    );
     println!("  日志: {}", rec.log.as_deref().unwrap_or("-"));
     println!("  环境变量(名): {}", rec.env_keys.join(", "));
     // `--yes` 决定工具面的白名单是否生效，属于「这个实例到底是什么」的一部分；
@@ -143,7 +159,10 @@ pub fn status(rec: &InstanceRecord, p: &Probe, as_json: bool) {
         if rec.yes { "是（--yes）" } else { "否" }
     );
     println!("  profile(声明): {}", rec.profile.as_deref().unwrap_or("-"));
-    println!("  profile(实际): {}", rec.profile_in_use.as_deref().unwrap_or("-"));
+    println!(
+        "  profile(实际): {}",
+        rec.profile_in_use.as_deref().unwrap_or("-")
+    );
     if rec.profile != rec.profile_in_use {
         println!(
             "  提示: profile 已变更但实例未重启；执行 `crabmatectl restart {}` 才生效",
@@ -216,7 +235,9 @@ pub fn down(out: &DownOutcome) {
             "实例 {} 已强制终止（宽限期内未退出，已用 SIGKILL）",
             out.name
         );
-        println!("  提示：serve 的优雅关停可能较慢；可用 `--timeout <SECS>` 放宽宽限期（见 `ctl logs`）");
+        println!(
+            "  提示：serve 的优雅关停可能较慢；可用 `--timeout <SECS>` 放宽宽限期（见 `ctl logs`）"
+        );
     } else {
         println!("实例 {} 已停止", out.name);
     }
@@ -281,7 +302,11 @@ pub fn gc(plan: &GcPlan, applied: bool) {
             "提示：下列残留没有状态记录（多半是早前 `prune` 掉的），gc 不删它们 —— 请人工确认后清理："
         );
         for orphan in &plan.orphans {
-            let paths: Vec<String> = orphan.paths.iter().map(|p| p.display().to_string()).collect();
+            let paths: Vec<String> = orphan
+                .paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
             println!(
                 "  {}：{}（{}）",
                 orphan.name,
@@ -535,9 +560,7 @@ pub fn step_json(step: &Step) -> serde_json::Value {
             obj.insert("env_keys".to_string(), json!(env_keys));
             obj.insert("cred_keys".to_string(), json!(cred_keys));
         }
-        Step::Stop { reason, .. }
-        | Step::Started { reason, .. }
-        | Step::Skipped { reason, .. } => {
+        Step::Stop { reason, .. } | Step::Started { reason, .. } | Step::Skipped { reason, .. } => {
             obj.insert("reason".to_string(), json!(reason));
         }
         // `--json` 目前只在 dry-run 下暴露（计划态），下面是完整匹配，不留 `_` 兜底：
@@ -566,7 +589,9 @@ fn supervise_line(step: &Step, dry_run: bool) -> String {
             let mark = if dry_run { "+" } else { "●" };
             format!(
                 "{mark} {name:<16} {verb}：端口 {port}，workspace {}（{reason}）",
-                spec.workspace.as_deref().unwrap_or("（待绑定：等 client 设置）")
+                spec.workspace
+                    .as_deref()
+                    .unwrap_or("（待绑定：等 client 设置）")
             )
         }
         Step::Stop { name, reason } => {

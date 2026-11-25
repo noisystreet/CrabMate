@@ -45,8 +45,8 @@ pub use gateway_hints::{
     default_llm_reasoning_split_for_gateway, fold_system_into_user_for_config,
 };
 pub use hot_reload::apply_hot_reload_config_subset;
-pub use load::{load_config, load_config_for_cli};
 pub(crate) use load::load_config_traced;
+pub use load::{load_config, load_config_for_cli};
 pub use permission::{
     clamp_permission_ceiling_on_reload, freeze_permission_ceiling_for_bind,
     reconcile_default_level_with_ceiling, resolve_permission_ceiling, validate_permission_config,
@@ -72,16 +72,16 @@ pub use finalize::{
 pub use agent_role_spec::AgentRoleSpec;
 #[allow(unused_imports)]
 pub use types::{
-    AgentsMdConfigSection, AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig,
-    AutonomyConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig,
-    ContextPipelineConfig, ConversationPersistenceConfig, ExposeSecret, HttpFetchConfigSection,
-    LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
-    LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend, McpClientConfig,
-    PerPlanPolicyConfig, PermissionConfig, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,
-    SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncDefaultToolSandboxMode,
-    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
-    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
-    WebSearchProvider, WorkspaceRootsConfig,
+    AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig, AgentsMdConfigSection,
+    AutonomyConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig,
+    ContextBootstrapInjectConfig, ContextPipelineConfig, ConversationPersistenceConfig,
+    ExposeSecret, HttpFetchConfigSection, LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig,
+    LlmSamplingConfig, LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend,
+    McpClientConfig, PerPlanPolicyConfig, PermissionConfig, RolesPromptsConfig, ScheduledAgentTask,
+    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection,
+    SyncDefaultToolSandboxMode, SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig,
+    ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig,
+    WebApiConfig, WebSearchConfigSection, WebSearchProvider, WorkspaceRootsConfig,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
@@ -578,10 +578,7 @@ mod numeric_validate_tests {
         b.tool_registry_policy
             .tool_registry_background_job_max_concurrent = Some(1000);
         let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
-        assert!(
-            err.contains("background_job_max_concurrent"),
-            "err: {err}"
-        );
+        assert!(err.contains("background_job_max_concurrent"), "err: {err}");
     }
 
     #[test]

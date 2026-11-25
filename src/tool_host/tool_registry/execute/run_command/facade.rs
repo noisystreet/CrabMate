@@ -5,7 +5,6 @@
 
 use std::path::Path;
 
-
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
 use super::super::*;
 // 同一条流水线的兄弟子模块：只能看到 `mod.rs` 里 `pub(in crate::tool_host::tool_registry::execute) use` 出来的显式接口。
@@ -27,7 +26,9 @@ pub(in crate::tool_host::tool_registry::execute) struct RunCommandCapabilities {
 
 impl RunCommandCapabilities {
     /// `async` 前置检查；判定顺序与拆分前逐字一致（开关 → 注册表 → Docker）。
-    pub(in crate::tool_host::tool_registry::execute) fn async_unavailable_reason(&self) -> Option<&'static str> {
+    pub(in crate::tool_host::tool_registry::execute) fn async_unavailable_reason(
+        &self,
+    ) -> Option<&'static str> {
         if !self.background_jobs_enabled {
             Some(
                 "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务或去掉 async 参数。",
@@ -50,13 +51,18 @@ pub(in crate::tool_host::tool_registry::execute) struct RunCommandFacadeInvoke<'
     pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
     pub(in crate::tool_host::tool_registry::execute) workspace_changed: &'a mut bool,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
     pub(in crate::tool_host::tool_registry::execute) tool_call_id: &'a str,
-    pub(in crate::tool_host::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    pub(in crate::tool_host::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    pub(in crate::tool_host::tool_registry::execute) tool_jobs: Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
+        Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror:
+        Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::tool_host::tool_registry::execute) cancel:
+        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::tool_host::tool_registry::execute) tool_jobs:
+        Option<std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
     pub(in crate::tool_host::tool_registry::execute) timeout_secs: Option<u64>,
     pub(in crate::tool_host::tool_registry::execute) parsed: ParsedRunCommandJson,
     pub(in crate::tool_host::tool_registry::execute) decision: PolicyDecision<'a>,
@@ -127,9 +133,6 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_run_command_fa
             })
             .await
         }
-        ExecMode::Pty => (
-            "错误：run_command 不支持 PTY 执行模式。".to_string(),
-            None,
-        ),
+        ExecMode::Pty => ("错误：run_command 不支持 PTY 执行模式。".to_string(), None),
     }
 }

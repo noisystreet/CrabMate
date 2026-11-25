@@ -155,7 +155,9 @@ mod tests {
             "通过硬链接应能看到更新后的内容"
         );
         assert!(
-            json_paths(dir.path()).iter().all(|n| !n.contains("crabmate_tmp")),
+            json_paths(dir.path())
+                .iter()
+                .all(|n| !n.contains("crabmate_tmp")),
             "成功提交后不应残留临时文件: {:?}",
             json_paths(dir.path())
         );

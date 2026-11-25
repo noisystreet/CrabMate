@@ -28,7 +28,6 @@ pub fn workspace_has_python_project(root: &Path) -> bool {
         || root.join("requirements.txt").is_file()
 }
 
-
 /// `python3 -m pytest`：可选单一路径、`-k` / `-m`、`-q`、maxfail、是否 nocapture。
 /// `wall_secs = Some(secs)` 时超时对进程组 SIGTERM→SIGKILL 并保留部分输出。
 ///
@@ -470,7 +469,6 @@ fn is_safe_py_expr(s: &str) -> bool {
         })
 }
 
-
 /// 经共享子进程会话运行并格式化输出；`tool_code` 拼成 `{tool_code}_failed`，
 /// `allowed_exit` 列出「非零但语义正常」的退出码。
 ///
@@ -667,10 +665,7 @@ mod tests {
         // 返回正文含「超时」说明与已捕获部分输出。
         let marker = format!("cm_py_runfmt_{}", std::process::id());
         let mut cmd = Command::new("bash");
-        cmd.args([
-            "-c",
-            &format!("echo partial-py-out; sleep 60 # {marker}"),
-        ]);
+        cmd.args(["-c", &format!("echo partial-py-out; sleep 60 # {marker}")]);
         let e = run_and_format_try(
             cmd,
             4096,

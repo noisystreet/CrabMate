@@ -5,8 +5,8 @@ use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksOutputFormat;
 use reqwest::blocking::Client;
 
-use super::core::*;
 use super::MarkdownCheckReport;
+use super::core::*;
 
 mod links_collect;
 mod links_format;
@@ -411,10 +411,7 @@ fn markdown_check_process_one_link_hit(
 /// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
 /// - `output_format`?: string，默认 text；可选 text/json/sarif
 #[allow(clippy::result_large_err)]
-pub fn markdown_check_links_try(
-    args_json: &str,
-    working_dir: &Path,
-) -> Result<String, ToolError> {
+pub fn markdown_check_links_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     markdown_check_links_report_try(args_json, working_dir).map(|r| r.output)
 }
 
@@ -430,9 +427,7 @@ pub fn markdown_check_links_report_try(
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let args: crate::cm_tools::tools::tool_param_types::MarkdownCheckLinksArgs =
         serde_json::from_value(v).map_err(|e| {
-            ToolError::invalid_args(format!(
-                "参数 JSON 与 markdown_check_links 形状不一致: {e}"
-            ))
+            ToolError::invalid_args(format!("参数 JSON 与 markdown_check_links 形状不一致: {e}"))
         })?;
     let parsed = parse_markdown_check_args(&args).map_err(ToolError::invalid_args)?;
     links_inner::markdown_check_links_inner_try(parsed, working_dir)

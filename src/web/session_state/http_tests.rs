@@ -38,11 +38,7 @@ async fn seed_conversation(handle: &crate::test_serve::TestServeHandle, id: &str
             Vec::new(),
         )
         .await;
-    assert_eq!(
-        outcome,
-        crate::SaveConversationOutcome::Saved,
-        "造会话失败"
-    );
+    assert_eq!(outcome, crate::SaveConversationOutcome::Saved, "造会话失败");
 }
 
 #[tokio::test]

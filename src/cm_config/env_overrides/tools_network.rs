@@ -24,10 +24,7 @@ fn web_search_keys(b: &mut ConfigBuilder) {
         &mut b.web_search.web_search_api_key,
         "CM_WEB_SEARCH_API_KEY",
     );
-    apply_raw_opt(
-        &mut b.web_search.web_search_proxy,
-        "CM_WEB_SEARCH_PROXY",
-    );
+    apply_raw_opt(&mut b.web_search.web_search_proxy, "CM_WEB_SEARCH_PROXY");
 }
 
 fn web_search_limits(b: &mut ConfigBuilder) {

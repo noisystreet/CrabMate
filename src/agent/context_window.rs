@@ -3,6 +3,10 @@
 //! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（`apply_session_sync_pipeline`）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::cm_agent::context_budget_pressure::{
+    effective_summary_trigger_for_turn, resolve_context_budget_pressure,
+    scale_message_pipeline_char_budget,
+};
 use crate::config::AgentConfig;
 use crate::llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, LlmRetryingTransportOpts,
@@ -12,10 +16,6 @@ use crate::types::{
     ChatRequest, Message, Tool, is_chat_timeline_marker,
     is_message_excluded_from_llm_context_except_memory, message_content_as_str,
     message_content_into_text_lossy,
-};
-use crate::cm_agent::context_budget_pressure::{
-    effective_summary_trigger_for_turn, resolve_context_budget_pressure,
-    scale_message_pipeline_char_budget,
 };
 use log::{info, warn};
 use reqwest::Client;
@@ -431,7 +431,9 @@ fn push_budget_notice_if_crossing(
         compaction,
         tools,
         model_override,
-        &format!("context: 本回合预算已用 {tier}%（墙钟 / 调用数 / Token 取最高档）；必要时收窄范围"),
+        &format!(
+            "context: 本回合预算已用 {tier}%（墙钟 / 调用数 / Token 取最高档）；必要时收窄范围"
+        ),
     );
 }
 
@@ -469,9 +471,8 @@ fn summary_trigger_and_tail(
     before_tokens: &crate::agent::context_compaction::ContextTokenEstimate,
 ) -> (bool, Option<usize>) {
     let force_summary_for_token_budget =
-        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
-            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
-        );
+        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg)
+            .is_some_and(|budget| before_tokens.used_input_tokens > budget.trigger_tokens);
     let planned_summary_tail = complete_turn_group_tail_len(
         messages,
         cfg.context_pipeline
@@ -545,15 +546,13 @@ fn context_summary_attempt_prep(
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
     force_for_token_budget: bool,
 ) -> Option<(usize, String)> {
-    if !context_summary_trigger_reached(
-        cfg,
-        messages,
-        turn_budget,
-        force_for_token_budget,
-    ) {
+    if !context_summary_trigger_reached(cfg, messages, turn_budget, force_for_token_budget) {
         return None;
     }
-    if messages.first().is_none_or(|message| message.role != "system") {
+    if messages
+        .first()
+        .is_none_or(|message| message.role != "system")
+    {
         return None;
     }
     let requested_tail = cfg
@@ -648,16 +647,17 @@ async fn maybe_summarize_with_llm(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
     params: MaybeSummarizeParams<'_>,
-) -> Result<(bool, crate::agent::message_pipeline::RemovedPrefix), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<
+    (bool, crate::agent::message_pipeline::RemovedPrefix),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let no_removal = crate::agent::message_pipeline::RemovedPrefix::default();
     let Some((tail, transcript)) = context_summary_attempt_prep(
         cfg,
         messages,
         params.turn_budget,
         params.force_for_token_budget,
-    )
-    else {
+    ) else {
         return Ok((false, no_removal));
     };
 
@@ -718,8 +718,7 @@ async fn maybe_summarize_with_llm(
 pub struct PrepareMessagesForModelHooks<'a> {
     pub tools: &'a [Tool],
     pub model_override: Option<&'a str>,
-    pub workspace_changelist:
-        Option<&'a crate::workspace::changelist::WorkspaceChangelist>,
+    pub workspace_changelist: Option<&'a crate::workspace::changelist::WorkspaceChangelist>,
     /// `#1455` B 步：跨回合任务状态摘要（`render_task_brief` 的产物，`None` = 不注入）。
     pub paused_task_brief: Option<&'a str>,
     pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
@@ -790,7 +789,10 @@ pub async fn prepare_messages_for_model(
     if let Some(r) = hooks.run_loop_messages_revision {
         *r = r.wrapping_add(1);
     }
-    delta.pipeline.n_after = messages.iter().filter(|m| !is_chat_timeline_marker(m)).count();
+    delta.pipeline.n_after = messages
+        .iter()
+        .filter(|m| !is_chat_timeline_marker(m))
+        .count();
     Ok(delta)
 }
 

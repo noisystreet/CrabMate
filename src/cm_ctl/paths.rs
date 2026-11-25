@@ -24,9 +24,9 @@ pub struct CtlPaths {
 impl CtlPaths {
     /// 按 XDG 规范解析；缺失时回退 `$HOME` 下的约定路径。
     pub fn resolve() -> Result<Self, CtlError> {
-        let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
-            CtlError::general("no_home", "无法确定 HOME：请设置环境变量 HOME")
-        })?;
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| CtlError::general("no_home", "无法确定 HOME：请设置环境变量 HOME"))?;
 
         let state_dir = xdg_dir("XDG_STATE_HOME")
             .map(|d| d.join("crabmate"))

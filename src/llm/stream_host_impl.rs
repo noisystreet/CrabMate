@@ -2,9 +2,9 @@
 
 use std::sync::atomic::AtomicBool;
 
-use async_trait::async_trait;
 use crate::cm_llm::{LlmCallError, StreamChatHost};
 use crate::cm_types::{ChatRequest, Message, message_content_as_str};
+use async_trait::async_trait;
 use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
 

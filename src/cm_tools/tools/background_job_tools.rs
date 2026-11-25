@@ -78,9 +78,11 @@ pub fn background_job_try(
         ToolError::invalid_args(format!("参数 JSON 与 background_job 形状不一致: {e}"))
     })?;
     match action {
-        BackgroundJobAction::Status => {
-            status_impl(require_job_id(tool_job_id.as_deref())?, host, max_output_len)
-        }
+        BackgroundJobAction::Status => status_impl(
+            require_job_id(tool_job_id.as_deref())?,
+            host,
+            max_output_len,
+        ),
         BackgroundJobAction::List => list_impl(limit, host, working_dir, max_output_len),
         BackgroundJobAction::Output => output_impl(
             require_job_id(tool_job_id.as_deref())?,
@@ -123,9 +125,7 @@ fn list_impl(
     working_dir: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let limit = limit
-        .unwrap_or(DEFAULT_LIST_LIMIT)
-        .clamp(1, MAX_LIST_LIMIT) as usize;
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIST_LIMIT) as usize;
     match host {
         Some(h) => Ok(h.list(working_dir, limit, max_output_len)),
         None => Err(ToolError::invalid_args(HOST_UNAVAILABLE.to_string())),
@@ -160,7 +160,9 @@ pub fn background_job_cancel_try(
     let v = parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let BackgroundJobCancelArgs { tool_job_id } =
         serde_json::from_value::<BackgroundJobCancelArgs>(v).map_err(|e| {
-            ToolError::invalid_args(format!("参数 JSON 与 background_job_cancel 形状不一致: {e}"))
+            ToolError::invalid_args(format!(
+                "参数 JSON 与 background_job_cancel 形状不一致: {e}"
+            ))
         })?;
     let id = require_job_id(Some(tool_job_id.as_str()))?;
     match host {
@@ -209,7 +211,8 @@ pub fn background_job_wait_try(
             let pat = output_matches.as_deref().unwrap_or("").trim();
             if pat.is_empty() {
                 return Err(ToolError::invalid_args(
-                    "`until=output_matches` 需要非空的 `output_matches`（要查找的子串）。".to_string(),
+                    "`until=output_matches` 需要非空的 `output_matches`（要查找的子串）。"
+                        .to_string(),
                 ));
             }
             if pat.len() > MAX_MATCH_PATTERN_BYTES {
@@ -419,8 +422,13 @@ mod tests {
         assert_eq!(e.code, "invalid_args");
         assert!(e.message.contains("不能为空"), "{}", e.message);
 
-        let e = background_job_try(r#"{"action":"status","tool_job_id":"j1"}"#, None, ws(), 1024)
-            .expect_err("无宿主必须报错，而不是回一段「不可用」正文");
+        let e = background_job_try(
+            r#"{"action":"status","tool_job_id":"j1"}"#,
+            None,
+            ws(),
+            1024,
+        )
+        .expect_err("无宿主必须报错，而不是回一段「不可用」正文");
         assert_eq!(e.code, "invalid_args");
 
         let e = background_job_try(r#"{"action":"nope"}"#, Some(&StubHost), ws(), 1024)
@@ -449,13 +457,8 @@ mod tests {
 
     #[test]
     fn wait_defaults_to_exit_and_default_timeout() {
-        let out = background_job_wait_try(
-            r#"{"tool_job_id":" j1 "}"#,
-            Some(&StubHost),
-            1024,
-            600,
-        )
-        .expect("wait 应成功");
+        let out = background_job_wait_try(r#"{"tool_job_id":" j1 "}"#, Some(&StubHost), 1024, 600)
+            .expect("wait 应成功");
         assert_eq!(
             out,
             format!("stub wait: j1 pattern=None timeout={DEFAULT_WAIT_TIMEOUT_SECS}")
@@ -491,9 +494,13 @@ mod tests {
     #[test]
     fn wait_blank_output_matches_falls_back_to_exit() {
         // 空白 pattern 不构成「想等 match」的意图，仍按默认 `exit`（不报错地空等 match）。
-        let out =
-            background_job_wait_try(r#"{"tool_job_id":"j1","output_matches":"  "}"#, Some(&StubHost), 1024, 600)
-                .expect("wait 应成功");
+        let out = background_job_wait_try(
+            r#"{"tool_job_id":"j1","output_matches":"  "}"#,
+            Some(&StubHost),
+            1024,
+            600,
+        )
+        .expect("wait 应成功");
         assert!(out.contains("pattern=None"), "{out}");
     }
 
@@ -513,9 +520,8 @@ mod tests {
     #[test]
     fn wait_rejects_overlong_pattern() {
         let long = "a".repeat(MAX_MATCH_PATTERN_BYTES + 1);
-        let args = format!(
-            r#"{{"tool_job_id":"j1","until":"output_matches","output_matches":"{long}"}}"#
-        );
+        let args =
+            format!(r#"{{"tool_job_id":"j1","until":"output_matches","output_matches":"{long}"}}"#);
         let e = background_job_wait_try(&args, Some(&StubHost), 1024, 600)
             .expect_err("过长 pattern 必须报错");
         assert_eq!(e.code, "invalid_args");

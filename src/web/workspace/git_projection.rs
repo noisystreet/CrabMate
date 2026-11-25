@@ -395,7 +395,9 @@ fn record_fields<'a>(
 fn parse_xy(xy: &str) -> Result<(char, char), String> {
     let mut chars = xy.chars();
     let x = chars.next().ok_or_else(|| "XY 为空".to_string())?;
-    let y = chars.next().ok_or_else(|| format!("XY 不足 2 字符：{xy}"))?;
+    let y = chars
+        .next()
+        .ok_or_else(|| format!("XY 不足 2 字符：{xy}"))?;
     if chars.next().is_some() {
         return Err(format!("XY 超过 2 字符：{xy}"));
     }

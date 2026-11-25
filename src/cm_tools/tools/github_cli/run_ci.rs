@@ -1,8 +1,8 @@
 //! `gh run rerun` 与失败 CI 摘要（只读排障）。
 
 use super::check_bucket::CheckBucket;
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use serde_json::Value as JsonValue;
 
 use super::common::{
@@ -120,13 +120,9 @@ fn wrap_with_parsed_if_json(formatted: String, stdout: &str) -> String {
 }
 
 /// `gh run rerun`（写远端：重新运行 workflow）
-pub fn gh_run_rerun_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_run_rerun_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
         None => return Err(ToolError::invalid_args("错误：缺少 run_id".to_string())),
@@ -247,13 +243,9 @@ fn truncate_report(report: String, max_output_len: usize) -> String {
 }
 
 /// `gh run failure summary`：解析 failed jobs 并拉取各 job 日志尾部（只读）。
-pub fn gh_run_failure_summary_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_run_failure_summary_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
         None => return Err(ToolError::invalid_args("错误：缺少 run_id".to_string())),

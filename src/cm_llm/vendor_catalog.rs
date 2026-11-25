@@ -95,8 +95,7 @@ struct VendorCatalog {
 static CATALOG: OnceLock<VendorCatalog> = OnceLock::new();
 
 fn parse_vendors_file(src: &str) -> Result<VendorCatalog, String> {
-    let file: VendorsFile =
-        toml::from_str(src).map_err(|e| format!("llm_vendors.toml: {e}"))?;
+    let file: VendorsFile = toml::from_str(src).map_err(|e| format!("llm_vendors.toml: {e}"))?;
     if file.vendor.is_empty() {
         return Err("llm_vendors.toml: [[vendor]] 不能为空".to_string());
     }
@@ -186,7 +185,9 @@ fn caps_from_vendor(v: &VendorEntry, model: &str) -> ResolvedVendorCaps {
 }
 
 fn find_vendor<'a>(cat: &'a VendorCatalog, model: &str, api_base: &str) -> Option<&'a VendorEntry> {
-    cat.vendors.iter().find(|v| vendor_matches(v, model, api_base))
+    cat.vendors
+        .iter()
+        .find(|v| vendor_matches(v, model, api_base))
 }
 
 /// 按目录匹配当前 **`model` + `api_base`**（无命中则 OpenAI 兼容缺省：可发 `image_url`）。
@@ -237,7 +238,10 @@ mod tests {
         );
         assert_eq!(caps.adapter, VendorAdapterId::Generic);
         assert_eq!(
-            matched_vendor_id("Kimi-K2.6", "https://ark.cn-beijing.volces.com/api/coding/v3"),
+            matched_vendor_id(
+                "Kimi-K2.6",
+                "https://ark.cn-beijing.volces.com/api/coding/v3"
+            ),
             Some("volcano")
         );
     }

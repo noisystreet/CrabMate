@@ -9,8 +9,8 @@ use crate::types::{FunctionCall, Message, ToolCall};
 
 use super::ChatJobQueue;
 use super::stream_finish::{
-    StreamEndedOnce, completed_turn_end_reason, ended_missing_for,
-    emit_missing_final_response_fallback_if_needed, emit_stream_draining, emit_stream_ended_once,
+    StreamEndedOnce, completed_turn_end_reason, emit_missing_final_response_fallback_if_needed,
+    emit_stream_draining, emit_stream_ended_once, ended_missing_for,
     sse_payload_has_final_response_timeline,
 };
 
@@ -240,10 +240,7 @@ async fn fallback_truncates_overlong_reasoning() {
         !first.contains(&long_reasoning),
         "超长思维链不应被整段回填: {first}"
     );
-    assert!(
-        first.contains('…'),
-        "超长思维链截断后应追加省略号: {first}"
-    );
+    assert!(first.contains('…'), "超长思维链截断后应追加省略号: {first}");
 }
 
 // 层 4b（#1414）：末条助手无正文、也无可回填思维链时，用**最后一次工具结果摘要**兜底终答。
@@ -265,7 +262,8 @@ async fn fallback_uses_last_tool_result_when_no_body_or_reasoning() {
             arguments: "{}".to_string(),
         },
     }]);
-    let mut long_output = String::from("退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed\n");
+    let mut long_output =
+        String::from("退出码：0\n标准输出：\ntest result: ok. 12 passed; 0 failed\n");
     long_output.push_str(&"日志".repeat(1200));
     let messages = vec![
         Message::user_only("跑通全部测试，然后回报结果"),
@@ -318,10 +316,7 @@ async fn fallback_uses_last_tool_result_when_no_body_or_reasoning() {
 // 层 2 收尾终态判定：`completed_turn_end_reason` 的单一事实来源行为固化。
 #[test]
 fn turn_end_reason_fallback_wins_over_visible_output() {
-    let messages = vec![
-        Message::user_only("问"),
-        Message::assistant_only("有正文"),
-    ];
+    let messages = vec![Message::user_only("问"), Message::assistant_only("有正文")];
     assert_eq!(
         completed_turn_end_reason(true, false, &messages, None),
         StreamEndReason::Fallback,

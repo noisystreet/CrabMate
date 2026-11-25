@@ -285,8 +285,8 @@ impl TurnBudgetCounter {
             0
         };
         let token_pct = if cfg.max_turn_tokens > 0 {
-            ((self.estimated_tokens_this_turn() as u64 * 100) / cfg.max_turn_tokens as u64)
-                .min(100) as u8
+            ((self.estimated_tokens_this_turn() as u64 * 100) / cfg.max_turn_tokens as u64).min(100)
+                as u8
         } else {
             0
         };

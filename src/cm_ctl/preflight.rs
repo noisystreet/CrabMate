@@ -94,7 +94,11 @@ mod tests {
         let ws = tempfile::tempdir().expect("tempdir");
         let out = check(None, ws.path()).expect("未给 serve-config 不应失败");
         assert_eq!(out.warnings.len(), 1);
-        assert!(out.warnings[0].contains("--serve-config"), "{:?}", out.warnings);
+        assert!(
+            out.warnings[0].contains("--serve-config"),
+            "{:?}",
+            out.warnings
+        );
     }
 
     #[test]

@@ -115,11 +115,7 @@ fn missing_revision_baseline(target: &Path) -> String {
 }
 
 /// 校验 `expected` 与目标文件当前 revision；不一致返回可直接作为工具输出的错误正文。
-fn verify_revision(
-    target: &Path,
-    expected: &str,
-    source: RevisionSource,
-) -> Result<(), String> {
+fn verify_revision(target: &Path, expected: &str, source: RevisionSource) -> Result<(), String> {
     let current = revision_of_path(target).map_err(|e| {
         format!(
             "错误[revision_check_failed]：无法计算文件 revision: {e}（{NOT_WRITTEN_HINT}）。\n路径：{}",

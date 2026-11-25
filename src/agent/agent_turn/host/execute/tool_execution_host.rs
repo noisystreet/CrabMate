@@ -15,8 +15,8 @@ use crate::tool_host::tool_registry::{
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;
-use crate::request_chrome_trace::RequestTurnTrace;
 use crate::cm_names as tool_names;
+use crate::request_chrome_trace::RequestTurnTrace;
 
 async fn prefetch_parallel_approval_failures_impl(
     params: ParallelPrefetchParams<'_>,
@@ -29,7 +29,10 @@ async fn prefetch_parallel_approval_failures_impl(
         permission,
     } = params;
     let mut prefetch_failures = ParallelPrefetchFailures::new();
-    if tool_calls.iter().any(|t| t.function.name == tool_names::HTTP_FETCH) {
+    if tool_calls
+        .iter()
+        .any(|t| t.function.name == tool_names::HTTP_FETCH)
+    {
         prefetch_failures.extend(
             tool_registry::prefetch_http_fetch_parallel_approvals(
                 tool_calls,
@@ -122,18 +125,19 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
             // 预先装配并注入（工具层刻意不持 `client` / `api_key`）。
             Some(AgentLayerHandler::Delegate) => {
                 let sub = &p.policy.cfg.subagent;
-                let (output, payload) = crate::agent::delegation_dispatch::dispatch_delegate_task_tool(
-                    p.delegation.delegator,
-                    crate::cm_tools::delegation_host::SubTaskLimits {
-                        max_llm_calls: sub.max_llm_calls,
-                        // 施加不了（`TurnBudgetCounter` 无工具调用维度），传 MAX 表示不限制。
-                        max_tool_calls: u32::MAX,
-                        max_wall_secs: sub.max_wall_secs,
-                    },
-                    sub.max_report_chars,
-                    p.call.args,
-                )
-                .await;
+                let (output, payload) =
+                    crate::agent::delegation_dispatch::dispatch_delegate_task_tool(
+                        p.delegation.delegator,
+                        crate::cm_tools::delegation_host::SubTaskLimits {
+                            max_llm_calls: sub.max_llm_calls,
+                            // 施加不了（`TurnBudgetCounter` 无工具调用维度），传 MAX 表示不限制。
+                            max_tool_calls: u32::MAX,
+                            max_wall_secs: sub.max_wall_secs,
+                        },
+                        sub.max_report_chars,
+                        p.call.args,
+                    )
+                    .await;
                 ToolRunOutcome::from_body_and_payload(tool_names::DELEGATE_TASK, output, payload)
             }
             None => InternalToolDispatch.dispatch(p).await,
@@ -238,9 +242,7 @@ impl CrabmateParallelToolDispatch {
             }
         })
         .await
-        .unwrap_or_else(|e| {
-            ToolRunOutcome::failed(format!("工具执行 panic：{}", e), None)
-        })
+        .unwrap_or_else(|e| ToolRunOutcome::failed(format!("工具执行 panic：{}", e), None))
     }
 }
 

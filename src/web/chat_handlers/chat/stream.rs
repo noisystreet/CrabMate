@@ -30,7 +30,9 @@ use crate::web::app_state::{
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
-use super::builtin_btw::{BTW_QUEUE_FULL_CODE, BTW_QUEUE_FULL_MESSAGE, BtwOutcome, run_btw_command};
+use super::builtin_btw::{
+    BTW_QUEUE_FULL_CODE, BTW_QUEUE_FULL_MESSAGE, BtwOutcome, run_btw_command,
+};
 use super::builtin_skills::run_web_builtin_command;
 use super::turn_build::{
     ChatStreamRequestParsed, build_messages_for_turn, parse_chat_stream_request,
@@ -340,10 +342,7 @@ async fn chat_stream_try_builtin_reply(
     p: &ChatStreamRequestParsed,
 ) -> Option<Response> {
     if let Some(reply) = run_web_builtin_command(state, p.user_trim.as_str()).await {
-        return Some(chat_stream_builtin_sse_response(
-            reply,
-            &p.conversation_id,
-        ));
+        return Some(chat_stream_builtin_sse_response(reply, &p.conversation_id));
     }
     match run_btw_command(
         state,
@@ -360,17 +359,13 @@ async fn chat_stream_try_builtin_reply(
     .await
     {
         None => None,
-        Some(BtwOutcome::Reply(reply)) => Some(chat_stream_builtin_sse_response(
-            reply,
-            &p.conversation_id,
-        )),
+        Some(BtwOutcome::Reply(reply)) => {
+            Some(chat_stream_builtin_sse_response(reply, &p.conversation_id))
+        }
         Some(BtwOutcome::QueueFull) => Some(
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(ApiError::new(
-                    BTW_QUEUE_FULL_CODE,
-                    BTW_QUEUE_FULL_MESSAGE,
-                )),
+                Json(ApiError::new(BTW_QUEUE_FULL_CODE, BTW_QUEUE_FULL_MESSAGE)),
             )
                 .into_response(),
         ),

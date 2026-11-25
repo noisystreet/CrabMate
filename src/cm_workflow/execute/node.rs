@@ -149,7 +149,8 @@ async fn execute_node_tool_phase(
                     return NodeRunResult {
                         id: node_id.to_string(),
                         status: NodeRunStatus::Failed,
-                        output: format!("workflow 节点超时（{} 秒）：tool={}", ts, tool_name).into(),
+                        output: format!("workflow 节点超时（{} 秒）：tool={}", ts, tool_name)
+                            .into(),
                         workspace_changed: false,
                         exit_code: None,
                         error_code: Some("timeout".to_string()),
@@ -410,9 +411,13 @@ async fn apply_interactive_allow_decision(
                 ..
             } = approval_mode
             {
-                persistent_allowlist.lock().await.insert(
-                    crate::cm_types::scoped_allowlist_key(*permission_level, cmd_lower),
-                );
+                persistent_allowlist
+                    .lock()
+                    .await
+                    .insert(crate::cm_types::scoped_allowlist_key(
+                        *permission_level,
+                        cmd_lower,
+                    ));
             }
             Ok(extend_allowlist_with_cmd(
                 &tool_exec_ctx.cfg_allowed_commands,
@@ -543,43 +548,42 @@ async fn apply_generic_workflow_node_approval(
         ..
     } = approval_mode
     {
-            // 与 `run_command` 同一把尺子：通用节点键也带等级作用域前缀（设计 §6.3）。
-            let scoped_key =
-                crate::cm_types::scoped_allowlist_key(*permission_level, &approval_key);
-            let already_allowed = persistent_allowlist.lock().await.contains(&scoped_key);
-            if !already_allowed {
-                let decision = request_approval(
-                    out_tx.clone(),
-                    approval_rx.clone(),
-                    approval_request_guard.clone(),
-                    cancel.clone(),
-                    &approval_key,
-                    &format!("工具：{}（requires_approval=true）", node.tool_name),
-                    *permission_level,
-                )
-                .await;
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        return Err(NodeRunResult {
-                            id: node.id.clone(),
-                            status: NodeRunStatus::Failed,
-                            output: format!(
-                                "workflow 执行失败：用户拒绝人工审批节点：{}",
-                                approval_key
-                            )
-                            .into(),
-                            workspace_changed: false,
-                            exit_code: None,
-                            error_code: Some("approval_denied".to_string()),
-                            attempt: 1,
-                        });
-                    }
-                    CommandApprovalDecision::AllowOnce => {}
-                    CommandApprovalDecision::AllowAlways => {
-                        persistent_allowlist.lock().await.insert(scoped_key);
-                    }
+        // 与 `run_command` 同一把尺子：通用节点键也带等级作用域前缀（设计 §6.3）。
+        let scoped_key = crate::cm_types::scoped_allowlist_key(*permission_level, &approval_key);
+        let already_allowed = persistent_allowlist.lock().await.contains(&scoped_key);
+        if !already_allowed {
+            let decision = request_approval(
+                out_tx.clone(),
+                approval_rx.clone(),
+                approval_request_guard.clone(),
+                cancel.clone(),
+                &approval_key,
+                &format!("工具：{}（requires_approval=true）", node.tool_name),
+                *permission_level,
+            )
+            .await;
+            match decision {
+                CommandApprovalDecision::Deny => {
+                    return Err(NodeRunResult {
+                        id: node.id.clone(),
+                        status: NodeRunStatus::Failed,
+                        output: format!(
+                            "workflow 执行失败：用户拒绝人工审批节点：{}",
+                            approval_key
+                        )
+                        .into(),
+                        workspace_changed: false,
+                        exit_code: None,
+                        error_code: Some("approval_denied".to_string()),
+                        attempt: 1,
+                    });
+                }
+                CommandApprovalDecision::AllowOnce => {}
+                CommandApprovalDecision::AllowAlways => {
+                    persistent_allowlist.lock().await.insert(scoped_key);
                 }
             }
+        }
     }
     Ok(())
 }

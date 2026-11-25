@@ -373,10 +373,7 @@ mod tests {
         let mut args = vec![];
         split_command_prefix_if_embedded(&mut cmd, &mut args);
         assert_eq!(cmd, "sh");
-        assert_eq!(
-            args,
-            vec!["-lc".to_string(), "cd sub && ls".to_string()]
-        );
+        assert_eq!(args, vec!["-lc".to_string(), "cd sub && ls".to_string()]);
     }
 
     #[test]

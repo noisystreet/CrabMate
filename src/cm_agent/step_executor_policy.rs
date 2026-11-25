@@ -264,7 +264,10 @@ mod tests {
     #[test]
     fn denied_body_lists_allowed_names() {
         let cfg = load_config(None).expect("embed default");
-        let defs = vec![tool_named(tool_names::READ_FILE), tool_named(tool_names::CREATE_FILE)];
+        let defs = vec![
+            tool_named(tool_names::READ_FILE),
+            tool_named(tool_names::CREATE_FILE),
+        ];
         let body = executor_kind_tool_denied_body(
             &cfg,
             &defs,

@@ -3,9 +3,9 @@
 use crate::agent::per_coord::PerCoordinator;
 use crate::types::Message;
 
-use super::emit::emit_tool_result_sse_and_append;
-use super::emit_common::{tool_envelope_context, summarize_tool_call_args};
 use super::EmitToolResultParams;
+use super::emit::emit_tool_result_sse_and_append;
+use super::emit_common::{summarize_tool_call_args, tool_envelope_context};
 
 pub(super) struct EmitToolBatchResultParams<'a> {
     pub messages: &'a mut Vec<Message>,

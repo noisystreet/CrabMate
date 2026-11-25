@@ -4,13 +4,13 @@
 
 #![cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 
-#[cfg(feature = "fastembed")]
-use crate::cm_memory::memory::vector_math::f32_slice_to_bytes;
+use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_memory::memory::long_term_memory::{
     LongTermMemoryRuntime, chunk_text, clamp_text, last_user_assistant_final_pair_for_turn,
 };
 use crate::cm_memory::memory::long_term_memory_store;
-use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
+#[cfg(feature = "fastembed")]
+use crate::cm_memory::memory::vector_math::f32_slice_to_bytes;
 use crate::cm_types::Message;
 
 /// 回合索引写入的单条分块（正文 + 角色标识）。

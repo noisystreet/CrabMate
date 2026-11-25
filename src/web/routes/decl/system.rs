@@ -15,7 +15,9 @@ const VIEW_PARAM: ParamDecl = ParamDecl {
     name: "view",
     location: ParamLocation::Query,
     required: false,
-    description: Some("为 shell 时返回 Web 壳层稳定子集 StatusShellView；省略则返回完整运行状态（StatusResponseBody）"),
+    description: Some(
+        "为 shell 时返回 Web 壳层稳定子集 StatusShellView；省略则返回完整运行状态（StatusResponseBody）",
+    ),
     schema: SchemaDecl::StrEnum(&["shell"]),
 };
 

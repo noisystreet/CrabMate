@@ -310,11 +310,20 @@ mod tests {
         rows.push(row(102, "assistant", "auto indexed assistant reply", "[]"));
         let scored: Vec<ScoredRow> = rows.into_iter().map(|r| (0.5f32, 0.5f32, r)).collect();
 
-        let picked = pick_recall_chunks(8, "cargo check 编译", scored, true, Some(RELATIVE_SCORE_RATIO));
+        let picked = pick_recall_chunks(
+            8,
+            "cargo check 编译",
+            scored,
+            true,
+            Some(RELATIVE_SCORE_RATIO),
+        );
         let roles: Vec<_> = picked.iter().map(|p| p.3.as_str()).collect();
         assert_eq!(picked.len(), 8);
         assert_eq!(
-            roles.iter().filter(|r| **r == "summarize_experience").count(),
+            roles
+                .iter()
+                .filter(|r| **r == "summarize_experience")
+                .count(),
             6
         );
         assert_eq!(
@@ -380,10 +389,11 @@ mod tests {
             (0.6f32, 0.6f32, row(1, "user", "记忆召回优化", "[]")),
             (0.2f32, 0.2f32, row(2, "user", "只有记忆命中", "[]")),
         ];
-        let cut: Vec<_> = pick_recall_chunks(8, "q", scored.clone(), false, Some(RELATIVE_SCORE_RATIO))
-            .iter()
-            .map(|p| p.1)
-            .collect();
+        let cut: Vec<_> =
+            pick_recall_chunks(8, "q", scored.clone(), false, Some(RELATIVE_SCORE_RATIO))
+                .iter()
+                .map(|p| p.1)
+                .collect();
         assert_eq!(cut, vec![1], "向量路径应裁掉 0.2 的尾部条");
         let kept: Vec<_> = pick_recall_chunks(8, "q", scored, false, None)
             .iter()

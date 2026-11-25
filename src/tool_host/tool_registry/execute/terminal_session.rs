@@ -22,7 +22,8 @@ pub(in crate::tool_host::tool_registry::execute) struct TerminalSessionExecInvok
     pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
     pub(in crate::tool_host::tool_registry::execute) workspace_changed: &'a mut bool,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
     pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
         Option<&'a tokio::sync::mpsc::Sender<String>>,
@@ -57,7 +58,9 @@ fn terminal_session_precheck(
     None
 }
 
-fn parse_terminal_session_args(args: &str) -> Result<serde_json::Value, (String, Option<serde_json::Value>)> {
+fn parse_terminal_session_args(
+    args: &str,
+) -> Result<serde_json::Value, (String, Option<serde_json::Value>)> {
     serde_json::from_str(args).map_err(|e| (format!("错误：参数 JSON 无效: {e}"), None))
 }
 

@@ -35,9 +35,9 @@ pub(super) use approval::{
     posix_shell_wrap_needs_interactive_approval,
 };
 pub(super) use async_invocation::{RunCommandAsyncInvoke, execute_run_command_async};
-pub(super) use chunks::{RunCommandHostInvoke, run_command_chunk_sink};
 #[cfg(test)]
 pub(super) use chunks::emit_run_command_tool_output_chunk;
+pub(super) use chunks::{RunCommandHostInvoke, run_command_chunk_sink};
 pub(super) use docker::dispatch_non_sync_tool_to_docker;
 pub(super) use facade::{
     RunCommandCapabilities, RunCommandFacadeInvoke, execute_run_command_facade,

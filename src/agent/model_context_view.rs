@@ -98,7 +98,11 @@ impl ModelContextArtifact {
             .min(canonical.len());
         let prefix = &canonical[..prefix_len];
         self.summarized_canonical_range = self.summary_tail_kept.and_then(|tail| {
-            let start = usize::from(prefix.first().is_some_and(|message| message.role == "system"));
+            let start = usize::from(
+                prefix
+                    .first()
+                    .is_some_and(|message| message.role == "system"),
+            );
             let end = prefix_len.saturating_sub(tail);
             (end > start).then_some(CanonicalMessageRange { start, end })
         });
@@ -229,8 +233,7 @@ impl ModelContextView {
             .cloned()
             .collect();
 
-        let removed_users =
-            count_real_users(canonical).saturating_sub(count_real_users(view_head));
+        let removed_users = count_real_users(canonical).saturating_sub(count_real_users(view_head));
         let view_summary = last_summary_message(&self.messages).cloned();
         let summary_replaced = match (view_summary.as_ref(), last_summary_message(canonical)) {
             (Some(view), Some(existing)) => view != existing,
@@ -489,8 +492,13 @@ mod tests {
             memory,
             Message::assistant_only("answer"),
         ];
-        let artifact =
-            ModelContextArtifact::capture(1, 1, &messages, ContextCompactionReport::default(), None);
+        let artifact = ModelContextArtifact::capture(
+            1,
+            1,
+            &messages,
+            ContextCompactionReport::default(),
+            None,
+        );
         assert_eq!(artifact.current_turn_messages.len(), 2);
         assert!(
             artifact
@@ -521,8 +529,10 @@ mod tests {
             Message::user_only("current"),
         ];
         let mut view = ModelContextView::derive(&canonical);
-        view.messages_mut().retain(|message| message != &old_timeline);
-        view.messages_mut().push(Message::assistant_only("new answer"));
+        view.messages_mut()
+            .retain(|message| message != &old_timeline);
+        view.messages_mut()
+            .push(Message::assistant_only("new answer"));
         view.messages_mut().push(old_timeline.clone());
 
         assert_eq!(view.commit_current_turn_to(&mut canonical).appended, 2);
@@ -570,7 +580,10 @@ mod tests {
         );
         assert!(empty.is_empty());
 
-        let canonical = vec![Message::system_only("system"), Message::user_only("current user")];
+        let canonical = vec![
+            Message::system_only("system"),
+            Message::user_only("current user"),
+        ];
         let mut target = canonical.clone();
         assert_eq!(
             ModelContextView::derive(&canonical).append_current_turn_to(&mut target),
@@ -647,24 +660,14 @@ mod tests {
 
     #[test]
     fn commit_recycles_old_context_artifacts_beyond_single_canonical_marker() {
-        let artifact_a = ModelContextArtifact::capture(
-            1,
-            0,
-            &[],
-            ContextCompactionReport::default(),
-            None,
-        )
-        .into_marker()
-        .expect("marker a");
-        let artifact_b = ModelContextArtifact::capture(
-            2,
-            0,
-            &[],
-            ContextCompactionReport::default(),
-            None,
-        )
-        .into_marker()
-        .expect("marker b");
+        let artifact_a =
+            ModelContextArtifact::capture(1, 0, &[], ContextCompactionReport::default(), None)
+                .into_marker()
+                .expect("marker a");
+        let artifact_b =
+            ModelContextArtifact::capture(2, 0, &[], ContextCompactionReport::default(), None)
+                .into_marker()
+                .expect("marker b");
         let mut canonical = vec![
             Message::system_only("system"),
             artifact_a.clone(),

@@ -58,8 +58,7 @@ pub fn long_term_remember(
     args_json: &str,
     st: &LongTermMemoryToolState<'_>,
 ) -> Result<String, ToolError> {
-    let args: RememberArgs =
-        serde_json::from_str(args_json).map_err(invalid_json)?;
+    let args: RememberArgs = serde_json::from_str(args_json).map_err(invalid_json)?;
     let text = args.text.trim();
     if text.is_empty() {
         return Err(ToolError::invalid_args("错误：text 不能为空".to_string()));
@@ -73,7 +72,10 @@ pub fn long_term_remember(
         .rt
         .explicit_remember_blocking(st.cfg, st.scope, text, &args.tags, ttl)
     {
-        Ok(id) => Ok(format!("已写入显式长期记忆 id={id}（tags={:?}）", args.tags)),
+        Ok(id) => Ok(format!(
+            "已写入显式长期记忆 id={id}（tags={:?}）",
+            args.tags
+        )),
         Err(e) => Err(memory_io_failed(e)),
     }
 }
@@ -83,8 +85,7 @@ pub fn long_term_forget(
     args_json: &str,
     st: &LongTermMemoryToolState<'_>,
 ) -> Result<String, ToolError> {
-    let args: ForgetArgs =
-        serde_json::from_str(args_json).map_err(invalid_json)?;
+    let args: ForgetArgs = serde_json::from_str(args_json).map_err(invalid_json)?;
     match st.rt.explicit_forget_blocking(
         st.cfg,
         st.scope,
@@ -126,8 +127,7 @@ pub fn summarize_experience(
     args_json: &str,
     st: &LongTermMemoryToolState<'_>,
 ) -> Result<String, ToolError> {
-    let args: SummarizeExperienceArgs =
-        serde_json::from_str(args_json).map_err(invalid_json)?;
+    let args: SummarizeExperienceArgs = serde_json::from_str(args_json).map_err(invalid_json)?;
     let text = args.experience.trim();
     if text.is_empty() {
         return Err(ToolError::invalid_args(
@@ -152,7 +152,10 @@ pub fn summarize_experience(
         ttl,
         "summarize_experience",
     ) {
-        Ok(id) => Ok(format!("已将经验写入长期记忆 id={id}（tags={:?}）", args.tags)),
+        Ok(id) => Ok(format!(
+            "已将经验写入长期记忆 id={id}（tags={:?}）",
+            args.tags
+        )),
         Err(e) => Err(memory_io_failed(e)),
     }
 }

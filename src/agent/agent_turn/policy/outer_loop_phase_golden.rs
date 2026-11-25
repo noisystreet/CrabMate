@@ -70,7 +70,10 @@ fn apply_step(driver: &mut OuterLoopDriver, step: &Value, last_reduce: &mut Opti
         driver.record_iteration_exit(exit_from(e));
         return;
     }
-    if let Some(trunc) = step.get("post_tools_truncated_feedback").and_then(|v| v.as_bool()) {
+    if let Some(trunc) = step
+        .get("post_tools_truncated_feedback")
+        .and_then(|v| v.as_bool())
+    {
         let early = step
             .get("post_tools_early_stop")
             .and_then(|v| v.as_bool())

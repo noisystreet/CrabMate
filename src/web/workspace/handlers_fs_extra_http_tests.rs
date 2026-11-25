@@ -93,7 +93,10 @@ async fn workspace_file_move_http_smoke() {
         .expect("move");
     assert_eq!(moved.status(), reqwest::StatusCode::NO_CONTENT);
     assert!(!root.path().join("a.txt").exists());
-    assert_eq!(std::fs::read(root.path().join("b.txt")).expect("read b"), b"x");
+    assert_eq!(
+        std::fs::read(root.path().join("b.txt")).expect("read b"),
+        b"x"
+    );
 
     let conflict = client
         .post(format!("{}/workspace/file/move", handle.base_url))
@@ -130,7 +133,10 @@ async fn workspace_file_move_http_smoke() {
         .await
         .expect("bad cid");
     assert_eq!(bad_cid.status(), reqwest::StatusCode::BAD_REQUEST);
-    assert!(root.path().join("b.txt").exists(), "move must not run after bad conversation_id");
+    assert!(
+        root.path().join("b.txt").exists(),
+        "move must not run after bad conversation_id"
+    );
 
     let over = client
         .post(format!("{}/workspace/file/move", handle.base_url))
@@ -172,7 +178,10 @@ async fn workspace_files_delete_batch_http_smoke() {
     assert_eq!(with_dir.status(), reqwest::StatusCode::OK);
     let body: serde_json::Value = with_dir.json().await.expect("json");
     assert!(
-        body["error"].as_str().unwrap_or("").contains("不支持删除目录"),
+        body["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("不支持删除目录"),
         "{body}"
     );
     assert!(

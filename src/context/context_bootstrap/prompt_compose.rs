@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use tracing::warn;
 
-use crate::tool_host::tool_stats::ToolOutcomeRecorder;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::SessionMode;
+use crate::tool_host::tool_stats::ToolOutcomeRecorder;
 
 use super::agents_md;
 
@@ -42,11 +42,7 @@ fn locale_output_language_label(locale: &str) -> Option<String> {
     if t.is_empty() {
         return None;
     }
-    let primary = t
-        .split(['-', '_'])
-        .next()
-        .unwrap_or(t)
-        .to_ascii_lowercase();
+    let primary = t.split(['-', '_']).next().unwrap_or(t).to_ascii_lowercase();
     let label = match primary.as_str() {
         "zh" => zh_variant_label(t),
         "en" => "English",
@@ -550,7 +546,10 @@ mod tests {
         .expect("compose");
         for (id, desc) in skills {
             assert!(system.contains(id), "index should list `{id}`");
-            assert!(system.contains(desc), "index should carry `{id}` description");
+            assert!(
+                system.contains(desc),
+                "index should carry `{id}` description"
+            );
             assert!(
                 !system.contains(&format!("{id}_BODY_ONLY")),
                 "skill bodies stay out of the first system"
@@ -697,7 +696,10 @@ mod tests {
             locale_output_language_label("en-US").as_deref(),
             Some("English")
         );
-        assert_eq!(locale_output_language_label("ja").as_deref(), Some("日本語"));
+        assert_eq!(
+            locale_output_language_label("ja").as_deref(),
+            Some("日本語")
+        );
         assert_eq!(
             locale_output_language_label("de-DE").as_deref(),
             Some("Deutsch")
@@ -738,7 +740,10 @@ mod tests {
     fn locale_directive_appended_only_when_locale_present() {
         let base = "BASE".to_string();
         assert_eq!(append_locale_output_directive(base.clone(), None), "BASE");
-        assert_eq!(append_locale_output_directive(base.clone(), Some("")), "BASE");
+        assert_eq!(
+            append_locale_output_directive(base.clone(), Some("")),
+            "BASE"
+        );
         let out = append_locale_output_directive(base, Some("en-US"));
         assert!(out.starts_with("BASE"));
         assert!(out.contains("## 输出语言"));

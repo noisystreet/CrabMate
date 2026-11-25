@@ -468,9 +468,7 @@ fn find_unknown_key(s: &str) -> Option<(&'static str, String)> {
         return Some(("顶层", key));
     }
     unknown_in_section(root, "agent", &known_keys::<AgentSection>())
-        .or_else(|| {
-            unknown_in_section(root, "tool_registry", &known_keys::<ToolRegistrySection>())
-        })
+        .or_else(|| unknown_in_section(root, "tool_registry", &known_keys::<ToolRegistrySection>()))
         .or_else(|| unknown_in_rows(root, "agent_roles", &known_keys::<AgentRoleRow>()))
         .or_else(|| {
             unknown_in_rows(

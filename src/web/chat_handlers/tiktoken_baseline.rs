@@ -63,7 +63,11 @@ pub(super) fn tiktoken_new_session_baselines_by_role(
     };
     let mut jobs: Vec<(String, Option<&str>)> = Vec::with_capacity(agent_role_ids.len() + 1);
     jobs.push((String::new(), None));
-    jobs.extend(agent_role_ids.iter().map(|id| (id.clone(), Some(id.as_str()))));
+    jobs.extend(
+        agent_role_ids
+            .iter()
+            .map(|id| (id.clone(), Some(id.as_str()))),
+    );
     run_jobs_in_batches(
         cfg,
         tool_recorder,
@@ -158,9 +162,13 @@ mod tests {
         let t0 = std::time::Instant::now();
         let mut serial = std::collections::BTreeMap::new();
         for id in &ids {
-            if let Some(tokens) =
-                tiktoken_baseline_tokens_for_role(&cfg, &recorder, ws.path(), None, Some(id.as_str()))
-            {
+            if let Some(tokens) = tiktoken_baseline_tokens_for_role(
+                &cfg,
+                &recorder,
+                ws.path(),
+                None,
+                Some(id.as_str()),
+            ) {
                 serial.insert(id.clone(), tokens);
             }
         }

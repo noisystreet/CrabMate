@@ -2,7 +2,9 @@
 
 use crate::agent::agent_turn::policy::task_level_evidence::command_line_looks_like_verify;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{ToolStatus, normalize_tool_message_content, tool_output_status};
+use crate::cm_tools::tool_result::{
+    ToolStatus, normalize_tool_message_content, tool_output_status,
+};
 use crate::cm_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。
@@ -220,7 +222,10 @@ mod tests {
     fn detects_cargo_check_recovery() {
         let messages = vec![
             user_msg("请修复 cargo check 编译错误"),
-            tool_msg("cargo_check", "cargo check (exit=101):\nstderr: error[E0425]"),
+            tool_msg(
+                "cargo_check",
+                "cargo check (exit=101):\nstderr: error[E0425]",
+            ),
             tool_msg("cargo_check", "cargo check (exit=0):\n(check output)"),
             asst_final("已修复未使用的导入，cargo check 通过。"),
         ];
@@ -261,7 +266,10 @@ mod tests {
     fn detects_recovery_without_build_words_in_user_message() {
         let messages = vec![
             user_msg("帮我把这个整理一下可以吗"),
-            tool_msg("cargo_check", "cargo check (exit=101):\nstderr: error[E0425]"),
+            tool_msg(
+                "cargo_check",
+                "cargo check (exit=101):\nstderr: error[E0425]",
+            ),
             tool_msg("cargo_check", "cargo check (exit=0):\n(check output)"),
             asst_final("已修好那个未使用的导入。"),
         ];

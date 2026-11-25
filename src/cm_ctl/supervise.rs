@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
+use super::CtlError;
 use super::env_file::CredEnv;
 use super::instances::{self, Declaration, InstancesFile};
 use super::ops::{self, Ctx, Origin, UpArgs};
@@ -25,7 +26,6 @@ use super::profiles::{self, ProfilesFile};
 use super::query;
 use super::record::{DesiredState, InstanceRecord};
 use super::restart;
-use super::CtlError;
 
 /// 一次收敛的参数。
 #[derive(Debug, Clone)]
@@ -202,9 +202,7 @@ fn step_for_decl(
     profiles_file: &ProfilesFile,
     profiles_path: &Path,
 ) -> Result<Step, CtlError> {
-    let workspace = decl
-        .workspace_path()?
-        .map(|p| p.display().to_string());
+    let workspace = decl.workspace_path()?.map(|p| p.display().to_string());
     // profile 在**计划阶段**就解析：引用不到立刻报错，而不是等到 spawn 才发现
     let resolved = match decl.profile.as_deref() {
         Some(profile) => Some(profiles::resolve(
@@ -224,7 +222,15 @@ fn step_for_decl(
     }
 
     let Some((rec, probe)) = current else {
-        return start_step(name, decl, workspace.as_deref(), None, resolved.as_ref(), false, "尚无实例记录".to_string());
+        return start_step(
+            name,
+            decl,
+            workspace.as_deref(),
+            None,
+            resolved.as_ref(),
+            false,
+            "尚无实例记录".to_string(),
+        );
     };
 
     // 用户显式 `down` 过的实例：声明不得越过用户意图把它拉起来
@@ -463,7 +469,10 @@ pub fn execute(ctx: &Ctx, steps: Vec<Step>, opts: &Opts) -> Vec<Step> {
     if opts.dry_run {
         return steps;
     }
-    steps.into_iter().map(|step| run_step(ctx, step, opts)).collect()
+    steps
+        .into_iter()
+        .map(|step| run_step(ctx, step, opts))
+        .collect()
 }
 
 fn run_step(ctx: &Ctx, step: Step, opts: &Opts) -> Step {
@@ -560,9 +569,7 @@ pub enum Poll {
 
 fn fingerprint(path: &Path) -> Fingerprint {
     use std::os::unix::fs::MetadataExt;
-    let mode = std::fs::metadata(path)
-        .ok()
-        .map(|m| m.mode() & 0o777);
+    let mode = std::fs::metadata(path).ok().map(|m| m.mode() & 0o777);
     Fingerprint {
         mode,
         text: std::fs::read_to_string(path).unwrap_or_default(),

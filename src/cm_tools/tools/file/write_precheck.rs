@@ -159,7 +159,9 @@ fn check_python(content: &str) -> PrecheckVerdict {
     if status.success() {
         PrecheckVerdict::Ok
     } else {
-        PrecheckVerdict::Failed(parse_python_syntax_error(String::from_utf8_lossy(&err).trim()))
+        PrecheckVerdict::Failed(parse_python_syntax_error(
+            String::from_utf8_lossy(&err).trim(),
+        ))
     }
 }
 
@@ -213,12 +215,18 @@ mod tests {
 
     #[test]
     fn plain_file_skips() {
-        assert!(matches!(precheck_write("a.rs", "fn main(){}"), PrecheckVerdict::Ok));
+        assert!(matches!(
+            precheck_write("a.rs", "fn main(){}"),
+            PrecheckVerdict::Ok
+        ));
     }
 
     #[test]
     fn json_valid_and_invalid() {
-        assert!(matches!(precheck_write("x.json", r#"{"a":1}"#), PrecheckVerdict::Ok));
+        assert!(matches!(
+            precheck_write("x.json", r#"{"a":1}"#),
+            PrecheckVerdict::Ok
+        ));
         let f = match precheck_write("x.json", "{not json") {
             PrecheckVerdict::Failed(f) => f,
             other => panic!("expected failed, got {other:?}"),
@@ -230,7 +238,10 @@ mod tests {
     #[test]
     fn toml_valid_and_invalid() {
         let v = precheck_write("Cargo.toml", "[package]\nname = \"a\"\n");
-        assert!(matches!(v, PrecheckVerdict::Ok), "valid toml rejected: {v:?}");
+        assert!(
+            matches!(v, PrecheckVerdict::Ok),
+            "valid toml rejected: {v:?}"
+        );
         assert!(matches!(
             precheck_write("c.toml", "name = = = bad"),
             PrecheckVerdict::Failed(_)
@@ -270,9 +281,15 @@ mod tests {
     fn empty_or_blank_content_allowed() {
         // 空/纯空白内容直接放行（创建空占位文件合法，且 py/json/toml 行为一致）。
         assert!(matches!(precheck_write("x.json", ""), PrecheckVerdict::Ok));
-        assert!(matches!(precheck_write("x.json", "  \n"), PrecheckVerdict::Ok));
+        assert!(matches!(
+            precheck_write("x.json", "  \n"),
+            PrecheckVerdict::Ok
+        ));
         assert!(matches!(precheck_write("app.py", ""), PrecheckVerdict::Ok));
-        assert!(matches!(precheck_write("Cargo.toml", "  "), PrecheckVerdict::Ok));
+        assert!(matches!(
+            precheck_write("Cargo.toml", "  "),
+            PrecheckVerdict::Ok
+        ));
     }
 
     #[test]
@@ -286,6 +303,9 @@ mod tests {
     #[test]
     fn error_message_has_code_and_line() {
         let msg = precheck_before_write("app.py", "def f():\nx = 1\n", false).unwrap_err();
-        assert!(msg.starts_with("校验失败（PY_SYNTAX_ERROR）：app.py:2"), "{msg}");
+        assert!(
+            msg.starts_with("校验失败（PY_SYNTAX_ERROR）：app.py:2"),
+            "{msg}"
+        );
     }
 }

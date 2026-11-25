@@ -1,5 +1,5 @@
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use std::path::Path;
 
 use serde_json::Value as JsonValue;
@@ -7,16 +7,18 @@ use serde_json::Value as JsonValue;
 use super::common::{
     command_formatted_exit_code, extract_stderr_from_formatted, gh_allowed, push_bool_flag,
     push_extra_args_from_json, push_repo_arg, push_trimmed_string_flag, run_gh_vec,
-    run_gh_vec_allow_exit,
-    validate_extra_args, validate_pr_body, validate_pr_ref_token, validate_pr_title, validate_repo,
-    write_workspace_temp_markdown,
+    run_gh_vec_allow_exit, validate_extra_args, validate_pr_body, validate_pr_ref_token,
+    validate_pr_title, validate_repo, write_workspace_temp_markdown,
 };
 use super::pr_body::build_pr_body_draft;
 use super::run_ci::{
     PR_CHECKS_STRUCTURED_JSON_FIELDS, finalize_structured_pr_checks, gh_pr_checks_rejects_json_flag,
 };
 
-fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, ToolError> {
+fn build_pr_checks_argv(
+    v: &JsonValue,
+    with_structured_json: bool,
+) -> Result<Vec<String>, ToolError> {
     let mut argv = vec!["pr".into(), "checks".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
         validate_repo(r)?;
@@ -25,7 +27,9 @@ fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec
     }
     if let Some(n) = v.get("number").and_then(|x| x.as_u64()) {
         if n == 0 || n > 999_999 {
-            return Err(ToolError::invalid_args("错误：number 须为 1～999999 的正整数或省略".to_string()));
+            return Err(ToolError::invalid_args(
+                "错误：number 须为 1～999999 的正整数或省略".to_string(),
+            ));
         }
         argv.push(n.to_string());
     }
@@ -44,10 +48,7 @@ fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec
     Ok(argv)
 }
 
-fn gh_pr_checks_table_fallback(
-    v: &JsonValue,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+fn gh_pr_checks_table_fallback(v: &JsonValue, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     let argv = build_pr_checks_argv(v, false)?;
     let table = run_gh_vec_allow_exit(argv, ctx, &[0, 1, 8])?;
     Ok(format!(
@@ -57,13 +58,9 @@ fn gh_pr_checks_table_fallback(
 }
 
 /// `gh pr checks`（只读）：CI 检查状态；省略 `number` 时使用当前分支关联的 PR（与 `gh` 默认一致）。
-pub fn gh_pr_checks_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_checks_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let structured = v.get("structured").and_then(|x| x.as_bool()) == Some(true);
     let argv = build_pr_checks_argv(&v, structured)?;
     // `gh pr checks` 对「有检查失败」返回 1、对「仍有 pending」返回 8，stdout 仍可能是合法
@@ -156,8 +153,7 @@ fn gh_pr_create_inputs(
     args_json: &str,
     working_dir: &Path,
 ) -> Result<(JsonValue, String, String), ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let title = v
         .get("title")
         .and_then(|x| x.as_str())
@@ -171,16 +167,17 @@ fn gh_pr_create_inputs(
 }
 
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
-pub fn gh_pr_create_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_create_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
     let (v, title, body_str) = gh_pr_create_inputs(args_json, ctx.working_dir)?;
     // 临时文件失败的类别与文案统一由 `write_workspace_temp_markdown` 给出
     // （`gh_temp_file_failed` + 「错误：{label} …」），此处**不再**按 message 二次判类别（#1494）。
-    let (dir, body_path_str) =
-        write_workspace_temp_markdown(ctx.working_dir, "crabmate_pr_body.md", body_str.as_bytes(), "PR 正文")?;
+    let (dir, body_path_str) = write_workspace_temp_markdown(
+        ctx.working_dir,
+        "crabmate_pr_body.md",
+        body_str.as_bytes(),
+        "PR 正文",
+    )?;
     let argv = gh_pr_create_build_argv(&v, &title, body_path_str)?;
     // 失败时仍要追加「如何自救」的提示，所以走 match 而不是 `?`。
     let out = match run_gh_vec(argv, ctx) {

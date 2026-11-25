@@ -318,8 +318,7 @@ mod tests {
     fn instance_lock_conflicts_then_releases() {
         let tmp = tempfile::tempdir().unwrap();
         let lock_path = tmp.path().join("serve.lock");
-        let first =
-            serve_acquire_instance_lock_at("工作区", &lock_path).expect("首次加锁应成功");
+        let first = serve_acquire_instance_lock_at("工作区", &lock_path).expect("首次加锁应成功");
         assert_eq!(first.path(), lock_path.as_path());
         let err = serve_acquire_instance_lock_at("工作区", &lock_path)
             .err()
@@ -335,21 +334,17 @@ mod tests {
     #[test]
     fn shared_ltm_conflicts_even_with_different_workspaces() {
         let tmp = tempfile::tempdir().unwrap();
-        let ws_a = serve_acquire_instance_lock_at(
-            "工作区",
-            &tmp.path().join("a/.crabmate/serve.lock"),
-        )
-        .unwrap();
+        let ws_a =
+            serve_acquire_instance_lock_at("工作区", &tmp.path().join("a/.crabmate/serve.lock"))
+                .unwrap();
         let ltm_a = serve_acquire_instance_lock_at(
             "长期记忆库",
             &tmp.path().join("ltm/memory.db.serve.lock"),
         )
         .unwrap();
-        let ws_b = serve_acquire_instance_lock_at(
-            "工作区",
-            &tmp.path().join("b/.crabmate/serve.lock"),
-        )
-        .expect("不同工作区可共存");
+        let ws_b =
+            serve_acquire_instance_lock_at("工作区", &tmp.path().join("b/.crabmate/serve.lock"))
+                .expect("不同工作区可共存");
         let err = serve_acquire_instance_lock_at(
             "长期记忆库",
             &tmp.path().join("ltm/memory.db.serve.lock"),

@@ -119,7 +119,10 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
     }
 }
 
-fn tracing_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Result<EnvFilter, String> {
+fn tracing_env_filter(
+    quiet_cli_default: bool,
+    log_file: Option<&Path>,
+) -> Result<EnvFilter, String> {
     let filter_str = default_env_filter(quiet_cli_default, log_file);
     if std::env::var_os("RUST_LOG").is_some() {
         EnvFilter::try_from_default_env().map_err(|e| e.to_string())
@@ -177,7 +180,8 @@ fn install_file_pipe_tracing(
     path: &Path,
     json_logs: bool,
 ) -> Result<(), String> {
-    let f = open_log_append(path).map_err(|e| format!("无法打开日志文件 {}: {e}", path.display()))?;
+    let f =
+        open_log_append(path).map_err(|e| format!("无法打开日志文件 {}: {e}", path.display()))?;
     let pipe = Arc::new(Mutex::new(StderrAndFile {
         stderr: io::stderr(),
         file: f,

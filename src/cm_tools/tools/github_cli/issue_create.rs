@@ -1,7 +1,7 @@
 //! `gh issue create`（写远端 Issue）。
 
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use serde_json::Value as JsonValue;
 
 use super::common::{
@@ -39,13 +39,9 @@ fn gh_issue_create_build_argv(
 }
 
 /// `gh issue create`（正文经工作区临时 `--body-file`）
-pub fn gh_issue_create_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_issue_create_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let title = match v.get("title").and_then(|x| x.as_str()) {
         Some(s) => s,
         None => return Err(ToolError::invalid_args("错误：缺少 title".to_string())),

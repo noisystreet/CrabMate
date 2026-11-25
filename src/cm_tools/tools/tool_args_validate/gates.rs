@@ -199,7 +199,11 @@ fn permissive_tools_keep_their_documented_fields() {
 fn policy_layers<'a>(
     spec: &'a ToolSpec,
     schema: &'a Value,
-) -> Vec<(&'a ArgsCoercionPolicy, &'a serde_json::Map<String, Value>, &'static str)> {
+) -> Vec<(
+    &'a ArgsCoercionPolicy,
+    &'a serde_json::Map<String, Value>,
+    &'static str,
+)> {
     let mut out = Vec::new();
     match schema.get("properties").and_then(|p| p.as_object()) {
         Some(props) => out.push((spec.args_coercion, props, "顶层")),
@@ -249,9 +253,12 @@ fn assert_bounds_align(
         let FieldKind::U64Min(min) = field.kind else {
             continue;
         };
-        let prop = props
-            .get(field.key)
-            .unwrap_or_else(|| panic!("工具 {tool} {layer}：`{}` 不在 schema properties 里", field.key));
+        let prop = props.get(field.key).unwrap_or_else(|| {
+            panic!(
+                "工具 {tool} {layer}：`{}` 不在 schema properties 里",
+                field.key
+            )
+        });
         let schema_min = prop
             .get("minimum")
             .and_then(serde_json::Value::as_u64)

@@ -19,11 +19,11 @@
 use serde_json::{Value, json};
 
 use super::write_sse_preview::MAX_UNIFIED_PREVIEW_FILE_CHARS;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::{
     CrabmateToolOutputEnvelope, CrabmateToolOutputMeta, PREVIEW_WORKSPACE_WRITE_DIFF,
     WorkspaceWriteDiffFields, WorkspaceWriteDiffFile,
 };
-use crate::cm_names as tool_names;
 
 /// 若 `result` 首行是 `{"kind":"crabmate_tool_output","tool":…}` 且 `tool` 与 `tool_name` 一致，返回该 JSON；否则 `None`。
 pub fn crabmate_tool_output_header(tool_name: &str, result: &str) -> Option<Value> {

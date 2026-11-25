@@ -8,10 +8,7 @@ use crate::cm_config::env_override_apply::{apply_bool, apply_parse};
 pub(super) fn apply(b: &mut ConfigBuilder) {
     apply_bool(&mut b.autonomy.enabled, "CM_AUTONOMY_ENABLED");
     apply_parse(&mut b.autonomy.max_tasks, "CM_AUTONOMY_MAX_TASKS");
-    apply_parse(
-        &mut b.autonomy.task_ttl_secs,
-        "CM_AUTONOMY_TASK_TTL_SECS",
-    );
+    apply_parse(&mut b.autonomy.task_ttl_secs, "CM_AUTONOMY_TASK_TTL_SECS");
     // B 步（#1455）：跨回合累计三项上限，**软闸**，默认 0 = 不限制。
     apply_parse(
         &mut b.autonomy.max_cumulative_llm_calls,
@@ -26,10 +23,7 @@ pub(super) fn apply(b: &mut ConfigBuilder) {
         "CM_AUTONOMY_MAX_CUMULATIVE_SECS",
     );
     // C 步（#1455）：自动续跑开关与硬闸。
-    apply_bool(
-        &mut b.autonomy.auto_resume,
-        "CM_AUTONOMY_AUTO_RESUME",
-    );
+    apply_bool(&mut b.autonomy.auto_resume, "CM_AUTONOMY_AUTO_RESUME");
     apply_parse(
         &mut b.autonomy.max_autonomous_turns,
         "CM_AUTONOMY_MAX_AUTONOMOUS_TURNS",

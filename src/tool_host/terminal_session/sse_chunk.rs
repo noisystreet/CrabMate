@@ -2,10 +2,11 @@
 
 use tokio::sync::mpsc::Sender;
 
-use crate::cm_sse_protocol::sse::{
-    SseControlMirror, SseEncoder, SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional,
-};
 use crate::cm_names as tool_names;
+use crate::cm_sse_protocol::sse::{
+    SseControlMirror, SseEncoder, SsePayload, ToolOutputChunkBody,
+    send_sse_control_payload_optional,
+};
 
 pub(super) fn push_truncated(acc: &mut String, chunk: &str, max_len: usize) {
     let remain = max_len.saturating_sub(acc.len());

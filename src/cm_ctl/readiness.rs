@@ -50,9 +50,8 @@ pub fn wait_tcp(addr: SocketAddr, pid: u32, timeout: Duration, poll: Duration) -
 /// 解析 `127.0.0.1:8080` 形式的监听地址。
 pub fn parse_addr(host: &str, port: u16) -> Result<SocketAddr, super::CtlError> {
     let text = format!("{host}:{port}");
-    text.parse::<SocketAddr>().map_err(|e| {
-        super::CtlError::usage("bad_addr", format!("无法解析监听地址 {text}：{e}"))
-    })
+    text.parse::<SocketAddr>()
+        .map_err(|e| super::CtlError::usage("bad_addr", format!("无法解析监听地址 {text}：{e}")))
 }
 
 #[cfg(test)]

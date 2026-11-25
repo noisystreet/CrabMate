@@ -24,8 +24,7 @@ pub fn parse_args_typed<T: serde::de::DeserializeOwned>(args_json: &str) -> Resu
 pub fn parse_args_from_value<T: serde::de::DeserializeOwned>(
     v: serde_json::Value,
 ) -> Result<T, String> {
-    serde_json::from_value(v)
-        .map_err(|e| format!("{}: {e}", error_text::INVALID_ARGS_PREFIX))
+    serde_json::from_value(v).map_err(|e| format!("{}: {e}", error_text::INVALID_ARGS_PREFIX))
 }
 
 /// 仅用于 `run_command`：尝试修复常见的裸 token 数组写法（如 `args:[-la]`、`args:[CMakeLists.txt]`）。

@@ -188,7 +188,8 @@ pub struct DispatchToolObs<'a> {
 pub struct DispatchToolMemory<'a> {
     pub read_file_turn_cache:
         Option<std::sync::Arc<crate::cm_tools::read_file_turn_cache::ReadFileTurnCache>>,
-    pub long_term_memory: Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory:
+        Option<Arc<crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
 }

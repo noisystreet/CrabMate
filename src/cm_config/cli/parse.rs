@@ -131,10 +131,16 @@ mod parse_tests {
     #[test]
     fn workspace_unset_conflicts_with_workspace() {
         let err = parse_args_from_argv(
-            ["crabmate", "--workspace", "/tmp", "serve", "--workspace-unset"]
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect(),
+            [
+                "crabmate",
+                "--workspace",
+                "/tmp",
+                "serve",
+                "--workspace-unset",
+            ]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
         )
         .expect_err("must reject --workspace + --workspace-unset");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);

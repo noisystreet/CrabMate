@@ -414,7 +414,13 @@ mod tests {
     #[test]
     fn restart_reads_grace_and_timeout_separately() {
         let cli = CtlCli::try_parse_from([
-            "crabmatectl", "restart", "a", "--grace", "45", "--timeout", "20",
+            "crabmatectl",
+            "restart",
+            "a",
+            "--grace",
+            "45",
+            "--timeout",
+            "20",
         ])
         .expect("restart 应接受 --grace 与 --timeout");
         let CtlSubCmd::Restart(c) = cli.sub else {
@@ -428,7 +434,8 @@ mod tests {
     /// 若默认变成 0，正常关停会直接跳到 SIGKILL。
     #[test]
     fn restart_defaults_grace_and_timeout_to_ten() {
-        let cli = CtlCli::try_parse_from(["crabmatectl", "restart", "a"]).expect("restart 只要有实例名");
+        let cli =
+            CtlCli::try_parse_from(["crabmatectl", "restart", "a"]).expect("restart 只要有实例名");
         let CtlSubCmd::Restart(c) = cli.sub else {
             panic!("应解析成 restart");
         };

@@ -146,7 +146,9 @@ static WORKSPACE_DECLS: &[RouteDecl] = &[
         method: HttpMethod::Post,
         tag: "workspace",
         summary: "在项目池内 git clone（SSE 进度；成功后切换当前工作区）",
-        description: Some("仅当已配置 web_workspace_pool。请求 JSON：url、name，可选 depth、branch。成功路径：phase → log/progress → phase=activate → done(name,path)。墙钟超时 20 分钟。"),
+        description: Some(
+            "仅当已配置 web_workspace_pool。请求 JSON：url、name，可选 depth、branch。成功路径：phase → log/progress → phase=activate → done(name,path)。墙钟超时 20 分钟。",
+        ),
         protected: true,
         params: &[],
         request: Some(RequestBody {
@@ -359,7 +361,9 @@ static WORKSPACE_DECLS: &[RouteDecl] = &[
                 name: "paths",
                 location: ParamLocation::Query,
                 required: false,
-                description: Some("批量删除：逗号分隔的相对路径列表（最多 32 个；任一非法则整批拒绝、不产生部分删除）"),
+                description: Some(
+                    "批量删除：逗号分隔的相对路径列表（最多 32 个；任一非法则整批拒绝、不产生部分删除）",
+                ),
                 schema: SchemaDecl::Str,
             },
         ],

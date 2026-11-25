@@ -3,9 +3,9 @@
 
 use std::borrow::Cow;
 
-use crate::tool_host::tool_registry::is_readonly_tool;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Tool;
+use crate::tool_host::tool_registry::is_readonly_tool;
 
 /// 与发给模型的工具说明一致；须为 JSON 字符串字段。
 pub const EXPLAIN_WHY_KEY: &str = "crabmate_explain_why";

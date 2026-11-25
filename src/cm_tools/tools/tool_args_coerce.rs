@@ -317,7 +317,11 @@ fn coerce_enum_synonym(
         .iter()
         .find(|(from, _)| *from == norm)
         .map(|(_, to)| *to)
-        .or(if fallback_to_normalized { Some(norm.as_str()) } else { None });
+        .or(if fallback_to_normalized {
+            Some(norm.as_str())
+        } else {
+            None
+        });
     let Some(target) = mapped else {
         return false;
     };

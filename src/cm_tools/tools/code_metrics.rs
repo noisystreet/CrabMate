@@ -63,7 +63,10 @@ pub fn code_stats_try(
     Ok(format_code_stats_table(&stats, path, max_output_len))
 }
 
-fn format_code_stats_json(stats: &project_metrics::WorkspaceCodeStats, max_output_len: usize) -> String {
+fn format_code_stats_json(
+    stats: &project_metrics::WorkspaceCodeStats,
+    max_output_len: usize,
+) -> String {
     let entries: Vec<serde_json::Value> = stats
         .languages
         .iter()

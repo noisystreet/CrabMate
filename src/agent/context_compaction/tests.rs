@@ -17,7 +17,10 @@ fn format_for_log_reports_budget_and_compaction_counters() {
             target_tokens: 58_976,
             ..Default::default()
         }),
-        before: ContextTokenEstimate { used_input_tokens: 120_000, ..Default::default() },
+        before: ContextTokenEstimate {
+            used_input_tokens: 120_000,
+            ..Default::default()
+        },
         after: ContextTokenEstimate {
             used_input_tokens: 58_000,
             tool_schema_tokens: 5_800,
@@ -57,7 +60,10 @@ fn format_for_log_keeps_usage_without_budget() {
     // 否则「字符裁剪到底裁掉了多少」在日志里无从判断。
     let report = ContextCompactionReport {
         budget: None,
-        after: ContextTokenEstimate { used_input_tokens: 4_096, ..Default::default() },
+        after: ContextTokenEstimate {
+            used_input_tokens: 4_096,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let line = report.format_for_log();
@@ -122,12 +128,14 @@ fn token_compaction_removes_whole_old_groups_and_keeps_recent_groups() {
     cfg.llm_sampling.max_tokens = 512;
     let mut messages = vec![Message::system_only("system")];
     for turn in 0..4 {
-        messages.push(Message::user_only(format!("turn-{turn} {}", "x".repeat(8_000))));
+        messages.push(Message::user_only(format!(
+            "turn-{turn} {}",
+            "x".repeat(8_000)
+        )));
         messages.push(Message::assistant_only(format!("answer-{turn}")));
     }
     let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
-    let report =
-        compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
+    let report = compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
     assert!(report.removed_turn_groups > 0);
     assert_eq!(conversation_turn_groups(&messages).len(), 2);
     assert!(
@@ -171,8 +179,7 @@ fn summary_tail_guard_yields_when_tail_alone_exceeds_target() {
     );
 
     // 6 = 摘要刻意保留的尾部条数（3 组 × 2 条）：第 1 级守卫必然挡住删组。
-    let report =
-        compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, true, 6);
+    let report = compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, true, 6);
 
     assert!(
         report.removed_turn_groups > 0,
@@ -200,8 +207,7 @@ fn zero_tail_guard_does_not_double_remove() {
         messages.push(Message::assistant_only(format!("answer-{turn}")));
     }
     let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
-    let report =
-        compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
+    let report = compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
     assert_eq!(
         conversation_turn_groups(&messages).len(),
         MIN_RECENT_TURN_GROUPS
@@ -219,12 +225,15 @@ fn small_tool_dense_history_does_not_compact_by_message_count() {
     for turn in 0..4 {
         messages.push(Message::user_only(format!("turn-{turn}")));
         messages.push(Message::assistant_only("calling tool"));
-        messages.push(Message::tool_result_named(format!("call-{turn}"), "read_file".to_string(), "ok"));
+        messages.push(Message::tool_result_named(
+            format!("call-{turn}"),
+            "read_file".to_string(),
+            "ok",
+        ));
         messages.push(Message::assistant_only("done"));
     }
     let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
-    let report =
-        compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
+    let report = compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
     assert_eq!(report.removed_turn_groups, 0);
     assert_eq!(conversation_turn_groups(&messages).len(), 4);
 }
@@ -308,8 +317,7 @@ fn token_compaction_prefers_tool_body_degrade_over_group_removal() {
         messages.push(Message::assistant_only("answer"));
     }
     let before = estimate_final_request_tokens(&cfg, &messages, &[], None);
-    let report =
-        compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
+    let report = compact_messages_to_token_budget(&cfg, &mut messages, &[], None, before, false, 0);
     assert!(report.token_triggered, "巨型 tool 正文应触发 Token 预算");
     assert_eq!(report.compressed_old_tool_messages, 1);
     assert_eq!(report.removed_turn_groups, 0, "压缩旧 tool 正文后应已达标");

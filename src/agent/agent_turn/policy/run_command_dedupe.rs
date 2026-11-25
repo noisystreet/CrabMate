@@ -185,7 +185,8 @@ mod tests {
     #[test]
     fn normalize_key_exact_shape() {
         assert_eq!(
-            normalize_run_command_key(r#"{"command":"cmake","args":["--build","build"]}"#).as_deref(),
+            normalize_run_command_key(r#"{"command":"cmake","args":["--build","build"]}"#)
+                .as_deref(),
             Some("run_command|cmake|--build\u{1f}build")
         );
     }
@@ -282,9 +283,11 @@ mod tests {
             .expect("key");
         assert_eq!(no_cwd, "run_command|bash|-c\u{1f}echo hi");
 
-        let with_cwd =
-            normalize_run_command_key_with_cwd(r#"{"command":"bash","args":["-c","echo hi"]}"#, Path::new("."))
-                .expect("key");
+        let with_cwd = normalize_run_command_key_with_cwd(
+            r#"{"command":"bash","args":["-c","echo hi"]}"#,
+            Path::new("."),
+        )
+        .expect("key");
         assert!(!with_cwd.contains(r#""shell""#), "{with_cwd}");
         assert!(!with_cwd.contains(r#""script""#), "{with_cwd}");
         assert!(with_cwd.contains(r#""cwd":".""#), "{with_cwd}");

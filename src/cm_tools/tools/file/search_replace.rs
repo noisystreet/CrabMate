@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use super::path::{PathAccess, path_for_tool_display};
 use super::write_precheck;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::SearchReplaceArgs;
@@ -22,7 +23,6 @@ use crate::cm_tools::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
-use crate::cm_names as tool_names;
 // ── search_replace ──────────────────────────────────────────
 
 /// `search_replace` 的替换范围。
@@ -148,11 +148,7 @@ fn line_preview(line: &str, max_chars: usize) -> String {
 ///
 /// 拒绝而不是「替换全部」是这里唯一诚实的选项：锚点重复时服务端无法知道要改哪一处，
 /// 静默全改的代价由调用方（往往是模型）在事后才发现。列出位置 + 两条改法让自纠错成为一步。
-fn ambiguous_match_message(
-    display: &str,
-    content: &str,
-    spans: &[Range<usize>],
-) -> String {
+fn ambiguous_match_message(display: &str, content: &str, spans: &[Range<usize>]) -> String {
     let total = spans.len();
     let mut msg = format!(
         "错误：search 在 {display} 匹配 {total} 处，无法唯一确定要替换哪一处，本次未写入任何内容（{}）。",
@@ -277,7 +273,9 @@ fn load_search_replace_file_bytes(
     access: &PathAccess<'_>,
     path: &str,
 ) -> Result<(PathBuf, String), ToolError> {
-    let target = access.for_read(path).map_err(ToolError::path_resolve_failed)?;
+    let target = access
+        .for_read(path)
+        .map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(format!("错误：{} 不是文件", path)));
     }
@@ -449,7 +447,12 @@ fn search_replace_persist(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    search_replace_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
+    search_replace_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// [`search_replace`] 的显式失败版本（成功正文与 String 面逐字节一致）。
@@ -534,9 +537,11 @@ mod tests {
         );
         assert!(!out.contains("校验失败"), "{out}");
         assert!(out.contains("已替换"), "{out}");
-        assert!(fs::read_to_string(tmp.path().join("app.py"))
-            .unwrap()
-            .contains("x = 1"));
+        assert!(
+            fs::read_to_string(tmp.path().join("app.py"))
+                .unwrap()
+                .contains("x = 1")
+        );
     }
 
     /// 缩进敏感回归：`search` 首行带缩进时按字面量替换，不得出现「缩进翻倍」。
@@ -545,7 +550,11 @@ mod tests {
     #[test]
     fn search_replace_keeps_indentation_of_indented_anchor() {
         let tmp = tempfile::tempdir().unwrap();
-        write(tmp.path(), "app.py", "def f():\n    if x:\n        return 1\n");
+        write(
+            tmp.path(),
+            "app.py",
+            "def f():\n    if x:\n        return 1\n",
+        );
         let ctx = test_ctx(tmp.path());
         let out = search_replace(
             r#"{"path":"app.py","search":"        return 1","replace":"        return 2","dry_run":false,"confirm":true}"#,
@@ -623,8 +632,14 @@ mod tests {
                 &ctx,
             );
             assert!(out.contains("已替换 3 处匹配"), "{extra} {out}");
-            assert!(out.contains("多处替换"), "多处替换应首行警示: {extra} {out}");
-            assert_eq!(fs::read_to_string(tmp.path().join("a.txt")).unwrap(), "y\ny\ny\n");
+            assert!(
+                out.contains("多处替换"),
+                "多处替换应首行警示: {extra} {out}"
+            );
+            assert_eq!(
+                fs::read_to_string(tmp.path().join("a.txt")).unwrap(),
+                "y\ny\ny\n"
+            );
         }
     }
 
@@ -696,7 +711,10 @@ mod tests {
             &ctx,
         );
         assert!(out.contains("已替换 1 处匹配"), "{out}");
-        assert_eq!(fs::read_to_string(tmp.path().join("a.txt")).unwrap(), "a\nb\n");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("a.txt")).unwrap(),
+            "a\nb\n"
+        );
     }
 
     /// dry-run 预览走统一 diff 渲染（`--- a/…` / `+++ b/…`），不再逐行 zip 对比。
@@ -712,7 +730,10 @@ mod tests {
         );
         assert!(out.contains("--- a/a.txt"), "{out}");
         assert!(out.contains("+++ b/a.txt"), "{out}");
-        assert_eq!(fs::read_to_string(tmp.path().join("a.txt")).unwrap(), "old\n");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("a.txt")).unwrap(),
+            "old\n"
+        );
     }
 
     /// 显式 `base_revision` 与当前内容不一致 → 拒写并保留精确错误码。
@@ -733,5 +754,4 @@ mod tests {
             "CAS 失败不得写入"
         );
     }
-
 }

@@ -150,12 +150,13 @@ pub fn resolve_for_read_open(
         .canonicalize()
         .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&canonical, &base_canonical)?;
-    crate::cm_tools::workspace::fs::open_existing_file_under_root(&base_canonical, &canonical).map_err(|e| {
-        WorkspacePathError::PathResolveFailed(std::io::Error::new(
-            e.kind(),
-            format!("open under workspace root: {e}"),
-        ))
-    })
+    crate::cm_tools::workspace::fs::open_existing_file_under_root(&base_canonical, &canonical)
+        .map_err(|e| {
+            WorkspacePathError::PathResolveFailed(std::io::Error::new(
+                e.kind(),
+                format!("open under workspace root: {e}"),
+            ))
+        })
 }
 
 /// 解析用于写入的路径（目标可不存在；path 必须为相对工作目录的相对路径，且不能通过 .. 超出工作目录）
@@ -207,7 +208,10 @@ fn unrestricted_target(base: &Path, sub: &str) -> PathBuf {
 ///
 /// 安全边界：L4 显式放宽工作区约束（设计 §4 / §9），因此这里不再有 `openat2`
 /// `RESOLVE_IN_ROOT` 那层保护——路径由模型在 L4 下给出，属运维有意授权。
-pub fn resolve_unrestricted_for_read(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+pub fn resolve_unrestricted_for_read(
+    base: &Path,
+    sub: &str,
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
         return Err(WorkspacePathError::EmptyPath);
@@ -232,7 +236,10 @@ pub fn resolve_unrestricted_for_read_open(
 }
 
 /// `PathScope::Any` 的写解析：目标可不存在，**不**校验是否落在工作区根内。
-pub fn resolve_unrestricted_for_write(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+pub fn resolve_unrestricted_for_write(
+    base: &Path,
+    sub: &str,
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
         return Err(WorkspacePathError::EmptyPath);
@@ -504,10 +511,7 @@ impl<'a> PathAccess<'a> {
 }
 
 /// 目标绝对路径：读要求存在（直接 `canonicalize`），写允许不存在（最近已存在祖先 + 后缀）。
-fn resolve_scope_target(
-    absolute: &Path,
-    must_exist: bool,
-) -> Result<PathBuf, WorkspacePathError> {
+fn resolve_scope_target(absolute: &Path, must_exist: bool) -> Result<PathBuf, WorkspacePathError> {
     if must_exist {
         absolute
             .canonicalize()

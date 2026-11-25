@@ -46,12 +46,7 @@ pub struct CommandOutcome {
 
 impl CommandOutcome {
     #[must_use]
-    pub fn new(
-        invocation: String,
-        status: ExitStatusKind,
-        stdout: String,
-        stderr: String,
-    ) -> Self {
+    pub fn new(invocation: String, status: ExitStatusKind, stdout: String, stderr: String) -> Self {
         Self {
             invocation,
             status,
@@ -191,10 +186,7 @@ impl CommandDigest {
         let Some(cwd) = &self.cwd else {
             return base;
         };
-        format!(
-            "{base}|meta={}",
-            serde_json::json!({ "cwd": cwd })
-        )
+        format!("{base}|meta={}", serde_json::json!({ "cwd": cwd }))
     }
 }
 
@@ -317,12 +309,18 @@ mod tests {
 
     #[test]
     fn digest_key_shape() {
-        let base = CommandDigest::new("cmake".to_string(), vec!["--build".to_string(), "build".to_string()]);
+        let base = CommandDigest::new(
+            "cmake".to_string(),
+            vec!["--build".to_string(), "build".to_string()],
+        );
         assert_eq!(base.key(), "run_command|cmake|--build\u{1f}build");
 
         let with_cwd = base.with_cwd(Path::new("/tmp/ws"));
         let key = with_cwd.key();
-        assert!(key.starts_with("run_command|cmake|--build\u{1f}build|meta="), "{key}");
+        assert!(
+            key.starts_with("run_command|cmake|--build\u{1f}build|meta="),
+            "{key}"
+        );
         assert!(key.contains(r#""cwd":"/tmp/ws""#), "{key}");
     }
 }

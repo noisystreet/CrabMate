@@ -601,7 +601,10 @@ pub fn sandbox_clamps(level: PermissionLevel, cfg: &AgentConfig) -> SandboxClamp
     {
         return SandboxClamps::default();
     }
-    let net = sb.sync_default_tool_sandbox_docker_network.trim().is_empty();
+    let net = sb
+        .sync_default_tool_sandbox_docker_network
+        .trim()
+        .is_empty();
     let has_roots = !cfg.workspace_roots.workspace_allowed_roots.is_empty();
     let path = matches!(
         crate::cm_types::path_scope_for(level, has_roots),

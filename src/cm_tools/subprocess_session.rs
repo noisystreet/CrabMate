@@ -715,8 +715,7 @@ pub fn take_utf8_text(pending: &mut Vec<u8>, incoming: &[u8], finish: bool) -> S
             Err(e) => {
                 let valid = e.valid_up_to();
                 if valid > 0 {
-                    let ok = std::str::from_utf8(&pending[..valid])
-                        .expect("valid_up_to is UTF-8");
+                    let ok = std::str::from_utf8(&pending[..valid]).expect("valid_up_to is UTF-8");
                     out.push_str(ok);
                     pending.drain(..valid);
                     continue;

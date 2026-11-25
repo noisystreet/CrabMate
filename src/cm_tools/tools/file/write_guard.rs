@@ -60,14 +60,10 @@ pub(super) fn guard_view(v: &Value) -> GuardView<'_> {
         let legacy = LEGACY_KEYS
             .iter()
             .find_map(|(new, old)| (*new == key).then_some(*old));
-        let from_guard = guard
-            .and_then(|g| g.get(key))
-            .and_then(|x| x.as_str());
+        let from_guard = guard.and_then(|g| g.get(key)).and_then(|x| x.as_str());
         // 空串**不是**「未设置」：`first_line`/`last_line`/`anchor_line` 传空串表示
         // 「校验那一行确实是空行」，是合法用法——过滤掉它等于静默跳过守卫。
-        let from_legacy = legacy
-            .and_then(|old| v.get(old))
-            .and_then(|x| x.as_str());
+        let from_legacy = legacy.and_then(|old| v.get(old)).and_then(|x| x.as_str());
         from_guard.or(from_legacy)
     };
     GuardView {

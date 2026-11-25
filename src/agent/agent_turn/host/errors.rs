@@ -303,11 +303,9 @@ impl RunAgentTurnError {
                         LLM_CANCELLED_ERROR.to_string(),
                         None,
                     ),
-                    LlmCompleteError::RateLimit(e) => (
-                        "LLM_RATE_LIMIT".to_string(),
-                        e.user_message.clone(),
-                        None,
-                    ),
+                    LlmCompleteError::RateLimit(e) => {
+                        ("LLM_RATE_LIMIT".to_string(), e.user_message.clone(), None)
+                    }
                     LlmCompleteError::Transport(e) => (
                         "LLM_REQUEST_FAILED".to_string(),
                         e.user_message.clone(),
@@ -371,9 +369,7 @@ impl RunAgentTurnError {
                 sub_phase,
                 request_id: None,
             },
-            Self::TurnBudgetExhausted {
-                deny, message, ..
-            } => SseErrorBody {
+            Self::TurnBudgetExhausted { deny, message, .. } => SseErrorBody {
                 error: self.public_user_message(),
                 code: Some(budget_deny_error_code(*deny).to_string()),
                 reason_code: Some(truncate_reason(message.clone())),
@@ -541,9 +537,10 @@ mod tests {
     fn http_llm_transport_omits_reason() {
         let e = RunAgentTurnError::Llm {
             phase: AgentTurnSubPhase::Executor,
-            kind: LlmCompleteError::from_boxed(Box::new(
-                crate::llm::LlmCallError::from_http_api(503, "upstream".into()),
-            )),
+            kind: LlmCompleteError::from_boxed(Box::new(crate::llm::LlmCallError::from_http_api(
+                503,
+                "upstream".into(),
+            ))),
         };
         let api = e.http_api_error();
         assert_eq!(api.code, "LLM_REQUEST_FAILED");
@@ -557,12 +554,10 @@ mod tests {
     fn http_llm_transport_503_real_shape_is_not_rate_limit() {
         let e = RunAgentTurnError::Llm {
             phase: AgentTurnSubPhase::Executor,
-            kind: LlmCompleteError::from_boxed(Box::new(
-                crate::llm::LlmCallError::from_http_api(
-                    503,
-                    "模型接口返回错误（HTTP 503），请检查 API 密钥与配额，或稍后重试".into(),
-                ),
-            )),
+            kind: LlmCompleteError::from_boxed(Box::new(crate::llm::LlmCallError::from_http_api(
+                503,
+                "模型接口返回错误（HTTP 503），请检查 API 密钥与配额，或稍后重试".into(),
+            ))),
         };
         assert_eq!(e.public_error_code(), "LLM_REQUEST_FAILED");
         assert_eq!(e.suggested_http_status().as_u16(), 503);

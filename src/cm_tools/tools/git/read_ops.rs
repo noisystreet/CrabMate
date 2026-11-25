@@ -45,10 +45,11 @@ pub fn dispatch(
         )));
     };
     // 先取出原值再反序列化，失败时能把拼错的 action 原样回显给调用方。
-    let action: GitAction = match serde_json::from_value(serde_json::Value::String(name.to_string())) {
-        Ok(a) => a,
-        Err(_) => return Err(ToolError::invalid_args(unknown(name))),
-    };
+    let action: GitAction =
+        match serde_json::from_value(serde_json::Value::String(name.to_string())) {
+            Ok(a) => a,
+            Err(_) => return Err(ToolError::invalid_args(unknown(name))),
+        };
     match action {
         GitAction::Status => status(args_json, max_output_len, working_dir),
         GitAction::Diff => diff(args_json, max_output_len, working_dir),
@@ -64,11 +65,7 @@ pub fn dispatch(
 }
 
 #[allow(clippy::result_large_err)]
-fn status(
-    args_json: &str,
-    max_output_len: usize,
-    working_dir: &Path,
-) -> Result<String, ToolError> {
+fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> Result<String, ToolError> {
     let v = parse_args(args_json)?;
     ensure_git_repo_try(working_dir)?;
     let porcelain = v
@@ -106,7 +103,10 @@ fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Result<St
     if v.get("stat").and_then(|x| x.as_bool()).unwrap_or(false) {
         extra.push("--stat");
     }
-    if v.get("name_only").and_then(|x| x.as_bool()).unwrap_or(false) {
+    if v.get("name_only")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false)
+    {
         extra.push("--name-only");
     }
     let title_base = if extra.is_empty() {
@@ -216,7 +216,12 @@ fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> Result<St
         .unwrap_or("HEAD");
     let mut cmd = Command::new("git");
     cmd.arg("show").arg(rev).current_dir(working_dir);
-    run_and_format(cmd, max_output_len, &format!("git show {}", rev), "git_show_failed")
+    run_and_format(
+        cmd,
+        max_output_len,
+        &format!("git show {}", rev),
+        "git_show_failed",
+    )
 }
 
 #[allow(clippy::result_large_err)]
@@ -316,7 +321,12 @@ fn remote_list(
     ensure_git_repo_try(working_dir)?;
     let mut cmd = Command::new("git");
     cmd.arg("remote").arg("-v").current_dir(working_dir);
-    run_and_format(cmd, max_output_len, "git remote -v", "git_remote_list_failed")
+    run_and_format(
+        cmd,
+        max_output_len,
+        "git remote -v",
+        "git_remote_list_failed",
+    )
 }
 
 #[cfg(test)]
@@ -345,7 +355,11 @@ mod tests {
         let e = dispatch("{}", 4096, std::path::Path::new(".")).expect_err("缺 action 应失败");
         assert_eq!(e.code, "invalid_args");
         assert!(e.message.contains("缺少 action"), "{}", e.message);
-        assert!(e.message.contains("clean_check"), "错误应列出可选值：{}", e.message);
+        assert!(
+            e.message.contains("clean_check"),
+            "错误应列出可选值：{}",
+            e.message
+        );
     }
 
     /// 未知 action 不能静默落到某个默认子命令上。
@@ -388,8 +402,7 @@ mod tests {
     #[test]
     fn non_repo_directory_reports_git_not_a_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let e = dispatch(r#"{"action":"status"}"#, 4096, dir.path())
-            .expect_err("非仓库目录应失败");
+        let e = dispatch(r#"{"action":"status"}"#, 4096, dir.path()).expect_err("非仓库目录应失败");
         assert_eq!(e.code, "git_not_a_repo");
         assert!(e.message.contains("不在 Git 仓库中"), "{}", e.message);
         assert_eq!(
@@ -421,8 +434,8 @@ mod tests {
     #[test]
     fn log_in_empty_repository_is_a_failure() {
         let dir = init_repo();
-        let e = dispatch(r#"{"action":"log"}"#, 4096, dir.path())
-            .expect_err("空仓库 log 应显式失败");
+        let e =
+            dispatch(r#"{"action":"log"}"#, 4096, dir.path()).expect_err("空仓库 log 应显式失败");
         assert_eq!(e.code, "git_log_failed");
     }
 

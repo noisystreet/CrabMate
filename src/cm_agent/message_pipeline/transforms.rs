@@ -341,10 +341,7 @@ fn trim_complete_turn_groups_by_char_budget(
             break;
         }
         messages.drain(oldest.start..oldest.end);
-        removed = removed.record_local(
-            oldest.start,
-            oldest.end.saturating_sub(oldest.start),
-        );
+        removed = removed.record_local(oldest.start, oldest.end.saturating_sub(oldest.start));
     }
     removed
 }
@@ -460,8 +457,7 @@ fn drop_unresponded_incomplete_tool_calls(messages: &mut [Message]) -> usize {
         let mut kept = Vec::with_capacity(calls.len());
         for call in calls {
             if responded.contains(&call.id)
-                || serde_json::from_str::<serde_json::Value>(call.function.arguments.trim())
-                    .is_ok()
+                || serde_json::from_str::<serde_json::Value>(call.function.arguments.trim()).is_ok()
             {
                 kept.push(call);
             } else {
@@ -500,8 +496,5 @@ pub fn complete_pending_tool_responses_for_persistence(messages: &mut Vec<Messag
             dropped
         );
     }
-    crate::cm_types::complete_missing_tool_responses(
-        messages,
-        INTERRUPTED_TOOL_RESULT_PLACEHOLDER,
-    )
+    crate::cm_types::complete_missing_tool_responses(messages, INTERRUPTED_TOOL_RESULT_PLACEHOLDER)
 }

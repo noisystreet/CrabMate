@@ -189,7 +189,10 @@ fn is_within_scope_matches_root_set() {
     assert!(access.is_within_scope("a.txt"), "会话根内");
     assert!(access.is_within_scope("../sibling/x.txt"), "允许根内");
     assert!(!access.is_within_scope("../outside"), "根外");
-    assert!(!access.is_within_scope("../sibling/missing.txt"), "目标不存在 ⇒ 不认");
+    assert!(
+        !access.is_within_scope("../sibling/missing.txt"),
+        "目标不存在 ⇒ 不认"
+    );
 
     // L4 恒真（`Any` 不再判落点）。
     let any = PathAccess::with_scope(&ws, PathScope::Any);

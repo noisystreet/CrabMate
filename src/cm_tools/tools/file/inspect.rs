@@ -34,7 +34,8 @@ fn resolve_regular_file(
     codes: WorkspacePathCodes,
     not_file_code: &'static str,
 ) -> Result<std::path::PathBuf, ToolError> {
-    let target = paths.for_read(path)
+    let target = paths
+        .for_read(path)
         .map_err(|e| workspace_path_tool_error(e, codes))?;
     if !target.is_file() {
         return Err(ToolError::external_code(
@@ -60,12 +61,14 @@ fn append_modified_unix(out: &mut String, meta: &std::fs::Metadata) {
 
 #[allow(clippy::result_large_err)]
 fn sha256_file_prefix_hex(target: &Path, to_read: usize) -> Result<String, ToolError> {
-    let mut file =
-        File::open(target).map_err(|e| ToolError::external_code("read_binary_meta_io_failed", format!("打开文件失败: {e}")))?;
+    let mut file = File::open(target).map_err(|e| {
+        ToolError::external_code("read_binary_meta_io_failed", format!("打开文件失败: {e}"))
+    })?;
     let mut buf = vec![0u8; to_read];
     if to_read > 0 {
-        file.read_exact(&mut buf)
-            .map_err(|e| ToolError::external_code("read_binary_meta_io_failed", format!("读取文件头失败: {e}")))?;
+        file.read_exact(&mut buf).map_err(|e| {
+            ToolError::external_code("read_binary_meta_io_failed", format!("读取文件头失败: {e}"))
+        })?;
     }
     Ok(bytes_to_hex(&Sha256::digest(&buf)))
 }
@@ -125,7 +128,6 @@ pub fn read_binary_meta_try(args_json: &str, paths: &PathAccess<'_>) -> Result<S
     }
     Ok(out.trim_end().to_string())
 }
-
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()

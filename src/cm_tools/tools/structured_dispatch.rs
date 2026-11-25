@@ -202,8 +202,12 @@ mod tests {
     #[test]
     fn unknown_action_is_rejected_by_schema() {
         let dir = tmp_dir("unknown_action");
-        let err = structured_try(r#"{"action":"nope","path":"a.json"}"#, &dir, &test_ctx(&dir))
-            .expect_err("未知 action 须失败");
+        let err = structured_try(
+            r#"{"action":"nope","path":"a.json"}"#,
+            &dir,
+            &test_ctx(&dir),
+        )
+        .expect_err("未知 action 须失败");
         assert_eq!(err.code, "invalid_args");
         let _ = std::fs::remove_dir_all(&dir);
     }

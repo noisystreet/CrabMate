@@ -315,10 +315,8 @@ mod tests {
 
     #[test]
     fn version_incompat_is_classified_structurally() {
-        let (item, kind) = health_item_from_probe(
-            "rustc",
-            ProbeResult::Ok("rustc 1.80.0 (abc)".to_string()),
-        );
+        let (item, kind) =
+            health_item_from_probe("rustc", ProbeResult::Ok("rustc 1.80.0 (abc)".to_string()));
         assert_eq!(kind, ProbeKind::VersionIncompat);
         assert!(!item.ok);
         assert!(item.detail.unwrap_or_default().contains("低于建议最低"));

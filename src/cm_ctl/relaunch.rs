@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
+use super::CtlError;
 use super::env_file::CredEnv;
 use super::instances::{self, Declaration};
 use super::ops::{Origin, UpArgs};
@@ -21,7 +22,6 @@ use super::profiles;
 use super::record::InstanceRecord;
 use super::spawn;
 use super::supervise;
-use super::CtlError;
 
 /// 由状态记录重建启动规格（`restart` 的后半段）。
 pub(crate) fn args_from_record(
@@ -261,7 +261,10 @@ mod tests {
 
         let args = args_from_record(&rec, None, Duration::from_secs(7));
 
-        assert!(args.yes, "`--yes` 必须随记录搬过去；丢了等于重启后把白名单又打开");
+        assert!(
+            args.yes,
+            "`--yes` 必须随记录搬过去；丢了等于重启后把白名单又打开"
+        );
         assert_eq!(
             args.origin,
             Origin::Supervise,
@@ -386,8 +389,11 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("建临时目录");
         let instances = dir.join("instances.toml");
-        std::fs::write(&instances, "[instances.a]\n\n[instances.a.env]\nFOO = \"bar\"\n")
-            .expect("写声明");
+        std::fs::write(
+            &instances,
+            "[instances.a]\n\n[instances.a.env]\nFOO = \"bar\"\n",
+        )
+        .expect("写声明");
         std::fs::set_permissions(&instances, std::fs::Permissions::from_mode(0o600))
             .expect("声明必须 0600");
         // profiles.toml 不存在：`load_optional` 视为空表
@@ -419,8 +425,8 @@ mod tests {
             no_tools: false,
         };
 
-        let plan =
-            plan_restart(&rec, Some(&decl), Some(&resolved), Duration::from_secs(5)).expect("应成功");
+        let plan = plan_restart(&rec, Some(&decl), Some(&resolved), Duration::from_secs(5))
+            .expect("应成功");
 
         assert_eq!(plan.args.env, env, "profile 解析结果就是最终 env");
     }
@@ -432,8 +438,13 @@ mod tests {
         let mut rec = InstanceRecord::new("a");
         rec.workspace = Some("/tmp/bound".to_string());
 
-        let plan = plan_restart(&rec, Some(&declaration(None, None)), None, Duration::from_secs(5))
-            .expect("应成功");
+        let plan = plan_restart(
+            &rec,
+            Some(&declaration(None, None)),
+            None,
+            Duration::from_secs(5),
+        )
+        .expect("应成功");
         assert_eq!(
             plan.args.workspace.as_deref(),
             Some("/tmp/bound"),
@@ -490,8 +501,13 @@ mod tests {
         let mut rec = InstanceRecord::new("a");
         rec.env_keys = vec!["GIT_SSH_COMMAND".to_string()];
 
-        let plan = plan_restart(&rec, Some(&declaration(None, None)), None, Duration::from_secs(5))
-            .expect("应成功");
+        let plan = plan_restart(
+            &rec,
+            Some(&declaration(None, None)),
+            None,
+            Duration::from_secs(5),
+        )
+        .expect("应成功");
 
         assert!(
             plan.notes.iter().any(|n| n.contains("GIT_SSH_COMMAND")),

@@ -369,7 +369,8 @@ fn replace_lines_after_content_in_memory(
     end_line: usize,
     new_body: &str,
 ) -> Result<String, String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
+    let src =
+        File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     let mut reader = BufReader::new(src);
     let mut out_buf: Vec<u8> = Vec::new();
     {
@@ -393,7 +394,8 @@ fn insert_after_content_in_memory(
     after_line: usize,
     new_body: &str,
 ) -> Result<String, String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
+    let src =
+        File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     let mut reader = BufReader::new(src);
     let mut out_buf: Vec<u8> = Vec::new();
     {
@@ -415,9 +417,10 @@ fn open_stream_edit_pair(
     tmp_path: &Path,
     inherit_metadata: bool,
 ) -> Result<(BufReader<File>, BufWriter<File>), String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
-    let tmp_file =
-        File::create(tmp_path).map_err(|e| format!("创建临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
+    let src =
+        File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
+    let tmp_file = File::create(tmp_path)
+        .map_err(|e| format!("创建临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     if inherit_metadata {
         // 临时文件随后会 rename 覆盖目标，需继承原文件属主/权限/扩展属性，否则会退化为默认值。
         // 写回原 inode（硬链接）时目标元数据不变，无需复制。
@@ -569,7 +572,13 @@ fn check_replace_expect_guards(
     let view: Vec<&str> = orig.lines().collect();
     match guard.content {
         Some(expect) => verify_expect_content(&view, start_line, end_line, expect),
-        None => verify_expect_edge_lines(&view, start_line, end_line, guard.first_line, guard.last_line),
+        None => verify_expect_edge_lines(
+            &view,
+            start_line,
+            end_line,
+            guard.first_line,
+            guard.last_line,
+        ),
     }
 }
 

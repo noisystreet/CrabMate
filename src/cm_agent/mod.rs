@@ -12,6 +12,8 @@
 pub mod completion_judge;
 /// 单轮 `TurnBudgetCounter` 与 `message_pipeline` / 上下文摘要的联动策略。
 pub mod context_budget_pressure;
+/// 回合上下文时间线收集（注入 / 裁剪；不发 SSE）。
+pub mod context_timeline;
 pub mod message_pipeline;
 pub mod per_coord;
 /// 权限等级 → 六轴投影与回合 min 链（唯一 `match level` 处；设计 `docs/design/permission_levels.md`）。
@@ -23,17 +25,15 @@ pub mod plan_artifact;
 pub mod plan_rewrite;
 /// PER 侧向语义校验结果类型（侧向 LLM 调用本身仍在根包）。
 pub mod plan_semantic;
+/// L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）：`paused` 落盘，**不含续跑**。
+pub mod run_epoch;
 pub mod step_executor_policy;
+pub mod task_state;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
 pub mod turn_budget;
-/// L2 跨回合任务状态（`#1386` S2 / `#1455` A 步）：`paused` 落盘，**不含续跑**。
-pub mod run_epoch;
-pub mod task_state;
 pub mod turn_origin;
-/// 回合上下文时间线收集（注入 / 裁剪；不发 SSE）。
-pub mod context_timeline;
 pub mod workflow_reflection_controller;
 pub mod workspace_snapshot;
 

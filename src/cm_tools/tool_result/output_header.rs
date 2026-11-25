@@ -270,12 +270,8 @@ mod tests {
 
     #[test]
     fn success_header_omits_error_code() {
-        let output = prepend_crabmate_tool_output_with_ok(
-            "create_file",
-            true,
-            json!({}),
-            "已创建文件",
-        );
+        let output =
+            prepend_crabmate_tool_output_with_ok("create_file", true, json!({}), "已创建文件");
         let v: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
         assert_eq!(v["ok"], true);
         assert!(v.get("error_code").is_none());

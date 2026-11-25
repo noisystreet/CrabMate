@@ -289,7 +289,9 @@ fn static_semantics_fail_codes(
     let mut codes: Vec<String> = Vec::new();
     if !layers_ok {
         let need = layer_need.unwrap_or(0);
-        codes.push(format!("plan_layer_count_mismatch need={need} got={plan_steps}"));
+        codes.push(format!(
+            "plan_layer_count_mismatch need={need} got={plan_steps}"
+        ));
     }
     if !workflow_subset_ok {
         codes.push("plan_workflow_node_ids_invalid".to_string());

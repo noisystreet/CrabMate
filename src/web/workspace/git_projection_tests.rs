@@ -98,7 +98,11 @@ fn file_list_matches_counts_invariant() {
 fn entries_are_sorted_by_path() {
     let p = parse_ok(&format!("{HEAD_MAIN}? b.txt\0? a.txt\0? C.txt\0"));
     let paths: Vec<&str> = p.files.items.iter().map(|e| e.path.as_str()).collect();
-    assert_eq!(paths, vec!["C.txt", "a.txt", "b.txt"], "字节序升序：{paths:?}");
+    assert_eq!(
+        paths,
+        vec!["C.txt", "a.txt", "b.txt"],
+        "字节序升序：{paths:?}"
+    );
 }
 
 /// 超限：计数照常累加，列表停下并置 `truncated`（不许静默截断）。
@@ -313,12 +317,18 @@ fn garbage_line_is_error() {
 #[test]
 fn short_or_unknown_xy_is_error() {
     assert!(
-        parse_porcelain_v2(format!("{HEAD_MAIN}1 M N... 1 2 3 4 5 a.txt\0").as_bytes(), "")
-            .is_err()
+        parse_porcelain_v2(
+            format!("{HEAD_MAIN}1 M N... 1 2 3 4 5 a.txt\0").as_bytes(),
+            ""
+        )
+        .is_err()
     );
     assert!(
-        parse_porcelain_v2(format!("{HEAD_MAIN}1 ZZ N... 1 2 3 4 5 a.txt\0").as_bytes(), "")
-            .is_err()
+        parse_porcelain_v2(
+            format!("{HEAD_MAIN}1 ZZ N... 1 2 3 4 5 a.txt\0").as_bytes(),
+            ""
+        )
+        .is_err()
     );
 }
 

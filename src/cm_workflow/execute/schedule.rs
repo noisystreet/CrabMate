@@ -77,7 +77,10 @@ fn dag_handle_empty_inflight(
     false // continue
 }
 
-fn node_panic_result(node_id: String, panic_payload: Box<dyn std::any::Any + Send>) -> NodeRunResult {
+fn node_panic_result(
+    node_id: String,
+    panic_payload: Box<dyn std::any::Any + Send>,
+) -> NodeRunResult {
     let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
         format!("workflow 节点 panic：{}", s)
     } else if let Some(s) = panic_payload.downcast_ref::<String>() {

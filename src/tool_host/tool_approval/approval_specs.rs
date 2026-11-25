@@ -1,7 +1,7 @@
 //! 各敏感工具的 [`ApprovalRequestSpec`] 构建器，避免在分发层重复拼装字段。
 
-use crate::cm_names as tool_names;
 use super::{ApprovalRequestSpec, SensitiveCapability};
+use crate::cm_names as tool_names;
 
 const HTTP_PREFIX_MISS_DETAIL: &str =
     "URL 未匹配 http_fetch_allowed_prefixes（`*` 或同源 + 路径前缀边界）：\n";
@@ -40,9 +40,7 @@ pub fn read_dir_external_path(ext_path: &str) -> ApprovalRequestSpec {
         sse_args: format!("path={ext_path}"),
         allowlist_key: None,
         cli_title: "read_dir 工作区外路径审批",
-        cli_detail: format!(
-            "read_dir 请求访问工作区外路径：{ext_path}\n仅在可信环境下批准。"
-        ),
+        cli_detail: format!("read_dir 请求访问工作区外路径：{ext_path}\n仅在可信环境下批准。"),
         web_timeline_prefix_zh: "工作区外路径审批：",
     }
 }

@@ -8,8 +8,7 @@ use crate::cm_tools::tool_result::ToolError;
 
 use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{
-    PathAccess, WorkspacePathCodes, path_for_tool_display,
-    workspace_path_tool_error_with_message,
+    PathAccess, WorkspacePathCodes, path_for_tool_display, workspace_path_tool_error_with_message,
 };
 use crate::cm_names as tool_names;
 

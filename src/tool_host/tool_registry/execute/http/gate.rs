@@ -8,11 +8,11 @@ use std::time::Duration;
 
 use log::error;
 
-use crate::tool_host::tool_approval;
 use crate::cm_tools::tools;
+use crate::tool_host::tool_approval;
 
-use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::super::ToolExecEnv;
+use super::super::run_command::dispatch_non_sync_tool_to_docker;
 
 /// URL 是否已由**本等级作用域内**的配置前缀或 persistent allowlist 放行。
 ///
@@ -140,8 +140,9 @@ async fn http_tool_gate_url_approval(
     )
     .await
     {
-        Ok(outcome) => tool_approval::interactive_gate_outcome_to_tool_err(outcome)
-            .map_err(|msg| (msg, None)),
+        Ok(outcome) => {
+            tool_approval::interactive_gate_outcome_to_tool_err(outcome).map_err(|msg| (msg, None))
+        }
         Err(e) => Err((e.user_message_zh().to_string(), None)),
     }
 }
@@ -151,7 +152,8 @@ pub(in crate::tool_host::tool_registry::execute) struct HttpToolPreflightParams<
     pub(in crate::tool_host::tool_registry::execute) env: &'a ToolExecEnv<'a>,
     pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
     pub(in crate::tool_host::tool_registry::execute) workspace_is_set: bool,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
     pub(in crate::tool_host::tool_registry::execute) tool_name: &'static str,
     pub(in crate::tool_host::tool_registry::execute) url: &'a reqwest::Url,
@@ -167,9 +169,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn http_tool_preflight(
     let cfg = p.env.cfg;
     // S3：先按 `net_scope` 判三态。`Any` / `None` 不必再查前缀与 persistent allowlist
     // （省一次加锁，也让 L0 的拒绝不依赖配置长什么样）。
-    let needs_prefix_lookup = p.env.permission.is_none_or(|c| {
-        c.outbound_uses_prefixes()
-    });
+    let needs_prefix_lookup = p.env.permission.is_none_or(|c| c.outbound_uses_prefixes());
     let url_allowed = needs_prefix_lookup
         && http_tool_url_allowed(
             cfg.as_ref(),
@@ -239,9 +239,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn http_fetch_prefetch_ap
     storage_key: &str,
     approval_args: &str,
 ) -> Result<(), String> {
-    let needs_prefix_lookup = permission.is_none_or(|c| {
-        c.outbound_uses_prefixes()
-    });
+    let needs_prefix_lookup = permission.is_none_or(|c| c.outbound_uses_prefixes());
     let url_allowed = needs_prefix_lookup
         && http_tool_url_allowed(cfg, web_ctx, permission, url, storage_key).await;
     match http_net_gate(permission, url, url_allowed) {
@@ -284,10 +282,16 @@ mod http_net_gate_tests {
         let url = reqwest::Url::parse("https://evil.example.org/x").expect("url");
 
         let l0 = project_caps(PermissionLevel::Chat, &cfg);
-        assert!(matches!(http_net_gate(Some(&l0), &url, false), HttpNetGate::Deny(_)));
+        assert!(matches!(
+            http_net_gate(Some(&l0), &url, false),
+            HttpNetGate::Deny(_)
+        ));
 
         let l2 = project_caps(PermissionLevel::Workspace, &cfg);
-        assert!(matches!(http_net_gate(Some(&l2), &url, false), HttpNetGate::Deny(_)));
+        assert!(matches!(
+            http_net_gate(Some(&l2), &url, false),
+            HttpNetGate::Deny(_)
+        ));
 
         let l3 = project_caps(PermissionLevel::Approved, &cfg);
         assert!(matches!(
@@ -295,14 +299,26 @@ mod http_net_gate_tests {
             HttpNetGate::NeedApproval
         ));
         // 命中配置前缀时 L3 直接放行（等价现状）。
-        assert!(matches!(http_net_gate(Some(&l3), &url, true), HttpNetGate::Allow));
+        assert!(matches!(
+            http_net_gate(Some(&l3), &url, true),
+            HttpNetGate::Allow
+        ));
 
         let l4 = project_caps(PermissionLevel::Unrestricted, &cfg);
-        assert!(matches!(http_net_gate(Some(&l4), &url, false), HttpNetGate::Allow));
+        assert!(matches!(
+            http_net_gate(Some(&l4), &url, false),
+            HttpNetGate::Allow
+        ));
 
         // 未接线：回落现状「命中即放行，否则审批」。
-        assert!(matches!(http_net_gate(None, &url, false), HttpNetGate::NeedApproval));
-        assert!(matches!(http_net_gate(None, &url, true), HttpNetGate::Allow));
+        assert!(matches!(
+            http_net_gate(None, &url, false),
+            HttpNetGate::NeedApproval
+        ));
+        assert!(matches!(
+            http_net_gate(None, &url, true),
+            HttpNetGate::Allow
+        ));
     }
 
     /// 接线回归：L4 的 `NetScope::Any` 放行必须留痕；L3 的前缀命中不得产出记录。
@@ -391,8 +407,7 @@ mod http_net_gate_tests {
 
         // MB-8：接线后前缀只来自 `caps.net_scope`，另一份 `cfg` 放宽的前缀不生效。
         let mut wider = test_cfg();
-        wider.http_fetch.http_fetch_allowed_prefixes =
-            vec!["https://evil.example.org".to_string()];
+        wider.http_fetch.http_fetch_allowed_prefixes = vec!["https://evil.example.org".to_string()];
         assert!(
             !http_tool_url_allowed(&wider, Some(&web), Some(&l2), &url, storage_key).await,
             "已接线的等级不得回读 cfg 前缀"

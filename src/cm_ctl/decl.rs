@@ -21,10 +21,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use super::CtlError;
 use super::instances::{self, Declaration};
 use super::ops::{self, Ctx};
 use super::paths;
-use super::CtlError;
 
 /// `add` 的入参：字段面与 socket 的 `AddRequest` 逐字一致。
 pub(crate) struct AddSpec {
@@ -102,7 +102,10 @@ pub(crate) fn add(path: &Path, spec: AddSpec) -> Result<AddOutcome, CtlError> {
         env_file: None,
     };
     reject_bad_workspace(&decl)?;
-    if instances::load_optional(path)?.instances.contains_key(&spec.name) {
+    if instances::load_optional(path)?
+        .instances
+        .contains_key(&spec.name)
+    {
         return Ok(AddOutcome {
             name: spec.name,
             created: false,
@@ -230,11 +233,7 @@ pub(crate) fn cli_remove(ctx: &Ctx, c: &RemoveCmd) -> Result<(), CtlError> {
 }
 
 /// `crabmatectl disable` / `crabmatectl enable`（`enabled` 由调用方给，不猜）。
-pub(crate) fn cli_toggle(
-    ctx: &Ctx,
-    c: &ToggleCmd,
-    enabled: bool,
-) -> Result<(), CtlError> {
+pub(crate) fn cli_toggle(ctx: &Ctx, c: &ToggleCmd, enabled: bool) -> Result<(), CtlError> {
     let path = target_path(ctx, c.instances_file.as_deref())?;
     let out = set_enabled(&path, ctx, &c.name, enabled)?;
     super::render::decl_toggle(&out, &path);
@@ -283,7 +282,12 @@ mod tests {
         assert!(first.created, "首次应新增");
         let file = instances::load(&path).expect("加载声明");
         assert_eq!(
-            file.instances.get("a").expect("应有 a").workspace_path().expect("路径").as_deref(),
+            file.instances
+                .get("a")
+                .expect("应有 a")
+                .workspace_path()
+                .expect("路径")
+                .as_deref(),
             Some(ws.as_path())
         );
 
@@ -293,7 +297,12 @@ mod tests {
         // 幂等的实质：workspace 不被第二次调用覆盖
         let file = instances::load(&path).expect("加载声明");
         assert_eq!(
-            file.instances.get("a").expect("应有 a").workspace_path().expect("路径").as_deref(),
+            file.instances
+                .get("a")
+                .expect("应有 a")
+                .workspace_path()
+                .expect("路径")
+                .as_deref(),
             Some(ws.as_path()),
             "已存在的声明不得被覆盖"
         );
@@ -324,7 +333,12 @@ mod tests {
         add(&path, spec("a", &ws)).expect("add 应成功（幂等）");
         let file = instances::load(&path).expect("加载声明");
         assert_eq!(
-            file.instances.get("a").expect("应有 a").env.get("GIT_SSH_COMMAND").map(String::as_str),
+            file.instances
+                .get("a")
+                .expect("应有 a")
+                .env
+                .get("GIT_SSH_COMMAND")
+                .map(String::as_str),
             Some("ssh -i /tmp/k"),
             "手工写的 env 必须原地保留"
         );
@@ -383,12 +397,23 @@ mod tests {
 
         let off = set_enabled(&path, &ctx, "a", false).expect("disable");
         assert!(off.changed && !off.missing);
-        assert!(!off.needs_reconcile() || off.changed, "changed 本身就是收敛依据");
+        assert!(
+            !off.needs_reconcile() || off.changed,
+            "changed 本身就是收敛依据"
+        );
         let file = instances::load(&path).expect("加载声明");
         let d = file.instances.get("a").expect("应有 a");
         assert!(!d.enabled);
-        assert_eq!(d.profile.as_deref(), Some("readonly-audit"), "profile 必须保住");
-        assert_eq!(d.env.get("X").map(String::as_str), Some("1"), "env 必须保住");
+        assert_eq!(
+            d.profile.as_deref(),
+            Some("readonly-audit"),
+            "profile 必须保住"
+        );
+        assert_eq!(
+            d.env.get("X").map(String::as_str),
+            Some("1"),
+            "env 必须保住"
+        );
 
         // 值未变时不写盘、不收敛
         let again = set_enabled(&path, &ctx, "a", false).expect("重复 disable");
@@ -445,7 +470,10 @@ mod tests {
         assert!(d.enabled, "省略 --enabled 必须是 true");
         assert_eq!(d.profile.as_deref(), Some("readonly-audit"));
         assert_eq!(d.port, Some(9123));
-        assert!(d.config.is_none() && d.env.is_empty(), "CLI 不得写入 config / env");
+        assert!(
+            d.config.is_none() && d.env.is_empty(),
+            "CLI 不得写入 config / env"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

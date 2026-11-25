@@ -259,4 +259,3 @@ pub(crate) fn all() -> Vec<&'static RouteDecl> {
     out.extend(memory_decls());
     out
 }
-

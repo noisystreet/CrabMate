@@ -1,7 +1,7 @@
 //! `GET /web-ui`：CSR 展示开关（仅读进程环境变量，无 TOML）。
 
-use axum::Json;
 pub use crate::cm_api_contract::WebUiConfigResponse;
+use axum::Json;
 
 pub const CM_WEB_DISABLE_MARKDOWN: &str = "CM_WEB_DISABLE_MARKDOWN";
 

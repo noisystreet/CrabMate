@@ -153,7 +153,8 @@ fn docker_sandbox_without_network_disables_outbound() {
     let mut cfg = test_cfg();
     cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
         crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = String::new();
+    cfg.sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_network = String::new();
 
     for level in [
         PermissionLevel::Read,
@@ -189,7 +190,8 @@ fn docker_sandbox_with_network_keeps_prefixes() {
     let mut cfg = test_cfg();
     cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
         crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = "bridge".to_string();
+    cfg.sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_network = "bridge".to_string();
 
     let caps = project_caps(PermissionLevel::Approved, &cfg);
     assert!(
@@ -218,7 +220,8 @@ fn docker_sandbox_clamps_multi_root_back_to_session_root() {
 
     cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
         crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-    cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = "bridge".to_string();
+    cfg.sync_tool_sandbox
+        .sync_default_tool_sandbox_docker_network = "bridge".to_string();
 
     let caps = project_caps(PermissionLevel::Approved, &cfg);
     assert_eq!(
@@ -282,7 +285,10 @@ fn external_tools_denied_below_l3() {
     }
     for level in [PermissionLevel::Approved, PermissionLevel::Unrestricted] {
         let caps = project_caps(level, &cfg);
-        assert!(tool_allowed_by_caps(&caps, "mcp__fanalyzer__list"), "{level:?}");
+        assert!(
+            tool_allowed_by_caps(&caps, "mcp__fanalyzer__list"),
+            "{level:?}"
+        );
         assert!(tool_allowed_by_caps(&caps, "dyn__deploy"), "{level:?}");
     }
 }
@@ -353,13 +359,7 @@ fn persisted_intent_is_reclamped_against_new_ceiling() {
 fn fallback_uses_configured_default_when_nothing_requested() {
     let mut cfg = test_cfg();
     cfg.permission.permission_level = PermissionLevel::Read;
-    let got = resolve_permission_level_for_turn(input(
-        &cfg,
-        None,
-        None,
-        None,
-        SessionMode::Act,
-    ));
+    let got = resolve_permission_level_for_turn(input(&cfg, None, None, None, SessionMode::Act));
     assert_eq!(got.effective, PermissionLevel::Read);
     assert!(got.clamped_by.is_empty());
 }
@@ -444,7 +444,11 @@ fn approved_level_allows_every_tool_like_before() {
 fn chat_level_denies_every_tool() {
     let cfg = test_cfg();
     let caps = project_caps(PermissionLevel::Chat, &cfg);
-    for name in ["read_file", "glob_files", "present_clarification_questionnaire"] {
+    for name in [
+        "read_file",
+        "glob_files",
+        "present_clarification_questionnaire",
+    ] {
         assert!(!tool_allowed_by_caps(&caps, name), "L0 不应允许 {name}");
     }
 }
@@ -538,10 +542,8 @@ fn session_mode_does_not_shrink_projected_caps() {
 #[test]
 fn read_level_explicit_list_cannot_whitelist_external_tools() {
     let mut cfg = test_cfg();
-    cfg.permission.permission_read_tools = Some(vec![
-        "read_file".to_string(),
-        "mcp__demo__tool".to_string(),
-    ]);
+    cfg.permission.permission_read_tools =
+        Some(vec!["read_file".to_string(), "mcp__demo__tool".to_string()]);
     let caps = project_caps(PermissionLevel::Read, &cfg);
     assert!(tool_allowed_by_caps(&caps, "read_file"));
     assert!(!tool_allowed_by_caps(&caps, "mcp__demo__tool"));
@@ -553,17 +555,16 @@ fn prepare_turn_relaxes_final_plan_requirement_for_chat_level() {
     let mut cfg = test_cfg();
     cfg.permission.permission_level = PermissionLevel::Chat;
     cfg.permission.permission_level_max_effective = PermissionLevel::Unrestricted;
-    let (snap, caps) =
-        prepare_turn_cfg_and_permission(
-            &cfg,
-            std::path::Path::new("ws"),
-            TurnPermissionStages {
-                role_max: None,
-                session_mode: SessionMode::Act,
-                requested: None,
-                persisted: None,
-            },
-        );
+    let (snap, caps) = prepare_turn_cfg_and_permission(
+        &cfg,
+        std::path::Path::new("ws"),
+        TurnPermissionStages {
+            role_max: None,
+            session_mode: SessionMode::Act,
+            requested: None,
+            persisted: None,
+        },
+    );
     assert_eq!(caps.tool_visibility, ToolVisibility::None);
     assert_eq!(
         snap.per_plan_policy.final_plan_requirement,
@@ -580,17 +581,16 @@ fn prepare_turn_relaxes_final_plan_requirement_for_chat_level() {
 fn prepare_turn_keeps_final_plan_requirement_for_approved_level() {
     let cfg = test_cfg();
     let before = cfg.per_plan_policy.final_plan_requirement;
-    let (snap, caps) =
-        prepare_turn_cfg_and_permission(
-            &cfg,
-            std::path::Path::new("ws"),
-            TurnPermissionStages {
-                role_max: None,
-                session_mode: SessionMode::Act,
-                requested: None,
-                persisted: None,
-            },
-        );
+    let (snap, caps) = prepare_turn_cfg_and_permission(
+        &cfg,
+        std::path::Path::new("ws"),
+        TurnPermissionStages {
+            role_max: None,
+            session_mode: SessionMode::Act,
+            requested: None,
+            persisted: None,
+        },
+    );
     assert_eq!(caps.tool_visibility, ToolVisibility::Full);
     assert_eq!(snap.per_plan_policy.final_plan_requirement, before);
 }
@@ -661,13 +661,8 @@ fn selectable_cap_matches_resolve_chain() {
             levels.windows(2).all(|pair| pair[0] < pair[1]),
             "available 必须自低到高且不重复：{levels:?}"
         );
-        let at_cap = resolve_permission_level_for_turn(input(
-            &cfg,
-            Some(cap),
-            None,
-            role_max,
-            session_mode,
-        ));
+        let at_cap =
+            resolve_permission_level_for_turn(input(&cfg, Some(cap), None, role_max, session_mode));
         assert_eq!(at_cap.effective, cap, "申请上界应正好落在上界");
         let top_requested = resolve_permission_level_for_turn(input(
             &cfg,

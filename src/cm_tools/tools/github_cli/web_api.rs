@@ -294,9 +294,7 @@ fn parse_check_items(v: &JsonValue) -> Vec<GithubPrCheckItemData> {
 ///
 /// `connected` 表示本机 `gh repo view` 成功（CLI 已认证）。即使未连接，仍可能从
 /// `git remote`（`origin` / `upstream`）解析出可打开的仓库 HTTPS URL。
-pub fn github_repo_context(
-    ctx: &GhCtx<'_>,
-) -> Result<GithubRepoContextData, String> {
+pub fn github_repo_context(ctx: &GhCtx<'_>) -> Result<GithubRepoContextData, String> {
     let gh_available = gh_allowed(ctx.allowed_commands).is_ok();
     let is_git_repo = is_git_repo(ctx.working_dir);
     let current_branch = current_git_branch(ctx.working_dir);
@@ -367,9 +365,7 @@ pub fn github_pr_checks(
 }
 
 /// 当前分支关联 PR 的 checks（省略 PR number 时与 `gh pr checks` 默认一致）。
-pub fn github_pr_current_checks(
-    ctx: &GhCtx<'_>,
-) -> Result<GithubPrCurrentChecksData, String> {
+pub fn github_pr_current_checks(ctx: &GhCtx<'_>) -> Result<GithubPrCurrentChecksData, String> {
     github_pr_checks(ctx, None)
 }
 

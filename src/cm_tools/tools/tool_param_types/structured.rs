@@ -498,4 +498,3 @@ pub struct SearchReplaceArgs {
     #[serde(default)]
     pub skip_precheck: bool,
 }
-

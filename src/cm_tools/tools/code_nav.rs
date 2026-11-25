@@ -120,10 +120,7 @@ pub fn find_references_try(args_json: &str, workspace_root: &Path) -> Result<Str
 /// 读盘失败属 `External`。旧实现把它们写成 `错误：…` / `读取文件失败：…`，
 /// 前者靠前缀偶然判对、后者只因为正文恰好含「失败」二字。
 #[allow(clippy::result_large_err)]
-pub fn rust_file_outline_try(
-    args_json: &str,
-    workspace_root: &Path,
-) -> Result<String, ToolError> {
+pub fn rust_file_outline_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = v
         .get("path")
@@ -131,9 +128,7 @@ pub fn rust_file_outline_try(
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let Some(rel) = path else {
-        return Err(ToolError::invalid_args(
-            "错误：缺少 path 参数".to_string(),
-        ));
+        return Err(ToolError::invalid_args("错误：缺少 path 参数".to_string()));
     };
 
     let include_use = v
@@ -298,7 +293,6 @@ fn search_refs_in_file(
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

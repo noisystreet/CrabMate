@@ -58,9 +58,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_run_command_im
         has_job_registry: tool_jobs.is_some(),
         docker_sandbox,
     };
-    if async_flag
-        && let Some(message) = capabilities.async_unavailable_reason()
-    {
+    if async_flag && let Some(message) = capabilities.async_unavailable_reason() {
         return (message.to_string(), None);
     }
     let parsed = match parse_run_command_json(args, effective_working_dir) {

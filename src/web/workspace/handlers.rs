@@ -15,14 +15,6 @@ use super::handlers_sync::{
     workspace_file_write_sync_unix, workspace_list_entries_sync, workspace_read_file_sync_unix,
 };
 #[cfg(not(unix))]
-use crate::text_encoding::decode_bytes_strict;
-use crate::text_encoding::parse_text_encoding_name;
-use crate::web::app_state::AppStateHttpCore;
-use crate::web::http_types::validation::{
-    clamp_workspace_search_max_results, validate_workspace_file_write_request,
-    validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
-};
-#[cfg(not(unix))]
 use crate::cm_api_contract::workspace::WorkspaceEntry;
 use crate::cm_api_contract::workspace::{
     WorkspaceDirCreateBody, WorkspaceDirCreateResponse, WorkspaceDirDeleteQuery,
@@ -31,11 +23,19 @@ use crate::cm_api_contract::workspace::{
     WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse, WorkspaceSearchBody,
     WorkspaceSearchResponse, WorkspaceSetBody,
 };
+use crate::cm_names as tool_names;
+#[cfg(not(unix))]
+use crate::text_encoding::decode_bytes_strict;
+use crate::text_encoding::parse_text_encoding_name;
+use crate::web::app_state::AppStateHttpCore;
+use crate::web::http_types::validation::{
+    clamp_workspace_search_max_results, validate_workspace_file_write_request,
+    validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
+};
 use crate::workspace::path::{
     WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
     validate_effective_workspace_base, validate_workspace_set_path,
 };
-use crate::cm_names as tool_names;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
 
@@ -814,8 +814,7 @@ pub async fn workspace_profile_handler(
     let (enabled, max_chars) = {
         let cfg = http.cfg.read().await;
         (
-            cfg.context_bootstrap_inject
-                .project_profile_inject_enabled,
+            cfg.context_bootstrap_inject.project_profile_inject_enabled,
             cfg.context_bootstrap_inject
                 .project_profile_inject_max_chars,
         )

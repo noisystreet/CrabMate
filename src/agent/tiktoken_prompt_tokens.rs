@@ -4,7 +4,9 @@
 //!
 //! 未知 `model` id 时按 **`gpt-4` → `gpt-4o`** 顺序回落，以便 DeepSeek / Kimi 等 OpenAI 兼容网关仍能给出**可比**的粗估值（与真实网关分词可能仍有偏差，见 API 字段说明）。
 
-use tiktoken_rs::{ChatCompletionRequestMessage, FunctionCall, bpe_for_model, num_tokens_from_messages};
+use tiktoken_rs::{
+    ChatCompletionRequestMessage, FunctionCall, bpe_for_model, num_tokens_from_messages,
+};
 
 use crate::agent::message_pipeline::conversation_messages_to_vendor_body;
 use crate::config::AgentConfig;
@@ -88,10 +90,7 @@ pub fn count_serialized_text_tokens_openai_compat(
     let model = tiktoken_model_id_for_config_model(configured_model);
     if let Ok(bpe) = bpe_for_model(&model) {
         return TiktokenPromptTokensSnapshot {
-            prompt_tokens: bpe
-                .encode_ordinary(text)
-                .len()
-                .min(u32::MAX as usize) as u32,
+            prompt_tokens: bpe.encode_ordinary(text).len().min(u32::MAX as usize) as u32,
             tiktoken_model: model,
             ..Default::default()
         };
@@ -258,9 +257,7 @@ fn enrich_snapshot_from_latest_model_context_artifact(
     snapshot.prompt_tokens = estimated.message_tokens;
     snapshot.used_input_tokens = Some(estimated.used_input_tokens);
     snapshot.max_input_tokens = usage.budget.map(|budget| budget.max_input_tokens);
-    snapshot.reserved_output_tokens = usage
-        .budget
-        .map(|budget| budget.reserved_output_tokens);
+    snapshot.reserved_output_tokens = usage.budget.map(|budget| budget.reserved_output_tokens);
     snapshot.message_tokens = Some(estimated.message_tokens);
     snapshot.tool_schema_tokens = Some(estimated.tool_schema_tokens);
     snapshot.attachment_tokens = Some(estimated.attachment_tokens);
@@ -394,14 +391,18 @@ mod tests {
             Message::user_only("hello"),
         ];
 
-        let snapshot = prompt_token_count_vendor_shaped_for_session(&cfg, &messages)
-            .expect("token snapshot");
+        let snapshot =
+            prompt_token_count_vendor_shaped_for_session(&cfg, &messages).expect("token snapshot");
         assert_eq!(
             snapshot.used_input_tokens,
             Some(900),
             "used 恒为估算（900），不是 provider 的 920"
         );
-        assert_eq!(snapshot.provider_input_tokens, Some(920), "上游 usage 单独透出");
+        assert_eq!(
+            snapshot.provider_input_tokens,
+            Some(920),
+            "上游 usage 单独透出"
+        );
         assert_eq!(snapshot.max_input_tokens, Some(3_456));
         assert_eq!(snapshot.tool_schema_tokens, Some(150));
         assert_eq!(

@@ -106,7 +106,6 @@ fn backfill_bad_rows(
     .into()
 }
 
-
 /// `crabmate sse-replay`：把录制的 AG-UI 事件回放成 `TurnLayout` 投影。
 pub(super) fn run_sse_replay(cmd: SseReplayCmd) -> Result<(), Box<dyn std::error::Error>> {
     crate::runtime::cli::run_sse_replay_command(SseReplayCli {

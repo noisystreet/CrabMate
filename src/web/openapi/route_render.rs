@@ -304,8 +304,14 @@ mod tests {
         );
 
         let post = &rendered["/mock"]["post"];
-        assert!(post.get("security").is_none(), "未受保护的端点不渲染 security");
-        assert!(post.get("parameters").is_none(), "无参数时不渲染 parameters");
+        assert!(
+            post.get("security").is_none(),
+            "未受保护的端点不渲染 security"
+        );
+        assert!(
+            post.get("parameters").is_none(),
+            "无参数时不渲染 parameters"
+        );
         assert_eq!(
             post["responses"]["200"]["content"],
             json!({ "application/json": { "schema": { "type": "object" } } })
@@ -500,7 +506,11 @@ mod tests {
             override_kind: Override::None,
         }];
         let param = &render_route_decls(&DECLS)["/memory/{id}"]["get"]["parameters"][0];
-        assert_eq!(param["in"], json!("path"), "in 必须由 location 决定，不能写死 query");
+        assert_eq!(
+            param["in"],
+            json!("path"),
+            "in 必须由 location 决定，不能写死 query"
+        );
         assert_eq!(param["required"], json!(true));
         assert!(
             param.get("description").is_none(),

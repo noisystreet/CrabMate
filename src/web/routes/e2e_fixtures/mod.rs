@@ -112,7 +112,15 @@ async fn seed_conversation_handler(
         facet.delete_conversation_record(&cid).await;
     }
     let outcome = facet
-        .save_conversation_messages_if_revision(cid.clone(), messages, None, None, None, None, Vec::new())
+        .save_conversation_messages_if_revision(
+            cid.clone(),
+            messages,
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+        )
         .await;
     match outcome {
         crate::SaveConversationOutcome::Saved => Ok(StatusCode::NO_CONTENT),
@@ -141,7 +149,9 @@ mod tests {
     /// 其余一律关闭 —— 这是「设了开关但设成假值」的那批，此前完全没有测试。
     #[test]
     fn other_values_disable_the_flag() {
-        for raw in ["0", "false", "FALSE", "no", "NO", "", "   ", "2", "on", "enabled"] {
+        for raw in [
+            "0", "false", "FALSE", "no", "NO", "", "   ", "2", "on", "enabled",
+        ] {
             assert!(!fixtures_flag_enabled(Some(raw)), "应为关闭：{raw:?}");
         }
         assert!(!fixtures_flag_enabled(None), "未设置应为关闭");

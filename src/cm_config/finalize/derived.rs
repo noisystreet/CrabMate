@@ -129,9 +129,7 @@ pub(super) fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDeri
             .unwrap_or(262_144)
             .clamp(4096, 16_777_216),
         // 工具失败透明重试（默认关闭；默认码集为瞬时可重试类，validate 拒绝越界，此处仅兜底）。
-        tool_registry_tool_retry_enabled: tr
-            .tool_registry_tool_retry_enabled
-            .unwrap_or(false),
+        tool_registry_tool_retry_enabled: tr.tool_registry_tool_retry_enabled.unwrap_or(false),
         tool_registry_tool_retry_max_attempts: tr
             .tool_registry_tool_retry_max_attempts
             .unwrap_or(2)
@@ -202,7 +200,10 @@ pub(super) fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, S
         None => types::LlmHttpAuthMode::default(),
     };
     let llm_reasoning_split = b.llm_vendor.llm_reasoning_split.unwrap_or_else(|| {
-        crate::cm_config::gateway_hints::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
+        crate::cm_config::gateway_hints::default_llm_reasoning_split_for_gateway(
+            &b.llm.model,
+            &b.llm.api_base,
+        )
     });
     Ok(IntentDerived {
         llm_http_auth_mode,
@@ -228,7 +229,10 @@ pub(super) fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
     } else {
         long_term_memory_vector_backend
     };
-    super::checks::validate_ltm_backend_when_enabled(long_term_memory_enabled, long_term_memory_vector_backend)?;
+    super::checks::validate_ltm_backend_when_enabled(
+        long_term_memory_enabled,
+        long_term_memory_vector_backend,
+    )?;
     Ok(LtmDerived {
         long_term_memory_enabled,
         long_term_memory_vector_backend,

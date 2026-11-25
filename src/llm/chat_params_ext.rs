@@ -23,8 +23,7 @@ pub struct CompleteChatRetryingParams<'a> {
     pub model_override: Option<&'a str>,
     /// 单轮共享预算；设置时由 [`super::complete_chat_retrying`] 统一门禁与计数。
     pub turn_budget: Option<&'a Arc<TurnBudgetCounter>>,
-    pub provider_usage_sink:
-        Option<&'a Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
+    pub provider_usage_sink: Option<&'a Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
 }
 
 impl<'a> CompleteChatRetryingParams<'a> {
@@ -104,14 +103,10 @@ impl<'a> CompleteChatRetryingParams<'a> {
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
             chat_uploads_dir: self.cfg.chat_uploads_dir.as_deref(),
-            chat_workspace_root: self
-                .cfg
-                .chat_workspace_root
-                .as_deref()
-                .or_else(|| {
-                    let d = self.cfg.command_exec.run_command_working_dir.trim();
-                    (!d.is_empty()).then_some(std::path::Path::new(d))
-                }),
+            chat_workspace_root: self.cfg.chat_workspace_root.as_deref().or_else(|| {
+                let d = self.cfg.command_exec.run_command_working_dir.trim();
+                (!d.is_empty()).then_some(std::path::Path::new(d))
+            }),
             provider_usage_sink: self.provider_usage_sink,
         }
     }

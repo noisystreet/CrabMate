@@ -6,18 +6,17 @@ use std::process::Command;
 use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
 
 use super::test_result_cache::{
-    TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached,
-    wrap_cache_hit,
+    TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
 };
 
 use super::command_outcome::{CommandDigest, CommandOutcome};
 
+#[path = "command_rate_limit.rs"]
+mod command_rate_limit;
 #[path = "command_shell_script.rs"]
 mod command_shell_script;
 #[path = "command_prepare_invocation.rs"]
 mod prepare_invocation;
-#[path = "command_rate_limit.rs"]
-mod command_rate_limit;
 
 use super::command_error::RunCommandError;
 use super::command_exec::{execute_spawn_plan_async, execute_spawn_plan_sync};
@@ -26,15 +25,14 @@ use prepare_invocation::prepare_run_command_spec;
 
 #[cfg(test)]
 pub use command_rate_limit::reset_run_command_rate_limit_for_tests;
+pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 pub use prepare_invocation::{CommandSpec, parse_command_spec};
 pub use prepare_invocation::{UnsafeArgScan, scan_run_command_unsafe_args_spec};
-pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
 pub use command_shell_script::{
     allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
     argv_needs_shell_expansion, dash_c_script_body, is_posix_shell_name,
-    is_shell_dash_c_invocation,
-    join_run_command_argv_tail, join_run_command_shell_script,
+    is_shell_dash_c_invocation, join_run_command_argv_tail, join_run_command_shell_script,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
 };
 
@@ -108,10 +106,7 @@ pub fn prepare_run_command_for_pty_spawn_spec(
 /// `run_command` 执行计划：命中缓存直接返回正文，否则给出待 spawn 的 [`SpawnPlan`]。
 #[allow(clippy::large_enum_variant)] // `SpawnPlan` 内嵌已配置的 `Command`，天然偏大；短生命周期，无需为其加间接层
 enum RunCommandPlan {
-    CacheHit {
-        body: String,
-        rewrites: Vec<String>,
-    },
+    CacheHit { body: String, rewrites: Vec<String> },
     Spawn(SpawnPlan),
 }
 
@@ -140,8 +135,7 @@ fn plan_run_command_spec(
     test_cache: Option<&RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> Result<RunCommandPlan, RunCommandError> {
-    let prepared =
-        prepare_run_command_spec(spec, working_dir, allowed_commands, skip_arg_safety)?;
+    let prepared = prepare_run_command_spec(spec, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
     Ok(plan_prepared(prepared, test_cache))
 }
@@ -177,7 +171,10 @@ fn default_spawn_plan(prepared: PreparedRunCommand, invocation: String) -> Spawn
     if prepared.inject_gh_token {
         crate::cm_tools::github_token::apply_gh_token_env(&mut cmd);
     } else {
-        crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+        crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(
+            &mut cmd,
+            &prepared.cmd_name,
+        );
     }
     SpawnPlan {
         cmd,
@@ -203,12 +200,10 @@ fn plan_cargo_test_cache(
         return None;
     }
     let inputs_fp = fingerprint_rust_workspace_sources(opts.workspace_root)?;
-    let args_fp = CommandDigest::from_invocation(
-        prepared.cmd_name.clone(),
-        prepared.cmd_args.clone(),
-    )
-    .with_cwd(prepared.effective_working_dir.as_path())
-    .key();
+    let args_fp =
+        CommandDigest::from_invocation(prepared.cmd_name.clone(), prepared.cmd_args.clone())
+            .with_cwd(prepared.effective_working_dir.as_path())
+            .key();
     let key = TestCacheKey {
         workspace_root: opts.workspace_root.to_path_buf(),
         kind: TestCacheKind::CargoTestViaRunCommand,
@@ -242,10 +237,7 @@ fn plan_cargo_test_cache(
 ///
 /// 返回 [`CommandOutcome`]：进程启动后的成功 / 非零退出 / 超时 / 取消都在 `status` 中；
 /// `Err` 仅表示未启动（解析、策略、限流、spawn 失败）。
-pub fn run(
-    spec: &CommandSpec,
-    opts: RunOptions<'_>,
-) -> Result<CommandOutcome, RunCommandError> {
+pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<CommandOutcome, RunCommandError> {
     match plan_run_command_spec(
         spec,
         opts.allowed_commands,
@@ -256,7 +248,9 @@ pub fn run(
         RunCommandPlan::CacheHit { body, rewrites } => {
             Ok(CommandOutcome::cached(body).with_rewrites(rewrites))
         }
-        RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, opts.max_output_len, opts.wait),
+        RunCommandPlan::Spawn(plan) => {
+            execute_spawn_plan_sync(plan, opts.max_output_len, opts.wait)
+        }
     }
 }
 

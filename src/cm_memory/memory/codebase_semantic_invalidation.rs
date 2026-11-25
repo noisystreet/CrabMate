@@ -6,11 +6,11 @@ use rusqlite::params;
 
 use crate::cm_names as tool_names;
 
+use crate::cm_config::AgentConfig;
 use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
     sqlite_like_escape,
 };
-use crate::cm_config::AgentConfig;
 use crate::cm_tools::registry_policy::is_readonly_tool;
 use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
 use crate::cm_types::path_utils::canonical_workspace_root;
@@ -52,7 +52,11 @@ enum InvalScopesFill {
     FullWorkspace,
 }
 
-fn fill_dir_path_tools(name: &str, v: &serde_json::Value, scopes: &mut Vec<RelScope>) -> Option<InvalScopesFill> {
+fn fill_dir_path_tools(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
     if !matches!(name, tool_names::DELETE_DIR | tool_names::CREATE_DIR) {
         return None;
     }
@@ -127,7 +131,10 @@ fn fill_structured_doc_tools(
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !matches!(name, tool_names::STRUCTURED | tool_names::MARKDOWN_CHECK_LINKS) {
+    if !matches!(
+        name,
+        tool_names::STRUCTURED | tool_names::MARKDOWN_CHECK_LINKS
+    ) {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
@@ -177,9 +184,7 @@ pub fn invalidation_for_tool_call(
     // 子进程 / 工作流 / 网络写：无法可靠解析受影响路径 → 整表失效。
     if matches!(
         name,
-        tool_names::RUN_COMMAND
-            | tool_names::WORKFLOW_EXECUTE
-            | tool_names::HTTP_REQUEST
+        tool_names::RUN_COMMAND | tool_names::WORKFLOW_EXECUTE | tool_names::HTTP_REQUEST
     ) || name.starts_with("git_")
     {
         return Some(CodebaseSemanticInvalidation::FullWorkspace);
@@ -236,7 +241,8 @@ pub fn apply_after_successful_tool(
     index_sqlite_path_cfg: &str,
     inv: CodebaseSemanticInvalidation,
 ) {
-    let Some((ws_key, mut conn)) = open_invalidation_connection(workspace_root, index_sqlite_path_cfg)
+    let Some((ws_key, mut conn)) =
+        open_invalidation_connection(workspace_root, index_sqlite_path_cfg)
     else {
         return;
     };
@@ -333,8 +339,6 @@ fn apply_rel_scope_invalidation(
     }
 }
 
-
-
 /// 这次工具调用是否**可视为改动了工作区**（决定要不要失效语义索引缓存）。
 ///
 /// 判据统一走 [`crate::cm_tools::tool_result::tool_output_status`]，这里只把三态拍成 `bool`：
@@ -398,8 +402,11 @@ mod tests {
     #[test]
     fn run_command_invalidates_full() {
         let cfg = default_cfg();
-        let inv =
-            invalidation_for_tool_call(&cfg, tool_names::RUN_COMMAND, r#"{"command":"touch","args":["x"]}"#);
+        let inv = invalidation_for_tool_call(
+            &cfg,
+            tool_names::RUN_COMMAND,
+            r#"{"command":"touch","args":["x"]}"#,
+        );
         assert!(matches!(
             inv,
             Some(CodebaseSemanticInvalidation::FullWorkspace)

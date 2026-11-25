@@ -89,8 +89,9 @@ impl ContextGateAlignment {
     /// 由预算与条数上限组装（不做任何 I/O，便于测试）。
     #[must_use]
     pub fn evaluate(budget: ContextTokenBudgetParts, max_message_history: usize) -> Self {
-        let count_gate_tokens =
-            u64::try_from(max_message_history).unwrap_or(u64::MAX).saturating_mul(ASSUMED_TOKENS_PER_MESSAGE);
+        let count_gate_tokens = u64::try_from(max_message_history)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(ASSUMED_TOKENS_PER_MESSAGE);
         Self {
             budget,
             max_message_history,
@@ -240,7 +241,10 @@ mod tests {
         cfg_256.llm_sampling.max_tokens = 16_384;
         let msg = count_gate_warning(&cfg_256).expect("256 条应触发告警");
         assert!(msg.contains("307200"), "应含条数闸等效水位: {msg}");
-        assert!(msg.contains(&cfg_256_trigger(&cfg_256).to_string()), "应含 trigger_tokens: {msg}");
+        assert!(
+            msg.contains(&cfg_256_trigger(&cfg_256).to_string()),
+            "应含 trigger_tokens: {msg}"
+        );
 
         let mut cfg_1024 = cfg_256.clone();
         cfg_1024.session_ui.max_message_history = 1024;
@@ -299,6 +303,9 @@ mod tests {
         cfg_small.llm_sampling.llm_context_tokens = 1_000_000;
         cfg_small.llm_sampling.max_tokens = 16_384;
         let msg = count_gate_warning(&cfg_small).expect("256 条应触发告警");
-        assert!(!msg.contains("上界"), "建议值 696 可达成，不该提上界: {msg}");
+        assert!(
+            !msg.contains("上界"),
+            "建议值 696 可达成，不该提上界: {msg}"
+        );
     }
 }

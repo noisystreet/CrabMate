@@ -335,10 +335,7 @@ mod tests {
             Some(McpConfigError::NeitherStdioNorUrl)
         );
         assert_eq!(server_with("fanalyzer", None).config_error(), None);
-        assert_eq!(
-            server_with("", Some("https://x/mcp")).config_error(),
-            None
-        );
+        assert_eq!(server_with("", Some("https://x/mcp")).config_error(), None);
         // 展示文案保持历史口径（用户已在日志/CLI 里见过这句）。
         assert_eq!(
             McpConfigError::BothStdioAndUrl.to_string(),

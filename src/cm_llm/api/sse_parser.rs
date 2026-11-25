@@ -674,11 +674,7 @@ mod stream_done_tests {
 
         fn append_stream_diagnostic_event(&self, _stream_ended: &str, _msg: &Message) {}
 
-        fn llm_call_error_from_http_api(
-            &self,
-            _status_code: u16,
-            _body: &str,
-        ) -> LlmCallError {
+        fn llm_call_error_from_http_api(&self, _status_code: u16, _body: &str) -> LlmCallError {
             unreachable!("stream_done 测试不触发 HTTP 错误映射")
         }
 

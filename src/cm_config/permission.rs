@@ -51,10 +51,7 @@ pub fn resolve_permission_ceiling(
             PermissionLevel::Unrestricted,
             CeilingSource::DerivedLoopback,
         ),
-        Some(false) | None => (
-            PermissionLevel::Approved,
-            CeilingSource::DerivedNonLoopback,
-        ),
+        Some(false) | None => (PermissionLevel::Approved, CeilingSource::DerivedNonLoopback),
     })
 }
 
@@ -194,9 +191,10 @@ pub(crate) fn derive_permission_config(
     b: &super::builder::ConfigBuilder,
 ) -> Result<PermissionConfig, String> {
     let raw = &b.permission;
-    let level = crate::cm_types::parse_optional_permission_level(raw.permission_level_str.as_deref())
-        .map_err(|e| format!("配置错误：permission_level：{e}"))?
-        .unwrap_or_default();
+    let level =
+        crate::cm_types::parse_optional_permission_level(raw.permission_level_str.as_deref())
+            .map_err(|e| format!("配置错误：permission_level：{e}"))?
+            .unwrap_or_default();
     let explicit_max =
         crate::cm_types::parse_optional_permission_level(raw.permission_level_max_str.as_deref())
             .map_err(|e| format!("配置错误：permission_level_max：{e}"))?;
@@ -215,7 +213,9 @@ pub(crate) fn derive_permission_config(
             CeilingSource::DerivedNonLoopback
         },
         permission_chat_control_tools: trim_drop_empty(
-            raw.permission_chat_control_tools.clone().unwrap_or_default(),
+            raw.permission_chat_control_tools
+                .clone()
+                .unwrap_or_default(),
         ),
         permission_read_tools: read_tools,
         permission_deny_system_paths: trim_drop_empty(
@@ -262,34 +262,25 @@ mod tests {
         );
         assert_eq!(
             resolve_permission_ceiling(None, Some(false), false).unwrap(),
-            (
-                PermissionLevel::Approved,
-                CeilingSource::DerivedNonLoopback
-            )
+            (PermissionLevel::Approved, CeilingSource::DerivedNonLoopback)
         );
         // 没有监听地址（bench / 运维 CLI）：保守按非 loopback 处理。
         assert_eq!(
             resolve_permission_ceiling(None, None, false).unwrap(),
-            (
-                PermissionLevel::Approved,
-                CeilingSource::DerivedNonLoopback
-            )
+            (PermissionLevel::Approved, CeilingSource::DerivedNonLoopback)
         );
     }
 
     #[test]
     fn explicit_config_overrides_derivation() {
         assert_eq!(
-            resolve_permission_ceiling(Some(PermissionLevel::Workspace), Some(true), false).unwrap(),
+            resolve_permission_ceiling(Some(PermissionLevel::Workspace), Some(true), false)
+                .unwrap(),
             (PermissionLevel::Workspace, CeilingSource::Config)
         );
         assert_eq!(
-            resolve_permission_ceiling(
-                Some(PermissionLevel::Unrestricted),
-                Some(true),
-                false
-            )
-            .unwrap(),
+            resolve_permission_ceiling(Some(PermissionLevel::Unrestricted), Some(true), false)
+                .unwrap(),
             (PermissionLevel::Unrestricted, CeilingSource::Config)
         );
     }
@@ -299,7 +290,10 @@ mod tests {
         let err =
             resolve_permission_ceiling(Some(PermissionLevel::Unrestricted), Some(false), false)
                 .expect_err("MB-3：非 loopback 默认不得拿到 L4");
-        assert!(err.contains("allow_unrestricted_permission_for_non_loopback"), "{err}");
+        assert!(
+            err.contains("allow_unrestricted_permission_for_non_loopback"),
+            "{err}"
+        );
         assert_eq!(
             resolve_permission_ceiling(Some(PermissionLevel::Unrestricted), Some(false), true)
                 .unwrap(),
@@ -330,7 +324,10 @@ mod tests {
         assert_eq!(clamp_permission_ceiling_on_reload(startup, None), startup);
 
         // 本机推导出 L4 时，显式写更低的档位仍是「降」。
-        let loopback = (PermissionLevel::Unrestricted, CeilingSource::DerivedLoopback);
+        let loopback = (
+            PermissionLevel::Unrestricted,
+            CeilingSource::DerivedLoopback,
+        );
         assert_eq!(
             clamp_permission_ceiling_on_reload(loopback, Some(PermissionLevel::Approved)),
             (PermissionLevel::Approved, CeilingSource::Config)
@@ -347,10 +344,7 @@ mod tests {
             PermissionLevel::Workspace
         );
         assert_eq!(
-            reconcile_default_level_with_ceiling(
-                PermissionLevel::Read,
-                PermissionLevel::Workspace
-            ),
+            reconcile_default_level_with_ceiling(PermissionLevel::Read, PermissionLevel::Workspace),
             PermissionLevel::Read
         );
     }
@@ -466,8 +460,8 @@ mod tests {
         let mut b = crate::cm_config::builder::ConfigBuilder::default();
         b.permission.permission_level_str = Some("unrestricted".to_string());
         let mut perm = derive_permission_config(&b).expect("derive 应成功");
-        let (ceiling, source) =
-            apply_ceiling_for_bind(&mut perm, IpAddr::from([0, 0, 0, 0])).expect("非 loopback 冻结");
+        let (ceiling, source) = apply_ceiling_for_bind(&mut perm, IpAddr::from([0, 0, 0, 0]))
+            .expect("非 loopback 冻结");
         assert_eq!(ceiling, PermissionLevel::Approved);
         assert_eq!(source, CeilingSource::DerivedNonLoopback);
         // 非 loopback 推导出 approved：默认等级按上限生效（可解释，不阻断启动）。

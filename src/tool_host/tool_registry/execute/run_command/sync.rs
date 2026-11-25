@@ -22,9 +22,12 @@ pub(in crate::tool_host::tool_registry::execute) struct RunCommandSyncHostInvoke
     pub(in crate::tool_host::tool_registry::execute) workspace_changed: &'a mut bool,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
     pub(in crate::tool_host::tool_registry::execute) tool_call_id: &'a str,
-    pub(in crate::tool_host::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    pub(in crate::tool_host::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
+        Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror:
+        Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::tool_host::tool_registry::execute) cancel:
+        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub(in crate::tool_host::tool_registry::execute) timeout_secs: Option<u64>,
     pub(in crate::tool_host::tool_registry::execute) parsed: ParsedRunCommandJson,
     pub(in crate::tool_host::tool_registry::execute) decision: PolicyDecision<'a>,
@@ -101,12 +104,17 @@ pub(in crate::tool_host::tool_registry::execute) struct SpawnRunCommandHost<'a> 
     pub(in crate::tool_host::tool_registry::execute) skip_arg_safety: bool,
     pub(in crate::tool_host::tool_registry::execute) timeout_secs: Option<u64>,
     pub(in crate::tool_host::tool_registry::execute) tool_call_id: &'a str,
-    pub(in crate::tool_host::tool_registry::execute) sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
-    pub(in crate::tool_host::tool_registry::execute) cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_out_tx:
+        Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub(in crate::tool_host::tool_registry::execute) sse_control_mirror:
+        Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    pub(in crate::tool_host::tool_registry::execute) cancel:
+        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
-pub(in crate::tool_host::tool_registry::execute) async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
+pub(in crate::tool_host::tool_registry::execute) async fn spawn_run_command_host(
+    p: SpawnRunCommandHost<'_>,
+) -> String {
     let SpawnRunCommandHost {
         cfg,
         spec,
@@ -129,7 +137,8 @@ pub(in crate::tool_host::tool_registry::execute) async fn spawn_run_command_host
     let cancel = cancel.clone();
     let sse_closed = sse_out_tx.cloned();
     let extra_stop = sse_closed.map(|tx| {
-        std::sync::Arc::new(move || tx.is_closed()) as std::sync::Arc<dyn Fn() -> bool + Send + Sync>
+        std::sync::Arc::new(move || tx.is_closed())
+            as std::sync::Arc<dyn Fn() -> bool + Send + Sync>
     });
     let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl {
         wall: Some(std::time::Duration::from_secs(cmd_timeout.max(1))),

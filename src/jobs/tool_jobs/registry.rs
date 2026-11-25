@@ -244,9 +244,7 @@ impl ToolJobRegistry {
         if g.jobs.len() >= self.limits.max_entries && !self.evict_one_terminal_locked(&mut g) {
             return Err(RegisterError::AtCapacity);
         }
-        if g.running >= self.limits.max_concurrent
-            && g.queue.len() >= self.limits.max_queued
-        {
+        if g.running >= self.limits.max_concurrent && g.queue.len() >= self.limits.max_queued {
             return Err(RegisterError::QueueFull);
         }
         let id = gen_tool_job_id();
@@ -328,10 +326,8 @@ impl ToolJobRegistry {
         let mut scan_cursor: u64 = 0;
         let mut carry = String::new();
         loop {
-            let Some((status, cancel_requested)) = g
-                .jobs
-                .get(id)
-                .map(|r| (r.status, r.cancel_requested))
+            let Some((status, cancel_requested)) =
+                g.jobs.get(id).map(|r| (r.status, r.cancel_requested))
             else {
                 return if g.expired.iter().any(|eid| eid == id) {
                     WaitOutcome::Expired
@@ -391,12 +387,7 @@ impl ToolJobRegistry {
     /// 输出轮询（契约 §3「增量轮询」）：命中记录按 TTL+宽限做惰性过期判定；
     /// 与状态轮询共用临界区完成「增量读取 + `eof` 判定」，保证与 worker 写入/状态转移原子一致。
     #[must_use]
-    pub fn poll_output(
-        &self,
-        id: &str,
-        cursor: Option<u64>,
-        now: SystemTime,
-    ) -> OutputPollOutcome {
+    pub fn poll_output(&self, id: &str, cursor: Option<u64>, now: SystemTime) -> OutputPollOutcome {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(record) = g.jobs.get(id) else {
             return if g.expired.iter().any(|eid| eid == id) {
@@ -545,12 +536,7 @@ impl ToolJobRegistry {
 
     /// worker 完成后写回结果。终态不可覆盖；`running` → 终态并递减运行计数。
     /// `workspace_changed` 由调用方按输出判定后传入。
-    pub fn complete(
-        &self,
-        id: &str,
-        outcome: JobOutcome,
-        workspace_changed: bool,
-    ) -> bool {
+    pub fn complete(&self, id: &str, outcome: JobOutcome, workspace_changed: bool) -> bool {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(record) = g.jobs.get_mut(id) else {
             return false;
@@ -711,7 +697,10 @@ fn fallback_id() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    format!("tooljob_{millis:x}{:x}", SEQ.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "tooljob_{millis:x}{:x}",
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 #[cfg(test)]

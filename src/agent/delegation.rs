@@ -64,8 +64,7 @@ pub(crate) struct DelegatorParts<'a> {
     pub workspace_changelist:
         Option<Arc<crate::cm_tools::workspace::changelist::WorkspaceChangelist>>,
     pub cancel: Option<Arc<AtomicBool>>,
-    pub long_term_memory:
-        Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     pub request_audit: Option<Arc<crate::WebRequestAudit>>,
@@ -128,10 +127,7 @@ pub(crate) struct CrabmateDelegator {
 ///
 /// 首版不支持嵌套（`depth` 恒 0，没有运行期深度计数），所以这条排除是**递归的唯一防线**，
 /// 不能只依赖名单正确。
-pub(crate) fn readonly_subset_for_subturn(
-    cfg: &AgentConfig,
-    tools: &[Tool],
-) -> Vec<Tool> {
+pub(crate) fn readonly_subset_for_subturn(cfg: &AgentConfig, tools: &[Tool]) -> Vec<Tool> {
     tools
         .iter()
         .filter(|t| t.function.name != tool_names::DELEGATE_TASK)
@@ -292,16 +288,14 @@ impl SubAgentDelegator for CrabmateDelegator {
         if let Some(cancel) = self.cancel.as_deref()
             && cancel.load(Ordering::Relaxed)
         {
-            return Ok(
-                SubTaskReport::bounded(
-                    SubTaskStatus::Cancelled,
-                    "父回合已取消，子任务未开始",
-                    Vec::new(),
-                    SubTaskStats::default(),
-                    req.max_report_chars,
-                )
-                .with_error_code("subtask_cancelled"),
-            );
+            return Ok(SubTaskReport::bounded(
+                SubTaskStatus::Cancelled,
+                "父回合已取消，子任务未开始",
+                Vec::new(),
+                SubTaskStats::default(),
+                req.max_report_chars,
+            )
+            .with_error_code("subtask_cancelled"));
         }
 
         let started = Instant::now();
@@ -370,13 +364,8 @@ impl SubAgentDelegator for CrabmateDelegator {
                     .collect()
             })
             .unwrap_or_default();
-        let mut report = SubTaskReport::bounded(
-            status,
-            summary,
-            key_paths,
-            stats,
-            req.max_report_chars,
-        );
+        let mut report =
+            SubTaskReport::bounded(status, summary, key_paths, stats, req.max_report_chars);
         if let Some(code) = error_code_for_status(status) {
             report = report.with_error_code(code);
         }
@@ -476,7 +465,10 @@ mod tests {
         let d = CrabmateDelegator::new(parts_with(engine));
         let report = d.run(request()).await.expect("父回合必须拿到 Ok");
         assert_eq!(report.status, SubTaskStatus::BudgetExhausted);
-        assert_eq!(report.error_code.as_deref(), Some("subtask_budget_exhausted"));
+        assert_eq!(
+            report.error_code.as_deref(),
+            Some("subtask_budget_exhausted")
+        );
         assert!(!report.status.is_ok());
     }
 

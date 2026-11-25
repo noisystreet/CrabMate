@@ -1,10 +1,10 @@
 //! 完成判定金样回归：`fixtures/turn_completion_golden.jsonl`。
 
 use super::{TurnCompletionDecision, evaluate_turn_redundant_tools};
+use crate::cm_names as tool_names;
 use crate::test_fixtures::{for_each_jsonl_record, line_ctx};
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde::Deserialize;
-use crate::cm_names as tool_names;
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -95,7 +95,8 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
                 .as_deref()
                 .unwrap_or_else(|| panic!("{ctx}: redundant_tools 需要 fixture"));
             let messages = fixture_messages(fixture);
-            let tools = fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_tree_probe"));
+            let tools =
+                fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_tree_probe"));
             evaluate_turn_redundant_tools(&tools, &messages, row.confirmed)
         }
         other => panic!("{ctx}: unknown case {other}"),

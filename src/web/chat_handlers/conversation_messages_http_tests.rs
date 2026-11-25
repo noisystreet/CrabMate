@@ -138,10 +138,7 @@ async fn pagination_windows_match_the_client_contract() {
     let full_texts = message_texts(&full);
     assert_eq!(full_texts.len(), SEEDED_MESSAGES as usize);
     assert_eq!(full_texts.first(), Some(&message_text(0)));
-    assert_eq!(
-        full_texts.last(),
-        Some(&message_text(SEEDED_MESSAGES - 1))
-    );
+    assert_eq!(full_texts.last(), Some(&message_text(SEEDED_MESSAGES - 1)));
 
     // ② `limit=80` → 尾页：窗口从第 20 条起，首条正是 `window_start_index` 那一条。
     let tail = fetch_messages(
@@ -159,10 +156,7 @@ async fn pagination_windows_match_the_client_contract() {
     let tail_texts = message_texts(&tail);
     assert_eq!(tail_texts.len(), PAGE_LIMIT as usize);
     assert_eq!(tail_texts.first(), Some(&message_text(TAIL_WINDOW_START)));
-    assert_eq!(
-        tail_texts.last(),
-        Some(&message_text(SEEDED_MESSAGES - 1))
-    );
+    assert_eq!(tail_texts.last(), Some(&message_text(SEEDED_MESSAGES - 1)));
 
     // ③ 用尾页的 `window_start_index` 当游标 → 前一页回到 0，且不再有更早。
     //    游标取自上一页响应（Client 也这么做），不写死：写死就测不出两者是否同源。
@@ -238,10 +232,7 @@ async fn limit_zero_is_full_window_and_oversized_limit_is_clamped() {
         oversized_texts.len(),
         MAX_CONVERSATION_MESSAGES_PAGE_LIMIT as usize
     );
-    assert_eq!(
-        oversized_texts.first(),
-        Some(&message_text(expected_start))
-    );
+    assert_eq!(oversized_texts.first(), Some(&message_text(expected_start)));
 }
 
 /// 未知 `conversation_id` 必须是 404 `CONVERSATION_NOT_FOUND`（不是空窗口的 200）。

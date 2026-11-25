@@ -21,8 +21,8 @@ use super::pty_io::{
 };
 use super::sse_chunk::{emit_tool_chunk, push_truncated};
 use crate::cm_config::AgentConfig;
-use crate::cm_tools::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
 use crate::cm_sse_protocol::sse::SseEncoder;
+use crate::cm_tools::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
 
 const MAX_SESSIONS: usize = 8;
 /// 连续无可读数据达到此时长后，认为本轮 PTY 输出暂告一段落。

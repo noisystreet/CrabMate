@@ -11,15 +11,16 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::cm_config::SkillsConfigSection;
 use crate::cm_config::skills::{
-    SkillLayer, SkillManagedDoc, list_skills_by_layer, resolve_skill_layer_dir, skill_ui_description,
+    SkillLayer, SkillManagedDoc, list_skills_by_layer, resolve_skill_layer_dir,
+    skill_ui_description,
 };
 use crate::cm_config::skills_slash::skill_callable_id;
-use crate::cm_config::SkillsConfigSection;
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     SkillManageAction, SkillManageArgs, SkillManageLayer,
 };
-use crate::cm_tools::tool_result::ToolError;
 
 /// 参数 / 目标不合法（name 非法、缺 `confirm`、同层冲突、未找到、层歧义）。
 fn invalid(msg: impl Into<String>) -> ToolError {
@@ -127,7 +128,9 @@ fn install_plan(
         })?;
     // content 自带 frontmatter 会与工具生成的叠加：解析器只认第一个 `---` 块，原块沦为正文。
     if content.lines().next().map(str::trim) == Some("---") {
-        return Err(invalid("错误：content 以 `---` frontmatter 开头；请剥离原有 frontmatter 只传 Markdown 正文（name / description 用参数提供，frontmatter 由本工具自动生成）"));
+        return Err(invalid(
+            "错误：content 以 `---` frontmatter 开头；请剥离原有 frontmatter 只传 Markdown 正文（name / description 用参数提供，frontmatter 由本工具自动生成）",
+        ));
     }
     let layer = install_layer(args.layer)?;
     let dir = layer_dir(skills, working_dir, layer)?;
@@ -205,7 +208,10 @@ fn write_skill_file(target_path: &Path, file_content: &str) -> Result<(), ToolEr
         .parent()
         .ok_or_else(|| invalid(format!("错误：无效目标路径 `{}`", target_path.display())))?;
     std::fs::create_dir_all(parent).map_err(|e| {
-        io_failed(format!("错误：无法创建技能目录 `{}`：{e}", parent.display()))
+        io_failed(format!(
+            "错误：无法创建技能目录 `{}`：{e}",
+            parent.display()
+        ))
     })?;
     std::fs::write(target_path, file_content).map_err(|e| {
         io_failed(format!(
@@ -285,7 +291,11 @@ fn install_action(
     write_skill_file(&target_path, &file_content)?;
     let mut out = format!(
         "已{}技能 `{name}` 到 {} 层：`{}`（{} 字符）",
-        if canonical_conflict { "覆盖" } else { "安装" },
+        if canonical_conflict {
+            "覆盖"
+        } else {
+            "安装"
+        },
         layer.label(),
         target_path.display(),
         file_content.chars().count()
@@ -314,7 +324,12 @@ fn remove_action(
     skills: &SkillsConfigSection,
     working_dir: &Path,
 ) -> Result<String, ToolError> {
-    let Some(name) = args.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+    let Some(name) = args
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
         return Err(invalid(
             "错误：remove 需要 name 参数（技能 id；可先用 list 动作查看）",
         ));
@@ -411,9 +426,8 @@ fn remove_delete(
     target: &SkillManagedDoc,
 ) -> Result<String, ToolError> {
     let path = &target.abs_path;
-    std::fs::remove_file(path).map_err(|e| {
-        io_failed(format!("错误：删除 `{}` 失败：{e}", path.display()))
-    })?;
+    std::fs::remove_file(path)
+        .map_err(|e| io_failed(format!("错误：删除 `{}` 失败：{e}", path.display())))?;
     let dir_note = remove_cleanup_dir(skills, working_dir, target);
     Ok(format!(
         "已删除 {} 层技能 `{name}`：`{}`{dir_note}\n[提示] 下一轮对话起不再注入；若更底层存在同名技能，该层副本将恢复生效。",
@@ -440,9 +454,7 @@ fn remove_cleanup_dir(
     let is_empty = std::fs::read_dir(parent)
         .map(|mut rd| rd.next().is_none())
         .unwrap_or(false);
-    if is_empty
-        && std::fs::remove_dir(parent).is_ok()
-    {
+    if is_empty && std::fs::remove_dir(parent).is_ok() {
         return format!("（空目录 `{}` 已一并清理）", parent.display());
     }
     String::new()
@@ -482,7 +494,10 @@ fn validate_skill_id(name: &str) -> Result<(), ToolError> {
     if name.chars().count() > 64 {
         return Err(invalid("错误：name 过长（≤64 字符）"));
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(invalid(format!(
             "错误：name `{name}` 含非法字符：仅允许字母 / 数字 / `-` / `_`（不含空格与路径分隔符）"
         )));
@@ -603,8 +618,7 @@ mod tests {
             ws,
         );
         assert!(forced.contains("已覆盖"), "out={forced}");
-        let body =
-            std::fs::read_to_string(ws_skills_dir(ws).join("dup/SKILL.md")).unwrap();
+        let body = std::fs::read_to_string(ws_skills_dir(ws).join("dup/SKILL.md")).unwrap();
         assert!(body.contains("v2"));
     }
 
@@ -640,8 +654,7 @@ mod tests {
             r#"{"action":"install","name":"shared","content":"ws body"}"#,
             &skills,
             ws,
-        )
-        ;
+        );
         let list = run(r#"{"action":"list"}"#, &skills, ws);
         assert!(list.contains("未生效"), "out={list}");
         // 跨层删除：默认仅删工作区层，layer=user 删用户层。

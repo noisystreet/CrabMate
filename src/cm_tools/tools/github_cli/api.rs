@@ -1,7 +1,7 @@
 //! `gh api` 子命令实现（与 `run_command` 封装分离以降低 `mod.rs` 体量）。
 
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -24,9 +24,14 @@ fn validate_gh_api_json(v: &JsonValue) -> Result<(), ToolError> {
         method.as_str(),
         "GET" | "HEAD" | "POST" | "PATCH" | "PUT" | "DELETE"
     ) {
-        return Err(ToolError::invalid_args("错误：method 须为 GET、HEAD、POST、PATCH、PUT 或 DELETE".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：method 须为 GET、HEAD、POST、PATCH、PUT 或 DELETE".to_string(),
+        ));
     }
-    validate_gh_api_body(v.get("body").and_then(|x| x.as_str()).map(str::trim), &method)?;
+    validate_gh_api_body(
+        v.get("body").and_then(|x| x.as_str()).map(str::trim),
+        &method,
+    )?;
     gh_api_query_pairs(v)?;
     if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
         let extra: Vec<String> = arr
@@ -44,10 +49,14 @@ fn validate_gh_api_body(body: Option<&str>, method: &str) -> Result<(), ToolErro
         return Ok(());
     };
     if !b.is_empty() && method == "GET" {
-        return Err(ToolError::invalid_args("错误：GET 请求不应带 body".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：GET 请求不应带 body".to_string(),
+        ));
     }
     if !b.is_empty() && serde_json::from_str::<JsonValue>(b).is_err() {
-        return Err(ToolError::invalid_args("错误：body 须为合法 JSON 字符串".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：body 须为合法 JSON 字符串".to_string(),
+        ));
     }
     Ok(())
 }
@@ -82,20 +91,24 @@ fn gh_api_query_pairs(v: &JsonValue) -> Result<Vec<(String, String)>, ToolError>
     if q.is_null() {
         return Ok(Vec::new());
     }
-    let obj = q
-        .as_object()
-        .ok_or_else(|| ToolError::invalid_args("错误：query 须为对象（如 {\"state\":\"open\"}）".to_string()))?;
+    let obj = q.as_object().ok_or_else(|| {
+        ToolError::invalid_args("错误：query 须为对象（如 {\"state\":\"open\"}）".to_string())
+    })?;
     let mut out = Vec::with_capacity(obj.len());
     for (k, val) in obj {
         let key = k.trim();
         if key.is_empty() {
-            return Err(ToolError::invalid_args("错误：query 键不能为空".to_string()));
+            return Err(ToolError::invalid_args(
+                "错误：query 键不能为空".to_string(),
+            ));
         }
         if !key
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
         {
-            return Err(ToolError::invalid_args(format!("错误：query 键 {key:?} 仅允许字母数字与 - _ .")));
+            return Err(ToolError::invalid_args(format!(
+                "错误：query 键 {key:?} 仅允许字母数字与 - _ ."
+            )));
         }
         out.push((key.to_string(), query_scalar_to_string(key, val)?));
     }
@@ -108,10 +121,16 @@ fn query_scalar_to_string(key: &str, val: &JsonValue) -> Result<String, ToolErro
         JsonValue::String(s) => s.clone(),
         JsonValue::Number(n) => n.to_string(),
         JsonValue::Bool(b) => b.to_string(),
-        _ => return Err(ToolError::invalid_args(format!("错误：query 值 {key:?} 须为字符串、数字或布尔"))),
+        _ => {
+            return Err(ToolError::invalid_args(format!(
+                "错误：query 值 {key:?} 须为字符串、数字或布尔"
+            )));
+        }
     };
     if s.contains('\0') || s.contains('\n') || s.contains('\r') {
-        return Err(ToolError::invalid_args(format!("错误：query 值 {key:?} 不得含换行或空字符")));
+        return Err(ToolError::invalid_args(format!(
+            "错误：query 值 {key:?} 不得含换行或空字符"
+        )));
     }
     Ok(s)
 }
@@ -180,10 +199,7 @@ fn format_gh_api_process_output(
 }
 
 /// `gh api`（受限 path + 方法；可选 JSON body 经 stdin 传入）
-pub fn gh_api_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_api_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
     let v = parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     validate_gh_api_json(&v)?;
@@ -283,7 +299,11 @@ mod tests {
     #[test]
     fn query_pairs_missing_or_null_is_empty() {
         assert!(gh_api_query_pairs(&json!({})).unwrap().is_empty());
-        assert!(gh_api_query_pairs(&json!({"query": null})).unwrap().is_empty());
+        assert!(
+            gh_api_query_pairs(&json!({"query": null}))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -299,4 +319,3 @@ mod tests {
         assert!(gh_api_query_pairs(&json!({"query": {"a": "x\ny"}})).is_err());
     }
 }
-

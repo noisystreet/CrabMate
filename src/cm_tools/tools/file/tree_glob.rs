@@ -142,7 +142,11 @@ struct GlobFilesArgs<'a> {
 fn parse_glob_files_args(v: &serde_json::Value) -> Result<GlobFilesArgs<'_>, ToolError> {
     let pattern_s = match v.get("pattern").and_then(|p| p.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
-        _ => return Err(ToolError::invalid_args("错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string())),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string(),
+            ));
+        }
     };
     if pattern_s.starts_with('/') || pattern_s.contains("..") {
         return Err(ToolError::invalid_args(

@@ -444,7 +444,11 @@ fn files_segment(files: &[String], cap: usize) -> Option<String> {
         listed.push(first.as_str());
     }
     let hidden = files.len().saturating_sub(listed.len());
-    let mut line = format!("已改动文件（最近 {} 个）：{}", listed.len(), listed.join("、"));
+    let mut line = format!(
+        "已改动文件（最近 {} 个）：{}",
+        listed.len(),
+        listed.join("、")
+    );
     if hidden > 0 {
         line.push_str(&format!("（另 {hidden} 个，完整清单见会话变更集）"));
     }
@@ -675,11 +679,7 @@ impl<'a> TaskStateStore<'a> {
 }
 
 /// `now - mtime > ttl`；时钟回拨（mtime 在未来）一律**不**判过期。
-fn is_expired(
-    now: std::time::SystemTime,
-    mtime: std::time::SystemTime,
-    ttl_secs: u64,
-) -> bool {
+fn is_expired(now: std::time::SystemTime, mtime: std::time::SystemTime, ttl_secs: u64) -> bool {
     match now.duration_since(mtime) {
         Ok(age) => age.as_secs() > ttl_secs,
         Err(_) => false,
