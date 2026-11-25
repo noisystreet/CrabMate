@@ -229,7 +229,10 @@ fn collect_root_markdown_file(
         && seen.insert(abs.to_path_buf())
     {
         out.push(abs.to_path_buf());
-    } else if !abs.extension().is_some_and(|x| x.eq_ignore_ascii_case("md")) {
+    } else if !abs
+        .extension()
+        .is_some_and(|x| x.eq_ignore_ascii_case("md"))
+    {
         errors.push(format!("扫描根是文件但不是 .md：{}", root_rel));
     }
 }

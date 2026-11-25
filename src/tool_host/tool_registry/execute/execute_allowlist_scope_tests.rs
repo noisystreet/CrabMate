@@ -32,12 +32,7 @@ async fn allow_always_key_does_not_cross_permission_levels() {
     let ctx = test_policy_context_with_caps(&cfg, &l3, Some(&fixture.web), ExecMode::Sync);
     evaluate_for_test(&parsed, &ctx).await.expect("L3 批准");
 
-    let stored = fixture
-        .web
-        .persistent_allowlist_shared
-        .lock()
-        .await
-        .clone();
+    let stored = fixture.web.persistent_allowlist_shared.lock().await.clone();
     assert_eq!(
         stored,
         std::collections::HashSet::from([crate::cm_types::scoped_allowlist_key(

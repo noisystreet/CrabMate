@@ -209,7 +209,10 @@ mod tests {
         let dir = tempdir("rotate");
         let log = dir.join("a.log");
         let rotated = rotated_path(&log);
-        assert_eq!(rotated.file_name().expect("文件名").to_string_lossy(), "a.log.1");
+        assert_eq!(
+            rotated.file_name().expect("文件名").to_string_lossy(),
+            "a.log.1"
+        );
 
         std::fs::write(&log, "0123456789").expect("写日志");
         assert!(
@@ -219,12 +222,18 @@ mod tests {
 
         assert!(rotate_if_oversized(&log, 8).expect("轮转"));
         assert!(!log.exists(), "当前日志应被改名");
-        assert_eq!(std::fs::read_to_string(&rotated).expect("读旧份"), "0123456789");
+        assert_eq!(
+            std::fs::read_to_string(&rotated).expect("读旧份"),
+            "0123456789"
+        );
 
         // 再切一次：旧份被覆盖，仍然只有一份
         std::fs::write(&log, "abcdefghij").expect("写日志");
         assert!(rotate_if_oversized(&log, 8).expect("轮转"));
-        assert_eq!(std::fs::read_to_string(&rotated).expect("读旧份"), "abcdefghij");
+        assert_eq!(
+            std::fs::read_to_string(&rotated).expect("读旧份"),
+            "abcdefghij"
+        );
     }
 
     #[test]

@@ -80,7 +80,8 @@ pub(super) async fn post_turn_web_prepare_and_save(
     let mode_save = request_session_mode;
     // 只存**意图**：生效值每回合按 min 链重算（运维调低上限后旧会话才会跟着降级）。
     let level_save = request_permission_level;
-    let archive_rows = crate::conversation_store::archive_rows_from_structural_commit(&structural_commit);
+    let archive_rows =
+        crate::conversation_store::archive_rows_from_structural_commit(&structural_commit);
     app.conversation
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
@@ -140,8 +141,10 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
     let had_visible_output = current_turn_has_visible_assistant_output(messages);
     // 取消可能停在 `assistant(tool_calls=[A, B]) + tool(A)` 或半截 arguments 上；
     // 落盘前修复结构，避免下一轮请求被上游以「tool_calls 缺少 tool 响应」拒绝。
-    let repaired = crate::cm_agent::message_pipeline::
-        complete_pending_tool_responses_for_persistence(messages);
+    let repaired =
+        crate::cm_agent::message_pipeline::complete_pending_tool_responses_for_persistence(
+            messages,
+        );
     if repaired > 0 {
         info!(
             target: "crabmate",
@@ -544,10 +547,8 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
 
 /// `run_agent_turn` 之后的流式任务收尾：落盘、SSE 错误/冲突、`stream_ended` 等。
 pub(super) struct StreamJobOutcomeCtx<'a> {
-    pub(super) r: Result<
-        crate::turn_runner::TurnOutcome,
-        crate::agent::agent_turn::RunAgentTurnError,
-    >,
+    pub(super) r:
+        Result<crate::turn_runner::TurnOutcome, crate::agent::agent_turn::RunAgentTurnError>,
     pub(super) cancelled_by_signal: bool,
     /// 层 1：本轮最后一次 assistant 输出是否被截断（来自 [`crate::per_turn_flight::PerTurnFlight`]）。
     pub(super) truncated: bool,
@@ -624,12 +625,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                     .await;
             // #1472：verdict 先绑成变量，终态帧要用它的 `missing`。
             let verdict = flight.completion_verdict();
-            let end_reason = completed_turn_end_reason(
-                fallback_emitted,
-                truncated,
-                messages,
-                verdict.as_ref(),
-            );
+            let end_reason =
+                completed_turn_end_reason(fallback_emitted, truncated, messages, verdict.as_ref());
             let ended_missing = ended_missing_for(end_reason, verdict.as_ref());
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
@@ -799,7 +796,10 @@ mod tests {
             Message::user_only("真实问题"),
             Message::user_server_injection(CRABMATE_LONG_TERM_MEMORY_NAME, "长期记忆注入"),
             Message::user_server_injection(CRABMATE_WORKSPACE_CHANGELIST_NAME, "变更集注入"),
-            Message::user_server_injection(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, "规划轮拒绝重写"),
+            Message::user_server_injection(
+                CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
+                "规划轮拒绝重写",
+            ),
             Message::user_context_summary_injection("基线摘要"),
             Message::user_first_turn_workspace_context("首轮工作区画像"),
             Message::system_execution_constraint_hint("执行约束临时 system"),

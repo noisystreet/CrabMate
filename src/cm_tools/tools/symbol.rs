@@ -303,4 +303,3 @@ fn read_context_lines(path: &PathBuf, line_no: usize, ctx: usize) -> Result<Stri
     }
     Ok(out)
 }
-

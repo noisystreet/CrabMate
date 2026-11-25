@@ -80,7 +80,11 @@ fn finished_sink_invoked_once_on_complete() {
     );
     // 终态不可覆盖：再次 complete 不触发补发。
     assert!(!reg.complete(&id, ok, false));
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "重复 complete 不得再次补发");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "重复 complete 不得再次补发"
+    );
 }
 
 #[test]

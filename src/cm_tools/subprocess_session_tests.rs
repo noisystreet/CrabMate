@@ -20,8 +20,7 @@ fn wait_session_timeout_kills_bash_sleep_grandchild() {
     prepare_piped_process_group(&mut cmd);
     let child = cmd.spawn().expect("spawn bash");
     let pid = child.id();
-    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 4096)
-        .expect("wait");
+    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 4096).expect("wait");
     assert_eq!(r.kind, SessionStopKind::Timeout);
     assert!(r.killed);
     assert_eq!(r.child_pid, pid);
@@ -65,8 +64,7 @@ fn wait_session_stderr_flood_does_not_deadlock_before_timeout() {
     cmd.args(["-c", "while true; do printf 'x%.0s' {1..1000} >&2; done"]);
     prepare_piped_process_group(&mut cmd);
     let child = cmd.spawn().expect("spawn flood");
-    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 2048)
-        .expect("wait");
+    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 2048).expect("wait");
     assert_eq!(r.kind, SessionStopKind::Timeout);
     assert!(!r.stderr.is_empty());
     assert!(r.stderr.len() <= 2048);
@@ -158,10 +156,10 @@ fn wait_session_chunk_sink_emits_stdout_and_stderr_deltas() {
         cancel: None,
         extra_stop: None,
         chunk_sink: Some(Arc::new(move |stream, bytes| {
-            chunks_cb.lock().expect("lock").push((
-                stream,
-                String::from_utf8_lossy(bytes).into_owned(),
-            ));
+            chunks_cb
+                .lock()
+                .expect("lock")
+                .push((stream, String::from_utf8_lossy(bytes).into_owned()));
             true
         })),
         uncapped_live: false,
@@ -241,10 +239,7 @@ fn run_and_capture_timeout_kills_process_group_with_partial_output() {
     // 超时对进程组 SIGTERM→SIGKILL，且已捕获输出随结果返回（孙进程同样被清）。
     let marker = format!("cm_capture_sleep_{}", std::process::id());
     let mut cmd = Command::new("bash");
-    cmd.args([
-        "-c",
-        &format!("echo partial-out; sleep 60 # {marker}"),
-    ]);
+    cmd.args(["-c", &format!("echo partial-out; sleep 60 # {marker}")]);
     let r = run_and_capture(cmd, 4096, Some(1)).expect("run");
     assert_eq!(r.kind, SessionStopKind::Timeout);
     assert!(r.killed);
@@ -340,7 +335,11 @@ fn uncapped_live_streams_beyond_capture_cap_but_kept_snapshot_stays_capped() {
     // 默认：sink 只收到 kept 前缀增量（满 cap 后不再投递）——既有语义回归。
     let (live_default, kept_default) = run(false);
     assert_eq!(live_default, kept_default, "默认 sink 应与 kept 快照一致");
-    assert!(live_default.len() <= 2048, "默认应被 cap 截断：{}", live_default.len());
+    assert!(
+        live_default.len() <= 2048,
+        "默认应被 cap 截断：{}",
+        live_default.len()
+    );
 
     // uncapped：sink 收到全量（> cap），kept 快照仍 ≤ cap。
     let (live_uncapped, kept_uncapped) = run(true);
@@ -365,8 +364,7 @@ fn session_stats_record_timeout_killed_and_live_returns_to_zero() {
     cmd.arg("60");
     prepare_piped_process_group(&mut cmd);
     let child = cmd.spawn().expect("spawn");
-    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 1024)
-        .expect("wait");
+    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 1024).expect("wait");
     assert_eq!(r.kind, SessionStopKind::Timeout);
     let after = session_stats_snapshot();
     // 其它测试并发跑会话，只用单调下界断言。
@@ -393,7 +391,10 @@ fn session_stats_histogram_places_duration_into_overflow_bucket() {
     record_session_duration(42);
     record_session_duration(900_000);
     let after = session_stats_snapshot();
-    assert!(after.duration_buckets[0] > before.duration_buckets[0], "{after:?}");
+    assert!(
+        after.duration_buckets[0] > before.duration_buckets[0],
+        "{after:?}"
+    );
     assert!(
         after.duration_buckets[SESSION_DURATION_BUCKET_MS.len() - 1]
             > before.duration_buckets[SESSION_DURATION_BUCKET_MS.len() - 1],

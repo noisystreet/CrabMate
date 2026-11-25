@@ -6,7 +6,9 @@ use log::info;
 
 use crate::config::SharedAgentConfig;
 
-use super::lock::{ENV_DISABLE_INSTANCE_LOCK, ServeInstanceLocks, serve_acquire_instance_locks, serve_instance_id};
+use super::lock::{
+    ENV_DISABLE_INSTANCE_LOCK, ServeInstanceLocks, serve_acquire_instance_locks, serve_instance_id,
+};
 
 /// `serve` 启动时解析出的隔离域路径（用于启动自检日志与实例锁定位）。
 #[derive(Debug, Clone)]
@@ -41,7 +43,10 @@ pub(super) async fn resolve_serve_paths(
         uploads_dir,
         conversation_sqlite,
         long_term_memory_enabled: g.long_term_memory.long_term_memory_enabled,
-        long_term_memory_sqlite: g.long_term_memory.long_term_memory_store_sqlite_path.clone(),
+        long_term_memory_sqlite: g
+            .long_term_memory
+            .long_term_memory_store_sqlite_path
+            .clone(),
         config_path: config_path.map(str::to_string),
     }
 }

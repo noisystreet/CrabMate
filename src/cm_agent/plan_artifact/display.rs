@@ -17,7 +17,8 @@ fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     let mut out = String::new();
     let mut n = 1usize;
     for st in &plan.steps {
-        let desc = crate::cm_agent::text_sanitize::naturalize_plan_step_description(&st.description);
+        let desc =
+            crate::cm_agent::text_sanitize::naturalize_plan_step_description(&st.description);
         let id = st.id.trim();
         if id.is_empty() {
             continue;

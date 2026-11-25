@@ -8,11 +8,11 @@ mod openapi_paths;
 mod openapi_paths_chat_stream;
 mod openapi_paths_permission;
 mod openapi_paths_session_state;
+mod openapi_paths_skills;
 mod openapi_paths_tool_jobs;
 mod openapi_paths_tools;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
-mod openapi_paths_skills;
 mod route_render;
 #[cfg(test)]
 mod route_table;
@@ -78,7 +78,9 @@ mod tests {
             "OpenAPI path+method must match axum `.route(` in src/web/routes, src/web/server.rs, cm_web_host web_ui (not e2e/static)\nmissing from OpenAPI: {missing:?}\nextra in OpenAPI: {extra:?}"
         );
         assert!(
-            documented.iter().all(|(path, _)| !path.starts_with("/e2e/")),
+            documented
+                .iter()
+                .all(|(path, _)| !path.starts_with("/e2e/")),
             "E2E fixture routes must not appear in OpenAPI"
         );
     }
@@ -90,9 +92,8 @@ mod tests {
     /// 分批迁移完成后两者合起来即为双向一致。
     #[test]
     fn declared_ops_are_mounted_in_axum_routes() {
-        let mounted = super::route_table::axum_route_ops_from_source(Path::new(env!(
-            "CARGO_MANIFEST_DIR"
-        )));
+        let mounted =
+            super::route_table::axum_route_ops_from_source(Path::new(env!("CARGO_MANIFEST_DIR")));
         let missing: Vec<_> = crate::web::routes::decl::all()
             .into_iter()
             .map(|decl| (decl.method.as_str(), decl.path))
@@ -145,8 +146,7 @@ mod tests {
     #[test]
     fn openapi_docs_snapshot_matches_spec() {
         let spec = build_openapi_spec();
-        let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/openapi.json");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/openapi.json");
         if std::env::var_os("CRABMATE_BLESS").is_some() {
             let pretty = serde_json::to_string_pretty(&spec).expect("serialize OpenAPI spec");
             std::fs::write(&path, pretty + "\n").expect("write docs/openapi.json");

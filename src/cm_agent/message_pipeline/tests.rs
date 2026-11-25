@@ -74,13 +74,25 @@ fn char_budget_drops_oldest_after_system() {
 }
 
 fn assistant_with_tool_calls() -> Message {
-    Message::assistant_tool_calls(vec![ToolCall::function("call_1".to_string(), "x".to_string(), "{}".to_string())])
+    Message::assistant_tool_calls(vec![ToolCall::function(
+        "call_1".to_string(),
+        "x".to_string(),
+        "{}".to_string(),
+    )])
 }
 
 #[test]
 fn count_fallback_keeps_parallel_tool_chain_in_latest_group() {
     let mut assistant = assistant_with_tool_calls();
-    assistant.tool_calls.as_mut().expect("tool calls").push(ToolCall::function("call_2".to_string(), "y".to_string(), "{}".to_string()));
+    assistant
+        .tool_calls
+        .as_mut()
+        .expect("tool calls")
+        .push(ToolCall::function(
+            "call_2".to_string(),
+            "y".to_string(),
+            "{}".to_string(),
+        ));
     let mut first_tool = tool_msg("one");
     first_tool.tool_call_id = Some("call_1".to_string());
     let mut second_tool = tool_msg("two");
@@ -289,8 +301,8 @@ fn drop_orphan_after_trim_count_in_full_pipeline() {
 #[test]
 fn pipeline_parks_timeline_so_history_budget_keeps_users() {
     use crate::cm_agent::context_timeline::{
-        ContextTimelineDetail, InjectDetail, KIND_CONTEXT_INJECT, KIND_CONTEXT_TRIM,
-        ContextTimelineEvent, TrimDetail, timeline_marker,
+        ContextTimelineDetail, ContextTimelineEvent, InjectDetail, KIND_CONTEXT_INJECT,
+        KIND_CONTEXT_TRIM, TrimDetail, timeline_marker,
     };
     use crate::cm_types::is_chat_timeline_marker;
 
@@ -338,7 +350,11 @@ fn complete_pending_tool_responses_fills_missing_response() {
         .tool_calls
         .as_mut()
         .expect("tool calls")
-        .push(ToolCall::function("call_2".to_string(), "y".to_string(), "{}".to_string()));
+        .push(ToolCall::function(
+            "call_2".to_string(),
+            "y".to_string(),
+            "{}".to_string(),
+        ));
     let mut first_tool = tool_msg("done");
     first_tool.tool_call_id = Some("call_1".to_string());
     let mut messages = vec![Message::user_only("u"), assistant, first_tool];
@@ -369,7 +385,11 @@ fn complete_pending_tool_responses_noop_when_all_responded() {
 }
 
 fn assistant_with_call_args(id: &str, args: &str) -> Message {
-    Message::assistant_tool_calls(vec![ToolCall::function(id.to_string(), "run_command".to_string(), args.to_string())])
+    Message::assistant_tool_calls(vec![ToolCall::function(
+        id.to_string(),
+        "run_command".to_string(),
+        args.to_string(),
+    )])
 }
 
 #[test]
@@ -389,15 +409,11 @@ fn persistence_drops_unresponded_truncated_tool_call() {
 #[test]
 fn persistence_keeps_valid_call_and_drops_truncated_sibling() {
     let mut assistant = assistant_with_call_args("call_1", "{\"path\":\"a\"}");
-    assistant
-        .tool_calls
-        .as_mut()
-        .expect("tool calls")
-        .extend(
-            assistant_with_call_args("call_2", "{\"command\":\"bash\"")
-                .tool_calls
-                .expect("tool calls"),
-        );
+    assistant.tool_calls.as_mut().expect("tool calls").extend(
+        assistant_with_call_args("call_2", "{\"command\":\"bash\"")
+            .tool_calls
+            .expect("tool calls"),
+    );
     let mut messages = vec![assistant];
 
     let added = complete_pending_tool_responses_for_persistence(&mut messages);
@@ -480,6 +496,9 @@ fn compress_noop_when_groups_fewer_than_keep() {
         Message::user_only("t1"),
         tool_msg(&long),
     ];
-    assert_eq!(compress_tool_message_contents(&mut v, 256, MIN_RECENT_TURN_GROUPS), 0);
+    assert_eq!(
+        compress_tool_message_contents(&mut v, 256, MIN_RECENT_TURN_GROUPS),
+        0
+    );
     assert_eq!(body_chars(&v[2]), 2_000);
 }

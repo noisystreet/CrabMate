@@ -89,7 +89,11 @@ fn envelope_status(content: &str) -> Option<ToolStatus> {
     let v: serde_json::Value = serde_json::from_str(content.trim()).ok()?;
     if let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object()) {
         if let Some(ok) = ct.get("ok").and_then(|x| x.as_bool()) {
-            return Some(if ok { ToolStatus::Ok } else { ToolStatus::Failed });
+            return Some(if ok {
+                ToolStatus::Ok
+            } else {
+                ToolStatus::Failed
+            });
         }
         // 缺 `output` 与 `NormalizedToolEnvelope` 保持一致：这不构成可解析的信封，
         // 交回正文路径；而不是拿空串递归、把结果固定成 `Unknown`。
@@ -99,7 +103,11 @@ fn envelope_status(content: &str) -> Option<ToolStatus> {
         return Some(tool_output_status(name, output));
     }
     let ok = v.get("ok").and_then(|x| x.as_bool())?;
-    Some(if ok { ToolStatus::Ok } else { ToolStatus::Failed })
+    Some(if ok {
+        ToolStatus::Ok
+    } else {
+        ToolStatus::Failed
+    })
 }
 
 #[cfg(test)]
@@ -107,7 +115,8 @@ mod tests {
     use super::*;
 
     fn envelope(ok: Option<bool>, output: &str) -> String {
-        let mut ct = serde_json::json!({ "v": 1, "name": "run_command", "summary": "s", "output": output });
+        let mut ct =
+            serde_json::json!({ "v": 1, "name": "run_command", "summary": "s", "output": output });
         if let Some(ok) = ok {
             ct["ok"] = serde_json::json!(ok);
         }
@@ -130,7 +139,10 @@ mod tests {
     #[test]
     fn envelope_without_ok_falls_back_to_body() {
         assert_eq!(
-            tool_output_status("run_command", &envelope(None, "命令：pwd\n退出码：0\n标准输出：\n/\n")),
+            tool_output_status(
+                "run_command",
+                &envelope(None, "命令：pwd\n退出码：0\n标准输出：\n/\n")
+            ),
             ToolStatus::Ok
         );
         assert_eq!(
@@ -192,8 +204,7 @@ mod tests {
         );
         assert_eq!(tool_output_status("run_command", raw), ToolStatus::Unknown);
         // 带 `output` 的同一形状才走信封回退。
-        let with_output =
-            r#"{"crabmate_tool": {"v": 1, "name": "run_command", "output": "命令：false\n退出码：1\n"}}"#;
+        let with_output = r#"{"crabmate_tool": {"v": 1, "name": "run_command", "output": "命令：false\n退出码：1\n"}}"#;
         assert_eq!(
             tool_output_status("run_command", with_output),
             ToolStatus::Failed

@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::ToolCall;
+use async_trait::async_trait;
 
 use crate::tool_registry::{DispatchToolParams, HandlerLookupTable, ToolRunOutcome};
 
@@ -33,11 +33,8 @@ pub struct ParallelPrefetchParams<'a> {
 /// 统计、turn replay）不再靠 `parse_tool_output` 从正文反推成败。
 #[async_trait]
 pub trait ToolExecutionHost: Send + Sync {
-    async fn dispatch_tool_call(
-        &mut self,
-        name: &str,
-        p: DispatchToolParams<'_>,
-    ) -> ToolRunOutcome;
+    async fn dispatch_tool_call(&mut self, name: &str, p: DispatchToolParams<'_>)
+    -> ToolRunOutcome;
 
     async fn prefetch_parallel_approval_failures(
         &self,

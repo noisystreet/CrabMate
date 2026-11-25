@@ -9,7 +9,6 @@ use super::{
     openapi_paths_user_data_mcp,
 };
 
-
 fn openapi_paths_fragment_chat_core() -> Value {
     json!({
         "/chat": {
@@ -469,22 +468,26 @@ fn openapi_paths_fragment_github() -> Value {
 pub(super) fn openapi_paths_value() -> Value {
     // `system` 组已迁入声明表（`web/routes/decl/system.rs`），由渲染器生成；
     // 其余分组仍是手写片段，按 `routes/` 逐批迁移（issue #1382）。
-    merge_object_fragments("openapi path", "OpenAPI path", &[
-        super::route_render::render_route_decls(crate::web::routes::decl::system_decls()),
-        openapi_paths_fragment_chat_core(),
-        openapi_paths_chat_stream::openapi_paths_fragment_chat_stream_cancel(),
-        openapi_paths_fragment_chat_async(),
-        openapi_paths_fragment_chat_extras(),
-        super::route_render::render_route_decls(crate::web::routes::decl::workspace_decls()),
-        openapi_paths_skills::openapi_paths_fragment_skills(),
-        openapi_paths_fragment_github(),
-        openapi_paths_fragment_workspace_tasks_and_config(),
-        super::route_render::render_route_decls(crate::web::routes::decl::memory_decls()),
-        openapi_paths_permission::openapi_paths_fragment_permission(),
-        openapi_paths_session_state::openapi_paths_fragment_conversation_state(),
-        openapi_paths_tool_jobs::openapi_paths_fragment_tool_jobs(),
-        openapi_paths_tools::openapi_paths_fragment_tools(),
-        openapi_paths_user_data::openapi_paths_fragment_user_data(),
-        openapi_paths_user_data_mcp::openapi_paths_fragment_user_data_mcp(),
-    ])
+    merge_object_fragments(
+        "openapi path",
+        "OpenAPI path",
+        &[
+            super::route_render::render_route_decls(crate::web::routes::decl::system_decls()),
+            openapi_paths_fragment_chat_core(),
+            openapi_paths_chat_stream::openapi_paths_fragment_chat_stream_cancel(),
+            openapi_paths_fragment_chat_async(),
+            openapi_paths_fragment_chat_extras(),
+            super::route_render::render_route_decls(crate::web::routes::decl::workspace_decls()),
+            openapi_paths_skills::openapi_paths_fragment_skills(),
+            openapi_paths_fragment_github(),
+            openapi_paths_fragment_workspace_tasks_and_config(),
+            super::route_render::render_route_decls(crate::web::routes::decl::memory_decls()),
+            openapi_paths_permission::openapi_paths_fragment_permission(),
+            openapi_paths_session_state::openapi_paths_fragment_conversation_state(),
+            openapi_paths_tool_jobs::openapi_paths_fragment_tool_jobs(),
+            openapi_paths_tools::openapi_paths_fragment_tools(),
+            openapi_paths_user_data::openapi_paths_fragment_user_data(),
+            openapi_paths_user_data_mcp::openapi_paths_fragment_user_data_mcp(),
+        ],
+    )
 }

@@ -5,8 +5,8 @@
 //! 跨越数十行。因此「剥掉首行后首行即状态行」是不成立的假设，取退出码须用
 //! [`exit_code_in_header_region`]（在首个流标记行之前逐行找）。
 
-use serde_json::Value;
 use crate::cm_names as tool_names;
+use serde_json::Value;
 
 use super::error_text;
 
@@ -86,7 +86,6 @@ pub(super) fn looks_like_failure(line: &str) -> bool {
     }
     error_text::has_known_error_prefix(head)
 }
-
 
 pub(super) fn extract_streams(output: &str) -> (String, String) {
     let stdout = if let Some(pos) = output.find(STDOUT_MARKER) {
@@ -187,7 +186,8 @@ mod tests {
     /// 修复不得把非 0 退出码也判成成功。
     #[test]
     fn multi_line_invocation_echo_keeps_nonzero_failure() {
-        let raw = "命令：git commit -m \"a\nb\"\n退出码：1\n标准输出：\n\n标准错误：\nhook failed\n";
+        let raw =
+            "命令：git commit -m \"a\nb\"\n退出码：1\n标准输出：\n\n标准错误：\nhook failed\n";
         let payload = run_command_structured_payload(raw);
         assert_eq!(payload["exit_code"], serde_json::json!(1));
         assert_eq!(payload["ok"], serde_json::json!(false));
@@ -196,7 +196,10 @@ mod tests {
     /// 非 `run_command` 形态的载荷正文里的「退出码：N」不得被采信。
     #[test]
     fn non_run_command_payload_ignores_exit_code_lines() {
-        assert_eq!(exit_code_in_header_region("文件内容：\n退出码：130\n"), None);
+        assert_eq!(
+            exit_code_in_header_region("文件内容：\n退出码：130\n"),
+            None
+        );
         assert_eq!(exit_code_in_header_region("退出码：7\n没有流标记\n"), None);
     }
 

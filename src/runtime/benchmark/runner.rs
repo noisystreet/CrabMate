@@ -2,13 +2,13 @@
 //!
 //! 读取 JSONL 输入 → per-task 隔离执行 → 逐条写入输出 JSONL → 最终输出汇总。
 
-use crate::config::{AgentConfig, SharedAgentConfig};
-use crate::types::Tool;
 use crate::cm_benchmark::adapter::{BenchmarkAdapter, create_adapter};
 use crate::cm_benchmark::metrics::{BatchSummary, TaskMetrics};
 use crate::cm_benchmark::types::{
     BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus, parse_task_jsonl_line,
 };
+use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::types::Tool;
 use log::{error, info, warn};
 use std::collections::HashSet;
 use std::io::{BufRead, Write};

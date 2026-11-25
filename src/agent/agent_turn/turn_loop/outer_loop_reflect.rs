@@ -10,15 +10,16 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{SsePayload, encode_message};
 use crate::types::Message;
 
-use crate::agent::agent_turn::policy::outer_loop_fsm::ReflectBranchCtl;
-use crate::agent::agent_turn::policy::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use super::turn_completion::{
     OUTER_LOOP_MISSING_FINAL_ANSWER_FEEDBACK_MAX,
-    outer_loop_has_visible_final_answer_since_last_user, outer_loop_missing_final_answer_feedback_body,
+    outer_loop_has_visible_final_answer_since_last_user,
+    outer_loop_missing_final_answer_feedback_body,
     outer_loop_missing_final_answer_feedback_if_needed, outer_loop_truncated_feedback_if_needed,
 };
 use crate::agent::agent_turn::errors::sse_plan_rewrite_exhausted_body;
 use crate::agent::agent_turn::params::RunLoopParams;
+use crate::agent::agent_turn::policy::outer_loop_fsm::ReflectBranchCtl;
+use crate::agent::agent_turn::policy::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
 
 fn sync_per_flight_from_coord(p: &RunLoopParams<'_>, per_coord: &PerCoordinator) {

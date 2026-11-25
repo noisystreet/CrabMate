@@ -40,7 +40,12 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    create_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
+    create_file_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
@@ -54,7 +59,9 @@ pub fn create_file_try(
     let working_dir = access.root();
     let (path, content) = parse_path_content(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
-    let target = access.for_write(&path).map_err(ToolError::path_resolve_failed)?;
+    let target = access
+        .for_write(&path)
+        .map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         return Err(ToolError::invalid_args(
             "错误：文件已存在，无法仅创建".to_string(),
@@ -122,7 +129,12 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    copy_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
+    copy_file_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
@@ -137,14 +149,17 @@ pub fn copy_file_try(
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
-    let opened =
-        access.for_read_open(&from).map_err(ToolError::path_resolve_failed)?;
+    let opened = access
+        .for_read_open(&from)
+        .map_err(ToolError::path_resolve_failed)?;
     if !opened.file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string(),
         ));
     }
-    let dst = access.for_write(&to).map_err(ToolError::path_resolve_failed)?;
+    let dst = access
+        .for_write(&to)
+        .map_err(ToolError::path_resolve_failed)?;
     if opened.resolved_path == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同，无需复制".to_string(),
@@ -180,7 +195,12 @@ pub fn copy_file_try(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    move_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
+    move_file_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
@@ -195,13 +215,17 @@ pub fn move_file_try(
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
-    let src = access.for_read(&from).map_err(ToolError::path_resolve_failed)?;
+    let src = access
+        .for_read(&from)
+        .map_err(ToolError::path_resolve_failed)?;
     if !src.is_file() {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string(),
         ));
     }
-    let dst = access.for_write(&to).map_err(ToolError::path_resolve_failed)?;
+    let dst = access
+        .for_write(&to)
+        .map_err(ToolError::path_resolve_failed)?;
     if src == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同".to_string(),
@@ -480,7 +504,12 @@ fn modify_file_dispatch_mode(
     if v.get("edits").is_some() {
         let display = modify_file_display(working_dir, target, path);
         return super::edits_batch::modify_file_batch_edits(
-            v, target, working_dir, ctx, path, &display,
+            v,
+            target,
+            working_dir,
+            ctx,
+            path,
+            &display,
         );
     }
     if let Some(out) = modify_file_dispatch_local_mode(v, target, working_dir, ctx, path, mode) {
@@ -497,7 +526,12 @@ fn modify_file_dispatch_mode(
 /// String 面：Typed 迁移的对照面，仅测试使用。
 #[cfg(test)]
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    modify_file_try(args_json, &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots), ctx).unwrap_or_else(|e| e.message)
+    modify_file_try(
+        args_json,
+        &PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
+        ctx,
+    )
+    .unwrap_or_else(|e| e.message)
 }
 
 /// 修改文件：仅在文件已存在时写入。
@@ -519,12 +553,13 @@ pub fn modify_file_try(
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let working_dir = access.root();
-    let v =
-        crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let path = modify_file_path_arg(&v).map_err(ToolError::invalid_args)?;
     let (explicit_mode, mode) = modify_file_mode_arg(&v);
 
-    let target = access.for_read(&path).map_err(ToolError::path_resolve_failed)?;
+    let target = access
+        .for_read(&path)
+        .map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(
             "错误：路径不是文件或不存在，无法仅修改".to_string(),
@@ -543,7 +578,11 @@ pub fn modify_file_try(
     if parsed.ok {
         return Ok(output);
     }
-    Err(ToolError::from_parsed(tool_names::MODIFY_FILE, &parsed, output))
+    Err(ToolError::from_parsed(
+        tool_names::MODIFY_FILE,
+        &parsed,
+        output,
+    ))
 }
 
 /// dispatch 内部仍返回正文：失败码由正文可识别标记保留（如 `错误[stale_revision]`）。

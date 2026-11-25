@@ -206,8 +206,10 @@ fn forced_skill_injection_message(
     forced_skill: Option<&crate::config::skills::SkillDoc>,
 ) -> Option<crate::types::Message> {
     let doc = forced_skill.filter(|_| cfg.skills.skills_enabled)?;
-    let appendix =
-        crate::config::skills::forced_skill_appendix_for_injection(doc, cfg.skills.skills_max_chars);
+    let appendix = crate::config::skills::forced_skill_appendix_for_injection(
+        doc,
+        cfg.skills.skills_max_chars,
+    );
     if appendix.trim().is_empty() {
         return None;
     }
@@ -354,11 +356,7 @@ async fn build_existing_conversation_turn(
         seed.persisted_active_permission_level = Some(level.to_string());
     }
     // `/<id>` 正文紧跟真实 user：system 与既有历史因此保持逐字节稳定（#1475）。
-    append_turn_user_and_forced_skill(
-        &mut seed.messages,
-        parts.last_user,
-        forced_skill_injection,
-    );
+    append_turn_user_and_forced_skill(&mut seed.messages, parts.last_user, forced_skill_injection);
     Ok(seed)
 }
 

@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::MAX_OUTPUT_LINES;
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::output_util;
 use crate::cm_tools::tools::tool_param_types::{
     DependencyGraphArgs, DependencyGraphFormat, DependencyGraphKind,
 };
-use crate::cm_tools::tool_result::ToolError;
 
 #[path = "code_metrics_dep_graph_cargo.rs"]
 mod dep_cargo;
@@ -278,22 +278,14 @@ fn npm_text_dep_tree(dir: &Path, stdout_fallback: &str, max_output_len: usize) -
     };
     format!(
         "npm 依赖树：\n{}",
-        output_util::truncate_output_lines(
-            text_out.trim_end(),
-            max_output_len,
-            MAX_OUTPUT_LINES
-        )
+        output_util::truncate_output_lines(text_out.trim_end(), max_output_len, MAX_OUTPUT_LINES)
     )
 }
 
 fn npm_json_parse_error(stdout: &str, max_output_len: usize) -> String {
     format!(
         "npm ls --json 解析失败，原始输出：\n{}",
-        output_util::truncate_output_lines(
-            stdout.trim_end(),
-            max_output_len,
-            MAX_OUTPUT_LINES
-        )
+        output_util::truncate_output_lines(stdout.trim_end(), max_output_len, MAX_OUTPUT_LINES)
     )
 }
 

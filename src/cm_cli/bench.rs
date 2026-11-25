@@ -20,14 +20,8 @@ pub(super) async fn run(
         ..
     } = session;
     let bench_args = BenchmarkCliArgs::from(bench);
-    if run_benchmark_batch_if_requested(
-        &cfg_holder,
-        &client,
-        api_key.trim(),
-        &tools,
-        &bench_args,
-    )
-    .await?
+    if run_benchmark_batch_if_requested(&cfg_holder, &client, api_key.trim(), &tools, &bench_args)
+        .await?
     {
         return Ok(());
     }

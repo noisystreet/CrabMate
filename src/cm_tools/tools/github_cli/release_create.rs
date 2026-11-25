@@ -1,7 +1,7 @@
 //! `gh release create`（写远端 Release）。
 
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use std::path::Path;
 
 use serde_json::Value as JsonValue;
@@ -15,7 +15,9 @@ fn git_notes_since_last_tag(working_dir: &Path, max_commits: usize) -> Result<St
     let mut cmd = std::process::Command::new("git");
     cmd.args(["describe", "--tags", "--abbrev=0"])
         .current_dir(working_dir);
-    let tag_out = cmd.output().map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}")))?;
+    let tag_out = cmd.output().map_err(|e| {
+        ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}"))
+    })?;
     let since = if tag_out.status.success() {
         let t = String::from_utf8_lossy(&tag_out.stdout).trim().to_string();
         if t.is_empty() {
@@ -39,12 +41,15 @@ fn git_notes_since_last_tag(working_dir: &Path, max_commits: usize) -> Result<St
             "--format=- %h %s",
         ]);
     }
-    let out = log_cmd
-        .output()
-        .map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git log: {e}")))?;
+    let out = log_cmd.output().map_err(|e| {
+        ToolError::external_code("gh_git_failed", format!("错误：无法执行 git log: {e}"))
+    })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(ToolError::invalid_args(format!("git log 失败: {}", stderr.trim())));
+        return Err(ToolError::invalid_args(format!(
+            "git log 失败: {}",
+            stderr.trim()
+        )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -96,13 +101,9 @@ fn gh_release_create_build_argv(
 }
 
 /// `gh release create`（notes 经工作区临时 `--notes-file`）
-pub fn gh_release_create_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_release_create_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     gh_allowed(ctx.allowed_commands)?;
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let tag = match v.get("tag").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
         None => return Err(ToolError::invalid_args("错误：缺少 tag".to_string())),

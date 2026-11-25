@@ -87,10 +87,7 @@ fn format_workspace_member_lines(names: Vec<String>) -> Vec<String> {
         return vec!["- （workspace 未列出 members 或为空）\n".to_string()];
     }
     let show: Vec<_> = names.iter().take(16).cloned().collect();
-    let mut lines = vec![format!(
-        "- 成员 crate 目录（节选）：{}\n",
-        show.join("、")
-    )];
+    let mut lines = vec![format!("- 成员 crate 目录（节选）：{}\n", show.join("、"))];
     if names.len() > 16 {
         lines.push(format!("- … 共 {} 个 member 条目\n", names.len()));
     }

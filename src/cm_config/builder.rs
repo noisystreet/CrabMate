@@ -70,7 +70,10 @@ impl ConfigBuilder {
     /// 权限等级相关键（保留原始字符串，`finalize` 再解析枚举）。
     fn apply_section_permission(&mut self, agent: &AgentSection) {
         let perm = &mut self.permission;
-        override_opt_string_non_empty(&mut perm.permission_level_str, agent.permission_level.clone());
+        override_opt_string_non_empty(
+            &mut perm.permission_level_str,
+            agent.permission_level.clone(),
+        );
         override_opt_string_non_empty(
             &mut perm.permission_level_max_str,
             agent.permission_level_max.clone(),
@@ -79,7 +82,10 @@ impl ConfigBuilder {
             &mut perm.permission_chat_control_tools,
             &agent.permission_chat_control_tools,
         );
-        override_opt_vec_allow_empty(&mut perm.permission_read_tools, &agent.permission_read_tools);
+        override_opt_vec_allow_empty(
+            &mut perm.permission_read_tools,
+            &agent.permission_read_tools,
+        );
         override_opt_vec_allow_empty(
             &mut perm.permission_deny_system_paths,
             &agent.permission_deny_system_paths,
@@ -218,7 +224,10 @@ impl ConfigBuilder {
         hf.http_fetch_max_response_bytes = agent
             .http_fetch_max_response_bytes
             .or(hf.http_fetch_max_response_bytes);
-        override_opt_string_non_empty(&mut hf.http_fetch_user_agent, agent.http_fetch_user_agent.clone());
+        override_opt_string_non_empty(
+            &mut hf.http_fetch_user_agent,
+            agent.http_fetch_user_agent.clone(),
+        );
         let pp = &mut self.per_plan_policy;
         pp.reflection_default_max_rounds = agent
             .reflection_default_max_rounds
@@ -445,12 +454,15 @@ impl ConfigBuilder {
         self.conversation_persistence.conversation_store_max_entries = agent
             .conversation_store_max_entries
             .or(self.conversation_persistence.conversation_store_max_entries);
-        self.conversation_persistence.context_archive_max_rows_per_conversation = agent
-            .context_archive_max_rows_per_conversation
-            .or(self.conversation_persistence.context_archive_max_rows_per_conversation);
-        self.conversation_persistence.context_archive_codec_min_bytes = agent
-            .context_archive_codec_min_bytes
-            .or(self.conversation_persistence.context_archive_codec_min_bytes);
+        self.conversation_persistence
+            .context_archive_max_rows_per_conversation =
+            agent.context_archive_max_rows_per_conversation.or(self
+                .conversation_persistence
+                .context_archive_max_rows_per_conversation);
+        self.conversation_persistence
+            .context_archive_codec_min_bytes = agent.context_archive_codec_min_bytes.or(self
+            .conversation_persistence
+            .context_archive_codec_min_bytes);
     }
 
     /// 上下文引导注入与工具调用解释字段合并。
@@ -682,9 +694,8 @@ fn apply_tool_registry_tool_lists(
         .background_job_output_buffer_bytes
         .or(p.tool_registry_background_job_output_buffer_bytes);
     // 工具失败透明重试 5 键（数值/开关为 Copy 用 `.or` 合并；数组字段消费 `tr` 值）。
-    p.tool_registry_tool_retry_enabled = tr
-        .tool_retry_enabled
-        .or(p.tool_registry_tool_retry_enabled);
+    p.tool_registry_tool_retry_enabled =
+        tr.tool_retry_enabled.or(p.tool_registry_tool_retry_enabled);
     p.tool_registry_tool_retry_max_attempts = tr
         .tool_retry_max_attempts
         .or(p.tool_registry_tool_retry_max_attempts);

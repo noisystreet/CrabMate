@@ -193,7 +193,10 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         m.insert("cargo", capture_probe("cargo", &["-V"]));
 
         m.insert("rustfmt", capture_probe("rustfmt", &["--version"]));
-        m.insert("clang_format", capture_probe("clang-format", &["--version"]));
+        m.insert(
+            "clang_format",
+            capture_probe("clang-format", &["--version"]),
+        );
         m.insert("cmake", capture_probe("cmake", &["--version"]));
         m.insert("ctest", capture_probe("ctest", &["--version"]));
         m.insert("cxxfilt", capture_probe("c++filt", &["--version"]));
@@ -370,10 +373,7 @@ mod health_status_tests {
         HealthReport {
             status: "degraded".into(),
             checks,
-            dep_probe_kinds: kinds
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), *v))
-                .collect(),
+            dep_probe_kinds: kinds.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
         }
     }
 
@@ -443,7 +443,10 @@ mod health_status_tests {
         );
         let summary = format_startup_health_summary(&report_with(
             checks,
-            &[("dep_gh", ProbeKind::Missing), ("dep_npm", ProbeKind::Missing)],
+            &[
+                ("dep_gh", ProbeKind::Missing),
+                ("dep_npm", ProbeKind::Missing),
+            ],
         ));
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
         assert!(summary.contains("gh"));

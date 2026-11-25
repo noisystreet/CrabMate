@@ -24,11 +24,9 @@ use axum::http::{HeaderMap, StatusCode};
 use log::{debug, info};
 
 use super::parse::{normalize_approval_session_id, normalize_client_conversation_id};
-use crate::conversation_store::BranchTruncateOutcome;
 use crate::cm_api_contract::chat::ConversationLayoutMeta;
-use crate::types::{
-    CommandApprovalDecision, Message, filter_messages_for_web_client_snapshot,
-};
+use crate::conversation_store::BranchTruncateOutcome;
+use crate::types::{CommandApprovalDecision, Message, filter_messages_for_web_client_snapshot};
 use crate::web::app_state_facets::{WebChatAppFacet, WebChatTurnAppFacet};
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
@@ -254,14 +252,13 @@ pub(crate) async fn conversation_delete_handler(
     State(state): State<WebChatAppFacet>,
     Path(conversation_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    let conversation_id = normalize_client_conversation_id(Some(&conversation_id)).map_err(
-        |msg| {
+    let conversation_id =
+        normalize_client_conversation_id(Some(&conversation_id)).map_err(|msg| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ApiError::new("INVALID_CONVERSATION_ID", msg)),
             )
-        },
-    )?;
+        })?;
     let Some(cid) = conversation_id else {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -448,8 +445,10 @@ mod hydration_telemetry_tests {
     #[test]
     fn layout_reports_derived_hash_mismatch() {
         let messages = vec![Message::user_only("hi")];
-        let (changed, prefix) =
-            hydration_projection_hash_diff(&meta(Some("hash-that-will-not-match-派生值")), &messages);
+        let (changed, prefix) = hydration_projection_hash_diff(
+            &meta(Some("hash-that-will-not-match-派生值")),
+            &messages,
+        );
         assert_eq!(changed, Some(true));
         assert_eq!(prefix.as_deref(), Some("hash-that-wi"));
     }

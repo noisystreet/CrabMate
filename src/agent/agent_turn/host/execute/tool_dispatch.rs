@@ -3,8 +3,8 @@
 //! [`ToolExecutionHost`] 经本模块的 [`ToolDispatch`]（默认 [`InternalToolDispatch`]）调用 registry；
 //! 测试可注入假实现而不走真实 `dispatch_tool`。
 
-use async_trait::async_trait;
 use crate::tool_host::tool_registry::{DispatchToolParams, ToolRunOutcome, dispatch_tool};
+use async_trait::async_trait;
 
 /// 单次工具调用的 registry 分发面（不含 `workflow_execute`）。
 #[async_trait]
@@ -30,13 +30,13 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use crate::cm_config::load_config;
+    use crate::cm_types::{FunctionCall, ToolCall};
     use crate::tool_registry::{
         DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
         DispatchToolPolicy, DispatchToolWorkspace, HandlerLookupTable, ToolRuntime,
     };
     use crate::tool_sandbox::default_sync_default_sandbox_backend;
-    use crate::cm_config::load_config;
-    use crate::cm_types::{FunctionCall, ToolCall};
 
     struct CountingMockDispatch {
         hits: AtomicUsize,

@@ -221,9 +221,21 @@ impl NormalizedToolEnvelope {
         if self.output_truncated {
             ct.insert("output_truncated".into(), Value::Bool(true));
         }
-        insert_opt(&mut ct, "output_original_chars", &self.output_original_chars);
-        insert_opt(&mut ct, "output_kept_head_chars", &self.output_kept_head_chars);
-        insert_opt(&mut ct, "output_kept_tail_chars", &self.output_kept_tail_chars);
+        insert_opt(
+            &mut ct,
+            "output_original_chars",
+            &self.output_original_chars,
+        );
+        insert_opt(
+            &mut ct,
+            "output_kept_head_chars",
+            &self.output_kept_head_chars,
+        );
+        insert_opt(
+            &mut ct,
+            "output_kept_tail_chars",
+            &self.output_kept_tail_chars,
+        );
         insert_opt(&mut ct, "structured_payload", &self.structured_payload);
         ct
     }
@@ -290,10 +302,7 @@ mod tests {
         assert_eq!(parsed.error_code, None);
 
         // 已知失败且带码：码取执行层的。
-        parsed.apply_outcome_facts(&ToolOutcomeFacts::known(
-            false,
-            Some("timeout".to_string()),
-        ));
+        parsed.apply_outcome_facts(&ToolOutcomeFacts::known(false, Some("timeout".to_string())));
         assert!(!parsed.ok);
         assert_eq!(parsed.error_code.as_deref(), Some("timeout"));
     }

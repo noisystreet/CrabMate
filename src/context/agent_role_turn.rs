@@ -195,8 +195,11 @@ pub fn tool_calls_allow_parallel_for_role(
     tool_calls: &[ToolCall],
     turn_allow: Option<&HashSet<String>>,
 ) -> bool {
-    if !crate::tool_host::tool_registry::tool_calls_allow_parallel_sync_batch(handler_lookup, cfg, tool_calls)
-    {
+    if !crate::tool_host::tool_registry::tool_calls_allow_parallel_sync_batch(
+        handler_lookup,
+        cfg,
+        tool_calls,
+    ) {
         return false;
     }
     if let Some(a) = turn_allow {

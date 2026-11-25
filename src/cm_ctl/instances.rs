@@ -232,13 +232,16 @@ const DECLARATION_KEYS: &[&str] = &[
 
 fn invalid_message(path: &Path, text: &str, detail: &str) -> String {
     // 提示按**文档里真实出现的未知键名**选，不靠 error 文案里的 `unknown field \`x\``。
-    let hint = match super::toml_unknown::first_unknown_entry_key(text, "instances", DECLARATION_KEYS)
-        .as_deref()
-    {
-        Some("workspace") => "（`workspace` 只能由实例声明提供，profile 不得携带）",
-        Some("yes") | Some("--yes") => "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）",
-        _ => "",
-    };
+    let hint =
+        match super::toml_unknown::first_unknown_entry_key(text, "instances", DECLARATION_KEYS)
+            .as_deref()
+        {
+            Some("workspace") => "（`workspace` 只能由实例声明提供，profile 不得携带）",
+            Some("yes") | Some("--yes") => {
+                "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）"
+            }
+            _ => "",
+        };
     format!("解析声明文件失败 {}：{detail}{hint}", path.display())
 }
 
@@ -356,7 +359,10 @@ port = 8080
         keys.sort_unstable();
         let mut expected = DECLARATION_KEYS.to_vec();
         expected.sort_unstable();
-        assert_eq!(keys, expected, "`DECLARATION_KEYS` 与 `Declaration` 字段必须一致");
+        assert_eq!(
+            keys, expected,
+            "`DECLARATION_KEYS` 与 `Declaration` 字段必须一致"
+        );
     }
 
     #[test]
@@ -452,7 +458,11 @@ port = 8080
     fn rejects_unsafe_instance_name() {
         let dir = tmpdir("bad_name");
         let p = dir.join(FILE_NAME);
-        write_with_mode(&p, "[instances.\"../evil\"]\nworkspace = \"/tmp/a\"\n", 0o600);
+        write_with_mode(
+            &p,
+            "[instances.\"../evil\"]\nworkspace = \"/tmp/a\"\n",
+            0o600,
+        );
         let err = load(&p).expect_err("路径穿越名应报错");
         assert_eq!(err.error_code, "bad_instances_entry");
         let _ = std::fs::remove_dir_all(&dir);

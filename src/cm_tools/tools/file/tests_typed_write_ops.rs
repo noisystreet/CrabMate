@@ -32,7 +32,13 @@ fn create_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || create_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || create_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            create_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -114,7 +120,13 @@ fn copy_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || copy_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || copy_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            copy_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -152,7 +164,7 @@ fn copy_file_try_missing_from_is_invalid_input() {
         &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
-        .expect_err("缺少 from 须失败");
+    .expect_err("缺少 from 须失败");
 
     assert_invalid_input(&err);
     assert!(err.message.contains("缺少 from"), "{}", err.message);
@@ -172,7 +184,13 @@ fn move_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || move_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || move_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            move_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(!dir_typed.join("a.txt").exists());
@@ -253,7 +271,13 @@ fn modify_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || modify_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || modify_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            modify_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("已按行替换"), "{typed}");
@@ -273,7 +297,7 @@ fn modify_file_try_missing_path_is_invalid_input() {
         &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
-        .expect_err("缺少 path 须失败");
+    .expect_err("缺少 path 须失败");
 
     assert_invalid_input(&err);
     assert!(err.message.contains("缺少 path"), "{}", err.message);
@@ -290,7 +314,7 @@ fn modify_file_try_non_file_path_is_invalid_input() {
         &super::PathAccess::new(&dir),
         &test_ctx(&dir),
     )
-        .expect_err("目录不可作为修改目标");
+    .expect_err("目录不可作为修改目标");
 
     assert_invalid_input(&err);
     assert!(
@@ -317,7 +341,11 @@ fn modify_file_try_stale_revision_keeps_body_and_code() {
     // `stale_revision` 无 `_failed` 后缀，按现有错误码映射归入 `Unknown`（与 Legacy 推断一致）。
     assert_eq!(err.category, ToolFailureCategory::Unknown);
     assert!(!err.retryable);
-    assert!(err.message.contains("错误[stale_revision]"), "{}", err.message);
+    assert!(
+        err.message.contains("错误[stale_revision]"),
+        "{}",
+        err.message
+    );
     assert_eq!(read(&dir, "a.txt"), "L1\nL2\n", "被拒绝的写入不得改动文件");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -380,7 +408,13 @@ fn append_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || append_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            append_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -403,7 +437,13 @@ fn append_file_try_dry_run_matches_string_face_and_does_not_write() {
         &dir_legacy,
         &dir_typed,
         || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || append_file_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            append_file_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert_eq!(read(&dir_typed, "a.txt"), "hello", "dry-run 不得写盘");
@@ -501,13 +541,20 @@ fn search_replace_try_success_matches_string_face() {
     let dir_typed = make_test_dir();
     std::fs::write(dir_legacy.join("a.txt"), "hello world\n").unwrap();
     std::fs::write(dir_typed.join("a.txt"), "hello world\n").unwrap();
-    let args = r#"{"path":"a.txt","search":"world","replace":"rust","dry_run":false,"confirm":true}"#;
+    let args =
+        r#"{"path":"a.txt","search":"world","replace":"rust","dry_run":false,"confirm":true}"#;
 
     let typed = assert_success_parity(
         &dir_legacy,
         &dir_typed,
         || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || search_replace_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            search_replace_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("已替换"), "{typed}");
@@ -531,10 +578,20 @@ fn search_replace_try_dry_run_matches_string_face_and_does_not_write() {
         &dir_legacy,
         &dir_typed,
         || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || search_replace_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            search_replace_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
-    assert_eq!(read(&dir_typed, "a.txt"), "hello world\n", "dry-run 不得写盘");
+    assert_eq!(
+        read(&dir_typed, "a.txt"),
+        "hello world\n",
+        "dry-run 不得写盘"
+    );
 
     let _ = std::fs::remove_dir_all(&dir_legacy);
     let _ = std::fs::remove_dir_all(&dir_typed);

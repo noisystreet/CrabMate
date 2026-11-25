@@ -8,7 +8,12 @@ pub(super) fn append_if_needed(args_json: &str, output: String) -> String {
     if output.contains(HINT_MARK) {
         return output;
     }
-    let mut hay = String::with_capacity(args_json.len().saturating_add(output.len()).saturating_add(1));
+    let mut hay = String::with_capacity(
+        args_json
+            .len()
+            .saturating_add(output.len())
+            .saturating_add(1),
+    );
     hay.push_str(args_json);
     hay.push('\n');
     hay.push_str(&output);
@@ -64,7 +69,13 @@ fn image_path_span_at(hay: &str, i: usize) -> Option<(usize, usize)> {
 fn ext_end_from(hay: &str, i: usize) -> Option<usize> {
     let rest = hay.get(i..)?;
     let low = rest.to_ascii_lowercase();
-    for (lit, n) in [(".jpeg", 5usize), (".webp", 5), (".png", 4), (".jpg", 4), (".gif", 4)] {
+    for (lit, n) in [
+        (".jpeg", 5usize),
+        (".webp", 5),
+        (".png", 4),
+        (".jpg", 4),
+        (".gif", 4),
+    ] {
         if low.starts_with(lit) {
             let end = i.checked_add(n)?;
             if ext_boundary_ok(hay, end) {
@@ -95,10 +106,7 @@ fn is_rel_path_byte(c: u8) -> bool {
 }
 
 fn rel_image_path_ok(p: &str) -> bool {
-    !p.is_empty()
-        && !p.starts_with('/')
-        && !p.contains("..")
-        && p.contains('.')
+    !p.is_empty() && !p.starts_with('/') && !p.contains("..") && p.contains('.')
 }
 
 #[cfg(test)]

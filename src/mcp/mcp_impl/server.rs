@@ -29,12 +29,7 @@ pub struct ToolCallbacks {
     /// 执行工具（名称、参数字符串、工作目录、配置）→ 异步输出。
     /// 返回 `Err` 表示执行被阻止（如审批失败）。参数按值传入以支持返回 `'static` future。
     pub run_tool: Arc<
-        dyn Fn(
-                String,
-                String,
-                PathBuf,
-                AgentConfig,
-            ) -> BoxFuture<'static, Result<String, String>>
+        dyn Fn(String, String, PathBuf, AgentConfig) -> BoxFuture<'static, Result<String, String>>
             + Send
             + Sync,
     >,
@@ -44,14 +39,14 @@ impl ToolCallbacks {
     pub fn new(
         build_tool_list: impl Fn(&AgentConfig, bool) -> Vec<OpenAiTool> + Send + Sync + 'static,
         run_tool: impl Fn(
-                String,
-                String,
-                PathBuf,
-                AgentConfig,
-            ) -> BoxFuture<'static, Result<String, String>>
-            + Send
-            + Sync
-            + 'static,
+            String,
+            String,
+            PathBuf,
+            AgentConfig,
+        ) -> BoxFuture<'static, Result<String, String>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self {
             build_tool_list: Arc::new(build_tool_list),

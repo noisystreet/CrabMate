@@ -412,7 +412,10 @@ mod registry_golden_tests {
             .unwrap_or_default();
 
         let mut merged: BTreeMap<String, Value> = BTreeMap::new();
-        if let Some(prev) = previous.and_then(|v| v.get("tools")).and_then(Value::as_object) {
+        if let Some(prev) = previous
+            .and_then(|v| v.get("tools"))
+            .and_then(Value::as_object)
+        {
             for (name, shape) in prev {
                 if !tools.contains_key(name) {
                     merged.insert(name.clone(), shape.clone());

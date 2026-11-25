@@ -12,7 +12,9 @@ pub fn run_try(args_json: &str) -> Result<String, ToolError> {
         super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let pattern = args.pattern.trim();
     if pattern.is_empty() {
-        return Err(ToolError::invalid_args("错误：缺少 pattern 参数".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：缺少 pattern 参数".to_string(),
+        ));
     }
     let re = Regex::new(pattern).map_err(|e| {
         ToolError::external_code("regex_test_invalid_regex", format!("正则编译失败：{}", e))

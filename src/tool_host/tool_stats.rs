@@ -10,10 +10,10 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::cm_config::AgentConfig;
 use crate::cm_tools::tool_result::{
     NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
 };
-use crate::cm_config::AgentConfig;
 
 #[derive(Debug)]
 struct ToolStatEvent {
@@ -179,7 +179,8 @@ impl ToolOutcomeRecorder {
 
         let mut lines: Vec<String> = Vec::new();
         for tool in keys {
-            if let Some(line) = format_tool_stat_hint_line(&tool, &per_tool[&tool], min_s, ratio_threshold)
+            if let Some(line) =
+                format_tool_stat_hint_line(&tool, &per_tool[&tool], min_s, ratio_threshold)
             {
                 lines.push(line);
             }
@@ -192,7 +193,10 @@ impl ToolOutcomeRecorder {
         let header = "## 近期工具调用提示（进程内全局统计，仅供参考）";
         let body = lines.join("\n");
         let mut out = format!("{header}\n\n{body}");
-        truncate_tool_stat_hints(&mut out, cfg.agent_tool_stats.agent_tool_stats_max_chars.max(64));
+        truncate_tool_stat_hints(
+            &mut out,
+            cfg.agent_tool_stats.agent_tool_stats_max_chars.max(64),
+        );
         Some(out)
     }
 }

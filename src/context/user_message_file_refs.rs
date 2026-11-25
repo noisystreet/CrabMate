@@ -14,9 +14,9 @@ use std::path::Path;
 
 use regex::Regex;
 
+use crate::cm_config::AgentConfig;
 use crate::cm_tools::tool_result::CrabmateToolOutputMeta;
 use crate::cm_tools::tools::{self, ToolContext};
-use crate::cm_config::AgentConfig;
 
 /// 与单次 `read_file` 默认一致，避免用户消息爆炸。
 const EXPAND_MAX_LINES: usize = 500;

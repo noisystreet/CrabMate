@@ -56,7 +56,8 @@ pub(super) fn count_lines_for_read(
 }
 
 fn count_lines_utf8_strict(path: &Path, skip: usize) -> Result<usize, TextDecodeError> {
-    let mut f = File::open(path).map_err(|e| TextDecodeError::io(format!("打开文件失败: {}", e)))?;
+    let mut f =
+        File::open(path).map_err(|e| TextDecodeError::io(format!("打开文件失败: {}", e)))?;
     if skip > 0 {
         f.seek(SeekFrom::Start(skip as u64))
             .map_err(|e| TextDecodeError::io(format!("定位文件失败: {}", e)))?;
@@ -129,13 +130,16 @@ impl ReadFileBodyError {
             Self::Utf8Decode(msg) => {
                 crate::cm_tools::tool_result::ToolError::external_code("read_file_utf8_decode", msg)
             }
-            Self::InvalidRange(msg) => {
-                crate::cm_tools::tool_result::ToolError::external_code("read_file_invalid_range", msg)
-            }
+            Self::InvalidRange(msg) => crate::cm_tools::tool_result::ToolError::external_code(
+                "read_file_invalid_range",
+                msg,
+            ),
             Self::Internal(msg) => {
                 crate::cm_tools::tool_result::ToolError::internal_code("read_file_internal", msg)
             }
-            Self::Io(msg) => crate::cm_tools::tool_result::ToolError::external_code("read_file_io", msg),
+            Self::Io(msg) => {
+                crate::cm_tools::tool_result::ToolError::external_code("read_file_io", msg)
+            }
         }
     }
 }
@@ -199,9 +203,13 @@ pub(super) fn resolve_read_end_line(
 pub(super) fn sniff_opened_file_encoding(
     file: File,
     enc_name: TextEncodingName,
-) -> Result<(ResolvedTextEncoding, DecodedFileNote, File, Vec<u8>), crate::cm_tools::tool_result::ToolError> {
-    let (file, head) = sniff_head_bytes_from(file, enc_name)
-        .map_err(|e| crate::cm_tools::tool_result::ToolError::external_code("read_file_io", e.to_string()))?;
+) -> Result<
+    (ResolvedTextEncoding, DecodedFileNote, File, Vec<u8>),
+    crate::cm_tools::tool_result::ToolError,
+> {
+    let (file, head) = sniff_head_bytes_from(file, enc_name).map_err(|e| {
+        crate::cm_tools::tool_result::ToolError::external_code("read_file_io", e.to_string())
+    })?;
     let (resolved, decode_note) = resolve_text_encoding(&head, enc_name).map_err(|e| {
         crate::cm_tools::tool_result::ToolError::external_code("read_file_encoding", e.to_string())
     })?;

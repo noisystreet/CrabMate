@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::path::Path;
 
-use crate::cm_tools::tools::{CommandSpec, parse_command_spec};
 use crate::cm_names as tool_names;
+use crate::cm_tools::tools::{CommandSpec, parse_command_spec};
 
 /// 失败家族判定只看 `CommandSpec` 的规范化结果，与审批/执行消费同一解析入口。
 pub(super) fn classify_run_command_failure_family_from_spec(
@@ -317,7 +317,10 @@ mod tests {
         let workdir = Path::new(".");
         for (args_json, code) in [
             (r#"{"command":"cd","args":["tmp"]}"#, "cd_prefix_invalid"),
-            (r#"{"command":"cd","args":["tmp","&&"]}"#, "cd_prefix_invalid"),
+            (
+                r#"{"command":"cd","args":["tmp","&&"]}"#,
+                "cd_prefix_invalid",
+            ),
             (
                 r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
                 "unsafe_arg",
@@ -364,7 +367,8 @@ mod tests {
     #[test]
     fn ctest_preflight_rejects_dash_c_build_misuse() {
         let args_json = r#"{"command":"ctest","args":["-C","build","-N"]}"#;
-        let got = super::run_command_ctest_preflight_error("run_command", args_json, Path::new("."));
+        let got =
+            super::run_command_ctest_preflight_error("run_command", args_json, Path::new("."));
         assert!(got.is_some());
     }
 
@@ -373,7 +377,8 @@ mod tests {
         // `command` 中内嵌整段命令，需经与执行相同的解析入口拆出 argv。
         let embedded = r#"{"command":"ctest -C build"}"#;
         assert!(
-            super::run_command_ctest_preflight_error("run_command", embedded, Path::new(".")).is_some()
+            super::run_command_ctest_preflight_error("run_command", embedded, Path::new("."))
+                .is_some()
         );
 
         // 显式 `script` 不算 `ctest` 直接调用，不应触发预检。

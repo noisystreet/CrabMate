@@ -358,7 +358,9 @@ fn upload_filename_ok(name: &str) -> bool {
         && !name.contains('/')
         && !name.contains('\\')
         && !name.contains("..")
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 fn upload_content_type(name: &str, bytes: &[u8]) -> &'static str {
@@ -402,7 +404,11 @@ pub(crate) async fn get_upload_file_handler(
     let dir = facet.uploads_dir().await;
     let path = dir.join(&filename);
     let meta = tokio::fs::metadata(&path).await.map_err(|_| {
-        upload_api_error(StatusCode::NOT_FOUND, "UPLOAD_NOT_FOUND", "附图不存在或已过期")
+        upload_api_error(
+            StatusCode::NOT_FOUND,
+            "UPLOAD_NOT_FOUND",
+            "附图不存在或已过期",
+        )
     })?;
     if !meta.is_file() {
         return Err(upload_api_error(
@@ -419,7 +425,11 @@ pub(crate) async fn get_upload_file_handler(
         ));
     }
     let bytes = tokio::fs::read(&path).await.map_err(|_| {
-        upload_api_error(StatusCode::NOT_FOUND, "UPLOAD_NOT_FOUND", "附图不存在或已过期")
+        upload_api_error(
+            StatusCode::NOT_FOUND,
+            "UPLOAD_NOT_FOUND",
+            "附图不存在或已过期",
+        )
     })?;
     let ctype = upload_content_type(&filename, &bytes);
     let corp = {

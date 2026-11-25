@@ -1,15 +1,14 @@
 mod agent_config_sections;
 
 pub use agent_config_sections::{
-    AgentsMdConfigSection, AgentThinkingTraceConfig, AgentToolStatsConfig, AutonomyConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
-    CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, HttpFetchConfigSection,
-    LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, PermissionConfig, SubagentConfig,
-    RolesPromptsConfig,
-    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncToolSandboxConfig,
-    ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig,
-    TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
-    WorkspaceRootsConfig,
+    AgentThinkingTraceConfig, AgentToolStatsConfig, AgentsMdConfigSection, AutonomyConfig,
+    ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig,
+    ContextPipelineConfig, ConversationPersistenceConfig, HttpFetchConfigSection,
+    LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, PermissionConfig,
+    RolesPromptsConfig, SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection,
+    SubagentConfig, SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig,
+    ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig,
+    WebApiConfig, WebSearchConfigSection, WorkspaceRootsConfig,
 };
 
 pub use crate::cm_types::llm_config::{
@@ -375,7 +374,10 @@ mod llm_context_budget_tests {
         let value: toml::Value =
             toml::from_str(include_str!("../../../config/default_config.toml"))
                 .expect("parse default config");
-        assert_eq!(value["agent"]["max_message_history"].as_integer(), Some(1024));
+        assert_eq!(
+            value["agent"]["max_message_history"].as_integer(),
+            Some(1024)
+        );
         assert_eq!(
             value["agent"]["context_token_trigger_percent"].as_integer(),
             Some(85)

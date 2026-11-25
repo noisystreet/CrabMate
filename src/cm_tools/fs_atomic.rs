@@ -131,7 +131,8 @@ fn copy_xattrs_best_effort(src_path: &Path, dst_path: &Path) {
             Ok(c) => c,
             Err(_) => continue,
         };
-        let vlen = unsafe { libc::getxattr(src.as_ptr(), name_c.as_ptr(), std::ptr::null_mut(), 0) };
+        let vlen =
+            unsafe { libc::getxattr(src.as_ptr(), name_c.as_ptr(), std::ptr::null_mut(), 0) };
         if vlen < 0 {
             continue;
         }
@@ -180,15 +181,15 @@ pub(crate) fn target_has_multiple_links(_path: &Path) -> bool {
 /// 硬链接场景：把临时文件内容写回原 inode（O_TRUNC 原地覆盖），保留 inode，
 /// 使其他硬链接同步可见新内容。写回成功后清理临时文件（best-effort）。
 fn write_back_into_target_inode(tmp_path: &Path, target: &Path) -> Result<(), String> {
-    let mut src =
-        File::open(tmp_path).map_err(|e| format!("读取临时文件失败: {}", e))?;
+    let mut src = File::open(tmp_path).map_err(|e| format!("读取临时文件失败: {}", e))?;
     let mut dst = fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(target)
         .map_err(|e| format!("写入原文件失败: {}", e))?;
     std::io::copy(&mut src, &mut dst).map_err(|e| format!("写回原文件失败: {}", e))?;
-    dst.sync_all().map_err(|e| format!("落盘原文件失败: {}", e))?;
+    dst.sync_all()
+        .map_err(|e| format!("落盘原文件失败: {}", e))?;
     let _ = fs::remove_file(tmp_path);
     Ok(())
 }

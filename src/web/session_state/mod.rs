@@ -78,16 +78,14 @@ impl ParsedPatch {
 }
 
 /// 会话不存在 → 404（**不做** upsert：空 `messages_json` 行会污染会话列表与 TTL 淘汰）。
-async fn load_seed(state: &WebChatAppFacet, conversation_id: &str) -> ApiResult<ConversationTurnSeed> {
+async fn load_seed(
+    state: &WebChatAppFacet,
+    conversation_id: &str,
+) -> ApiResult<ConversationTurnSeed> {
     state
         .load_conversation_seed(conversation_id)
         .await
-        .ok_or_else(|| {
-            not_found(
-                error_codes::CONVERSATION_NOT_FOUND,
-                "会话不存在或已过期",
-            )
-        })
+        .ok_or_else(|| not_found(error_codes::CONVERSATION_NOT_FOUND, "会话不存在或已过期"))
 }
 
 /// `POST /conversation/state`：写入会话级意图并回带更新后的权限投影。

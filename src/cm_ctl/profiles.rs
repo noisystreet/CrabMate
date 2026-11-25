@@ -163,9 +163,7 @@ fn invalid_message(path: &Path, text: &str, detail: &str) -> String {
         .as_deref()
     {
         Some("workspace") => "（`workspace` 只能由实例声明提供，profile 不得携带）",
-        Some("yes") | Some("--yes") => {
-            "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）"
-        }
+        Some("yes") | Some("--yes") => "（白名单全放行必须由实例级显式决定，不得藏在 profile 里）",
         _ => "",
     };
     format!("解析 profiles 文件失败 {}：{detail}{hint}", path.display())
@@ -353,7 +351,11 @@ GIT_SSH_COMMAND = "ssh -i k"
     fn rejects_workspace_inside_profile() {
         let err = parse("[profiles.a]\nworkspace = \"/tmp/x\"\n").expect_err("workspace 必须拒绝");
         assert_eq!(err.error_code, "profiles_file_invalid");
-        assert!(err.message.contains("只能由实例声明提供"), "{}", err.message);
+        assert!(
+            err.message.contains("只能由实例声明提供"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]
@@ -399,9 +401,18 @@ GIT_SSH_COMMAND = "ssh -i k"
             Some("grep,cat"),
             "allowed_commands 派生为 CSV"
         );
-        assert_eq!(r.env.get("CM_PERMISSION_LEVEL").map(String::as_str), Some("read"));
-        assert_eq!(r.env.get("CM_LLM_API_BASE").map(String::as_str), Some("http://127.0.0.1:11434/v1"));
-        assert_eq!(r.env.get("GIT_SSH_COMMAND").map(String::as_str), Some("ssh -i k"));
+        assert_eq!(
+            r.env.get("CM_PERMISSION_LEVEL").map(String::as_str),
+            Some("read")
+        );
+        assert_eq!(
+            r.env.get("CM_LLM_API_BASE").map(String::as_str),
+            Some("http://127.0.0.1:11434/v1")
+        );
+        assert_eq!(
+            r.env.get("GIT_SSH_COMMAND").map(String::as_str),
+            Some("ssh -i k")
+        );
         assert!(r.no_tools);
         assert_eq!(r.serve_config.as_deref(), Some("/tmp/base.toml"));
     }
@@ -451,10 +462,19 @@ CM_ALLOWED_COMMANDS = "cat"
     #[test]
     fn unknown_profile_reports_lookup_path() {
         let f = parse(FULL).expect("加载");
-        let err = resolve(&f, "nope", &BTreeMap::new(), Path::new("/tmp/profiles.toml"))
-            .expect_err("未定义应报错");
+        let err = resolve(
+            &f,
+            "nope",
+            &BTreeMap::new(),
+            Path::new("/tmp/profiles.toml"),
+        )
+        .expect_err("未定义应报错");
         assert_eq!(err.error_code, "profile_not_found");
-        assert!(err.message.contains("/tmp/profiles.toml"), "{}", err.message);
+        assert!(
+            err.message.contains("/tmp/profiles.toml"),
+            "{}",
+            err.message
+        );
         assert!(err.message.contains("audit"), "{}", err.message);
     }
 }

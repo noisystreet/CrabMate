@@ -18,7 +18,10 @@ pub(super) fn markdown_check_links_inner_try(
     working_dir: &Path,
 ) -> Result<MarkdownCheckReport, ToolError> {
     let collected = markdown_check_collect_files(&parsed, working_dir).map_err(|e| {
-        ToolError::external_code("markdown_check_links_workspace_failed", format!("错误：{e}"))
+        ToolError::external_code(
+            "markdown_check_links_workspace_failed",
+            format!("错误：{e}"),
+        )
     })?;
 
     let mut state = MarkdownCheckScanState::new();

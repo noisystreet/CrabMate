@@ -39,7 +39,8 @@ const PROBE_USAGE_FLAGS: &[&str] = &["--help", "--version"];
 ///
 /// **不含 `timeout`**：它还要跳过时长、并判内层是「干活」还是「跑一下」，
 /// 见 [`timeout_wrapped_is_probe`]。
-const PROBE_WRAPPER_PROGRAMS: &[&str] = &["strace", "env", "nice", "nohup", "command", "exec", "sudo"];
+const PROBE_WRAPPER_PROGRAMS: &[&str] =
+    &["strace", "env", "nice", "nohup", "command", "exec", "sudo"];
 
 /// `timeout` 中**带取值**的 flag：`-s KILL` / `--signal=KILL` / `-k 5`。
 /// 认错会让取值被当成时长、时长被当成命令名（#1422 review 的 High）。
@@ -122,10 +123,7 @@ fn argv_is_readonly_probe(command: &str, args: &[String], depth: usize) -> bool 
     if depth > MAX_PROBE_WRAP_DEPTH {
         return false;
     }
-    if args
-        .iter()
-        .any(|a| PROBE_USAGE_FLAGS.contains(&a.as_str()))
-    {
+    if args.iter().any(|a| PROBE_USAGE_FLAGS.contains(&a.as_str())) {
         return true;
     }
     let base = program_basename(command);
@@ -364,7 +362,10 @@ mod tests {
     #[test]
     fn satisfied_goal_marks_exact_run_command_repeat_redundant() {
         use crate::cm_types::Message;
-        let messages = vec![Message::tool_result("tc1", "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello")];
+        let messages = vec![Message::tool_result(
+            "tc1",
+            "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+        )];
         let calls = vec![run_command_tool(
             r#"{"command":"cmake","args":["--build","build"]}"#,
         )];
@@ -376,7 +377,10 @@ mod tests {
     #[test]
     fn satisfied_goal_does_not_mark_different_run_command_redundant() {
         use crate::cm_types::Message;
-        let messages = vec![Message::tool_result("tc1", "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello")];
+        let messages = vec![Message::tool_result(
+            "tc1",
+            "$ cmake --build build\n退出码：0\n标准输出：\n[100%] Built target hello",
+        )];
         let calls = vec![run_command_tool(r#"{"command":"./build/hello","args":[]}"#)];
         assert!(!tool_calls_are_redundant_when_goal_satisfied(
             &calls, &messages

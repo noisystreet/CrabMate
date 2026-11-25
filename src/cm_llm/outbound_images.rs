@@ -210,11 +210,7 @@ fn uploads_file_name(url: &str) -> Option<String> {
     Some(name.to_string())
 }
 
-fn read_upload_as_data_url(
-    dir: &Path,
-    name: &str,
-    budget: &mut u64,
-) -> Result<String, InlineFail> {
+fn read_upload_as_data_url(dir: &Path, name: &str, budget: &mut u64) -> Result<String, InlineFail> {
     let path = safe_upload_path(dir, name).ok_or(InlineFail::BadPath)?;
     let bytes = std::fs::read(&path).map_err(|_| InlineFail::Read)?;
     bytes_to_data_url(&bytes, budget)
@@ -273,7 +269,10 @@ mod tests {
 
     #[test]
     fn flatten_drops_image_url_for_text_deepseek() {
-        let mut msgs = vec![Message::user_with_images("看图", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images(
+            "看图",
+            &["/uploads/a.png".into()],
+        )];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash",
@@ -291,7 +290,10 @@ mod tests {
 
     #[test]
     fn flatten_text_deepseek_on_proxy_host() {
-        let mut msgs = vec![Message::user_with_images("看图", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images(
+            "看图",
+            &["/uploads/a.png".into()],
+        )];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash",
@@ -309,7 +311,10 @@ mod tests {
     fn vision_inlines_png_as_data_url() {
         let dir = tempfile::tempdir().expect("tmp");
         std::fs::write(dir.path().join("a.png"), PNG_1X1).expect("write");
-        let mut msgs = vec![Message::user_with_images("描述", &["/uploads/a.png".into()])];
+        let mut msgs = vec![Message::user_with_images(
+            "描述",
+            &["/uploads/a.png".into()],
+        )];
         rewrite_messages_for_vendor(
             &mut msgs,
             "deepseek-v4-flash-vision-exp",
@@ -337,7 +342,9 @@ mod tests {
             None,
         );
         match msgs[0].content.as_ref() {
-            Some(MessageContent::Text(t)) => assert!(t.contains("已过期") || t.contains("无法读取")),
+            Some(MessageContent::Text(t)) => {
+                assert!(t.contains("已过期") || t.contains("无法读取"))
+            }
             Some(MessageContent::Parts(p)) => {
                 let joined: String = p
                     .iter()
@@ -412,10 +419,18 @@ mod tests {
         };
         let url = parts
             .iter()
-            .find_map(|p| p.get("image_url").and_then(|i| i.get("url")).and_then(|u| u.as_str()))
+            .find_map(|p| {
+                p.get("image_url")
+                    .and_then(|i| i.get("url"))
+                    .and_then(|u| u.as_str())
+            })
             .expect("data url");
         assert!(url.starts_with("data:image/png;base64,"));
-        assert!(parts.iter().any(|p| p.get("text").and_then(|t| t.as_str()) == Some("看 @plot.png")));
+        assert!(
+            parts
+                .iter()
+                .any(|p| p.get("text").and_then(|t| t.as_str()) == Some("看 @plot.png"))
+        );
     }
 
     #[test]
@@ -478,10 +493,11 @@ mod tests {
         let MessageContent::Parts(parts) = msgs[0].content.as_ref().expect("parts") else {
             panic!("expected parts");
         };
-        assert!(parts.iter().any(|p| p
-            .get("image_url")
-            .and_then(|i| i.get("url"))
-            .and_then(|u| u.as_str())
-            .is_some_and(|u| u.starts_with("data:image/png;base64,"))));
+        assert!(parts.iter().any(|p| {
+            p.get("image_url")
+                .and_then(|i| i.get("url"))
+                .and_then(|u| u.as_str())
+                .is_some_and(|u| u.starts_with("data:image/png;base64,"))
+        }));
     }
 }

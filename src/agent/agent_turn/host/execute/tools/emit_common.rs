@@ -1,11 +1,11 @@
 //! 工具结果 SSE 信封规范化（并行/串行批共用）。
 
+use crate::cm_names as tool_names;
 use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
 use crate::tool_result::{
     self, NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
 };
 use crate::tools;
-use crate::cm_names as tool_names;
 
 /// 按执行模式构造 [`ToolEnvelopeContext`]。
 pub(super) fn tool_envelope_context<'a>(

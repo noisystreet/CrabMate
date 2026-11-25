@@ -613,9 +613,13 @@ fn rebuild_index_in_open_db(
         .map_err(|e| format!("索引事务开始失败: {}", e))?;
     let subtree = clear_rebuild_scope_rows(&tx, p.ws_key, p.sub_path, p.incremental)?;
     let (scan, chunks_total) = rebuild_index_write_scan(&tx, &p, &search_root, subtree)?;
-    tx.commit()
-        .map_err(|e| format!("索引提交失败: {}", e))?;
-    Ok(format_rebuild_success_message(&p, subtree, &scan, chunks_total))
+    tx.commit().map_err(|e| format!("索引提交失败: {}", e))?;
+    Ok(format_rebuild_success_message(
+        &p,
+        subtree,
+        &scan,
+        chunks_total,
+    ))
 }
 
 /// 重建索引。

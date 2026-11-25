@@ -49,10 +49,7 @@ fn dry_run_delete_previews_without_removing() {
     let args = serde_json::json!({ "patch": patch, "dry_run": true }).to_string();
     run_with_changelist_try(&args, &test_ctx(&dir)).expect("预览应成功");
 
-    assert!(
-        dir.join("gone.txt").exists(),
-        "dry_run 不得删除文件"
-    );
+    assert!(dir.join("gone.txt").exists(), "dry_run 不得删除文件");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

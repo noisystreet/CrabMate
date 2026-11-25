@@ -55,18 +55,14 @@ pub async fn workspace_git_handler(
     let cache = http.workspace_git_cache.clone();
     let force = query.refresh.unwrap_or(false);
 
-    if !force
-        && let Some(hit) = read_fresh(&cache, &root_key, want_files)
-    {
+    if !force && let Some(hit) = read_fresh(&cache, &root_key, want_files) {
         return Json(hit);
     }
 
     // 最小 single-flight：TTL 到期瞬间的并发请求不应各自 fork 两条 git 命令。
     // 本仓没有通用 single-flight 设施（`per_turn_flight` 是单回合状态镜像），锁 + 双重检查足够。
     let _probe_guard = cache.probe_lock.lock().await;
-    if !force
-        && let Some(hit) = read_fresh(&cache, &root_key, want_files)
-    {
+    if !force && let Some(hit) = read_fresh(&cache, &root_key, want_files) {
         return Json(hit);
     }
 
@@ -210,7 +206,11 @@ fn read_stale(
     if entry.workspace_root != root_key {
         return None;
     }
-    Some(materialize(entry, want_files, WorkspaceGitSource::StaleCache))
+    Some(materialize(
+        entry,
+        want_files,
+        WorkspaceGitSource::StaleCache,
+    ))
 }
 
 /// 写入缓存，并把清单**搬进** `Arc`（不复制）。
@@ -314,7 +314,10 @@ mod tests {
         assert_eq!(hit.source, WorkspaceGitSource::Cache);
         assert_eq!(hit.computed_at_unix, 1234, "命中缓存不应推进探测时刻");
         assert!(hit.files.is_none(), "无参命中不带清单");
-        assert!(read_fresh(&cache, "/other", false).is_none(), "换工作区不应命中");
+        assert!(
+            read_fresh(&cache, "/other", false).is_none(),
+            "换工作区不应命中"
+        );
     }
 
     #[test]
@@ -333,7 +336,10 @@ mod tests {
         let stale = read_stale(&cache, "/w", false).expect("stale fallback");
         assert_eq!(stale.source, WorkspaceGitSource::StaleCache);
         assert_eq!(stale.computed_at_unix, 1234, "兜底沿用旧探测时刻");
-        assert!(read_stale(&cache, "/other", false).is_none(), "换工作区不应兜底");
+        assert!(
+            read_stale(&cache, "/other", false).is_none(),
+            "换工作区不应兜底"
+        );
     }
 
     #[test]

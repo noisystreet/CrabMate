@@ -107,13 +107,8 @@ mod tests {
     /// 未注入 delegator（未启用 / 未接线）→ 明确错误，不静默失败。
     #[tokio::test]
     async fn missing_delegator_reports_clear_error() {
-        let (body, payload) = dispatch_delegate_task_tool(
-            None,
-            limits(),
-            4000,
-            r#"{"prompt":"看看 src"}"#,
-        )
-        .await;
+        let (body, payload) =
+            dispatch_delegate_task_tool(None, limits(), 4000, r#"{"prompt":"看看 src"}"#).await;
         assert!(body.starts_with("错误："), "{body}");
         assert!(body.contains("subagent_enabled"));
         assert!(payload.is_none());
@@ -132,13 +127,8 @@ mod tests {
                 panic!("参数非法时不应启动子回合");
             }
         }
-        let (body, _) = dispatch_delegate_task_tool(
-            Some(&NeverRun),
-            limits(),
-            4000,
-            r#"{"prompt":123}"#,
-        )
-        .await;
+        let (body, _) =
+            dispatch_delegate_task_tool(Some(&NeverRun), limits(), 4000, r#"{"prompt":123}"#).await;
         assert!(body.contains("参数无效"), "{body}");
     }
 

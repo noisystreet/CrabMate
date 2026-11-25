@@ -313,7 +313,11 @@ mod tests {
                 name: None,
                 tool_call_id: None,
             },
-            tool_env("cargo_check", "cargo check", "退出码：0\n标准输出：\nFinished"),
+            tool_env(
+                "cargo_check",
+                "cargo check",
+                "退出码：0\n标准输出：\nFinished",
+            ),
         ];
         assert!(
             !outer_loop_has_visible_final_answer_since_last_user(&messages),
@@ -326,9 +330,14 @@ mod tests {
     fn visible_final_answer_detected_from_assistant_body() {
         let messages = vec![
             msg("user", "分析这个 issue 怎么修"),
-            msg("assistant", "结论：早停门缺终答条件，按方案 A 落地并补测试即可。"),
+            msg(
+                "assistant",
+                "结论：早停门缺终答条件，按方案 A 落地并补测试即可。",
+            ),
         ];
-        assert!(outer_loop_has_visible_final_answer_since_last_user(&messages));
+        assert!(outer_loop_has_visible_final_answer_since_last_user(
+            &messages
+        ));
     }
 
     /// #1414 复盘：夹带 `tool_calls` 的长正文只是「打算做什么」的过程叙述，**不算**可见终答。
@@ -437,7 +446,10 @@ mod tests {
                 "read file: README.md",
                 "读取文件\n退出码：0\n标准输出：\n# Project\n",
             ),
-            msg("assistant", "当前目录包含 README 与源码目录，分析结果如下。"),
+            msg(
+                "assistant",
+                "当前目录包含 README 与源码目录，分析结果如下。",
+            ),
         ];
         let tools = vec![list_tree_probe()];
         // 未确认：同步路径拿不到 judge，只有第 ① 层 → 拒绝。
@@ -468,9 +480,8 @@ mod tests {
         let ev = EvidenceSet::collect(window);
         assert_eq!(ev.items().len(), 1, "只应采集本轮证据");
         assert!(
-            ev.items()
-                .iter()
-                .all(|i| i.kind != crate::agent::agent_turn::policy::task_level_evidence::EvidenceKind::Verify),
+            ev.items().iter().all(|i| i.kind
+                != crate::agent::agent_turn::policy::task_level_evidence::EvidenceKind::Verify),
             "上一任务的 cargo_test 不得进入本轮判定输入"
         );
     }

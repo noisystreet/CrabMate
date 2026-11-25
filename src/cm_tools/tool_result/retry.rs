@@ -90,7 +90,10 @@ mod tests {
             "workflow_tool_join_error",
             "workflow_semaphore_closed",
         ] {
-            assert!(workflow_node_retryable(Some(code)), "编排层原本可重试：{code}");
+            assert!(
+                workflow_node_retryable(Some(code)),
+                "编排层原本可重试：{code}"
+            );
         }
         // 编排层原本就**不**重试这个码。
         assert!(tool_error_retryable(Some("workflow_node_missing_result")));

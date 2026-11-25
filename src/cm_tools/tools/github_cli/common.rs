@@ -23,11 +23,15 @@ pub fn validate_repo(repo: &str) -> Result<(), ToolError> {
         return Err(ToolError::invalid_args("错误：repo 不能为空".to_string()));
     }
     if t.contains("..") || t.starts_with('/') {
-        return Err(ToolError::invalid_args("错误：repo 不得含 \"..\" 或以 \"/\" 开头（请用 owner/repo）".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：repo 不得含 \"..\" 或以 \"/\" 开头（请用 owner/repo）".to_string(),
+        ));
     }
     let parts: Vec<&str> = t.split('/').filter(|p| !p.is_empty()).collect();
     if parts.len() != 2 {
-        return Err(ToolError::invalid_args("错误：repo 须为 owner/repo 两段式".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：repo 须为 owner/repo 两段式".to_string(),
+        ));
     }
     Ok(())
 }
@@ -50,10 +54,14 @@ pub fn validate_api_path(path: &str) -> Result<(), ToolError> {
         return Err(ToolError::invalid_args("错误：path 不能为空".to_string()));
     }
     if t.contains("..") {
-        return Err(ToolError::invalid_args("错误：path 不得包含 \"..\"".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：path 不得包含 \"..\"".to_string(),
+        ));
     }
     if t.starts_with('/') {
-        return Err(ToolError::invalid_args("错误：path 不得以 \"/\" 开头（请用相对路径，如 repos/owner/repo/issues）".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：path 不得以 \"/\" 开头（请用相对路径，如 repos/owner/repo/issues）".to_string(),
+        ));
     }
     if t.contains('?') {
         return Err(ToolError::invalid_args("错误：path 不得包含查询串 \"?\"（path 仅传相对端点路径；查询参数请改用 query 对象，如 {\"state\":\"open\"}）".to_string()));
@@ -62,8 +70,10 @@ pub fn validate_api_path(path: &str) -> Result<(), ToolError> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "/_.@-:".contains(c))
     {
-        return Err(ToolError::invalid_args("错误：path 仅允许字母数字与 / _ . @ - :（查询参数请放入 query 对象，勿写入 path）"
-                .to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：path 仅允许字母数字与 / _ . @ - :（查询参数请放入 query 对象，勿写入 path）"
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -201,7 +211,10 @@ pub fn run_gh_vec_allow_exit(
         "args": argv,
     }))
     .map_err(|e| {
-        ToolError::internal_code("gh_serialize_failed", format!("错误：构造 gh 参数失败：{e}"))
+        ToolError::internal_code(
+            "gh_serialize_failed",
+            format!("错误：构造 gh 参数失败：{e}"),
+        )
     })?;
     let spec = command::parse_command_spec(&args_json, ctx.working_dir)
         .map_err(RunCommandError::into_tool_error)?;
@@ -244,7 +257,9 @@ pub fn validate_run_id(id: &str) -> Result<(), ToolError> {
         return Err(ToolError::invalid_args("错误：run_id 过长".to_string()));
     }
     if !t.chars().all(|c| c.is_ascii_digit()) {
-        return Err(ToolError::invalid_args("错误：run_id 须为纯数字（与 `gh run list --json databaseId` 一致）".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：run_id 须为纯数字（与 `gh run list --json databaseId` 一致）".to_string(),
+        ));
     }
     Ok(())
 }
@@ -258,13 +273,17 @@ pub fn validate_release_tag(tag: &str) -> Result<(), ToolError> {
         return Err(ToolError::invalid_args("错误：tag 过长".to_string()));
     }
     if t.contains("..") || t.starts_with('/') {
-        return Err(ToolError::invalid_args("错误：tag 不得含 \"..\" 或以 \"/\" 开头".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：tag 不得含 \"..\" 或以 \"/\" 开头".to_string(),
+        ));
     }
     if !t
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_.+@".contains(c))
     {
-        return Err(ToolError::invalid_args("错误：tag 仅允许字母数字与 - _ . + @".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：tag 仅允许字母数字与 - _ . + @".to_string(),
+        ));
     }
     Ok(())
 }
@@ -281,7 +300,9 @@ pub fn validate_pr_title(title: &str) -> Result<(), ToolError> {
         )));
     }
     if t.contains('\0') || t.contains('\n') || t.contains('\r') {
-        return Err(ToolError::invalid_args("错误：title 不得含换行或空字符".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：title 不得含换行或空字符".to_string(),
+        ));
     }
     Ok(())
 }
@@ -294,7 +315,9 @@ pub fn validate_pr_body(body: &str) -> Result<(), ToolError> {
         )));
     }
     if body.contains('\0') {
-        return Err(ToolError::invalid_args("错误：body 不得含空字符".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：body 不得含空字符".to_string(),
+        ));
     }
     Ok(())
 }
@@ -303,7 +326,9 @@ pub fn validate_pr_body(body: &str) -> Result<(), ToolError> {
 pub fn validate_pr_ref_token(token: &str) -> Result<(), ToolError> {
     let t = token.trim();
     if t.is_empty() {
-        return Err(ToolError::invalid_args("错误：base/head 不能为空".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：base/head 不能为空".to_string(),
+        ));
     }
     if t.len() > MAX_PR_REF_TOKEN_BYTES {
         return Err(ToolError::invalid_args(format!(
@@ -312,14 +337,18 @@ pub fn validate_pr_ref_token(token: &str) -> Result<(), ToolError> {
         )));
     }
     if t.contains("..") || t.starts_with('/') {
-        return Err(ToolError::invalid_args("错误：base/head 不得含 \"..\" 或以 \"/\" 开头".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：base/head 不得含 \"..\" 或以 \"/\" 开头".to_string(),
+        ));
     }
     if !t
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_./:@".contains(c))
     {
-        return Err(ToolError::invalid_args("错误：base/head 仅允许字母数字与 - _ . / : @（与常见分支 / fork:branch 写法一致）"
-                .to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：base/head 仅允许字母数字与 - _ . / : @（与常见分支 / fork:branch 写法一致）"
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -336,7 +365,9 @@ pub fn validate_job_name(name: &str) -> Result<(), ToolError> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ')
     {
-        return Err(ToolError::invalid_args("错误：job 仅允许字母数字、空格、连字符与下划线".to_string()));
+        return Err(ToolError::invalid_args(
+            "错误：job 仅允许字母数字、空格、连字符与下划线".to_string(),
+        ));
     }
     Ok(())
 }
@@ -347,23 +378,27 @@ pub fn write_workspace_temp_markdown(
     content: &[u8],
     err_label: &str,
 ) -> Result<(tempfile::TempDir, String), ToolError> {
-    let dir = tempfile::tempdir_in(working_dir)
-        .map_err(|e| ToolError::external_code(
+    let dir = tempfile::tempdir_in(working_dir).map_err(|e| {
+        ToolError::external_code(
             "gh_temp_file_failed",
             format!("错误：无法在工作区内创建临时目录：{e}"),
-        ))?;
+        )
+    })?;
     let path = dir.path().join(filename);
-    std::fs::write(&path, content)
-        .map_err(|e| ToolError::external_code(
+    std::fs::write(&path, content).map_err(|e| {
+        ToolError::external_code(
             "gh_temp_file_failed",
             format!("错误：写入 {err_label} 临时文件失败：{e}"),
-        ))?;
+        )
+    })?;
     let path_str = path
         .to_str()
-        .ok_or_else(|| ToolError::external_code(
-            "gh_temp_file_failed",
-            format!("错误：{err_label} 临时文件路径非 UTF-8"),
-        ))?
+        .ok_or_else(|| {
+            ToolError::external_code(
+                "gh_temp_file_failed",
+                format!("错误：{err_label} 临时文件路径非 UTF-8"),
+            )
+        })?
         .to_string();
     Ok((dir, path_str))
 }

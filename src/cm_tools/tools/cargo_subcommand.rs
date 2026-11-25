@@ -219,7 +219,10 @@ pub(super) fn run_and_format_try(
                         ),
                     )
                 } else {
-                    ("cancelled", format!("{} 命令已取消；子进程已发送终止信号。", title))
+                    (
+                        "cancelled",
+                        format!("{} 命令已取消；子进程已发送终止信号。", title),
+                    )
                 };
                 Err(ToolError::session_stop(
                     code,

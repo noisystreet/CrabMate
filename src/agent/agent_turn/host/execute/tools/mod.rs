@@ -9,19 +9,19 @@ use tokio::sync::mpsc;
 
 static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
+use crate::agent::agent_turn::host::params::LoopEnv;
+use crate::agent::agent_turn::policy::{
+    ToolBatchExecutionMode, ToolBatchModeParams, replay_force_serial_from_env,
+    resolve_tool_batch_execution_mode,
+};
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
-use crate::agent::agent_turn::host::params::LoopEnv;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SseEncoder, SsePayload, encode_message};
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
-use crate::agent::agent_turn::policy::{
-    ToolBatchExecutionMode, ToolBatchModeParams, replay_force_serial_from_env,
-    resolve_tool_batch_execution_mode,
-};
 
 mod batch_dispatch;
 mod emit;

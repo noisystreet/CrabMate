@@ -297,13 +297,22 @@ mod tests {
     #[test]
     fn report_serializes_with_bounded_fields() {
         let paths: Vec<String> = (0..25).map(|i| format!("p{i}")).collect();
-        let r = SubTaskReport::bounded(SubTaskStatus::BudgetExhausted, "x".repeat(50), paths, stats(), 8)
-            .with_error_code("subtask_budget_exhausted");
+        let r = SubTaskReport::bounded(
+            SubTaskStatus::BudgetExhausted,
+            "x".repeat(50),
+            paths,
+            stats(),
+            8,
+        )
+        .with_error_code("subtask_budget_exhausted");
         let v = serde_json::to_value(&r).expect("serialize");
         assert_eq!(v["status"], "budget_exhausted");
         assert_eq!(v["truncated"], true);
         assert_eq!(v["error_code"], "subtask_budget_exhausted");
         assert_eq!(v["stats"]["llm_calls"], 3);
-        assert_eq!(v["key_paths"].as_array().map(Vec::len), Some(SubTaskReport::MAX_KEY_PATHS));
+        assert_eq!(
+            v["key_paths"].as_array().map(Vec::len),
+            Some(SubTaskReport::MAX_KEY_PATHS)
+        );
     }
 }

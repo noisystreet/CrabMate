@@ -238,11 +238,9 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// 本用户回合窗口/注入时间线（SSE 去重 + 落盘）。
     pub(crate) context_timeline: crate::cm_agent::context_timeline::ContextTimelineAcc,
     /// 每次实际发往模型前的派生视图配方；回合成功后作为隐藏旁注持久化。
-    pub(crate) model_context_artifacts:
-        Vec<crate::agent::model_context_view::ModelContextArtifact>,
+    pub(crate) model_context_artifacts: Vec<crate::agent::model_context_view::ModelContextArtifact>,
     /// 最近一次主 Agent 模型调用返回的供应商 usage（摘要等旁路调用不写入）。
-    pub(crate) provider_usage:
-        Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
+    pub(crate) provider_usage: Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
     /// 本回合因**预算耗尽**而中止时的原因（`#1455` B 步引入、C 步消费）。
     ///
     /// `None` = 正常结束或其它失败。用 `Arc<Mutex<_>>` 而非普通字段，是为了让
@@ -250,8 +248,7 @@ pub(crate) struct RunLoopTurnState<'a> {
     /// 与 [`Self::provider_usage`] 同款，省掉把整条调用链改成 `&mut` 的级联改动。
     ///
     /// **刻意不扩 `RunAgentTurnError`**：续跑触发只读这一个标记，改错误枚举会波及所有 `match` 点。
-    pub paused_reason:
-        Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
+    pub paused_reason: Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
     /// `#1455` B 步：注入模型的「上次暂停进度」摘要（回合起算一次，`None` = 不注入）。
     ///
     /// 由 `render_task_brief` 产出；不进历史（落盘前由
@@ -436,36 +433,36 @@ impl RunLoopParams<'_> {
         // 用量取权威形状（#1347 S3a）：`context_trim.detail` 不再自己从报告里逐字段挑，
         // 与 SSE `tiktokenPromptTokens` 走同一个 `TurnInputUsage`（S3b 才会拆口径）。
         let usage = delta.compaction.input_usage();
-        let events = self.turn.context_timeline.merge(
-            crate::cm_agent::context_timeline::ContextTimelineSnapshot {
+        let events =
+            self.turn
+                .context_timeline
+                .merge(crate::cm_agent::context_timeline::ContextTimelineSnapshot {
                 messages: self.turn.messages_buf,
                 pipeline: delta.pipeline,
                 summarized: delta.summarized,
                 summary_tail_kept: delta.summary_tail_kept,
-                compaction:
-                    crate::cm_agent::context_timeline::ContextCompactionTimelineSnapshot {
-                        // `before` 是压缩前的诊断水位，不在 `TurnInputUsage`（「本回合发了多少」）
-                        // 的范围内，所以仍直接取报告。
-                        before_tokens: delta.compaction.before.used_input_tokens,
-                        after_tokens: usage.estimated_used(),
-                        max_input_tokens: usage.budget.map(|budget| budget.max_input_tokens),
-                        reserved_output_tokens: usage
-                            .budget
-                            .map(|budget| budget.reserved_output_tokens),
-                        message_tokens: usage.estimated.message_tokens,
-                        tool_schema_tokens: usage.estimated.tool_schema_tokens,
-                        attachment_tokens: usage.estimated.attachment_tokens,
-                        counting_source: usage
-                            .estimated
-                            .counting_source
-                            .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str),
-                        token_triggered: delta.compaction.token_triggered,
-                        removed_turn_groups: delta.compaction.removed_turn_groups,
-                        removed_messages: delta.compaction.removed_messages,
-                        compaction_reason: delta.compaction.compaction_reason(),
-                    },
-            },
-        );
+                compaction: crate::cm_agent::context_timeline::ContextCompactionTimelineSnapshot {
+                    // `before` 是压缩前的诊断水位，不在 `TurnInputUsage`（「本回合发了多少」）
+                    // 的范围内，所以仍直接取报告。
+                    before_tokens: delta.compaction.before.used_input_tokens,
+                    after_tokens: usage.estimated_used(),
+                    max_input_tokens: usage.budget.map(|budget| budget.max_input_tokens),
+                    reserved_output_tokens: usage
+                        .budget
+                        .map(|budget| budget.reserved_output_tokens),
+                    message_tokens: usage.estimated.message_tokens,
+                    tool_schema_tokens: usage.estimated.tool_schema_tokens,
+                    attachment_tokens: usage.estimated.attachment_tokens,
+                    counting_source: usage
+                        .estimated
+                        .counting_source
+                        .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str),
+                    token_triggered: delta.compaction.token_triggered,
+                    removed_turn_groups: delta.compaction.removed_turn_groups,
+                    removed_messages: delta.compaction.removed_messages,
+                    compaction_reason: delta.compaction.compaction_reason(),
+                },
+            });
         crate::agent::agent_turn::turn_loop::context_timeline_sse::emit_context_timeline_sse(
             &self.ctx.io.control,
             &events,

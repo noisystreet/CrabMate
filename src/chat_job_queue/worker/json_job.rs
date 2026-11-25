@@ -10,8 +10,8 @@ use crate::types::Message;
 
 use super::super::stream_finish::{PostTurnWebPrepareParams, post_turn_web_prepare_and_save};
 use super::super::{ChatJsonJobFailure, WebChatJobEnvelope};
-use super::prelude::{PreparedTurnParams, prepare_queued_turn};
 use super::JobOutcome;
+use super::prelude::{PreparedTurnParams, prepare_queued_turn};
 
 /// `run_json_queued_job` 入参（[`WebChatJobEnvelope`] + JSON oneshot）。
 pub(super) struct JsonQueuedJobParams {

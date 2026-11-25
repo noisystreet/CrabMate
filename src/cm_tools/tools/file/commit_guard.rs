@@ -43,10 +43,8 @@ pub(crate) fn write_bytes_with_revision_guard(
     auto_bind: bool,
 ) -> Result<(), String> {
     let preserve_inode = fs_atomic::target_has_multiple_links(target);
-    let mut guard = fs_atomic::TmpFileGuard::new(fs_atomic::unique_tmp_path(
-        target,
-        "crabmate_write_tmp",
-    ));
+    let mut guard =
+        fs_atomic::TmpFileGuard::new(fs_atomic::unique_tmp_path(target, "crabmate_write_tmp"));
     let mut file = File::create(guard.path())
         .map_err(|e| format!("创建临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     if !preserve_inode {

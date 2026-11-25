@@ -157,10 +157,16 @@ pub fn typos_check(
     let args: TyposCheckArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let v = serde_json::to_value(&args).map_err(|e| {
-        ToolError::internal_code("spell_args_serialize_failed", format!("参数序列化错误: {e}"))
+        ToolError::internal_code(
+            "spell_args_serialize_failed",
+            format!("参数序列化错误: {e}"),
+        )
     })?;
     let base = workspace_root.canonicalize().map_err(|e| {
-        ToolError::external_code("spell_workspace_failed", format!("工作区根目录无法解析: {e}"))
+        ToolError::external_code(
+            "spell_workspace_failed",
+            format!("工作区根目录无法解析: {e}"),
+        )
     })?;
     let paths = parse_rel_paths_limited(&v, "paths", &["README.md", "docs"], MAX_SPELL_PATHS)
         .map_err(ToolError::invalid_args)?;
@@ -252,10 +258,16 @@ pub fn codespell_check(
     let args: CodespellCheckArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let v = serde_json::to_value(&args).map_err(|e| {
-        ToolError::internal_code("spell_args_serialize_failed", format!("参数序列化错误: {e}"))
+        ToolError::internal_code(
+            "spell_args_serialize_failed",
+            format!("参数序列化错误: {e}"),
+        )
     })?;
     let base = workspace_root.canonicalize().map_err(|e| {
-        ToolError::external_code("spell_workspace_failed", format!("工作区根目录无法解析: {e}"))
+        ToolError::external_code(
+            "spell_workspace_failed",
+            format!("工作区根目录无法解析: {e}"),
+        )
     })?;
     let paths = parse_rel_paths_limited(&v, "paths", &["README.md", "docs"], MAX_SPELL_PATHS)
         .map_err(ToolError::invalid_args)?;
@@ -315,7 +327,10 @@ mod tests {
             SpellCheckStatus::Unavailable,
             "子进程没起来 = CLI 未安装"
         );
-        assert_eq!(SpellCheckStatus::from_exit_code(Some(0)), SpellCheckStatus::Clean);
+        assert_eq!(
+            SpellCheckStatus::from_exit_code(Some(0)),
+            SpellCheckStatus::Clean
+        );
         assert_eq!(
             SpellCheckStatus::from_exit_code(Some(1)),
             SpellCheckStatus::FoundIssues

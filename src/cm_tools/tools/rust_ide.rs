@@ -217,7 +217,8 @@ fn lsp_rust_analyzer_handshake(
         "method": "initialized",
         "params": {}
     });
-    write_lsp(stdin, &notif_init.to_string()).map_err(|e| lsp_io_error("写 initialized 通知", e))?;
+    write_lsp(stdin, &notif_init.to_string())
+        .map_err(|e| lsp_io_error("写 initialized 通知", e))?;
 
     let did_open = json!({
         "jsonrpc": "2.0",
@@ -297,9 +298,7 @@ fn resolve_rel_file(root: &Path, rel: &str) -> Result<PathBuf, ToolError> {
         )
     })?;
     if !canon.starts_with(root) {
-        return Err(ToolError::invalid_args(
-            "错误：路径超出工作区".to_string(),
-        ));
+        return Err(ToolError::invalid_args("错误：路径超出工作区".to_string()));
     }
     if !canon.is_file() {
         return Err(ToolError::invalid_args(
@@ -432,7 +431,11 @@ mod tests {
         let err = ra_lsp_op_from_json(r#"{"action":"nope","path":"src/lib.rs"}"#)
             .expect_err("未知 action 须失败");
         assert_eq!(err.code, "invalid_args", "未知 action 属参数问题");
-        assert!(err.message.contains("未知 action `nope`"), "{}", err.message);
+        assert!(
+            err.message.contains("未知 action `nope`"),
+            "{}",
+            err.message
+        );
         assert!(
             err.message.contains("goto_definition"),
             "应列出可选值: {}",

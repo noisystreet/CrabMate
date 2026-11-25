@@ -199,7 +199,10 @@ fn parse(text: &str, path: &Path) -> Result<BTreeMap<String, String>, CtlError> 
 fn bad_line(path: &Path, lineno: usize, reason: &str) -> CtlError {
     CtlError::general(
         "env_file_invalid",
-        format!("env_file {} 第 {lineno} 行无法解析：{reason}", path.display()),
+        format!(
+            "env_file {} 第 {lineno} 行无法解析：{reason}",
+            path.display()
+        ),
     )
 }
 
@@ -225,7 +228,10 @@ mod tests {
             0o600,
         );
         let env = load(&p).expect("应能解析");
-        assert_eq!(env.get("API_KEY").map(String::as_str), Some("sk-fake-not-a-real-key"));
+        assert_eq!(
+            env.get("API_KEY").map(String::as_str),
+            Some("sk-fake-not-a-real-key")
+        );
         // 值里的 `=` 与空格原样保留：第一个 `=` 之后都是值
         assert_eq!(env.get("URL_WITH_EQ").map(String::as_str), Some("a=b"));
         assert_eq!(
@@ -262,7 +268,11 @@ mod tests {
         write(&p, "CM_ALLOWED_COMMANDS=grep\n", 0o600);
         let err = load(&p).expect_err("CM_* 应被拒绝");
         assert_eq!(err.error_code, "env_file_forbidden_key");
-        assert!(err.message.contains("CM_ALLOWED_COMMANDS"), "{}", err.message);
+        assert!(
+            err.message.contains("CM_ALLOWED_COMMANDS"),
+            "{}",
+            err.message
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -36,11 +36,7 @@ async fn get_uploads_http_smoke_survives_workspace_switch() {
         .send()
         .await
         .expect("POST /workspace");
-    assert!(
-        set.status().is_success(),
-        "set workspace: {}",
-        set.status()
-    );
+    assert!(set.status().is_success(), "set workspace: {}", set.status());
 
     let still = client.get(&url).send().await.expect("GET after switch");
     assert_eq!(

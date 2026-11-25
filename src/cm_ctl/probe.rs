@@ -21,8 +21,8 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use super::identity::{self, Identity};
-use super::record::{DesiredState, InstanceRecord, InstanceState};
 use super::readiness;
+use super::record::{DesiredState, InstanceRecord, InstanceState};
 
 /// 对外观测态（比落盘四态多 `stale` / `held`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

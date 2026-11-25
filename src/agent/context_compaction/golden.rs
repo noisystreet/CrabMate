@@ -93,8 +93,10 @@ struct Expect {
 }
 
 fn load_fixture() -> Fixture {
-    serde_json::from_str(include_str!("../../../fixtures/context_compaction_golden.json"))
-        .expect("parse fixtures/context_compaction_golden.json")
+    serde_json::from_str(include_str!(
+        "../../../fixtures/context_compaction_golden.json"
+    ))
+    .expect("parse fixtures/context_compaction_golden.json")
 }
 
 fn bulky_text(tag: &str, lines: usize) -> String {
@@ -124,7 +126,9 @@ fn build_messages(specs: &[MsgSpec]) -> Vec<Message> {
     for (idx, spec) in specs.iter().enumerate() {
         match spec {
             MsgSpec::System { text } => out.push(Message::system_only(text.clone())),
-            MsgSpec::Summary { text } => out.push(Message::user_context_summary_injection(text.clone())),
+            MsgSpec::Summary { text } => {
+                out.push(Message::user_context_summary_injection(text.clone()))
+            }
             MsgSpec::Turn {
                 user_lines,
                 tool_lines,

@@ -20,8 +20,8 @@ use super::http_types::tools::{
     ToolEnabledBody, ToolEnabledResponse, ToolListItem, ToolPolicyView, ToolSourceCounts,
     ToolsListResponse,
 };
-use crate::cm_names as tool_names;
 use crate::cm_api_contract::error_codes;
+use crate::cm_names as tool_names;
 use crate::cm_tools::registry_policy;
 use crate::cm_tools::tool_dispatch::HandlerLookupTable;
 use crate::cm_tools::tool_naming;
@@ -85,7 +85,10 @@ fn validate_tool_name(name: &str) -> Result<(), ApiErr> {
 /// 显式拒绝路径分隔符、`..` 等（对齐 `/workspace/file` 风格），不做任何规范化。
 fn validate_plugin_file_name(file: &str) -> Result<(), ApiErr> {
     let stem_ok = file.strip_suffix(".json").is_some_and(|stem| {
-        !stem.is_empty() && stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        !stem.is_empty()
+            && stem
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
     });
     if stem_ok {
         Ok(())
@@ -216,10 +219,7 @@ async fn enumerate_tools_from(cfg: &AgentConfig, ws: &str) -> Vec<ToolEntry> {
 
 /// 工具在已枚举集合中的 `source`（未注册返回 `None`）。
 fn entry_source(entries: &[ToolEntry], name: &str) -> Option<&'static str> {
-    entries
-        .iter()
-        .find(|e| e.name == name)
-        .map(|e| e.source)
+    entries.iter().find(|e| e.name == name).map(|e| e.source)
 }
 
 fn parse_enum_filters(query: &ToolsQuery) -> Result<Option<Vec<&'static str>>, ApiErr> {
@@ -389,13 +389,13 @@ pub(crate) async fn tools_list_handler(
 fn parameters_for(cfg: &AgentConfig, ws: &str, name: &str, source: &str) -> Value {
     match source {
         "builtin" => cached_params_for_tool_name(name).unwrap_or(Value::Null),
-        "dynamic" if !ws.trim().is_empty() => crate::tool_host::dynamic_tools::load_dynamic_tools(
-            Path::new(ws),
-        )
-        .into_iter()
-        .find(|t| t.function.name == name)
-        .map(|t| t.function.parameters)
-        .unwrap_or(Value::Null),
+        "dynamic" if !ws.trim().is_empty() => {
+            crate::tool_host::dynamic_tools::load_dynamic_tools(Path::new(ws))
+                .into_iter()
+                .find(|t| t.function.name == name)
+                .map(|t| t.function.parameters)
+                .unwrap_or(Value::Null)
+        }
         _ => {
             let _ = cfg;
             Value::Null
@@ -557,10 +557,8 @@ pub(crate) async fn tools_plugins_handler(
         let cfg = http.cfg.read().await;
         cfg.command_exec.allowed_commands.to_vec()
     };
-    let probes = crate::tool_host::dynamic_tools::probe_dynamic_tool_files(
-        Path::new(&ws),
-        &allowed,
-    );
+    let probes =
+        crate::tool_host::dynamic_tools::probe_dynamic_tool_files(Path::new(&ws), &allowed);
     let plugins: Vec<DynamicToolFileView> = probes
         .into_iter()
         .map(|p| DynamicToolFileView {
@@ -726,7 +724,8 @@ mod tests {
         assert!(policy_disabled(&cfg, "run_command"));
         assert!(!policy_disabled(&cfg, "run_command_other"));
 
-        cfg.tool_registry_policy.tool_registry_disabled_tool_prefixes =
+        cfg.tool_registry_policy
+            .tool_registry_disabled_tool_prefixes =
             Some(Arc::from(vec!["mcp__".to_string(), String::new()]));
         assert!(policy_disabled(&cfg, "mcp__srv__remote"));
         // 空前缀不得命中所有工具。
@@ -814,7 +813,10 @@ mod tests {
 
         // L0：无工具。
         for name in ["read_file", "modify_file", "run_command"] {
-            assert!(!available(PermissionLevel::Chat, name), "L0 不应允许 {name}");
+            assert!(
+                !available(PermissionLevel::Chat, name),
+                "L0 不应允许 {name}"
+            );
         }
         // L1：只读正列表——写工具与命令类都不可用。
         assert!(available(PermissionLevel::Read, "read_file"));

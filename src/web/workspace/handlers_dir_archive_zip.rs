@@ -124,22 +124,21 @@ fn read_member_under_root(
     }
     #[cfg(unix)]
     {
-        super::handlers_sync::workspace_read_file_bytes_sync_unix(
-            root.to_path_buf(),
-            canon,
-            max_b,
-        )
-        .map_err(|err| {
-            // 结构化判定（#1478 B-β）：不再从中文消息里 `contains("过大")`。
-            if matches!(err, super::handlers_sync::WorkspaceFileIoError::TooLarge { .. }) {
-                ZipDirError::too_large(err.to_string())
-            } else {
-                ZipDirError {
-                    code: "WORKSPACE_ARCHIVE_READ",
-                    message: err.to_string(),
+        super::handlers_sync::workspace_read_file_bytes_sync_unix(root.to_path_buf(), canon, max_b)
+            .map_err(|err| {
+                // 结构化判定（#1478 B-β）：不再从中文消息里 `contains("过大")`。
+                if matches!(
+                    err,
+                    super::handlers_sync::WorkspaceFileIoError::TooLarge { .. }
+                ) {
+                    ZipDirError::too_large(err.to_string())
+                } else {
+                    ZipDirError {
+                        code: "WORKSPACE_ARCHIVE_READ",
+                        message: err.to_string(),
+                    }
                 }
-            }
-        })
+            })
     }
     #[cfg(not(unix))]
     {
@@ -164,10 +163,11 @@ fn empty_dir_zip(
 ) -> Result<Vec<u8>, ZipDirError> {
     if zip_prefix.is_empty() {
         let mut zip = zip;
-        zip.add_directory("workspace/", options).map_err(|e| ZipDirError {
-            code: "WORKSPACE_ARCHIVE_WRITE",
-            message: format!("写入 zip 失败: {e}"),
-        })?;
+        zip.add_directory("workspace/", options)
+            .map_err(|e| ZipDirError {
+                code: "WORKSPACE_ARCHIVE_WRITE",
+                message: format!("写入 zip 失败: {e}"),
+            })?;
         return finish_zip(zip);
     }
     add_empty_prefix_dir(zip, options, zip_prefix)

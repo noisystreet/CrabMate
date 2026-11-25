@@ -2,10 +2,10 @@
 //!
 //! **FSM**：`WorkflowReflectionFsmPhase` 描述会话状态（与 JSON 注入文案正交）；`WorkflowReflectionController::reflection_fsm_phase` 供观测。
 
+use crate::cm_names as tool_names;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fmt;
-use crate::cm_names as tool_names;
 
 /// Do 阶段契约校验收集到的节点集合（id 集合 + 节点副本与 id）。
 type WorkflowExecuteCollectedNodes = (HashSet<String>, Vec<(Value, String)>);

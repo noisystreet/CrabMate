@@ -1,7 +1,7 @@
 use reqwest::Url;
 
-use crate::cm_names as tool_names;
 use super::args::{FetchMethod, RequestMethod};
+use crate::cm_names as tool_names;
 
 /// 永久允许列表与审批判定的键（小写、无 query/fragment）；**仅** `http_fetch`（GET/HEAD）使用。
 pub fn storage_key(url: &Url) -> String {

@@ -39,7 +39,6 @@ impl TurnOrigin {
             Self::Webhook => "webhook",
         }
     }
-
 }
 
 #[cfg(test)]

@@ -6,10 +6,10 @@
 //! 传 `&PermissionCaps` 的既有调用点靠自动 coerce 继续可用。
 //! 语义与判定规则见 `cm_types::permission_audit` 的模块文档。
 
+use crate::cm_agent::permission::PolicyEngine;
 pub use crate::cm_types::permission_audit::{
     PermissionAuditEvent, PermissionAxis, PermissionDecision, emit, record_approved, should_emit,
 };
-use crate::cm_agent::permission::PolicyEngine;
 
 /// 等级**直接放行**（L4 的核心留痕）。L0–L3 下是空操作。
 ///

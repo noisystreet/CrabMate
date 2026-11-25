@@ -141,14 +141,14 @@ fn geocode_city_blocking(
                 return Err(weather_api_error(format!(
                     "错误[weather_api_error]：解析地理编码结果失败：{}",
                     e
-                )))
+                )));
             }
         },
         Ok(res) => {
             return Err(weather_api_error(format!(
                 "错误[weather_api_error]：地理编码请求失败：{}",
                 res.status()
-            )))
+            )));
         }
         Err(e) => return Err(weather_network_error(&e)),
     };

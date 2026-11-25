@@ -55,7 +55,12 @@ fn push_output_and_read_incremental_no_gaps_or_dups() {
     assert!(reg.push_output(&id, SessionStream::Stdout, "a2\n"));
     assert!(reg.push_output(&id, SessionStream::Stderr, "e1\n"));
     let r1 = match reg.poll_output(&id, None, SystemTime::now()) {
-        OutputPollOutcome::Found { status, log_read, eof, .. } => {
+        OutputPollOutcome::Found {
+            status,
+            log_read,
+            eof,
+            ..
+        } => {
             assert_eq!(status, JobStatus::Queued);
             assert!(!eof, "非终态恒 eof=false");
             log_read
@@ -95,7 +100,12 @@ fn poll_output_eof_after_terminal_and_expired() {
     // 终态无输出 → eof=true、items 空。
     assert!(reg.complete(&id, ok_outcome(JobStatus::Succeeded), false));
     match reg.poll_output(&id, None, SystemTime::now()) {
-        OutputPollOutcome::Found { status, log_read, eof, .. } => {
+        OutputPollOutcome::Found {
+            status,
+            log_read,
+            eof,
+            ..
+        } => {
             assert_eq!(status, JobStatus::Succeeded);
             assert!(log_read.items.is_empty());
             assert!(eof, "终态且无输出应 eof=true");
@@ -104,7 +114,10 @@ fn poll_output_eof_after_terminal_and_expired() {
     }
     // 过期 → Expired（输出缓冲随记录一并清理）。
     let far = SystemTime::now() + Duration::from_secs(200);
-    assert!(matches!(reg.poll_output(&id, None, far), OutputPollOutcome::Expired));
+    assert!(matches!(
+        reg.poll_output(&id, None, far),
+        OutputPollOutcome::Expired
+    ));
     assert_eq!(reg.stats().total, 0);
     assert_eq!(reg.stats().output_retained_bytes, 0);
 }
@@ -154,7 +167,11 @@ fn terminal_trim_keeps_per_stream_tail_and_outputs_removed_on_cleanup() {
     let id = register_default(&reg); // spawn.max_output_len = 1024
     // stdout 200 条 × 20 B = 4000 B；stderr 少一些。
     for i in 1..=200u32 {
-        reg.push_output(&id, SessionStream::Stdout, &format!("y{i:03}:0123456789abcdef\n"));
+        reg.push_output(
+            &id,
+            SessionStream::Stdout,
+            &format!("y{i:03}:0123456789abcdef\n"),
+        );
     }
     for i in 1..=50u32 {
         reg.push_output(&id, SessionStream::Stderr, &format!("err{i:03}:12345\n"));
@@ -191,7 +208,10 @@ fn terminal_trim_keeps_per_stream_tail_and_outputs_removed_on_cleanup() {
     // 容量清理后输出侧表一并删除。
     let far = SystemTime::now() + Duration::from_secs(200);
     assert_eq!(reg.cleanup(far), 1);
-    assert!(matches!(reg.poll_output(&id, None, far), OutputPollOutcome::Expired));
+    assert!(matches!(
+        reg.poll_output(&id, None, far),
+        OutputPollOutcome::Expired
+    ));
     assert_eq!(reg.stats().output_retained_bytes, 0);
 }
 
@@ -207,13 +227,13 @@ fn terminal_trim_memory_first_when_trailing_single_over_cap() {
     let id = register_default(&reg); // spawn.max_output_len = 1024
     // stdout 50 条 × 20 B = 1000 B（达标）；末尾单条 stderr 3000 B > cap(1024) 无法拆。
     for i in 1..=50u32 {
-        reg.push_output(&id, SessionStream::Stdout, &format!("s{i:03}:0123456789abcdef\n"));
+        reg.push_output(
+            &id,
+            SessionStream::Stdout,
+            &format!("s{i:03}:0123456789abcdef\n"),
+        );
     }
-    reg.push_output(
-        &id,
-        SessionStream::Stderr,
-        &"E".repeat(3000),
-    );
+    reg.push_output(&id, SessionStream::Stderr, &"E".repeat(3000));
     assert!(reg.complete(&id, ok_outcome(JobStatus::Succeeded), false));
     let r = match reg.poll_output(&id, None, SystemTime::now()) {
         OutputPollOutcome::Found { log_read, .. } => log_read,

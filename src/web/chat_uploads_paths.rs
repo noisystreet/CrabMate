@@ -39,7 +39,6 @@ pub(crate) async fn sync_chat_runtime_paths_for_workspace(
     g.chat_workspace_root = Some(workspace_root.to_path_buf());
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

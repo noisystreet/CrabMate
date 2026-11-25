@@ -17,22 +17,22 @@ pub mod backend {
     pub use crate::cm_llm::backend_shared::shared_static_chat_backend;
 }
 
+#[allow(unused_imports)]
+pub use crate::cm_llm::{
+    E2eMode, FileTraceSink, LlmCallError, LlmCompleteError, LlmRetryHooks,
+    LlmRetryingTransportOpts, LlmVendorAdapter, NullTraceSink, StreamChatHost, StreamChatParams,
+    TraceEvent, TraceSink, TraceUsage, build_e2e_backend, chat_request_vendor_extensions_for_agent,
+    conversation_messages_to_vendor_body, detect_mode_from_env, fetch_models_report,
+    fold_system_into_user_for_config, kimi_k2_5_vendor_requires_tool_call_reasoning,
+    llm_vendor_adapter, no_tools_chat_request, no_tools_chat_request_from_messages,
+    normalize_stripped_messages_for_vendor_body, stream_chat, tool_chat_request, vendor,
+    vendor_temperature_for_config,
+};
 pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend, shared_static_chat_backend,
 };
 pub use chat_params_ext::CompleteChatRetryingParams;
-#[allow(unused_imports)]
-pub use crate::cm_llm::{
-    E2eMode, FileTraceSink, LlmCallError, LlmCompleteError, LlmRetryHooks, LlmRetryingTransportOpts,
-    LlmVendorAdapter, NullTraceSink, StreamChatHost, StreamChatParams, TraceEvent, TraceSink,
-    TraceUsage, build_e2e_backend, chat_request_vendor_extensions_for_agent,
-    conversation_messages_to_vendor_body, detect_mode_from_env, fetch_models_report,
-    fold_system_into_user_for_config, kimi_k2_5_vendor_requires_tool_call_reasoning,
-    llm_vendor_adapter, no_tools_chat_request,
-    no_tools_chat_request_from_messages, normalize_stripped_messages_for_vendor_body, stream_chat,
-    tool_chat_request, vendor, vendor_temperature_for_config,
-};
 #[allow(unused_imports)]
 pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};
 

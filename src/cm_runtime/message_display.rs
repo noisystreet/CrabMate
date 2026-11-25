@@ -3,11 +3,11 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-use crate::cm_runtime::latex_unicode::latex_math_to_unicode;
-use crate::cm_runtime::message_display_parts::tool_display_from_normalized_envelope;
 use crate::cm_agent::plan_artifact::{
     format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display,
 };
+use crate::cm_runtime::latex_unicode::latex_math_to_unicode;
+use crate::cm_runtime::message_display_parts::tool_display_from_normalized_envelope;
 use crate::cm_tools::tool_result::{ToolResult, normalize_tool_message_content};
 use crate::cm_types::Message;
 

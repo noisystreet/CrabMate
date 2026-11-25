@@ -10,11 +10,7 @@
 /// 只看条目级未知键：本助手专门用来解释「合法键写错位置」（`workspace` / `yes` 被写进
 /// profile），顶层未知表不影响这些提示。`known` 由各模块提供，并用「填满字段的样例」
 /// 用例钉住，避免与结构体漂移。
-pub(crate) fn first_unknown_entry_key(
-    text: &str,
-    table: &str,
-    known: &[&str],
-) -> Option<String> {
+pub(crate) fn first_unknown_entry_key(text: &str, table: &str, known: &[&str]) -> Option<String> {
     let value: toml::Value = toml::from_str(text).ok()?;
     let entries = value.as_table()?.get(table)?.as_table()?;
     for (_, entry) in entries {

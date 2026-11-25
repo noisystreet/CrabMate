@@ -10,17 +10,17 @@ use crate::cm_tools::memory_tool_host::{
     CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
 };
 
+use crate::cm_memory::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
+use crate::cm_tools::subprocess_session::SessionStream;
+use crate::cm_tools::tool_result::ToolError;
+use crate::jobs::tool_jobs::GetOutcome;
+use crate::jobs::tool_jobs::WaitOutcome;
+use crate::jobs::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
+use crate::jobs::tool_jobs::types::{JobRecord, JobStatus};
 use crate::tool_host::long_term_memory_tools::{
     LongTermMemoryHostInner, LongTermMemoryToolState, long_term_forget, long_term_memory_list,
     long_term_remember, summarize_experience,
 };
-use crate::cm_memory::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool_try};
-use crate::jobs::tool_jobs::GetOutcome;
-use crate::jobs::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
-use crate::jobs::tool_jobs::types::{JobRecord, JobStatus};
-use crate::jobs::tool_jobs::WaitOutcome;
-use crate::cm_tools::subprocess_session::SessionStream;
-use crate::cm_tools::tool_result::ToolError;
 
 pub struct CodebaseSemanticHost {
     pub params: CodebaseSemanticToolParams,
@@ -103,7 +103,9 @@ impl DispatchMemoryHosts {
     ) -> Self {
         let codebase = CodebaseSemanticHost::from_config(cfg);
         let (mem_rt, mem_scope) =
-            crate::cm_memory::memory::long_term_memory::tool_context_memory_extras(cfg, ltm, scope_id);
+            crate::cm_memory::memory::long_term_memory::tool_context_memory_extras(
+                cfg, ltm, scope_id,
+            );
         let long_term = mem_rt
             .zip(mem_scope)
             .map(|(rt, scope)| LongTermMemoryHost::new(rt, scope));
@@ -167,39 +169,39 @@ fn append_stream(out: &mut String, label: &str, bytes: &[u8]) {
 fn render_job_record(rec: &JobRecord, max_output_len: usize) -> String {
     let mut out = String::new();
     out.push_str(&format!("后台任务 {}\n", rec.id));
-        out.push_str(&format!("状态: {}\n", rec.status.as_str()));
-        out.push_str(&format!("工作区: {}\n", rec.workspace.display()));
-        out.push_str(&format!(
-            "工作区已变更: {}\n",
-            if rec.workspace_changed { "是" } else { "否" }
-        ));
-        if let Some(summary) =
-            crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &rec.args_json)
-        {
-            out.push_str(&format!("命令: {summary}\n"));
+    out.push_str(&format!("状态: {}\n", rec.status.as_str()));
+    out.push_str(&format!("工作区: {}\n", rec.workspace.display()));
+    out.push_str(&format!(
+        "工作区已变更: {}\n",
+        if rec.workspace_changed { "是" } else { "否" }
+    ));
+    if let Some(summary) =
+        crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &rec.args_json)
+    {
+        out.push_str(&format!("命令: {summary}\n"));
+    }
+    match rec.outcome.as_ref() {
+        Some(o) => {
+            if let Some(code) = o.exit_code {
+                out.push_str(&format!("退出码: {code}\n"));
+            }
+            if let Some(code) = o.error_code.as_deref() {
+                out.push_str(&format!("错误码: {code}\n"));
+            }
+            if let Some(cat) = o.failure_category.as_deref() {
+                out.push_str(&format!("失败分类: {cat}\n"));
+            }
+            append_stream(&mut out, "--- stdout ---", &o.stdout);
+            append_stream(&mut out, "--- stderr ---", &o.stderr);
         }
-        match rec.outcome.as_ref() {
-            Some(o) => {
-                if let Some(code) = o.exit_code {
-                    out.push_str(&format!("退出码: {code}\n"));
-                }
-                if let Some(code) = o.error_code.as_deref() {
-                    out.push_str(&format!("错误码: {code}\n"));
-                }
-                if let Some(cat) = o.failure_category.as_deref() {
-                    out.push_str(&format!("失败分类: {cat}\n"));
-                }
-                append_stream(&mut out, "--- stdout ---", &o.stdout);
-                append_stream(&mut out, "--- stderr ---", &o.stderr);
-            }
-            None if rec.status.is_terminal() => {
-                out.push_str("（任务已终态，但无输出记录。）\n");
-            }
-            None => {
-                out.push_str("（任务尚未结束，暂无输出；可稍后再查。）\n");
-            }
+        None if rec.status.is_terminal() => {
+            out.push_str("（任务已终态，但无输出记录。）\n");
         }
-        truncate_text(&out, max_output_len)
+        None => {
+            out.push_str("（任务尚未结束，暂无输出；可稍后再查。）\n");
+        }
+    }
+    truncate_text(&out, max_output_len)
 }
 
 fn job_expired_text(id: &str) -> String {
@@ -235,8 +237,9 @@ impl ToolJobsToolHost for ToolJobsHost {
                 .duration_since(r.created_at)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let cmd = crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &r.args_json)
-                .unwrap_or_else(|| r.args_json.clone());
+            let cmd =
+                crate::cm_tools::tools::summarize_tool_call(tool_names::RUN_COMMAND, &r.args_json)
+                    .unwrap_or_else(|| r.args_json.clone());
             out.push_str(&format!(
                 "- {} [{}] {}（{}秒前）\n",
                 r.id,
@@ -291,7 +294,10 @@ impl ToolJobsToolHost for ToolJobsHost {
                 format!("后台任务 `{id}` 已是 cancelled（幂等，无需重复取消）。")
             }
             CancelOutcome::AlreadyFinished(s) => {
-                format!("错误：后台任务 `{id}` 已处于终态 `{}`，不可取消。", s.as_str())
+                format!(
+                    "错误：后台任务 `{id}` 已处于终态 `{}`，不可取消。",
+                    s.as_str()
+                )
             }
             CancelOutcome::Expired => job_expired_text(id),
             CancelOutcome::NotFound => job_not_found_text(id),
@@ -530,7 +536,10 @@ mod tests {
         let first_at = out.find(&first).expect("first row");
         let second_at = out.find(&second).expect("second row");
         assert!(second_at < first_at, "{out}");
-        assert!(out.contains(&format!("- {second} [queued] true（")), "{out}");
+        assert!(
+            out.contains(&format!("- {second} [queued] true（")),
+            "{out}"
+        );
         assert!(
             out.contains(&format!("- {first} [queued] cargo test（")),
             "{out}"

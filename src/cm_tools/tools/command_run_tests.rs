@@ -272,8 +272,8 @@ fn prepare_peels_cd_prefix_into_effective_workdir() {
 
 #[test]
 fn prepare_cd_without_and_is_rejected() {
-    let spec = parse_command_spec(r#"{"command":"cd","args":["src"]}"#, Path::new("."))
-        .expect("spec");
+    let spec =
+        parse_command_spec(r#"{"command":"cd","args":["src"]}"#, Path::new(".")).expect("spec");
     let e = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .err()
         .expect("cd alone");
@@ -309,8 +309,11 @@ fn prepare_merges_dot_slash_command_with_single_relative_executable() {
     perms.set_mode(0o755);
     std::fs::set_permissions(&bin, perms).expect("chmod");
 
-    let spec = parse_command_spec(r#"{"command":"./","args":["hello/build/hello"]}"#, dir.path())
-        .expect("spec");
+    let spec = parse_command_spec(
+        r#"{"command":"./","args":["hello/build/hello"]}"#,
+        dir.path(),
+    )
+    .expect("spec");
     let p = prepare_run_command_spec(&spec, dir.path(), &[], false).expect("prep");
     assert_eq!(p.cmd_raw, "./hello/build/hello");
     assert!(p.cmd_args.is_empty());
@@ -579,8 +582,8 @@ fn prepare_peels_multiple_cd_prefixes() {
 
 #[test]
 fn prepare_allows_cmake_parent_dir_arg() {
-    let spec = parse_command_spec(r#"{"command":"cmake","args":[".."]}"#, Path::new("."))
-        .expect("spec");
+    let spec =
+        parse_command_spec(r#"{"command":"cmake","args":[".."]}"#, Path::new(".")).expect("spec");
     let p = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .expect("cmake .. must stay allowed");
     assert_eq!(p.cmd_name, "cmake");
@@ -589,8 +592,11 @@ fn prepare_allows_cmake_parent_dir_arg() {
 
 #[test]
 fn prepare_allows_git_revision_range_arg() {
-    let spec = parse_command_spec(r#"{"command":"git","args":["log","main..HEAD"]}"#, Path::new("."))
-        .expect("spec");
+    let spec = parse_command_spec(
+        r#"{"command":"git","args":["log","main..HEAD"]}"#,
+        Path::new("."),
+    )
+    .expect("spec");
     let p = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .expect("git rev range must stay allowed");
     assert_eq!(p.cmd_name, "git");
@@ -646,10 +652,12 @@ fn cargo_test_prepared(cwd: std::path::PathBuf) -> PreparedRunCommand {
 
 fn cache_write_key(plan: RunCommandPlan) -> TestCacheKey {
     match plan {
-        RunCommandPlan::Spawn(spawn) => spawn
-            .cache_write
-            .expect("eligible cargo test should carry cache_write")
-            .key,
+        RunCommandPlan::Spawn(spawn) => {
+            spawn
+                .cache_write
+                .expect("eligible cargo test should carry cache_write")
+                .key
+        }
         RunCommandPlan::CacheHit { .. } => panic!("fresh key must not hit cache"),
     }
 }
@@ -691,9 +699,8 @@ fn cargo_test_cache_key_includes_effective_working_dir() {
 fn run_command_timeout_includes_partial_output_and_kills() {
     use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
     let marker = format!("cm_p0_rc_{}", std::process::id());
-    let args = format!(
-        r#"{{"command":"bash","args":["-c","echo partial-out; sleep 60 # {marker}"]}}"#
-    );
+    let args =
+        format!(r#"{{"command":"bash","args":["-c","echo partial-out; sleep 60 # {marker}"]}}"#);
     let outcome = run_checked_wait(
         &args,
         TEST_MAX_OUTPUT_LEN,

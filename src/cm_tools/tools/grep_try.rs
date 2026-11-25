@@ -6,10 +6,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::{
     SearchInFilesOutputFields, ToolError, prepend_crabmate_tool_output_with_ok,
 };
-use crate::cm_names as tool_names;
 
 struct SearchParams {
     pattern: String,

@@ -168,9 +168,8 @@ pub fn write_atomic(path: &Path, rec: &InstanceRecord) -> Result<(), CtlError> {
             format!("状态文件路径无父目录：{}", path.display()),
         )
     })?;
-    let body = serde_json::to_vec_pretty(rec).map_err(|e| {
-        CtlError::general("record_serialize", format!("序列化状态记录失败：{e}"))
-    })?;
+    let body = serde_json::to_vec_pretty(rec)
+        .map_err(|e| CtlError::general("record_serialize", format!("序列化状态记录失败：{e}")))?;
 
     let tmp = dir.join(format!(
         ".{}.tmp.{}",
@@ -288,11 +287,8 @@ mod tests {
         let dir = tempdir("record");
         let path = dir.join("b.json");
         // 缺几乎所有字段 + 多一个未知字段
-        fs::write(
-            &path,
-            br#"{"name":"b","state":"ready","future_field":123}"#,
-        )
-        .expect("写最小记录");
+        fs::write(&path, br#"{"name":"b","state":"ready","future_field":123}"#)
+            .expect("写最小记录");
         let rec = read_required(&path).expect("应容忍未知与缺失字段");
         assert_eq!(rec.name, "b");
         assert_eq!(rec.state, InstanceState::Ready);

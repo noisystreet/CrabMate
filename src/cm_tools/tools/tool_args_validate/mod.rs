@@ -19,9 +19,9 @@ use std::sync::OnceLock;
 use jsonschema::Validator;
 use serde_json::Value;
 
-use crate::cm_names as tool_names;
 use super::cached_params_for_tool_name;
 use super::tool_specs_registry::tool_specs;
+use crate::cm_names as tool_names;
 
 static ARG_SCHEMA_VALIDATORS: OnceLock<HashMap<&'static str, Validator>> = OnceLock::new();
 
@@ -58,7 +58,6 @@ pub fn coerce_builtin_tool_args_value(name: &str, v: &mut Value) -> bool {
     };
     super::tool_args_coerce::coerce_args_value(spec.args_coercion, v)
 }
-
 
 /// 内置工具入参 JSON：解析成功后做一轮 [`coerce_builtin_tool_args_value`]，若有改写则返回序列化字符串供校验与 runner 共用。
 pub fn effective_builtin_tool_args_json<'a>(

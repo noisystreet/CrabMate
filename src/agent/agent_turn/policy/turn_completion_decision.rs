@@ -12,13 +12,9 @@ use super::completion_suppression::tool_calls_are_redundant_when_goal_satisfied;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnCompletionDecision {
     AllowRedundantTools,
-    DenyRedundantTools {
-        reason: &'static str,
-    },
+    DenyRedundantTools { reason: &'static str },
     AllowMissingFinalAnswerFeedback,
-    DenyMissingFinalAnswerFeedback {
-        reason: &'static str,
-    },
+    DenyMissingFinalAnswerFeedback { reason: &'static str },
 }
 
 impl TurnCompletionDecision {
@@ -33,9 +29,8 @@ impl TurnCompletionDecision {
 
     pub fn deny_reason(self) -> Option<&'static str> {
         match self {
-            Self::DenyRedundantTools { reason } | Self::DenyMissingFinalAnswerFeedback { reason } => {
-                Some(reason)
-            }
+            Self::DenyRedundantTools { reason }
+            | Self::DenyMissingFinalAnswerFeedback { reason } => Some(reason),
             _ => None,
         }
     }

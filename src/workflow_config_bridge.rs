@@ -74,8 +74,7 @@ mod tests {
         let mut cfg = crate::config::load_config(None).expect("embedded default config");
         cfg.command_exec.command_timeout_secs = 7;
         cfg.command_exec.command_max_output_len = 1234;
-        cfg.command_exec.allowed_commands =
-            vec!["cargo".to_string(), "git".to_string()].into();
+        cfg.command_exec.allowed_commands = vec!["cargo".to_string(), "git".to_string()].into();
         cfg.http_fetch.http_fetch_allowed_prefixes = vec!["http://127.0.0.1:8080".to_string()];
         cfg.http_fetch.http_fetch_max_response_bytes = 4321;
         cfg.web_search.web_search_timeout_secs = 11;
@@ -85,8 +84,7 @@ mod tests {
         cfg.codebase_semantic.codebase_semantic_top_k = 9;
         // S7：多根集合也必须搬过去——漏搬的表现是「节点内读同级仓仍被拒」，
         // 不会报错，所以必须落在这条「关键字段一一对上」的断言里。
-        cfg.workspace_roots.workspace_allowed_roots =
-            vec![std::path::PathBuf::from("/tmp/roots")];
+        cfg.workspace_roots.workspace_allowed_roots = vec![std::path::PathBuf::from("/tmp/roots")];
 
         let wf = workflow_config_from(&cfg);
         assert_eq!(wf.command_timeout_secs, 7);

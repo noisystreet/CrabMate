@@ -162,12 +162,8 @@ fn apply_patch_try_all_failure_keeps_single_header() {
     );
     assert_eq!(run_with_changelist(&args, &test_ctx(&dir)), err.message);
 
-    let output = assert_run_tool_error_code(
-        "apply_patch",
-        &args,
-        &test_ctx(&dir),
-        "apply_patch_failed",
-    );
+    let output =
+        assert_run_tool_error_code("apply_patch", &args, &test_ctx(&dir), "apply_patch_failed");
     assert_eq!(output.matches("crabmate_tool_output").count(), 1);
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -209,12 +205,8 @@ fn apply_patch_try_partial_failure_writes_nothing() {
     assert_eq!(read(&dir, "good.txt"), "old\n", "部分失败不得留下半套修改");
     assert_eq!(run_with_changelist(&args, &test_ctx(&dir)), err.message);
 
-    let output = assert_run_tool_error_code(
-        "apply_patch",
-        &args,
-        &test_ctx(&dir),
-        "apply_patch_failed",
-    );
+    let output =
+        assert_run_tool_error_code("apply_patch", &args, &test_ctx(&dir), "apply_patch_failed");
     assert_eq!(output.matches("crabmate_tool_output").count(), 1);
     assert_eq!(read(&dir, "good.txt"), "old\n");
 

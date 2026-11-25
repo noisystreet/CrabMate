@@ -5,14 +5,14 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{
-    SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary,
-    TurnSegmentStartBody, send_sse_control_payload_optional,
+    SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary, TurnSegmentStartBody,
+    send_sse_control_payload_optional,
 };
 use crate::tool_result::{self, parse_tool_output};
 use crate::types::{Message, message_content_byte_len_for_estimate};
 
-use super::emit_common::{emit_sse_tool_result, summarize_tool_call_args};
 use super::EmitToolResultParams;
+use super::emit_common::{emit_sse_tool_result, summarize_tool_call_args};
 
 fn context_snapshot_for_trace(messages: &[Message]) -> String {
     const MAX: usize = 600;

@@ -22,10 +22,7 @@ fn numeric_bound_violation_suggests_the_usable_value() {
     .expect("known");
     let msg = r.expect_err("context_after=14 应越界");
     assert!(msg.contains("maximum"), "{}", msg);
-    assert!(
-        msg.contains("maximum = 10"),
-        "越界提示应附上可用值：{msg}"
-    );
+    assert!(msg.contains("maximum = 10"), "越界提示应附上可用值：{msg}");
     assert!(msg.contains("改为此值或更小"), "{}", msg);
 }
 
@@ -230,8 +227,7 @@ fn modify_file_guard_schema_exposes_guard_only() {
     let raw = r#"{"path":"a.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","guard":{"first_line":"L1","last_line":"L1"}}"#;
     let r = validate_parsed_str_for_builtin("modify_file", raw).expect("validator");
     assert!(r.is_ok(), "{r:?}");
-    let schema =
-        schemars::schema_for!(crate::cm_tools::tools::tool_param_types::ModifyFileArgs);
+    let schema = schemars::schema_for!(crate::cm_tools::tools::tool_param_types::ModifyFileArgs);
     let s = serde_json::to_string(&schema).expect("schema json");
     assert!(s.contains("\"guard\""), "{s}");
     for legacy in [

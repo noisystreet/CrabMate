@@ -32,12 +32,11 @@ fn parse_append_file_args(args_json: &str) -> Result<AppendFileArgs, String> {
 }
 
 #[allow(clippy::result_large_err)]
-fn delete_dir_validate_target(
-    access: &PathAccess<'_>,
-    path: &str,
-) -> Result<PathBuf, ToolError> {
+fn delete_dir_validate_target(access: &PathAccess<'_>, path: &str) -> Result<PathBuf, ToolError> {
     let working_dir = access.root();
-    let target = access.for_read(path).map_err(ToolError::path_resolve_failed)?;
+    let target = access
+        .for_read(path)
+        .map_err(ToolError::path_resolve_failed)?;
     if !target.is_dir() {
         return Err(ToolError::invalid_args(format!(
             "错误：{} 不是目录",
@@ -82,7 +81,9 @@ fn append_resolve_target_path(
     create_if_missing: bool,
 ) -> Result<PathBuf, ToolError> {
     if create_if_missing {
-        access.for_write(path).map_err(ToolError::path_resolve_failed)
+        access
+            .for_write(path)
+            .map_err(ToolError::path_resolve_failed)
     } else {
         match access.for_read(path) {
             Ok(p) => Ok(p),
@@ -304,7 +305,11 @@ fn delete_files_validate(
     let working_dir = access.root();
     let mut targets = Vec::with_capacity(paths.len());
     for path in paths {
-        targets.push(access.for_read(path).map_err(ToolError::path_resolve_failed)?);
+        targets.push(
+            access
+                .for_read(path)
+                .map_err(ToolError::path_resolve_failed)?,
+        );
     }
     for (path, target) in paths.iter().zip(&targets) {
         if !target.is_file() {
@@ -505,7 +510,9 @@ pub fn create_dir_try(args_json: &str, access: &PathAccess<'_>) -> Result<String
     };
     let parents = args.parents;
 
-    let target = access.for_write(&path).map_err(ToolError::path_resolve_failed)?;
+    let target = access
+        .for_write(&path)
+        .map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         if target.is_dir() {
             return Ok(format!(

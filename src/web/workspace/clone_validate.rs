@@ -372,7 +372,10 @@ mod tests {
     fn exit_code_phrase_has_no_debug_or_parens() {
         assert_eq!(format_clone_exit_code(Some(128)), "退出码 128");
         assert_eq!(format_clone_exit_code(None), "进程被信号终止，无退出码");
-        for phrase in [format_clone_exit_code(Some(1)), format_clone_exit_code(None)] {
+        for phrase in [
+            format_clone_exit_code(Some(1)),
+            format_clone_exit_code(None),
+        ] {
             assert!(!phrase.contains("Some("), "{phrase}");
             assert!(!phrase.contains('（'), "{phrase}");
         }

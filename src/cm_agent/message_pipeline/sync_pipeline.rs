@@ -7,9 +7,8 @@ use crate::cm_types::Message;
 
 use super::transforms::{
     MIN_RECENT_TURN_GROUPS, RemovedPrefix, ToolCompressHit,
-    compress_tool_message_contents_detailed, drop_orphan_tool_messages,
-    estimate_non_system_chars, take_chat_timeline_markers, trim_messages_by_char_budget,
-    trim_messages_by_count,
+    compress_tool_message_contents_detailed, drop_orphan_tool_messages, estimate_non_system_chars,
+    take_chat_timeline_markers, trim_messages_by_char_budget, trim_messages_by_count,
 };
 use super::{MESSAGE_PIPELINE_COUNTERS, MessagePipelineConfig, MessagePipelineCounters};
 

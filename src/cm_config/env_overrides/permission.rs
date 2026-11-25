@@ -20,10 +20,7 @@ pub(super) fn apply(b: &mut ConfigBuilder) {
         &mut perm.permission_chat_control_tools,
         "CM_PERMISSION_CHAT_CONTROL_TOOLS",
     );
-    apply_csv_allow_empty(
-        &mut perm.permission_read_tools,
-        "CM_PERMISSION_READ_TOOLS",
-    );
+    apply_csv_allow_empty(&mut perm.permission_read_tools, "CM_PERMISSION_READ_TOOLS");
     apply_csv_allow_empty(
         &mut perm.permission_deny_system_paths,
         "CM_PERMISSION_DENY_SYSTEM_PATHS",

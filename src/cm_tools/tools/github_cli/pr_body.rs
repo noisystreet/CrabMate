@@ -1,7 +1,7 @@
 //! PR 正文草稿：读取仓库模板 + 可选 `git log` 摘要（只读，不写盘）。
 
-use crate::cm_tools::tool_result::ToolError;
 use super::common::GhCtx;
+use crate::cm_tools::tool_result::ToolError;
 use std::path::{Path, PathBuf};
 
 use crate::cm_tools::tools::git;
@@ -58,7 +58,9 @@ fn is_safe_git_ref(s: &str) -> bool {
 fn run_git_stdout(working_dir: &Path, args: &[&str]) -> Result<String, ToolError> {
     let mut cmd = std::process::Command::new("git");
     cmd.args(args).current_dir(working_dir);
-    let out = cmd.output().map_err(|e| ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}")))?;
+    let out = cmd.output().map_err(|e| {
+        ToolError::external_code("gh_git_failed", format!("错误：无法执行 git: {e}"))
+    })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(ToolError::invalid_args(format!(
@@ -105,8 +107,7 @@ pub fn build_pr_body_draft(
     include_template: bool,
     include_commit_log: bool,
 ) -> Result<String, ToolError> {
-    git::ensure_git_repo(working_dir)
-        .map_err(|m| ToolError::external_code("gh_git_failed", m))?;
+    git::ensure_git_repo(working_dir).map_err(|m| ToolError::external_code("gh_git_failed", m))?;
     let max_commits = max_commits.clamp(1, MAX_COMMITS_CAP);
     let base_ref = base.unwrap_or("main").trim();
     if base_ref.is_empty() {
@@ -149,8 +150,7 @@ pub fn build_pr_body_draft(
 
 /// `gh_pr_body_draft` 工具入口（只读）。
 pub fn gh_pr_body_draft_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let base = v.get("base").and_then(|x| x.as_str());
     let max_commits = v
         .get("max_commits")

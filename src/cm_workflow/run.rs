@@ -17,11 +17,11 @@ use super::execute::{
 use super::model::WorkflowSpec;
 use super::parse::parse_workflow_spec;
 use super::tool_name_check::validate_tool_names;
-use super::validate::validate_workflow_spec;
 use super::types::{
     WORKFLOW_RUN_SEQ, WorkflowExecutionCompensationReport, WorkflowExecutionNodeReport,
     WorkflowExecutionReport, WorkflowExecutionStats,
 };
+use super::validate::validate_workflow_spec;
 
 /// 加载期工具名校验的失败 JSON：`validate_only` 与真执行共用形状，只有 `type` 与提示前缀不同。
 ///
@@ -450,6 +450,8 @@ mod tests {
     fn tool_name_check_failure_is_none_when_all_registered() {
         let json = r#"{"workflow":{"nodes":[{"id":"a","tool":"read_file","tool_args":{}}]}}"#;
         let spec = parse_workflow_spec(json).unwrap();
-        assert!(tool_name_check_failure(&spec, "workflow_execute_error", "工具名校验失败").is_none());
+        assert!(
+            tool_name_check_failure(&spec, "workflow_execute_error", "工具名校验失败").is_none()
+        );
     }
 }

@@ -7,10 +7,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
-use crate::cm_tools::tools;
 use crate::cm_names as tool_names;
+use crate::cm_tools::tools;
 use crate::cm_types::CommandApprovalDecision;
+use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
 
 // 祖先层（`execute`）的项：子模块可见祖先的私有项，故直接 glob 取用。
 use super::super::*;
@@ -43,7 +43,10 @@ pub(in crate::tool_host::tool_registry::execute) fn parse_run_command_json(
     })
 }
 
-pub(in crate::tool_host::tool_registry::execute) fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
+pub(in crate::tool_host::tool_registry::execute) fn cmd_missing_from_allowlist(
+    cmd: &str,
+    allowed: &[String],
+) -> bool {
     !tools::allowlist_allows_all(allowed)
         && !cmd.is_empty()
         && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
@@ -116,11 +119,13 @@ impl RunCommandCaps {
 pub(in crate::tool_host::tool_registry::execute) struct PolicyContext<'a> {
     pub(in crate::tool_host::tool_registry::execute) cfg: &'a Arc<AgentConfig>,
     pub(in crate::tool_host::tool_registry::execute) workspace: &'a Path,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) mode: ExecMode,
     pub(in crate::tool_host::tool_registry::execute) sse_command: &'a str,
     /// 本回合权限能力快照；`None` = 未接线，回落 `cfg` 白名单（S3）。
-    pub(in crate::tool_host::tool_registry::execute) permission: Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
+    pub(in crate::tool_host::tool_registry::execute) permission:
+        Option<&'a dyn crate::cm_agent::permission::PolicyEngine>,
 }
 
 impl PolicyContext<'_> {
@@ -182,7 +187,9 @@ impl PolicyError {
     }
 
     /// 转成工具调用返回的 `(正文, 注入)`；审批错误不注入结构化数据。
-    pub(in crate::tool_host::tool_registry::execute) fn into_message(self) -> (String, Option<serde_json::Value>) {
+    pub(in crate::tool_host::tool_registry::execute) fn into_message(
+        self,
+    ) -> (String, Option<serde_json::Value>) {
         let reason = self.reason();
         let message = match self {
             Self::Denied { message, .. }
@@ -324,9 +331,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn request_unknown_cmd_ap
         script.to_string()
     };
     let spec = crate::tool_host::tool_approval::approval_spec_run_command_unknown_cmd(
-        cmd,
-        argv_tail,
-        &cmd_show,
+        cmd, argv_tail, &cmd_show,
     );
     let decision = match crate::tool_host::tool_approval::request_tool_interactive_approval(
         web_ctx.approval_sink(),
@@ -346,15 +351,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn request_unknown_cmd_ap
             });
         }
     };
-    apply_unknown_cmd_decision(
-        base,
-        cmd,
-        needs_shell,
-        &cmd_show,
-        decision,
-        &allow_handles,
-    )
-    .await
+    apply_unknown_cmd_decision(base, cmd, needs_shell, &cmd_show, decision, &allow_handles).await
 }
 
 /// 把一次性审批结论落到「快照基白名单 + 新命令（+ `bash`）」上。
@@ -556,10 +553,8 @@ pub(in crate::tool_host::tool_registry::execute) async fn approve_posix_shell_wr
         });
     }
     let spec = tool_approval::approval_spec_shell_script(ctx.sse_command, parsed.script.as_str());
-    let allow_handles = tool_approval::shared_allowlist_handles_web(
-        ctx.web_ctx,
-        ctx.permission.map(|c| c.level()),
-    );
+    let allow_handles =
+        tool_approval::shared_allowlist_handles_web(ctx.web_ctx, ctx.permission.map(|c| c.level()));
     match tool_approval::interactive_gate_after_whitelist_miss(
         ctx.web_ctx.and_then(|w| w.approval_sink()),
         &spec,
@@ -707,7 +702,11 @@ fn scan_external_path_args(
     let access = tools::PathAccess::with_scope_and_roots(
         ctx.workspace,
         scope,
-        ctx.cfg.as_ref().workspace_roots.workspace_allowed_roots.as_slice(),
+        ctx.cfg
+            .as_ref()
+            .workspace_roots
+            .workspace_allowed_roots
+            .as_slice(),
     );
     tools::scan_run_command_unsafe_args_spec(&parsed.spec, ctx.workspace, allowed_commands, access)
 }
@@ -719,10 +718,8 @@ async fn request_external_path_interactive_approval(
 ) -> Result<ExternalPathGate, PolicyError> {
     let detail_paths = escaping.join(", ");
     let spec = tool_approval::approval_spec_workspace_external_path(ctx.sse_command, &detail_paths);
-    let allow_handles = tool_approval::shared_allowlist_handles_web(
-        ctx.web_ctx,
-        ctx.permission.map(|c| c.level()),
-    );
+    let allow_handles =
+        tool_approval::shared_allowlist_handles_web(ctx.web_ctx, ctx.permission.map(|c| c.level()));
     match tool_approval::interactive_gate_after_whitelist_miss(
         ctx.web_ctx.and_then(|w| w.approval_sink()),
         &spec,

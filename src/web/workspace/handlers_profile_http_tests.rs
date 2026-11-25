@@ -28,8 +28,7 @@ fn temp_cargo_workspace() -> tempfile::TempDir {
 
 fn cfg_with_profile(enabled: bool, max_chars: usize) -> crate::config::AgentConfig {
     let mut cfg = crate::config::load_config(None).expect("embed default");
-    cfg.context_bootstrap_inject
-        .project_profile_inject_enabled = enabled;
+    cfg.context_bootstrap_inject.project_profile_inject_enabled = enabled;
     cfg.context_bootstrap_inject
         .project_profile_inject_max_chars = max_chars;
     cfg

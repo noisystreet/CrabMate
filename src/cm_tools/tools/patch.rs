@@ -46,8 +46,8 @@ pub fn run_with_changelist_try(
     args_json: &str,
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
-    let args = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(ToolError::invalid_args)?;
+    let args =
+        crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     let patch_text = match args.get("patch").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s,
@@ -63,10 +63,7 @@ pub fn run_with_changelist_try(
         .unwrap_or(false);
 
     let root = ctx.working_dir.canonicalize().map_err(|e| {
-        ToolError::external_code(
-            "apply_patch_failed",
-            format!("工作区根目录无法解析: {}", e),
-        )
+        ToolError::external_code("apply_patch_failed", format!("工作区根目录无法解析: {}", e))
     })?;
 
     if let Err(e) = validate_patch_paths(patch_text, &root) {
@@ -227,8 +224,8 @@ fn plan_single_hunk(
         Some(DevNullHunkKind::Create) => {
             let single = diffy::Patch::from_str(hunk_patch)
                 .map_err(|e| format!("{}: 解析失败: {}", file_path, e))?;
-            let after = diffy::apply("", &single)
-                .map_err(|e| format!("{}: 应用失败: {}", file_path, e))?;
+            let after =
+                diffy::apply("", &single).map_err(|e| format!("{}: 应用失败: {}", file_path, e))?;
             Ok(Some(PlannedPatch::Create {
                 rel: file_path,
                 after,
@@ -294,8 +291,7 @@ fn commit_planned(
             if !apply.dry_run {
                 let target = apply.root.join(rel);
                 file::verify_write_revision(apply.args, &target, apply.ctx, false)?;
-                std::fs::remove_file(&target)
-                    .map_err(|e| format!("{}: 删除失败: {}", rel, e))?;
+                std::fs::remove_file(&target).map_err(|e| format!("{}: 删除失败: {}", rel, e))?;
             }
             record_mutation(apply, rel, before.clone(), None);
             preview_files.push(WriteDiffFileState {
@@ -329,8 +325,7 @@ fn ensure_parent_dir(apply: &PatchApply<'_>, rel: &str) -> Result<(), String> {
     }
     let target = apply.root.join(rel);
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("{}: 创建父目录失败: {}", rel, e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: 创建父目录失败: {}", rel, e))?;
     }
     Ok(())
 }

@@ -18,12 +18,12 @@ use crate::tool_registry::{HandlerId, HandlerLookupTable, ToolRunOutcome, ToolRu
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
+use super::batch_dispatch::emit_tool_batch_result;
 use super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, PARALLEL_READONLY_TOOL_BATCH_SEQ,
     abort_tool_batch_if_sse_closed, dedup_readonly_tool_calls_count, emit_timeline_log_sse,
     emit_tool_call_summary_sse, trace_parallel_tool_child_span,
 };
-use super::batch_dispatch::emit_tool_batch_result;
 
 /// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
 #[derive(Clone, Copy)]
@@ -411,7 +411,10 @@ async fn parallel_emit_ordered_tool_results(
         // 去重表里没有该键（理论上不会发生）时退回空正文 + 未知成败，与接线前一致。
         let (cached, cached_facts) = match result_by_name_args.get(&key) {
             Some(o) => (o.output.clone(), o.facts()),
-            None => (String::new(), crate::tool_result::ToolOutcomeFacts::unknown()),
+            None => (
+                String::new(),
+                crate::tool_result::ToolOutcomeFacts::unknown(),
+            ),
         };
         emit_tool_batch_result(
             super::batch_dispatch::EmitToolBatchResultParams {
@@ -446,9 +449,9 @@ pub(super) async fn execute_tools_parallel(
         messages,
         env,
         read_file_turn_cache,
-            workspace_changelist,
-            control,
-            cancel,
+        workspace_changelist,
+        control,
+        cancel,
         web_tool_ctx,
         mcp_turn: _,
         request_chrome_trace: _,
@@ -487,7 +490,14 @@ pub(super) async fn execute_tools_parallel(
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
     if matches!(
-        parallel_emit_tool_starts(tool_calls, env.cfg.as_ref(), messages, &control, Some(permission)).await,
+        parallel_emit_tool_starts(
+            tool_calls,
+            env.cfg.as_ref(),
+            messages,
+            &control,
+            Some(permission)
+        )
+        .await,
         ExecuteToolsBatchOutcome::AbortedSse
     ) {
         return ExecuteToolsBatchOutcome::AbortedSse;

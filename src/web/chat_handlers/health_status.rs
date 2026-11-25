@@ -1,19 +1,19 @@
 //! `GET /health`、`GET /status`。
 
+use crate::cm_api_contract::StatusShellView;
+use crate::cm_api_contract::health::{HealthCheckItemView, HealthReportView};
 use crate::cm_session_store::SessionStore;
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
-use crate::cm_api_contract::health::{HealthCheckItemView, HealthReportView};
-use crate::cm_api_contract::StatusShellView;
 use serde::Deserialize;
 
+use super::tiktoken_baseline::tiktoken_new_session_baselines_by_role;
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
 use crate::chat_job_queue;
 use crate::health;
 use crate::tool_registry;
 use crate::web::app_state_facets::{WebHealthAppFacet, WebStatusAppFacet};
-use super::tiktoken_baseline::tiktoken_new_session_baselines_by_role;
 
 pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> impl IntoResponse {
     let eff = facet.effective_workspace_path().await;
@@ -243,7 +243,6 @@ fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView 
     }
 }
 
-
 /// 缓存 TTL：fingerprint 只覆盖 `AgentConfig`，工作区文件内容变化不主动失效，到期重算。
 const BASELINE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
@@ -388,8 +387,7 @@ pub(crate) fn spawn_tiktoken_baseline_warmup(state: std::sync::Arc<crate::AppSta
         let mut agent_role_ids: Vec<String> =
             cfg.roles_prompts.agent_roles.keys().cloned().collect();
         agent_role_ids.sort();
-        let workspace_root =
-            std::path::PathBuf::from(state.http.effective_workspace_path().await);
+        let workspace_root = std::path::PathBuf::from(state.http.effective_workspace_path().await);
         let baseline_by_role = tiktoken_baselines_cached_or_compute(
             &state.aux.tiktoken_baseline_cache,
             &cfg,
@@ -637,7 +635,9 @@ mod tiktoken_baseline_cache_tests {
     /// 将缓存内容替换为哨兵值：后续若命中缓存，返回值必然携带该哨兵。
     fn plant_sentinel(cache: &Mutex<Option<CachedTiktokenBaseline>>) {
         let mut cell = cache.lock().expect("cache lock");
-        let cached = cell.as_mut().expect("cache must be filled by prior compute");
+        let cached = cell
+            .as_mut()
+            .expect("cache must be filled by prior compute");
         cached.baseline_by_role.clear();
         cached
             .baseline_by_role
@@ -763,7 +763,6 @@ mod tiktoken_baseline_cache_tests {
             );
         }
     }
-
 }
 
 #[cfg(test)]

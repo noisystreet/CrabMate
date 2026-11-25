@@ -10,8 +10,5 @@ use crate::AppState;
 use crate::web::session_state::conversation_state_handler;
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
-    Router::new().route(
-        "/conversation/state",
-        post(conversation_state_handler),
-    )
+    Router::new().route("/conversation/state", post(conversation_state_handler))
 }

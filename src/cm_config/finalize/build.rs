@@ -1,11 +1,17 @@
-use super::*;
 use super::tail::FinalizeTailScalars;
+use super::*;
 
-fn build_agent_config_from_finalize(mid: FinalizeAfterRoles, tail: FinalizeTailScalars) -> AgentConfig {
+fn build_agent_config_from_finalize(
+    mid: FinalizeAfterRoles,
+    tail: FinalizeTailScalars,
+) -> AgentConfig {
     assemble_agent_config_from_finalize(&mid, &tail)
 }
 
-fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &FinalizeTailScalars) -> AgentConfig {
+fn assemble_agent_config_from_finalize(
+    mid: &FinalizeAfterRoles,
+    tail: &FinalizeTailScalars,
+) -> AgentConfig {
     AgentConfig {
         llm: finalize_section_llm_connection(mid),
         session_ui: finalize_section_session_ui(mid),
@@ -194,7 +200,9 @@ fn finalize_section_tool_transcript(tail: &FinalizeTailScalars) -> types::ToolTr
     }
 }
 
-fn finalize_section_agent_thinking_trace(tail: &FinalizeTailScalars) -> types::AgentThinkingTraceConfig {
+fn finalize_section_agent_thinking_trace(
+    tail: &FinalizeTailScalars,
+) -> types::AgentThinkingTraceConfig {
     types::AgentThinkingTraceConfig {
         agent_thinking_trace_enabled: tail.agent_thinking_trace_enabled,
     }
@@ -222,7 +230,10 @@ fn finalize_section_context_pipeline(
     tail: &FinalizeTailScalars,
 ) -> types::ContextPipelineConfig {
     let (context_summary_system, context_summary_user_template) = resolve_context_summary_prompts(
-        mid.b.context_pipeline.context_summary_system_file.as_deref(),
+        mid.b
+            .context_pipeline
+            .context_summary_system_file
+            .as_deref(),
         mid.b.context_pipeline.context_summary_user_file.as_deref(),
         &mid.system_prompt_search_bases,
         mid.run_command_working_dir.as_path(),
@@ -289,8 +300,11 @@ fn finalize_section_sync_tool_sandbox(tail: &FinalizeTailScalars) -> types::Sync
     types::SyncToolSandboxConfig {
         sync_default_tool_sandbox_mode: tail.sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image: tail.sync_default_tool_sandbox_docker_image.clone(),
-        sync_default_tool_sandbox_docker_network: tail.sync_default_tool_sandbox_docker_network.clone(),
-        sync_default_tool_sandbox_docker_timeout_secs: tail.sync_default_tool_sandbox_docker_timeout_secs,
+        sync_default_tool_sandbox_docker_network: tail
+            .sync_default_tool_sandbox_docker_network
+            .clone(),
+        sync_default_tool_sandbox_docker_timeout_secs: tail
+            .sync_default_tool_sandbox_docker_timeout_secs,
         sync_default_tool_sandbox_docker_user: tail.sync_default_tool_sandbox_docker_user.clone(),
     }
 }
@@ -303,14 +317,15 @@ fn finalize_section_conversation_persistence(
         conversation_store_sqlite_path: tail.conversation_store_sqlite_path.clone(),
         conversation_store_ttl_secs: tail.conversation_store_ttl_secs,
         conversation_store_max_entries: tail.conversation_store_max_entries,
-        context_archive_max_rows_per_conversation: tail
-            .context_archive_max_rows_per_conversation,
+        context_archive_max_rows_per_conversation: tail.context_archive_max_rows_per_conversation,
         context_archive_codec_min_bytes: tail.context_archive_codec_min_bytes,
         scheduled_agent_tasks: mid.scheduled_agent_tasks.clone(),
     }
 }
 
-fn finalize_section_context_bootstrap_inject(tail: &FinalizeTailScalars) -> types::ContextBootstrapInjectConfig {
+fn finalize_section_context_bootstrap_inject(
+    tail: &FinalizeTailScalars,
+) -> types::ContextBootstrapInjectConfig {
     types::ContextBootstrapInjectConfig {
         agent_memory_file_enabled: tail.agent_memory_file_enabled,
         agent_memory_file: tail.agent_memory_file.clone(),
@@ -347,8 +362,7 @@ fn finalize_section_long_term_memory(mid: &FinalizeAfterRoles) -> types::LongTer
         long_term_memory_min_chars_to_index: ltm.long_term_memory_min_chars_to_index,
         long_term_memory_async_index: ltm.long_term_memory_async_index,
         long_term_memory_auto_index_turns: ltm.long_term_memory_auto_index_turns,
-        long_term_memory_auto_summarize_experience: ltm
-            .long_term_memory_auto_summarize_experience,
+        long_term_memory_auto_summarize_experience: ltm.long_term_memory_auto_summarize_experience,
         long_term_memory_prioritize_experience_recall: ltm
             .long_term_memory_prioritize_experience_recall,
         long_term_memory_default_ttl_secs: ltm.long_term_memory_default_ttl_secs,
@@ -366,7 +380,8 @@ fn finalize_section_codebase_semantic(mid: &FinalizeAfterRoles) -> types::Codeba
     let sem = &mid.sem;
     types::CodebaseSemanticConfig {
         codebase_semantic_search_enabled: sem.codebase_semantic_search_enabled,
-        codebase_semantic_invalidate_on_workspace_change: sem.codebase_semantic_invalidate_on_workspace_change,
+        codebase_semantic_invalidate_on_workspace_change: sem
+            .codebase_semantic_invalidate_on_workspace_change,
         codebase_semantic_index_sqlite_path: sem.codebase_semantic_index_sqlite_path.clone(),
         codebase_semantic_max_file_bytes: sem.codebase_semantic_max_file_bytes,
         codebase_semantic_chunk_max_chars: sem.codebase_semantic_chunk_max_chars,
@@ -380,25 +395,43 @@ fn finalize_section_codebase_semantic(mid: &FinalizeAfterRoles) -> types::Codeba
     }
 }
 
-fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::ToolRegistryPolicyConfig {
+fn finalize_section_tool_registry_policy(
+    mid: &FinalizeAfterRoles,
+) -> types::ToolRegistryPolicyConfig {
     let tr = &mid.tr;
     types::ToolRegistryPolicyConfig {
         tool_registry_http_fetch_wall_timeout_secs: tr.tool_registry_http_fetch_wall_timeout_secs,
-        tool_registry_http_request_wall_timeout_secs: tr.tool_registry_http_request_wall_timeout_secs,
-        tool_registry_parallel_wall_timeout_secs: tr.tool_registry_parallel_wall_timeout_secs.clone(),
-        tool_registry_parallel_sync_denied_tools: tr.tool_registry_parallel_sync_denied_tools.clone(),
-        tool_registry_parallel_sync_denied_prefixes: tr.tool_registry_parallel_sync_denied_prefixes.clone(),
+        tool_registry_http_request_wall_timeout_secs: tr
+            .tool_registry_http_request_wall_timeout_secs,
+        tool_registry_parallel_wall_timeout_secs: tr
+            .tool_registry_parallel_wall_timeout_secs
+            .clone(),
+        tool_registry_parallel_sync_denied_tools: tr
+            .tool_registry_parallel_sync_denied_tools
+            .clone(),
+        tool_registry_parallel_sync_denied_prefixes: tr
+            .tool_registry_parallel_sync_denied_prefixes
+            .clone(),
         tool_registry_sync_default_inline_tools: tr.tool_registry_sync_default_inline_tools.clone(),
         tool_registry_write_effect_tools: tr.tool_registry_write_effect_tools.clone(),
-        tool_registry_sub_agent_patch_write_extra_tools: tr.tool_registry_sub_agent_patch_write_extra_tools.clone(),
-        tool_registry_sub_agent_test_runner_extra_tools: tr.tool_registry_sub_agent_test_runner_extra_tools.clone(),
-        tool_registry_sub_agent_review_readonly_deny_tools: tr.tool_registry_sub_agent_review_readonly_deny_tools.clone(),
+        tool_registry_sub_agent_patch_write_extra_tools: tr
+            .tool_registry_sub_agent_patch_write_extra_tools
+            .clone(),
+        tool_registry_sub_agent_test_runner_extra_tools: tr
+            .tool_registry_sub_agent_test_runner_extra_tools
+            .clone(),
+        tool_registry_sub_agent_review_readonly_deny_tools: tr
+            .tool_registry_sub_agent_review_readonly_deny_tools
+            .clone(),
         tool_registry_background_jobs_enabled: tr.tool_registry_background_jobs_enabled,
-        tool_registry_background_job_async_tools: tr.tool_registry_background_job_async_tools.clone(),
+        tool_registry_background_job_async_tools: tr
+            .tool_registry_background_job_async_tools
+            .clone(),
         tool_registry_background_job_max_concurrent: tr.tool_registry_background_job_max_concurrent,
         tool_registry_background_job_max_queued: tr.tool_registry_background_job_max_queued,
         tool_registry_background_job_ttl_secs: tr.tool_registry_background_job_ttl_secs,
-        tool_registry_background_job_result_grace_secs: tr.tool_registry_background_job_result_grace_secs,
+        tool_registry_background_job_result_grace_secs: tr
+            .tool_registry_background_job_result_grace_secs,
         tool_registry_background_job_max_entries: tr.tool_registry_background_job_max_entries,
         tool_registry_background_job_output_buffer_bytes: tr
             .tool_registry_background_job_output_buffer_bytes,

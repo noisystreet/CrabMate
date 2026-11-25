@@ -114,11 +114,7 @@ impl CompletionVerdict {
 
     /// 唯一构造入口：施加条数与长度上限（模型输出不可信）。
     #[must_use]
-    pub fn new(
-        status: CompletionStatus,
-        evidence_refs: Vec<String>,
-        missing: Vec<String>,
-    ) -> Self {
+    pub fn new(status: CompletionStatus, evidence_refs: Vec<String>, missing: Vec<String>) -> Self {
         let mut refs = evidence_refs;
         refs.truncate(Self::MAX_EVIDENCE_REFS);
         let mut missing: Vec<String> = missing
@@ -143,7 +139,8 @@ impl CompletionVerdict {
         self.degraded = true;
         let reason = reason.into();
         if !reason.trim().is_empty() && self.missing.len() < Self::MAX_MISSING {
-            self.missing.push(truncate_chars(reason.trim(), Self::MAX_MISSING_CHARS));
+            self.missing
+                .push(truncate_chars(reason.trim(), Self::MAX_MISSING_CHARS));
         }
         self
     }
@@ -265,7 +262,10 @@ mod tests {
         assert_eq!(CompletionStatus::Satisfied.as_str(), "satisfied");
         assert_eq!(CompletionStatus::Partial.as_str(), "partial");
         assert_eq!(CompletionStatus::Unsatisfied.as_str(), "unsatisfied");
-        assert_eq!(CompletionStatus::parse("SATISFIED"), Some(CompletionStatus::Satisfied));
+        assert_eq!(
+            CompletionStatus::parse("SATISFIED"),
+            Some(CompletionStatus::Satisfied)
+        );
         assert_eq!(CompletionStatus::parse("nope"), None);
     }
 
@@ -361,7 +361,10 @@ mod tests {
 
     #[async_trait]
     impl CompletionJudge for FixedJudge {
-        async fn judge(&self, _input: CompletionJudgeInput) -> Result<CompletionVerdict, ToolError> {
+        async fn judge(
+            &self,
+            _input: CompletionJudgeInput,
+        ) -> Result<CompletionVerdict, ToolError> {
             match &self.0 {
                 Ok(v) => Ok(v.clone()),
                 Err(()) => Err(ToolError {
@@ -400,7 +403,9 @@ mod tests {
     #[tokio::test]
     async fn judge_and_validate_passes_anchored_satisfied() {
         let judge = FixedJudge(Ok(satisfied(&["ev_1"])));
-        let out = judge_and_validate(&judge, judge_input()).await.expect("some");
+        let out = judge_and_validate(&judge, judge_input())
+            .await
+            .expect("some");
         assert_eq!(out.status, CompletionStatus::Satisfied);
     }
 
@@ -411,7 +416,9 @@ mod tests {
     #[tokio::test]
     async fn judge_and_validate_degrades_unanchored_satisfied() {
         let judge = FixedJudge(Ok(satisfied(&[])));
-        let out = judge_and_validate(&judge, judge_input()).await.expect("some");
+        let out = judge_and_validate(&judge, judge_input())
+            .await
+            .expect("some");
         assert_eq!(out.status, CompletionStatus::Unsatisfied);
         assert!(out.missing.iter().any(|m| m.contains("evidence_refs")));
     }

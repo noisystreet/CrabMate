@@ -45,11 +45,7 @@ pub(super) fn load_cli_agent_config(
 /// 「顺序对不对」有 golden 守，「这一步还在不在」就靠这里。
 ///
 /// `cli_tokens` 是 `&mut Option<_>`：CLI 层只消费一次，重复访问不会二次生效。
-fn apply_layer(
-    cfg: &mut config::AgentConfig,
-    layer: ConfigLayer,
-    cli_tokens: &mut Option<u32>,
-) {
+fn apply_layer(cfg: &mut config::AgentConfig, layer: ConfigLayer, cli_tokens: &mut Option<u32>) {
     match layer {
         ConfigLayer::UserData => {
             crate::user_data::apply_user_data_llm_overrides(cfg);

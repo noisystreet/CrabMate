@@ -13,14 +13,14 @@ use axum::http::{HeaderMap, StatusCode};
 
 use crate::AppState;
 use crate::cm_api_contract::error_codes;
-use crate::jobs::tool_jobs::registry::{CancelOutcome, GetOutcome, OutputPollOutcome};
-use crate::jobs::tool_jobs::types::{JobStatus, OutputLogRead};
-use crate::web::http_types::chat::ApiError;
 use crate::cm_api_contract::tool_jobs::{
     ToolJobCancelResponseBody, ToolJobOutputItem, ToolJobOutputResponseBody,
     ToolJobStatusResponseBody,
 };
 use crate::cm_names as tool_names;
+use crate::jobs::tool_jobs::registry::{CancelOutcome, GetOutcome, OutputPollOutcome};
+use crate::jobs::tool_jobs::types::{JobStatus, OutputLogRead};
+use crate::web::http_types::chat::ApiError;
 
 /// 可选归属校验头：客户端声明其所在 workspace root；与任务创建时记录比对。
 const X_WORKSPACE_ROOT: &str = "x-workspace-root";
@@ -41,7 +41,10 @@ fn normalize_workspace_root(p: &str) -> String {
 }
 
 /// 可选归属校验（契约 §3.3）：不带头即放行（知晓 id 即能力凭证）。
-fn check_workspace_ownership(workspace: &std::path::Path, headers: &HeaderMap) -> Result<(), ApiErr> {
+fn check_workspace_ownership(
+    workspace: &std::path::Path,
+    headers: &HeaderMap,
+) -> Result<(), ApiErr> {
     let Some(hdr) = headers.get(X_WORKSPACE_ROOT) else {
         return Ok(());
     };
@@ -159,10 +162,7 @@ pub(crate) async fn tool_job_output_handler(
 ) -> Result<Json<ToolJobOutputResponseBody>, ApiErr> {
     let registry = &state.aux.tool_job_registry;
     // 游标解析失败/负数/溢出 → 按省略（从最早可用起；宁从头，不错序）。
-    let cursor = query
-        .cursor
-        .as_deref()
-        .and_then(|s| s.parse::<u64>().ok());
+    let cursor = query.cursor.as_deref().and_then(|s| s.parse::<u64>().ok());
     let outcome = registry.poll_output(&id, cursor, SystemTime::now());
     let (status, workspace, log_read, eof) = match outcome {
         OutputPollOutcome::Found {
@@ -239,10 +239,12 @@ fn cancel_response(
             status: "cancelled".to_string(),
         })),
         // 已是 cancelled：幂等返回 200（契约 §3.2），不视为冲突。
-        CancelOutcome::AlreadyFinished(JobStatus::Cancelled) => Ok(Json(ToolJobCancelResponseBody {
-            tool_job_id: id,
-            status: "cancelled".to_string(),
-        })),
+        CancelOutcome::AlreadyFinished(JobStatus::Cancelled) => {
+            Ok(Json(ToolJobCancelResponseBody {
+                tool_job_id: id,
+                status: "cancelled".to_string(),
+            }))
+        }
         CancelOutcome::AlreadyFinished(status) => Err((
             StatusCode::CONFLICT,
             Json(serde_json::json!({ "status": status.as_str() })),
@@ -304,9 +306,14 @@ mod tests {
     fn ownership_passes_without_header_or_matching_root() {
         let rec = record("/home/user/project");
         assert!(check_workspace_ownership(&rec.workspace, &HeaderMap::new()).is_ok());
-        assert!(check_workspace_ownership(&rec.workspace, &headers_with("/home/user/project")).is_ok());
+        assert!(
+            check_workspace_ownership(&rec.workspace, &headers_with("/home/user/project")).is_ok()
+        );
         // 尾斜杠与空白容忍。
-        assert!(check_workspace_ownership(&rec.workspace, &headers_with(" /home/user/project/ ")).is_ok());
+        assert!(
+            check_workspace_ownership(&rec.workspace, &headers_with(" /home/user/project/ "))
+                .is_ok()
+        );
         // 空头等同未提供。
         assert!(check_workspace_ownership(&rec.workspace, &headers_with("  ")).is_ok());
     }
@@ -314,8 +321,13 @@ mod tests {
     #[test]
     fn ownership_rejects_mismatched_root() {
         let rec = record("/home/user/project");
-        assert!(check_workspace_ownership(&rec.workspace, &headers_with("/home/user/other")).is_err());
-        assert!(check_workspace_ownership(&rec.workspace, &headers_with("/home/user/project/sub")).is_err());
+        assert!(
+            check_workspace_ownership(&rec.workspace, &headers_with("/home/user/other")).is_err()
+        );
+        assert!(
+            check_workspace_ownership(&rec.workspace, &headers_with("/home/user/project/sub"))
+                .is_err()
+        );
     }
 
     #[test]
@@ -371,7 +383,11 @@ mod tests {
     fn cancel_outcome_body(
         id: &str,
         outcome: CancelOutcome,
-    ) -> (Option<ToolJobCancelResponseBody>, StatusCode, serde_json::Value) {
+    ) -> (
+        Option<ToolJobCancelResponseBody>,
+        StatusCode,
+        serde_json::Value,
+    ) {
         match cancel_response(id.to_string(), outcome) {
             Ok(Json(body)) => (Some(body), StatusCode::OK, serde_json::Value::Null),
             Err((status, Json(body))) => (None, status, body),
@@ -395,11 +411,7 @@ mod tests {
 
     #[test]
     fn cancel_response_other_terminal_is_409_not_overwrite() {
-        for status in [
-            JobStatus::Succeeded,
-            JobStatus::Failed,
-            JobStatus::TimedOut,
-        ] {
+        for status in [JobStatus::Succeeded, JobStatus::Failed, JobStatus::TimedOut] {
             let (body, status_code, body_json) =
                 cancel_outcome_body("tooljob_x", CancelOutcome::AlreadyFinished(status));
             assert!(body.is_none());

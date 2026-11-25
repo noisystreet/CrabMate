@@ -86,7 +86,6 @@ pub(crate) fn skill_path_stem(display_path: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-
 /// UI / 补全用短描述：优先 frontmatter `description`，否则取正文首个非空行（去 `#` 标题前缀）。
 pub fn skill_ui_description(doc: &SkillDoc) -> String {
     const MAX: usize = 160;
@@ -276,7 +275,8 @@ pub fn list_skills_by_layer(opts: SkillsListOpts<'_>) -> Result<Vec<SkillManaged
             });
         }
     }
-    if let Some(user_dir) = resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_user_dir)?
+    if let Some(user_dir) =
+        resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_user_dir)?
     {
         for doc in list_skills_layer_lenient(&user_dir, &user_dir, "user") {
             out.push(SkillManagedDoc {
@@ -510,7 +510,10 @@ fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title:
     let mut body = String::from(title);
     for d in docs {
         body.push_str("\n\n---\n");
-        body.push_str(&format!("{}{}\n\n", SKILLS_FILE_LINE_PREFIX, d.display_path));
+        body.push_str(&format!(
+            "{}{}\n\n",
+            SKILLS_FILE_LINE_PREFIX, d.display_path
+        ));
         body.push_str(d.content.trim());
     }
     if body.chars().count() <= max_chars {
@@ -774,7 +777,11 @@ mod tests {
     fn index_lists_every_skill_with_description() {
         let tmp = tempfile::tempdir().unwrap();
         let skills = tmp.path().join(".crabmate/skills");
-        for (name, desc) in [("alpha", "Alpha desc"), ("beta", "Beta desc"), ("gamma", "Gamma desc")] {
+        for (name, desc) in [
+            ("alpha", "Alpha desc"),
+            ("beta", "Beta desc"),
+            ("gamma", "Gamma desc"),
+        ] {
             write_skill(
                 &skills,
                 &format!("{name}.md"),
@@ -791,12 +798,19 @@ mod tests {
         assert_eq!(docs.len(), 3);
         let idx = render_skills_index_appendix(&docs, 32_000);
         assert!(idx.contains("当前共 3 条技能"), "应报全量条数：{idx}");
-        for (name, desc) in [("alpha", "Alpha desc"), ("beta", "Beta desc"), ("gamma", "Gamma desc")] {
+        for (name, desc) in [
+            ("alpha", "Alpha desc"),
+            ("beta", "Beta desc"),
+            ("gamma", "Gamma desc"),
+        ] {
             assert!(idx.contains(name), "索引应含 {name}：{idx}");
             assert!(idx.contains(desc), "索引应含 {name} 的描述：{idx}");
         }
         assert!(idx.contains("skill_read"), "索引应提示用 skill_read 取正文");
-        assert!(idx.contains("skill_manage"), "索引应提示可用 skill_manage 沉淀新技能：{idx}");
+        assert!(
+            idx.contains("skill_manage"),
+            "索引应提示可用 skill_manage 沉淀新技能：{idx}"
+        );
     }
 
     /// 没有 `/<id>` 强制注入时既不追加正文、也不扫描目录——首条 `system` 因此逐轮稳定。

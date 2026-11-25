@@ -36,14 +36,8 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
             post(workspace_clone_stream_handler),
         )
         .route("/workspace/search", post(workspace_search_handler))
-        .route(
-            "/workspace/dir/archive",
-            get(workspace_dir_archive_handler),
-        )
-        .route(
-            "/workspace/file/move",
-            post(workspace_file_move_handler),
-        )
+        .route("/workspace/dir/archive", get(workspace_dir_archive_handler))
+        .route("/workspace/file/move", post(workspace_file_move_handler))
         .route(
             "/workspace/file/download",
             get(workspace_file_download_handler),

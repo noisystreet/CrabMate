@@ -34,14 +34,12 @@ pub mod policy;
 pub(crate) mod turn_loop;
 
 // ---- 稳定模块路径（对外 / `$crate::agent::agent_turn::…`）----
-pub(crate) use host::{
-    errors, execute, execute_tools, params, run_command_dedupe, turn_sink,
-};
+pub(crate) use host::{errors, execute, execute_tools, params, run_command_dedupe, turn_sink};
 pub(crate) use plan_reflect::{intent, plan, reflect};
-#[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
-pub(crate) use turn_loop::turn_completion;
 pub(crate) use policy::orchestration_entry;
 pub(crate) use turn_loop::run_dispatch;
+#[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
+pub(crate) use turn_loop::turn_completion;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};
@@ -54,14 +52,14 @@ pub(crate) use execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
 pub(crate) use intent::intent_at_turn_start;
-#[allow(unused_imports)]
-pub(crate) use policy::messages::push_assistant_merging_trailing_empty_placeholder;
 pub(crate) use params::{
     RunLoopAttach, RunLoopCore, RunLoopCtx, RunLoopIo, RunLoopObs, RunLoopParams, RunLoopTurnState,
     TurnPlannerHints,
 };
 #[allow(unused_imports)]
 pub(crate) use plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
+#[allow(unused_imports)]
+pub(crate) use policy::messages::push_assistant_merging_trailing_empty_placeholder;
 #[allow(unused_imports)]
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 pub(crate) use turn_sink::TurnControlSink;

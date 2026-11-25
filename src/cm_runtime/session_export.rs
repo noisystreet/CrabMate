@@ -59,7 +59,8 @@ pub fn messages_to_display_export(messages: &[Message]) -> Vec<DisplayExportMess
         }
         let content = match m.role.as_str() {
             "assistant" => {
-                let body = crate::cm_runtime::message_display::assistant_markdown_source_for_message(m);
+                let body =
+                    crate::cm_runtime::message_display::assistant_markdown_source_for_message(m);
                 let t = body.trim();
                 if t.is_empty() {
                     None
@@ -69,7 +70,8 @@ pub fn messages_to_display_export(messages: &[Message]) -> Vec<DisplayExportMess
             }
             "user" => {
                 let plain = message_content_plain_for_chat_display(&m.content);
-                let shown = crate::cm_runtime::message_display::user_message_for_chat_display(&plain);
+                let shown =
+                    crate::cm_runtime::message_display::user_message_for_chat_display(&plain);
                 let t = shown.trim();
                 if t.is_empty() {
                     None
@@ -79,7 +81,9 @@ pub fn messages_to_display_export(messages: &[Message]) -> Vec<DisplayExportMess
             }
             "tool" => {
                 let body = if let Some(raw) = message_content_as_str(&m.content) {
-                    crate::cm_runtime::message_display::tool_content_for_display_for_message(raw, messages, idx)
+                    crate::cm_runtime::message_display::tool_content_for_display_for_message(
+                        raw, messages, idx,
+                    )
                 } else {
                     message_content_plain_for_chat_display(&m.content)
                 };

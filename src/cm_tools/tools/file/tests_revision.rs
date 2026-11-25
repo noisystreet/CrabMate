@@ -28,8 +28,11 @@ fn test_read_file_output_header_contains_content_revision() {
     let file = dir.join("rev.txt");
     std::fs::write(&file, content).unwrap();
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     let out = read_file(r#"{"path":"rev.txt"}"#, &dir, &ctx);
     let revision = read_file_header_str(&out, "revision");
@@ -45,8 +48,11 @@ fn test_read_file_empty_file_reports_empty_content_revision_and_is_writable() {
     let file = dir.join("empty.txt");
     std::fs::write(&file, "").unwrap();
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     let out = read_file(r#"{"path":"empty.txt"}"#, &dir, &ctx);
     let revision = read_file_header_str(&out, "revision");
@@ -70,8 +76,11 @@ fn test_modify_file_accepts_matching_base_revision() {
     let file = dir.join("ok.txt");
     std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     let out = read_file(r#"{"path":"ok.txt"}"#, &dir, &ctx);
     let revision = read_file_header_str(&out, "revision");
@@ -90,8 +99,11 @@ fn test_modify_file_rejects_stale_base_revision_without_writing() {
     let file = dir.join("stale.txt");
     std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     let out = read_file(r#"{"path":"stale.txt"}"#, &dir, &ctx);
     let stale = read_file_header_str(&out, "revision");
@@ -298,8 +310,11 @@ fn test_full_and_edits_commit_via_atomic_rename() {
     let dir = make_test_dir();
     let file = dir.join("atomic.txt");
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
     let ino_before = std::fs::metadata(&file).unwrap().ino();
@@ -344,8 +359,11 @@ fn test_line_mode_without_read_baseline_is_rejected_with_code() {
     let file = dir.join("nobase.txt");
     std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
 
     let err = modify_file_try(
         r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","dry_run":false}"#,

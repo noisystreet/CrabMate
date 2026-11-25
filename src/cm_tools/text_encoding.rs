@@ -60,10 +60,7 @@ pub enum TextDecodeError {
         skipped_bom: Option<usize>,
     },
     /// `encoding_rs` 解码器遇非法序列；`at_eof` 表示出现在流末尾的不完整序列。
-    DecoderInvalid {
-        label: &'static str,
-        at_eof: bool,
-    },
+    DecoderInvalid { label: &'static str, at_eof: bool },
     /// 其它解码类失败：调用点已渲染完整文案（`BufRead::read_line` 只给 `InvalidData`，无结构信息）。
     InvalidBytes { detail: String },
     /// 打开 / 读取 / 定位文件失败（`detail` 已含上下文前缀）。
@@ -99,7 +96,10 @@ impl TextDecodeError {
 
     /// 流末尾残留不完整序列（`encoding_rs` flush 时的 `Malformed`）。
     pub fn decoder_truncated(label: &'static str) -> Self {
-        Self::DecoderInvalid { label, at_eof: true }
+        Self::DecoderInvalid {
+            label,
+            at_eof: true,
+        }
     }
 
     /// 其它解码类失败（调用点已渲染完整文案）。
@@ -156,11 +156,10 @@ impl std::fmt::Display for TextDecodeError {
                 "解码失败：检测到非法字节序列或与声明编码不一致（{}）。可尝试 encoding=auto，或改用 gb18030 / big5 / utf-8-sig 等。",
                 label
             ),
-            Self::DecoderInvalid { label, at_eof: true } => write!(
-                f,
-                "解码失败：流末尾存在不完整或非法序列（{}）。",
-                label
-            ),
+            Self::DecoderInvalid {
+                label,
+                at_eof: true,
+            } => write!(f, "解码失败：流末尾存在不完整或非法序列（{}）。", label),
             Self::InvalidBytes { detail } | Self::Io { detail } | Self::Internal { detail } => {
                 f.write_str(detail)
             }
@@ -413,8 +412,8 @@ pub fn decode_bytes_strict(
     let (resolved, note) = resolve_text_encoding(bytes, hint)?;
     match resolved {
         ResolvedTextEncoding::Utf8Strict => {
-            let s = std::str::from_utf8(bytes)
-                .map_err(|e| TextDecodeError::utf8_invalid(e, None))?;
+            let s =
+                std::str::from_utf8(bytes).map_err(|e| TextDecodeError::utf8_invalid(e, None))?;
             Ok((s.to_string(), note))
         }
         ResolvedTextEncoding::Utf8Sig { skip_bom } => {
@@ -490,8 +489,14 @@ where
         return Ok((line_no, note));
     }
 
-    if read_decoder_chunks(&mut file, &mut decoder, &mut pending, &mut line_no, &mut on_line, label)?
-    {
+    if read_decoder_chunks(
+        &mut file,
+        &mut decoder,
+        &mut pending,
+        &mut line_no,
+        &mut on_line,
+        label,
+    )? {
         return Ok((line_no, note));
     }
 
@@ -542,10 +547,7 @@ where
 }
 
 /// 解码后的总行数（与 `read_file` 行语义一致）。
-pub fn count_decoded_lines(
-    path: &Path,
-    hint: TextEncodingName,
-) -> Result<usize, TextDecodeError> {
+pub fn count_decoded_lines(path: &Path, hint: TextEncodingName) -> Result<usize, TextDecodeError> {
     let (last_no, _) =
         for_each_decoded_line(path, hint, |_, _| std::ops::ControlFlow::Continue(()))?;
     Ok(last_no)
@@ -560,7 +562,10 @@ mod tests {
         let err = parse_text_encoding_name(Some("koi8-r")).expect_err("不支持的编码必须报错");
         assert!(matches!(err, TextDecodeError::UnsupportedEncoding { .. }));
         // Display 仍是历史文案（用户可见报错口径不变）。
-        assert!(err.to_string().starts_with("错误：不支持的 encoding「koi8-r」"));
+        assert!(
+            err.to_string()
+                .starts_with("错误：不支持的 encoding「koi8-r」")
+        );
     }
 
     #[test]
@@ -599,7 +604,13 @@ mod tests {
         let err = decode_bytes_strict(&[0xFF, 0xFF], TextEncodingName::Gbk)
             .expect_err("GBK 非法序列必须报错");
         assert!(
-            matches!(err, TextDecodeError::DecoderInvalid { label: "GBK", at_eof: false }),
+            matches!(
+                err,
+                TextDecodeError::DecoderInvalid {
+                    label: "GBK",
+                    at_eof: false
+                }
+            ),
             "got: {err:?}"
         );
     }

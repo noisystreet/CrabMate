@@ -365,7 +365,12 @@ pub fn run_command_output_report(
             }
         }
         Err(e) => ProcessRunReport {
-            output: format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref()),
+            output: format_spawn_error_with_program(
+                title,
+                &e,
+                spawn_style,
+                program_hint.as_deref(),
+            ),
             exit_code: None,
         },
     }
@@ -415,7 +420,10 @@ pub fn run_command_output_try(
             if code == 0 {
                 Ok(text)
             } else {
-                Err(ToolError::external_code_owned(failure_code.to_string(), text))
+                Err(ToolError::external_code_owned(
+                    failure_code.to_string(),
+                    text,
+                ))
             }
         }
         Err(e) => {
@@ -462,18 +470,31 @@ pub(super) fn truncate_output_lines(s: &str, max_bytes: usize, max_lines: usize)
 /// 带 `标准输出：` / `标准错误：` 标记的部分输出块，供 `parse_tool_output` 提取到 `stdout`/`stderr`；
 /// 超时/取消信封与 `run_command` 的 `CommandOutcome::render` 同构。
 #[must_use]
-pub fn format_marked_streams_block(stdout: &str, stderr: &str, max_bytes: usize, max_lines: usize) -> String {
+pub fn format_marked_streams_block(
+    stdout: &str,
+    stderr: &str,
+    max_bytes: usize,
+    max_lines: usize,
+) -> String {
     let mut out = String::new();
     if !stdout.trim().is_empty() {
         out.push_str("标准输出：\n");
-        out.push_str(&truncate_output_lines(stdout.trim_end(), max_bytes, max_lines));
+        out.push_str(&truncate_output_lines(
+            stdout.trim_end(),
+            max_bytes,
+            max_lines,
+        ));
     }
     if !stderr.trim().is_empty() {
         if !out.is_empty() {
             out.push('\n');
         }
         out.push_str("标准错误：\n");
-        out.push_str(&truncate_output_lines(stderr.trim_end(), max_bytes, max_lines));
+        out.push_str(&truncate_output_lines(
+            stderr.trim_end(),
+            max_bytes,
+            max_lines,
+        ));
     }
     if out.trim().is_empty() {
         out.push_str("(无输出)");

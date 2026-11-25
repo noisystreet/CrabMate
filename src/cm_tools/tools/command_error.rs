@@ -259,7 +259,8 @@ mod tests {
             serde_json::from_str::<serde_json::Value>("{").expect_err("不是合法 JSON"),
         );
         assert!(
-            json.to_string().starts_with(error_text::INVALID_ARGS_PREFIX),
+            json.to_string()
+                .starts_with(error_text::INVALID_ARGS_PREFIX),
             "{}",
             json
         );

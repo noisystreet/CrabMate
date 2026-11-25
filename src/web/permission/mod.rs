@@ -21,11 +21,11 @@ use crate::cm_api_contract::ApiError;
 use crate::cm_api_contract::error_codes;
 use crate::cm_api_contract::permission::{PermissionLevelSource, PermissionView};
 use crate::cm_config::AgentConfig;
+use crate::cm_types::{PermissionLevel, SessionMode};
 use crate::context::agent_role_turn::turn_role_max_permission_level_for_web_or_cli_job;
 use crate::context::session_mode_turn::{
     resolve_session_mode_for_turn, role_default_session_mode_for_turn,
 };
-use crate::cm_types::{PermissionLevel, SessionMode};
 use crate::web::app_state_facets::WebChatAppFacet;
 use crate::web::chat_handlers::normalize_agent_role;
 
@@ -98,11 +98,7 @@ pub(crate) fn build_permission_view(input: PermissionViewInput<'_>) -> Permissio
             .iter()
             .map(|level| level.as_str().to_string())
             .collect(),
-        clamped_by: clamped_by_with_sandbox(
-            resolved.projection_level,
-            cfg,
-            &resolved.clamped_by,
-        ),
+        clamped_by: clamped_by_with_sandbox(resolved.projection_level, cfg, &resolved.clamped_by),
         caps: caps.view(),
     }
 }
@@ -116,7 +112,10 @@ fn clamped_by_with_sandbox(
     cfg: &AgentConfig,
     level_clamps: &[crate::cm_agent::permission::PermissionClamp],
 ) -> Vec<String> {
-    let mut out: Vec<String> = level_clamps.iter().map(|c| c.as_str().to_string()).collect();
+    let mut out: Vec<String> = level_clamps
+        .iter()
+        .map(|c| c.as_str().to_string())
+        .collect();
     if crate::cm_agent::permission::sandbox_clamps(level, cfg).any() {
         out.push(
             crate::cm_agent::permission::PermissionClamp::Sandbox
@@ -214,19 +213,18 @@ pub(crate) async fn permission_handler(
 ) -> Result<Json<PermissionView>, (StatusCode, Json<ApiError>)> {
     let requested_agent_role = normalize_agent_role(query.agent_role.as_deref())
         .map_err(|msg| bad_request("INVALID_AGENT_ROLE", msg))?;
-    let conversation_id = crate::web::normalize_client_conversation_id(query.conversation_id.as_deref())
-        .map_err(|msg| bad_request(error_codes::INVALID_CONVERSATION_ID, msg))?;
+    let conversation_id =
+        crate::web::normalize_client_conversation_id(query.conversation_id.as_deref())
+            .map_err(|msg| bad_request(error_codes::INVALID_CONVERSATION_ID, msg))?;
     // 会话不存在就明确 404，而不是悄悄退回「无持久化」的静态投影：
     // 后者会让客户端把一份按默认配出来的等级当成该会话的等级。
-    let seed = match conversation_id.as_deref() {
-        None => None,
-        Some(cid) => Some(state.load_conversation_seed(cid).await.ok_or_else(|| {
-            not_found(
-                error_codes::CONVERSATION_NOT_FOUND,
-                "会话不存在或已过期",
-            )
-        })?),
-    };
+    let seed =
+        match conversation_id.as_deref() {
+            None => None,
+            Some(cid) => Some(state.load_conversation_seed(cid).await.ok_or_else(|| {
+                not_found(error_codes::CONVERSATION_NOT_FOUND, "会话不存在或已过期")
+            })?),
+        };
     let cfg = state.cfg.read().await;
     // 未知角色必须报错：静默回落默认角色会返回一份偏松的 `available`，
     // 客户端「先选错再纠正」正是 §16.2 要避免的体验。
@@ -328,7 +326,8 @@ mod tests {
         let mut cfg = base_cfg();
         cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
             crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-        cfg.sync_tool_sandbox.sync_default_tool_sandbox_docker_network = String::new();
+        cfg.sync_tool_sandbox
+            .sync_default_tool_sandbox_docker_network = String::new();
 
         let view = view_for(&cfg, None);
         assert!(
@@ -364,11 +363,13 @@ mod tests {
     #[test]
     fn snapshot_reports_intent_and_effective_separately() {
         let cfg = base_cfg();
-        let (active, effective) = permission_levels_for_snapshot(&cfg, None, Some("ask"), Some("unrestricted"));
+        let (active, effective) =
+            permission_levels_for_snapshot(&cfg, None, Some("ask"), Some("unrestricted"));
         assert_eq!(active.as_deref(), Some("unrestricted"));
         assert_eq!(effective.as_deref(), Some("read"), "ask 钳到 ≤ read");
 
-        let (active, effective) = permission_levels_for_snapshot(&cfg, None, Some("act"), Some("workspace"));
+        let (active, effective) =
+            permission_levels_for_snapshot(&cfg, None, Some("act"), Some("workspace"));
         assert_eq!(active.as_deref(), Some("workspace"));
         assert_eq!(effective.as_deref(), Some("workspace"));
     }
@@ -379,13 +380,22 @@ mod tests {
         let cfg = base_cfg();
         let (active, effective) = permission_levels_for_snapshot(&cfg, None, None, None);
         assert_eq!(active, None);
-        assert_eq!(effective.as_deref(), Some(cfg.permission.permission_level.as_str()));
+        assert_eq!(
+            effective.as_deref(),
+            Some(cfg.permission.permission_level.as_str())
+        );
 
         let (active, effective) = permission_levels_for_snapshot(&cfg, None, None, Some("root"));
-        assert_eq!(active.as_deref(), Some("root"), "原样回传，便于用户看到脏值");
-        assert_eq!(effective.as_deref(), Some(cfg.permission.permission_level.as_str()));
+        assert_eq!(
+            active.as_deref(),
+            Some("root"),
+            "原样回传，便于用户看到脏值"
+        );
+        assert_eq!(
+            effective.as_deref(),
+            Some(cfg.permission.permission_level.as_str())
+        );
     }
-
 
     /// 上限被显式降到 `workspace`（启动期 `reconcile_default_level_with_ceiling` 会把默认等级
     /// 一并降到上限）：`available` 里不再出现更高的档。`clamped_by` 此时为空是**正确**的 ——

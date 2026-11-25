@@ -57,7 +57,8 @@ fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), ToolError> {
         GhPrAction::Review => match parsed.event {
             None => {
                 return Err(ToolError::invalid_args(
-                    "错误：action=review 需要 event（approve / request-changes / comment）".to_string(),
+                    "错误：action=review 需要 event（approve / request-changes / comment）"
+                        .to_string(),
                 ));
             }
             Some(GhPrReviewEvent::Comment) | Some(GhPrReviewEvent::RequestChanges) => {
@@ -85,10 +86,7 @@ fn validate_pr_action_fields(parsed: &GhPrArgs) -> Result<(), ToolError> {
 
 /// `gh_pr`：按 `action` 分发到 `checks` / `create` / `merge` / `review` / `comment` / `edit` / `body_draft`。
 #[allow(clippy::result_large_err)]
-pub fn gh_pr_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_pr_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     let parsed: GhPrArgs = parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     validate_pr_action_fields(&parsed)?;
     match parsed.action {
@@ -104,10 +102,7 @@ pub fn gh_pr_try(
 
 /// `gh_run`：按 `action` 分发到 `rerun` / `failure_summary`。
 #[allow(clippy::result_large_err)]
-pub fn gh_run_try(
-    args_json: &str,
-    ctx: &GhCtx<'_>,
-) -> Result<String, ToolError> {
+pub fn gh_run_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, ToolError> {
     let parsed: GhRunArgs = parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     match parsed.action {
         GhRunAction::Rerun => run_ci::gh_run_rerun_try(args_json, ctx),
@@ -152,7 +147,10 @@ mod dispatch_tests {
             (r#"{"action":"create"}"#, "title"),
             (r#"{"action":"create","title":"   "}"#, "title"),
             (r#"{"action":"review"}"#, "event"),
-            (r#"{"action":"review","event":"approve"}"#, "allowed_commands"),
+            (
+                r#"{"action":"review","event":"approve"}"#,
+                "allowed_commands",
+            ),
             (r#"{"action":"review","event":"request-changes"}"#, "body"),
             (r#"{"action":"review","event":"comment"}"#, "body"),
             (r#"{"action":"comment"}"#, "body"),

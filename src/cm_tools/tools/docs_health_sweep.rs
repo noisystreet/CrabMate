@@ -7,9 +7,9 @@ use super::file::read_file;
 use super::output_util::truncate_output_bytes;
 use super::repo_overview;
 use super::spell_tools;
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::DocsHealthSweepArgs;
-use crate::cm_names as tool_names;
 
 /// 阶段参数二次序列化失败（`DocsHealthSweepArgs` → `Value` → `String`）。
 ///
@@ -276,11 +276,8 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Result<Option<String>, Too
         return Ok(None);
     }
     let codespell_args = codespell_args_json(env.v)?;
-    let report = spell_tools::codespell_check(
-        &codespell_args,
-        env.workspace_root,
-        env.max_output_len,
-    )?;
+    let report =
+        spell_tools::codespell_check(&codespell_args, env.workspace_root, env.max_output_len)?;
     let verdict = spell_stage_verdict(report.status);
     let failed = verdict.is_failure();
     summary.push(("codespell_check".to_string(), verdict));
@@ -373,8 +370,7 @@ fn run_markdown_links_phase(
         return Ok(());
     }
     let md_args = markdown_check_links_args_json(v)?;
-    let report =
-        super::markdown_links::markdown_check_links_report_try(&md_args, workspace_root)?;
+    let report = super::markdown_links::markdown_check_links_report_try(&md_args, workspace_root)?;
     summary.push((
         tool_names::MARKDOWN_CHECK_LINKS.to_string(),
         if report.verdict.is_clean() {
@@ -580,10 +576,8 @@ mod tests {
 
     /// 每个用例独立临时根（并行跑测试时不会互相删目录）。
     fn temp_root(tag: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "crabmate_docs_health_{}_{tag}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("crabmate_docs_health_{}_{tag}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("mkdir");
         root
@@ -636,7 +630,10 @@ mod tests {
         let out = docs_health_sweep_try(JSON_ONLY, &root, 80_000).expect("内容发现不是工具故障");
         let _ = fs::remove_dir_all(&root);
 
-        assert!(!out.contains("结论: 发现"), "json 正文不该有 text 报告文案：{out}");
+        assert!(
+            !out.contains("结论: 发现"),
+            "json 正文不该有 text 报告文案：{out}"
+        );
         assert!(out.contains("markdown_check_links: failed"), "{out}");
         assert!(out.contains("存在失败项"), "{out}");
     }
@@ -657,7 +654,11 @@ mod tests {
         let e = docs_health_sweep_try(ONLY_MARKDOWN, &root, 80_000)
             .expect_err("工作区不可用应是执行故障");
 
-        assert_eq!(e.code, "markdown_check_links_workspace_failed", "{}", e.code);
+        assert_eq!(
+            e.code, "markdown_check_links_workspace_failed",
+            "{}",
+            e.code
+        );
     }
 
     /// 入参类型不对仍是 `invalid_args`（不让「容忍」把真参数错误也吞掉）。

@@ -57,9 +57,7 @@ impl ContextTokenBudget {
 }
 
 /// 一次模型视图压缩的可观测报告。
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct ContextCompactionReport {
     pub budget: Option<ContextTokenBudget>,
@@ -223,7 +221,9 @@ pub fn estimate_final_request_tokens(
     } else {
         serde_json::to_string(tools)
             .ok()
-            .map(|json| count_serialized_text_tokens_openai_compat(&message_model, &json).prompt_tokens)
+            .map(|json| {
+                count_serialized_text_tokens_openai_compat(&message_model, &json).prompt_tokens
+            })
             .unwrap_or(0)
     };
     let attachment_tokens = attachment_token_estimate(&vendor_messages);
@@ -315,9 +315,7 @@ fn remove_groups_until_target(
             return false;
         }
         // 删掉最旧一组后的尾部消息数；低于摘要保留条数就停手（那是这次摘要刻意留下的）。
-        if step.tail_guard > 0
-            && messages.len().saturating_sub(groups[1].start) < step.tail_guard
-        {
+        if step.tail_guard > 0 && messages.len().saturating_sub(groups[1].start) < step.tail_guard {
             return false;
         }
         let removed = remove_oldest_turn_group(messages, step.min_groups);

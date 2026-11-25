@@ -9,20 +9,19 @@ use log::debug;
 
 mod approval_specs;
 
-pub use approval_specs::{
-    http_fetch as approval_spec_http_fetch,
-    http_request as approval_spec_http_request,
-    read_dir_external_path as approval_spec_read_dir_external_path,
-    run_command_unknown_cmd as approval_spec_run_command_unknown_cmd,
-    shell_script as approval_spec_shell_script,
-    workspace_external_path as approval_spec_workspace_external_path,
-};
 pub use crate::cm_approval::{
     ApprovalRequestSpec, InteractiveGateOutcome, SensitiveCapability, SharedAllowlistHandles,
     ToolApprovalWebError, WebApprovalChannelMode, WebApprovalSink, persist_allowlist_key,
     run_web_tool_approval,
 };
 use crate::cm_types::CommandApprovalDecision;
+pub use approval_specs::{
+    http_fetch as approval_spec_http_fetch, http_request as approval_spec_http_request,
+    read_dir_external_path as approval_spec_read_dir_external_path,
+    run_command_unknown_cmd as approval_spec_run_command_unknown_cmd,
+    shell_script as approval_spec_shell_script,
+    workspace_external_path as approval_spec_workspace_external_path,
+};
 
 /// 审批能力域 → 审计轴（设计 §11.2）。
 ///
@@ -44,7 +43,10 @@ fn audit_axis_for(
 }
 
 /// 记一条「人批准了这次越界」。`level = None`（未接线等级的旧路径）不记。
-fn audit_approval_granted(spec: &ApprovalRequestSpec, level: Option<crate::cm_types::PermissionLevel>) {
+fn audit_approval_granted(
+    spec: &ApprovalRequestSpec,
+    level: Option<crate::cm_types::PermissionLevel>,
+) {
     let Some(level) = level else {
         return;
     };
@@ -64,7 +66,8 @@ pub async fn interactive_gate_after_whitelist_miss(
     sse_log_label: &'static str,
     allowlist: &SharedAllowlistHandles<'_>,
 ) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
-    let decision = request_tool_interactive_approval(web, spec, sse_log_label, allowlist.level).await?;
+    let decision =
+        request_tool_interactive_approval(web, spec, sse_log_label, allowlist.level).await?;
     match decision {
         CommandApprovalDecision::Deny => Ok(InteractiveGateOutcome::Denied(format!(
             "用户拒绝 {}：{}",
@@ -153,6 +156,4 @@ pub fn interactive_gate_outcome_to_tool_err(outcome: InteractiveGateOutcome) -> 
 }
 
 /// HTTP 工具：URL 未匹配配置前缀且无 Web 审批通道时的统一错误。
-pub const HTTP_TOOL_NO_APPROVAL_CHANNEL_ERR: &str =
-    "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。";
-
+pub const HTTP_TOOL_NO_APPROVAL_CHANNEL_ERR: &str = "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。";

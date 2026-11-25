@@ -28,14 +28,14 @@ fn read_binary_meta_try_outside_workspace_is_workspace_resolve_failed() {
     let dir = make_test_dir();
     let name = write_outside_sibling(&dir);
     let args = format!(r#"{{"path":"../{name}"}}"#);
-    let err = read_binary_meta_try(&args, &PathAccess::new(&dir)).expect_err("工作区外路径应显式失败");
+    let err =
+        read_binary_meta_try(&args, &PathAccess::new(&dir)).expect_err("工作区外路径应显式失败");
     assert_eq!(err.code, "read_binary_meta_workspace_resolve_failed");
     assert_eq!(err.category, ToolFailureCategory::Workspace);
     assert_eq!(err.message, "错误：路径不能超出工作目录");
     let _ = std::fs::remove_file(dir.parent().expect("父目录").join(&name));
     let _ = std::fs::remove_dir_all(&dir);
 }
-
 
 #[test]
 fn read_binary_meta_try_missing_file_is_io_failed() {

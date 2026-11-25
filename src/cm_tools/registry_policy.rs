@@ -7,10 +7,10 @@ use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
 use crate::cm_config::{AgentConfig, WebSearchProvider};
 use crate::cm_types::ToolCall;
 
+use crate::cm_names as tool_names;
 use crate::cm_tools::tool_dispatch::{
     HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool,
 };
-use crate::cm_names as tool_names;
 use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 
 /// `web_search`（worbrow）外圈相对配置超时的额外等待秒数，供浏览器进程收尾。
@@ -329,7 +329,10 @@ mod readonly_single_source_tests {
         // `tool_` 曾是旧实现里的误写，不是真实前缀，故不在此列。
         for name in ["mcp__srv__read", "dyn__plugin_tool"] {
             assert!(!is_readonly_tool(&cfg, name), "`{name}` 不得判为只读");
-            assert!(!is_readonly_tool_for_permission(name), "`{name}` 同上（权限口径）");
+            assert!(
+                !is_readonly_tool_for_permission(name),
+                "`{name}` 同上（权限口径）"
+            );
         }
     }
 

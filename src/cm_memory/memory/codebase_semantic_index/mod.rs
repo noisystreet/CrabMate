@@ -171,13 +171,13 @@ pub fn run_tool_try(
     if !p.enabled {
         return Err(ToolError::workspace(
             "codebase_semantic_unconfigured",
-            "错误：代码语义检索已在配置中关闭（codebase_semantic_search_enabled=false）".to_string(),
+            "错误：代码语义检索已在配置中关闭（codebase_semantic_search_enabled=false）"
+                .to_string(),
         ));
     }
 
-    let v: serde_json::Value = serde_json::from_str(args_json).map_err(|e| {
-        ToolError::invalid_args(format!("错误：参数 JSON 无效: {e}"))
-    })?;
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("错误：参数 JSON 无效: {e}")))?;
 
     let rebuild = json_bool(&v, "rebuild_index", false);
     let query = v.get("query").and_then(|q| q.as_str()).unwrap_or("").trim();
@@ -227,8 +227,8 @@ mod search;
 #[cfg(test)]
 mod tests {
     use super::numeric::{
-        chunk_text_lines, fts5_match_expression, norm_scores_bm25,
-        posix_subdir_prefix_for_delete, rust_symbol_hints_for_chunk, sqlite_like_escape,
+        chunk_text_lines, fts5_match_expression, norm_scores_bm25, posix_subdir_prefix_for_delete,
+        rust_symbol_hints_for_chunk, sqlite_like_escape,
     };
     use crate::cm_memory::memory::vector_math::cosine_sim;
 

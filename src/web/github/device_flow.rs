@@ -420,8 +420,7 @@ pub(crate) async fn github_oauth_device_status_handler(headers: HeaderMap) -> Re
                     set_cookies.extend(access_cookie);
                     set_cookies.extend(refresh_cookie);
                 } else {
-                    let refresh_cookie_ok =
-                        refresh.is_none() || refresh_cookie.is_some();
+                    let refresh_cookie_ok = refresh.is_none() || refresh_cookie.is_some();
                     if access_cookie.is_some() && refresh_cookie_ok {
                         set_cookies.extend(access_cookie);
                         set_cookies.extend(refresh_cookie);
@@ -574,13 +573,15 @@ pub(crate) fn parse_token_grant(v: &serde_json::Value) -> Option<TokenGrant> {
             .map(str::to_string),
         scope: v.get("scope").and_then(|x| x.as_str()).map(str::to_string),
         expires_in: v.get("expires_in").and_then(|x| x.as_u64()),
-        refresh_token_expires_in: v
-            .get("refresh_token_expires_in")
-            .and_then(|x| x.as_u64()),
+        refresh_token_expires_in: v.get("refresh_token_expires_in").and_then(|x| x.as_u64()),
     })
 }
 
-async fn apply_access_token(client: &reqwest::Client, cancel: &Arc<AtomicBool>, grant: &TokenGrant) {
+async fn apply_access_token(
+    client: &reqwest::Client,
+    cancel: &Arc<AtomicBool>,
+    grant: &TokenGrant,
+) {
     let login = fetch_github_login(client, &grant.access_token).await;
     mark_session(
         cancel,

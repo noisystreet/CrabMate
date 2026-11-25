@@ -100,7 +100,9 @@ pub fn build_env(
         if is_forbidden(key) {
             return Err(CtlError::usage(
                 "forbidden_env",
-                format!("拒绝透传敏感环境变量 `{key}`（实例隔离要求不继承 CM_*/API_KEY/*_TOKEN/*_SECRET）"),
+                format!(
+                    "拒绝透传敏感环境变量 `{key}`（实例隔离要求不继承 CM_*/API_KEY/*_TOKEN/*_SECRET）"
+                ),
             ));
         }
         env.insert(key.clone(), val.clone());
@@ -248,9 +250,8 @@ fn resolve_serve_binary() -> Result<PathBuf, CtlError> {
             format!("CRABMATECTL_BIN 指向的文件不存在：{}", path.display()),
         ));
     }
-    let exe = std::env::current_exe().map_err(|e| {
-        CtlError::general("spawn_failed", format!("无法定位当前可执行文件：{e}"))
-    })?;
+    let exe = std::env::current_exe()
+        .map_err(|e| CtlError::general("spawn_failed", format!("无法定位当前可执行文件：{e}")))?;
     let sibling = exe.with_file_name("crabmate");
     if sibling.is_file() {
         return Ok(sibling);
@@ -272,9 +273,9 @@ fn open_stdio(spec: &SpawnSpec) -> Result<(Stdio, Stdio), CtlError> {
         return Ok((Stdio::inherit(), Stdio::inherit()));
     }
     let log = open_log(&spec.log_path)?;
-    let log_err = log.try_clone().map_err(|e| {
-        CtlError::general("log_unwritable", format!("复制日志句柄失败：{e}"))
-    })?;
+    let log_err = log
+        .try_clone()
+        .map_err(|e| CtlError::general("log_unwritable", format!("复制日志句柄失败：{e}")))?;
     Ok((Stdio::from(log), Stdio::from(log_err)))
 }
 
@@ -365,7 +366,10 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("建临时目录");
         let log = dir.join("a.log");
         let big = logio::ROTATE_THRESHOLD_BYTES + 1;
-        File::create(&log).expect("建日志").set_len(big).expect("造超阈值日志");
+        File::create(&log)
+            .expect("建日志")
+            .set_len(big)
+            .expect("造超阈值日志");
 
         open_log(&log).expect("打开日志应成功");
 
@@ -430,7 +434,10 @@ mod tests {
         let args = build_args(&spec, spec.serve_config.as_deref());
         assert!(!args.iter().any(|a| a == "--config"), "不应隐式传 --config");
         assert!(!args.iter().any(|a| a == "--yes"), "不应隐式开 --yes");
-        assert!(!args.iter().any(|a| a == "--no-tools"), "不应隐式开 --no-tools");
+        assert!(
+            !args.iter().any(|a| a == "--no-tools"),
+            "不应隐式开 --no-tools"
+        );
     }
 
     #[test]
@@ -534,7 +541,10 @@ mod tests {
         let mut declared = BTreeMap::new();
         declared.insert("GIT_SSH_COMMAND".to_string(), "ssh -i k".to_string());
         let (env, keys) = build_env(&declared, &CredEnv::default()).expect("普通变量应允许");
-        assert_eq!(env.get("GIT_SSH_COMMAND").map(String::as_str), Some("ssh -i k"));
+        assert_eq!(
+            env.get("GIT_SSH_COMMAND").map(String::as_str),
+            Some("ssh -i k")
+        );
         assert!(keys.iter().any(|k| k == "GIT_SSH_COMMAND"));
     }
 
@@ -552,7 +562,10 @@ mod tests {
     fn forbidden_env_rejects_instance_lock_bypass() {
         // 绕过 serve 实例锁会让两个实例并发写同一 SQLite
         let mut d = BTreeMap::new();
-        d.insert("CM_SERVE_DISABLE_INSTANCE_LOCK".to_string(), "1".to_string());
+        d.insert(
+            "CM_SERVE_DISABLE_INSTANCE_LOCK".to_string(),
+            "1".to_string(),
+        );
         assert!(build_env(&d, &CredEnv::default()).is_err());
     }
 }

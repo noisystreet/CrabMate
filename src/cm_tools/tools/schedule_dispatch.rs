@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
-    EventArgs, EventAction, ReminderAction, ReminderArgs,
+    EventAction, EventArgs, ReminderAction, ReminderArgs,
 };
 
 use super::schedule;
@@ -57,17 +57,11 @@ pub fn reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolError
         }
         ReminderAction::Delete => {
             let id = require_id(args.id.as_deref(), tool_names::REMINDER)?;
-            schedule::delete_reminder(
-                &serde_json::json!({ "id": id }).to_string(),
-                working_dir,
-            )
+            schedule::delete_reminder(&serde_json::json!({ "id": id }).to_string(), working_dir)
         }
         ReminderAction::Complete => {
             let id = require_id(args.id.as_deref(), tool_names::REMINDER)?;
-            schedule::complete_reminder(
-                &serde_json::json!({ "id": id }).to_string(),
-                working_dir,
-            )
+            schedule::complete_reminder(&serde_json::json!({ "id": id }).to_string(), working_dir)
         }
     }
 }
@@ -128,10 +122,7 @@ pub fn event(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
         }
         EventAction::Delete => {
             let id = require_id(args.id.as_deref(), tool_names::EVENT)?;
-            schedule::delete_event(
-                &serde_json::json!({ "id": id }).to_string(),
-                working_dir,
-            )
+            schedule::delete_event(&serde_json::json!({ "id": id }).to_string(), working_dir)
         }
     }
 }
@@ -351,10 +342,7 @@ mod tests {
             );
             assert_eq!(err_code(out), "reminder_not_found", "{action}");
         }
-        let updated = super::reminder(
-            r#"{"action":"update","id":"rem_missing","title":"x"}"#,
-            ws,
-        );
+        let updated = super::reminder(r#"{"action":"update","id":"rem_missing","title":"x"}"#, ws);
         assert_eq!(err_code(updated), "reminder_not_found");
 
         for action in ["update", "delete"] {

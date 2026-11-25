@@ -5,10 +5,10 @@ use axum::http::StatusCode;
 
 use super::handlers::effective_workspace_base_canonical;
 use super::handlers_file_raw::{
-    map_workspace_rel_read_err, raw_err, reject_unsafe_rel_path, RawErr,
+    RawErr, map_workspace_rel_read_err, raw_err, reject_unsafe_rel_path,
 };
-use crate::web::app_state_facets::WebChangelogAppFacet;
 use crate::cm_api_contract::workspace::WorkspaceFileMoveBody;
+use crate::web::app_state_facets::WebChangelogAppFacet;
 use crate::web::normalize_client_conversation_id;
 use crate::workspace::changelist::record_file_state_after_write;
 use crate::workspace::fs::rename_file_under_root;
@@ -20,9 +20,8 @@ pub async fn workspace_file_move_handler(
     Json(body): Json<WorkspaceFileMoveBody>,
 ) -> Result<StatusCode, RawErr> {
     let (from, to) = parse_move_rels(&body)?;
-    let cid = normalize_client_conversation_id(body.conversation_id.as_deref()).map_err(|msg| {
-        raw_err(StatusCode::BAD_REQUEST, "INVALID_CONVERSATION_ID", msg)
-    })?;
+    let cid = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|msg| raw_err(StatusCode::BAD_REQUEST, "INVALID_CONVERSATION_ID", msg))?;
     let base = effective_workspace_base_canonical(&facet.http)
         .await
         .map_err(|e| {

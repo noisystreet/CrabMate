@@ -190,29 +190,30 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     let saved_revision = saved_revision_sink.lock().ok().and_then(|g| *g);
     crate::chat_job_queue::auto_resume::maybe_auto_resume_next_turn(
         crate::chat_job_queue::auto_resume::AutoResumeCtx {
-        queue_deps: &queue_deps,
-        app: &app,
-        cfg_snap: &prepared.cfg_snap,
-        conversation_id: conversation_id.as_str(),
-        paused_reason,
-        saved_revision,
-        // 用户刚点了停止：绝不替他再起一回合（取消优先于一切，含开关）。
-        cancelled,
-        // 本回合是否由续跑发起 —— 决定这次暂停要不要计入「连续无进展」。
-        from_auto_resume,
-        request_agent_role: request_agent_role.as_deref(),
-        request_session_mode: request_session_mode.as_deref(),
-        request_permission_level: request_permission_level.as_deref(),
-        work_dir: work_dir.as_path(),
-        workspace_is_set,
-        temperature_override,
-        seed_override,
-        llm_override,
-        executor_llm_override,
-        readonly_tool_ttl_cache_secs,
-        github_token,
-        client_sse_protocol,
-    })
+            queue_deps: &queue_deps,
+            app: &app,
+            cfg_snap: &prepared.cfg_snap,
+            conversation_id: conversation_id.as_str(),
+            paused_reason,
+            saved_revision,
+            // 用户刚点了停止：绝不替他再起一回合（取消优先于一切，含开关）。
+            cancelled,
+            // 本回合是否由续跑发起 —— 决定这次暂停要不要计入「连续无进展」。
+            from_auto_resume,
+            request_agent_role: request_agent_role.as_deref(),
+            request_session_mode: request_session_mode.as_deref(),
+            request_permission_level: request_permission_level.as_deref(),
+            work_dir: work_dir.as_path(),
+            workspace_is_set,
+            temperature_override,
+            seed_override,
+            llm_override,
+            executor_llm_override,
+            readonly_tool_ttl_cache_secs,
+            github_token,
+            client_sse_protocol,
+        },
+    )
     .await;
 
     if cancelled {
@@ -222,7 +223,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     if !stream_ended_sent.is_sent() {
         let tiktoken_prompt_tokens =
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
-                &prepared.cfg_snap, &messages,
+                &prepared.cfg_snap,
+                &messages,
             );
         // 兜底补发路径（主路径未发帧时才走到这里）：`missing` 不保证，按空处理——
         // 该路径拿不到主路径那份 verdict，硬凑会让「没证据」变成「有结论」（#1472）。

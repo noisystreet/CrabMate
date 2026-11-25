@@ -230,7 +230,9 @@ fn preview_append_header(
     }
 }
 
-fn count_remaining_preview_rows(it: csv::StringRecordsIter<'_, io::Cursor<&[u8]>>) -> (usize, bool) {
+fn count_remaining_preview_rows(
+    it: csv::StringRecordsIter<'_, io::Cursor<&[u8]>>,
+) -> (usize, bool) {
     let mut rest = 0usize;
     let mut capped = false;
     for _ in it {
@@ -351,7 +353,11 @@ fn run_validate(data: &[u8], delim: u8, max_scan: usize) -> Result<String, Strin
     }
 
     Ok(format_column_validate_report(
-        delim, cap, total, expected, &mismatches,
+        delim,
+        cap,
+        total,
+        expected,
+        &mismatches,
     ))
 }
 
@@ -625,13 +631,7 @@ fn table_text_args_to_json_value(args: &TableTextArgs) -> Value {
     set_opt_field(&mut v, "preview_rows", args.preview_rows);
     set_opt_field(&mut v, "max_rows_scan", args.max_rows_scan);
     if !args.columns.is_empty() {
-        v["columns"] = Value::Array(
-            args.columns
-                .iter()
-                .copied()
-                .map(Value::from)
-                .collect(),
-        );
+        v["columns"] = Value::Array(args.columns.iter().copied().map(Value::from).collect());
     }
     set_opt_field(&mut v, "column", args.column);
     set_opt_field(&mut v, "equals", args.equals.clone());
@@ -702,11 +702,7 @@ fn table_text_run_preview_action(
 }
 
 #[allow(clippy::result_large_err)]
-fn table_text_run_validate_action(
-    v: &Value,
-    bytes: &[u8],
-    delim: u8,
-) -> Result<String, ToolError> {
+fn table_text_run_validate_action(v: &Value, bytes: &[u8], delim: u8) -> Result<String, ToolError> {
     let max_scan = parse_usize(v, "max_rows_scan", MAX_ROWS_SCAN, MAX_ROWS_SCAN)
         .map_err(ToolError::invalid_args)?;
     run_validate(bytes, delim, max_scan)

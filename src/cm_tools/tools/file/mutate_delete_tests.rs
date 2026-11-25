@@ -41,7 +41,10 @@ fn delete_files_validation_rejects_whole_batch() {
         &ctx,
     );
     assert!(!out.contains("已删除"), "{out}");
-    assert!(out.contains("路径无法解析") || out.contains("错误"), "{out}");
+    assert!(
+        out.contains("路径无法解析") || out.contains("错误"),
+        "{out}"
+    );
     assert!(
         tmp.path().join("a.txt").exists(),
         "任一路径非法时整批拒绝，不应删除任何文件"

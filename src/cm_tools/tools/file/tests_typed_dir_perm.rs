@@ -30,7 +30,13 @@ fn delete_files_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || delete_files(args, &dir_legacy, &test_ctx(&dir_legacy)),
-        || delete_files_try(args, &super::PathAccess::new(&dir_typed), &test_ctx(&dir_typed)),
+        || {
+            delete_files_try(
+                args,
+                &super::PathAccess::new(&dir_typed),
+                &test_ctx(&dir_typed),
+            )
+        },
     );
 
     assert!(typed.contains("已删除 2 个文件"), "{typed}");
@@ -93,12 +99,8 @@ fn delete_files_try_partial_failure_is_delete_files_failed() {
     let dir = make_test_dir();
     write(&dir, "a.txt", "A");
 
-    let output = assert_run_tool_error_code(
-        "delete_files",
-        args,
-        &test_ctx(&dir),
-        "delete_files_failed",
-    );
+    let output =
+        assert_run_tool_error_code("delete_files", args, &test_ctx(&dir), "delete_files_failed");
     // 失败正文已由写入 diff 预览头携带 `ok:false`；Typed 收尾不得再追加第二个头。
     assert_eq!(
         output.matches("crabmate_tool_output").count(),
@@ -177,7 +179,7 @@ fn delete_dir_try_non_empty_without_recursive_is_delete_dir_failed() {
         r#"{"path":"sub","confirm":true}"#,
         &super::PathAccess::new(&dir),
     )
-        .expect_err("非空目录未递归须失败");
+    .expect_err("非空目录未递归须失败");
 
     assert_error(
         &err,
@@ -198,7 +200,7 @@ fn delete_dir_try_missing_path_is_invalid_input() {
         r#"{"path":"  ","confirm":true}"#,
         &super::PathAccess::new(&dir),
     )
-        .expect_err("空 path 须失败");
+    .expect_err("空 path 须失败");
     assert_invalid_input(&err);
     assert!(err.message.contains("缺少 path 参数"), "{}", err.message);
     let _ = std::fs::remove_dir_all(&dir);
@@ -233,7 +235,7 @@ fn delete_dir_try_non_directory_is_invalid_input() {
         r#"{"path":"a.txt","confirm":true}"#,
         &super::PathAccess::new(&dir),
     )
-        .expect_err("文件路径不可当目录删除");
+    .expect_err("文件路径不可当目录删除");
     assert_invalid_input(&err);
     assert!(err.message.contains("不是目录"), "{}", err.message);
     assert!(dir.join("a.txt").exists());
@@ -257,7 +259,7 @@ fn delete_dir_try_workspace_root_is_invalid_input() {
         r#"{"path":".","confirm":true}"#,
         &super::PathAccess::new(&dir),
     )
-        .expect_err("不得删除工作区根目录");
+    .expect_err("不得删除工作区根目录");
     assert_invalid_input(&err);
     assert!(err.message.contains("工作区根目录"), "{}", err.message);
     assert!(dir.is_dir(), "工作区根目录必须保留");

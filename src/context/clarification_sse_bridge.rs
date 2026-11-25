@@ -4,8 +4,8 @@ use crate::cm_tools::clarification_questionnaire::{
     ClarificationQuestionnaireBody as ToolsBody, parse_present_clarification_body,
 };
 
-use crate::cm_sse_protocol::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
 use crate::cm_names as tool_names;
+use crate::cm_sse_protocol::sse::{ClarificationQuestionField, ClarificationQuestionnaireBody};
 
 fn to_sse_body(body: ToolsBody) -> ClarificationQuestionnaireBody {
     ClarificationQuestionnaireBody {

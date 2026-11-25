@@ -7,7 +7,7 @@ use tracing::Instrument;
 use crate::llm as llm_mod;
 use crate::{
     AgentTurnLlmOverrides, AgentTurnTransport, RunAgentTurnAttach, RunAgentTurnObs,
-    TurnRequest, RunAgentTurnSession, RunAgentTurnSharedInputs,
+    RunAgentTurnSession, RunAgentTurnSharedInputs, TurnRequest,
 };
 
 fn resolved_turn_llm_backend<'a>(
@@ -132,7 +132,9 @@ pub async fn run_agent_turn<'a>(
     // 出站 `@` 图跟本轮工具 `work_dir`，不读热更新后的全局工作区；权限 `caps`（含 L0 的编排
     // 收敛）在同一次快照里算好。
     let (cfg_for_turn, permission) = crate::cm_agent::permission::prepare_turn_cfg_and_permission(
-        cfg, effective_working_dir, permission_stages,
+        cfg,
+        effective_working_dir,
+        permission_stages,
     );
     let cfg = &cfg_for_turn;
 
@@ -315,7 +317,9 @@ struct RunLoopAssembly<'a> {
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     tool_job_registry: Option<Arc<crate::jobs::tool_jobs::ToolJobRegistry>>,
     /// `#1455` C 步：暂停信号回传口（`None` = 调用方不关心）。
-    paused_reason_sink: Option<std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>>,
+    paused_reason_sink: Option<
+        std::sync::Arc<std::sync::Mutex<Option<crate::cm_agent::task_state::TaskPauseReason>>>,
+    >,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     trace_sink: Option<Arc<dyn crate::llm::TraceSink>>,
     // → RunLoopTurnState 的采样覆盖段（`AgentTurnLlmOverrides` 已在外层解构）
@@ -386,13 +390,10 @@ fn assemble_run_loop_params<'a>(
     // 换取 `'a` —— 那是每回合永久泄漏。
     //
     // 仅在 `subagent_enabled = true` 时构造；默认关闭 → 零分配、零行为变化。
-    let delegator: Option<
-        std::sync::Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>,
-    > =
+    let delegator: Option<std::sync::Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>> =
         if cfg.subagent.enabled {
-            let readonly_tools = crate::agent::delegation::readonly_subset_for_subturn(
-                cfg, tools_defs,
-            );
+            let readonly_tools =
+                crate::agent::delegation::readonly_subset_for_subturn(cfg, tools_defs);
             let d = crate::agent::delegation::CrabmateDelegator::new(
                 crate::agent::delegation::DelegatorParts {
                     engine: crate::turn_runner::default_turn_engine(),
@@ -542,8 +543,10 @@ fn finish_turn_result(
         )),
         Err(e) if interrupted_cancel => {
             let appended = model_context_view.append_current_turn_to(messages);
-            let completed = crate::cm_agent::message_pipeline::
-                complete_pending_tool_responses_for_persistence(messages);
+            let completed =
+                crate::cm_agent::message_pipeline::complete_pending_tool_responses_for_persistence(
+                    messages,
+                );
             // 中断分支**不做**结构性提交：本轮模型视图的压缩配方（artifacts）描述的是一个
             // 未被 commit 的视图，若转成 marker 写入 canonical，下一轮会把压缩区间重放到
             // 实际并不存在的位置。显式丢弃，也让「中断路径不消费 artifacts」成为显式契约。
@@ -586,7 +589,10 @@ fn commit_successful_model_context_view(
             model_context_view.canonical_message_count_before_turn();
         artifact.bind_canonical_ranges(canonical);
     }
-    for marker in artifacts.drain(..).filter_map(|artifact| artifact.into_marker()) {
+    for marker in artifacts
+        .drain(..)
+        .filter_map(|artifact| artifact.into_marker())
+    {
         canonical.push(marker);
     }
     model_context_view.commit_current_turn_to(canonical)

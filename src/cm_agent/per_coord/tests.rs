@@ -93,9 +93,11 @@ fn final_assistant_stops_when_plan_present() {
                 tool_call_id: Some("tc0".to_string()),
             },
         ];
-    let ok = Message::assistant_only(r#"```json
+    let ok = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step","workflow_node_id":"only"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&ok, &hist_one_node, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -123,20 +125,24 @@ fn plan_semantics_requires_enough_steps_vs_validate_layers() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step = Message::assistant_only(r#"```json
+    let one_step = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&one_step, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let three_steps = Message::assistant_only(r#"```json
+    let three_steps = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s0","description":"layer 0","workflow_node_id":"a"},
   {"id":"s1","description":"layer 1","workflow_node_id":"b"},
   {"id":"s2","description":"layer 2","workflow_node_id":"c"}
 ]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&three_steps, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -164,9 +170,11 @@ fn plan_rewrite_exhausted_reason_layer_mismatch() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step = Message::assistant_only(r#"```json
+    let one_step = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&one_step, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
@@ -200,19 +208,23 @@ fn plan_workflow_node_id_must_match_last_workflow_nodes() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let bad_link = Message::assistant_only(r#"```json
+    let bad_link = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"no-such-node"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&bad_link, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let ok_link = Message::assistant_only(r#"```json
+    let ok_link = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"step1","description":"run fmt","workflow_node_id":"fmt"},
   {"id":"step2","description":"run test","workflow_node_id":"test"}
 ]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&ok_link, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -240,19 +252,23 @@ fn validate_only_duplicate_nodes_plan_must_repeat_workflow_node_id() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let one_step_dup = Message::assistant_only(r#"```json
+    let one_step_dup = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"both","workflow_node_id":"dup"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&one_step_dup, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let two_steps_dup = Message::assistant_only(r#"```json
+    let two_steps_dup = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s1","description":"first","workflow_node_id":"dup"},
   {"id":"s2","description":"second","workflow_node_id":"dup"}
 ]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&two_steps_dup, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -287,19 +303,23 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-    let partial = Message::assistant_only(r#"```json
+    let partial = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"only fmt","workflow_node_id":"fmt"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&partial, &hist, &cfg, false),
         AfterFinalAssistant::RequestPlanRewrite(_)
     ));
-    let both = Message::assistant_only(r#"```json
+    let both = Message::assistant_only(
+        r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
   {"id":"s1","description":"fmt","workflow_node_id":"fmt"},
   {"id":"s2","description":"test","workflow_node_id":"test"}
 ]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&both, &hist, &cfg, false),
         AfterFinalAssistant::StopTurn
@@ -352,10 +372,12 @@ fn always_policy_requests_rewrite_without_workflow() {
 fn always_policy_stops_when_plan_present() {
     let cfg = test_cfg();
     let mut c = pc(FinalPlanRequirementMode::Always, 2);
-    let ok = Message::assistant_only(r#"Here is my plan:
+    let ok = Message::assistant_only(
+        r#"Here is my plan:
 ```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do the thing"}]}
-```"#);
+```"#,
+    );
     assert!(matches!(
         c.after_final_assistant(&ok, &[], &cfg, false),
         AfterFinalAssistant::StopTurn

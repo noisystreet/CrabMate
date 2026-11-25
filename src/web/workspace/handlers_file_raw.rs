@@ -1,17 +1,17 @@
 //! `GET /workspace/file/raw`：工作区内常见图片字节（供聊天气泡 `<img>` 经 Client 鉴权拉取）。
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::Json;
 
 use super::handlers::effective_workspace_base_canonical;
 #[cfg(unix)]
 use super::handlers_sync::{WorkspaceFileIoError, workspace_read_file_bytes_sync_unix};
+use crate::cm_api_contract::workspace::WorkspaceFileQuery;
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::chat::ApiError;
-use crate::cm_api_contract::workspace::WorkspaceFileQuery;
 use crate::workspace::path::resolve_web_workspace_read_path;
 
 /// 与 Web `POST /upload` 单张图片上限一致。
@@ -233,7 +233,11 @@ async fn read_workspace_bytes_non_unix(
         return Err(raw_err(
             StatusCode::PAYLOAD_TOO_LARGE,
             read_code,
-            format!("文件过大（{} 字节），当前最多读取 {} 字节", meta.len(), max_b),
+            format!(
+                "文件过大（{} 字节），当前最多读取 {} 字节",
+                meta.len(),
+                max_b
+            ),
         ));
     }
     tokio::fs::read(&canonical).await.map_err(|e| {

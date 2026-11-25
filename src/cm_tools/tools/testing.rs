@@ -8,9 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::ToolContext;
 use crate::cm_config::WebSearchProvider;
-use crate::cm_tools::tool_result::{
-    ToolError, ToolFailureCategory, parse_tool_output, ToolResult,
-};
+use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory, ToolResult, parse_tool_output};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -81,7 +79,12 @@ pub(crate) fn assert_error(
 
 /// 参数类失败的固定契约（`invalid_args` / `InvalidInput` / 不可重试）。
 pub(crate) fn assert_invalid_input(err: &ToolError) {
-    assert_error(err, "invalid_args", ToolFailureCategory::InvalidInput, false);
+    assert_error(
+        err,
+        "invalid_args",
+        ToolFailureCategory::InvalidInput,
+        false,
+    );
 }
 
 /// 成功路径双目录对比：输入须由调用方在两目录中准备一致。

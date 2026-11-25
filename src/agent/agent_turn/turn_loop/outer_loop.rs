@@ -19,14 +19,6 @@ use crate::types::{
     Message, USER_CANCELLED_FINISH_REASON, is_execution_constraint_ephemeral_system,
 };
 
-use crate::agent::agent_turn::policy::outer_loop_driver::OuterLoopDriver;
-use crate::agent::agent_turn::policy::outer_loop_fsm::{
-    OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl,
-};
-use crate::agent::agent_turn::policy::outer_loop_iteration_reduce::{
-    outer_loop_iteration_exit_from_reflect_reduce,
-    reduce_outer_loop_post_tools_exit_with_feedback,
-};
 use super::outer_loop_reflect::{
     map_reflect_outcome_to_branch_ctl, outer_loop_inject_missing_final_answer_feedback_after_tools,
     outer_loop_inject_truncated_feedback_after_tools,
@@ -41,6 +33,13 @@ use crate::agent::agent_turn::execute_tools::{
 };
 use crate::agent::agent_turn::params::{OuterLoopPlanCallModelRole, RunLoopParams};
 use crate::agent::agent_turn::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
+use crate::agent::agent_turn::policy::outer_loop_driver::OuterLoopDriver;
+use crate::agent::agent_turn::policy::outer_loop_fsm::{
+    OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl,
+};
+use crate::agent::agent_turn::policy::outer_loop_iteration_reduce::{
+    outer_loop_iteration_exit_from_reflect_reduce, reduce_outer_loop_post_tools_exit_with_feedback,
+};
 use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
 use crate::agent::agent_turn::reflect::per_reflect_after_assistant;
 use crate::cm_agent::step_executor_policy::filter_tool_defs_for_executor_kind;
@@ -734,8 +733,14 @@ mod tests {
         cfg.turn_budget.max_llm_calls_per_turn = 7;
         cfg.turn_budget.max_turn_tokens = 4096;
         for (deny, expected_message) in [
-            (TurnBudgetDeny::WallClock, turn_wall_clock_limit_user_message(33)),
-            (TurnBudgetDeny::LlmCalls, turn_llm_calls_limit_user_message(7)),
+            (
+                TurnBudgetDeny::WallClock,
+                turn_wall_clock_limit_user_message(33),
+            ),
+            (
+                TurnBudgetDeny::LlmCalls,
+                turn_llm_calls_limit_user_message(7),
+            ),
             (TurnBudgetDeny::Tokens, turn_tokens_limit_user_message(4096)),
         ] {
             match turn_budget_deny_to_turn_error(deny, &cfg.turn_budget) {
@@ -777,7 +782,10 @@ mod tests {
             Message::user_only("   "),
             Message::user_only("最终目标"),
         ];
-        assert_eq!(super::last_user_goal(&messages).as_deref(), Some("最终目标"));
+        assert_eq!(
+            super::last_user_goal(&messages).as_deref(),
+            Some("最终目标")
+        );
 
         let blank = vec![Message::user_only("   ")];
         assert_eq!(super::last_user_goal(&blank), None);

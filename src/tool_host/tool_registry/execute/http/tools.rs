@@ -9,13 +9,13 @@ use std::time::Duration;
 
 use log::error;
 
+use crate::cm_tools::tools;
 use crate::tool_host::tool_registry::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, web_search_outer_wall_secs,
 };
-use crate::cm_tools::tools;
 
-use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::super::ToolExecEnv;
+use super::super::run_command::dispatch_non_sync_tool_to_docker;
 use super::{HttpToolPreflightParams, http_tool_preflight, spawn_blocking_http_tool};
 
 pub(in crate::tool_host::tool_registry::execute) async fn execute_http_fetch_impl(
@@ -87,10 +87,8 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_http_request_i
         };
     let has_body = json_body.is_some();
     let key = tools::http_fetch::request_storage_key(method, &url);
-    let approval_args =
-        tools::http_fetch::approval_args_display_request(method, &url, has_body);
-    let spec =
-        crate::tool_host::tool_approval::approval_spec_http_request(&approval_args, &key);
+    let approval_args = tools::http_fetch::approval_args_display_request(method, &url, has_body);
+    let spec = crate::tool_host::tool_approval::approval_spec_http_request(&approval_args, &key);
     if let Err(out) = http_tool_preflight(HttpToolPreflightParams {
         env,
         effective_working_dir,

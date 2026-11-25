@@ -13,8 +13,8 @@ use crate::AppState;
 use crate::web::chat_handlers::{
     chat_approval_handler, chat_async_handler, chat_branch_handler, chat_handler,
     chat_job_status_handler, chat_stream_cancel_handler, chat_stream_handler,
-    conversation_delete_handler, conversation_messages_handler,
-    delete_uploads_handler, get_upload_file_handler, upload_handler,
+    conversation_delete_handler, conversation_messages_handler, delete_uploads_handler,
+    get_upload_file_handler, upload_handler,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -23,7 +23,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/chat/async", post(chat_async_handler))
         .route("/chat/jobs/{job_id}", get(chat_job_status_handler))
         .route("/chat/stream", post(chat_stream_handler))
-        .route("/chat/stream/{job_id}/cancel", post(chat_stream_cancel_handler))
+        .route(
+            "/chat/stream/{job_id}/cancel",
+            post(chat_stream_cancel_handler),
+        )
         .route("/chat/approval", post(chat_approval_handler))
         .route("/chat/branch", post(chat_branch_handler))
         .route("/conversation/messages", get(conversation_messages_handler))

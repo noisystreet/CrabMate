@@ -14,8 +14,11 @@ fn test_modify_file_replace_lines_preserves_executable_mode() {
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
     let out = modify_file(
         r#"{"dry_run":false,"path":"run.sh","mode":"replace_lines","start_line":2,"end_line":2,"content":"echo changed","allow_stale_revision":true}"#,
         &dir,
@@ -38,8 +41,11 @@ fn test_modify_file_insert_after_line_preserves_executable_mode() {
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
     let out = modify_file(
         r#"{"dry_run":false,"path":"run2.sh","mode":"insert_after_line","after_line":1,"content":"echo two","allow_stale_revision":true}"#,
         &dir,
@@ -62,8 +68,11 @@ fn test_modify_file_replace_lines_preserves_readonly_mode_and_cleans_tmp() {
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
 
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
     let out = modify_file(
         r#"{"dry_run":false,"path":"ro.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"B","allow_stale_revision":true}"#,
         &dir,
@@ -80,7 +89,10 @@ fn test_modify_file_replace_lines_preserves_readonly_mode_and_cleans_tmp() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.contains("crabmate_edit_tmp"))
         .collect();
-    assert!(leftover.is_empty(), "成功提交后不应残留临时文件: {leftover:?}");
+    assert!(
+        leftover.is_empty(),
+        "成功提交后不应残留临时文件: {leftover:?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -113,8 +125,11 @@ fn test_modify_file_replace_lines_preserves_xattr() {
     }
 
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
     let out = modify_file(
         r#"{"dry_run":false,"path":"x.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
@@ -155,8 +170,11 @@ fn test_modify_file_replace_lines_preserves_hard_link_inode() {
     );
 
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
-    let ctx =
-        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let ctx = crate::cm_tools::tools::tool_context_for(
+        &cfg,
+        cfg.command_exec.allowed_commands.as_ref(),
+        &dir,
+    );
     let out = modify_file(
         r#"{"dry_run":false,"path":"orig.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
@@ -184,6 +202,9 @@ fn test_modify_file_replace_lines_preserves_hard_link_inode() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.contains("crabmate_edit_tmp"))
         .collect();
-    assert!(leftover.is_empty(), "成功提交后不应残留临时文件: {leftover:?}");
+    assert!(
+        leftover.is_empty(),
+        "成功提交后不应残留临时文件: {leftover:?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

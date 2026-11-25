@@ -14,7 +14,10 @@ use crate::AppState;
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/tools", get(crate::web::tools_handlers::tools_list_handler))
+        .route(
+            "/tools",
+            get(crate::web::tools_handlers::tools_list_handler),
+        )
         .route(
             "/tools/plugins",
             get(crate::web::tools_handlers::tools_plugins_handler),

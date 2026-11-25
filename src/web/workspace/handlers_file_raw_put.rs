@@ -5,12 +5,12 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 
 use super::handlers::effective_workspace_base_canonical;
+use super::handlers_file_raw::{RawErr, raw_err, reject_unsafe_rel_path};
 #[cfg(unix)]
 use super::handlers_sync::{WorkspaceFileIoError, workspace_file_write_sync_unix};
-use super::handlers_file_raw::{raw_err, reject_unsafe_rel_path, RawErr};
+use crate::cm_api_contract::workspace::WorkspaceFileRawPutQuery;
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::validate_workspace_file_write_payload;
-use crate::cm_api_contract::workspace::WorkspaceFileRawPutQuery;
 use crate::workspace::path::resolve_web_workspace_write_path;
 
 /// 写入工作区原始字节；成功 **204**。失败为 JSON `ApiError`（与 GET raw 同类）。
@@ -29,7 +29,11 @@ pub async fn workspace_file_raw_put_handler(
     let path = query.path.trim();
     reject_unsafe_rel_path(path)?;
     if let Err(e) = validate_workspace_file_write_payload(body.as_ref()) {
-        return Err(raw_err(StatusCode::PAYLOAD_TOO_LARGE, "WORKSPACE_FILE_TOO_LARGE", e));
+        return Err(raw_err(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "WORKSPACE_FILE_TOO_LARGE",
+            e,
+        ));
     }
     let base = effective_workspace_base_canonical(&http)
         .await

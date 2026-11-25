@@ -42,6 +42,7 @@ use std::time::Instant;
 
 use crate::cm_llm::{E2eMode, build_e2e_backend};
 
+use crate::cm_names as tool_names;
 use crate::config::load_config;
 use crate::context_bootstrap::conversation_turn_bootstrap::compose_new_conversation_messages;
 use crate::context_bootstrap::prompt_compose::{
@@ -51,9 +52,8 @@ use crate::tool_stats::ToolOutcomeRecorder;
 use crate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend,
     LlmSeedOverride, Message, ProcessHandles, RunAgentTurnAttach, RunAgentTurnObs,
-    TurnRequest, RunAgentTurnSession, RunAgentTurnSharedInputs, build_tools, run_agent_turn,
+    RunAgentTurnSession, RunAgentTurnSharedInputs, TurnRequest, build_tools, run_agent_turn,
 };
-use crate::cm_names as tool_names;
 
 /// LLM-as-Judge 评分配置。
 #[derive(Debug, Clone, Default)]

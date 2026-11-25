@@ -52,7 +52,10 @@ pub(super) struct PreparedQueuedTurn {
 
 /// 解析一个排队回合的前置阶段，并登记它的 PER 观测镜像。
 pub(super) async fn prepare_queued_turn(p: PreparedTurnParams<'_>) -> PreparedQueuedTurn {
-    let PreparedTurnParams { envelope, queue_deps } = p;
+    let PreparedTurnParams {
+        envelope,
+        queue_deps,
+    } = p;
 
     // 在册 ⟺ 两个 driver 之一仍持有 `flight` 的强引用（见 `ChatJobQueue` 的
     // `active_per_flights`）。先建先登记、再做解析：否则「回合已开始」与「出现在
@@ -106,7 +109,11 @@ pub(super) async fn prepare_queued_turn(p: PreparedTurnParams<'_>) -> PreparedQu
     };
 
     let (executor_api_base, executor_api_key, executor_model_override) =
-        resolve_executor_llm_triple(queue_deps, &cfg_turn, envelope.executor_llm_override.as_ref());
+        resolve_executor_llm_triple(
+            queue_deps,
+            &cfg_turn,
+            envelope.executor_llm_override.as_ref(),
+        );
     let client_model_override = envelope.llm_override.as_ref().and_then(|o| o.model.clone());
 
     PreparedQueuedTurn {
@@ -168,8 +175,8 @@ fn resolve_executor_llm_triple(
     else {
         return (None, None, None);
     };
-    let base =
-        (executor_cfg.llm.api_base != cfg_turn.llm.api_base).then(|| executor_cfg.llm.api_base.clone());
+    let base = (executor_cfg.llm.api_base != cfg_turn.llm.api_base)
+        .then(|| executor_cfg.llm.api_base.clone());
     let model =
         (executor_cfg.llm.model != cfg_turn.llm.model).then(|| executor_cfg.llm.model.clone());
     (base, Some(executor_key), model)

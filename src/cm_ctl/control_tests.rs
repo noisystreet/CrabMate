@@ -314,7 +314,11 @@ fn list_reports_stale_observed_when_ready_record_cannot_be_reached() {
     crate::cm_ctl::record::write_atomic(&path, &rec).expect("写记录");
 
     let v: Value = serde_json::from_str(&list(&ctx, &decl, false).to_line()).expect("应为 JSON");
-    assert_eq!(v["instances"][0]["state"], json!("ready"), "落盘态保持 ready");
+    assert_eq!(
+        v["instances"][0]["state"],
+        json!("ready"),
+        "落盘态保持 ready"
+    );
     assert_eq!(
         v["instances"][0]["observed"],
         json!("stale"),
@@ -555,10 +559,7 @@ fn enable_on_already_enabled_but_downed_instance_reconverges() {
 /// `disable` / `enable` 只收 `name`：多给的字段一律拒绝（手写白名单是唯一防线）。
 #[test]
 fn disable_rejects_unknown_field() {
-    let (v, decl, dir) = roundtrip(
-        "dis_evil",
-        r#"{"op":"disable","name":"p","enabled":true}"#,
-    );
+    let (v, decl, dir) = roundtrip("dis_evil", r#"{"op":"disable","name":"p","enabled":true}"#);
     assert_eq!(v["ok"], json!(false));
     assert_eq!(v["code"], json!("bad_request"));
     assert!(!decl.exists(), "非法请求不得创建声明文件");

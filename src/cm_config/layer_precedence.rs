@@ -17,8 +17,8 @@
 use std::sync::Arc;
 
 use crate::cm_config::AgentConfig;
-use crate::cm_config::builder::ConfigBuilder;
 use crate::cm_config::ExposeSecret;
+use crate::cm_config::builder::ConfigBuilder;
 
 /// 配置覆盖层，声明顺序即由低到高的生效顺序。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -173,7 +173,9 @@ impl WatchedValues {
                 u64::try_from(cfg.session_ui.max_message_history).unwrap_or(u64::MAX),
             ),
             disabled_tools: Some(disabled_tools_snapshot(
-                cfg.tool_registry_policy.tool_registry_disabled_tools.as_ref(),
+                cfg.tool_registry_policy
+                    .tool_registry_disabled_tools
+                    .as_ref(),
             )),
             web_api_bearer_set: Some(
                 !cfg.web_api
@@ -192,10 +194,7 @@ impl WatchedValues {
                 &WatchedKey::LlmContextTokens,
                 self.llm_context_tokens != prev.llm_context_tokens,
             ),
-            (
-                &WatchedKey::MaxTokens,
-                self.max_tokens != prev.max_tokens,
-            ),
+            (&WatchedKey::MaxTokens, self.max_tokens != prev.max_tokens),
             (
                 &WatchedKey::MaxMessageHistory,
                 self.max_message_history != prev.max_message_history,
@@ -211,8 +210,8 @@ impl WatchedValues {
         ];
         for (key, changed) in pairs {
             // bearer 只把「设成非空」当有效改动：清空/沿用空值不值得在溯源里占一行。
-            let meaningful = *key != WatchedKey::WebApiBearer
-                || self.web_api_bearer_set == Some(true);
+            let meaningful =
+                *key != WatchedKey::WebApiBearer || self.web_api_bearer_set == Some(true);
             if changed && meaningful {
                 trace.record(*key, layer);
             }
@@ -273,7 +272,11 @@ impl LayerTrace {
                     .map_or("未覆盖，沿用内嵌默认".to_string(), |layer| {
                         format!("最后由 {}", layer.as_str())
                     });
-                format!("  {} = {}（{source}）", key.as_str(), describe_value(cfg, *key))
+                format!(
+                    "  {} = {}（{source}）",
+                    key.as_str(),
+                    describe_value(cfg, *key)
+                )
             })
             .collect()
     }
@@ -296,7 +299,10 @@ fn describe_value(cfg: &AgentConfig, key: WatchedKey) -> String {
             .tool_registry_policy
             .tool_registry_disabled_tools
             .as_ref()
-            .map_or_else(|| VALUE_UNSET.to_string(), |set| format!("{} 个", set.len())),
+            .map_or_else(
+                || VALUE_UNSET.to_string(),
+                |set| format!("{} 个", set.len()),
+            ),
         WatchedKey::WebApiBearer => {
             if cfg
                 .web_api
@@ -331,7 +337,9 @@ where
 
 /// `tool_registry_disabled_tools` 的不可变集合形态转快照用名列表（测试与 doctor 共用）。
 #[must_use]
-pub fn disabled_tools_snapshot(set: Option<&Arc<std::collections::HashSet<String>>>) -> Vec<String> {
+pub fn disabled_tools_snapshot(
+    set: Option<&Arc<std::collections::HashSet<String>>>,
+) -> Vec<String> {
     set.map_or_else(Vec::new, |s| sorted_names(s.as_ref()))
 }
 
@@ -397,7 +405,11 @@ mod tests {
     fn equal_value_at_higher_layer_keeps_earlier_source() {
         let mut cfg = default_cfg();
         let mut trace = LayerTrace::default();
-        let target = cfg.llm_sampling.llm_context_tokens.saturating_sub(1_000).max(1);
+        let target = cfg
+            .llm_sampling
+            .llm_context_tokens
+            .saturating_sub(1_000)
+            .max(1);
         apply_post_load_layers(&mut cfg, &mut trace, |layer, cfg| {
             if matches!(layer, ConfigLayer::UserData | ConfigLayer::Cli) {
                 cfg.llm_sampling.llm_context_tokens = target;
@@ -447,19 +459,29 @@ mod tests {
     }
 
     fn u32_of(value: &serde_json::Value, key: WatchedKey) -> u32 {
-        u32::try_from(value.as_u64().unwrap_or_else(|| panic!("{} 需要整数", key.as_str())))
-            .unwrap_or_else(|_| panic!("{} 超出 u32", key.as_str()))
+        u32::try_from(
+            value
+                .as_u64()
+                .unwrap_or_else(|| panic!("{} 需要整数", key.as_str())),
+        )
+        .unwrap_or_else(|_| panic!("{} 超出 u32", key.as_str()))
     }
 
     fn usize_of(value: &serde_json::Value, key: WatchedKey) -> usize {
-        usize::try_from(value.as_u64().unwrap_or_else(|| panic!("{} 需要整数", key.as_str())))
-            .unwrap_or_else(|_| panic!("{} 超出 usize", key.as_str()))
+        usize::try_from(
+            value
+                .as_u64()
+                .unwrap_or_else(|| panic!("{} 需要整数", key.as_str())),
+        )
+        .unwrap_or_else(|_| panic!("{} 超出 usize", key.as_str()))
     }
 
     /// 按 fixture 声明的键值写入 cfg（模拟该层「改了这些键」）。
     fn set_watched(cfg: &mut AgentConfig, key: WatchedKey, value: &serde_json::Value) {
         match key {
-            WatchedKey::LlmContextTokens => cfg.llm_sampling.llm_context_tokens = u32_of(value, key),
+            WatchedKey::LlmContextTokens => {
+                cfg.llm_sampling.llm_context_tokens = u32_of(value, key)
+            }
             WatchedKey::MaxTokens => cfg.llm_sampling.max_tokens = u32_of(value, key),
             WatchedKey::MaxMessageHistory => {
                 cfg.session_ui.max_message_history = usize_of(value, key);
@@ -495,7 +517,9 @@ mod tests {
             WatchedKey::MaxTokens => serde_json::json!(cfg.llm_sampling.max_tokens),
             WatchedKey::MaxMessageHistory => serde_json::json!(cfg.session_ui.max_message_history),
             WatchedKey::DisabledTools => serde_json::json!(disabled_tools_snapshot(
-                cfg.tool_registry_policy.tool_registry_disabled_tools.as_ref()
+                cfg.tool_registry_policy
+                    .tool_registry_disabled_tools
+                    .as_ref()
             )),
             WatchedKey::WebApiBearer => {
                 let set = !cfg
@@ -538,13 +562,10 @@ mod tests {
                     "case={} key={raw_key} 最终取值不符",
                     case.name
                 );
-                let expected_source = expectation
-                    .source
-                    .as_deref()
-                    .map(|raw| {
-                        ConfigLayer::from_str_exact(raw)
-                            .unwrap_or_else(|| panic!("golden 里的未知层 {raw}"))
-                    });
+                let expected_source = expectation.source.as_deref().map(|raw| {
+                    ConfigLayer::from_str_exact(raw)
+                        .unwrap_or_else(|| panic!("golden 里的未知层 {raw}"))
+                });
                 assert_eq!(
                     trace.source_of(key),
                     expected_source,

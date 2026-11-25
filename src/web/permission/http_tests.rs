@@ -15,10 +15,9 @@ fn loopback_http_client() -> reqwest::Client {
 const LEVELS: [&str; 5] = ["chat", "read", "workspace", "approved", "unrestricted"];
 
 fn level_index(raw: &str) -> usize {
-    LEVELS
-        .iter()
-        .position(|l| *l == raw)
-        .unwrap_or_else(|| panic!("未知等级 {raw}（不是 chat/read/workspace/approved/unrestricted）"))
+    LEVELS.iter().position(|l| *l == raw).unwrap_or_else(|| {
+        panic!("未知等级 {raw}（不是 chat/read/workspace/approved/unrestricted）")
+    })
 }
 
 #[tokio::test]
@@ -79,7 +78,10 @@ async fn permission_http_smoke_reports_shape_and_bounds() {
     );
     // 会话级等级写入（S5b）之前，来源恒为配置。
     assert_eq!(body["level_source"], "config");
-    assert!(body["clamped_by"].is_array(), "clamped_by 必须是数组（可空）");
+    assert!(
+        body["clamped_by"].is_array(),
+        "clamped_by 必须是数组（可空）"
+    );
 
     for axis in [
         "tool_visibility",

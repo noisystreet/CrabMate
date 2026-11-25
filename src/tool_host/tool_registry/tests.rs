@@ -5,17 +5,15 @@ use super::policy::{
     parallel_tool_wall_timeout_secs, sync_default_runs_inline,
     tool_calls_allow_parallel_sync_batch, web_search_outer_wall_secs,
 };
-use super::{
-    DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
-    DispatchToolPolicy, DispatchToolWorkspace, dispatch_tool,
-};
 use super::runtime::ToolRuntime;
+use super::{
+    DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams, DispatchToolPolicy,
+    DispatchToolWorkspace, dispatch_tool,
+};
 
 /// #1430：`dispatch_tool` 现返回 `ToolRunOutcome`；本文件断言仍按历史 `(String, payload)`
 /// 形状书写，故在此统一转换。等断言开始消费 `ok` / `error_code` 时再逐个改。
-async fn dispatch_tool_bp(
-    p: DispatchToolParams<'_>,
-) -> (String, Option<serde_json::Value>) {
+async fn dispatch_tool_bp(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let (out, payload, _facts) = dispatch_tool(p).await.into_parts();
     (out, payload)
 }
@@ -280,8 +278,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
     // 开启重试但 http_fetch URL 未匹配前缀（需审批）：资格门排除，单次调用返回前缀错误（无审批重提示风险）。
     let mut cfg = test_cfg();
     cfg.tool_registry_policy.tool_registry_tool_retry_enabled = true;
-    cfg.http_fetch.http_fetch_allowed_prefixes =
-        vec!["https://doc.rust-lang.org/".to_string()];
+    cfg.http_fetch.http_fetch_allowed_prefixes = vec!["https://doc.rust-lang.org/".to_string()];
     let cfg = std::sync::Arc::new(cfg);
     let mut workspace_changed = false;
     let runtime = ToolRuntime {
@@ -341,14 +338,16 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
 #[tokio::test]
 async fn background_job_reads_async_run_command_result_end_to_end() {
     let mut cfg = test_cfg();
-    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy
+        .tool_registry_background_jobs_enabled = true;
     let cfg = std::sync::Arc::new(cfg);
     let registry = crate::jobs::tool_jobs::registry_from_config(&cfg);
     let lookup = default_lookup();
     let sandbox = crate::tool_sandbox::default_sync_default_sandbox_backend();
     let wd = std::path::Path::new(".");
 
-    let start_args = r#"{"command":"echo","args":["e2e-background-hi"],"async":true,"timeout_secs":10}"#;
+    let start_args =
+        r#"{"command":"echo","args":["e2e-background-hi"],"async":true,"timeout_secs":10}"#;
     let start_tc = ToolCall {
         id: "call_start".into(),
         typ: "function".into(),
@@ -464,7 +463,10 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
     })
     .await;
     assert!(status_payload.is_none());
-    assert!(status_out.contains(&format!("后台任务 {job_id}")), "{status_out}");
+    assert!(
+        status_out.contains(&format!("后台任务 {job_id}")),
+        "{status_out}"
+    );
     assert!(status_out.contains("状态: succeeded"), "{status_out}");
     assert!(status_out.contains("退出码: 0"), "{status_out}");
     assert!(status_out.contains("e2e-background-hi"), "{status_out}");
@@ -525,9 +527,7 @@ async fn background_job_reads_async_run_command_result_end_to_end() {
 ///
 /// 不走 `DispatchToolWorkspace::for_tests`：它把 `workspace_is_set` 钉成 `true`（常规
 /// 已设置上下文），而这里要的恰是另一侧。
-async fn dispatch_json_format_with_workspace(
-    is_set: bool,
-) -> (String, Option<serde_json::Value>) {
+async fn dispatch_json_format_with_workspace(is_set: bool) -> (String, Option<serde_json::Value>) {
     let cfg = std::sync::Arc::new(test_cfg());
     let mut workspace_changed = false;
     let call = ToolCall {

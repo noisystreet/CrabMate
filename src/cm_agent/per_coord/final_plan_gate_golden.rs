@@ -102,9 +102,11 @@ fn exhausted_reason_label(reason: PlanRewriteExhaustedReason) -> &'static str {
 
 fn assistant_from_label(label: &str) -> Message {
     match label {
-        "valid_plan" => Message::assistant_only(r#"```json
+        "valid_plan" => Message::assistant_only(
+            r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"x"}]}
-```"#),
+```"#,
+        ),
         "no_plan" => Message::assistant_only("no json plan".to_string()),
         other => panic!("unknown assistant label: {other}"),
     }

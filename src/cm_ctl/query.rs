@@ -7,13 +7,13 @@
 //! 「哪些条目可以清」的判据仍只有一处来源：[`probe::Observed::is_prunable`] 决定
 //! 状态集合，[`guard::live_process_reason`] 决定活进程豁免。`gc` 复用同一组。
 
+use super::CtlError;
 use super::guard;
 use super::logio;
 use super::ops::Ctx;
 use super::paths;
 use super::probe::{self, Observed, Probe};
 use super::record::{self, InstanceRecord};
-use super::CtlError;
 
 /// 列出全部实例（含派生观测态）。
 pub fn ls(ctx: &Ctx) -> Result<Vec<(InstanceRecord, Probe)>, CtlError> {

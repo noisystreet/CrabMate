@@ -22,19 +22,18 @@ pub(crate) mod status;
 mod tool_error;
 
 pub use normalize::{NormalizedToolEnvelope, ToolOutcomeFacts, normalize_tool_message_content};
+#[allow(unused_imports)] // 保留既有 pub 再导出面；#1422 C1 之后 crate 内已无消费者
+pub use output_header::prepend_crabmate_tool_output;
+pub use output_header::{
+    CrabmateToolOutputEnvelope, CrabmateToolOutputMeta, ListTreeOutputFields,
+    PREVIEW_WORKSPACE_WRITE_DIFF, ReadDirOutputFields, ReadFileOutputFields,
+    SearchInFilesOutputFields, WorkspaceWriteDiffFields, WorkspaceWriteDiffFile,
+    prepend_crabmate_tool_output_with_ok, prepend_crabmate_tool_output_with_ok_and_error_code,
+};
 /// 三态判定只服务 crate 内的消费侧（`cm_memory`），**不**进 crates.io 承诺面：
 /// `root public API list` 门禁只扫 `src/lib.rs` 顶格 `pub`，嵌套模块的 `pub` 它拦不住，
 /// 所以这里显式收窄（#1401 P1 review）。
 pub(crate) use status::{ToolStatus, tool_output_status};
-pub use output_header::{
-    CrabmateToolOutputEnvelope,
-    CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
-    ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
-    WorkspaceWriteDiffFile, prepend_crabmate_tool_output_with_ok,
-    prepend_crabmate_tool_output_with_ok_and_error_code,
-};
-#[allow(unused_imports)] // 保留既有 pub 再导出面；#1422 C1 之后 crate 内已无消费者
-pub use output_header::prepend_crabmate_tool_output;
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
 
@@ -42,11 +41,11 @@ use std::borrow::Cow;
 
 use serde_json::Value;
 
+use crate::cm_names as tool_names;
 use run_command::{
     exit_code_in_header_region, extract_streams, looks_like_failure, parse_exit_code,
     run_command_structured_payload, strip_leading_command_invocation_line,
 };
-use crate::cm_names as tool_names;
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -500,12 +499,31 @@ mod tests {
     #[test]
     fn explicit_error_code_marker_parsed_and_classified() {
         // 网络工具错误正文首行 `错误[码]：` 显式标记：原样提取、数字码、向后兼容、非法格式拒绝、retryable。
-        let code = |l: &str| parse_tool_output("http_fetch", l).error_code.map(|s| s.to_string());
-        assert_eq!(code("错误[http_timeout]：请求失败: timed out").as_deref(), Some("http_timeout"));
-        assert_eq!(code("错误[http_network_error]：请求失败: dns").as_deref(), Some("http_network_error"));
-        assert_eq!(code("错误[http_body_read_error]：读取响应体失败: io").as_deref(), Some("http_body_read_error"));
-        assert_eq!(code("错误[http_5xx]：上游 5xx").as_deref(), Some("http_5xx"));
-        assert_eq!(code("错误[timeout]：网络请求超时").as_deref(), Some("timeout"));
+        let code = |l: &str| {
+            parse_tool_output("http_fetch", l)
+                .error_code
+                .map(|s| s.to_string())
+        };
+        assert_eq!(
+            code("错误[http_timeout]：请求失败: timed out").as_deref(),
+            Some("http_timeout")
+        );
+        assert_eq!(
+            code("错误[http_network_error]：请求失败: dns").as_deref(),
+            Some("http_network_error")
+        );
+        assert_eq!(
+            code("错误[http_body_read_error]：读取响应体失败: io").as_deref(),
+            Some("http_body_read_error")
+        );
+        assert_eq!(
+            code("错误[http_5xx]：上游 5xx").as_deref(),
+            Some("http_5xx")
+        );
+        assert_eq!(
+            code("错误[timeout]：网络请求超时").as_deref(),
+            Some("timeout")
+        );
         // #1430：无结构化前缀的正文在 ④ 级不再判失败，故用带前缀的形态测 classify。
         assert_eq!(
             code("错误：请求失败: connect error").as_deref(),
@@ -606,10 +624,8 @@ b.rs"##;
 
     #[test]
     fn parse_exit_code_from_chinese_prefix() {
-        let r = ToolResult::from_output(
-            "run_command",
-            "退出码：0\n标准输出：\nhello\n".to_string(),
-        );
+        let r =
+            ToolResult::from_output("run_command", "退出码：0\n标准输出：\nhello\n".to_string());
         assert!(r.ok);
         assert_eq!(r.exit_code, Some(0));
         assert_eq!(r.stdout, "hello");
@@ -626,10 +642,7 @@ b.rs"##;
 
     #[test]
     fn parse_exit_code_from_exit_pattern() {
-        let r = ToolResult::from_output(
-            "cargo_test",
-            "cargo test (exit=1):\nfailed".to_string(),
-        );
+        let r = ToolResult::from_output("cargo_test", "cargo test (exit=1):\nfailed".to_string());
         assert!(!r.ok);
         assert_eq!(r.exit_code, Some(1));
         assert_eq!(r.error_code.as_deref(), Some("cargo_test_failed"));
@@ -724,8 +737,14 @@ hi"#;
     #[test]
     fn structured_payload_http_skips_error_code_marker_prefix() {
         // 显式错误码标记同样命中失败前缀，不生成结构化载荷。
-        assert!(structured_payload_for_tool("http_fetch", "错误[http_timeout]：请求失败: timed out").is_none());
-        assert!(structured_payload_for_tool("http_request", "错误[http_network_error]：请求失败: dns").is_none());
+        assert!(
+            structured_payload_for_tool("http_fetch", "错误[http_timeout]：请求失败: timed out")
+                .is_none()
+        );
+        assert!(
+            structured_payload_for_tool("http_request", "错误[http_network_error]：请求失败: dns")
+                .is_none()
+        );
     }
 
     #[test]

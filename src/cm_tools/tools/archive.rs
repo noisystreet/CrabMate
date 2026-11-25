@@ -7,7 +7,9 @@ use std::path::{Component, Path, PathBuf};
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::file::PathAccess;
-use crate::cm_tools::tools::tool_param_types::{ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs};
+use crate::cm_tools::tools::tool_param_types::{
+    ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs,
+};
 use crate::cm_tools::workspace::path::WorkspacePathError;
 
 /// 超大归档列表默认最多输出的条目数（避免灌满上下文）。
@@ -90,7 +92,11 @@ pub fn archive_pack(
     // 旧实现在源既非文件也非目录时静默跳过，现在由 `for_read` 直接报缺失。
     let sources: Vec<ResolvedSource> = sources
         .into_iter()
-        .map(|rel| access.for_read(&rel).map(|path| ResolvedSource { rel, path }))
+        .map(|rel| {
+            access
+                .for_read(&rel)
+                .map(|path| ResolvedSource { rel, path })
+        })
         .collect::<Result<_, _>>()
         .map_err(ToolError::path_resolve_failed)?;
 
@@ -174,9 +180,8 @@ pub fn archive_unpack(
         }
     };
 
-    let files = result.map_err(|e| {
-        ToolError::external_code("archive_unpack_failed", format!("解压失败: {e}"))
-    })?;
+    let files = result
+        .map_err(|e| ToolError::external_code("archive_unpack_failed", format!("解压失败: {e}")))?;
     Ok(format_unpack_success(
         files,
         output_dir,
@@ -229,9 +234,8 @@ pub fn archive_list(
         }
     };
 
-    result.map_err(|e| {
-        ToolError::external_code("archive_list_failed", format!("列出内容失败: {e}"))
-    })
+    result
+        .map_err(|e| ToolError::external_code("archive_list_failed", format!("列出内容失败: {e}")))
 }
 
 struct UnpackOptions<'a> {

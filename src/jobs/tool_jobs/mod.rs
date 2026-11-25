@@ -26,7 +26,9 @@ pub use worker::{JobOutputSink, drain_queued, launch_job, run_job_async};
 
 /// 按当前 `[tool_registry]` 配置构建注册表（web 启动 / 热重载时读取一次；已运行 job 不受影响）。
 #[must_use]
-pub fn registry_from_config(cfg: &crate::cm_config::AgentConfig) -> std::sync::Arc<ToolJobRegistry> {
+pub fn registry_from_config(
+    cfg: &crate::cm_config::AgentConfig,
+) -> std::sync::Arc<ToolJobRegistry> {
     std::sync::Arc::new(ToolJobRegistry::new(JobLimits::from_config(
         &cfg.tool_registry_policy,
     )))

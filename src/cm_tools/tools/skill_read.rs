@@ -73,10 +73,11 @@ mod tests {
     }
 
     fn skills_section(max_chars: usize) -> SkillsConfigSection {
-        let mut s: SkillsConfigSection = crate::cm_config::load_config_test_env::without_cm_env_overrides(
-            || crate::cm_config::load_config(None).expect("embed default"),
-        )
-        .skills;
+        let mut s: SkillsConfigSection =
+            crate::cm_config::load_config_test_env::without_cm_env_overrides(|| {
+                crate::cm_config::load_config(None).expect("embed default")
+            })
+            .skills;
         s.skills_dir = ".crabmate/skills".to_string();
         s.skills_user_dir = String::new();
         s.skills_system_dir = String::new();
@@ -175,12 +176,8 @@ mod tests {
             ("user-skill", "user body"),
             ("system-skill", "system body"),
         ] {
-            let out = skill_read(
-                SkillReadArgs { id: id.to_string() },
-                &section,
-                ws.path(),
-            )
-            .unwrap_or_else(|e| panic!("`{id}` 应可读：{e}"));
+            let out = skill_read(SkillReadArgs { id: id.to_string() }, &section, ws.path())
+                .unwrap_or_else(|e| panic!("`{id}` 应可读：{e}"));
             assert!(out.contains(marker), "`{id}` 输出应含正文：{out}");
         }
     }

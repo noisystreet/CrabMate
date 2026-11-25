@@ -17,16 +17,14 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, JsonFormatArgs,
-        CargoTestArgs, CodeNavArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
-        ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
-        PytestRunArgs, RunCommandArgs,
-        StructuredArgs, TableTextArgs, WorkflowExecuteArgs,
-    };
     #[cfg(feature = "archive-tools")]
     use crate::cm_tools::tools::tool_param_types::ArchivePackArgs;
+    use crate::cm_tools::tools::tool_param_types::{
+        AddReminderArgs, CargoTestArgs, CodeNavArgs, CodeStatsArgs, CoverageReportArgs,
+        DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs, JsonFormatArgs,
+        ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs, PytestRunArgs, RunCommandArgs,
+        StructuredArgs, TableTextArgs, WorkflowExecuteArgs,
+    };
     use serde_json::json;
 
     #[test]
@@ -231,9 +229,7 @@ mod tests {
     #[test]
     fn run_command_schema_exposes_async_and_timeout_secs() {
         let v = tool_parameters_schema_value::<RunCommandArgs>();
-        let async_prop = v
-            .pointer("/properties/async")
-            .expect("properties.async");
+        let async_prop = v.pointer("/properties/async").expect("properties.async");
         let async_types = async_prop.get("type").and_then(|x| x.as_array());
         assert!(
             async_types.is_some_and(|t| t.iter().any(|x| x == "boolean")),
@@ -261,7 +257,10 @@ mod tests {
                 "cargo_test",
                 tool_parameters_schema_value::<CargoTestArgs>(),
             ),
-            ("pytest_run", tool_parameters_schema_value::<PytestRunArgs>()),
+            (
+                "pytest_run",
+                tool_parameters_schema_value::<PytestRunArgs>(),
+            ),
         ] {
             let prop = v.pointer("/properties/async").expect("properties.async");
             let types = prop.get("type").and_then(|x| x.as_array());
@@ -316,7 +315,10 @@ mod tests {
             "remote_status",
             "remote_list",
         ] {
-            assert!(values.contains(&expected), "schema enum 缺少 {expected}：{values:?}");
+            assert!(
+                values.contains(&expected),
+                "schema enum 缺少 {expected}：{values:?}"
+            );
         }
         // 数量对齐：新增 action 时这里会失败，提醒同步 `GIT_ACTIONS` 文案与文档示例。
         assert_eq!(values.len(), 10, "action 数量变化：{values:?}");

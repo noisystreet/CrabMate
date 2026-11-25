@@ -227,7 +227,6 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
 }
 
 impl ToolError {
-
     /// 所有构造的**统一出口**。
     ///
     /// **#1430**：首行既带不出退出码、又不以任何 `error_text::KNOWN_ERROR_PREFIXES` 开头时，
@@ -259,11 +258,7 @@ impl ToolError {
         }
     }
     /// 由 [`super::parse_tool_output`] 的结果构造（`raw_output` 为完整 `run_tool` 字符串）。
-    pub fn from_parsed(
-        tool_name: &str,
-        parsed: &ParsedToolOutput,
-        raw_output: String,
-    ) -> Self {
+    pub fn from_parsed(tool_name: &str, parsed: &ParsedToolOutput, raw_output: String) -> Self {
         let code = parsed
             .error_code
             .clone()
@@ -384,7 +379,13 @@ impl ToolError {
             error_code: Some(code.clone()),
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        Self::build(ToolFailureCategory::External, code, message, retryable, parsed)
+        Self::build(
+            ToolFailureCategory::External,
+            code,
+            message,
+            retryable,
+            parsed,
+        )
     }
 
     /// 无法启动子进程（如找不到 `cargo` 可执行文件）。

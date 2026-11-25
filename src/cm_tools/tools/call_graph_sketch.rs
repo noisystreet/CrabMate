@@ -517,6 +517,9 @@ mod tests {
 
     #[test]
     fn use_clause_as_rename() {
-        assert!(use_clause_touches_symbol("crate::cm_tools::api::Thing as T", "Thing"));
+        assert!(use_clause_touches_symbol(
+            "crate::cm_tools::api::Thing as T",
+            "Thing"
+        ));
     }
 }

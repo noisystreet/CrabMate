@@ -204,8 +204,8 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> Result<String, ToolE
 #[allow(clippy::result_large_err)]
 pub fn list_reminders(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     // 保持既有宽容语义：入参 JSON 坏掉时退化为「无过滤条件」，由 dispatch 层负责严格校验。
-    let v =
-        crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .unwrap_or_else(|_| serde_json::json!({}));
     let args: ListRemindersArgs = serde_json::from_value(v)
         .map_err(|e| ToolError::invalid_args(format!("参数解析错误: {e}")))?;
     let include_done = args.include_done;
@@ -445,7 +445,11 @@ fn prepare_new_event(args: &AddEventArgs) -> Result<Event, ToolError> {
     };
     let start_at_raw = match args.start_at.trim() {
         s if !s.is_empty() => s,
-        _ => return Err(ToolError::invalid_args("错误：缺少 start_at 参数".to_string())),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：缺少 start_at 参数".to_string(),
+            ));
+        }
     };
     let start_at =
         parse_datetime_to_rfc3339(start_at_raw).unwrap_or_else(|| start_at_raw.to_string());
@@ -483,8 +487,8 @@ fn prepare_new_event(args: &AddEventArgs) -> Result<Event, ToolError> {
 #[allow(clippy::result_large_err)]
 pub fn list_events(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     // 保持既有宽容语义：入参 JSON 坏掉时退化为「无过滤条件」，由 dispatch 层负责严格校验。
-    let v =
-        crate::cm_tools::tools::parse_args_json(args_json).unwrap_or_else(|_| serde_json::json!({}));
+    let v = crate::cm_tools::tools::parse_args_json(args_json)
+        .unwrap_or_else(|_| serde_json::json!({}));
     let args: ListEventsArgs = serde_json::from_value(v)
         .map_err(|e| ToolError::invalid_args(format!("参数解析错误: {e}")))?;
     let year = args.year;
@@ -636,7 +640,14 @@ fn apply_event_clearable_text(
 ) {
     if let Some(s) = value {
         let t = s.trim();
-        set(e, if t.is_empty() { None } else { Some(t.to_string()) });
+        set(
+            e,
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            },
+        );
     }
 }
 
@@ -673,11 +684,7 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> Result<String, ToolE
 }
 
 /// 在 `items` 中按 `id` 应用更新并返回新标题；未命中返回 `None`。
-fn apply_event_update(
-    items: &mut [Event],
-    id: &str,
-    patch: &EventUpdateFields,
-) -> Option<String> {
+fn apply_event_update(items: &mut [Event], id: &str, patch: &EventUpdateFields) -> Option<String> {
     for e in items {
         if e.id == id {
             apply_event_updates(e, patch);

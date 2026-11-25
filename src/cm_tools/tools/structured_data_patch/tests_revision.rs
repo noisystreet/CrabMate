@@ -21,11 +21,8 @@ fn make_test_dir() -> std::path::PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!(
-        "crabmate_spatch_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("crabmate_spatch_{}_{}", std::process::id(), nanos));
     std::fs::create_dir_all(&dir).expect("创建临时目录");
     dir
 }

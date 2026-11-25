@@ -68,8 +68,8 @@ fn run_structured_patch(
     let abs = file::resolve_for_read(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
     let data_fmt = detect_structured_patch_format(&path, fmt)?;
     let (text, mut jv) = read_limited_json_value(&abs, data_fmt)?;
-    let tokens =
-        parse_patch_query_tokens(&query).map_err(|e| ToolError::invalid_args(format!("query 无效: {e}")))?;
+    let tokens = parse_patch_query_tokens(&query)
+        .map_err(|e| ToolError::invalid_args(format!("query 无效: {e}")))?;
 
     // 显式 `base_revision` 在**预览阶段也校验**（与 `modify_file` 一致）：预览若基于过期快照，
     // 应当立刻报错，而不是给出一份「看起来安全」的 diff 让人据此决定写盘。
@@ -79,7 +79,10 @@ fn run_structured_patch(
 
     apply_patch_mutation(action, &args, &mut jv, tokens.as_slice())?;
     let serialized = serialize_by_format(&jv, data_fmt).map_err(|e| {
-        ToolError::external_code("structured_patch_serialize_failed", format!("序列化失败: {e}"))
+        ToolError::external_code(
+            "structured_patch_serialize_failed",
+            format!("序列化失败: {e}"),
+        )
     })?;
     finish_structured_patch(StructuredPatchOutcome {
         path: &path,
@@ -134,14 +137,14 @@ fn apply_patch_mutation(
     tokens: &[String],
 ) -> Result<(), ToolError> {
     if action == "set" {
-        let new_value = args
-            .value
-            .clone()
-            .ok_or_else(|| ToolError::invalid_args("错误：action=set 时必须提供 value".to_string()))?;
+        let new_value = args.value.clone().ok_or_else(|| {
+            ToolError::invalid_args("错误：action=set 时必须提供 value".to_string())
+        })?;
         set_value_at_path(jv, tokens, new_value, args.create_missing)
             .map_err(|e| ToolError::invalid_args(format!("补丁失败: {e}")))
     } else {
-        remove_value_at_path(jv, tokens).map_err(|e| ToolError::invalid_args(format!("补丁失败: {e}")))
+        remove_value_at_path(jv, tokens)
+            .map_err(|e| ToolError::invalid_args(format!("补丁失败: {e}")))
     }
 }
 

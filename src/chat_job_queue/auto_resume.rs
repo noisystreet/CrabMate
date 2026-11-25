@@ -290,7 +290,11 @@ fn failure_label(e: &ChatJsonJobFailure) -> &'static str {
 fn auto_resume_instruction() -> Message {
     Message {
         role: "user".to_string(),
-        content: Some(crate::cm_types::CRABMATE_AUTO_RESUME_TEXT.to_string().into()),
+        content: Some(
+            crate::cm_types::CRABMATE_AUTO_RESUME_TEXT
+                .to_string()
+                .into(),
+        ),
         reasoning_content: None,
         reasoning_details: None,
         tool_calls: None,
@@ -321,7 +325,6 @@ mod tests {
         }
     }
 
-
     /// 真 e2e（函数级）：决策 → 入队 → **队列真的执行了那一轮**。
     ///
     /// 用可控 `TurnEngine` 代替真 LLM：它既计数，又钉住「入队的消息里确实带续跑指令」。
@@ -340,10 +343,8 @@ mod tests {
             async fn run(
                 &self,
                 params: crate::TurnRequest<'_>,
-            ) -> Result<
-                crate::turn_runner::TurnOutcome,
-                crate::agent::agent_turn::RunAgentTurnError,
-            > {
+            ) -> Result<crate::turn_runner::TurnOutcome, crate::agent::agent_turn::RunAgentTurnError>
+            {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 if params
                     .session
@@ -396,9 +397,7 @@ mod tests {
             },
             run_epoch: Arc::new(std::sync::Mutex::new(RunEpoch::new())),
             process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
-            approval_sessions: Arc::new(tokio::sync::RwLock::new(
-                std::collections::HashMap::new(),
-            )),
+            approval_sessions: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tool_job_registry: crate::jobs::tool_jobs::registry_from_config(&agent_cfg),
         };
 
@@ -415,7 +414,10 @@ mod tests {
                 Vec::new(),
             )
             .await;
-        assert_eq!(saved, crate::conversation_store::SaveConversationOutcome::Saved);
+        assert_eq!(
+            saved,
+            crate::conversation_store::SaveConversationOutcome::Saved
+        );
         let rev = app
             .conversation
             .load_conversation_seed("conv-e2e")
@@ -520,7 +522,13 @@ mod tests {
         );
         // 关键：暂停了但没有写回后的 revision ⇒ 不得退化成 `None` 入队（那会放弃 CAS）。
         assert_eq!(
-            plan_auto_resume(&c, Some(TaskPauseReason::BudgetLlmCalls), None, false, snap(0, 0)),
+            plan_auto_resume(
+                &c,
+                Some(TaskPauseReason::BudgetLlmCalls),
+                None,
+                false,
+                snap(0, 0)
+            ),
             AutoResumePlan::Skip(AutoResumeSkip::NotSaved)
         );
     }

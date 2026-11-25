@@ -167,9 +167,7 @@ fn per_plan_policy_section(cfg: &AgentConfig) -> String {
     let p = &cfg.per_plan_policy;
     format!(
         "reflection_default_max_rounds = {}\nfinal_plan_requirement = {:?}\nplan_rewrite_max_attempts = {}\n",
-        p.reflection_default_max_rounds,
-        p.final_plan_requirement,
-        p.plan_rewrite_max_attempts,
+        p.reflection_default_max_rounds, p.final_plan_requirement, p.plan_rewrite_max_attempts,
     )
 }
 
@@ -366,7 +364,7 @@ fn permission_section(cfg: &AgentConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{permission_section, section_body, self_config_info, SECTION_NAMES};
+    use super::{SECTION_NAMES, permission_section, section_body, self_config_info};
 
     /// S7：配了非空 `workspace_allowed_roots` ⇒ 自检的 `caps.path_scope` 必须是
     /// `allowed_roots`。走 `caps_view()`（等价空根）会报 `session_root`，

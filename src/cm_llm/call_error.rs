@@ -175,26 +175,27 @@ mod tests {
     /// 调用在 `attempt=1` 直接失败，尽管配置了多次重试。
     #[test]
     fn send_request_kind_error_is_retryable() {
-        let err = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async {
-                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let addr = listener.local_addr().unwrap();
-                let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(5))
-                    .build()
-                    .unwrap();
-                tokio::spawn(async move {
-                    // 接受连接后立即 drop（发 FIN、不响应），客户端在发送/读取阶段失败。
-                    let _ = listener.accept().await;
-                });
-                client
-                    .get(format!("http://{addr}/"))
-                    .send()
-                    .await
-                    .expect_err("连接被立即关闭，请求应当失败")
+        let err = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap();
+            tokio::spawn(async move {
+                // 接受连接后立即 drop（发 FIN、不响应），客户端在发送/读取阶段失败。
+                let _ = listener.accept().await;
             });
-        assert!(err.is_request(), "错误应为发送阶段失败（Kind::Request）: {err}");
+            client
+                .get(format!("http://{addr}/"))
+                .send()
+                .await
+                .expect_err("连接被立即关闭，请求应当失败")
+        });
+        assert!(
+            err.is_request(),
+            "错误应为发送阶段失败（Kind::Request）: {err}"
+        );
         assert!(!err.is_connect(), "连接已建立，不应归类为连接失败: {err}");
         assert!(
             reqwest_transport_error_retryable(&err),
@@ -249,7 +250,8 @@ mod tests {
         assert_eq!(payment.class, LlmFailureClass::QuotaOrRateLimit);
 
         // 非标网关：用 400 报配额（golden `llm_transport_quota_msg` 的契约）。
-        let quota_400 = LlmCallError::from_http_api(400, "You exceeded your current quota".to_string());
+        let quota_400 =
+            LlmCallError::from_http_api(400, "You exceeded your current quota".to_string());
         assert_eq!(quota_400.class, LlmFailureClass::QuotaOrRateLimit);
 
         // 鉴权类短路：正文里的「余额充足」不得把 401 判成配额。

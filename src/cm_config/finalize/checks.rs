@@ -207,11 +207,8 @@ mod tests {
         // 非 Docker ⇒ 恒放行。
         let b = builder_with_levels(Some("unrestricted"), Some("unrestricted"));
         assert!(
-            validate_unrestricted_with_docker_sandbox(
-                types::SyncDefaultToolSandboxMode::None,
-                &b
-            )
-            .is_ok()
+            validate_unrestricted_with_docker_sandbox(types::SyncDefaultToolSandboxMode::None, &b)
+                .is_ok()
         );
     }
 }

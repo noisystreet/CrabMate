@@ -14,11 +14,11 @@ use std::time::Duration;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 
-
 const BACKGROUND_ASYNC_DISABLED_MSG: &str = "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务并确保该工具已在 `background_job_async_tools` 白名单中，或去掉 async 参数。";
 const BACKGROUND_ASYNC_NO_REGISTRY_MSG: &str =
     "错误：当前执行环境不支持后台任务（async）。请去掉 async 参数。";
-const BACKGROUND_ASYNC_DOCKER_MSG: &str = "错误：后台任务（async）暂不支持 Docker 同步工具沙盒模式；请使用宿主模式或去掉 async 参数。";
+const BACKGROUND_ASYNC_DOCKER_MSG: &str =
+    "错误：后台任务（async）暂不支持 Docker 同步工具沙盒模式；请使用宿主模式或去掉 async 参数。";
 
 /// 后台 argv 装配函数签名：`(args_json, workspace_root) → 可复刻命令快照`。
 type BackgroundArgvAssembler =
@@ -65,7 +65,9 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
             )
             .map_err(|e| e.message)
         }),
-        crate::cm_names::PYTEST_RUN => Some(crate::cm_tools::tools::python_tools::pytest_run_background_argv),
+        crate::cm_names::PYTEST_RUN => {
+            Some(crate::cm_tools::tools::python_tools::pytest_run_background_argv)
+        }
         _ => None,
     }
 }
@@ -109,7 +111,9 @@ pub(in crate::tool_host::tool_registry::execute) fn try_dispatch_background_asyn
     let Some(registry) = tool_jobs else {
         return Some((BACKGROUND_ASYNC_NO_REGISTRY_MSG.to_string(), None));
     };
-    if cfg_ref.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+    if cfg_ref.sync_tool_sandbox.sync_default_tool_sandbox_mode
+        == SyncDefaultToolSandboxMode::Docker
+    {
         return Some((BACKGROUND_ASYNC_DOCKER_MSG.to_string(), None));
     }
     let spawn = match assemble_background_job_spawn(cfg_ref, name, args, effective_working_dir) {

@@ -82,15 +82,19 @@ fn list_newest_first_filters_workspace_and_truncates() {
     let other = register_at("/other");
 
     let ids = |rows: Vec<JobRecord>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
-    assert_eq!(ids(reg.list(Some(ws), 10)), vec![second.clone(), first.clone()]);
+    assert_eq!(
+        ids(reg.list(Some(ws), 10)),
+        vec![second.clone(), first.clone()]
+    );
     assert_eq!(
         ids(reg.list(None, 10)),
         vec![other.clone(), second.clone(), first.clone()]
     );
     assert_eq!(ids(reg.list(None, 2)), vec![other.clone(), second.clone()]);
-    assert_eq!(ids(reg.list(Some(std::path::Path::new("/other")), 10)), vec![
-        other.clone()
-    ]);
+    assert_eq!(
+        ids(reg.list(Some(std::path::Path::new("/other")), 10)),
+        vec![other.clone()]
+    );
     assert!(reg.list(None, 0).is_empty());
 }
 
@@ -116,7 +120,10 @@ fn cancel_non_terminal_for_source_turn_skips_other_turns() {
         )
         .expect("stop");
     assert_eq!(reg.cancel_non_terminal_for_source_turn(2), 1);
-    assert_eq!(reg.get(&id_stop).expect("stop").status, JobStatus::Cancelled);
+    assert_eq!(
+        reg.get(&id_stop).expect("stop").status,
+        JobStatus::Cancelled
+    );
     assert_eq!(reg.get(&id_keep).expect("keep").status, JobStatus::Queued);
 }
 
@@ -194,7 +201,10 @@ fn cancel_running_sets_flag_then_complete_transitions() {
     assert!(reg.complete(&id, outcome, false));
     let rec = reg.get(&id).expect("rec");
     assert_eq!(rec.status, JobStatus::Cancelled);
-    assert_eq!(rec.outcome.as_ref().expect("out").error_code.as_deref(), Some("cancelled"));
+    assert_eq!(
+        rec.outcome.as_ref().expect("out").error_code.as_deref(),
+        Some("cancelled")
+    );
     assert_eq!(reg.stats().running, 0);
 }
 
@@ -211,7 +221,10 @@ fn complete_rejects_non_terminal_outcome() {
         error_code: None,
         failure_category: None,
     };
-    assert!(!reg.complete(&id, running, false), "非终态 outcome 不得写入");
+    assert!(
+        !reg.complete(&id, running, false),
+        "非终态 outcome 不得写入"
+    );
     assert_eq!(reg.get(&id).expect("rec").status, JobStatus::Running);
     assert_eq!(reg.stats().running, 1);
 }
@@ -350,10 +363,16 @@ fn get_checked_found_not_found_and_lazy_expiry() {
     assert!(reg.complete(&id, ok, false));
     let rec = reg.get(&id).expect("rec");
     let expired_at = rec.created_at + Duration::from_secs(200);
-    assert!(matches!(reg.get_checked(&id, expired_at), GetOutcome::Expired));
+    assert!(matches!(
+        reg.get_checked(&id, expired_at),
+        GetOutcome::Expired
+    ));
     assert!(reg.get(&id).is_none());
     // 删除后仍能识别为 Expired（而非 NotFound）。
-    assert!(matches!(reg.get_checked(&id, expired_at), GetOutcome::Expired));
+    assert!(matches!(
+        reg.get_checked(&id, expired_at),
+        GetOutcome::Expired
+    ));
 }
 
 #[test]
@@ -410,7 +429,13 @@ fn get_checked_does_not_expire_running_or_queued() {
     let running = register_default(&reg); // running
     reg.try_start().expect("start");
     let far = SystemTime::now() + Duration::from_secs(3600);
-    assert!(matches!(reg.get_checked(&queued, far), GetOutcome::Found(_)));
-    assert!(matches!(reg.get_checked(&running, far), GetOutcome::Found(_)));
+    assert!(matches!(
+        reg.get_checked(&queued, far),
+        GetOutcome::Found(_)
+    ));
+    assert!(matches!(
+        reg.get_checked(&running, far),
+        GetOutcome::Found(_)
+    ));
     assert_eq!(reg.stats().total, 2, "非终态不得被惰性清理");
 }

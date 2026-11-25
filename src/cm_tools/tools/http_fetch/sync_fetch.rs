@@ -6,13 +6,13 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 
 use super::super::ToolContext;
-use crate::cm_tools::tool_result::ToolError;
 use super::args::{
     ABS_MAX_BODY_BYTES, FetchMethod, HttpBodyTextFormat, RequestMethod, parse_http_fetch_args,
     parse_http_request_args,
 };
 use super::decode::{apply_text_format_if_requested, decode_http_body_text_for_tool};
 use super::policy::url_matches_allowed_prefixes;
+use crate::cm_tools::tool_result::ToolError;
 
 /// 默认 UA：`crabmate/<版本>`；可经配置 `http_fetch_user_agent` / `CM_HTTP_FETCH_USER_AGENT` 覆盖。
 pub fn default_user_agent() -> String {
@@ -200,7 +200,12 @@ pub fn fetch_with_method(
         return Ok(out.trim_end().to_string());
     }
 
-    out.push_str(&read_body_section(resp, &ctype, max_body_bytes, text_format)?);
+    out.push_str(&read_body_section(
+        resp,
+        &ctype,
+        max_body_bytes,
+        text_format,
+    )?);
     Ok(out)
 }
 
@@ -278,7 +283,12 @@ pub fn request_with_json_body(
     out.push_str(&format!("Content-Type: {}\n", ctype));
     append_content_length_line(&mut out, clen);
 
-    out.push_str(&read_body_section(resp, &ctype, max_body_bytes, text_format)?);
+    out.push_str(&read_body_section(
+        resp,
+        &ctype,
+        max_body_bytes,
+        text_format,
+    )?);
     Ok(out)
 }
 

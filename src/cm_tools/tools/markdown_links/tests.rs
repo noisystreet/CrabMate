@@ -98,10 +98,7 @@ fn supports_sarif_output() {
 #[test]
 fn missing_workspace_root_reports_workspace_failed() {
     // 工作区根 canonicalize 失败是扫描期最早的硬错误，钉住新码与保留的「错误：」前缀。
-    let missing = std::env::temp_dir().join(format!(
-        "crabmate_md_missing_{}",
-        std::process::id()
-    ));
+    let missing = std::env::temp_dir().join(format!("crabmate_md_missing_{}", std::process::id()));
     let _ = fs::remove_dir_all(&missing);
     let args = serde_json::json!({ "roots": ["README.md"] }).to_string();
     let err = markdown_check_links_try(&args, &missing).expect_err("missing workspace must fail");

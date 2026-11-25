@@ -71,7 +71,9 @@ pub async fn run_job_async(
             return out;
         }
     };
-    let chunk_sink = output.as_ref().map(|sink| chunk_sink_from_output(Arc::clone(sink)));
+    let chunk_sink = output
+        .as_ref()
+        .map(|sink| chunk_sink_from_output(Arc::clone(sink)));
     let ctl = SubprocessWaitCtl {
         wall: Some(spawn.wall),
         cancel: Some(cancel),
@@ -150,8 +152,7 @@ pub fn job_outcome_workspace_changed(args_json: &str, outcome: &JobOutcome) -> b
     if outcome.status != JobStatus::Succeeded {
         return false;
     }
-    let Ok(spec) =
-        crate::cm_tools::tools::parse_command_spec(args_json, std::path::Path::new("."))
+    let Ok(spec) = crate::cm_tools::tools::parse_command_spec(args_json, std::path::Path::new("."))
     else {
         return false;
     };
@@ -179,7 +180,13 @@ pub fn enqueue_and_launch(
     args_json: String,
     finished_sink: Option<JobFinishedSink>,
 ) -> Result<String, RegisterError> {
-    let id = registry.register(workspace, source_turn_job_id, spawn, args_json, finished_sink)?;
+    let id = registry.register(
+        workspace,
+        source_turn_job_id,
+        spawn,
+        args_json,
+        finished_sink,
+    )?;
     drain_queued(Arc::clone(&registry));
     Ok(id)
 }
@@ -317,12 +324,15 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
         assert_eq!(rec.status, JobStatus::Succeeded);
-        assert!(String::from_utf8_lossy(
-            &rec.outcome.as_ref().expect("out").stdout
-        )
-        .contains("async-ok"));
+        assert!(
+            String::from_utf8_lossy(&rec.outcome.as_ref().expect("out").stdout)
+                .contains("async-ok")
+        );
         // 编译命令判定：echo 非编译命令 → false。
-        assert!(!rec.workspace_changed, "非编译命令不得标记 workspace_changed");
+        assert!(
+            !rec.workspace_changed,
+            "非编译命令不得标记 workspace_changed"
+        );
     }
 
     #[cfg(unix)]
@@ -347,7 +357,10 @@ mod tests {
         .expect("enqueue");
         // 等 worker 真正进入等待循环后经注册表取消（验证 cancel_flag 接线）。
         tokio::time::sleep(Duration::from_millis(150)).await;
-        assert_eq!(reg.cancel(&id), crate::jobs::tool_jobs::registry::CancelOutcome::Cancelled);
+        assert_eq!(
+            reg.cancel(&id),
+            crate::jobs::tool_jobs::registry::CancelOutcome::Cancelled
+        );
         let rec = loop {
             let rec = reg.get(&id).expect("record");
             if rec.status.is_terminal() {
@@ -356,7 +369,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
         assert_eq!(rec.status, JobStatus::Cancelled);
-        assert_eq!(rec.outcome.as_ref().expect("out").error_code.as_deref(), Some("cancelled"));
+        assert_eq!(
+            rec.outcome.as_ref().expect("out").error_code.as_deref(),
+            Some("cancelled")
+        );
     }
 
     #[tokio::test]
@@ -447,10 +463,7 @@ mod tests {
             r#"{"script":"cargo test"}"#,
             &ok
         ));
-        assert!(!job_outcome_workspace_changed(
-            r#"{"command":"ls"}"#,
-            &ok
-        ));
+        assert!(!job_outcome_workspace_changed(r#"{"command":"ls"}"#, &ok));
         let failed = JobOutcome {
             status: JobStatus::Failed,
             exit_code: Some(1),
@@ -542,6 +555,9 @@ mod tests {
             panic!("终态后应仍可取输出");
         };
         let tail_text: String = log_read.items.iter().map(|e| e.text.as_str()).collect();
-        assert!(tail_text.contains("tail-line"), "终态尾部应可读: {tail_text:?}");
+        assert!(
+            tail_text.contains("tail-line"),
+            "终态尾部应可读: {tail_text:?}"
+        );
     }
 }

@@ -4,8 +4,8 @@ use axum::Json;
 use axum::extract::{Query, State};
 
 use super::parse::normalize_client_conversation_id;
-use crate::web::app_state_facets::WebChangelogAppFacet;
 use crate::cm_api_contract::workspace::{WorkspaceChangelogQuery, WorkspaceChangelogResponse};
+use crate::web::app_state_facets::WebChangelogAppFacet;
 pub(crate) async fn workspace_changelog_handler(
     State(facet): State<WebChangelogAppFacet>,
     Query(q): Query<WorkspaceChangelogQuery>,

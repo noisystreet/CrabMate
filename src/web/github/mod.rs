@@ -6,5 +6,5 @@ pub(crate) use device_flow::{
     github_oauth_device_cancel_handler, github_oauth_device_logout_handler,
     github_oauth_device_start_handler, github_oauth_device_status_handler,
 };
-pub(crate) use token_refresh::github_oauth_token_refresh_handler;
 pub use handlers::{github_pr_current_checks_handler, github_repo_context_handler};
+pub(crate) use token_refresh::github_oauth_token_refresh_handler;

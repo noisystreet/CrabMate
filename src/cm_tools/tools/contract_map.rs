@@ -96,10 +96,7 @@ fn section_file(
 /// 非法 / 越界 / 不存在的 `extra_paths` 只被跳过 —— 这些是**容忍**，不是失败，
 /// 由 `contract_map_tolerates_out_of_range_and_bad_paths` 钉住。
 #[allow(clippy::result_large_err)]
-pub fn crate_contract_map_try(
-    args_json: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn crate_contract_map_try(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     let head_lines = v

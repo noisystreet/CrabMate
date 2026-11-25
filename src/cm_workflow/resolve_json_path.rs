@@ -172,9 +172,8 @@ fn apply_legacy_segment<'a>(
     let v = if field.is_empty() {
         cur
     } else {
-        cur.get(field).ok_or_else(|| {
-            JsonPathResolveError::PathNotFound(format!("missing key {:?}", field))
-        })?
+        cur.get(field)
+            .ok_or_else(|| JsonPathResolveError::PathNotFound(format!("missing key {:?}", field)))?
     };
     apply_bracket_indices(v, bracket_tail)
 }

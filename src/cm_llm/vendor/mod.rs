@@ -463,7 +463,9 @@ mod tests {
         assert!(super::deepseek_json_output_eligible(
             "https://api.deepseek.com/v1"
         ));
-        assert!(super::deepseek_json_output_eligible("https://API.DeepSeek.com"));
+        assert!(super::deepseek_json_output_eligible(
+            "https://API.DeepSeek.com"
+        ));
         // 目录里 minimax / moonshot 的条目排在 deepseek 之前，命中它们就不该算 deepseek。
         assert!(!super::deepseek_json_output_eligible(
             "https://api.minimaxi.com/v1"
@@ -474,7 +476,9 @@ mod tests {
         assert!(!super::deepseek_json_output_eligible(
             "https://open.bigmodel.cn/api/paas/v4"
         ));
-        assert!(!super::deepseek_json_output_eligible("http://127.0.0.1:11434/v1"));
+        assert!(!super::deepseek_json_output_eligible(
+            "http://127.0.0.1:11434/v1"
+        ));
     }
 
     #[test]

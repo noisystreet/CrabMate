@@ -15,13 +15,13 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 
+use super::CtlError;
 use super::instances::{self, InstancesFile};
 use super::ops::Ctx;
 use super::probe::{Observed, Probe};
 use super::query;
 use super::record::{self, DesiredState, InstanceRecord};
 use super::supervise::{self, Opts, Step};
-use super::CtlError;
 
 /// 重启策略（CLI 的 `--restart` 翻译后的形态）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -59,9 +59,7 @@ impl Backoff {
     pub fn delay(&self, attempt: u32) -> Duration {
         // `2^n` 在 attempt 变大时会溢出：先夹住指数，`saturating_mul` 再兜一层
         let shift = attempt.saturating_sub(1).min(16);
-        self.initial
-            .saturating_mul(1u32 << shift)
-            .min(self.max)
+        self.initial.saturating_mul(1u32 << shift).min(self.max)
     }
 
     /// 第 `attempt` 次尝试之后的下一次允许时间。
@@ -392,9 +390,22 @@ mod tests {
     fn sweep_skips_downed_and_starting() {
         let tmp = tempdir("skip");
         let ctx = ctx_at(&tmp);
-        write_record(&ctx, "downed", InstanceState::Stopped, DesiredState::Stopped);
-        write_record(&ctx, "booting", InstanceState::Starting, DesiredState::Running);
-        let file = file_with(&[("downed", "/tmp/nope-downed"), ("booting", "/tmp/nope-boot")]);
+        write_record(
+            &ctx,
+            "downed",
+            InstanceState::Stopped,
+            DesiredState::Stopped,
+        );
+        write_record(
+            &ctx,
+            "booting",
+            InstanceState::Starting,
+            DesiredState::Running,
+        );
+        let file = file_with(&[
+            ("downed", "/tmp/nope-downed"),
+            ("booting", "/tmp/nope-boot"),
+        ]);
         let steps = sweep(&ctx, &file, &opts(Backoff::default()), Utc::now()).expect("巡检");
         assert!(steps.is_empty(), "不该有任何动作：{steps:?}");
         assert_eq!(read(&ctx, "downed").restart_attempts, 0);

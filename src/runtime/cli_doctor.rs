@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
-use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::config::layer_precedence::LayerTrace;
+use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -491,7 +491,8 @@ fn doctor_context_gates_lines(cfg: &AgentConfig) -> Vec<String> {
         lines.push(format!(
             "  先到: 条数闸 [!] 上下文水位还很低就会按条数裁剪；建议 max_message_history ≥ {suggested}"
         ));
-        if let Some(hint) = crate::cm_config::context_gates::unreachable_suggestion_hint(suggested) {
+        if let Some(hint) = crate::cm_config::context_gates::unreachable_suggestion_hint(suggested)
+        {
             lines.push(format!("  {hint}"));
         }
     } else {
@@ -627,7 +628,10 @@ mod tests {
             doctor_context_gates_lines(&cfg_with(0, 1_024)).join("\n"),
         ] {
             assert!(lines.contains("非回合实测"), "{lines}");
-            assert!(lines.contains("context_trim"), "应指向真正的用量出口: {lines}");
+            assert!(
+                lines.contains("context_trim"),
+                "应指向真正的用量出口: {lines}"
+            );
         }
     }
 

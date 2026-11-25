@@ -511,10 +511,7 @@ fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String>
 /// 校验并可选摘要顶层结构。
 /// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
 #[allow(clippy::result_large_err)]
-pub fn structured_validate_try(
-    args_json: &str,
-    working_dir: &Path,
-) -> Result<String, ToolError> {
+pub fn structured_validate_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     let args: StructuredValidateArgs =
         crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
@@ -526,8 +523,8 @@ pub fn structured_validate_try(
     let has_header = args.has_header;
 
     let abs = file::resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
-    let data_fmt = detect_format(path, fmt)
-        .map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
+    let data_fmt =
+        detect_format(path, fmt).map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
     let text = read_limited(&abs).map_err(structured_io_error)?;
     match parse_to_json(&text, data_fmt, has_header) {
         Ok(jv) => {
@@ -593,8 +590,8 @@ fn load_structured_query_doc(
     has_header: bool,
 ) -> Result<JsonValue, ToolError> {
     let abs = file::resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
-    let data_fmt = detect_format(path, fmt)
-        .map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
+    let data_fmt =
+        detect_format(path, fmt).map_err(|e| ToolError::invalid_args(format!("错误：{e}")))?;
     let text = read_limited(&abs).map_err(structured_io_error)?;
     parse_to_json(&text, data_fmt, has_header)
         .map_err(|e| ToolError::external_code("structured_parse_failed", format!("解析失败: {e}")))

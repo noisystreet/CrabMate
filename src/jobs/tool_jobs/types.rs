@@ -11,8 +11,8 @@ use std::path::PathBuf;
 #[cfg(test)]
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, SystemTime};
 
 use crate::cm_tools::subprocess_session::SessionStream;
@@ -114,11 +114,7 @@ impl JobOutputLog {
             .front()
             .map(|e| e.seq)
             .unwrap_or(self.written + 1);
-        let truncated = requested != 0
-            && self
-                .events
-                .front()
-                .is_some_and(|e| requested < e.seq);
+        let truncated = requested != 0 && self.events.front().is_some_and(|e| requested < e.seq);
         let start = requested.max(earliest);
         let mut items = Vec::new();
         for ev in &self.events {
@@ -258,8 +254,14 @@ impl JobSpawn {
     #[cfg(test)]
     pub(crate) fn from_command(cmd: &mut Command, wall: Duration, max_output_len: usize) -> Self {
         let program = cmd.get_program().to_string_lossy().into_owned();
-        let args = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        let cwd = cmd.get_current_dir().unwrap_or(Path::new(".")).to_path_buf();
+        let args = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let cwd = cmd
+            .get_current_dir()
+            .unwrap_or(Path::new("."))
+            .to_path_buf();
         let extra_env = Vec::new();
         Self {
             program,

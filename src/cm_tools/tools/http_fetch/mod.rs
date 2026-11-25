@@ -6,7 +6,6 @@
 //! 环境代理：遵循 **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`**（HTTP(S) 代理；reqwest 0.13 不支持 **SOCKS**，遇到 socks 代理会在错误中提示 unset 或改用 http 端口）。
 //! 可选 **`text_format: html_text`**：用 **`scraper`（html5ever）** 将 HTML 转为可读纯文本（跳过 `script`/`style`/`noscript`，优先抽取 `main` / `article` / `[role=main]`，否则 `body`）。
 
-
 mod args;
 mod decode;
 mod policy;
@@ -16,16 +15,14 @@ pub use args::{parse_http_fetch_args, parse_http_request_args};
 // 以下只被 lib test 单元消费（`tests` 里断言枚举成员与正文转换），lib 单元没有调用方。
 #[cfg(test)]
 pub use args::{FetchMethod, HttpBodyTextFormat, RequestMethod};
+pub use args::{HttpFetchArgs, HttpRequestArgs};
 #[cfg(test)]
 pub use decode::html_to_readable_text;
-pub use args::{HttpFetchArgs, HttpRequestArgs};
 pub use policy::{
-    approval_args_display, approval_args_display_request, request_storage_key,
-    prefixes_include_allow_any, storage_key, url_matches_allowed_prefixes,
+    approval_args_display, approval_args_display_request, prefixes_include_allow_any,
+    request_storage_key, storage_key, url_matches_allowed_prefixes,
 };
-pub use sync_fetch::{
-    fetch_with_method, request_with_json_body, run_direct, run_request_direct,
-};
+pub use sync_fetch::{fetch_with_method, request_with_json_body, run_direct, run_request_direct};
 
 #[cfg(test)]
 mod tests;

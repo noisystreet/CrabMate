@@ -35,7 +35,10 @@ pub(crate) struct CompactionProbe {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ContextAction {
     /// ① 最近 `keep_groups` 组之外的 `tool` 正文二次压缩到 `max_chars`。
-    DegradeOldToolBodies { keep_groups: usize, max_chars: usize },
+    DegradeOldToolBodies {
+        keep_groups: usize,
+        max_chars: usize,
+    },
     /// ② 删最旧完整交互组：先到 `target_tokens`（全程尊重 `tail_guard`），
     /// 软目标没达成但撞 `hard_limit_tokens` 时放开尾部保护继续删。
     ///

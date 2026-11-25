@@ -249,10 +249,7 @@ pub fn runner_workflow_execute_try(
 /// 与 `workflow_execute` 同款：**正常路径由 agent 层调度**（它需要 `SubAgentDelegator`
 /// 能力对象，而工具层刻意不持 LLM 凭据）。落到同步路径即内部缺陷。
 #[allow(clippy::result_large_err)]
-pub fn runner_delegate_task_try(
-    _args: &str,
-    _ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn runner_delegate_task_try(_args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     Err(ToolError::internal_code(
         "delegate_task_not_intercepted",
         "delegate_task 由 agent 层在对话回合中调度；同步工具路径未拦截（内部缺陷，请报告）。"
@@ -262,10 +259,7 @@ pub fn runner_delegate_task_try(
 
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
 #[allow(clippy::result_large_err)]
-pub fn runner_cargo_check_try(
-    args: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn runner_cargo_check_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     cargo_tools::cargo_check_try(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
@@ -328,10 +322,7 @@ pub fn runner_diagnostic_summary_try(
 /// 「`sections` 未匹配任何小节」归 `invalid_args`（属调用方给了不存在的节名），
 /// 正文保持原文案（含可用小节列表），便于模型自我纠正。
 #[allow(clippy::result_large_err)]
-pub fn runner_self_config_info_try(
-    args: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn runner_self_config_info_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     let Some(cfg) = ctx.cfg else {
         return Err(ToolError::workspace(
             "tool_context_incomplete",
@@ -454,10 +445,7 @@ pub fn runner_long_term_memory_list_try(
 }
 
 #[allow(clippy::result_large_err)]
-pub fn runner_background_job_try(
-    args: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn runner_background_job_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     background_job_tools::background_job_try(
         args,
         ctx.tool_jobs_host,
@@ -507,11 +495,7 @@ pub fn read_file_try_dispatch(
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
     file::read_file_try(
         args_json,
-        &file::PathAccess::with_scope_and_roots(
-            ctx.working_dir,
-            ctx.path_scope,
-            ctx.allowed_roots,
-        ),
+        &file::PathAccess::with_scope_and_roots(ctx.working_dir, ctx.path_scope, ctx.allowed_roots),
         ctx,
     )
 }
@@ -525,21 +509,14 @@ pub fn read_file_try_at_paths(
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
     file::read_file_try(
         args_json,
-        &file::PathAccess::with_scope_and_roots(
-            working_dir,
-            ctx.path_scope,
-            ctx.allowed_roots,
-        ),
+        &file::PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),
         ctx,
     )
 }
 
 /// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
 #[allow(clippy::result_large_err)]
-pub fn runner_search_in_files_try(
-    args: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
+pub fn runner_search_in_files_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
     grep_try::search_in_files_try(args, ctx.working_dir)
 }
 
@@ -688,10 +665,7 @@ define_git_runners_try! {
 // `gh` 非零退出、白名单拒绝、起不来都有各自的 `error_code`，不再靠正文关键词。
 gh_runner_try!(runner_gh_pr_try, github_cli::gh_pr_try);
 gh_runner_try!(runner_gh_run_try, github_cli::gh_run_try);
-gh_runner_try!(
-    runner_gh_issue_create_try,
-    github_cli::gh_issue_create_try
-);
+gh_runner_try!(runner_gh_issue_create_try, github_cli::gh_issue_create_try);
 gh_runner_try!(
     runner_gh_release_create_try,
     github_cli::gh_release_create_try

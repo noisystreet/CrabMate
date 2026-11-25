@@ -12,9 +12,9 @@ use crate::cm_tools::tool_result::ToolError;
 
 use super::{
     DEFAULT_MAX_DOCUMENT_SYMBOLS, DEFAULT_RA_WAIT_MS, KillRaChild, LSP_IO_TIMEOUT,
-    LspRustAnalyzerHandshake, MAX_DID_OPEN_BYTES, RaLspOp, lsp_io_error, lsp_rust_analyzer_handshake,
-    lsp_rust_analyzer_run, path_to_file_uri, ra_lsp_request_method_params, read_response_until_id,
-    resolve_rel_file, write_lsp,
+    LspRustAnalyzerHandshake, MAX_DID_OPEN_BYTES, RaLspOp, lsp_io_error,
+    lsp_rust_analyzer_handshake, lsp_rust_analyzer_run, path_to_file_uri,
+    ra_lsp_request_method_params, read_response_until_id, resolve_rel_file, write_lsp,
 };
 
 #[allow(clippy::result_large_err)]
@@ -139,7 +139,8 @@ fn parse_ra_lsp_json_inputs(v: &Value, op: RaLspOp) -> Result<ParsedRaLspInputs,
         let line = v
             .get("line")
             .and_then(|x| x.as_u64())
-            .ok_or_else(|| ToolError::invalid_args("错误：缺少 line（0-based）".to_string()))? as u32;
+            .ok_or_else(|| ToolError::invalid_args("错误：缺少 line（0-based）".to_string()))?
+            as u32;
         let character = v.get("character").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
         (line, character)
     };

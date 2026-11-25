@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::CtlError;
 use super::env_file::{self, CredEnv};
 use super::guard;
 use super::identity;
@@ -19,7 +20,6 @@ use super::readiness::{self, WaitOutcome};
 use super::record::{self, DesiredState, InstanceRecord, InstanceState};
 use super::signal;
 use super::spawn::{self, SpawnSpec};
-use super::CtlError;
 
 /// 轮询间隔（readiness 与信号等待共用）。
 const POLL: Duration = Duration::from_millis(100);
@@ -271,10 +271,7 @@ fn finalize_ready(
             rec.base_url = Some(url.to_string());
         }
         // 只有 serve 真的加载了配置文件才对得上；未加载时为 null
-        rec.config_in_use = j
-            .get("config")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
+        rec.config_in_use = j.get("config").and_then(|v| v.as_str()).map(str::to_string);
     }
 
     let path = ctx.record_path(&rec.name)?;
@@ -502,7 +499,14 @@ pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
         } => (workspace, port, env_file_env, warnings),
     };
 
-    match up_once(ctx, args, workspace.as_deref(), port, &env_file_env, &warnings) {
+    match up_once(
+        ctx,
+        args,
+        workspace.as_deref(),
+        port,
+        &env_file_env,
+        &warnings,
+    ) {
         Ok(out) => Ok(out),
         // 端口竞争：池内顺延重试一次，仍失败则把两个原因都说清
         Err(e) if e.error_code == "readiness_failed" && args.port.is_none() => {
@@ -518,7 +522,10 @@ pub fn up(ctx: &Ctx, args: &UpArgs) -> Result<UpOutcome, CtlError> {
             .map_err(|e2| {
                 CtlError::general(
                     "port_race",
-                    format!("端口 {port} 启动失败，顺延到 {retry} 仍失败：{}", e2.message),
+                    format!(
+                        "端口 {port} 启动失败，顺延到 {retry} 仍失败：{}",
+                        e2.message
+                    ),
                 )
             })
         }
@@ -750,7 +757,8 @@ mod tests {
         rec.state = InstanceState::Starting;
         rec.pid = Some(pid);
         // `pgid = None` 走 Pid 模式：真实路径上组长是 serve 自己
-        let out = mark_readiness_timeout(&ctx, rec, pid, Duration::from_secs(1)).expect("应写入记录");
+        let out =
+            mark_readiness_timeout(&ctx, rec, pid, Duration::from_secs(1)).expect("应写入记录");
 
         assert_eq!(out.state, InstanceState::Failed);
         assert!(out.pid.is_none() && out.pgid.is_none());

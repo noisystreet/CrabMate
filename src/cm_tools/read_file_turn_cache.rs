@@ -118,13 +118,7 @@ impl ReadFileTurnCache {
         }
     }
 
-    pub fn insert(
-        &self,
-        key: String,
-        stamp: FileStamp,
-        output: String,
-        revision: String,
-    ) {
+    pub fn insert(&self, key: String, stamp: FileStamp, output: String, revision: String) {
         let Ok(mut g) = self.inner.lock() else {
             return;
         };

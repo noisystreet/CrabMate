@@ -2,8 +2,8 @@
 
 use std::sync::atomic::AtomicBool;
 
-use async_trait::async_trait;
 use crate::cm_types::{ChatRequest, Message};
+use async_trait::async_trait;
 use tokio::sync::mpsc::Sender;
 
 use crate::cm_llm::call_error::LlmCallError;

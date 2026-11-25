@@ -7,9 +7,9 @@ use crate::cm_tools::tool_result::{
 use crate::cm_types::Message;
 use serde_json::Value;
 
-use crate::cm_types::text_utils::preview_chars;
 use crate::cm_agent::plan_artifact;
 use crate::cm_names as tool_names;
+use crate::cm_types::text_utils::preview_chars;
 
 /// 终答规划重写用尽时 SSE **`reason_code`** 的稳定子码（顶层 **`code`** 仍为 `plan_rewrite_exhausted`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,11 +197,7 @@ fn workflow_execute_report_node_ids(v: &Value) -> Option<Vec<String>> {
         let id = n.get("id").and_then(|x| x.as_str())?;
         ids.push(id.to_string());
     }
-    if ids.is_empty() {
-        None
-    } else {
-        Some(ids)
-    }
+    if ids.is_empty() { None } else { Some(ids) }
 }
 
 // 解析单条 `role: tool` 消息：若为 `workflow_execute` 且报告类型与 `nodes` 合法则返回 id 列表。
@@ -274,9 +270,9 @@ fn layer_count_from_validate_result(v: &Value) -> Option<usize> {
 
 /// 从对话历史中取**最近一次** `workflow_execute` 的 `workflow_validate_only` 工具结果里的 `spec.layer_count`。
 pub fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
-    (0..messages.len())
-        .rev()
-        .find_map(|i| layer_count_from_validate_result(&workflow_execute_tool_payload_json(messages, i)?))
+    (0..messages.len()).rev().find_map(|i| {
+        layer_count_from_validate_result(&workflow_execute_tool_payload_json(messages, i)?)
+    })
 }
 
 /// 自历史中取最近一次 **`workflow_validate_result`** 的 `nodes[].id` 列表（含重复），供 **validate_only → Do** 路径上强制规划逐步绑定。

@@ -164,7 +164,8 @@ fn parse_chat_request_for_enqueue_tail(
         .unwrap_or_else(|| state.next_conversation_id());
     let agent_role = normalize_agent_role(body.agent_role.as_deref())
         .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
-    let (session_mode, permission_level) = super::turn_build::parse_chat_mode_and_permission_level(body)?;
+    let (session_mode, permission_level) =
+        super::turn_build::parse_chat_mode_and_permission_level(body)?;
     let temperature_override = parse_optional_chat_temperature(body.temperature)
         .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())

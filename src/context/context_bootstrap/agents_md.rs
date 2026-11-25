@@ -65,8 +65,7 @@ pub fn load_agents_md_block(
     if out.chars().count() <= max_chars {
         return Some(out);
     }
-    const TRUNCATION_NOTE: &str =
-        "\n\n[提示] 规则内容已按 `agents_md_max_chars` 截断。后续不得假定未出现在本 system 中的规则条文。";
+    const TRUNCATION_NOTE: &str = "\n\n[提示] 规则内容已按 `agents_md_max_chars` 截断。后续不得假定未出现在本 system 中的规则条文。";
     let note_len = TRUNCATION_NOTE.chars().count();
     if max_chars <= note_len {
         // 防御：配置校验保证 max_chars >= 1024，正常不会走到这里。

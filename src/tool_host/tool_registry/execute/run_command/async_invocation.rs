@@ -18,9 +18,11 @@ use crate::cm_names as tool_names;
 pub(in crate::tool_host::tool_registry::execute) struct RunCommandAsyncInvoke<'a> {
     pub(in crate::tool_host::tool_registry::execute) env: &'a ToolExecEnv<'a>,
     pub(in crate::tool_host::tool_registry::execute) effective_working_dir: &'a Path,
-    pub(in crate::tool_host::tool_registry::execute) web_ctx: Option<&'a dyn crate::cm_approval::ApprovalBroker>,
+    pub(in crate::tool_host::tool_registry::execute) web_ctx:
+        Option<&'a dyn crate::cm_approval::ApprovalBroker>,
     pub(in crate::tool_host::tool_registry::execute) args: &'a str,
-    pub(in crate::tool_host::tool_registry::execute) tool_jobs: std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
+    pub(in crate::tool_host::tool_registry::execute) tool_jobs:
+        std::sync::Arc<crate::jobs::tool_jobs::ToolJobRegistry>,
     pub(in crate::tool_host::tool_registry::execute) parsed: ParsedRunCommandJson,
     pub(in crate::tool_host::tool_registry::execute) decision: PolicyDecision<'a>,
     pub(in crate::tool_host::tool_registry::execute) timeout_secs: Option<u64>,
@@ -48,16 +50,15 @@ pub(in crate::tool_host::tool_registry::execute) async fn execute_run_command_as
     let effective_allowed_arc = Arc::clone(&decision.caps.allowed_commands);
     let skip_arg_safety = decision.skip_arg_safety;
 
-    let prepared =
-        match tools::prepare_run_command_for_pty_spawn_spec(
-            &parsed.spec,
-            effective_working_dir,
-            effective_allowed_arc.as_ref(),
-            skip_arg_safety,
-        ) {
-            Ok(p) => p,
-            Err(e) => return (e.extended_user_message(), None),
-        };
+    let prepared = match tools::prepare_run_command_for_pty_spawn_spec(
+        &parsed.spec,
+        effective_working_dir,
+        effective_allowed_arc.as_ref(),
+        skip_arg_safety,
+    ) {
+        Ok(p) => p,
+        Err(e) => return (e.extended_user_message(), None),
+    };
     let program = match prepared.exec_path {
         Some(p) => p.to_string_lossy().into_owned(),
         None => prepared.cmd_name,
