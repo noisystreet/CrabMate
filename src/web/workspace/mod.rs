@@ -18,6 +18,8 @@ mod handlers_file_raw_http_tests;
 #[cfg(test)]
 mod handlers_fs_extra_http_tests;
 #[cfg(test)]
+mod git_projection_tests;
+#[cfg(test)]
 mod handlers_git_http_tests;
 #[cfg(test)]
 mod handlers_profile_http_tests;

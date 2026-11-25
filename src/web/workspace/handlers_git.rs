@@ -9,10 +9,11 @@ use axum::extract::{Query, State};
 use crate::cm_api_contract::error_codes;
 use crate::cm_api_contract::workspace::{
     WorkspaceGitQuery, WorkspaceGitSource, WorkspaceGitState, WorkspaceGitStatusResponse,
+    WorkspaceGitUntrackedMode,
 };
 use crate::web::app_state::{AppStateHttpCore, CachedWorkspaceGitStatus, WorkspaceGitCache};
 use crate::web::workspace::git_projection::{
-    self, CACHE_TTL, PROBE_TIMEOUT, ProbeOutcome, response_from_outcome,
+    self, CACHE_TTL, PROBE_TIMEOUT, ProbeOutcome, UntrackedMode, response_from_outcome,
 };
 use crate::web::workspace::handlers::effective_workspace_base_canonical;
 
@@ -20,10 +21,14 @@ use crate::web::workspace::handlers::effective_workspace_base_canonical;
 ///
 /// 一律 200：可用性靠 `state` 表达（`ok` / `not_a_repo` / `git_unavailable` / `failed`）。
 /// `?refresh=true` 只跳过缓存**读**，仍回写缓存 —— 因此该 GET 保持幂等。
+/// `?files=true` 才随响应返回文件清单；缓存里**永远**是全量，见 [`with_files_visibility`]。
 pub async fn workspace_git_handler(
     State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceGitQuery>,
 ) -> Json<WorkspaceGitStatusResponse> {
+    let want_files = query.files.unwrap_or(false);
+    // 口径目前只有折叠一种；放在这里是为了让「谁取的数」一路可见（回显在 `untracked_mode`）。
+    let mode = UntrackedMode::Folded;
     let raw_root = http.effective_workspace_path().await;
     if raw_root.trim().is_empty() {
         return Json(workspace_level_failure(
@@ -51,7 +56,7 @@ pub async fn workspace_git_handler(
     if !force
         && let Some(hit) = read_fresh(&cache, &root_key)
     {
-        return Json(hit);
+        return Json(with_files_visibility(hit, want_files));
     }
 
     // 最小 single-flight：TTL 到期瞬间的并发请求不应各自 fork 两条 git 命令。
@@ -60,34 +65,55 @@ pub async fn workspace_git_handler(
     if !force
         && let Some(hit) = read_fresh(&cache, &root_key)
     {
-        return Json(hit);
+        return Json(with_files_visibility(hit, want_files));
     }
 
-    let outcome = probe_with_timeout(root).await;
+    let outcome = probe_with_timeout(root, mode).await;
     match outcome {
         outcome @ (ProbeOutcome::Ok(_) | ProbeOutcome::NotARepo | ProbeOutcome::GitUnavailable) => {
             let response = response_from_outcome(
                 outcome,
                 git_projection::now_unix(),
                 WorkspaceGitSource::Probe,
+                mode,
             );
             // 明确结论（含 not_a_repo / git_unavailable）写缓存，省掉 TTL 内的重复 fork。
             write_cache(&cache, &root_key, &response);
-            Json(response)
+            Json(with_files_visibility(response, want_files))
         }
         ProbeOutcome::Failed { .. } => {
             // 重探失败时优先沿用旧值，避免一次超时把侧栏打成 failed。
             if let Some(stale) = read_stale(&cache, &root_key) {
-                return Json(stale);
+                return Json(with_files_visibility(stale, want_files));
             }
             // 无旧值可兜底：不写缓存，避免把一次瞬时失败固化一整个 TTL。
-            Json(response_from_outcome(
-                outcome,
-                git_projection::now_unix(),
-                WorkspaceGitSource::Probe,
+            Json(with_files_visibility(
+                response_from_outcome(
+                    outcome,
+                    git_projection::now_unix(),
+                    WorkspaceGitSource::Probe,
+                    mode,
+                ),
+                want_files,
             ))
         }
     }
+}
+
+/// 按 `?files` 决定清单是否随响应返回。
+///
+/// **缓存里永远是全量**（探测阶段就产出列表），只有出站这一刻才剥离。这么做是因为缓存条目
+/// 存的是装配好的响应：若「要列表」与「不要列表」各写一份，就会出现
+/// 「先无参请求写缓存 → 再 `?files=true` 命中缓存」拿到**没有列表**的响应，
+/// 于是 `counts` 说 3 条、列表为空（#1498 明确要防的回归）。
+fn with_files_visibility(
+    mut response: WorkspaceGitStatusResponse,
+    want_files: bool,
+) -> WorkspaceGitStatusResponse {
+    if !want_files {
+        response.files = None;
+    }
+    response
 }
 
 /// 工作区根被拒时的固定文案（**不含**绝对路径）。
@@ -114,6 +140,9 @@ fn workspace_level_failure(code: &str, message: &str) -> WorkspaceGitStatusRespo
         behind: None,
         dirty: None,
         counts: None,
+        files: None,
+        // 未进 probe 就没取过数，口径仍是默认的折叠（客户端只看 `state`）。
+        untracked_mode: WorkspaceGitUntrackedMode::Folded,
         computed_at_unix: git_projection::now_unix(),
         source: WorkspaceGitSource::Probe,
     }
@@ -123,8 +152,8 @@ fn workspace_level_failure(code: &str, message: &str) -> WorkspaceGitStatusRespo
 ///
 /// `spawn_blocking` 无法被取消，超时后那条线程仍会跑完再丢弃结果 —— 这是可接受的：
 /// 单次探测上限 2s，且 single-flight 已把并发压成一次。
-async fn probe_with_timeout(root: std::path::PathBuf) -> ProbeOutcome {
-    let handle = tokio::task::spawn_blocking(move || git_projection::probe(&root));
+async fn probe_with_timeout(root: std::path::PathBuf, mode: UntrackedMode) -> ProbeOutcome {
+    let handle = tokio::task::spawn_blocking(move || git_projection::probe(&root, mode));
     match tokio::time::timeout(PROBE_TIMEOUT, handle).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(join_error)) => ProbeOutcome::Failed {
@@ -177,6 +206,10 @@ fn write_cache(cache: &WorkspaceGitCache, root_key: &str, response: &WorkspaceGi
 mod tests {
     use super::*;
 
+    use crate::cm_api_contract::workspace::{
+        WorkspaceGitFileEntry, WorkspaceGitFileKind, WorkspaceGitFileList,
+    };
+
     fn sample() -> WorkspaceGitStatusResponse {
         WorkspaceGitStatusResponse {
             state: WorkspaceGitState::Ok,
@@ -188,6 +221,20 @@ mod tests {
             behind: None,
             dirty: Some(false),
             counts: None,
+            // 缓存条目**恒**带全量列表：`?files` 只影响出站，不影响缓存内容。
+            files: Some(WorkspaceGitFileList {
+                items: vec![WorkspaceGitFileEntry {
+                    path: "a.txt".to_string(),
+                    kind: WorkspaceGitFileKind::File,
+                    staged: false,
+                    unstaged: false,
+                    untracked: true,
+                    conflicted: false,
+                }],
+                truncated: false,
+                limit: 500,
+            }),
+            untracked_mode: WorkspaceGitUntrackedMode::Folded,
             computed_at_unix: 1234,
             source: WorkspaceGitSource::Probe,
         }
@@ -234,5 +281,30 @@ mod tests {
         let cache = WorkspaceGitCache::default();
         assert!(read_fresh(&cache, "/w").is_none());
         assert!(read_stale(&cache, "/w").is_none());
+    }
+
+    /// #1498 回归点：缓存里存的是**全量**，`?files` 只在出站剥离。
+    ///
+    /// 如果哪天有人按 `files` 布尔把响应写进缓存（或缓存写入用了已剥离的响应），
+    /// 「先无参请求 → 再 `?files=true`」就会拿到 `counts` 有、列表空 的响应。
+    #[test]
+    fn plain_request_must_not_poison_cache_for_files_request() {
+        let cache = WorkspaceGitCache::default();
+        store(&cache, "/w", std::time::Instant::now());
+
+        // 第一次：无参请求，出站剥离列表。
+        let plain = with_files_visibility(read_fresh(&cache, "/w").expect("fresh hit"), false);
+        assert!(plain.files.is_none(), "无参请求不应带列表");
+
+        // 第二次：`?files=true` 命中同一缓存，必须仍能给出列表。
+        let with_files =
+            with_files_visibility(read_fresh(&cache, "/w").expect("fresh hit"), true);
+        assert!(with_files.files.is_some(), "缓存不得被前一次无参请求污染");
+        assert_eq!(with_files.source, WorkspaceGitSource::Cache);
+        assert_eq!(
+            with_files.files.expect("files").items.len(),
+            1,
+            "列表内容应与写入缓存时一致"
+        );
     }
 }
