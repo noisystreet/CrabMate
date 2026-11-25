@@ -523,6 +523,12 @@ git -c core.quotePath=false -c status.renames=true -c core.fileMode=true \
 若改成「按 `files` 存两份」，就会出现「先无参请求写缓存 → 再 `?files=true`」拿到没有列表的缓存
 （`counts` 说 3、列表空）。HTTP 与缓存单测各有一条回归用例钉住这点。
 
+**结构（#1507）**：条目拆成「骨架 + `Arc` 清单」——`skeleton.files` **恒为 `None`**，
+清单只存在 `files: Option<Arc<WorkspaceGitFileList>>` 里。于是无参命中只克隆骨架
+（几个小 `String`），不会为「最多 500 条路径」付一次深拷贝再立刻丢弃；只有 `?files=true`
+才从 `Arc` 复制一份。探测写缓存时清单是**搬进** `Arc`（不复制）。
+`cache_skeleton_never_carries_files` 单测锁住这个前提。
+
 ### 12.5 测试矩阵增补
 
 | 用例 | 位置 |

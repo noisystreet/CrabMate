@@ -114,12 +114,21 @@ pub(crate) struct AppStateConversationRuntime {
 /// `GET /workspace/git` 的缓存条目。
 ///
 /// **单条即可**：一实例一工作区（#1183），切换工作区后 `workspace_root` 不匹配自然失效。
+///
+/// **拆成「骨架 + `Arc` 清单」（#1507）**：条目原先存整份 `WorkspaceGitStatusResponse`，
+/// 每次命中都深拷贝一次；引入 `?files` 之后那次拷贝就是「最多 500 条 `String` 路径」，
+/// 而侧栏 2 s 轮询的绝大多数请求根本不带列表，拷完立刻被丢弃。拆开后：
+/// 无参命中只克隆骨架（几个小 `String`），清单按需从 `Arc` 复制。
 #[derive(Clone)]
 pub(crate) struct CachedWorkspaceGitStatus {
     pub(crate) workspace_root: String,
-    /// 单调钟，用于 TTL；命中缓存时**不**推进 `projection.computed_at_unix`。
+    /// 单调钟，用于 TTL；命中缓存时**不**推进 `skeleton.computed_at_unix`。
     pub(crate) computed_at: std::time::Instant,
-    pub(crate) projection: crate::cm_api_contract::workspace::WorkspaceGitStatusResponse,
+    /// 出站响应的「骨架」：除 `files` 之外的一切，`files` **恒为 `None`**。
+    pub(crate) skeleton: crate::cm_api_contract::workspace::WorkspaceGitStatusResponse,
+    /// 文件清单（探测写缓存时**搬进来**，不复制）。不可用态为 `None`。
+    pub(crate) files:
+        Option<std::sync::Arc<crate::cm_api_contract::workspace::WorkspaceGitFileList>>,
 }
 
 /// git 投影的缓存与探针锁。
