@@ -112,7 +112,7 @@ P0 之所以可以做到「无行为变化」，是因为它只删除**转发层
 
 1. `classify_model_error_message` 与其两项单元测试移入 `cm_internal/agent_errors.rs`（引用 `crate::cm_runtime::cli_exit::EXIT_*`）。
 2. 删除 `runtime/cli_exit.rs`；`runtime/mod.rs` 的 `pub mod cli_exit;` 改为 `pub use crate::cm_runtime::cli_exit;`。
-3. `lib_server.rs` 的 crate 根再导出拆成两行，`crate::classify_model_error_message` 路径保持可用：
+3. `src/lib.rs` 的 `server` 段 的 crate 根再导出拆成两行，`crate::classify_model_error_message` 路径保持可用：
    ```rust
    pub use runtime::cli_exit::{CliExitError, EXIT_GENERAL, …};
    pub use agent_errors::classify_model_error_message;
@@ -143,7 +143,7 @@ P0 之所以可以做到「无行为变化」，是因为它只删除**转发层
 
 ## 4. 不变式（已核对）
 
-1. `src/lib.rs` 的 6 个 `protocol` 模块 + `lib_server.rs` 的顶层 `mod` 清单**未变**。
+1. `src/lib.rs` 的 6 个 `protocol` 模块 + `src/lib.rs` 的 `server` 段 的顶层 `mod` 清单**未变**。
 2. `crate::web::http_types::*`、`crate::runtime::cli_exit::*`、`crate::classify_model_error_message` 等既有路径仍可解析。
 3. 无 `#[serde]` / 路由 / SSE / 配置键 / CLI 参数改动。
 4. 无新增依赖；无 `unsafe`；无 `unwrap()` / `expect()` 进入生产路径。

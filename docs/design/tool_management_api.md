@@ -47,7 +47,7 @@
 
 **构建期**（[cm_tools/tools/mod.rs](../../src/cm_tools/tools/mod.rs)）：`ToolsBuildOptions { categories, dev_tags }` → `tool_passes_filters`，
   外加 `codebase_semantic_search` 的 `fastembed` 特性门（[runners.rs](../../src/cm_tools/tools/runners.rs#L42-L44)）。
-  但全仓检索显示 `ToolsBuildOptions` 的**唯一生产侧引用是 `lib_server.rs` 的 re-export**，其余是测试；
+  但全仓检索显示 `ToolsBuildOptions` 的**唯一生产侧引用是 `src/lib.rs` 的 `server` 段 的 re-export**，其余是测试；
     `src/cm_config` 内检索 `dev_tags` / `tool_categories` **无任何匹配**——即 `categories` / `dev_tags` 两个过滤维度**根本没有配置入口**，
     当前恒为「不过滤」。
 

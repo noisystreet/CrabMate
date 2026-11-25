@@ -7,7 +7,8 @@
 人工归入 `fixtures/public_api_golden.txt` 的 `promised` 或 `excluded`，否则失败。
 
 **抽取口径**（刻意保守，宁漏不误）：
-- 只看 `src/lib.rs` 与 `src/lib_server.rs`（后者由 `include!` 落在 crate 根）。
+- 只看 `src/lib.rs`（`server` 面原先经 `include!("lib_server.rs")` 落在 crate 根，
+  现已就地展开并逐项 `#[cfg(feature = "server")]`，故单文件即可覆盖）。
 - 只认**顶格**（第 0 列）的 `pub mod|fn|struct|enum|trait|type|use`。非顶格项属于嵌套
   模块（`mod tests { … }` 等），不在根面。
 - `#[cfg(test)]` 项跳过：它们不构成对外面。
@@ -35,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "fixtures" / "public_api_golden.txt"
-ROOT_FILES = ("src/lib.rs", "src/lib_server.rs")
+ROOT_FILES = ("src/lib.rs",)
 
 CLASSES = ("promised", "excluded", "unclassified")
 ITEM_RE = re.compile(

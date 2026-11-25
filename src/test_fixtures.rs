@@ -116,7 +116,7 @@ pub(crate) fn msg(role: &str, text: &str) -> Message {
 /// `summary` 单独给，是因为完成判定要区分「摘要」与「原始输出」；此前 3 份副本里
 /// 有一份写死 `summary = name`，调用方补同一个值即可。
 ///
-/// **仅 `server` feature**：`cm_tools` 随 `lib_server.rs` 一起编译，`protocol`-only
+/// **仅 `server` feature**：`cm_tools` 随 `src/lib.rs` 的 `server` 段一起编译，`protocol`-only
 /// 构建（Client WASM / SSE 金样检查）里没有 `crate::cm_tools`。逐函数的门控理由
 /// 见模块头。
 #[cfg(feature = "server")]

@@ -4,7 +4,7 @@
 //! `tool_sandbox` 按 §4.2 定案提到 **crate 顶层**（`crate::tool_sandbox`），**不进**本桶 ——
 //! 它有公开面，塞进 `pub(crate)` 桶会制造假结构。
 //!
-//! `lib_server.rs` 的 `pub(crate) use` 指本桶：根上短名 `crate::tool_registry` 等不变，
+//! `src/lib.rs` 的 `server` 段 `pub(crate) use` 指本桶：根上短名 `crate::tool_registry` 等不变，
 //! 变的是定义点。
 
 pub mod dynamic_tools;

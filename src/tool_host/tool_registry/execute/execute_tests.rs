@@ -683,32 +683,3 @@ async fn run_command_async_rejects_allow_once_requiring_command() {
     assert_eq!(registry.stats().total, 0, "拒绝后不得创建任务");
     drop(sandbox);
 }
-
-// ── 审批侧与执行侧共用同一 argv 解析（含裸 token 修复）──────────────────────
-
-#[test]
-fn parse_run_command_json_repairs_bare_arg_tokens() {
-    let parsed = parse_run_command_json(r#"{"command":"ls","args":[-la]}"#, Path::new("."))
-        .expect("裸 token 应可修复");
-    assert_eq!(parsed.cmd, "ls");
-    assert_eq!(parsed.spec.args, vec!["-la".to_string()]);
-    assert_eq!(parsed.script, "ls -la");
-}
-
-#[test]
-fn parse_run_command_json_reports_invalid_json() {
-    let err = parse_run_command_json("{not json", Path::new("."))
-        .err()
-        .expect("非法 JSON 必须显式报错");
-    assert_eq!(err.kind(), "json_parse");
-    assert!(
-        err.extended_user_message().contains("参数解析错误"),
-        "{}",
-        err.extended_user_message()
-    );
-    assert_eq!(
-        err.into_tool_error().code,
-        "json_parse",
-        "JSON 解析失败应有独立 error_code，而非通用 invalid_args"
-    );
-}

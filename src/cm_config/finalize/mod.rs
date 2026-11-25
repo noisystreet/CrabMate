@@ -14,8 +14,8 @@ use super::validate;
 use super::workspace_roots;
 use crate::cm_names as tool_names;
 
-mod autonomy;
 mod agent_layers;
+mod autonomy;
 mod checks;
 mod derived;
 mod prompts;
@@ -24,9 +24,12 @@ pub use self::prompts::{
     embedded_context_summary_system, embedded_context_summary_user_template,
     embedded_session_mode_appendix, embedded_thinking_avoid_echo_appendix,
 };
-pub(crate) use self::prompts::{resolve_coding_workbench_increment, resolve_context_summary_prompts};
+pub(crate) use self::prompts::{
+    resolve_coding_workbench_increment, resolve_context_summary_prompts,
+};
 mod build;
 mod tail;
+mod tail_storage_inject_net;
 
 pub(in crate::cm_config) use self::build::finalize;
 
@@ -223,4 +226,3 @@ fn finalize_agent_config(
         permission,
     })
 }
-

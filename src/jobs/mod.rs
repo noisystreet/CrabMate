@@ -4,6 +4,6 @@
 //! `tool_host` 完全正交，故独立一期搬迁。
 //!
 //! 上层一律写 `crate::jobs::tool_jobs::…`：`tool_jobs` 没有根上短名消费者，
-//! `lib_server.rs` 不导出它，所以 **没有** `crate::tool_jobs::…` 这种写法。
+//! `src/lib.rs` 的 `server` 段不导出它，所以 **没有** `crate::tool_jobs::…` 这种写法。
 
 pub mod tool_jobs;

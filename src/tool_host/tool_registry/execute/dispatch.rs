@@ -15,11 +15,11 @@ use std::time::Duration;
 use log::error;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
 use crate::cm_tools::tool_result::error_text;
-use crate::cm_tools::tools;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
+use crate::cm_tools::tools;
 use crate::cm_types::ToolCall;
+use crate::tool_host::tool_approval::{self, InteractiveGateOutcome};
 
 use super::super::meta::{HandlerId, HandlerLookupTable};
 use super::super::policy::{parallel_tool_wall_timeout_secs, sync_default_runs_inline};
@@ -50,7 +50,9 @@ struct SyncDefaultToolDispatchArgs<'a> {
 }
 
 /// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
-fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a dyn crate::cm_approval::ApprovalBroker> {
+fn http_tool_approval_context<'a>(
+    runtime: ToolRuntime<'a>,
+) -> Option<&'a dyn crate::cm_approval::ApprovalBroker> {
     runtime.ctx
 }
 
@@ -169,16 +171,17 @@ async fn try_dispatch_dynamic_tool(
             None,
         ));
     }
-    let def = match crate::tool_host::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
-        Ok(Some(d)) => d,
-        Ok(None) => {
-            return Some((
-                format!("{}：{}", error_text::UNKNOWN_TOOL_PREFIX, name),
-                None,
-            ));
-        }
-        Err(e) => return Some((format!("错误：动态工具加载失败：{}", e), None)),
-    };
+    let def =
+        match crate::tool_host::dynamic_tools::resolve_runtime_def(effective_working_dir, name) {
+            Ok(Some(d)) => d,
+            Ok(None) => {
+                return Some((
+                    format!("{}：{}", error_text::UNKNOWN_TOOL_PREFIX, name),
+                    None,
+                ));
+            }
+            Err(e) => return Some((format!("错误：动态工具加载失败：{}", e), None)),
+        };
     let args_owned = args.to_string();
     let wd = effective_working_dir.to_path_buf();
     let cfg2 = Arc::clone(cfg);
@@ -354,11 +357,12 @@ async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolR
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
     let handle = tokio::task::spawn_blocking(move || {
         crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            let hosts = crate::tool_host::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
-                cfg2.as_ref(),
-                ltm2,
-                ltm_scope2.as_deref(),
-            );
+            let hosts =
+                crate::tool_host::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
+                    cfg2.as_ref(),
+                    ltm2,
+                    ltm_scope2.as_deref(),
+                );
             let jobs_host = tj
                 .as_ref()
                 .map(|r| crate::tool_host::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
@@ -404,7 +408,11 @@ async fn dispatch_sync_default_tool(p: SyncDefaultToolDispatchArgs<'_>) -> ToolR
         Err(_) => {
             error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
             ToolRunOutcome::failed(
-                format!("{}：工具执行超时（{} 秒）", error_text::ERROR_PREFIX, wall_secs),
+                format!(
+                    "{}：工具执行超时（{} 秒）",
+                    error_text::ERROR_PREFIX,
+                    wall_secs
+                ),
                 Some("timeout".to_string()),
             )
         }
@@ -427,8 +435,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> ToolRunOutcome {
             return outcome;
         }
         // 用户取消：停止重试，返回最后一次结果。
-        if p
-            .obs
+        if p.obs
             .cancel
             .as_ref()
             .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
@@ -460,9 +467,7 @@ pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> ToolRunOutcome {
 }
 
 /// 等待用户取消标志置位（供重试退避期间响应取消）；`None` 表示无取消源，永久等待。
-async fn wait_for_tool_cancel(
-    cancel: Option<&std::sync::Arc<std::sync::atomic::AtomicBool>>,
-) {
+async fn wait_for_tool_cancel(cancel: Option<&std::sync::Arc<std::sync::atomic::AtomicBool>>) {
     let Some(c) = cancel else {
         std::future::pending::<()>().await;
         return;
@@ -484,6 +489,53 @@ fn internal_dispatch_error(tool: &str) -> String {
         "{}：内部错误：{tool} 须由 agent 层调度，不应进入 dispatch_tool",
         error_text::ERROR_PREFIX
     )
+}
+
+/// 分派前的三条短路路径：回合准入（拒绝即出结论）→ 动态工具 → MCP 代理。
+///
+/// 返回 `Some` 表示已得出结论、调用方直接返回；`None` 表示继续走内置 `HandlerId` 分派。
+/// 提取自 `dispatch_tool_inner`：那里只留一次调用，避免准入/短路逻辑把主体撑过 nloc 棘轮。
+async fn try_short_circuit_dispatch(
+    cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    turn_allow: Option<&HashSet<String>>,
+    mcp_turn: Option<&crate::mcp::McpTurnHandle>,
+    name: &str,
+    args: &str,
+) -> Option<ToolRunOutcome> {
+    if !crate::context::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
+        // 不给码：`tool_denied` 类文案已带「错误：」前缀，下游 `{tool}_failed` 兜底即可；
+        // 且策略拒绝的既有码是 `command_denied` / `approval_denied`，不是分类名 `policy_denied`。
+        return Some(ToolRunOutcome::failed(
+            crate::context::agent_role_turn::turn_tool_denied_message(name),
+            None,
+        ));
+    }
+
+    if let Some((out, payload)) =
+        try_dispatch_dynamic_tool(cfg, effective_working_dir, workspace_is_set, name, args).await
+    {
+        return Some(ToolRunOutcome::from_body_and_payload(name, out, payload));
+    }
+
+    let (out, payload) = try_dispatch_mcp_proxy_tool(cfg, mcp_turn, name, args).await?;
+    Some(ToolRunOutcome::from_body_and_payload(name, out, payload))
+}
+
+/// Web 未设置工作区时：仍允许出网类工具；禁止所有 `SyncDefault`（否则 `working_dir` 会回落到
+/// 配置目录，等效于未选工作区仍可读本地树）。返回 `Some` 表示应直接以此结论结束。
+fn deny_sync_default_without_workspace(
+    hid: HandlerId,
+    workspace_is_set: bool,
+) -> Option<ToolRunOutcome> {
+    if workspace_is_set || !matches!(hid, HandlerId::SyncDefault) {
+        return None;
+    }
+    Some(ToolRunOutcome::failed(
+        web_tool_err_workspace_not_set("执行内置工具"),
+        Some("workspace_not_set".to_string()),
+    ))
 }
 
 /// 单次工具执行（含审批、沙盒与 handler 分发）；供 [`dispatch_tool`] 重试循环按可变借用复用。
@@ -550,41 +602,35 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
         sandbox_backend: sync_default_sandbox_backend,
         permission,
     };
-    if !crate::context::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
-        // 不给码：`tool_denied` 类文案已带「错误：」前缀，下游 `{tool}_failed` 兜底即可；
-        // 且策略拒绝的既有码是 `command_denied` / `approval_denied`，不是分类名 `policy_denied`。
-        return ToolRunOutcome::failed(
-            crate::context::agent_role_turn::turn_tool_denied_message(name),
-            None,
-        );
-    }
-
-    if let Some((out, payload)) =
-        try_dispatch_dynamic_tool(cfg, effective_working_dir, workspace_is_set, name, args).await
+    if let Some(outcome) = try_short_circuit_dispatch(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        turn_allow,
+        mcp_turn,
+        name,
+        args,
+    )
+    .await
     {
-        return ToolRunOutcome::from_body_and_payload(name, out, payload);
+        return outcome;
     }
 
-    if let Some((out, payload)) = try_dispatch_mcp_proxy_tool(cfg, mcp_turn, name, args).await {
-        return ToolRunOutcome::from_body_and_payload(name, out, payload);
-    }
-
-    let args_processed =
-        match crate::tool_host::tool_call_explain::require_explain_for_mutation(cfg.as_ref(), name, args) {
-            Ok(c) => c,
-            // 不给码：`require_explain_for_mutation` 只返回用户可见文案，本来就没有错误码。
-            Err(e) => return ToolRunOutcome::failed(e, None),
-        };
+    let args_processed = match crate::tool_host::tool_call_explain::require_explain_for_mutation(
+        cfg.as_ref(),
+        name,
+        args,
+    ) {
+        Ok(c) => c,
+        // 不给码：`require_explain_for_mutation` 只返回用户可见文案，本来就没有错误码。
+        Err(e) => return ToolRunOutcome::failed(e, None),
+    };
     let args = args_processed.as_ref();
 
     let hid = handler_lookup.id_for(name);
 
-    // Web 未设置工作区时：仍允许出网类工具；禁止所有 SyncDefault（否则 `working_dir` 会回落到配置目录，等效于未选工作区仍可读本地树）。
-    if !workspace_is_set && matches!(hid, HandlerId::SyncDefault) {
-        return ToolRunOutcome::failed(
-            web_tool_err_workspace_not_set("执行内置工具"),
-            Some("workspace_not_set".to_string()),
-        );
+    if let Some(outcome) = deny_sync_default_without_workspace(hid, workspace_is_set) {
+        return outcome;
     }
 
     // 非 `run_command` 工具的 `async=true` 后台门闩（装配表内的进程载荷工具）。
@@ -619,43 +665,48 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
                 workspace_changed,
                 ctx,
             } = runtime;
-            wrap(execute_run_command_impl(RunCommandHostInvoke {
-                env: &env,
-                effective_working_dir,
-                workspace_is_set,
-                workspace_changed,
-                web_ctx: ctx,
-                args,
-                tool_call_id: tc.id.as_str(),
-                sse_out_tx,
-                sse_control_mirror,
-                cancel,
-                tool_jobs,
-            })
-            .await)
+            wrap(
+                execute_run_command_impl(RunCommandHostInvoke {
+                    env: &env,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    web_ctx: ctx,
+                    args,
+                    tool_call_id: tc.id.as_str(),
+                    sse_out_tx,
+                    sse_control_mirror,
+                    cancel,
+                    tool_jobs,
+                })
+                .await,
+            )
         }
         HandlerId::TerminalSession => {
             let ToolRuntime {
                 workspace_changed,
                 ctx,
             } = runtime;
-            wrap(execute_terminal_session_impl(TerminalSessionExecInvoke {
-                env: &env,
-                effective_working_dir,
-                workspace_is_set,
-                workspace_changed,
-                web_ctx: ctx,
-                args,
-                sse_out_tx,
-                sse_control_mirror,
-                tool_call_id: tc.id.as_str(),
-                sse_encoder: None,
-                cancel,
-            })
-            .await)
+            wrap(
+                execute_terminal_session_impl(TerminalSessionExecInvoke {
+                    env: &env,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    web_ctx: ctx,
+                    args,
+                    sse_out_tx,
+                    sse_control_mirror,
+                    tool_call_id: tc.id.as_str(),
+                    sse_encoder: None,
+                    cancel,
+                })
+                .await,
+            )
         }
         HandlerId::GetWeather => wrap(
-            execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args).await,
+            execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args)
+                .await,
         ),
         HandlerId::WebSearch => wrap(
             execute_web_search_web(&env, effective_working_dir, workspace_is_set, name, args).await,
@@ -725,16 +776,15 @@ pub async fn prefetch_parallel_syncdefault_approvals(
         if !seen.insert(key.clone()) {
             continue;
         }
-        if let Err(msg) =
-            approve_external_read_dir_if_needed(
-                tc.function.arguments.as_str(),
-                web_ctx,
-                permission,
-                // 并行批预审批拿不到 `effective_working_dir` 与根集合；`AllowedRoots` 档
-                // 在此**不定论**（`None`），交给下面每个工具自己的 `dispatch_tool`。
-                None,
-            )
-            .await
+        if let Err(msg) = approve_external_read_dir_if_needed(
+            tc.function.arguments.as_str(),
+            web_ctx,
+            permission,
+            // 并行批预审批拿不到 `effective_working_dir` 与根集合；`AllowedRoots` 档
+            // 在此**不定论**（`None`），交给下面每个工具自己的 `dispatch_tool`。
+            None,
+        )
+        .await
         {
             failures.insert(key, msg);
         }

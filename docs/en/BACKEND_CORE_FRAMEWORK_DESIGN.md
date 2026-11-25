@@ -46,7 +46,7 @@ This document captures a **design analysis** (not an implementation commitment) 
     enable extras with `--features fastembed`, or `--all-features`)
 - The only trimming path in use today is **protocol-only**:
   `cargo build --no-default-features --features protocol` (see `scripts/check-client-contract.sh` / `check-sse-protocol.sh`). That combination skips
-  `src/lib_server.rs` entirely, so the `server`-side modules (Web / MCP / archive / CLI)
+  `src/lib.rs` entirely, so the `server`-side modules (Web / MCP / archive / CLI)
   **do not exist**. Consequently the negative branches for **`mcp`** (`src/mcp/stub.rs`,
   `runtime/cli_mcp.rs`, `src/mcp/mod.rs`), **`archive-tools`** (`cm_tools/tools/mod.rs`, `cm_tools/tools/tool_specs_registry/mod.rs`;
     `web/workspace/handlers_dir_archive.rs` now only needs `zip` and carries no such gate) and **`web`** (`cli_run.rs`, `cli_run_session.rs`,

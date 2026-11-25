@@ -2,7 +2,7 @@
 """`#[allow(unused*)]` 例外面棘轮（#1231）。
 
 **为什么需要它**：`-D warnings` 永远抓不到被 `allow` 压住的告警——这正是 #1229 的根因。
-`src/lib_server.rs` 曾给 10 个 `cm_*` 模块整体加 `#[allow(unused)]`，而 `unused` 这个
+`src/lib.rs` 曾给 10 个 `cm_*` 模块整体加 `#[allow(unused)]`，而 `unused` 这个
 lint group 含 `dead_code`，于是模块内的死代码与多余 import 全部静默，clippy 一直绿。
 
 所以「allow 出现在哪一层」必须单独门禁。本脚本只盯**模块级罩子**，不碰 item 级豁免：
