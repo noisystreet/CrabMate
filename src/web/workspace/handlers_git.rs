@@ -307,4 +307,27 @@ mod tests {
             "列表内容应与写入缓存时一致"
         );
     }
+
+    /// `stale_cache` 兜底路径同样按 `?files` 出站：重探失败时旧值里的列表必须完整保留。
+    #[test]
+    fn stale_cache_entry_still_serves_files_when_requested() {
+        let cache = WorkspaceGitCache::default();
+        let old = std::time::Instant::now()
+            .checked_sub(CACHE_TTL * 2)
+            .expect("单调钟当前时刻必然大于 CACHE_TTL*2");
+        store(&cache, "/w", old);
+
+        let stale = with_files_visibility(read_stale(&cache, "/w").expect("stale"), true);
+        assert_eq!(stale.source, WorkspaceGitSource::StaleCache);
+        assert_eq!(
+            stale.files.expect("stale 也要带列表").items.len(),
+            1,
+            "旧值里的列表必须完整保留"
+        );
+
+        // 无参请求同样从 stale 剥离。
+        let plain = with_files_visibility(read_stale(&cache, "/w").expect("stale"), false);
+        assert!(plain.files.is_none());
+        assert_eq!(plain.source, WorkspaceGitSource::StaleCache);
+    }
 }

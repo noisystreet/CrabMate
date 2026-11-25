@@ -538,6 +538,9 @@ git -c core.quotePath=false -c status.renames=true -c core.fileMode=true \
 | `relativePaths=false` 不泄露根外记录（bug 回归） | `relative_paths_false_does_not_leak_outside_records` |
 | `renames=false` 下仍只一条 | `renames_pinned_true_keeps_one_record` |
 | 先无参再 `?files=true` 仍拿到列表 | `files_served_after_plain_request_hit_cache` |
+| `refresh=true` + `files=true` 仍带列表 | `refresh_with_files_still_returns_list` |
+| `stale_cache` 兜底仍带列表 | `stale_cache_entry_still_serves_files_when_requested` |
+| 原始空 path ⇒ 失败（不猜成 `.`） | `empty_record_path_is_error` |
 
 ### 12.6 文档与契约同步
 

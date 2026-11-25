@@ -352,3 +352,31 @@ async fn renames_pinned_true_keeps_one_record() {
     assert_eq!(items.len(), 1, "{body}");
     assert_eq!(items[0]["path"], "b.txt", "{body}");
 }
+
+/// `refresh=true` 与 `files=true` 组合：强制重探后仍要带列表。
+///
+/// `force` 会跳过缓存读、失败时仍可能落到 `stale_cache`，所以 `want_files` 必须一路穿透。
+#[tokio::test]
+async fn refresh_with_files_still_returns_list() {
+    let ws = tempfile::tempdir().expect("tempdir");
+    init_repo(ws.path());
+    std::fs::write(ws.path().join("a.txt"), "x").expect("write");
+    let handle = start_test_serve_with_config(cfg_default(), None).await;
+    let client = loopback_http_client();
+
+    // 先无参写缓存，再 `refresh=true&files=true`：必须真探且带列表。
+    let _ = setup_and_get(&client, &handle.base_url, ws.path(), "").await;
+    let body = setup_and_get(
+        &client,
+        &handle.base_url,
+        ws.path(),
+        "?refresh=true&files=true",
+    )
+    .await;
+    assert_eq!(body["source"], "probe", "{body}");
+    let items = body["files"]["items"]
+        .as_array()
+        .expect("refresh 之后仍须带列表");
+    assert_eq!(items.len(), 1, "{body}");
+    assert_eq!(items[0]["path"], "a.txt", "{body}");
+}
