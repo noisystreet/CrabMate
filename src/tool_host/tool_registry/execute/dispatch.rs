@@ -587,7 +587,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> ToolRunOutcome {
         );
     }
 
-    // 非 `run_command` 工具的 `async=true` 后台门闩（`cargo_test` / `pytest_run` 等进程载荷）。
+    // 非 `run_command` 工具的 `async=true` 后台门闩（装配表内的进程载荷工具）。
     if let Some((out, payload)) = try_dispatch_background_async_tool(
         cfg,
         effective_working_dir,

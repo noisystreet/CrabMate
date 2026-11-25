@@ -157,7 +157,8 @@
     `ruff_check` / `mypy_check` 函数体随之移除。
 - **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
 - **Agent / 编排类**：保留。
-- **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），
+- **`cargo_check` / `cargo_test` / `cargo_clippy` / `cargo_run`** 等已接入**后台任务装配**
+  （`background_job_async_tools` 默认 `["run_command"]`，这些工具须显式加入才走后台），
   收敛前须确认不破坏该链路。
 
 ### 8.5.4 候选路线（按风险 / 收益排序，非承诺顺序）

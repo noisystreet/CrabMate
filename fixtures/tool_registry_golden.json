@@ -1042,6 +1042,14 @@
               "null"
             ]
           },
+          "async": {
+            "default": null,
+            "description": "`true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`\n（含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。\n需 `[tool_registry] background_jobs_enabled` 且该工具（`cargo_check` / `cargo_clippy`）\n在 `background_job_async_tools` 白名单内。",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "bin": {
             "default": null,
             "type": [
@@ -1091,6 +1099,14 @@
         "properties": {
           "all_targets": {
             "default": null,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "async": {
+            "default": null,
+            "description": "`true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`\n（含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。\n需 `[tool_registry] background_jobs_enabled` 且该工具（`cargo_check` / `cargo_clippy`）\n在 `background_job_async_tools` 白名单内。",
             "type": [
               "boolean",
               "null"
@@ -1150,6 +1166,14 @@
             },
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "async": {
+            "default": null,
+            "description": "`true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`\n（含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。\n需 `[tool_registry] background_jobs_enabled` 且 `cargo_run` 在 `background_job_async_tools` 白名单内。\n`cargo run` 常是长期运行的程序：后台发起后请用 `background_job_wait` 等到终态或命中日志，\n不要反复 `background_job status` 轮询。",
+            "type": [
+              "boolean",
               "null"
             ]
           },

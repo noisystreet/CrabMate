@@ -50,7 +50,10 @@
 
 - **白名单外 CLI**：`rust-analyzer` / `pytest` 等**不在** `allowed_commands`；删掉专用工具等于功能净丢失，除非先扩白名单（§8.5.3 边界，风险最高）。
   **`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（`sg` 仍未加入，见 §3.2）。
-- **后台任务装配**：`background_job_async_tools` 默认仅 `["run_command"]`；`cargo_test` / `pytest_run` 须**显式加入**才走后台，收敛前须确认不破坏该链路。
+- **后台任务装配**：`background_job_async_tools` 默认仅 `["run_command"]`；`cargo_check` / `cargo_test` /
+  `cargo_clippy` / `cargo_run` / `pytest_run` 须**显式加入**才走后台，收敛前须确认不破坏该链路
+  （尤其不许把 cargo 家族并成单个 `cargo` + `action` —— 装配表与白名单都按**工具名**匹配，合并会让既有配置静默失效，
+  见 §3.2.1）。
 
 ### 2.3 运行时语义差异
 

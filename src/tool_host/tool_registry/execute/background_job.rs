@@ -29,10 +29,37 @@ type BackgroundArgvAssembler =
 /// 门闩的 `supported` 判定与 [`assemble_background_job_spawn`] 的装配共用本表，
 /// 避免「支持清单」与「装配分支」两处漂移；新增工具只需在此登记一行。
 fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler> {
+    // cargo 家族（check/test/clippy/run）：前台与后台共用 `build_cargo_subcommand_command`，
+    // 差异只是子命令字面量（`cargo_tools.rs` 的 `cargo_*_try` 均经 `run_cargo_subcommand_str_try`），
+    // 故装配函数同源、argv 逐项相同。
     match name {
+        crate::cm_names::CARGO_CHECK => Some(|args_json, workspace_root| {
+            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+                "check",
+                args_json,
+                workspace_root,
+            )
+            .map_err(|e| e.message)
+        }),
         crate::cm_names::CARGO_TEST => Some(|args_json, workspace_root| {
             crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
                 "test",
+                args_json,
+                workspace_root,
+            )
+            .map_err(|e| e.message)
+        }),
+        crate::cm_names::CARGO_CLIPPY => Some(|args_json, workspace_root| {
+            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+                "clippy",
+                args_json,
+                workspace_root,
+            )
+            .map_err(|e| e.message)
+        }),
+        crate::cm_names::CARGO_RUN => Some(|args_json, workspace_root| {
+            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+                "run",
                 args_json,
                 workspace_root,
             )

@@ -53,6 +53,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   **full** list and `files` is stripped on the way out, so a plain request never poisons a later
   `?files=true`. Contract tag: `client-contract-v0.5.0` (additive; mark **after**
   `client-contract-v0.4.0`).
+- **`cargo_check` / `cargo_clippy` / `cargo_run` can now run in the background (`async: true`).**
+  The background-task assembly table (`tool_registry/execute/background_job.rs`) gained the three
+  remaining cargo tools, reusing the same `build_cargo_subcommand_command` the foreground path uses —
+  argv / cwd are byte-identical, and cancel / wall-clock / output buffering need **no** `tool_jobs`
+  changes. Each Args struct gains the optional **`async`** field (`CargoCommonCliArgs` covers both
+  `cargo_check` and `cargo_clippy`), and the default **`background_job_async_tools`** stays
+  **`["run_command"]`**, so nothing is backgrounded until a tool is explicitly allowlisted.
+  **Upgrade note**: with the default allowlist unchanged, `async: true` on these three now fails with
+  `invalid_args` ("not in `background_job_async_tools`") instead of being silently ignored and running
+  synchronously — a model that previously "got away with" it will see an error until the tool is
+  allowlisted. `cargo_run` is commonly long-lived: poll with `background_job_wait` rather than repeated
+  `background_job status`, and note that a long-lived job holds one `background_job_max_concurrent` slot
+  until it is cancelled or hits TTL.
 
 ### Fixed
 
