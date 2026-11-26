@@ -8,7 +8,8 @@ use crate::cm_llm::chat_params::{LlmRetryingTransportOpts, StreamChatParams};
 use crate::cm_llm::{fold_system_into_user_for_config, llm_vendor_adapter, vendor};
 use reqwest::Client;
 
-use crate::agent::turn_budget::TurnBudgetCounter;
+// 直接引领域层：`agent::turn_budget` 只是 `cm_agent::turn_budget` 的再导出（#1510）。
+use crate::cm_agent::turn_budget::TurnBudgetCounter;
 
 /// [`super::complete_chat_retrying`] 入参（不含每次克隆前的 `ChatRequest`）。
 pub struct CompleteChatRetryingParams<'a> {
