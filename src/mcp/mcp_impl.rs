@@ -34,7 +34,7 @@ use crate::cm_types::{FunctionDef, Tool};
 use crate::mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer, validate_mcp_remote_url};
 use crate::mcp::turn_handle::{McpTurnHandle, McpTurnSessions};
 
-pub use crate::cm_tools::tool_naming::MCP_PROXY_PREFIX;
+pub use crate::cm_kernel::MCP_PROXY_PREFIX;
 
 /// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程 / HTTP 会话）。
 pub type McpClientSession = RunningService<RoleClient, ClientConfig>;

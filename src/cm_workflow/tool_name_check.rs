@@ -5,7 +5,7 @@
 //! 唯一职责（不校验 `tool_args` 是否符合该工具的 JSON Schema）。
 
 use super::model::WorkflowSpec;
-use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
+use crate::cm_kernel::{ToolOrigin, tool_origin};
 use crate::cm_tools::tools::is_registered_tool_name;
 
 /// 校验 `nodes` 与 `for_each_pending` 的每个 `tool_name`；任一未注册即返回错误。

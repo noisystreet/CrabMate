@@ -3,15 +3,14 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
 use crate::cm_config::{AgentConfig, WebSearchProvider};
 use crate::cm_types::ToolCall;
 
+use crate::cm_kernel::{ToolOrigin, tool_origin};
 use crate::cm_names as tool_names;
 use crate::cm_tools::tool_dispatch::{
     HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool,
 };
-use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 
 /// `web_search`（worbrow）外圈相对配置超时的额外等待秒数，供浏览器进程收尾。
 pub const WEB_SEARCH_WORBROW_OUTER_GRACE_SECS: u64 = 15;
@@ -107,38 +106,12 @@ pub fn terminal_session_outer_wall_secs(cfg: &AgentConfig) -> u64 {
 // 写效应名单唯一来源在 `crate::cm_config::tool_write_effect`（`cm_memory` 的语义索引失效
 // 判定共用同一份）；本模块只负责「按配置替换」与「非内置一律不算只读」的策略。
 
-/// 是否为**内置**工具（非 `mcp__*` / `plugins/*.json` 动态工具）。
-///
-/// 权限等级的只读判定只认内置工具：外部工具的可用性由 `PermissionCaps::external_tools`
-/// 决定，不能被「只读正列表」顺手放行（设计 §8.1）。
-#[must_use]
-pub fn is_builtin_tool(name: &str) -> bool {
-    tool_origin(name) == ToolOrigin::Builtin
-}
-
-/// 权限语义的「只读」判定（权限等级 L1 的只读正列表推导用）。
-///
-/// **不读** `tool_registry_write_effect_tools`：那是并行只读批的**性能开关**（整体替换式），
-/// 运维为调并行顺手漏配 `run_command` 就会让 L1 放行子进程——不能拿它当安全边界
-/// （设计 `docs/design/permission_levels.md` §4.2 / §7.2）。
-///
-/// 非内置来源（`mcp__*` / `plugins/*.json` 动态工具）一律**不算**只读：L1 下它们必须被
-/// early-deny 拒掉，而不是靠「没进 tools 列表」兜着。
-pub fn is_readonly_tool_for_permission(name: &str) -> bool {
-    is_builtin_tool(name) && !builtin_write_effect_tools().contains(name)
-}
-
-/// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
-pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
-    if tool_origin(name) != ToolOrigin::Builtin {
-        return false;
-    }
-    let writes = match &cfg.tool_registry_policy.tool_registry_write_effect_tools {
-        None => builtin_write_effect_tools(),
-        Some(arc) => arc.as_ref(),
-    };
-    !writes.contains(name)
-}
+// 三个判定（内建 / 权限只读 / 并行只读）已下沉到 `crate::cm_kernel`（#1510 P2a）：
+// `cm_agent` 与 `cm_tools` 都要用，留在这里会逼领域层反向依赖工具层。此处只转发。
+// `is_readonly_tool` 有真实消费者（`tool_host::tool_registry` 转引、`web/tools_handlers`），
+// 故保留 `pub use`；另两个判定的消费者只有本模块 tests，在测试模块里单独引入即可
+// （#1510 P2a 复查修正：先前把三个一起私有化会打断 tool_registry 的转发链）。
+pub use crate::cm_kernel::is_readonly_tool;
 
 /// 同轮「只读结果去重缓存」的豁免清单。
 ///
@@ -299,6 +272,9 @@ mod web_search_wall_tests {
 #[cfg(test)]
 mod readonly_single_source_tests {
     use super::*;
+    // 只在测试里用：非 test 构建下本模块已不直接读写效应名单（判定已下沉 cm_kernel）。
+    use crate::cm_config::tool_write_effect::builtin_write_effect_tools;
+    use crate::cm_kernel::is_readonly_tool_for_permission;
 
     #[test]
     fn readonly_classification_covers_every_tool_name() {

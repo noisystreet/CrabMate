@@ -89,6 +89,12 @@ check_forbidden_mod src/cm_config crate::cm_tools \
   "config stays below tools; tool names come from crate::cm_names"
 check_forbidden_mod src/cm_types crate::cm_tools \
   "protocol contract stays below tools"
+# #1510 P2a：`cm_kernel` 是工具层与领域层共用的中立内核 —— 两边都可以依赖它，
+# 但它不能反向依赖任何一边（否则又变成谁都能被绕过的假中立）。
+check_forbidden_mod src/cm_kernel.rs crate::cm_tools \
+  "kernel is shared by tools and agent; tools must not be a dependency of it"
+check_forbidden_mod src/cm_kernel.rs crate::cm_agent \
+  "kernel is shared by tools and agent; agent must not be a dependency of it"
 
 # #1510 P0：`chat_job_queue` 是 `web` 的下游消费者 —— 只许 `web -> queue`，不许反向。
 # 两者共享的类型定义在 `context::web_state_facet`；这条一旦报错，说明又有人把定义挪回 `web`

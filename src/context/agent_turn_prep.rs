@@ -99,7 +99,7 @@ pub async fn prepare_tools_for_turn(
     }
     if let Some(allow) = turn_allowed_tool_names {
         tools_for_turn.retain(|t| {
-            crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist(
+            crate::cm_kernel::tool_name_allowed_by_turn_allowlist(
                 t.function.name.as_str(),
                 Some(allow),
             )
