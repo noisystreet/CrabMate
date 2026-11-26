@@ -1,10 +1,10 @@
 //! 工具结果 SSE 信封规范化（并行/串行批共用）。
 
 use crate::cm_names as tool_names;
-use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
-use crate::tool_result::{
-    self, NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
+use crate::cm_tool_result::{
+    NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
 };
+use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
 use crate::tools;
 
 /// 按执行模式构造 [`ToolEnvelopeContext`]。
@@ -46,7 +46,7 @@ pub(super) async fn emit_sse_tool_result(
     let mut parsed = parse_tool_output(name, result);
     // #1430：执行层给出的成败优先于正文反推（同一条结果不能有两种结论）。
     parsed.apply_outcome_facts(facts);
-    let structured_payload = tool_result::structured_payload_for_tool(name, result);
+    let structured_payload = crate::cm_tool_result::structured_payload_for_tool(name, result);
     let summary_for_norm = tool_summary
         .clone()
         .unwrap_or_else(|| format!("tool: {name}"));

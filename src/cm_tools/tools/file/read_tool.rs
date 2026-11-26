@@ -31,9 +31,7 @@ fn read_file_missing_path_hint_eligible(e: &WorkspacePathError) -> bool {
     }
 }
 
-fn read_file_workspace_tool_error(
-    e: WorkspacePathError,
-) -> crate::cm_tools::tool_result::ToolError {
+fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::cm_tool_result::ToolError {
     let code: &'static str = match e.kind() {
         "empty_path" => "read_file_workspace_empty_path",
         "absolute_path_not_allowed" => "read_file_workspace_absolute_path_not_allowed",
@@ -53,15 +51,12 @@ fn read_file_workspace_tool_error(
         "no_existing_ancestor" => "read_file_workspace_no_existing_ancestor",
         _ => "read_file_workspace_other",
     };
-    crate::cm_tools::tool_result::ToolError::external_code(
-        code,
-        tool_user_error_from_workspace_path(e),
-    )
+    crate::cm_tool_result::ToolError::external_code(code, tool_user_error_from_workspace_path(e))
 }
 
 fn read_file_workspace_tool_error_maybe_hint(
     e: WorkspacePathError,
-) -> crate::cm_tools::tool_result::ToolError {
+) -> crate::cm_tool_result::ToolError {
     let attach = read_file_missing_path_hint_eligible(&e);
     let mut err = read_file_workspace_tool_error(e);
     if attach {
@@ -71,10 +66,10 @@ fn read_file_workspace_tool_error_maybe_hint(
 }
 
 fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
+    crate::cm_tool_result::prepend_crabmate_tool_output_with_ok(
         tool_names::READ_FILE,
         true,
-        crate::cm_tools::tool_result::ReadFileOutputFields {
+        crate::cm_tool_result::ReadFileOutputFields {
             path: path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path)),
             revision: meta.revision.to_string(),
             start_line: meta.start_line,
@@ -168,7 +163,7 @@ fn read_file_build_empty_response(
 #[allow(clippy::result_large_err)]
 fn read_file_require_regular_file(
     meta: &std::fs::Metadata,
-) -> Result<(), crate::cm_tools::tool_result::ToolError> {
+) -> Result<(), crate::cm_tool_result::ToolError> {
     if meta.is_file() {
         return Ok(());
     }
@@ -178,7 +173,7 @@ fn read_file_require_regular_file(
     } else {
         "错误：路径不是文件或不存在，无法读取".to_string()
     };
-    Err(crate::cm_tools::tool_result::ToolError::external_code(
+    Err(crate::cm_tool_result::ToolError::external_code(
         "read_file_not_file",
         msg,
     ))
@@ -223,7 +218,7 @@ fn read_file_pipeline_body(
     revision: &str,
     parsed: &ReadFileParsedArgs,
     file: std::fs::File,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+) -> Result<String, crate::cm_tool_result::ToolError> {
     let ReadFileParsedArgs {
         enc_name,
         start_line,
@@ -298,10 +293,10 @@ pub fn read_file_try(
     args_json: &str,
     access: &super::PathAccess<'_>,
     ctx: &super::super::ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+) -> Result<String, crate::cm_tool_result::ToolError> {
     let working_dir = access.root();
     let v = crate::cm_tools::tools::parse_args_json(args_json)
-        .map_err(crate::cm_tools::tool_result::ToolError::invalid_args)?;
+        .map_err(crate::cm_tool_result::ToolError::invalid_args)?;
     let parsed = parse_read_file_args(&v)?;
     let path = parsed.path.as_str();
 
@@ -319,7 +314,7 @@ pub fn read_file_try(
 
     // 缓存未命中：基于同一打开句柄计算内容 revision（读完复位到文件开头），避免额外 open 与 TOCTOU。
     let revision = super::revision::revision_of_open_file(&mut opened.file).map_err(|e| {
-        crate::cm_tools::tool_result::ToolError::external_code(
+        crate::cm_tool_result::ToolError::external_code(
             "read_file_revision_failed",
             format!("计算文件 revision 失败: {e}"),
         )

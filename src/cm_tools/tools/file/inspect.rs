@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::path::{
     PathAccess, WorkspacePathCodes, path_for_tool_display, workspace_path_tool_error,

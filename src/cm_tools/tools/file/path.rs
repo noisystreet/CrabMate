@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::workspace::fs::OpenedWorkspaceFile;
 use crate::cm_tools::workspace::path::{
     WorkspacePathError, absolutize_relative_under_root, ensure_canonical_within_root,

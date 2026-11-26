@@ -6,7 +6,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use super::output_util;
-use crate::cm_tools::tool_result::{ParsedToolOutput, ToolError, ToolFailureCategory};
+use crate::cm_tool_result::{ParsedToolOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::CdPeelError;
 
@@ -247,7 +247,7 @@ pub(super) fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> Ru
 #[cfg(test)]
 mod tests {
     use super::RunCommandError;
-    use crate::cm_tools::tool_result::error_text;
+    use crate::cm_tool_result::error_text;
 
     /// `thiserror` 的 `#[error("…")]` 只接受字面量格式串，无法直接引用 [`error_text`] 常量。
     ///

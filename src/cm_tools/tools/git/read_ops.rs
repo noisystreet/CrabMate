@@ -5,7 +5,7 @@ use super::helpers::{
     MAX_OUTPUT_LINES, ensure_git_repo_try, extract_safe_path, parse_args, require_safe_path,
     run_and_format, run_diff_mode,
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::output_util;
 use crate::cm_tools::tools::tool_param_types::GitAction;
 
@@ -407,7 +407,7 @@ mod tests {
         assert!(e.message.contains("不在 Git 仓库中"), "{}", e.message);
         assert_eq!(
             e.category,
-            crate::cm_tools::tool_result::ToolFailureCategory::Workspace
+            crate::cm_tool_result::ToolFailureCategory::Workspace
         );
     }
 

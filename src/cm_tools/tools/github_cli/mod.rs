@@ -35,7 +35,7 @@ pub use release_create::gh_release_create_try;
 // （`deny_unknown_fields` + 枚举取值校验），再把原始 JSON 透传——子实现各自用
 // `parse_args_json` 取自己关心的键，因此无需裁剪字段；校验失败时不会落到 `gh`。
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::parse_args_typed;
 use crate::cm_tools::tools::tool_param_types::{
     GhPrAction, GhPrArgs, GhPrReviewEvent, GhRunAction, GhRunArgs,

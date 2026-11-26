@@ -2,9 +2,7 @@
 
 use crate::agent::agent_turn::policy::task_level_evidence::command_line_looks_like_verify;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{
-    ToolStatus, normalize_tool_message_content, tool_output_status,
-};
+use crate::cm_tool_result::{ToolStatus, normalize_tool_message_content, tool_output_status};
 use crate::cm_types::{Message, message_content_as_str};
 
 /// 检测本回合是否值得自动沉淀；返回经验正文与标签。

@@ -15,7 +15,7 @@ use std::time::Duration;
 use log::error;
 
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
-use crate::cm_tools::tool_result::error_text;
+use crate::cm_tool_result::error_text;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_tools::tools;
 use crate::cm_types::ToolCall;

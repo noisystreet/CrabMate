@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::{
     DEFAULT_MAX_DOCUMENT_SYMBOLS, DEFAULT_RA_WAIT_MS, KillRaChild, LSP_IO_TIMEOUT,

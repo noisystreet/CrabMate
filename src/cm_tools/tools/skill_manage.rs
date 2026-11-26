@@ -17,7 +17,7 @@ use crate::cm_config::skills::{
     skill_ui_description,
 };
 use crate::cm_config::skills_slash::skill_callable_id;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     SkillManageAction, SkillManageArgs, SkillManageLayer,
 };

@@ -1,4 +1,4 @@
-//! `search_in_files` 的显式 [`crate::cm_tools::tool_result::ToolError`] 路径。
+//! `search_in_files` 的显式 [`crate::cm_tool_result::ToolError`] 路径。
 
 use ignore::WalkBuilder;
 use regex::RegexBuilder;
@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{
+use crate::cm_tool_result::{
     SearchInFilesOutputFields, ToolError, prepend_crabmate_tool_output_with_ok,
 };
 

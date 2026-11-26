@@ -23,7 +23,7 @@ use crate::agent::turn_budget::TurnBudgetCounter;
 use crate::cm_agent::completion_judge::{
     CompletionJudge, CompletionJudgeInput, CompletionStatus, CompletionVerdict, JudgedEvidence,
 };
-use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory};
+use crate::cm_tool_result::{ToolError, ToolFailureCategory};
 use crate::cm_types::Message;
 use crate::config::AgentConfig;
 use crate::llm::{
@@ -199,7 +199,7 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
                 code: "completion_judge_cancelled".to_string(),
                 message: "完成判定被取消".to_string(),
                 retryable: false,
-                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                parsed: crate::cm_tool_result::ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -250,7 +250,7 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
                 code: "completion_judge_llm_failed".to_string(),
                 message: format!("完成判定 LLM 调用失败：{e}"),
                 retryable: true,
-                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                parsed: crate::cm_tool_result::ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),
@@ -270,7 +270,7 @@ impl CompletionJudge for LlmCompletionJudge<'_> {
                 crate::redact::preview_chars(&text, 120)
             ),
             retryable: false,
-            parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+            parsed: crate::cm_tool_result::ParsedToolOutput {
                 ok: false,
                 exit_code: None,
                 stdout: String::new(),

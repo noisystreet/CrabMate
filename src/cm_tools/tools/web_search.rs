@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use crate::cm_config::WebSearchProvider;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
-use crate::cm_tools::tool_result::ToolError;
 use log::warn;
 use serde::Deserialize;
 use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind, search};

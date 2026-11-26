@@ -1,6 +1,6 @@
 //! `structured_patch` 实现目录（自单文件拆分以降低圈复杂度）。
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 mod execute;
 

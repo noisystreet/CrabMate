@@ -5,7 +5,7 @@ use super::common::{
     gh_allowed, push_extra_args_from_json, push_repo_arg, run_gh_vec, validate_pr_body,
     validate_pr_ref_token, validate_pr_title, write_workspace_temp_markdown,
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, ToolError> {
     match v.get("number") {

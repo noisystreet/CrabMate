@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::cm_config::AgentConfig;
-use crate::cm_tools::tool_result::{
+use crate::cm_tool_result::{
     NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
 };
 
@@ -112,7 +112,7 @@ impl ToolOutcomeRecorder {
         parsed.apply_outcome_facts(facts);
         let summary = tool_summary.unwrap_or_else(|| format!("tool: {tool_name}"));
         let structured_payload =
-            crate::cm_tools::tool_result::structured_payload_for_tool(tool_name, result_raw);
+            crate::cm_tool_result::structured_payload_for_tool(tool_name, result_raw);
         let norm = NormalizedToolEnvelope::from_tool_run(
             tool_name,
             summary,

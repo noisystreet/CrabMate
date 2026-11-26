@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::output_util;
 
@@ -193,7 +193,7 @@ impl CommandDigest {
 #[cfg(test)]
 mod tests {
     use super::{CommandDigest, CommandOutcome, ExitStatusKind};
-    use crate::cm_tools::tool_result::ToolFailureCategory;
+    use crate::cm_tool_result::ToolFailureCategory;
     use std::path::Path;
 
     const MAX: usize = 10_000;

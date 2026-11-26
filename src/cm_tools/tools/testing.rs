@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::ToolContext;
 use crate::cm_config::WebSearchProvider;
-use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory, ToolResult, parse_tool_output};
+use crate::cm_tool_result::{ToolError, ToolFailureCategory, ToolResult, parse_tool_output};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 

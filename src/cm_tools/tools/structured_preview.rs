@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 
 use super::write_sse_preview::MAX_UNIFIED_PREVIEW_FILE_CHARS;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{
+use crate::cm_tool_result::{
     CrabmateToolOutputEnvelope, CrabmateToolOutputMeta, PREVIEW_WORKSPACE_WRITE_DIFF,
     WorkspaceWriteDiffFields, WorkspaceWriteDiffFile,
 };

@@ -40,10 +40,11 @@ pub const MESSAGE_LOG_PREVIEW_CHARS: usize = 320;
 pub use crate::cm_types::text_utils::preview_chars;
 
 /// 将空白（含换行、制表）规范为**单空格**后截断，便于结构化日志单行输出。
-pub fn single_line_preview(s: &str, max_chars: usize) -> String {
-    let folded = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    preview_chars(&folded, max_chars)
-}
+///
+/// 唯一实现位于 [`crate::cm_types::text_utils::single_line_preview`]（#1510 P2b：
+/// `cm_agent` 也要用它，工具层不能被领域层反向依赖）；此处保留再导出，
+/// 既有 `redact::single_line_preview` 调用路径不变。
+pub use crate::cm_types::text_utils::single_line_preview;
 
 /// 从 OpenAI 兼容的 chat 错误 JSON 中取出简短 `message`，供 `stream_chat` 等返回给 TUI/前端。
 /// 解析失败或非字符串字段时返回 `None`（调用方保留泛化提示语）。

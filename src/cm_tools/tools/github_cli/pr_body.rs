@@ -1,7 +1,7 @@
 //! PR 正文草稿：读取仓库模板 + 可选 `git log` 摘要（只读，不写盘）。
 
 use super::common::GhCtx;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use std::path::{Path, PathBuf};
 
 use crate::cm_tools::tools::git;

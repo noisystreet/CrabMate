@@ -105,6 +105,9 @@ pub(crate) mod cm_memory;
 pub(crate) mod cm_names;
 #[cfg(feature = "server")]
 pub(crate) mod cm_runtime;
+/// 工具结果信封 / 解析 / 压缩（#1510 P3 第一批）：`cm_agent` 与 `tool_host` 的共用面。
+#[cfg(feature = "server")]
+pub(crate) mod cm_tool_result;
 #[cfg(feature = "server")]
 pub(crate) mod cm_tools;
 #[cfg(feature = "server")]
@@ -132,7 +135,7 @@ pub(crate) mod tool_host;
 #[cfg(feature = "server")]
 pub mod agent;
 /// `cm_internal` 门面：`#[doc(hidden)]`。稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
-// `cm_internal` 只导出**自身实现**。`tools` / `workspace` / `redact` / `tool_result` /
+// `cm_internal` 只导出**自身实现**。`tools` / `workspace` / `redact` /
 // `read_file_turn_cache` 等本体在 `cm_tools`，`memory` 在 `cm_memory` —— 经 `cm_internal`
 // 转发只会让内部桶看起来比实际更中心（S4-P1a，见 #1300），故按本体直连。
 // 不属任何桶的两个顶层模块（§1.4 修正点 2 / 4）：`process_handles` 是进程级句柄集合，
@@ -153,8 +156,8 @@ pub mod tool_sandbox;
 pub(crate) use crate::cm_memory::memory;
 #[cfg(feature = "server")]
 pub(crate) use crate::cm_tools::{
-    clarification_questionnaire, github_token, read_file_turn_cache, redact, text_encoding,
-    tool_result, tools, workspace,
+    clarification_questionnaire, github_token, read_file_turn_cache, redact, text_encoding, tools,
+    workspace,
 };
 #[cfg(feature = "server")]
 pub(crate) use crate::context::{

@@ -1,6 +1,6 @@
 //! JSON/YAML 格式化与转换工具（纯内存）
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 const MAX_INPUT_BYTES: usize = 512 * 1024;
 

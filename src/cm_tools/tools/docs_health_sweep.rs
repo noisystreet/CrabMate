@@ -8,7 +8,7 @@ use super::output_util::truncate_output_bytes;
 use super::repo_overview;
 use super::spell_tools;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::DocsHealthSweepArgs;
 
 /// 阶段参数二次序列化失败（`DocsHealthSweepArgs` → `Value` → `String`）。

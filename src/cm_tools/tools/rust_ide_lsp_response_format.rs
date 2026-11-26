@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 pub(super) fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {

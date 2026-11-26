@@ -6,7 +6,7 @@ use crate::cm_config::AgentConfig;
 use serde::Deserialize;
 
 use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 pub struct LongTermMemoryToolState<'a> {
     pub cfg: &'a AgentConfig,

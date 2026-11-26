@@ -3,7 +3,7 @@
 #[path = "code_nav_outline.rs"]
 mod code_nav_outline;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::symbol;
 use crate::cm_tools::tools::tool_param_types::FindReferencesArgs;
 use code_nav_outline::collect_outline;

@@ -125,21 +125,18 @@ pub(super) enum ReadFileBodyError {
 }
 
 impl ReadFileBodyError {
-    pub(super) fn into_tool_error(self) -> crate::cm_tools::tool_result::ToolError {
+    pub(super) fn into_tool_error(self) -> crate::cm_tool_result::ToolError {
         match self {
             Self::Utf8Decode(msg) => {
-                crate::cm_tools::tool_result::ToolError::external_code("read_file_utf8_decode", msg)
+                crate::cm_tool_result::ToolError::external_code("read_file_utf8_decode", msg)
             }
-            Self::InvalidRange(msg) => crate::cm_tools::tool_result::ToolError::external_code(
-                "read_file_invalid_range",
-                msg,
-            ),
+            Self::InvalidRange(msg) => {
+                crate::cm_tool_result::ToolError::external_code("read_file_invalid_range", msg)
+            }
             Self::Internal(msg) => {
-                crate::cm_tools::tool_result::ToolError::internal_code("read_file_internal", msg)
+                crate::cm_tool_result::ToolError::internal_code("read_file_internal", msg)
             }
-            Self::Io(msg) => {
-                crate::cm_tools::tool_result::ToolError::external_code("read_file_io", msg)
-            }
+            Self::Io(msg) => crate::cm_tool_result::ToolError::external_code("read_file_io", msg),
         }
     }
 }
@@ -170,9 +167,9 @@ impl From<TextDecodeError> for ReadFileBodyError {
 pub(super) fn guard_read_file_count_total_size(
     meta_len: u64,
     count_total: bool,
-) -> Result<(), crate::cm_tools::tool_result::ToolError> {
+) -> Result<(), crate::cm_tool_result::ToolError> {
     if count_total && meta_len > READ_FILE_COUNT_TOTAL_MAX_BYTES {
-        return Err(crate::cm_tools::tool_result::ToolError::external_code(
+        return Err(crate::cm_tool_result::ToolError::external_code(
             "read_file_count_total_too_large",
             format!(
                 "错误：文件过大（{} 字节），超过 count_total_lines 允许上限 {} 字节；请省略 count_total_lines 或分段读取。",
@@ -203,15 +200,13 @@ pub(super) fn resolve_read_end_line(
 pub(super) fn sniff_opened_file_encoding(
     file: File,
     enc_name: TextEncodingName,
-) -> Result<
-    (ResolvedTextEncoding, DecodedFileNote, File, Vec<u8>),
-    crate::cm_tools::tool_result::ToolError,
-> {
+) -> Result<(ResolvedTextEncoding, DecodedFileNote, File, Vec<u8>), crate::cm_tool_result::ToolError>
+{
     let (file, head) = sniff_head_bytes_from(file, enc_name).map_err(|e| {
-        crate::cm_tools::tool_result::ToolError::external_code("read_file_io", e.to_string())
+        crate::cm_tool_result::ToolError::external_code("read_file_io", e.to_string())
     })?;
     let (resolved, decode_note) = resolve_text_encoding(&head, enc_name).map_err(|e| {
-        crate::cm_tools::tool_result::ToolError::external_code("read_file_encoding", e.to_string())
+        crate::cm_tool_result::ToolError::external_code("read_file_encoding", e.to_string())
     })?;
     Ok((resolved, decode_note, file, head))
 }
@@ -221,7 +216,7 @@ pub(super) fn maybe_count_total_lines_for_read(
     count_total: bool,
     target: &Path,
     enc_name: TextEncodingName,
-) -> Result<Option<usize>, crate::cm_tools::tool_result::ToolError> {
+) -> Result<Option<usize>, crate::cm_tool_result::ToolError> {
     if !count_total {
         return Ok(None);
     }

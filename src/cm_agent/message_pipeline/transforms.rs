@@ -230,7 +230,7 @@ pub fn compress_tool_message_contents_detailed(
         };
         if let crate::cm_types::MessageContent::Text(s) = c
             && let Some(compressed) =
-                crate::cm_tools::tool_result::maybe_compress_tool_message_content(s, max_chars)
+                crate::cm_tool_result::maybe_compress_tool_message_content(s, max_chars)
         {
             let original_chars = s.chars().count();
             let kept_chars = compressed.chars().count();

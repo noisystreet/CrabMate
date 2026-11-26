@@ -6,7 +6,7 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     AddEventArgs, AddReminderArgs, IdOnlyArgs, ListEventsArgs, ListRemindersArgs, UpdateEventArgs,
     UpdateReminderArgs,
@@ -855,7 +855,7 @@ mod tests {
         assert_eq!(err.code, "schedule_io_failed");
         assert_eq!(
             err.category,
-            crate::cm_tools::tool_result::ToolFailureCategory::External
+            crate::cm_tool_result::ToolFailureCategory::External
         );
 
         let _ = std::fs::remove_file(dir.join(".crabmate"));

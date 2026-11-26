@@ -1,6 +1,6 @@
 //! 节点失败是否可自动重试（超时 / join / 信号量等，避免对业务失败重复执行有副作用工具）。
 //!
-//! 口径**单一来源**：[`crate::cm_tools::tool_result::retry::RETRY_SCOPES`] 那张表。
+//! 口径**单一来源**：[`crate::cm_tool_result::retry::RETRY_SCOPES`] 那张表。
 //! 归前本文件与 `tool_result::tool_error_retryable_heuristic` 各有一份白名单（3 码 / 6 码），
 //! 新增瞬时错误码时漏改任一份，该码就会在一侧静默变成「不可重试」（#1401 P1）。
 //!
@@ -9,13 +9,13 @@
 
 /// 是否对节点失败做**自动重试**（保守：避免对业务失败重复执行有副作用工具）。
 pub(crate) fn workflow_node_failure_retryable(error_code: Option<&str>) -> bool {
-    crate::cm_tools::tool_result::retry::workflow_node_retryable(error_code)
+    crate::cm_tool_result::retry::workflow_node_retryable(error_code)
 }
 
 #[cfg(test)]
 mod tests {
     use super::workflow_node_failure_retryable;
-    use crate::cm_tools::tool_result::retry::{RETRY_SCOPES, RetryScope};
+    use crate::cm_tool_result::retry::{RETRY_SCOPES, RetryScope};
 
     /// 与 `cm_tools` 共用同一张表：新增/改动码时两侧不可能各自漂移。
     #[test]

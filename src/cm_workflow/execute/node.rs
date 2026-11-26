@@ -123,16 +123,14 @@ async fn execute_node_tool_phase(
                 };
                 crate::cm_tools::tools::run_tool_result(&tool_name_owned, &exec_args, &tool_ctx)
             });
-            handle
-                .await
-                .unwrap_or(crate::cm_tools::tool_result::ToolResult {
-                    ok: false,
-                    exit_code: None,
-                    message: "工具执行异常".to_string(),
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("workflow_tool_join_error".to_string()),
-                })
+            handle.await.unwrap_or(crate::cm_tool_result::ToolResult {
+                ok: false,
+                exit_code: None,
+                message: "工具执行异常".to_string(),
+                stdout: String::new(),
+                stderr: String::new(),
+                error_code: Some("workflow_tool_join_error".to_string()),
+            })
         };
 
         if let Some(ts) = timeout_secs {

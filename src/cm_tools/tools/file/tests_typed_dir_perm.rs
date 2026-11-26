@@ -7,7 +7,7 @@ use super::test_support::{make_test_dir, test_ctx, write};
 use super::{
     create_dir, create_dir_try, delete_dir, delete_dir_try, delete_files, delete_files_try,
 };
-use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tool_result::ToolFailureCategory;
 use crate::cm_tools::tools::testing::{
     assert_error, assert_invalid_input, assert_run_tool_error_code, assert_success_parity,
     assert_success_with_failure_wording,

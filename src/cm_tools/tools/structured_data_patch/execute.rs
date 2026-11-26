@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::Value as JsonValue;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::file;
 use crate::cm_tools::tools::tool_param_types::{StructuredPatchAction, StructuredPatchArgs};

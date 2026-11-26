@@ -7,8 +7,8 @@ use super::output_util;
 use super::tool_param_types::{
     CodeStatsArgs, CodeStatsFormat, CoverageReportArgs, CoverageReportFormat,
 };
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::project_metrics;
-use crate::cm_tools::tool_result::ToolError;
 
 pub(super) const MAX_OUTPUT_LINES: usize = 600;
 

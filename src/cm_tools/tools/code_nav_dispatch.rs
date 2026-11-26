@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{CodeNavAction, CodeNavArgs};
 use crate::cm_tools::tools::{
     call_graph_sketch, code_nav, parse_args_json, parse_args_typed, symbol,

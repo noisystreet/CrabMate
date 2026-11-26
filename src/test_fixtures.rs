@@ -121,10 +121,10 @@ pub(crate) fn msg(role: &str, text: &str) -> Message {
 /// 见模块头。
 #[cfg(feature = "server")]
 pub(crate) fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(name, output);
+    let parsed = crate::cm_tool_result::parse_tool_output(name, output);
     msg(
         "tool",
-        &crate::cm_tools::tool_result::encode_tool_message_envelope_v1(
+        &crate::cm_tool_result::encode_tool_message_envelope_v1(
             name,
             summary.to_string(),
             &parsed,

@@ -17,7 +17,7 @@
 use async_trait::async_trait;
 use serde::Serialize;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 子任务终态（设计 §4.2）。
 ///

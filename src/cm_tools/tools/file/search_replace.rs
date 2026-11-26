@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use super::path::{PathAccess, path_for_tool_display};
 use super::write_precheck;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::SearchReplaceArgs;
 use crate::cm_tools::tools::write_sse_preview::{
@@ -296,7 +296,7 @@ fn load_search_replace_file_bytes(
 ///
 /// `parse_tool_output` 只认**首行**标记，所以调用方不能给这类正文加 `写入文件失败：` 前缀。
 fn search_replace_typed_error(body: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::SEARCH_REPLACE, &body);
+    let parsed = crate::cm_tool_result::parse_tool_output(tool_names::SEARCH_REPLACE, &body);
     ToolError::from_parsed(tool_names::SEARCH_REPLACE, &parsed, body)
 }
 
@@ -587,7 +587,7 @@ mod tests {
             "写入文件失败：x\n",
             "写盘应已成功"
         );
-        let r = crate::cm_tools::tool_result::ToolResult::from_output("search_replace", out);
+        let r = crate::cm_tool_result::ToolResult::from_output("search_replace", out);
         assert!(
             r.ok,
             "文件已成功写入，工具结果不应判失败: error_code={:?}",

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::super::{MarkdownCheckReport, MarkdownLinkVerdict};
 use super::MarkdownCheckParsed;

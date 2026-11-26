@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::subprocess_session::{self, SessionStopKind};
-use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::output_util;
 
 use super::MAX_OUTPUT_LINES;

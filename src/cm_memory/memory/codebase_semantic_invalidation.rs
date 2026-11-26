@@ -12,7 +12,7 @@ use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
     sqlite_like_escape,
 };
-use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
+use crate::cm_tool_result::{ToolStatus, tool_output_status};
 use crate::cm_types::path_utils::canonical_workspace_root;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
@@ -341,7 +341,7 @@ fn apply_rel_scope_invalidation(
 
 /// 这次工具调用是否**可视为改动了工作区**（决定要不要失效语义索引缓存）。
 ///
-/// 判据统一走 [`crate::cm_tools::tool_result::tool_output_status`]，这里只把三态拍成 `bool`：
+/// 判据统一走 [`crate::cm_tool_result::tool_output_status`]，这里只把三态拍成 `bool`：
 /// **只有确定失败才跳过失效**。`Unknown` 按「可能改过」处理——宁可多算一次索引，也别留
 /// 陈旧缓存。旧实现三套口径各挑一个默认值（信封缺 `ok` 放行、纯文本找不到 `退出码：0` 就
 /// 判失败），同一份输出在不同路径上结论相反（#1401 P1）。

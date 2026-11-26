@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::time::{Duration, Instant};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 struct KillRaChild(Option<Child>);
 impl Drop for KillRaChild {
@@ -614,7 +614,7 @@ mod tests {
         assert_eq!(err.code, "rust_analyzer_workspace_resolve_failed");
         assert_eq!(
             err.category,
-            crate::cm_tools::tool_result::ToolFailureCategory::Workspace
+            crate::cm_tool_result::ToolFailureCategory::Workspace
         );
     }
 }

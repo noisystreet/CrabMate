@@ -12,7 +12,7 @@ use std::path::Path;
 use rusqlite::Row;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::{TABLE, TABLE_FTS, fts5_match_expression, norm_scores_bm25, open_codebase_semantic_db};
 #[cfg(feature = "fastembed")]

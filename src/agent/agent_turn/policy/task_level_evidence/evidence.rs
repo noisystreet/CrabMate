@@ -26,7 +26,7 @@
 //! 语义——「改过工作区」与「验证过结果」。两处口径不同，不应合并。
 
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::{normalize_tool_message_content, parse_tool_output};
+use crate::cm_tool_result::{normalize_tool_message_content, parse_tool_output};
 use crate::cm_types::{Message, message_content_as_str};
 
 /// 一次工具调用贡献的证据种类。

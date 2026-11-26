@@ -9,10 +9,10 @@ use crate::agent::agent_turn::run_command_dedupe::{
 };
 use crate::agent::per_coord::PerCoordinator;
 use crate::cm_names as tool_names;
-use crate::cm_tools::tool_result::error_text;
+use crate::cm_tool_result::error_text;
+use crate::cm_tool_result::{ToolOutcomeFacts, parse_tool_output};
 use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
-use crate::tool_result::{ToolOutcomeFacts, parse_tool_output};
 
 use super::super::batch_dispatch::emit_tool_batch_result;
 use super::super::run_command_guard::{

@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 use super::structured_data::{
     structured_diff_try, structured_patch_try, structured_query_try, structured_validate_try,
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     StructuredAction, StructuredArgs, StructuredDataFormat, StructuredPatchAction,
 };

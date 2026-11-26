@@ -8,7 +8,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::CallGraphSketchArgs;
 
 use super::code_nav_paths::resolve_search_root;

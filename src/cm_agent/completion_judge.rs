@@ -15,7 +15,7 @@
 
 use async_trait::async_trait;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 判定结论。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,11 +368,11 @@ mod tests {
             match &self.0 {
                 Ok(v) => Ok(v.clone()),
                 Err(()) => Err(ToolError {
-                    category: crate::cm_tools::tool_result::ToolFailureCategory::Internal,
+                    category: crate::cm_tool_result::ToolFailureCategory::Internal,
                     code: "mock_unavailable".to_string(),
                     message: "mock 判定不可用".to_string(),
                     retryable: false,
-                    parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                    parsed: crate::cm_tool_result::ParsedToolOutput {
                         ok: false,
                         exit_code: None,
                         stdout: String::new(),

@@ -12,7 +12,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Output;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 合并 **stdout / stderr** 的策略（不同 CLI 习惯不同）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,7 +122,7 @@ pub fn format_spawn_error_with_program(
         CommandSpawnErrorStyle::ExecuteFailed => {
             format!(
                 "{title}: {}（{err}）",
-                crate::cm_tools::tool_result::error_text::EXECUTE_FAILED_PREFIX
+                crate::cm_tool_result::error_text::EXECUTE_FAILED_PREFIX
             )
         }
     };
@@ -398,7 +398,7 @@ fn render_process_output(
 /// 同 [`run_command_output_report`]，但**非零退出即失败**（`error_code = failure_code`）。
 ///
 /// 为什么要这个孪生：正文里的退出码（`title (exit=N)`）只是渲染结果，调用方若只能靠
-/// [`crate::cm_tools::tool_result::parse_tool_output`] 从文本里回捞，正文一换形态就可能
+/// [`crate::cm_tool_result::parse_tool_output`] 从文本里回捞，正文一换形态就可能
 /// 被读成成功。这里在渲染前读出 `status.code()`，
 /// `Ok`（退出 0）与 `Err` 的正文都与前者逐字一致，只多一层成败判定。
 ///

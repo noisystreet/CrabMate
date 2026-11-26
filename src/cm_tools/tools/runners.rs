@@ -492,7 +492,7 @@ pub fn runner_background_job_wait_try(
 pub fn read_file_try_dispatch(
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+) -> Result<String, crate::cm_tool_result::ToolError> {
     file::read_file_try(
         args_json,
         &file::PathAccess::with_scope_and_roots(ctx.working_dir, ctx.path_scope, ctx.allowed_roots),
@@ -506,7 +506,7 @@ pub fn read_file_try_at_paths(
     args_json: &str,
     working_dir: &std::path::Path,
     ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+) -> Result<String, crate::cm_tool_result::ToolError> {
     file::read_file_try(
         args_json,
         &file::PathAccess::with_scope_and_roots(working_dir, ctx.path_scope, ctx.allowed_roots),

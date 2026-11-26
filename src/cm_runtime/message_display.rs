@@ -8,7 +8,7 @@ use crate::cm_agent::plan_artifact::{
 };
 use crate::cm_runtime::latex_unicode::latex_math_to_unicode;
 use crate::cm_runtime::message_display_parts::tool_display_from_normalized_envelope;
-use crate::cm_tools::tool_result::{ToolResult, normalize_tool_message_content};
+use crate::cm_tool_result::{ToolResult, normalize_tool_message_content};
 use crate::cm_types::Message;
 
 /// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。

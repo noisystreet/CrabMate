@@ -8,7 +8,7 @@
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::file;
 use crate::cm_tools::tools::write_sse_preview::{

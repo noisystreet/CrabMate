@@ -12,7 +12,7 @@ use super::args::{
 };
 use super::decode::{apply_text_format_if_requested, decode_http_body_text_for_tool};
 use super::policy::url_matches_allowed_prefixes;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 默认 UA：`crabmate/<版本>`；可经配置 `http_fetch_user_agent` / `CM_HTTP_FETCH_USER_AGENT` 覆盖。
 pub fn default_user_agent() -> String {

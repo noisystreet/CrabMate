@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::MAX_OUTPUT_LINES;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::output_util;
 use crate::cm_tools::tools::tool_param_types::{
     DependencyGraphArgs, DependencyGraphFormat, DependencyGraphKind,

@@ -5,7 +5,7 @@ use super::{
     MIN_QUESTIONS,
     id_validation::{valid_question_id, valid_questionnaire_id},
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 #[derive(Debug, Deserialize)]
 struct PresentArgs {

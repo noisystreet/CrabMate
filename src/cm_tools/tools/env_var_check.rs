@@ -1,6 +1,6 @@
 //! 环境变量批量检查工具（只读、脱敏）
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 fn format_one_env_var_line(
     raw_name: &str,

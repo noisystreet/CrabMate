@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde_json::Value as JsonValue;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::ToolContext;
 use super::file;

@@ -1,9 +1,7 @@
 //! 从 `messages` 扫描工作流工具结果、组装规划重写 user 正文、终答侧向校验摘要、用尽原因分类。
 //! **不**调用 `complete_chat_retrying`（侧向 LLM 仍在 `per_plan_semantic_check`（根包））。
 
-use crate::cm_tools::tool_result::{
-    normalize_tool_message_content, tool_message_payload_for_inner_parse,
-};
+use crate::cm_tool_result::{normalize_tool_message_content, tool_message_payload_for_inner_parse};
 use crate::cm_types::Message;
 use serde_json::Value;
 
@@ -399,7 +397,7 @@ fn semantic_check_format_tool_summary_line(name: &str, body: &str, max_chars_per
             "- {} ok={} summary={} out_preview={}",
             env.name,
             env.ok,
-            crate::cm_tools::redact::single_line_preview(env.summary.as_str(), 160),
+            crate::cm_types::text_utils::single_line_preview(env.summary.as_str(), 160),
             out_head
         )
     } else {
