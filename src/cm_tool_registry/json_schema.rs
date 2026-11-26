@@ -18,8 +18,8 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     #[cfg(feature = "archive-tools")]
-    use crate::cm_tools::tools::tool_param_types::ArchivePackArgs;
-    use crate::cm_tools::tools::tool_param_types::{
+    use crate::cm_tool_registry::param_types::ArchivePackArgs;
+    use crate::cm_tool_registry::param_types::{
         AddReminderArgs, CargoTestArgs, CodeNavArgs, CodeStatsArgs, CoverageReportArgs,
         DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs, JsonFormatArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs, PytestRunArgs, RunCommandArgs,

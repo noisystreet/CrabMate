@@ -112,6 +112,11 @@ check_forbidden_mod src/cm_tool_exec.rs crate::cm_tools \
   "exec infrastructure must not depend on the tool layer"
 check_forbidden_mod src/cm_tool_exec.rs crate::cm_agent \
   "exec infrastructure must not depend on the domain layer"
+# #1510 P3-3：`cm_tool_registry` 只有参数类型与 schema 生成，自身零 `crate::` 依赖。
+check_forbidden_mod src/cm_tool_registry crate::cm_tools \
+  "registry param types / schema must not depend on the tool layer"
+check_forbidden_mod src/cm_tool_registry crate::cm_agent \
+  "registry param types / schema must not depend on the domain layer"
 
 # #1510 P0：`chat_job_queue` 是 `web` 的下游消费者 —— 只许 `web -> queue`，不许反向。
 # 两者共享的类型定义在 `context::web_state_facet`；这条一旦报错，说明又有人把定义挪回 `web`
