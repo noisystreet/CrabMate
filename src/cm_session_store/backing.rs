@@ -138,7 +138,7 @@ where
 /// Web 会话存储后端。
 ///
 /// **唯一分派点**：内存与 SQLite 的差异只出现在本 impl 内；上层
-/// [`super::AppStateConversationRuntime`] 全是薄委托。
+/// [`crate::context::web_state_facet::AppStateConversationRuntime`] 全是薄委托。
 #[derive(Clone)]
 pub(crate) enum ConversationBacking {
     Memory(Arc<tokio::sync::RwLock<HashMap<String, MemoryConversationEntry>>>),

@@ -90,7 +90,7 @@ check_forbidden_mod src/cm_types crate::cm_tools \
 # #1510 P0：`chat_job_queue` 是 `web` 的下游消费者 —— 只许 `web -> queue`，不许反向。
 # 两者共享的类型定义在 `context::web_state_facet`；这条一旦报错，说明又有人把定义挪回 `web`
 # 或直接在队列里 `use crate::web::…`（Rust 单 crate 内模块循环引用照样编译，只靠注释拦不住）。
-check_forbidden_mod src/chat_job_queue crate::web \
+check_forbidden_mod src/chat_job_queue crate::web:: \
   "queue must not reach back into web; shared types live in context::web_state_facet"
 
 if [[ "$fail" -ne 0 ]]; then

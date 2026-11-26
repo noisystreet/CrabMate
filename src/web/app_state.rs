@@ -22,6 +22,8 @@ pub(crate) use crate::cm_session_store::ConversationTurnSeed;
 
 // P0（#1510）：以下名字的定义点在 `context::web_state_facet`，此处只转发，
 // 保持 `web::app_state::…` 与 `web::…` 的既有导入路径不变。
+// **新代码请直接引 `crate::context::web_state_facet::…`**：这里的转发名只为兼容既有调用点，
+// 不再新增使用者 —— 否则又长回 #1510 P1 要治的「同模块双名」。
 pub(crate) use crate::context::web_state_facet::{
     APPROVAL_SESSION_TTL, AppStateConversationRuntime, ApprovalSessionSlot, WebChatJobAppFacet,
     purge_expired_approval_sessions,
