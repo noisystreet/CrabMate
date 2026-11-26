@@ -29,7 +29,7 @@
 | **已有「不进 dispatch」的先例** | `workflow_execute`：`tool_registry/execute/dispatch.rs:526-532` 明写「须由 agent 层调度」；特判点在 `tool_execution_host.rs:70` |
 | **已有「能力注入」的先例** | `cm_tools/memory_tool_host.rs`：trait 由 crate 侧实现并注入，避免 `cm_tools → cm_memory` 环 |
 | **已有「只读性」单一真源** | `tool_registry::is_readonly_tool(cfg, name)`（`serial/exec_serial.rs:199` 已在用） |
-| 回合执行面可注入 | `TurnEngine` + `default_turn_engine()`（`turn_runner.rs:72-91`），默认转发 `run_agent_turn` |
+| 回合执行面可注入 | `TurnEngine`（`turn_runner.rs`，端口层）+ `default_turn_engine()`（`agent/default_turn_engine.rs`；#1510 起默认引擎在实现侧），默认转发 `run_agent_turn` |
 | 公开面 golden 只记类型名 | `fixtures/public_api_golden.txt:24,28` 只有 `promised struct RunAgentTurnAttach` / `TurnRequest`，**不列字段** |
 
 ## 3. 关键约束：不做成 cm_tools 里的普通 runner

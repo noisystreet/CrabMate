@@ -1,19 +1,25 @@
 //! 可注入的回合执行面：打断 Web 队列对 [`crate::run_agent_turn`] 的硬连。
 //!
-//! 入口（`chat_job_queue` worker）只依赖 [`TurnEngine`]；默认实现仍转发到根包
-//! [`crate::run_agent_turn`]。见 **`docs/design/turn_host_decouple.md`** P2；
-//! 执行面落点（暂不拆 `crabmate-turn-runtime`）见 **`docs/design/turn_runtime_placement.md`**。
+//! 入口（`chat_job_queue` worker）只依赖 [`TurnEngine`]；默认实现在
+//! `crate::agent::DefaultTurnEngine`（仍转发到根包 [`crate::run_agent_turn`]）。见
+//! **`docs/design/turn_host_decouple.md`** P2；执行面落点（暂不拆
+//! `crabmate-turn-runtime`）见 **`docs/design/turn_runtime_placement.md`**。
 //!
-//! **命名说明**（S2，见 #1285）：类型已正名为 [`TurnEngine`] / [`DefaultTurnEngine`] /
-//! [`default_turn_engine`]，但**模块名与文件名仍保留 `turn_runner`**（历史名）——
-//! 本片只做类型正名，不搬文件，避免把「改名」和「搬移」混进同一个 diff。
-//! 三者均为 `pub(crate)`，不在承诺面上，故不保留旧类型名别名。
+//! **命名说明**（S2，见 #1285）：类型已正名为 `TurnEngine` / `DefaultTurnEngine` /
+//! `default_turn_engine`，但**模块名与文件名仍保留 `turn_runner`**（历史名），
+//! 避免把「改名」和「搬移」混进同一个 diff。
+//!
+//! **落点（#1510）**：`TurnEngine` / `TurnOutcome` / `TurnStats` 仍在本模块（由 `lib.rs`
+//! 上根为承诺面）；`DefaultTurnEngine` / `default_turn_engine()` 已移到实现侧
+//! `crate::agent`（子模块私有，只经 `crate::agent` 的 `pub(crate) use` 暴露，避免再长出
+//! 第二条公开路径）—— 默认引擎要调 `crate::run_agent_turn`，留在本模块会让端口层
+//! 依赖具体实现。
 
 use async_trait::async_trait;
 
 use crate::TurnRequest;
 use crate::agent::agent_turn::RunAgentTurnError;
-use crate::agent::model_context_view::StructuralCommit;
+use crate::cm_types::StructuralCommit;
 
 /// 本轮的只读聚合（全部取自既有账本，不引入任何新语义、不参与业务判定）。
 ///
@@ -71,33 +77,4 @@ pub struct TurnOutcome {
 #[async_trait]
 pub trait TurnEngine: Send + Sync {
     async fn run(&self, params: TurnRequest<'_>) -> Result<TurnOutcome, RunAgentTurnError>;
-}
-
-/// 默认实现：调用 [`crate::run_agent_turn`]。
-#[derive(Debug, Default, Clone, Copy)]
-pub struct DefaultTurnEngine;
-
-#[async_trait]
-impl TurnEngine for DefaultTurnEngine {
-    async fn run(&self, params: TurnRequest<'_>) -> Result<TurnOutcome, RunAgentTurnError> {
-        crate::run_agent_turn(params).await
-    }
-}
-
-/// serve / 测试装配用的默认 [`TurnEngine`] 句柄。
-#[must_use]
-pub fn default_turn_engine() -> std::sync::Arc<dyn TurnEngine> {
-    std::sync::Arc::new(DefaultTurnEngine)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_turn_engine_is_object_safe_send_sync() {
-        let r = default_turn_engine();
-        fn assert_bounds(_: &(dyn TurnEngine + Send + Sync)) {}
-        assert_bounds(r.as_ref());
-    }
 }

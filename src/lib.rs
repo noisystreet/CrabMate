@@ -264,6 +264,8 @@ use tokio::sync::mpsc;
 pub use crate::agent::agent_turn::host::errors::{
     AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason,
 };
+#[cfg(feature = "server")]
+pub use agent::{DefaultTurnEngine, default_turn_engine};
 /// 端口以 `#[async_trait]` 声明。不 re-export 宏，外部实现就只能自己猜版本；
 /// 承诺 trait 却不承诺它要求的宏，等于把「可实现」变成一句口号。
 #[cfg(feature = "server")]
@@ -279,7 +281,7 @@ pub use conversation_store::{
     ArchiveReason, ArchiveRow, BranchTruncateOutcome, SaveConversationOutcome,
 };
 #[cfg(feature = "server")]
-pub use turn_runner::{DefaultTurnEngine, TurnEngine, default_turn_engine};
+pub use turn_runner::TurnEngine;
 // `run_agent_turn` 是 crate 根的公开入口，其返回类型因此必须公开可达（S2-4，见 #1285）。
 #[cfg(feature = "server")]
 pub use turn_runner::{TurnOutcome, TurnStats};

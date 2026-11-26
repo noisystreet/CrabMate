@@ -19,7 +19,10 @@ check_forbidden_mod() {
     return
   fi
   local hits
-  hits="$(grep -R --include='*.rs' -n -F "$needle" "$from_dir" || true)"
+  # 注释行不算依赖（与 `check_no_cm_internal_refs` 同口径）：只剔除**整行**注释。
+  # 行尾注释仍计入引用 —— 宁可多报，也别漏掉真实的 `use`。
+  hits="$(grep -R --include='*.rs' -n -F "$needle" "$from_dir" 2>/dev/null \
+    | grep -vE '(^|:)[0-9]+:[[:space:]]*(//|/\*)' || true)"
   if [[ -n "$hits" ]]; then
     echo "FORBIDDEN: ${from_dir} must not reference ${needle} (${why})"
     printf '%s\n' "$hits" | head -40
@@ -92,6 +95,15 @@ check_forbidden_mod src/cm_types crate::cm_tools \
 # 或直接在队列里 `use crate::web::…`（Rust 单 crate 内模块循环引用照样编译，只靠注释拦不住）。
 check_forbidden_mod src/chat_job_queue crate::web:: \
   "queue must not reach back into web; shared types live in context::web_state_facet"
+
+# #1510：端口层 `turn_runner` 只留 `TurnEngine` / `TurnStats` / `TurnOutcome`。
+# 默认引擎（要调 `run_agent_turn`）在 `agent::default_turn_engine`；`StructuralCommit`
+# 在 `cm_types`（`agent::model_context_view` 只是 re-export）。这两条一旦报错，
+# 说明端口层又开始依赖具体实现。
+check_forbidden_mod src/turn_runner.rs crate::run_agent_turn \
+  "default engine lives in agent::default_turn_engine; port layer must not call the turn fn"
+check_forbidden_mod src/turn_runner.rs agent::model_context_view \
+  "StructuralCommit lives in cm_types; agent::model_context_view is only a re-export"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "dependency policy FAILED"
