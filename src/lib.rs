@@ -105,6 +105,9 @@ pub(crate) mod cm_memory;
 pub(crate) mod cm_names;
 #[cfg(feature = "server")]
 pub(crate) mod cm_runtime;
+/// 工具**执行基础设施**（#1510 P3 第二批）：子进程会话、进程组 kill、管道排空、墙钟与截断缓冲。
+#[cfg(feature = "server")]
+pub(crate) mod cm_tool_exec;
 /// 工具结果信封 / 解析 / 压缩（#1510 P3 第一批）：`cm_agent` 与 `tool_host` 的共用面。
 #[cfg(feature = "server")]
 pub(crate) mod cm_tool_result;

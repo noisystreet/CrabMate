@@ -16,6 +16,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCAN_DIRS = ["docs"]
 SCAN_ROOT_FILES = ["README.md", "README.zh.md", "CHANGELOG.md"]
 INLINE_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+# 会被 docs 直接引用的源码/配置扩展名（`.rs` 是主要目标，其余顺带覆盖）。
+SOURCE_SUFFIXES = (".rs", ".toml", ".json", ".yaml", ".yml", ".sh", ".py")
 
 
 def iter_markdown_files():
@@ -61,6 +63,11 @@ def check_target(path, raw):
             return t
     elif t.endswith("/"):
         if not os.path.isdir(os.path.normpath(os.path.join(base, t))):
+            return t
+    elif t.endswith(SOURCE_SUFFIXES):
+        # 源码链接也要校验：文件改名/删除后，docs 里指向它的链接同样会变成死链。
+        # 此前只校验 `.md` 与目录，源码链接从不检查（#1510 复盘发现的缺口）。
+        if not os.path.isfile(os.path.normpath(os.path.join(base, t))):
             return t
     return None
 

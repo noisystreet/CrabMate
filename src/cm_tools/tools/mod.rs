@@ -735,8 +735,7 @@ async fn run_command_dispatch_async(
             max_entries: test_cache_max,
             workspace_root: work_dir.as_path(),
         });
-        let wait =
-            crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(timeout_secs);
+        let wait = crate::cm_tool_exec::SubprocessWaitCtl::with_wall_secs(timeout_secs);
         command::run_async(
             &spec,
             command::RunOptions {

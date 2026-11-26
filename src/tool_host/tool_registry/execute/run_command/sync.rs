@@ -140,7 +140,7 @@ pub(in crate::tool_host::tool_registry::execute) async fn spawn_run_command_host
         std::sync::Arc::new(move || tx.is_closed())
             as std::sync::Arc<dyn Fn() -> bool + Send + Sync>
     });
-    let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl {
+    let wait = crate::cm_tool_exec::SubprocessWaitCtl {
         wall: Some(std::time::Duration::from_secs(cmd_timeout.max(1))),
         cancel,
         extra_stop,

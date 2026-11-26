@@ -27,7 +27,7 @@ fn run_and_format_try_timeout_returns_timeout_error_with_partial_output() {
     );
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(
-        !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+        !crate::cm_tool_exec::proc_cmdline_contains(&marker),
         "run_and_format_try 孙进程 sleep 仍在运行（进程组未杀干净）"
     );
 }

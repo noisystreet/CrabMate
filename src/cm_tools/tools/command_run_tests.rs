@@ -1,5 +1,5 @@
 use super::*;
-use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+use crate::cm_tool_exec::SubprocessWaitCtl;
 use crate::cm_tools::tools::ExitStatusKind;
 use std::path::Path;
 
@@ -697,7 +697,7 @@ fn cargo_test_cache_key_includes_effective_working_dir() {
 #[cfg(unix)]
 #[test]
 fn run_command_timeout_includes_partial_output_and_kills() {
-    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    use crate::cm_tool_exec::SubprocessWaitCtl;
     let marker = format!("cm_p0_rc_{}", std::process::id());
     let args =
         format!(r#"{{"command":"bash","args":["-c","echo partial-out; sleep 60 # {marker}"]}}"#);
@@ -726,7 +726,7 @@ fn run_command_timeout_includes_partial_output_and_kills() {
     assert!(te.retryable);
     std::thread::sleep(std::time::Duration::from_millis(250));
     assert!(
-        !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+        !crate::cm_tool_exec::proc_cmdline_contains(&marker),
         "sleep grandchild still running for {marker}"
     );
 }
@@ -734,7 +734,7 @@ fn run_command_timeout_includes_partial_output_and_kills() {
 #[cfg(unix)]
 #[test]
 fn run_command_timeout_parsed_keeps_stdout() {
-    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    use crate::cm_tool_exec::SubprocessWaitCtl;
     let outcome = run_checked_wait(
         r#"{"command":"bash","args":["-c","echo partial-out; sleep 60"]}"#,
         TEST_MAX_OUTPUT_LEN,
@@ -760,7 +760,7 @@ fn run_command_timeout_parsed_keeps_stdout() {
 #[cfg(unix)]
 #[test]
 fn run_command_cancel_sets_cancelled_code() {
-    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    use crate::cm_tool_exec::SubprocessWaitCtl;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     let cancel = Arc::new(AtomicBool::new(false));

@@ -449,7 +449,7 @@ async fn external_path_gate_decision_matrix() {
 #[test]
 fn run_command_chunk_seq_is_monotonic_on_mirror() {
     use crate::cm_sse_protocol::sse::protocol::SsePayload;
-    use crate::cm_tools::subprocess_session::SessionStream;
+    use crate::cm_tool_exec::SessionStream;
     use std::sync::Mutex;
     use std::sync::atomic::AtomicU64;
 
@@ -485,7 +485,7 @@ fn run_command_chunk_seq_is_monotonic_on_mirror() {
 
 #[tokio::test]
 async fn run_command_chunk_try_send_full_does_not_bump_seq() {
-    use crate::cm_tools::subprocess_session::SessionStream;
+    use crate::cm_tool_exec::SessionStream;
     use std::sync::Mutex;
     use std::sync::atomic::AtomicU64;
     use tokio::sync::mpsc;

@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::cm_tools::subprocess_session::{
+use crate::cm_tool_exec::{
     SessionChunkSink, SessionStopKind, SessionStream, SubprocessWaitCtl,
     prepare_piped_process_group, take_utf8_text, wait_child_session_async,
 };
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(o.error_code.as_deref(), Some("timeout"));
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert!(
-            !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+            !crate::cm_tool_exec::proc_cmdline_contains(&marker),
             "孙进程 sleep 仍在运行（进程组未杀干净）"
         );
     }

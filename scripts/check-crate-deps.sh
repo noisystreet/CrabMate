@@ -106,6 +106,12 @@ check_forbidden_mod src/cm_agent crate::cm_tools \
 # 结果信封/解析不该反向依赖工具实现。
 check_forbidden_mod src/cm_tool_result crate::cm_tools::tools \
   "tool_result must not depend on tool implementations; only workspace::path is a known exception"
+# #1510 P3 第二批：`cm_tool_exec` 是纯执行基础设施（零 crate 依赖起步），
+# 不能被工具层/领域层反向拖进来。
+check_forbidden_mod src/cm_tool_exec.rs crate::cm_tools \
+  "exec infrastructure must not depend on the tool layer"
+check_forbidden_mod src/cm_tool_exec.rs crate::cm_agent \
+  "exec infrastructure must not depend on the domain layer"
 
 # #1510 P0：`chat_job_queue` 是 `web` 的下游消费者 —— 只许 `web -> queue`，不许反向。
 # 两者共享的类型定义在 `context::web_state_facet`；这条一旦报错，说明又有人把定义挪回 `web`

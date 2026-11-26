@@ -110,7 +110,7 @@
 - **OpenAPI tag 缺口**：
   顶层 `tags` 数组为 chat / workspace / system / tasks / tool_jobs / config / user_data /
   uploads（[openapi/mod.rs](../../src/web/openapi/mod.rs#L34-L43)），**没有 `skills`**，
-  但 `/skills` 片段自带 `"tags": ["skills"]`（[openapi_paths_workspace.rs](../../src/web/openapi/openapi_paths_workspace.rs#L151-L171)）。
+  但 `/skills` 片段自带 `"tags": ["skills"]`（[openapi_paths_skills.rs](../../src/web/openapi/openapi_paths_skills.rs#L12)）。
 - **待办缺口**：[`待办清单.md`](../待办清单.md) 的 `tools/` 章（L99-L107）只列了长耗时执行、审批分级、新栈扩展与 MCP 扩展，
   **没有「工具清单 / 启停 / 统一收口」条目**。
 

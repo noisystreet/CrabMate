@@ -33,7 +33,7 @@ pub(in crate::tool_host::tool_registry::execute) fn run_command_chunk_sink(
     tool_call_id: String,
     sse_out_tx: Option<tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<crate::cm_sse_protocol::sse::SseControlMirror>,
-) -> Option<crate::cm_tools::subprocess_session::SessionChunkSink> {
+) -> Option<crate::cm_tool_exec::SessionChunkSink> {
     if sse_out_tx.is_none() && sse_control_mirror.is_none() {
         return None;
     }
@@ -49,8 +49,8 @@ pub(in crate::tool_host::tool_registry::execute) fn run_command_chunk_sink(
             sse_out_tx.as_ref(),
             sse_control_mirror.as_ref(),
             match stream {
-                crate::cm_tools::subprocess_session::SessionStream::Stdout => utf8_out.as_ref(),
-                crate::cm_tools::subprocess_session::SessionStream::Stderr => utf8_err.as_ref(),
+                crate::cm_tool_exec::SessionStream::Stdout => utf8_out.as_ref(),
+                crate::cm_tool_exec::SessionStream::Stderr => utf8_err.as_ref(),
             },
         )
     }))
@@ -59,7 +59,7 @@ pub(in crate::tool_host::tool_registry::execute) fn run_command_chunk_sink(
 pub(in crate::tool_host::tool_registry::execute) fn emit_run_command_tool_output_chunk(
     seq: &std::sync::atomic::AtomicU64,
     tool_call_id: &str,
-    stream: crate::cm_tools::subprocess_session::SessionStream,
+    stream: crate::cm_tool_exec::SessionStream,
     bytes: &[u8],
     sse_out_tx: Option<&tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::cm_sse_protocol::sse::SseControlMirror>,
@@ -71,7 +71,7 @@ pub(in crate::tool_host::tool_registry::execute) fn emit_run_command_tool_output
             return true;
         };
         let saved = pending.clone();
-        let text = crate::cm_tools::subprocess_session::take_utf8_text(&mut pending, bytes, finish);
+        let text = crate::cm_tool_exec::take_utf8_text(&mut pending, bytes, finish);
         (text, saved)
     };
     if text.is_empty() {

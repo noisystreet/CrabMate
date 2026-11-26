@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::cm_tool_exec::SessionStopKind;
 use crate::cm_tool_result::ToolError;
-use crate::cm_tools::subprocess_session::{self, SessionStopKind};
 use crate::cm_tools::tools::output_util;
 
 use super::MAX_OUTPUT_LINES;
@@ -181,7 +181,7 @@ pub(super) fn run_and_format_try(
 ) -> Result<String, ToolError> {
     // 路线 A（strangler 过渡）：`cargo <subcmd>` 仍在同步 `run_tool` 面执行，沿用 `subprocess_session`
     // 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
-    match subprocess_session::run_and_capture(cmd, max_output_len, wall_secs) {
+    match crate::cm_tool_exec::run_and_capture(cmd, max_output_len, wall_secs) {
         Ok(session) => match session.kind {
             SessionStopKind::Exited => {
                 let exit = session.status.and_then(|s| s.code()).unwrap_or(-1);

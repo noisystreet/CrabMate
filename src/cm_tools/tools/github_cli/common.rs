@@ -218,7 +218,7 @@ pub fn run_gh_vec_allow_exit(
     })?;
     let spec = command::parse_command_spec(&args_json, ctx.working_dir)
         .map_err(RunCommandError::into_tool_error)?;
-    let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::default();
+    let wait = crate::cm_tool_exec::SubprocessWaitCtl::default();
     let outcome = command::run(
         &spec,
         command::RunOptions {

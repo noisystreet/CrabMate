@@ -153,7 +153,7 @@
 | 场景 | 行为 |
 |------|------|
 | `queued` | 直接标 `cancelled`（**不**走杀进程路径） |
-| `running` | 置 job 级取消 → `subprocess_session` 走 `Cancelled`（进程组 SIGTERM→SIGKILL）→ `cancelled` |
+| `running` | 置 job 级取消 → `cm_tool_exec` 走 `Cancelled`（进程组 SIGTERM→SIGKILL）→ `cancelled` |
 | 已是 `cancelled` | 幂等：返回 **200** 当前状态 |
 | 其它终态（`succeeded`/`failed`/`timed_out`） | 不覆盖：返回 **409** `{ "status": "<当前状态>" }`（原子状态转移，杜绝把成功覆盖成取消） |
 | 不存在 / 已过期 | 404 / 410（同 §3.1） |
@@ -273,7 +273,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 |----|------|--------|
 | 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`run_command_dispatch_async`（`cm_tools/tools/mod.rs`）/ `run_command/async_invocation.rs` | 参数表单 |
 | 装配表（`cargo_check` / `cargo_test` / `cargo_clippy` / `cargo_run` / `pytest_run`） | `tool_registry/execute/background_job.rs`（`background_async_gate` 门闩 + `background_async_argv_assembler` 装配表 + `assemble_background_job_spawn` + `launch_background_job` 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs`（`AssembledCommand` + `command_program_and_args`） | 参数表单（`async`） |
-| job 注册表 + worker | 新模块（建议 `src/jobs/tool_jobs/`，复用 `subprocess_session`） | — |
+| job 注册表 + worker | 新模块（建议 `src/jobs/tool_jobs/`，复用 `cm_tool_exec`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |
 | 配置 | `cm_config` + `config/tools.toml` | — |

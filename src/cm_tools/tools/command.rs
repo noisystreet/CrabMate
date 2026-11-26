@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+use crate::cm_tool_exec::SubprocessWaitCtl;
 
 use super::test_result_cache::{
     TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
