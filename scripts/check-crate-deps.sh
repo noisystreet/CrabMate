@@ -104,6 +104,17 @@ check_forbidden_mod src/turn_runner.rs crate::run_agent_turn \
   "default engine lives in agent::default_turn_engine; port layer must not call the turn fn"
 check_forbidden_mod src/turn_runner.rs agent::model_context_view \
   "StructuralCommit lives in cm_types; agent::model_context_view is only a re-export"
+# #1510：端口层不得依赖实现层。错误类型（`RunAgentTurnError` 等）在 `turn_error`，
+# 共享类型在 `cm_types` / `cm_agent`；这条一旦报错，说明端口层又在借 `agent` 的东西。
+check_forbidden_mod src/turn_runner.rs crate::agent:: \
+  "port layer must not depend on the implementation layer; types live in turn_error / cm_*"
+# #1510：`turn_error` 是端口契约的错误类型，只能依赖 cm_* / text_util。
+# `crate::llm` 是**实现层**别名模块（它自己 use 了 crate::agent），经它取类型等于绕回
+# 实现层 —— 这层间接边禁边脚本的直接引用检查看不见，所以单独立一条。
+check_forbidden_mod src/turn_error.rs crate::llm \
+  "use crate::cm_llm (domain) instead of the crate::llm alias; the alias depends on agent"
+check_forbidden_mod src/turn_error.rs crate::agent:: \
+  "turn_error is a port contract; it must not depend on the implementation layer"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "dependency policy FAILED"

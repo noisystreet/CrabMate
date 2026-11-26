@@ -11,7 +11,7 @@
 use async_trait::async_trait;
 
 use crate::TurnRequest;
-use crate::agent::agent_turn::RunAgentTurnError;
+use crate::turn_error::RunAgentTurnError;
 use crate::turn_runner::{TurnEngine, TurnOutcome};
 
 /// 默认实现：调用 [`crate::run_agent_turn`]。

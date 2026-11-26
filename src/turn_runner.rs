@@ -18,8 +18,8 @@
 use async_trait::async_trait;
 
 use crate::TurnRequest;
-use crate::agent::agent_turn::RunAgentTurnError;
 use crate::cm_types::StructuralCommit;
+use crate::turn_error::RunAgentTurnError;
 
 /// 本轮的只读聚合（全部取自既有账本，不引入任何新语义、不参与业务判定）。
 ///
