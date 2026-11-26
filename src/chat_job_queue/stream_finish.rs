@@ -9,9 +9,9 @@ use tokio::sync::mpsc;
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::config::AgentConfig;
+use crate::context::web_state_facet::WebChatJobAppFacet;
 use crate::per_turn_flight::PerTurnFlight;
 use crate::types::{Message, assistant_output_kind, message_content_as_str};
-use crate::web::WebChatJobAppFacet;
 
 use super::WebChatQueueDeps;
 

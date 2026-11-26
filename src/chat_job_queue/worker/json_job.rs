@@ -124,7 +124,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
 struct JsonTurnFinishParams<'a> {
     reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
     job_id: u64,
-    app: &'a crate::web::WebChatJobAppFacet,
+    app: &'a crate::context::web_state_facet::WebChatJobAppFacet,
     queue_deps: &'a super::super::WebChatQueueDeps,
     cfg_snap: &'a Arc<crate::config::AgentConfig>,
     conversation_id: &'a str,

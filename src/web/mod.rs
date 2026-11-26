@@ -32,7 +32,7 @@ mod permission;
 
 pub(crate) use app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
-    WebChatJobAppFacet, WorkspaceGitCache, open_conversation_sqlite,
+    WorkspaceGitCache, open_conversation_sqlite,
 };
 pub(crate) use chat_handlers::spawn_tiktoken_baseline_warmup;
 pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_line};
