@@ -217,6 +217,8 @@ mod runtime;
 #[doc(hidden)]
 pub mod test_serve;
 #[cfg(feature = "server")]
+mod turn_error;
+#[cfg(feature = "server")]
 mod turn_replay_dump;
 #[cfg(feature = "server")]
 mod turn_runner;
@@ -261,10 +263,6 @@ use tokio::sync::mpsc;
 // 整模块 pub）：源模块保持 `pub(crate)`，只有承诺的名字出去——否则内部项会随模块
 // 可见性一起变成事实上的公开面，而清单门禁看不到它们。
 #[cfg(feature = "server")]
-pub use crate::agent::agent_turn::host::errors::{
-    AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason,
-};
-#[cfg(feature = "server")]
 pub use agent::{DefaultTurnEngine, default_turn_engine};
 /// 端口以 `#[async_trait]` 声明。不 re-export 宏，外部实现就只能自己猜版本；
 /// 承诺 trait 却不承诺它要求的宏，等于把「可实现」变成一句口号。
@@ -280,6 +278,8 @@ pub use cm_session_store::{ConversationRetention, ConversationTurnSeed, SessionS
 pub use conversation_store::{
     ArchiveReason, ArchiveRow, BranchTruncateOutcome, SaveConversationOutcome,
 };
+#[cfg(feature = "server")]
+pub use turn_error::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
 #[cfg(feature = "server")]
 pub use turn_runner::TurnEngine;
 // `run_agent_turn` 是 crate 根的公开入口，其返回类型因此必须公开可达（S2-4，见 #1285）。
