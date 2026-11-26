@@ -396,7 +396,7 @@ fn assemble_run_loop_params<'a>(
                 crate::agent::delegation::readonly_subset_for_subturn(cfg, tools_defs);
             let d = crate::agent::delegation::CrabmateDelegator::new(
                 crate::agent::delegation::DelegatorParts {
-                    engine: crate::turn_runner::default_turn_engine(),
+                    engine: crate::agent::default_turn_engine(),
                     client,
                     api_key,
                     cfg,

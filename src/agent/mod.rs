@@ -9,6 +9,13 @@ pub mod completion_judge_llm;
 /// 最终请求 Token 预算、分项估算与完整交互组压缩报告。
 pub mod context_compaction;
 pub mod context_window;
+/// `TurnEngine` 的默认实现（#1510）：从 `turn_runner` 移到实现侧，端口层不再依赖具体回合函数。
+///
+/// 子模块保持**私有**、只在本模块 `pub use` 两个名字：否则
+/// `crate::agent::default_turn_engine::DefaultTurnEngine` 会成为
+/// `crate::DefaultTurnEngine` 之外的一条模块深路径（#1510 P2 要收敛的正是这类扩散）。
+mod default_turn_engine;
+pub use default_turn_engine::{DefaultTurnEngine, default_turn_engine};
 /// 子 Agent 委托实现（#839 P1）：契约在 `cm_tools::delegation_host`。
 pub mod delegation;
 /// `delegate_task` 的 agent 层调度（#839 P1）：只消费注入的 delegator，不持凭据。
