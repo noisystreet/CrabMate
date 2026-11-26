@@ -28,8 +28,8 @@ use crate::cm_agent::task_state::{
 };
 use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
+use crate::context::web_state_facet::WebChatJobAppFacet;
 use crate::types::LlmSeedOverride;
-use crate::web::WebChatJobAppFacet;
 
 /// 收尾处决策所需的上下文（字段多，用结构体而不是长形参）。
 pub(super) struct AutoResumeCtx<'a> {
@@ -387,8 +387,8 @@ mod tests {
             }),
         });
 
-        let app = crate::web::WebChatJobAppFacet {
-            conversation: crate::web::AppStateConversationRuntime {
+        let app = crate::context::web_state_facet::WebChatJobAppFacet {
+            conversation: crate::context::web_state_facet::AppStateConversationRuntime {
                 conversation_backing: Arc::new(tokio::sync::RwLock::new(
                     crate::cm_session_store::ConversationBacking::memory_default(),
                 )),

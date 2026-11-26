@@ -10,13 +10,13 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
+use crate::context::web_state_facet::WebChatJobAppFacet;
 use crate::llm::ChatCompletionsBackend;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::per_turn_flight::PerTurnFlight;
 use crate::request_audit::WebRequestAudit;
 use crate::sse::SseStreamHub;
 use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message, Tool};
-use crate::web::WebChatJobAppFacet;
 use log::debug;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
