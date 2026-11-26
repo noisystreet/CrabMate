@@ -26,7 +26,7 @@ pub use schema::{
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_types::path_utils::canonical_workspace_root;
 use numeric::default_code_extensions;
 use rebuild::{RebuildIndexParams, rebuild_index};
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(e.code, "codebase_semantic_unconfigured");
         assert_eq!(
             e.category,
-            crate::cm_tools::tool_result::ToolFailureCategory::Workspace
+            crate::cm_tool_result::ToolFailureCategory::Workspace
         );
     }
 

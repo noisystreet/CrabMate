@@ -1,7 +1,7 @@
 //! `read_file` 参数解析（从 `read_tool.rs` 拆出以降低圈复杂度）。
 
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::text_encoding::parse_text_encoding_name;
-use crate::cm_tools::tool_result::ToolError;
 
 /// 单次 read_file 默认最多返回的行数（防撑爆上下文）
 pub(super) const READ_FILE_DEFAULT_MAX_LINES: usize = 500;

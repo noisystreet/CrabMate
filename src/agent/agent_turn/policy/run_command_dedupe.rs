@@ -71,15 +71,15 @@ pub fn run_command_duplicate_suppress_key_with_cwd(args_json: &str, cwd: &Path) 
 }
 
 fn tool_exit_ok_from_raw(raw: &str) -> bool {
-    if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crate::cm_tool_result::normalize_tool_message_content(raw) {
         return env.ok || env.exit_code == Some(0);
     }
-    let parsed = crate::cm_tools::tool_result::parse_tool_output("run_command", raw);
+    let parsed = crate::cm_tool_result::parse_tool_output("run_command", raw);
     parsed.ok || parsed.exit_code == Some(0)
 }
 
 fn run_command_args_from_tool_message(raw: &str) -> Option<String> {
-    if let Some(env) = crate::cm_tools::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crate::cm_tool_result::normalize_tool_message_content(raw) {
         if env.name != "run_command" {
             return None;
         }

@@ -6,7 +6,7 @@ use std::path::Path;
 use super::path::{
     PathAccess, canonical_workspace_root, parse_path_content, path_for_tool_display,
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
@@ -574,7 +574,7 @@ pub fn modify_file_try(
 
     let output =
         modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode);
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
+    let parsed = crate::cm_tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
     if parsed.ok {
         return Ok(output);
     }
@@ -588,6 +588,6 @@ pub fn modify_file_try(
 /// dispatch 内部仍返回正文：失败码由正文可识别标记保留（如 `错误[stale_revision]`）。
 #[allow(clippy::result_large_err)]
 fn modify_file_legacy_body_error(output: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
+    let parsed = crate::cm_tool_result::parse_tool_output(tool_names::MODIFY_FILE, &output);
     ToolError::from_parsed(tool_names::MODIFY_FILE, &parsed, output)
 }

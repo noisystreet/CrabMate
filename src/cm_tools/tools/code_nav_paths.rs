@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 绝对路径：工作区外的绝对路径一律拒绝（`PolicyDenied`）。
 fn path_absolute_not_allowed() -> ToolError {

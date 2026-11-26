@@ -1,6 +1,6 @@
 //! 正则表达式测试工具（纯内存）
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use regex::Regex;
 
 /// 显式失败版本（成功正文与迁移前的 String 面逐字节一致）。

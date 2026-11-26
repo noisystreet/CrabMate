@@ -184,7 +184,7 @@ fn outer_loop_window_has_any_successful_tool(messages: &[Message]) -> bool {
         let Some(raw) = message_content_as_str(&m.content) else {
             return false;
         };
-        if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+        if let Some(env) = crate::cm_tool_result::normalize_tool_message_content(raw) {
             return env.ok || env.exit_code == Some(0);
         }
         text_reports_zero_exit_code(raw)

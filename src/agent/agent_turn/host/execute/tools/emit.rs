@@ -3,12 +3,12 @@ use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire_body_if_tool_ok;
+use crate::cm_tool_result::parse_tool_output;
 use crate::config::AgentConfig;
 use crate::sse::{
     SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary, TurnSegmentStartBody,
     send_sse_control_payload_optional,
 };
-use crate::tool_result::{self, parse_tool_output};
 use crate::types::{Message, message_content_byte_len_for_estimate};
 
 use super::EmitToolResultParams;
@@ -193,8 +193,8 @@ pub(super) async fn emit_tool_result_sse_and_append(
             "failure_category": parsed_for_timeline
                 .error_code
                 .as_deref()
-                .map(|c| crate::tool_result::failure_category_for_error_code(c).as_str().to_string()),
-            "retryable": crate::tool_result::tool_error_retryable_heuristic(
+                .map(|c| crate::cm_tool_result::failure_category_for_error_code(c).as_str().to_string()),
+            "retryable": crate::cm_tool_result::tool_error_retryable_heuristic(
                 parsed_for_timeline.error_code.as_deref()
             ),
             "summary": tool_summary,
@@ -230,7 +230,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     let summary_str = tool_summary
         .clone()
         .unwrap_or_else(|| format!("tool: {name}"));
-    let content_for_model = tool_result::encode_tool_message_envelope_v1(
+    let content_for_model = crate::cm_tool_result::encode_tool_message_envelope_v1(
         name,
         summary_str,
         &parsed_for_timeline,

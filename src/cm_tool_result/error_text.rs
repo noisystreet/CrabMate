@@ -115,7 +115,7 @@ pub(crate) fn has_known_error_prefix(first_line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::cm_tools::tool_result::classify_error_code_fixture;
+    use crate::cm_tool_result::classify_error_code_fixture;
 
     /// **字面量快照**：每条历史文案都必须反查到具体错误码。
     ///

@@ -13,7 +13,7 @@ use std::path::Path;
 use crate::cm_config::SkillsConfigSection;
 use crate::cm_config::skills::SkillDoc;
 use crate::cm_config::skills_slash::{SkillSlashError, resolve_skill_by_id, skill_callable_id};
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::SkillReadArgs;
 
 /// 入口：解析 id → 渲染正文（失败路径全部显式返回 [`ToolError`]）。

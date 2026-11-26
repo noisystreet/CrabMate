@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use super::{run_with_changelist, run_with_changelist_try};
-use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tool_result::ToolFailureCategory;
 use crate::cm_tools::tools::testing::{
     assert_invalid_input, assert_run_tool_error_code, assert_success_parity,
     assert_success_with_failure_wording, make_test_dir, test_ctx,

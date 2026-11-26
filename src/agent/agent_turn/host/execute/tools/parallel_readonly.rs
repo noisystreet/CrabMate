@@ -10,7 +10,7 @@ use crate::agent::agent_turn::execute::{ParallelPrefetchParams, ToolExecutionHos
 use crate::agent::agent_turn::policy::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
-use crate::cm_tools::tool_result::error_text;
+use crate::cm_tool_result::error_text;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
@@ -413,7 +413,7 @@ async fn parallel_emit_ordered_tool_results(
             Some(o) => (o.output.clone(), o.facts()),
             None => (
                 String::new(),
-                crate::tool_result::ToolOutcomeFacts::unknown(),
+                crate::cm_tool_result::ToolOutcomeFacts::unknown(),
             ),
         };
         emit_tool_batch_result(
@@ -568,7 +568,7 @@ mod tests {
             "正文需带 `错误：` 前缀：{}",
             outcome.output
         );
-        let reparsed = crate::tool_result::parse_tool_output("read_file", &outcome.output);
+        let reparsed = crate::cm_tool_result::parse_tool_output("read_file", &outcome.output);
         assert!(!reparsed.ok, "退化为文本反推时也必须判失败");
         assert_eq!(reparsed.error_code.as_deref(), Some("timeout"));
     }

@@ -4,7 +4,7 @@
 
 use similar::TextDiff;
 
-use crate::cm_tools::tool_result::{
+use crate::cm_tool_result::{
     WorkspaceWriteDiffFields, WorkspaceWriteDiffFile, prepend_crabmate_tool_output_with_ok,
 };
 

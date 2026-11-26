@@ -5,7 +5,7 @@ use glob::Pattern;
 use std::path::Path;
 use walkdir::DirEntry;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::path::{
     PathAccess, WorkspacePathCodes, canonical_workspace_root, path_for_tool_display,
@@ -73,10 +73,10 @@ fn prepend_list_tree_output_header(
     lines_count: usize,
     truncated: bool,
 ) -> String {
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
+    crate::cm_tool_result::prepend_crabmate_tool_output_with_ok(
         tool_names::LIST_TREE,
         true,
-        crate::cm_tools::tool_result::ListTreeOutputFields {
+        crate::cm_tool_result::ListTreeOutputFields {
             path: root_rel.to_string(),
             max_depth,
             max_entries,

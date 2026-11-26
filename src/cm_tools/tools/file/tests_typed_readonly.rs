@@ -10,7 +10,7 @@ use std::path::Path;
 
 use super::tests::make_test_dir;
 use super::{PathAccess, read_binary_meta_try};
-use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tool_result::ToolFailureCategory;
 
 /// 在临时工作区的**父目录**造一个真实文件，返回文件名（供 `../<name>` 引用）。
 fn write_outside_sibling(dir: &Path) -> String {

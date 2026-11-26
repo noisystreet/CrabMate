@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::cm_config::AgentConfig;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// `codebase_semantic_search` 执行面。
 ///

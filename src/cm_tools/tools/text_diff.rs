@@ -9,7 +9,7 @@ use similar::TextDiff;
 use super::file;
 use super::output_util;
 use super::tool_param_types::TextDiffArgs;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 内联模式每侧最大字节
 const MAX_INLINE_BYTES: usize = 256 * 1024;

@@ -243,7 +243,7 @@ pub fn estimate_final_request_tokens(
 
 /// 分级释放 ①：把**最近 `keep_groups` 组之外**的 `tool` 正文二次压缩到 `max_chars`。
 ///
-/// 信封形状由 [`crate::cm_tools::tool_result::maybe_compress_tool_message_content`] 处理：
+/// 信封形状由 [`crate::cm_tool_result::maybe_compress_tool_message_content`] 处理：
 /// `output` 保留首尾采样，`ok` / 错误码 / 截断元数据原样保留，因此关键证据不会丢。
 ///
 /// 属**视图层**优化：调用方持有的是 `ModelContextView` 副本，不得回写 canonical（ADR §3.7）。
@@ -262,7 +262,7 @@ fn compress_old_tool_messages(
             continue;
         };
         if let Some(next) =
-            crate::cm_tools::tool_result::maybe_compress_tool_message_content(text, max_chars)
+            crate::cm_tool_result::maybe_compress_tool_message_content(text, max_chars)
         {
             *text = next;
             compressed = compressed.saturating_add(1);

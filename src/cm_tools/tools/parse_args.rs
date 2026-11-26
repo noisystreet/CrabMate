@@ -3,7 +3,7 @@
 //! 文案取自 [`error_text`] 的常量，与 `tool_result::classify_error_code` 的反查表同源：
 //! 两边各写一份字面量时，改文案会让 `error_code` 静默退化成 `{tool}_failed`。
 
-use crate::cm_tools::tool_result::error_text;
+use crate::cm_tool_result::error_text;
 
 /// 将工具入参 JSON 解析为 [`serde_json::Value`]；失败时返回与用户可见 runner 一致的中文说明。
 #[inline]

@@ -8,7 +8,7 @@ use super::path::{
     PathAccess, canonical_workspace_root, path_for_tool_display,
     tool_user_error_from_workspace_path,
 };
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::{
     AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs,

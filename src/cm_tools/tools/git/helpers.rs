@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::output_util;
 
 pub(super) const MAX_OUTPUT_LINES: usize = 800;

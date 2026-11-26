@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::file;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 与 `config/mod.rs`、README、AGENTS 中常见项对齐；按字母序输出。
 const TRACKED_ENV_VARS: &[&str] = &[

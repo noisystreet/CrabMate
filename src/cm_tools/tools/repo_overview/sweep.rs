@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::cm_tools::project_profile;
 
 use super::parse::RepoSweepParams;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::file::{
     canonical_workspace_root, glob_files_try, list_tree_try, read_file,

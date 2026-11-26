@@ -4,7 +4,7 @@
 use std::cmp::Ordering;
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{
@@ -24,10 +24,10 @@ fn prepend_read_dir_output_header(
     entries_shown: usize,
     entries_walked: usize,
 ) -> String {
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
+    crate::cm_tool_result::prepend_crabmate_tool_output_with_ok(
         tool_names::READ_DIR,
         true,
-        crate::cm_tools::tool_result::ReadDirOutputFields {
+        crate::cm_tool_result::ReadDirOutputFields {
             path: path_disp.to_string(),
             entries_shown,
             entries_walked,

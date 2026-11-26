@@ -2,7 +2,7 @@
 
 use chrono::{Datelike, Duration, Local, NaiveDate};
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 /// 显式失败版本（成功正文与迁移前的 String 面逐字节一致）。
 ///

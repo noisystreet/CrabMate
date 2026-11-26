@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{
     EventAction, EventArgs, ReminderAction, ReminderArgs,
 };
@@ -149,7 +149,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use crate::cm_tools::tool_result::ToolError;
+    use crate::cm_tool_result::ToolError;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 

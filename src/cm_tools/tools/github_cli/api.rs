@@ -1,7 +1,7 @@
 //! `gh api` 子命令实现（与 `run_command` 封装分离以降低 `mod.rs` 体量）。
 
 use super::common::GhCtx;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use std::io::Write;
 use std::process::{Command, Stdio};
 

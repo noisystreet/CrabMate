@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use super::ToolContext;
 use super::file::canonical_workspace_root;
 use super::output_util::truncate_output_bytes;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 
 fn rel_path_ok(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
     let rel = rel.trim();

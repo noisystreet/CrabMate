@@ -123,7 +123,7 @@ mod tests {
             async fn run(
                 &self,
                 _r: SubTaskRequest,
-            ) -> Result<SubTaskReport, crate::cm_tools::tool_result::ToolError> {
+            ) -> Result<SubTaskReport, crate::cm_tool_result::ToolError> {
                 panic!("参数非法时不应启动子回合");
             }
         }

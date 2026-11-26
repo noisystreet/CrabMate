@@ -31,7 +31,7 @@ pub(super) struct SerialEmitToolResultParams<'a> {
     pub(super) id: &'a str,
     pub(super) result: String,
     /// 执行层直给的成败事实（#1430）；早退 / 缓存路径填 `unknown()`（正文前缀已足够反推）。
-    pub(super) facts: crate::tool_result::ToolOutcomeFacts,
+    pub(super) facts: crate::cm_tool_result::ToolOutcomeFacts,
     pub(super) reflection_inject: Option<serde_json::Value>,
 }
 

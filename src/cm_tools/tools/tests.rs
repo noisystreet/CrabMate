@@ -2,7 +2,7 @@ use super::*;
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::{ToolFailureCategory, parse_tool_output};
+use crate::cm_tool_result::{ToolFailureCategory, parse_tool_output};
 
 const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
@@ -78,7 +78,7 @@ fn dispatch_string(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+) -> Result<String, crate::cm_tool_result::ToolError> {
     run_tool_dispatch(name, args_json, ctx).map(|(output, _)| output)
 }
 
@@ -191,7 +191,7 @@ async fn test_run_tool_run_command_disallowed() {
 
 #[tokio::test]
 async fn test_run_tool_async_run_command_disallowed_tool_error() {
-    use crate::cm_tools::tool_result::ToolFailureCategory;
+    use crate::cm_tool_result::ToolFailureCategory;
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     // 直调私有异步分派以取回结构化 `ToolError`（`run_tool_result_async` 会降级为 `ToolResult`）。
@@ -205,7 +205,7 @@ async fn test_run_tool_async_run_command_disallowed_tool_error() {
 
 #[test]
 fn test_dispatch_string_cargo_check_workspace_no_cargo_toml() {
-    use crate::cm_tools::tool_result::ToolFailureCategory;
+    use crate::cm_tool_result::ToolFailureCategory;
     let allowed = test_allowed_commands();
     let dir = std::env::temp_dir().join(format!("crabmate_cargo_empty_{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("mkdir temp workspace");

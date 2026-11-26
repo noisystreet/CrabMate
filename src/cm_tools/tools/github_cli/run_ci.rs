@@ -2,7 +2,7 @@
 
 use super::check_bucket::CheckBucket;
 use super::common::GhCtx;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use serde_json::Value as JsonValue;
 
 use super::common::{

@@ -1,6 +1,6 @@
 //! `message_display` 中 JSON 工具信封（`NormalizedToolEnvelope`）的展示辅助。
 
-use crate::cm_tools::tool_result::NormalizedToolEnvelope;
+use crate::cm_tool_result::NormalizedToolEnvelope;
 
 pub const TOOL_OUTPUT_SECTION_HEADLINE: &str = "### 执行输出";
 

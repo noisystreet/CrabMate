@@ -95,6 +95,17 @@ check_forbidden_mod src/cm_kernel.rs crate::cm_tools \
   "kernel is shared by tools and agent; tools must not be a dependency of it"
 check_forbidden_mod src/cm_kernel.rs crate::cm_agent \
   "kernel is shared by tools and agent; agent must not be a dependency of it"
+# #1510 P2b：领域层不再依赖工具层。`cm_agent` 曾引 `cm_tools::{tool_result, registry_policy,
+# tool_naming, redact}` 共 11 处；tool_result 已拆成 `cm_tool_result`，其余进 `cm_kernel`。
+# 注意：`cm_tool_result` 自身仍依赖 `cm_tools::workspace::path::WorkspacePathError`
+# （安全敏感面，属 P3 `cm_tool_fs` 批次），所以这里只约束 `cm_agent`。
+check_forbidden_mod src/cm_agent crate::cm_tools \
+  "domain layer must not depend on the tool layer; shared types live in cm_tool_result / cm_kernel"
+# `cm_tool_result` 目前仍依赖 `cm_tools::workspace::path::WorkspacePathError`（安全敏感面，
+# 待 P3 `cm_tool_fs` 批次下沉），所以不能整体禁 `crate::cm_tools`；先堵住大头：
+# 结果信封/解析不该反向依赖工具实现。
+check_forbidden_mod src/cm_tool_result crate::cm_tools::tools \
+  "tool_result must not depend on tool implementations; only workspace::path is a known exception"
 
 # #1510 P0：`chat_job_queue` 是 `web` 的下游消费者 —— 只许 `web -> queue`，不许反向。
 # 两者共享的类型定义在 `context::web_state_facet`；这条一旦报错，说明又有人把定义挪回 `web`

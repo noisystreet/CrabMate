@@ -18,7 +18,7 @@ pub(super) struct EmitToolBatchResultParams<'a> {
     pub id: &'a str,
     pub result: String,
     /// 执行层直给的成败事实（#1430）；早退 / 缓存路径传 `unknown()`。
-    pub facts: crate::tool_result::ToolOutcomeFacts,
+    pub facts: crate::cm_tool_result::ToolOutcomeFacts,
     pub reflection_inject: Option<serde_json::Value>,
     pub execution_mode: &'static str,
     pub parallel_batch_id: Option<&'a str>,

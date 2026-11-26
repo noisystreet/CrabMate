@@ -473,7 +473,7 @@ impl ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cm_tools::tool_result::parse_tool_output;
+    use crate::cm_tool_result::parse_tool_output;
 
     /// #1430：无已知前缀的错误正文在**构造处**补 `错误：`，让下游 ④ 级只靠 `starts_with`
     /// 就能识别，不必依赖 `contains("失败")` 那条会把成功输出误判的宽口径。
@@ -543,7 +543,7 @@ mod tests {
         for e in cases {
             let head = e.message.lines().next().unwrap_or("");
             assert!(
-                crate::cm_tools::tool_result::error_text::has_known_error_prefix(head)
+                crate::cm_tool_result::error_text::has_known_error_prefix(head)
                     || e.parsed.exit_code.is_some(),
                 "首行既无已知前缀也无退出码，下游只能靠猜：{head:?}（code={}）",
                 e.code

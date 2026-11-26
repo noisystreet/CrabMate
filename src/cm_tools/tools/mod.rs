@@ -107,10 +107,10 @@ use std::sync::Arc;
 
 use crate::cm_config::{AgentConfig, ExposeSecret};
 use crate::cm_names as tool_names;
+use crate::cm_tool_result::{ToolError, ToolResult};
 use crate::cm_tools::memory_tool_host::{
     CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
 };
-use crate::cm_tools::tool_result::{ToolError, ToolResult};
 use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
 use crate::cm_types::{FunctionDef, Tool};
 
@@ -555,7 +555,7 @@ fn run_tool_dispatch(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
+) -> Result<(String, crate::cm_tool_result::ParsedToolOutput), ToolError> {
     let (spec, args_eff) = prepare_builtin_dispatch(name, args_json)?;
     run_tool_dispatch_fallback(name, args_eff.as_ref(), spec, ctx)
 }
@@ -570,7 +570,7 @@ fn run_tool_dispatch_fallback(
     args_ref: &str,
     spec: &ToolSpec,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
+) -> Result<(String, crate::cm_tool_result::ParsedToolOutput), ToolError> {
     match spec.runner {
         ToolRunner::Typed(f) => {
             f(args_ref, ctx).map(|output| finish_dispatch_typed_ok(name, args_ref, output))
@@ -594,12 +594,12 @@ fn async_only_sync_error(name: &str) -> String {
 /// timeline / 模型信封、统计与验收又都用 `parse_tool_output` 重新推断。正文一致时
 /// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败与 `error_code`。
 fn typed_outcome_output(name: &str, ok: bool, error_code: Option<&str>, output: String) -> String {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
+    let parsed = crate::cm_tool_result::parse_tool_output(name, &output);
     if parsed.ok == ok && (ok || error_code.is_none() || parsed.error_code.as_deref() == error_code)
     {
         return output;
     }
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok_and_error_code(
+    crate::cm_tool_result::prepend_crabmate_tool_output_with_ok_and_error_code(
         name,
         ok,
         error_code,
@@ -611,14 +611,14 @@ fn typed_outcome_output(name: &str, ok: bool, error_code: Option<&str>, output: 
 /// Typed 收尾：`Ok` 即成功，正文只用于抽取 `exit_code/stdout/stderr`。
 ///
 /// 成功正文（如搜索结果）可能含「失败」「超时」等词，因此**不能**再把正文交给
-/// [`crate::cm_tools::tool_result::parse_tool_output`] 推断 `ok`；失败必须由执行体
+/// [`crate::cm_tool_result::parse_tool_output`] 推断 `ok`；失败必须由执行体
 /// 返回 [`ToolError`]。返回值同样注入显式 `ok` 头（若必要），保证下游再次解析一致。
 fn finish_dispatch_typed_ok(
     name: &str,
     args_json: &str,
     output: String,
-) -> (String, crate::cm_tools::tool_result::ParsedToolOutput) {
-    let mut parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
+) -> (String, crate::cm_tool_result::ParsedToolOutput) {
+    let mut parsed = crate::cm_tool_result::parse_tool_output(name, &output);
     parsed.ok = true;
     parsed.error_code = None;
     if parsed.exit_code.is_some_and(|code| code != 0) {
@@ -635,8 +635,8 @@ fn finish_dispatch_text(
     name: &str,
     args_json: &str,
     output: String,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(name, &output);
+) -> Result<(String, crate::cm_tool_result::ParsedToolOutput), ToolError> {
+    let parsed = crate::cm_tool_result::parse_tool_output(name, &output);
     if parsed.ok {
         let output = workspace_image_chat_hint::append_if_needed(args_json, output);
         Ok((output, parsed))
@@ -699,7 +699,7 @@ async fn try_run_command_dispatch_async(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Option<Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError>> {
+) -> Option<Result<(String, crate::cm_tool_result::ParsedToolOutput), ToolError>> {
     if name != tool_names::RUN_COMMAND {
         return None;
     }
@@ -718,7 +718,7 @@ async fn run_command_dispatch_async(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::cm_tools::tool_result::ParsedToolOutput), ToolError> {
+) -> Result<(String, crate::cm_tool_result::ParsedToolOutput), ToolError> {
     let name_owned = name.to_string();
     let spec = command::parse_command_spec(args_json, ctx.working_dir)
         .map_err(RunCommandError::into_tool_error)?;
@@ -775,7 +775,7 @@ pub fn is_compile_command_success_spec(spec: &CommandSpec, result: &str) -> bool
     if !is_compile_command_spec(spec) {
         return false;
     }
-    let parsed = crate::cm_tools::tool_result::parse_tool_output(tool_names::RUN_COMMAND, result);
+    let parsed = crate::cm_tool_result::parse_tool_output(tool_names::RUN_COMMAND, result);
     parsed.ok && parsed.exit_code == Some(0)
 }
 

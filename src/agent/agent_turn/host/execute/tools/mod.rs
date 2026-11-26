@@ -16,10 +16,10 @@ use crate::agent::agent_turn::policy::{
 };
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
+use crate::cm_tool_result::ToolEnvelopeContext;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SseEncoder, SsePayload, encode_message};
-use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
@@ -108,7 +108,7 @@ pub(super) struct EmitToolResultParams<'a> {
     id: &'a str,
     result: String,
     /// 执行层直给的成败事实（#1430）：`unknown()` = 该路径无结构化结论，按正文反推。
-    facts: crate::tool_result::ToolOutcomeFacts,
+    facts: crate::cm_tool_result::ToolOutcomeFacts,
     reflection_inject: Option<serde_json::Value>,
     envelope_ctx: Option<ToolEnvelopeContext<'a>>,
 }

@@ -11,7 +11,7 @@ use super::{
     append_file, append_file_try, copy_file, copy_file_try, create_file, create_file_try,
     modify_file, modify_file_try, move_file, move_file_try, search_replace, search_replace_try,
 };
-use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tool_result::ToolFailureCategory;
 use crate::cm_tools::tools::testing::{
     assert_invalid_input, assert_run_tool_error_code, assert_run_tool_result_ok,
     assert_success_parity, assert_success_with_failure_wording,

@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 
 use super::output_util;
 
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{CodespellCheckArgs, TyposCheckArgs};
 
 const MAX_OUTPUT_LINES: usize = 800;

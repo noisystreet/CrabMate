@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::output_util;
+use crate::cm_tool_result::ToolError;
 use crate::cm_tools::subprocess_session::{
     SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, run_and_capture,
     wait_child_session,
 };
-use crate::cm_tools::tool_result::ToolError;
 
 const MAX_OUTPUT_LINES: usize = 800;
 

@@ -27,10 +27,10 @@ use crate::cm_names as tool_names;
 use crate::agent::agent_turn::host::errors::{RunAgentTurnError, TurnAbortReason};
 use crate::agent::sub_turn::{SubTurnMessages, SubTurnSpec};
 use crate::cm_agent::permission::TurnPermissionStages;
+use crate::cm_tool_result::{ToolError, ToolFailureCategory};
 use crate::cm_tools::delegation_host::{
     SubAgentDelegator, SubTaskLimits, SubTaskReport, SubTaskRequest, SubTaskStats, SubTaskStatus,
 };
-use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory};
 use crate::cm_types::{Message, Tool, message_content_as_str};
 use crate::config::AgentConfig;
 use crate::process_handles::TurnProcessHandles;
@@ -276,7 +276,7 @@ impl SubAgentDelegator for CrabmateDelegator {
                 code: "subtask_empty_prompt".to_string(),
                 message: "子任务 prompt 为空".to_string(),
                 retryable: false,
-                parsed: crate::cm_tools::tool_result::ParsedToolOutput {
+                parsed: crate::cm_tool_result::ParsedToolOutput {
                     ok: false,
                     exit_code: None,
                     stdout: String::new(),

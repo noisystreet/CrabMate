@@ -16,6 +16,16 @@ pub fn preview_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// 将空白（含换行、制表）规范为**单空格**后截断，便于结构化日志单行输出。
+///
+/// 与 [`preview_chars`] 同处的原因：#1510 P2b 起 `cm_agent`（领域层）也要用它，
+/// 而它原本在 `cm_tools::redact`（工具层）—— 领域层不能反向依赖工具层。
+/// 既有 `redact::single_line_preview` 由 `cm_tools` 侧再导出保持。
+pub fn single_line_preview(s: &str, max_chars: usize) -> String {
+    let folded = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    preview_chars(&folded, max_chars)
+}
+
 /// UTF-8 安全的字节截断：在 `max_bytes` 以内找到最近的 char boundary 并截取。
 ///
 /// 曾在 `cm_tools::tools::output_util`、`cm_memory::…::numeric`、`cm_workflow::execute::report`

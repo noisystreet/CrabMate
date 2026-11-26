@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::cm_tools::tool_result::error_text;
+use crate::cm_tool_result::error_text;
 
 /// 写盘未发生（校验失败 / 守卫拒绝 / I/O 失败）时统一追加的提示：目标文件保持原样（等价于回滚）。
 ///

@@ -1,7 +1,7 @@
 //! `gh issue create`（写远端 Issue）。
 
 use super::common::GhCtx;
-use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tool_result::ToolError;
 use serde_json::Value as JsonValue;
 
 use super::common::{

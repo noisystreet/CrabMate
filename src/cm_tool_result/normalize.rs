@@ -18,7 +18,7 @@ pub const CRABMATE_TOOL_ENVELOPE_VERSION_V1: u32 = 1;
 /// `None` 表示**该路径没有结构化结论**——早退短路文案、缓存命中正文、以及尚未改造
 /// `execute_*_impl` 的过渡路径；这些地方下游仍退回 `parse_tool_output` 的正文判定。
 ///
-/// 唯一应用点是 [`crate::cm_tools::tool_result::ParsedToolOutput::apply_outcome_facts`]：
+/// 唯一应用点是 [`crate::cm_tool_result::ParsedToolOutput::apply_outcome_facts`]：
 /// 覆盖 parse 结果后，[`NormalizedToolEnvelope`]（SSE / stats）与 `crabmate_tool` 信封
 /// （模型可见）都从同一份 parsed 派生，不会出现两种成败结论。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

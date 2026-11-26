@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::cm_config::AgentConfig;
-use crate::cm_tools::tool_result::ToolOutcomeFacts;
+use crate::cm_tool_result::ToolOutcomeFacts;
 use crate::cm_types::ToolCall;
 
 use super::meta::HandlerLookupTable;
@@ -44,8 +44,8 @@ pub struct ToolRunOutcome {
     /// `ToolOutcomeRecorder::record_tool_outcome`（统计 / 系统提示），经
     /// [`ToolOutcomeFacts`] 覆盖 [`NormalizedToolEnvelope`] 的反推结果。
     ///
-    /// [`ToolOutcomeFacts`]: crate::cm_tools::tool_result::ToolOutcomeFacts
-    /// [`NormalizedToolEnvelope`]: crate::cm_tools::tool_result::NormalizedToolEnvelope
+    /// [`ToolOutcomeFacts`]: crate::cm_tool_result::ToolOutcomeFacts
+    /// [`NormalizedToolEnvelope`]: crate::cm_tool_result::NormalizedToolEnvelope
     pub ok: bool,
     pub error_code: Option<String>,
 }
@@ -81,7 +81,7 @@ impl ToolRunOutcome {
         output: String,
         payload: Option<serde_json::Value>,
     ) -> Self {
-        let parsed = crate::cm_tools::tool_result::parse_tool_output(tool, &output);
+        let parsed = crate::cm_tool_result::parse_tool_output(tool, &output);
         Self {
             output,
             payload,
