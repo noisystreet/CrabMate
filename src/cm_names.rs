@@ -27,8 +27,8 @@
 //! 因此本模块保持**零依赖**（只有 `&'static str` 与 `#[cfg(feature = ...)]`），
 //! 只允许被上层单向引用；`scripts/check-crate-deps.sh` 强制这条边。
 //!
-//! 前缀 / 来源判定（`mcp__` / `dyn__` 与 [`crate::cm_tools::tool_naming::ToolOrigin`]）
-//! **不在**本模块，见 [`crate::cm_tools::tool_naming`]——那里判的是「名字的形状」，
+//! 前缀 / 来源判定（`mcp__` / `dyn__` 与 [`crate::cm_kernel::ToolOrigin`]）
+//! **不在**本模块，见 [`crate::cm_kernel`]——那里判的是「名字的形状」，
 //! 这里列的是「内建工具的全部名字」。
 
 // --- `specs/archive.inc.rs`（feature `archive-tools`）---

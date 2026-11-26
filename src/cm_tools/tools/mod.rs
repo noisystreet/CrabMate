@@ -335,7 +335,7 @@ fn find_spec(name: &str) -> Option<&'static ToolSpec> {
 /// 工具改名时就有第二处需要人工同步；这里直接问「执行期会不会命中」。
 ///
 /// `mcp__*` / `dyn__*` 是运行时注册的，不在本表内，由调用方按
-/// `crate::cm_tools::tool_naming::tool_origin` 自行放行。
+/// `crate::cm_kernel::tool_origin` 自行放行。
 ///
 /// 文档里不写成 intra-doc 链接：`run_tool_dispatch` 与 `cm_tools` 均为 `pub(crate)`，
 /// 链接会触发 `rustdoc::private_intra_doc_links`（pre-commit 的 `cargo doc` 将其视为错误）。

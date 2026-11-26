@@ -92,6 +92,9 @@ pub mod cm_config;
 #[cfg(unix)]
 #[doc(hidden)]
 pub mod cm_ctl;
+/// 工具层与领域层共用的中立内核（#1510 P2a）：工具名约定 + 来源/只读判定。
+#[cfg(feature = "server")]
+pub(crate) mod cm_kernel;
 #[cfg(feature = "server")]
 #[doc(hidden)]
 pub mod cm_llm;

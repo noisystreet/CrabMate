@@ -21,10 +21,10 @@ use super::http_types::tools::{
     ToolsListResponse,
 };
 use crate::cm_api_contract::error_codes;
+use crate::cm_kernel::{ToolOrigin, tool_origin};
 use crate::cm_names as tool_names;
 use crate::cm_tools::registry_policy;
 use crate::cm_tools::tool_dispatch::HandlerLookupTable;
-use crate::cm_tools::tool_naming;
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_tools::tools::{builtin_tool_descriptors, cached_params_for_tool_name};
 use crate::config::AgentConfig;
@@ -407,7 +407,7 @@ fn parameters_for(cfg: &AgentConfig, ws: &str, name: &str, source: &str) -> Valu
 fn policy_view(cfg: &AgentConfig, name: &str) -> ToolPolicyView {
     let handlers = HandlerLookupTable::default_dispatch();
     let read_only = registry_policy::is_readonly_tool(cfg, name);
-    let is_external = tool_naming::tool_origin(name) != tool_naming::ToolOrigin::Builtin;
+    let is_external = tool_origin(name) != ToolOrigin::Builtin;
     let p = &cfg.tool_registry_policy;
     let mut sub_agent_extra_allow: Vec<String> = Vec::new();
     if p.tool_registry_sub_agent_patch_write_extra_tools

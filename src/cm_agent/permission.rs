@@ -24,7 +24,7 @@ pub enum ToolVisibility {
     None,
     /// L1：只下发**独立正列表** `permission_read_tools` 里的工具。
     ///
-    /// **不读** [`crate::cm_tools::registry_policy::is_readonly_tool`]：后者是并行只读批的
+    /// **不读** [`crate::cm_kernel::is_readonly_tool`]：后者是并行只读批的
     /// 性能判据，且其写集合可被 `tool_registry_write_effect_tools` 整体替换——拿它当安全边界，
     /// 运维为调并行漏配 `run_command` 就会让 L1 直接放行子进程。
     Readonly,
@@ -62,9 +62,7 @@ impl ReadonlyAllow {
     pub fn allows(&self, name: &str) -> bool {
         match self {
             ReadonlyAllow::Explicit(set) => set.contains(name),
-            ReadonlyAllow::Derived => {
-                crate::cm_tools::registry_policy::is_readonly_tool_for_permission(name)
-            }
+            ReadonlyAllow::Derived => crate::cm_kernel::is_readonly_tool_for_permission(name),
         }
     }
 }
@@ -321,8 +319,7 @@ pub fn is_command_tool(name: &str) -> bool {
 #[must_use]
 pub fn external_tools_allowed_by_caps(caps: &PermissionCaps, name: &str) -> bool {
     caps.external_tools == ExternalTools::Allowed
-        || crate::cm_tools::tool_naming::tool_origin(name)
-            == crate::cm_tools::tool_naming::ToolOrigin::Builtin
+        || crate::cm_kernel::tool_origin(name) == crate::cm_kernel::ToolOrigin::Builtin
 }
 
 /// 单工具是否允许在 `caps` 下**执行**：可见性过滤与 early-deny 共用这一条判据（§7.4「不要第二套」）。
@@ -345,7 +342,7 @@ pub fn tool_allowed_by_caps(caps: &PermissionCaps, name: &str) -> bool {
         // 由 `external_tools` 轴决定。否则运维把 `mcp__x` 写进 `permission_read_tools`
         // 就绕过了 L1 的「外部工具 Denied」（设计 §8.1）。
         ToolVisibility::Readonly => {
-            crate::cm_tools::registry_policy::is_builtin_tool(name)
+            crate::cm_kernel::is_builtin_tool(name)
                 && caps
                     .readonly_allow
                     .as_ref()

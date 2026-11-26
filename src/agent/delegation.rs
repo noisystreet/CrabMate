@@ -131,7 +131,7 @@ pub(crate) fn readonly_subset_for_subturn(cfg: &AgentConfig, tools: &[Tool]) -> 
     tools
         .iter()
         .filter(|t| t.function.name != tool_names::DELEGATE_TASK)
-        .filter(|t| crate::cm_tools::registry_policy::is_readonly_tool(cfg, &t.function.name))
+        .filter(|t| crate::cm_kernel::is_readonly_tool(cfg, &t.function.name))
         .cloned()
         .collect()
 }

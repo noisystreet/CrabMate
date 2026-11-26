@@ -64,7 +64,7 @@ impl ToolRetrySpec {
         if !self.enabled {
             return false;
         }
-        if !crate::cm_tools::registry_policy::is_readonly_tool(cfg, tool_name) {
+        if !crate::cm_kernel::is_readonly_tool(cfg, tool_name) {
             return false;
         }
         if builtin_retry_denied().contains(tool_name) || self.denied_tools.contains(tool_name) {

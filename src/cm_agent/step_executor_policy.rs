@@ -4,9 +4,9 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_kernel::is_readonly_tool;
+use crate::cm_kernel::{ToolOrigin, tool_origin};
 use crate::cm_names as tool_names;
-use crate::cm_tools::registry_policy::is_readonly_tool;
-use crate::cm_tools::tool_naming::{ToolOrigin, tool_origin};
 use crate::cm_types::Tool;
 
 use crate::cm_agent::plan_artifact::PlanStepExecutorKind;

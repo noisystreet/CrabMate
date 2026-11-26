@@ -1005,6 +1005,7 @@ impl PathAccess<'_> {
 **落地结果**（实测 10 个判定点，与下方原估算基本一致）：
 
 - 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
+  （#1510 P2a 后定义移至 **`cm_kernel`**；`cm_tools` 与 `cm_agent` 都直引它，不再经 `cm_tools` 转发。）
 - 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、
   `dispatch.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
 - **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；

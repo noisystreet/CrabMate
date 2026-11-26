@@ -312,7 +312,7 @@ fn static_semantics_pass_outcome(
 ) -> StaticSemanticsOutcome {
     let digest = plan_rewrite::summarize_messages_for_final_plan_semantic_check(
         args.messages,
-        &|name| crate::cm_tools::registry_policy::is_readonly_tool(args.cfg, name),
+        &|name| crate::cm_kernel::is_readonly_tool(args.cfg, name),
         args.workspace_is_set,
         args.final_plan_semantic_check_max_non_readonly_tools,
     );

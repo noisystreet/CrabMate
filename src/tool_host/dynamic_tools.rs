@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::cm_tools::tools::split_command_prefix_if_embedded;
 use crate::cm_types::{FunctionDef, Tool};
 
-pub use crate::cm_tools::tool_naming::{DYNAMIC_TOOL_PREFIX, is_dynamic_tool_name};
+pub use crate::cm_kernel::{DYNAMIC_TOOL_PREFIX, is_dynamic_tool_name};
 
 #[derive(Debug, Clone, Deserialize)]
 struct DynamicToolFile {

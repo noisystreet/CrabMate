@@ -178,10 +178,10 @@ pub fn turn_role_max_permission_level_for_web_or_cli_job(
 
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
 ///
-/// 实现委托 `crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`。
+/// 实现委托 `crate::cm_kernel::tool_name_allowed_by_turn_allowlist`。
 #[inline]
 pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {
-    crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist(name, allow)
+    crate::cm_kernel::tool_name_allowed_by_turn_allowlist(name, allow)
 }
 
 pub fn turn_tool_denied_message(name: &str) -> String {

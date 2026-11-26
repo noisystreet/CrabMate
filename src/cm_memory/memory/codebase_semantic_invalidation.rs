@@ -7,17 +7,17 @@ use rusqlite::params;
 use crate::cm_names as tool_names;
 
 use crate::cm_config::AgentConfig;
+use crate::cm_kernel::is_readonly_tool;
 use crate::cm_memory::memory::codebase_semantic_index::{
     CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
     sqlite_like_escape,
 };
-use crate::cm_tools::registry_policy::is_readonly_tool;
 use crate::cm_tools::tool_result::{ToolStatus, tool_output_status};
 use crate::cm_types::path_utils::canonical_workspace_root;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
-// 只读判定只认策略层那**一份**实现（[`crate::cm_tools::registry_policy::is_readonly_tool`]），
+// 只读判定只认策略层那**一份**实现（[`crate::cm_kernel::is_readonly_tool`]），
 // 写效应名单也只有一份（[`crate::cm_config::tool_write_effect`]）。本模块曾自带副本，两处先后漂移过：
 // 名单停在已删除的工具名上（`apply_diff` / `write_file` / `mkdir`…），漏 `structured` / `reminder` /
 // `event` / `archive_*`；前缀判定又写成 `tool_`（动态工具的实际前缀是 `dyn__`），使 `dyn__*` 被当成

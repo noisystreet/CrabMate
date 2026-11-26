@@ -160,9 +160,7 @@ async fn try_dispatch_dynamic_tool(
     name: &str,
     args: &str,
 ) -> Option<(String, Option<serde_json::Value>)> {
-    if crate::cm_tools::tool_naming::tool_origin(name)
-        != crate::cm_tools::tool_naming::ToolOrigin::Dynamic
-    {
+    if crate::cm_kernel::tool_origin(name) != crate::cm_kernel::ToolOrigin::Dynamic {
         return None;
     }
     if !workspace_is_set {
@@ -217,9 +215,7 @@ async fn try_dispatch_mcp_proxy_tool(
     name: &str,
     args: &str,
 ) -> Option<(String, Option<serde_json::Value>)> {
-    if crate::cm_tools::tool_naming::tool_origin(name)
-        != crate::cm_tools::tool_naming::ToolOrigin::Mcp
-    {
+    if crate::cm_kernel::tool_origin(name) != crate::cm_kernel::ToolOrigin::Mcp {
         return None;
     }
     let Some(turn) = mcp_turn else {
