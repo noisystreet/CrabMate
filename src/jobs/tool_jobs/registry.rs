@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::cm_tools::subprocess_session::SessionStream;
+use crate::cm_tool_exec::SessionStream;
 
 use super::types::{
     JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus,

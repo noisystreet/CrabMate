@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, SystemTime};
 
-use crate::cm_tools::subprocess_session::SessionStream;
+use crate::cm_tool_exec::SessionStream;
 
 /// 环形输出缓冲保留的元素条数硬上限（防海量微块；默认容量下平均开销约 32 B/元素）。
 pub const MAX_OUTPUT_ITEMS: usize = 8192;

@@ -337,12 +337,12 @@ mod tests {
             items: vec![
                 OutputEvent {
                     seq: 1,
-                    stream: crate::cm_tools::subprocess_session::SessionStream::Stdout,
+                    stream: crate::cm_tool_exec::SessionStream::Stdout,
                     text: "compile ok\n".to_string(),
                 },
                 OutputEvent {
                     seq: 2,
-                    stream: crate::cm_tools::subprocess_session::SessionStream::Stderr,
+                    stream: crate::cm_tool_exec::SessionStream::Stderr,
                     text: "warning: x\n".to_string(),
                 },
             ],

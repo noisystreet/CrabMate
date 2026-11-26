@@ -840,5 +840,5 @@ pub(crate) fn proc_cmdline_contains(marker: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "subprocess_session_tests.rs"]
+#[path = "cm_tool_exec_tests.rs"]
 mod tests;

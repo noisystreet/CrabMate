@@ -13,7 +13,7 @@
 
 - 长构建（`cargo test` / `pytest_run` / `cmake --build` 数分钟）目前**绑死当前 LLM turn**：SSE 连接必须保持、`RunLoopIo.cancel` 一关 job 就丢。
   模型只能干等，页面关掉则执行中止。
-- 已落地底座：[`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、
+- 已落地底座：[`src/cm_tool_exec.rs`](../../src/cm_tool_exec.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、
   `tool_output_chunk`、观测统计）；`run_command` 已 emit chunk；P0/P1（#868/#869）已合并。
 - 目标：工具可**脱离当前 turn** 继续执行，调用方在**连接关闭后**仍能查询/取消；结果不自动塞回模型上下文（避免污染）。
 - 约束：全部新增契约对旧客户端**可忽略**（软字段原则），不 bump `SSE_PROTOCOL_VERSION`；执行与回收都必须与 SSE 连接生命周期解耦。
@@ -36,7 +36,7 @@
   轮询/取消端点校验归属，防越权读取。
 - 状态机：`queued → running → succeeded | failed | cancelled | timed_out`。**`expired` 不是持久状态**：TTL+宽限到期即删除记录（轮询得 `410 Gone`）。
 - 超时：默认 `command_timeout_secs`；工具参数 `timeout_secs` 显式覆盖（钳制同现有 1～600）。取消：
-  复用 `subprocess_session` 的进程组 kill（`Cancelled` 路径已实现）。
+  复用 `cm_tool_exec` 的进程组 kill（`Cancelled` 路径已实现）。
 - 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；
   `run_command` 的成功结果**可**写入 `test_result_cache`（装配表工具 `cargo_test` / `pytest_run` 不参与该缓存，与其前台同步路径一致）；
   超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。`workspace_changed` 仅 `run_command` 编译命令族成功时才为 true，
@@ -77,7 +77,7 @@
   `wait_child_session` 走既有 `Cancelled` 路径）。
 - **级联取消**：发起时把当前回合流任务 `job_id` 写入 `JobRecord.source_turn_job_id`（经 `WebToolRuntime.turn_job_id`）；
   用户 `POST /chat/stream/{job_id}/cancel` 停止回合时，一并取消本回合尚未终态的后台任务（响应 `background_tools_cancelled` 为命中数）。
-- 复用 `subprocess_session::wait_child_session_async`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；
+- 复用 `cm_tool_exec::wait_child_session_async`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；
   `tokio::spawn` 内直接 `await`（与迁 `tokio::process` 后的 chat / workflow 宿主一致）。
 - 注册表：进程内 `Mutex<HashMap<tool_job_id, JobState>>` + 过期清理（TTL 与条目上限）。**多副本**需外部代理/持久化（与 `chat_job_queue` 既有声明一致），另立项。
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；

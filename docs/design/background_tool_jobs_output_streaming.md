@@ -13,8 +13,8 @@
   状态卡，看不到输出滚动。
 - 用户期望：发起长构建后能像 `tail -f` 一样**实时看到输出**（含结尾的编译错误），且不依赖任何 SSE 连接——job 本就与连接生命周期解耦。
 - 已确认的实现事实（决定改动面）：
-  - [`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 有增量回调 `chunk_sink`，
-    但 [`append_captured`](../../src/cm_tools/subprocess_session.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，
+  - [`src/cm_tool_exec.rs`](../../src/cm_tool_exec.rs) 有增量回调 `chunk_sink`，
+    但 [`append_captured`](../../src/cm_tool_exec.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，
     增量回调再也收不到字节。后台 worker 现传 `chunk_sink: None`。
   - sink 由 wait 循环在**调用方线程**同步 flush（单流内保序；双流按管道排空时序近似交错）。
   - 现有 `JobRecord` / `JobOutcome` 只存终态截断正文，不存执行过程；`registry` 为单 Mutex 临界区。
@@ -97,7 +97,7 @@
 - **近似实时**：实时性受轮询间隔约束（毫秒级体验需 Phase 2 SSE）。
 - **历史有界**：超出环形缓冲上限的早期输出不可回放（`truncated` 语义）；要全文历史需另立项持久化。
 - **内存有界但有量**：并发 job 各持 ≤ 缓冲上限，终态条目在 TTL+宽限内各多持 ≤ 2×max_output_len 尾部。
-- **共享改造**：`subprocess_session` 的 `uncapped_live` 是共享代码路径的新增字段（默认 false）；回归面需覆盖同步路径零变化。
+- **共享改造**：`cm_tool_exec` 的 `uncapped_live` 是共享代码路径的新增字段（默认 false）；回归面需覆盖同步路径零变化。
 - 双流交错顺序为**近似**（按管道排空时序），不承诺跨流严格时序——展示时带 `stream` 标记。
 - 行为/文档同步：`docs/命令行契约.md`、OpenAPI、`docs/配置说明.md`（新配置键）、Client 气泡 UI。
 

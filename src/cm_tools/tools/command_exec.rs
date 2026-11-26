@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::cm_tools::subprocess_session::{
+use crate::cm_tool_exec::{
     SessionStopKind, SessionWaitResult, SubprocessWaitCtl, prepare_piped_process_group,
     wait_child_session, wait_child_session_async,
 };

@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::output_util;
-use crate::cm_tool_result::ToolError;
-use crate::cm_tools::subprocess_session::{
+use crate::cm_tool_exec::{
     SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, run_and_capture,
     wait_child_session,
 };
+use crate::cm_tool_result::ToolError;
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -396,7 +396,7 @@ fn python_snippet_spawn(
 /// 会话终止 → `Ok(正文)` 或显式失败（非零退出 / 超时 / 取消）。
 #[allow(clippy::result_large_err)]
 fn python_snippet_outcome(
-    session: &crate::cm_tools::subprocess_session::SessionWaitResult,
+    session: &crate::cm_tool_exec::SessionWaitResult,
     title: &str,
     wall_secs: u64,
     max_output_len: usize,
@@ -652,7 +652,7 @@ mod tests {
         assert!(e.message.contains("墙上时钟"), "{}", e.message);
         std::thread::sleep(std::time::Duration::from_millis(200));
         assert!(
-            !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+            !crate::cm_tool_exec::proc_cmdline_contains(&marker),
             "python 孙进程 sleep 仍在运行（进程组未杀干净）"
         );
         let _ = std::fs::remove_dir_all(dir.path());
@@ -685,7 +685,7 @@ mod tests {
         );
         std::thread::sleep(std::time::Duration::from_millis(200));
         assert!(
-            !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+            !crate::cm_tool_exec::proc_cmdline_contains(&marker),
             "run_and_format 孙进程 sleep 仍在运行（进程组未杀干净）"
         );
     }
