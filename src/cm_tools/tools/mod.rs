@@ -89,8 +89,13 @@ mod text_truncate;
 #[cfg(feature = "schema-tools")]
 mod tool_args_coerce;
 mod tool_args_validate;
-mod tool_json_schema;
-mod tool_param_types;
+// 定义已下沉到 `crate::cm_tool_registry`（#1510 P3-3 第一批）：两者零 `crate::` 依赖，
+// 却被注册表与各工具实现共用。这里保留模块别名，使既有 `super::tool_param_types::…`
+// / `crate::cm_tools::tools::tool_param_types::…` 的 131 处引用零涟漪。
+// **新代码请直接引 `crate::cm_tool_registry::{param_types, json_schema}::…`**：别名只为
+// 兼容既有调用点，不再新增使用者（否则又长成两条路径）。
+pub(crate) use crate::cm_tool_registry::json_schema as tool_json_schema;
+pub(crate) use crate::cm_tool_registry::param_types as tool_param_types;
 mod tool_specs_registry;
 mod tool_summary_args;
 mod weather;

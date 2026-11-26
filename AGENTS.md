@@ -137,7 +137,7 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 
 ### 4.9 工具注册 / Tool registry (`src/cm_tools/`)
 
-- **Args 与 spec 同源**（#1157 已迁移）：`tool_param_types/` 写 Args（`Deserialize + JsonSchema`），
+- **Args 与 spec 同源**（#1157 已迁移）：`cm_tool_registry/param_types/` 写 Args（`Deserialize + JsonSchema`），
   `specs/*.inc.rs` 用 `builtin_tool!` 声明一行，执行体是 `runners.rs` 的 `runner_*` 薄包装。别再手抄 `ToolSpec` 的 `parameters`。
 - **`name` 必须用 `src/cm_tools/tool_names.rs` 的常量（绝不写字面量）并同时加进 `tool_names::ALL`**——
   `all_tool_names_match_specs` 会拦住漏加。同步 `README.md` + `docs/工具说明.md`。
