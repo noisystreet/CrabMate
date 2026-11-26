@@ -171,6 +171,27 @@ impl AppStateConversationRuntime {
         let backing = self.conversation_backing.read().await;
         backing.delete(conversation_id).await;
     }
+
+    /// 只改会话级 `active_*` 意图列（`POST /conversation/state`）。
+    ///
+    /// `Ok(false)` = 会话不存在；`Err` = 存储层失败（锁中毒 / SQLite 报错 / 任务崩）。
+    /// 两者必须分开：把存储失败压成 `false` 会让「磁盘满」对客户端表现为「会话不存在」。
+    ///
+    /// 与 [`Self::save_conversation_messages_if_revision`]（整行覆盖 + CAS）分工：
+    /// 这条**不**碰 `messages_json`、**不** bump `revision`、**不**动 `updated_at_unix`，
+    /// 理由见 [`crate::conversation_store::set_active_state`]。
+    pub(crate) async fn set_conversation_active_state(
+        &self,
+        conversation_id: String,
+        role: Option<&str>,
+        mode: Option<&str>,
+        level: Option<&str>,
+    ) -> Result<bool, String> {
+        let backing = self.conversation_backing.read().await;
+        backing
+            .set_active_state(conversation_id, role, mode, level)
+            .await
+    }
 }
 
 /// 队列 worker 所需的 AppState **消费面**：会话落盘、审批表、`ProcessHandles`
