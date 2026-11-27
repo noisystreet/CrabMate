@@ -76,7 +76,7 @@
 | 现象 | 代码落点 |
 |------|----------|
 | 多数工具：`spawn_blocking` + 外圈 `tokio::time::timeout`，超时只丢 JoinHandle | `execute_run_command.inc.rs`、`dispatch.rs`、`http/tools.rs`、`dynamic_tools` 分发 |
-| `run_command` 用 `Command::output()` 整段结束 | `src/cm_tools/tools/command.rs` `run_impl` |
+| `run_command` 用 `Command::output()` 整段结束 | `src/cm_tools/tools/command/mod.rs` `run_impl` |
 | `cargo_test` / `pytest_run` / go / npm 等各自 `Command` + `run_and_format*` | `cargo_tools.rs`、`python_tools.rs`、… |
 | workflow 超时注明孤儿进程 | `src/cm_workflow/execute/node.rs` |
 | SSE 断开 / 取消只在**工具之间**检查 | `exec_serial.rs`、`abort_tool_batch_if_sse_closed`；`run_command` 看不到 `RunLoopIo.cancel` |

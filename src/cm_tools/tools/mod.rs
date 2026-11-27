@@ -11,26 +11,12 @@ mod code_metrics;
 mod code_nav;
 mod code_nav_dispatch;
 mod code_nav_paths;
+// `run_command` 域（#1521 批次 1）：装配 / 执行 / 结果三段已收进 `command/` 子目录，
+// 这里只保留一条 glob 承接 —— `crate::cm_tools::tools::{CommandSpec, run_async, …}` 等
+// 既有路径全部不变，`command/mod.rs` 用显式 `pub use` 决定暴露哪些符号。
 mod command;
-mod command_error;
-mod command_exec;
-mod command_outcome;
 pub(crate) use command::parse_run_command_payload_lenient;
-pub use command::{
-    CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, UnsafeArgScan,
-    allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
-    argv_needs_shell_expansion, dash_c_script_body, is_shell_dash_c_invocation,
-    join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
-    peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run_async,
-    scan_run_command_unsafe_args_spec,
-};
-pub use command_error::RunCommandError;
-pub use command_outcome::CommandDigest;
-#[cfg(test)]
-pub use command_outcome::ExitStatusKind;
-mod command_line_prepare;
-pub use command_line_prepare::split_command_prefix_if_embedded;
+pub use command::*;
 mod contract_map;
 mod date_calc;
 mod diagnostics;

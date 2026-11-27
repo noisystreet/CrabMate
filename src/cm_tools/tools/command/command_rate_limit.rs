@@ -1,5 +1,5 @@
 //! `run_command` 全局速率限制（每秒最多 [`MAX_COMMANDS_PER_SEC`] 条）。
-//! 作为 [`super`]（`command`）的子模块，经 `#[path]` 挂载。
+//! 作为 [`super`]（`command`）的真子模块（#1521 批次 1 起不再经 `#[path]` 挂载）。
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};

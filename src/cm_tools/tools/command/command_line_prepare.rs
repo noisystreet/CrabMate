@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use super::command::is_posix_shell_name;
+use super::is_posix_shell_name;
 
 /// [`crate::cm_tools::tools::command::RunCommandError`] 在剥离 `cd` 前缀阶段的子集，避免 `command` ↔ 本模块循环依赖。
 #[derive(Debug)]

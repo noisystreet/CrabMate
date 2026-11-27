@@ -1,9 +1,9 @@
 //! `run_command` 调用准备：解析 argv、白名单/工作区可执行、参数安全。
-//! 作为 [`super`]（`command`）的子模块，经 `#[path]` 挂载。
+//! 作为 [`super`]（`command`）的真子模块（#1521 批次 1 起不再经 `#[path]` 挂载）。
 
 use std::path::{Path, PathBuf};
 
-use super::super::command_line_prepare::{
+use super::command_line_prepare::{
     arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
     parse_cd_prefix, peel_workspace_cd_prefix, resolve_cd_prefix_dir,
     split_command_prefix_if_embedded,

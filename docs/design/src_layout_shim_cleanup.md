@@ -45,7 +45,7 @@
 | `cm_tools/tools/mod/`、`src/lib/` | 目录名仅为绕开 `mod.rs` / `lib.rs` 命名冲突而存在 | ✅ 已归位 |
 | `agent/agent_turn/` 与 `cm_agent/agent_turn/` | 一个逻辑模块在两个顶层目录各叫一次 `agent_turn` | ✅ 已合并（P1a） |
 | `crate::tools` | ~~三级别名 `lib_server → cm_internal → cm_tools::tools`~~ → 三级已自然消失，别名已删（#1522） | ✅ |
-| `cm_tools/tools/` | 66 个平铺 `.rs` + 763 行 `mod.rs`（63 条 `mod` 声明） | ⬜ P3 |
+| `cm_tools/tools/` | 按域分组进行中：平铺 `.rs` 64→**55**、`mod.rs` 892→**878** 行 / 62→**58** 条 `mod`；`command/` 域已完成（#1521 批次 1） | 🚧 P3 |
 | ~~42 个 `.inc.rs`（5521 行）~~ → **代码分片已清零** | 原为绕开 `fn-nloc-ratchet` 的「假模块」。现剩 **20 个 `.inc.rs` / 696 行，全部是 `specs/` 的数据字面量**（`static SPECS_X: &[ToolSpec] = &include!("x.inc.rs")`，表达式位置，不制造作用域边界）；最后两处代码分片（`tool_summary_args/fragment_*.rs` 6 片、`text_encoding/*.inc.rs` 1 片）已改为真子模块 / 内联 | ✅ |
 | `#[path = "loop/mod.rs"] mod turn_loop;` | `loop` 是 Rust 关键字，被迫加一层间接 | ✅ 已消除（P1a，目录改名 `turn_loop/`） |
 
@@ -178,5 +178,13 @@ pre-commit run --all-files                   # 全绿（含 lizard / fn-param / 
 - **P2** ✅：`cm_internal` 已由 S4-P4 整包删除；它残留的「`crate::tools` 收敛」在 #1522 收尾——
   6 处 `use` + 13 处内联路径直连 `crate::cm_tools::tools`，`src/lib.rs` 的 `pub(crate) use … tools` 已删，
   并由 `scripts/tools-alias-guard.sh` 防回退。删的是 `pub(crate) use` 项，未增删顶层 `mod`，故架构文档无需同步。
-- **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、
-  语义自洽）保留，其余转真子模块。
+- **P3** 🚧：`cm_tools/tools/` 平铺文件按域分组。**批次 1 已完成**（#1521）：`command/` 域收纳
+  `run_command` 的装配 / 执行 / 结果三段共 9 个文件（约 4000 行，纯搬迁，行为零变化），并消掉
+  4 处 `#[path]` 绕名；`tools/mod.rs` 892 → 878 行、`mod` 声明 62 → 58。
+  **机制**（后续 3 批照此复用）：域目录的 `mod.rs` 用**显式 `pub use`** 决定对外暴露哪些符号，
+  父 `tools/mod.rs` 只写 `mod <域>;` + `pub use <域>::*;` 承接。glob 在这里只负责「把域内已经
+  定好的公开面提上一层」，新符号仍必须在域 `mod.rs` 里显式挑起，所以它**不构成隐式公开**，
+  也不同于 P1a 消掉的「多份实现拼进同一作用域」那种 glob。批次 2–4（`meta/` / `codemap/` /
+  `text/`）见 #1521。
+- 剩余 20 个 `.inc.rs` 全在 `tool_specs_registry/specs/`（表驱动、语义自洽），属数据字面量，
+  **不清理**；代码分片已由 #1520 收掉最后 7 处。
