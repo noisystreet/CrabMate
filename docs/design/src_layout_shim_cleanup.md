@@ -46,7 +46,7 @@
 | `agent/agent_turn/` 与 `cm_agent/agent_turn/` | 一个逻辑模块在两个顶层目录各叫一次 `agent_turn` | ✅ 已合并（P1a） |
 | `crate::tools` | 解析链 `lib_server → cm_internal → cm_tools::tools`，三级别名 | ⬜ P2 |
 | `cm_tools/tools/` | 66 个平铺 `.rs` + 763 行 `mod.rs`（63 条 `mod` 声明） | ⬜ P3 |
-| 42 个 `.inc.rs`（5521 行） | `include!` 文本分片，用于绕开 `fn-nloc-ratchet`，属「假模块」 | ⬜ P3 |
+| ~~42 个 `.inc.rs`（5521 行）~~ → **代码分片已清零** | 原为绕开 `fn-nloc-ratchet` 的「假模块」。现剩 **20 个 `.inc.rs` / 696 行，全部是 `specs/` 的数据字面量**（`static SPECS_X: &[ToolSpec] = &include!("x.inc.rs")`，表达式位置，不制造作用域边界）；最后两处代码分片（`tool_summary_args/fragment_*.rs` 6 片、`text_encoding/*.inc.rs` 1 片）已改为真子模块 / 内联 | ✅ |
 | `#[path = "loop/mod.rs"] mod turn_loop;` | `loop` 是 Rust 关键字，被迫加一层间接 | ✅ 已消除（P1a，目录改名 `turn_loop/`） |
 
 ---

@@ -1,3 +1,11 @@
+// #1510 清理：这三类 helper 原先与其它 `fragment_*.rs` 同处一个作用域（`include!`），
+// 跨片引用是裸名；子模块化后必须显式声明依赖。
+use super::core::{
+    command_display_tokens, run_command_arg_display_tokens, terminal_session_arg_display_token,
+};
+use super::gh_archive::gh_repo_suffix;
+use super::{ToolArgsSummary, arg_bool, arg_str, arg_str_raw, arg_str_vec, arg_u64};
+
 // ── 摘要与 Args 同源（#1157 落地后的现状形态，不再是「迁移目标」）──────────
 //
 // 每条 `impl` 紧贴对应 Args 的 schema 定义（`tool_param_types`）阅读：字段名直接取自
@@ -7,7 +15,7 @@
 // 输出文本必须与迁移前逐字一致——`fixtures/tool_registry_golden.json` 的
 // `dynamic_summary_samples` 钉住了这一点。
 
-impl ToolArgsSummary for super::tool_param_types::ReadFileArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ReadFileArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         let suffix = match arg_u64(args, "anchor_line") {
@@ -30,11 +38,7 @@ impl ToolArgsSummary for super::tool_param_types::ReadFileArgs {
 }
 
 /// `read_file` 的行区间后缀；与迁移前 `ReadFileSummaryArgs` 的分支逐字一致。
-fn read_file_range_suffix(
-    start: Option<u64>,
-    end: Option<u64>,
-    max_lines: Option<u64>,
-) -> String {
+fn read_file_range_suffix(start: Option<u64>, end: Option<u64>, max_lines: Option<u64>) -> String {
     match (start, end, max_lines) {
         (Some(s), Some(e), _) => {
             let (lo, hi) = if e < s { (e, s) } else { (s, e) };
@@ -48,7 +52,7 @@ fn read_file_range_suffix(
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::FileWriteArgs {
+impl ToolArgsSummary for super::super::tool_param_types::FileWriteArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         Some(format!("create file: {path}"))
@@ -57,7 +61,7 @@ impl ToolArgsSummary for super::tool_param_types::FileWriteArgs {
 
 // ── P2 批：代码度量 / 后台任务的 5 个小摘要 ────────────────────────────────
 
-impl ToolArgsSummary for super::tool_param_types::CodeStatsArgs {
+impl ToolArgsSummary for super::super::tool_param_types::CodeStatsArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         // 旧结构体是 `Option<String>` + `unwrap_or(".")`：缺失回落 `.`，显式空白串则 trim
         // 成空串而**不**回落——用 `arg_str_raw` 保持这条边界，`arg_str` 会把它当「没给」。
@@ -66,7 +70,7 @@ impl ToolArgsSummary for super::tool_param_types::CodeStatsArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::DependencyGraphArgs {
+impl ToolArgsSummary for super::super::tool_param_types::DependencyGraphArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let format = arg_str_raw(args, "format").unwrap_or("mermaid");
         let kind = arg_str_raw(args, "kind").unwrap_or("auto");
@@ -74,7 +78,7 @@ impl ToolArgsSummary for super::tool_param_types::DependencyGraphArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::CoverageReportArgs {
+impl ToolArgsSummary for super::super::tool_param_types::CoverageReportArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str_raw(args, "path").unwrap_or("").trim();
         if path.is_empty() {
@@ -85,7 +89,7 @@ impl ToolArgsSummary for super::tool_param_types::CoverageReportArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::DeleteDirArgs {
+impl ToolArgsSummary for super::super::tool_param_types::DeleteDirArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         Some(if arg_bool(args, "recursive").unwrap_or(false) {
@@ -96,7 +100,7 @@ impl ToolArgsSummary for super::tool_param_types::DeleteDirArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::BackgroundJobCancelArgs {
+impl ToolArgsSummary for super::super::tool_param_types::BackgroundJobCancelArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         match arg_str(args, "tool_job_id") {
             Some(id) => Some(format!("cancel background job: {id}")),
@@ -104,7 +108,6 @@ impl ToolArgsSummary for super::tool_param_types::BackgroundJobCancelArgs {
         }
     }
 }
-
 
 /// 摘要里的「前 N 字符 + …」截断。原先 `gh issue create` / `gh api` / `gh pr` /
 /// `search_replace` 各写一遍同样的逻辑，迁移时收敛到这里。
@@ -115,25 +118,25 @@ fn truncate_chars(s: &str, max: usize) -> String {
         s.to_string()
     }
 }
-impl ToolArgsSummary for super::tool_param_types::ReadBinaryMetaArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ReadBinaryMetaArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("binary metadata: {}", arg_str(args, "path")?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::AppendFileArgs {
+impl ToolArgsSummary for super::super::tool_param_types::AppendFileArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("append to file: {}", arg_str(args, "path")?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::CreateDirArgs {
+impl ToolArgsSummary for super::super::tool_param_types::CreateDirArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("create directory: {}", arg_str(args, "path")?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::DeleteFilesArgs {
+impl ToolArgsSummary for super::super::tool_param_types::DeleteFilesArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         // 旧结构体是 `paths: Vec<String>`：字段缺失或不是数组都等于「没给」。
         let paths = args.get("paths")?.as_array()?;
@@ -141,7 +144,11 @@ impl ToolArgsSummary for super::tool_param_types::DeleteFilesArgs {
         if total == 0 {
             return None;
         }
-        let shown: Vec<&str> = paths.iter().take(3).filter_map(serde_json::Value::as_str).collect();
+        let shown: Vec<&str> = paths
+            .iter()
+            .take(3)
+            .filter_map(serde_json::Value::as_str)
+            .collect();
         let mut line = format!("delete files: {}", shown.join(", "));
         if total > 3 {
             line.push_str(&format!(" (+{} more)", total - 3));
@@ -150,7 +157,7 @@ impl ToolArgsSummary for super::tool_param_types::DeleteFilesArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::GhReleaseCreateArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GhReleaseCreateArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let tag = arg_str(args, "tag")?;
         let draft = arg_bool(args, "draft") == Some(true);
@@ -161,7 +168,7 @@ impl ToolArgsSummary for super::tool_param_types::GhReleaseCreateArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::GhIssueCreateArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GhIssueCreateArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let title = arg_str(args, "title")?;
         Some(format!(
@@ -172,7 +179,7 @@ impl ToolArgsSummary for super::tool_param_types::GhIssueCreateArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::GhApiArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GhApiArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         // `method` 走 `arg_str_raw`：旧实现是 `unwrap_or("GET").trim()`，显式空白串会得到
@@ -185,10 +192,9 @@ impl ToolArgsSummary for super::tool_param_types::GhApiArgs {
     }
 }
 
-
 // ── P2 批：后台任务族（含 `AsyncOnly` 的 run_command / terminal_session）─────────
 
-impl ToolArgsSummary for super::tool_param_types::RunCommandArgs {
+impl ToolArgsSummary for super::super::tool_param_types::RunCommandArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         // `command` 既可能是字符串也可能是数组（模型两种都发），所以不走 `arg_str`，
         // 直接看原始 JSON；数组会被拼成一整条命令行。
@@ -204,7 +210,7 @@ impl ToolArgsSummary for super::tool_param_types::RunCommandArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::TerminalSessionArgs {
+impl ToolArgsSummary for super::super::tool_param_types::TerminalSessionArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action_raw = arg_str_raw(args, "action").unwrap_or("").trim();
         let action = action_raw.to_ascii_lowercase();
@@ -254,7 +260,7 @@ impl ToolArgsSummary for super::tool_param_types::TerminalSessionArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::BackgroundJobArgs {
+impl ToolArgsSummary for super::super::tool_param_types::BackgroundJobArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action = arg_str_raw(args, "action").unwrap_or("").trim();
         let id = args
@@ -287,7 +293,7 @@ impl ToolArgsSummary for super::tool_param_types::BackgroundJobArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::BackgroundJobWaitArgs {
+impl ToolArgsSummary for super::super::tool_param_types::BackgroundJobWaitArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let id = args
             .get("tool_job_id")
@@ -315,10 +321,9 @@ impl ToolArgsSummary for super::tool_param_types::BackgroundJobWaitArgs {
     }
 }
 
-
 // ── P2 批：检索 / 结构化 / 受控 HTTP ────────────────────────────────────────
 
-impl ToolArgsSummary for super::tool_param_types::SearchInFilesEnhancedArgs {
+impl ToolArgsSummary for super::super::tool_param_types::SearchInFilesEnhancedArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let pat = truncate_chars(arg_str(args, "pattern")?, 40);
         Some(match arg_str(args, "path") {
@@ -328,7 +333,7 @@ impl ToolArgsSummary for super::tool_param_types::SearchInFilesEnhancedArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::SearchReplaceArgs {
+impl ToolArgsSummary for super::super::tool_param_types::SearchReplaceArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         let short = truncate_chars(arg_str(args, "search")?, 30);
@@ -340,7 +345,9 @@ impl ToolArgsSummary for super::tool_param_types::SearchReplaceArgs {
         ) {
             (None, false) => "",
             (Some(0), _) | (None, true) => " (all)",
-            (Some(n), _) => return Some(format!("search_replace (first {n}): {path} / \"{short}\"")),
+            (Some(n), _) => {
+                return Some(format!("search_replace (first {n}): {path} / \"{short}\""));
+            }
         };
         let preview = arg_bool(args, "dry_run").unwrap_or(true);
         Some(format!(
@@ -353,7 +360,7 @@ impl ToolArgsSummary for super::tool_param_types::SearchReplaceArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::StructuredArgs {
+impl ToolArgsSummary for super::super::tool_param_types::StructuredArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path");
         match arg_str_raw(args, "action").unwrap_or("").trim() {
@@ -396,7 +403,9 @@ fn html_text_suffix(args: &serde_json::Value) -> &'static str {
 impl ToolArgsSummary for crate::cm_tools::tools::http_fetch::HttpFetchArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let url = arg_str(args, "url")?;
-        let method = arg_str(args, "method").unwrap_or("GET").to_ascii_uppercase();
+        let method = arg_str(args, "method")
+            .unwrap_or("GET")
+            .to_ascii_uppercase();
         Some(format!("HTTP {method} {url}{}", html_text_suffix(args)))
     }
 }
@@ -436,34 +445,34 @@ fn from_to_line(args: &serde_json::Value, verb: &str) -> Option<String> {
     Some(format!("{verb}: {from} → {to}"))
 }
 
-pub(super) fn summary_copy_file(args: &serde_json::Value) -> Option<String> {
+pub(crate) fn summary_copy_file(args: &serde_json::Value) -> Option<String> {
     from_to_line(args, "copy file")
 }
 
-pub(super) fn summary_move_file(args: &serde_json::Value) -> Option<String> {
+pub(crate) fn summary_move_file(args: &serde_json::Value) -> Option<String> {
     from_to_line(args, "move file")
 }
 
-impl ToolArgsSummary for super::tool_param_types::ReadDirEnhancedArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ReadDirEnhancedArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("read dir: {}", path_or_dot(args)?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::GlobFilesArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GlobFilesArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let pattern = arg_str(args, "pattern")?;
         Some(format!("glob {pattern} @ {}", path_or_dot(args)?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::ListTreeArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ListTreeArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("list tree: {}", path_or_dot(args)?))
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::MarkdownCheckLinksArgs {
+impl ToolArgsSummary for super::super::tool_param_types::MarkdownCheckLinksArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let joined = arg_str_vec(args, "roots")?
             .into_iter()
@@ -494,7 +503,7 @@ mod args_summary_tests {
     fn read_file_summary_tolerates_unknown_keys() {
         let v = json!({"path": "src/lib.rs", "bogus": 1, "anchor_line": 7});
         assert_eq!(
-            super::super::tool_param_types::ReadFileArgs::summary_line(&v).as_deref(),
+            super::super::super::tool_param_types::ReadFileArgs::summary_line(&v).as_deref(),
             Some("read file: src/lib.rs [@L7 ±120]")
         );
     }
@@ -503,7 +512,7 @@ mod args_summary_tests {
     fn read_file_summary_keeps_range_and_encoding_forms() {
         let v = json!({"path": "a.rs", "start_line": 9, "end_line": 3, "encoding": " gbk "});
         assert_eq!(
-            super::super::tool_param_types::ReadFileArgs::summary_line(&v).as_deref(),
+            super::super::super::tool_param_types::ReadFileArgs::summary_line(&v).as_deref(),
             Some("read file: a.rs [3-9] enc=gbk")
         );
     }
@@ -512,11 +521,13 @@ mod args_summary_tests {
     #[test]
     fn create_file_summary_requires_path() {
         assert!(
-            super::super::tool_param_types::FileWriteArgs::summary_line(&json!({"content": ""}))
-                .is_none()
+            super::super::super::tool_param_types::FileWriteArgs::summary_line(
+                &json!({"content": ""})
+            )
+            .is_none()
         );
         assert_eq!(
-            super::super::tool_param_types::FileWriteArgs::summary_line(
+            super::super::super::tool_param_types::FileWriteArgs::summary_line(
                 &json!({"path": " notes/a.md ", "content": ""})
             )
             .as_deref(),
@@ -538,7 +549,10 @@ mod background_family_summary_tests {
     #[test]
     fn run_command_summary_joins_command_and_string_args() {
         let v = json!({ "command": "cargo", "args": ["test", "--all"] });
-        assert_eq!(RunCommandArgs::summary_line(&v).expect("summary"), "cargo test --all");
+        assert_eq!(
+            RunCommandArgs::summary_line(&v).expect("summary"),
+            "cargo test --all"
+        );
     }
 
     #[test]
@@ -611,7 +625,8 @@ mod field_family_summary_tests {
             SearchReplaceArgs::summary_line(&all).expect("summary"),
             "search_replace (all): a.rs / \"foo\""
         );
-        let zero = json!({ "path": "a.rs", "search": "foo", "dry_run": false, "max_replacements": 0 });
+        let zero =
+            json!({ "path": "a.rs", "search": "foo", "dry_run": false, "max_replacements": 0 });
         assert_eq!(
             SearchReplaceArgs::summary_line(&zero).expect("summary"),
             "search_replace (all): a.rs / \"foo\""
@@ -718,7 +733,8 @@ mod path_family_summary_tests {
     fn glob_requires_pattern_and_defaults_root_to_dot() {
         assert!(GlobFilesArgs::summary_line(&json!({ "path": "src" })).is_none());
         assert_eq!(
-            GlobFilesArgs::summary_line(&json!({ "pattern": " **/*.rs ", "path": "src" })).as_deref(),
+            GlobFilesArgs::summary_line(&json!({ "pattern": " **/*.rs ", "path": "src" }))
+                .as_deref(),
             Some("glob **/*.rs @ src")
         );
         assert_eq!(

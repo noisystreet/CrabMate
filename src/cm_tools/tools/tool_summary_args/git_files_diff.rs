@@ -1,3 +1,5 @@
+use super::{ToolArgsSummary, arg_opt_bool, arg_opt_str, arg_str_default};
+
 // ── git（action 选择器） ──────────────────────────────────────
 
 /// `git` 的摘要行：一个 `impl` 覆盖全部 action（原 10 个 `git_*` 工具里 `git_diff` 用动态文案、
@@ -5,7 +7,7 @@
 ///
 /// 旧 `GitSummaryArgs` 的每个字段都带 `#[serde(default)]`：缺键宽容，类型不符整体失败
 /// （= 没有摘要）。所以七个字段**一律先取值**，不因为当前 action 用不到就跳过校验。
-impl ToolArgsSummary for super::tool_param_types::GitArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GitArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action = arg_str_default(args, "action")?;
         let mode = arg_opt_str(args, "mode")?;
@@ -99,7 +101,8 @@ mod git_summary_tests {
             Some("git diff (working)")
         );
         assert_eq!(
-            GitArgs::summary_line(&json!({"action": "diff", "stat": true, "base": "main"})).as_deref(),
+            GitArgs::summary_line(&json!({"action": "diff", "stat": true, "base": "main"}))
+                .as_deref(),
             Some("git diff --stat (main...HEAD)")
         );
         // `--stat` 优先于 `--name-only`（旧实现是 if / else if）。

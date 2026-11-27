@@ -1,8 +1,10 @@
+use super::{ToolArgsSummary, arg_str_raw};
+
 // ── web_search ───────────────────────────────────────────────
 
 /// 旧的 `WebSearchSummaryArgs` 里 `query: String` 是**必填**（没有 `#[serde(default)]`）：
 /// 缺键 / `null` / 类型不符 ⇒ 整条摘要消失；空白串能反序列化成功，但 trim 后为空 ⇒ 也不出摘要。
-impl ToolArgsSummary for super::tool_param_types::WebSearchArgs {
+impl ToolArgsSummary for super::super::tool_param_types::WebSearchArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let q = arg_str_raw(args, "query")?.trim();
         (!q.is_empty()).then(|| format!("web search: {q}"))

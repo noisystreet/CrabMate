@@ -1,8 +1,13 @@
+use super::{
+    ToolArgsSummary, arg_bool_default, arg_opt_bool, arg_opt_str, arg_opt_u64, arg_str_default,
+    arg_str_raw,
+};
+
 // ── codebase_semantic_search ──────────────────────────────────
 
 /// `codebase_semantic_search`：旧结构体五个字段全带 `#[serde(default)]`（缺键宽容、类型不符
 /// 整体失败）。先把五个字段取完再分支，别因为当前走 query 分支就跳过 `incremental` 的校验。
-impl ToolArgsSummary for super::tool_param_types::CodebaseSemanticSearchArgs {
+impl ToolArgsSummary for super::super::tool_param_types::CodebaseSemanticSearchArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let rebuild_index = arg_bool_default(args, "rebuild_index")?;
         let path = arg_opt_str(args, "path")?;
@@ -46,7 +51,7 @@ fn json_arg_display_token(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
+pub(super) fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
     match args {
         serde_json::Value::Null => Vec::new(),
         serde_json::Value::String(s) => {
@@ -57,14 +62,16 @@ fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
                 vec![terminal_session_arg_display_token(t)]
             }
         }
-        serde_json::Value::Array(items) => items.iter().filter_map(json_arg_display_token).collect(),
+        serde_json::Value::Array(items) => {
+            items.iter().filter_map(json_arg_display_token).collect()
+        }
         other => vec![terminal_session_arg_display_token(&other.to_string())],
     }
 }
 
 /// `command` 的展示 token：数组即一整条命令行，字符串原样保留（它本身就是要显示的命令，
 /// 加引号反而奇怪）。参数位置另由 [`run_command_arg_display_tokens`] 逐 token 处理。
-fn command_display_tokens(command: &serde_json::Value) -> Vec<String> {
+pub(super) fn command_display_tokens(command: &serde_json::Value) -> Vec<String> {
     match command {
         serde_json::Value::String(s) => {
             let t = s.trim();
@@ -74,13 +81,15 @@ fn command_display_tokens(command: &serde_json::Value) -> Vec<String> {
                 vec![t.to_string()]
             }
         }
-        serde_json::Value::Array(items) => items.iter().filter_map(json_arg_display_token).collect(),
+        serde_json::Value::Array(items) => {
+            items.iter().filter_map(json_arg_display_token).collect()
+        }
         serde_json::Value::Null => Vec::new(),
         other => vec![terminal_session_arg_display_token(&other.to_string())],
     }
 }
 
-fn terminal_session_arg_display_token(arg: &str) -> String {
+pub(super) fn terminal_session_arg_display_token(arg: &str) -> String {
     let arg = arg.trim();
     if arg.is_empty() {
         return "''".to_string();
@@ -110,7 +119,7 @@ fn terminal_session_arg_display_token(arg: &str) -> String {
 ///
 /// 旧结构体里 `action` 有 `#[serde(default)]`、`path` 是**必填**、`line` / `query` 是
 /// `Option`，但四个字段都会先反序列化——与当前 action 无关的字段类型不符同样没有摘要。
-impl ToolArgsSummary for super::tool_param_types::RustAnalyzerArgs {
+impl ToolArgsSummary for super::super::tool_param_types::RustAnalyzerArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action = arg_str_default(args, "action")?;
         let path = arg_str_raw(args, "path")?;
@@ -162,7 +171,7 @@ fn rust_analyzer_label(action: &str) -> &str {
 
 /// 旧的 `PythonSnippetRunSummaryArgs` 只有 `use_uv: bool` + `#[serde(default)]`：
 /// 缺键 ⇒ false；`null` / 类型不符 ⇒ 整条摘要消失。
-impl ToolArgsSummary for super::tool_param_types::PythonSnippetRunArgs {
+impl ToolArgsSummary for super::super::tool_param_types::PythonSnippetRunArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let use_uv = arg_bool_default(args, "use_uv")?;
         Some(if use_uv {
@@ -218,7 +227,10 @@ mod rust_analyzer_summary_tests {
     #[test]
     fn rust_analyzer_summary_omits_when_uninformative() {
         // 缺 query 的 workspace_symbol、空 path、缺 path 都不生成摘要行。
-        assert_eq!(line(json!({"action":"workspace_symbol","path":"a.rs"})), None);
+        assert_eq!(
+            line(json!({"action":"workspace_symbol","path":"a.rs"})),
+            None
+        );
         assert_eq!(line(json!({"action":"hover","path":"  "})), None);
         assert_eq!(line(json!({"action":"hover"})), None);
     }
@@ -278,7 +290,10 @@ mod codebase_semantic_search_summary_tests {
     #[test]
     fn empty_query_falls_back_to_generic_line() {
         assert_eq!(line(json!({})).as_deref(), Some("semantic code search"));
-        assert_eq!(line(json!({"query": "   "})).as_deref(), Some("semantic code search"));
+        assert_eq!(
+            line(json!({"query": "   "})).as_deref(),
+            Some("semantic code search")
+        );
     }
 
     /// 与当前分支无关的字段类型不符同样不给摘要。
