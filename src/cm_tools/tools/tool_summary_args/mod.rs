@@ -27,6 +27,18 @@ pub(super) fn arg_str<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a 
         .filter(|s| !s.is_empty())
 }
 
+/// 按一组同义键名依次取字符串参数（主名在前，别名在后）。
+///
+/// 用于「入参键名有主名 + 兼容别名」的工具：`args_summary` 读的是**原始 JSON**，
+/// 只认主名会让旧名调用静默丢掉整行摘要（Chat 面板少一行，且没有错误提示）。
+pub(super) fn arg_str_any<'a>(
+    args: &'a serde_json::Value,
+    key: &str,
+    aliases: &[&str],
+) -> Option<&'a str> {
+    arg_str(args, key).or_else(|| aliases.iter().find_map(|alias| arg_str(args, alias)))
+}
+
 /// 取非负整数参数：缺失或类型不符算「没给」。
 pub(super) fn arg_u64(args: &serde_json::Value, key: &str) -> Option<u64> {
     args.get(key).and_then(serde_json::Value::as_u64)

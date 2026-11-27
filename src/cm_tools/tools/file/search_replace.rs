@@ -1,8 +1,10 @@
 //! `search_replace`：单文件搜索替换（由 `mutate.rs` 拆出，受单文件 920 行上限所迫）。
 //!
-//! 三条不变量：
-//! - **默认要求 `search` 唯一匹配**：锚点重复时服务端无法知道要改哪一处，静默全改的代价
+//! 四条不变量：
+//! - **默认要求 `old_text` 唯一匹配**：锚点重复时服务端无法知道要改哪一处，静默全改的代价
 //!   只有在事后才被发现，因此默认拒写并列出命中位置；
+//! - **`new_text` 必填、`old_text` 零命中时反向探一次**：前者堵住「漏传新文本 = 静默删除」，
+//!   后者把「两个值写反」从一句看不出方向的「未找到匹配」变成可直接照做的对调建议；
 //! - **替换在原文上左到右不重叠推进**（`str::replacen` / `Regex::replacen`），「前 N 处」
 //!   不会命中上一轮刚插入的文本；
 //! - **写盘走统一提交通道**（tmp → 继承元数据 → `fsync` → revision 校验 → `rename`），
@@ -17,7 +19,10 @@ use super::write_precheck;
 use crate::cm_names as tool_names;
 use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
-use crate::cm_tools::tools::tool_param_types::SearchReplaceArgs;
+use crate::cm_tools::tools::tool_param_types::{
+    SEARCH_REPLACE_NEW_TEXT_ALIASES, SEARCH_REPLACE_NEW_TEXT_KEY, SEARCH_REPLACE_OLD_TEXT_ALIASES,
+    SEARCH_REPLACE_OLD_TEXT_KEY, SearchReplaceArgs,
+};
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
     format_tool_output_with_write_diff_preview,
@@ -33,7 +38,7 @@ use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 /// 位置，由调用方显式选择「前 N 处」或「全部」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReplaceScope {
-    /// 未显式声明：`search` 必须只匹配 1 处。
+    /// 未显式声明：`old_text` 必须只匹配 1 处。
     Unique,
     /// 只替换前 N 处（`N >= 1`）。
     First(usize),
@@ -67,17 +72,17 @@ fn resolve_replace_scope(args: &SearchReplaceArgs) -> Result<ReplaceScope, Strin
 /// 先数一遍再编译一遍是白花钱。
 fn search_replace_spans(
     content: &str,
-    search: &str,
+    old_text: &str,
     is_regex: bool,
 ) -> Result<(Vec<Range<usize>>, Option<Regex>), String> {
     if !is_regex {
         let spans = content
-            .match_indices(search)
+            .match_indices(old_text)
             .map(|(start, m)| start..start + m.len())
             .collect();
         return Ok((spans, None));
     }
-    let re = RegexBuilder::new(search)
+    let re = RegexBuilder::new(old_text)
         .build()
         .map_err(|e| format!("正则表达式无效：{}", e))?;
     let spans = re.find_iter(content).map(|m| m.start()..m.end()).collect();
@@ -92,8 +97,8 @@ fn search_replace_spans(
 /// 是二次复杂度。`str::replacen` / `Regex::replacen` 都按原文左到右不重叠推进，语义正确且线性。
 fn apply_search_replace_inner(
     content: &str,
-    search: &str,
-    replace: &str,
+    old_text: &str,
+    new_text: &str,
     re: Option<&Regex>,
     total: usize,
     limit: Option<usize>,
@@ -103,10 +108,10 @@ fn apply_search_replace_inner(
         Some(n) => total.min(n),
     };
     let new = match (re, limit) {
-        (Some(re), None) => re.replace_all(content, replace).to_string(),
-        (Some(re), Some(n)) => re.replacen(content, n, replace).to_string(),
-        (None, None) => content.replace(search, replace),
-        (None, Some(n)) => content.replacen(search, replace, n),
+        (Some(re), None) => re.replace_all(content, new_text).to_string(),
+        (Some(re), Some(n)) => re.replacen(content, n, new_text).to_string(),
+        (None, None) => content.replace(old_text, new_text),
+        (None, Some(n)) => content.replacen(old_text, new_text, n),
     };
     (new, replaced)
 }
@@ -144,14 +149,14 @@ fn line_preview(line: &str, max_chars: usize) -> String {
     format!("{head}…")
 }
 
-/// `search` 多处命中且调用方未声明范围时的拒写正文。
+/// `old_text` 多处命中且调用方未声明范围时的拒写正文。
 ///
 /// 拒绝而不是「替换全部」是这里唯一诚实的选项：锚点重复时服务端无法知道要改哪一处，
 /// 静默全改的代价由调用方（往往是模型）在事后才发现。列出位置 + 两条改法让自纠错成为一步。
 fn ambiguous_match_message(display: &str, content: &str, spans: &[Range<usize>]) -> String {
     let total = spans.len();
     let mut msg = format!(
-        "错误：search 在 {display} 匹配 {total} 处，无法唯一确定要替换哪一处，本次未写入任何内容（{}）。",
+        "错误：old_text 在 {display} 匹配 {total} 处，无法唯一确定要替换哪一处，本次未写入任何内容（{}）。",
         write_precheck::NOT_WRITTEN_HINT
     );
     msg.push_str("\n命中位置：");
@@ -165,7 +170,7 @@ fn ambiguous_match_message(display: &str, content: &str, spans: &[Range<usize>])
     }
     msg.push_str(
         "\n改法（二选一）：\n\
-         1) 补足上下文让 search 唯一——把锚点连同上下 1~2 行一起写进 search（推荐）；\n\
+         1) 补足上下文让 old_text 唯一——把锚点连同上下 1~2 行一起写进 old_text（推荐）；\n\
          2) 显式声明替换范围：max_replacements=N 只改前 N 处，或 replace_all=true / max_replacements=0 全部替换。",
     );
     msg
@@ -185,21 +190,33 @@ struct SearchReplaceOutcome<'a> {
     total: usize,
     /// 本次实际替换处数。
     replaced: usize,
-    search: &'a str,
-    replace: &'a str,
+    /// 文件里已有的原文（`old_text`）。
+    old_text: &'a str,
+    /// 替换进去的新文本（`new_text`；空串表示删除）。
+    new_text: &'a str,
 }
 
 fn search_replace_success_body(o: &SearchReplaceOutcome<'_>) -> String {
     let head = format!(
         "已替换 {} 处匹配（\"{}\" → \"{}\"）：{}",
-        o.replaced, o.search, o.replace, o.display
+        o.replaced, o.old_text, o.new_text, o.display
     );
+    // 删除是最容易被「漏传 new_text」误触发的破坏性结果：正文若不显眼，读起来与普通替换
+    // 一模一样，只有事后翻文件才发现内容没了。所以放在所有分支之前。
+    if o.new_text.is_empty() {
+        return format!(
+            "⚠ 删除内容：new_text 为空，本次删除了 {} 处匹配\n{}\n  命中行：{}",
+            o.replaced,
+            head,
+            hit_lines(o.content, &o.spans[..o.replaced])
+        );
+    }
     if o.replaced <= 1 {
         return head;
     }
     // 多处替换必须在首行就刺眼：旧正文只写「已替换 N 处」，模型据此继续编辑时并不知道自己改多了。
     format!(
-        "⚠ 多处替换：search 共命中 {} 处，本次改了 {} 处\n{}\n  命中行：{}",
+        "⚠ 多处替换：old_text 共命中 {} 处，本次改了 {} 处\n{}\n  命中行：{}",
         o.total,
         o.replaced,
         head,
@@ -212,6 +229,12 @@ fn search_replace_dry_run_preview(o: &SearchReplaceOutcome<'_>, new_content: &st
         "预览（dry-run）：在 {} 找到 {} 处匹配，本次将替换 {} 处",
         o.display, o.total, o.replaced
     );
+    if o.new_text.is_empty() {
+        body.push_str(&format!(
+            "\n⚠ 将删除内容：new_text 为空，这 {} 处匹配会被移除",
+            o.replaced
+        ));
+    }
     if o.total > 1 {
         body.push_str(&format!(
             "\n⚠ 多处匹配：命中行 {}",
@@ -238,20 +261,24 @@ fn parse_search_replace_args(raw_args: &serde_json::Value) -> Result<SearchRepla
     crate::cm_tools::tools::parse_args_from_value(raw_args.clone())
 }
 
-fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, String), String> {
+fn search_replace_path_and_texts(args: &SearchReplaceArgs) -> Result<(String, String), String> {
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
         _ => return Err("缺少 path 参数".to_string()),
     };
-    // **保留 `search` 原文**（含首行前导空白），只拦真正空串。
-    // 若对 `search` 取 `trim()`，会剥掉首行缩进：锚点变短后按子串替换，文件原缩进前缀与
-    // `replace` 自带缩进叠加 → 写出「缩进翻倍」的坏文件（Python 等缩进敏感语言尤甚）。
+    // **保留 `old_text` 原文**（含首行前导空白），只拦真正空串。
+    // 若对锚点取 `trim()`，会剥掉首行缩进：锚点变短后按子串替换，文件原缩进前缀与
+    // `new_text` 自带缩进叠加 → 写出「缩进翻倍」的坏文件（Python 等缩进敏感语言尤甚）。
     // 同理这里不能用 `trim().is_empty()`：`"\n\n"`（替换空行）、`"    "`（统一缩进）都是
-    // 合法锚点，`trim()` 会把它们判成「没传 search」。
-    if args.search.is_empty() {
-        return Err("缺少 search 参数".to_string());
+    // 合法锚点，`trim()` 会把它们判成「没传 old_text」。
+    //
+    // `new_text` 不在这里校验：**必填**由 serde 保证（`SearchReplaceArgs::new_text` 没有
+    // `#[serde(default)]`），而空串是合法的「删除」语义。真正的缺口是「漏传」——那由
+    // [`require_both_texts`] 在 serde 之前拦成中文可自纠的消息。
+    if args.old_text.is_empty() {
+        return Err("缺少 old_text 参数（文件里已有的原文；旧名 search 仍可用）".to_string());
     }
-    Ok((path, args.search.clone()))
+    Ok((path, args.old_text.clone()))
 }
 
 /// 写盘前闸门：语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
@@ -357,31 +384,140 @@ fn search_replace_commit(
 struct SearchReplacePlan {
     raw_args: serde_json::Value,
     path: String,
-    search: String,
-    replace: String,
+    old_text: String,
+    new_text: String,
     is_regex: bool,
     dry_run: bool,
     skip_precheck: bool,
     scope: ReplaceScope,
 }
 
+/// 入参里出现规范键名或任一同义别名就算提供了该字段。
+fn has_any_key(args: &serde_json::Value, key: &str, aliases: &[&str]) -> bool {
+    args.get(key).is_some() || aliases.iter().any(|alias| args.get(*alias).is_some())
+}
+
+/// 缺参诊断：**在 serde 反序列化之前**给出中文消息，并列出调用方实际传了哪些键。
+///
+/// 两个理由：
+/// - `new_text` 是必填字段，serde 的 `missing field 'new_text'` 既不说明「要删除请显式传空串」，
+///   也不说明「本工具也认 `replace` 这个旧名」——模型只能原样再错一次；
+/// - 未知键此前被**静默忽略**（`SearchReplaceArgs` 没有 `deny_unknown_fields`），于是
+///   `{"old_string": …, "new_string": …}` 只得到一句「缺少 old_text」，看不出问题在键名。
+fn require_both_texts(raw_args: &serde_json::Value) -> Result<(), String> {
+    let received = raw_args
+        .as_object()
+        .map(|m| m.keys().cloned().collect::<Vec<_>>().join(", "))
+        .unwrap_or_else(|| "（不是 JSON 对象）".to_string());
+    if !has_any_key(
+        raw_args,
+        SEARCH_REPLACE_OLD_TEXT_KEY,
+        SEARCH_REPLACE_OLD_TEXT_ALIASES,
+    ) {
+        return Err(format!(
+            "缺少 old_text 参数（文件里**已有的**原文；旧名 search / old_string 仍可用）。\
+             收到的字段：{received}"
+        ));
+    }
+    if !has_any_key(
+        raw_args,
+        SEARCH_REPLACE_NEW_TEXT_KEY,
+        SEARCH_REPLACE_NEW_TEXT_ALIASES,
+    ) {
+        return Err(format!(
+            "缺少 new_text 参数（要**替换进去**的新文本；旧名 replace / new_string 仍可用）。\
+             要删除这段内容请显式传空串（\"new_text\": \"\"）——漏传会被拒绝，\
+             因为「把新文本写进 old_text」与「忘记传 new_text」在结果上都是静默删改。\
+             收到的字段：{received}"
+        ));
+    }
+    Ok(())
+}
+
 #[allow(clippy::result_large_err)]
 fn prepare_search_replace(args_json: &str) -> Result<SearchReplacePlan, ToolError> {
     let raw_args =
         crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    require_both_texts(&raw_args).map_err(ToolError::invalid_args)?;
     let args = parse_search_replace_args(&raw_args).map_err(ToolError::invalid_args)?;
-    let (path, search) = search_replace_path_and_query(&args).map_err(ToolError::invalid_args)?;
+    let (path, old_text) = search_replace_path_and_texts(&args).map_err(ToolError::invalid_args)?;
     let scope = resolve_replace_scope(&args).map_err(ToolError::invalid_args)?;
     Ok(SearchReplacePlan {
         raw_args,
         path,
-        search,
-        replace: args.replace,
+        old_text,
+        new_text: args.new_text,
         is_regex: args.regex,
         dry_run: args.dry_run,
         skip_precheck: args.skip_precheck,
         scope,
     })
+}
+
+/// 把一段文本压成可嵌进 JSON 建议的单行形式（截断 + 转义）。
+fn json_escape_preview(text: &str, max_chars: usize) -> String {
+    let truncated: String = text.chars().take(max_chars).collect();
+    let mut out = String::new();
+    for ch in truncated.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// `old_text` 零命中时的自诊断正文。
+///
+/// 最常见成因是**两个值写反**：调用方把「新文本」写进了 `old_text`。零命中本来就要失败，
+/// 所以额外探一次 `new_text` 在原文件里的命中是**零成本**的（不新增任何成功/失败分支），
+/// 却能把「未找到匹配」这句看不出方向的话，变成一条可直接照做的对调建议——否则调用方只会
+/// 把同样的参数再试一遍，或者（更糟）以为自己该改用别的工具。
+fn no_match_message(plan: &SearchReplacePlan, content: &str, display: &str) -> String {
+    let mut msg = format!(
+        "未找到匹配：old_text = \"{}\" 在 {display}",
+        line_preview(&plan.old_text, 120)
+    );
+    let reversed: Vec<Range<usize>> = if plan.new_text.is_empty() {
+        Vec::new()
+    } else {
+        content
+            .match_indices(plan.new_text.as_str())
+            .map(|(start, m)| start..start + m.len())
+            .collect()
+    };
+    if reversed.is_empty() {
+        msg.push_str(
+            "\nnew_text 也不在该文件中——请检查 path / old_text 是否写错，或文件内容是否已变化。",
+        );
+        return msg;
+    }
+    msg.push_str(&format!(
+        "\n⚠ 疑似 old_text 与 new_text 写反：new_text = \"{}\" 在文件中命中 {} 处。",
+        line_preview(&plan.new_text, 120),
+        reversed.len()
+    ));
+    msg.push_str(&format!("\n  命中行：{}", hit_lines(content, &reversed)));
+    // `regex` 必须一起带：正则锚点被当成字面量重试会「看起来一样、结果不同」。
+    // `dry_run` 刻意不带——它默认 true，漏掉只会让建议更保守（先预览）。
+    let regex_hint = if plan.is_regex {
+        ", \"regex\": true"
+    } else {
+        ""
+    };
+    msg.push_str(&format!(
+        "\n若你是想把这几处改成 \"{}\"，请对调两个参数：\
+         {{\"path\": \"{}\", \"old_text\": \"{}\", \"new_text\": \"{}\"{regex_hint}}}",
+        line_preview(&plan.old_text, 60),
+        json_escape_preview(&plan.path, 120),
+        json_escape_preview(&plan.new_text, 120),
+        json_escape_preview(&plan.old_text, 120)
+    ));
+    msg
 }
 
 /// 无匹配 / 范围判定：返回 `replacen` 的 `limit`（`None` = 全部替换）。
@@ -396,9 +532,8 @@ fn resolve_replace_limit(
     display: &str,
 ) -> Result<Option<usize>, ToolError> {
     if spans.is_empty() {
-        return Err(ToolError::invalid_args(format!(
-            "未找到匹配：\"{}\" 在 {}",
-            plan.search, plan.path
+        return Err(ToolError::invalid_args(no_match_message(
+            plan, content, display,
         )));
     }
     match plan.scope {
@@ -465,14 +600,14 @@ pub fn search_replace_try(
     let working_dir = access.root();
     let plan = prepare_search_replace(args_json)?;
     let (target, content) = load_search_replace_file_bytes(access, &plan.path)?;
-    let (spans, re) = search_replace_spans(&content, &plan.search, plan.is_regex)
+    let (spans, re) = search_replace_spans(&content, &plan.old_text, plan.is_regex)
         .map_err(ToolError::invalid_args)?;
     let display = path_for_tool_display(working_dir, &target, Some(&plan.path));
     let limit = resolve_replace_limit(&plan, &content, &spans, &display)?;
     let (new_content, replaced) = apply_search_replace_inner(
         &content,
-        &plan.search,
-        &plan.replace,
+        &plan.old_text,
+        &plan.new_text,
         re.as_ref(),
         spans.len(),
         limit,
@@ -484,8 +619,8 @@ pub fn search_replace_try(
         spans: &spans,
         total: spans.len(),
         replaced,
-        search: &plan.search,
-        replace: &plan.replace,
+        old_text: &plan.old_text,
+        new_text: &plan.new_text,
     };
 
     // 显式 `base_revision` 在**预览阶段也校验**（与 `structured_patch` 一致）：预览若基于过期

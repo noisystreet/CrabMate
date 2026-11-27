@@ -86,6 +86,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **BREAKING: `search_replace` renames its two text parameters to `old_text` / `new_text`.** `search` and
+  `replace` are both verbs, and `replace` reads either as "the text to be replaced" (old) or "the text to replace
+  with" (new), so swapping the two values carried no signal at all. Canonical names are now **`old_text`** (the text
+  already in the file) and **`new_text`** (what to put there); `search` / `replace`, `old_string` / `new_string`,
+  `find` / `replacement` and a few more stay as **inbound aliases** on both layers that matter: `tool_args_coerce`
+  maps them onto the canonical keys *before* JSON Schema validation (aliases never enter the schema, so an alias
+  that reached the `required` check first would already have failed), and `#[serde(alias)]` covers the
+  direct-deserialization call sites (`tool-replay`, tests). No client change: the tool **name** is untouched and
+  nothing on the Client side parses these argument names.
+  Two failures that used to be silent are now loud. (1) **Omitting `new_text` is rejected** instead of defaulting
+  to `""` — that default turned "forgot the new text" into a silent deletion; a delete must now pass `""`
+  explicitly, and the success body leads with `⚠ 删除内容`. (2) When `old_text` matches nothing, the tool also
+  probes `new_text` in the file and, if that hits, reports that **the two values look swapped** with the hit lines
+  and the corrected call — zero hits was already a failure, so the probe adds no new failure branch and turns a dead
+  end into a one-step fix. `args_summary` reads the raw JSON (not the typed struct) and now accepts both key sets,
+  otherwise an `old_text` call would silently lose its summary line.
 - **`/workspace/git` cache hits stop deep-copying the file list (#1507).** The cache entry used to
   hold the whole assembled response, so every hit cloned it — harmless when that meant a few
   counters, but after `?files` it meant up to 500 `String` paths copied and then immediately

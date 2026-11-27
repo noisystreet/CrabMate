@@ -56,8 +56,10 @@ pub use self::schedule::{ArchiveListArgs, ArchivePackArgs, ArchiveUnpackArgs};
 
 pub use self::structured::{
     AppendFileArgs, CodespellCheckArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs,
-    DocsHealthSweepArgs, SearchReplaceArgs, StructuredAction, StructuredArgs, StructuredDataFormat,
-    StructuredDiffArgs, StructuredPatchAction, StructuredPatchArgs, StructuredQueryArgs,
-    StructuredValidateArgs, TableTextAction, TableTextAggregateOp, TableTextArgs,
-    TableTextDelimiter, TextDiffArgs, TyposCheckArgs, WorkflowExecuteArgs,
+    DocsHealthSweepArgs, SEARCH_REPLACE_NEW_TEXT_ALIASES, SEARCH_REPLACE_NEW_TEXT_KEY,
+    SEARCH_REPLACE_OLD_TEXT_ALIASES, SEARCH_REPLACE_OLD_TEXT_KEY, SearchReplaceArgs,
+    StructuredAction, StructuredArgs, StructuredDataFormat, StructuredDiffArgs,
+    StructuredPatchAction, StructuredPatchArgs, StructuredQueryArgs, StructuredValidateArgs,
+    TableTextAction, TableTextAggregateOp, TableTextArgs, TableTextDelimiter, TextDiffArgs,
+    TyposCheckArgs, WorkflowExecuteArgs,
 };

@@ -21,8 +21,9 @@ use super::tool_param_types::{
     AppendFileArgs, CodeNavArgs, CodeStatsArgs, CodebaseSemanticSearchArgs, CoverageReportArgs,
     CreateDirArgs, DeleteDirArgs, FileFromToOverwriteArgs, FileWriteArgs, GhApiArgs, GitArgs,
     GlobFilesArgs, ListTreeArgs, ModifyFileArgs, ReadBinaryMetaArgs, ReadDirEnhancedArgs,
-    ReadFileArgs, RustAnalyzerArgs, SearchInFilesEnhancedArgs, SearchReplaceArgs, StructuredArgs,
-    TableTextArgs,
+    ReadFileArgs, RustAnalyzerArgs, SEARCH_REPLACE_NEW_TEXT_ALIASES, SEARCH_REPLACE_NEW_TEXT_KEY,
+    SEARCH_REPLACE_OLD_TEXT_ALIASES, SEARCH_REPLACE_OLD_TEXT_KEY, SearchInFilesEnhancedArgs,
+    SearchReplaceArgs, StructuredArgs, TableTextArgs,
 };
 
 /// 别名键与目标键的匹配方式。
@@ -453,6 +454,31 @@ pub const PATH_ONLY: ArgsCoercionPolicy = ArgsCoercionPolicy {
     nested_edits: None,
 };
 
+/// `search_replace`：`old_text` / `new_text` 的主名 + 兼容别名。
+///
+/// 只挂 serde 的 `#[serde(alias)]` 不够：入参在反序列化之前先过 **JSON Schema 校验**，
+/// 而 schema 只认主名（别名不进 schema），旧名调用会先死在 `required` 上。本策略在
+/// validate 之前把别名搬到主名，两道门才一致。
+pub const SEARCH_REPLACE_POLICY: ArgsCoercionPolicy = ArgsCoercionPolicy {
+    fields: &[
+        PATH_FIELD,
+        FieldCoercion {
+            key: SEARCH_REPLACE_OLD_TEXT_KEY,
+            aliases: SEARCH_REPLACE_OLD_TEXT_ALIASES,
+            alias_match: AliasMatch::Exact,
+            kind: FieldKind::Keep,
+        },
+        FieldCoercion {
+            key: SEARCH_REPLACE_NEW_TEXT_KEY,
+            aliases: SEARCH_REPLACE_NEW_TEXT_ALIASES,
+            alias_match: AliasMatch::Exact,
+            kind: FieldKind::Keep,
+        },
+    ],
+    structural: StructuralRules::NONE,
+    nested_edits: None,
+};
+
 /// `read_file`：行号字符串、`encoding` 去空白、`count_total_lines` 布尔。
 pub const READ_FILE_POLICY: ArgsCoercionPolicy = ArgsCoercionPolicy {
     fields: &[
@@ -604,7 +630,7 @@ pub trait ArgsCoercion {
     const POLICY: &'static ArgsCoercionPolicy;
 }
 
-/// 只做 `path` 归一的只读 / 文件工具：17 个 Args 类型共用同一套策略。
+/// 只做 `path` 归一的只读 / 文件工具：16 个 Args 类型共用同一套策略。
 macro_rules! path_only_args {
     ($($ty:ty),* $(,)?) => {
         $(
@@ -630,10 +656,13 @@ path_only_args!(
     ReadDirEnhancedArgs,
     RustAnalyzerArgs,
     SearchInFilesEnhancedArgs,
-    SearchReplaceArgs,
     StructuredArgs,
     TableTextArgs,
 );
+
+impl ArgsCoercion for SearchReplaceArgs {
+    const POLICY: &'static ArgsCoercionPolicy = &SEARCH_REPLACE_POLICY;
+}
 
 impl ArgsCoercion for ReadFileArgs {
     const POLICY: &'static ArgsCoercionPolicy = &READ_FILE_POLICY;
