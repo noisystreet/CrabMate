@@ -4,8 +4,8 @@ use crate::cm_names as tool_names;
 use crate::cm_tool_result::{
     NormalizedToolEnvelope, ToolEnvelopeContext, ToolOutcomeFacts, parse_tool_output,
 };
+use crate::cm_tools::tools;
 use crate::sse::{SseEncoder, SsePayload, ToolResultBody, send_sse_control_payload_optional};
-use crate::tools;
 
 /// 按执行模式构造 [`ToolEnvelopeContext`]。
 pub(super) fn tool_envelope_context<'a>(
@@ -58,18 +58,17 @@ pub(super) async fn emit_sse_tool_result(
         envelope_ctx.as_ref(),
         structured_payload,
     );
-    let mut structured_preview = crate::tools::structured_preview::structured_preview_for_tool_sse(
+    let mut structured_preview = tools::structured_preview::structured_preview_for_tool_sse(
         name,
         result,
         norm.structured_payload.as_ref(),
     );
     if name == tool_names::RUN_COMMAND {
-        structured_preview =
-            crate::tools::structured_preview::augment_run_command_preview_with_git_diff(
-                structured_preview,
-                result,
-                parsed.stdout.as_str(),
-            );
+        structured_preview = tools::structured_preview::augment_run_command_preview_with_git_diff(
+            structured_preview,
+            result,
+            parsed.stdout.as_str(),
+        );
     }
     let stdout = if parsed.stdout.is_empty() {
         None

@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
+use crate::cm_tools::tools::{canonical_workspace_root, capture_trimmed};
 use crate::config::layer_precedence::LayerTrace;
 use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::llm::fetch_models_report;
-use crate::tools::{canonical_workspace_root, capture_trimmed};
 
 fn resolve_workspace_dir(cfg: &AgentConfig, workspace_cli: Option<&str>) -> PathBuf {
     let raw = workspace_cli
@@ -282,7 +282,7 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
         "  官方对话请用 Client **crabmate-tui** / Web；或扩大 **allowed_commands** / 匹配 **http_fetch_allowed_prefixes**（仅可信环境）。同进程 **chat** / 终端审批已移除（D2.2）。"
     );
     let prefixes = &cfg.http_fetch.http_fetch_allowed_prefixes;
-    let allow_any = crate::tools::http_fetch::prefixes_include_allow_any(prefixes);
+    let allow_any = crate::cm_tools::tools::http_fetch::prefixes_include_allow_any(prefixes);
     println!(
         "  http_fetch_allowed_prefixes: {} 条{}（未匹配时需 Web SSE 审批通道）",
         prefixes.len(),

@@ -36,7 +36,7 @@ pub(super) async fn init_cli_session_start(
         let g = cfg_holder.read().await;
         crate::http_client::build_shared_api_client(&g.llm_http_retry)?
     };
-    let mut all_tools = crate::tools::build_tools();
+    let mut all_tools = crate::cm_tools::tools::build_tools();
     {
         let g = cfg_holder.read().await;
         crate::tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, &g);

@@ -224,7 +224,7 @@ impl CrabmateParallelToolDispatch {
                 ltm,
                 ltm_scope.as_deref(),
             );
-            let ctx = crate::tools::tool_context_for_with_read_cache_and_memory(
+            let ctx = crate::cm_tools::tools::tool_context_for_with_read_cache_and_memory(
                 cfg.as_ref(),
                 cfg.command_exec.allowed_commands.as_ref(),
                 wd.as_path(),
@@ -236,7 +236,7 @@ impl CrabmateParallelToolDispatch {
                 None,
             );
             // 并行只读批把正文交给编排层：这里只把 `Result` 折成结构化结果（正文与迁移前逐字一致）。
-            match crate::tools::http_fetch::run_direct(&args, &ctx) {
+            match crate::cm_tools::tools::http_fetch::run_direct(&args, &ctx) {
                 Ok(body) => ToolRunOutcome::ok(body, None),
                 Err(e) => ToolRunOutcome::failed(e.message, None),
             }

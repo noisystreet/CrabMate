@@ -19,13 +19,13 @@ mod full {
                 if no_tools {
                     return Vec::new();
                 }
-                let mut defs = crate::tools::build_tools();
+                let mut defs = crate::cm_tools::tools::build_tools();
                 crate::tool_call_explain::annotate_tool_defs_for_explain_card(&mut defs, cfg);
                 defs
             },
             |name: String, args_json: String, work_dir: PathBuf, cfg: AgentConfig| {
                 async move {
-                    let ctx = crate::tools::tool_context_for(
+                    let ctx = crate::cm_tools::tools::tool_context_for(
                         &cfg,
                         &cfg.command_exec.allowed_commands,
                         &work_dir,
@@ -36,7 +36,7 @@ mod full {
                         Ok(cow) => cow.into_owned(),
                         Err(msg) => return Err(msg),
                     };
-                    Ok(crate::tools::run_tool_async(&name, &args_for_tool, &ctx).await)
+                    Ok(crate::cm_tools::tools::run_tool_async(&name, &args_for_tool, &ctx).await)
                 }
                 .boxed()
             },

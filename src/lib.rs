@@ -165,7 +165,7 @@ pub mod tool_sandbox;
 pub(crate) use crate::cm_memory::memory;
 #[cfg(feature = "server")]
 pub(crate) use crate::cm_tools::{
-    clarification_questionnaire, github_token, read_file_turn_cache, redact, text_encoding, tools,
+    clarification_questionnaire, github_token, read_file_turn_cache, redact, text_encoding,
     workspace,
 };
 #[cfg(feature = "server")]
@@ -218,7 +218,7 @@ mod shutdown;
 #[cfg(feature = "server")]
 #[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {
-    crate::tools::reset_process_tool_globals_for_tests();
+    crate::cm_tools::tools::reset_process_tool_globals_for_tests();
     crate::turn_replay_dump::reset_turn_replay_globals_for_tests();
 }
 
@@ -674,6 +674,12 @@ pub async fn run_cli_from_parsed(
 #[cfg(feature = "server")]
 pub use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
 #[cfg(feature = "server")]
+pub use crate::cm_tools::tools::dev_tag;
+#[cfg(feature = "server")]
+pub use crate::cm_tools::tools::{
+    ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options,
+};
+#[cfg(feature = "server")]
 pub use config::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config, load_config_for_cli,
 };
@@ -690,10 +696,6 @@ pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, WebToolRuntime, all_dispatch_metadata,
     execution_class_for_tool, is_readonly_tool, try_dispatch_meta,
 };
-#[cfg(feature = "server")]
-pub use tools::dev_tag;
-#[cfg(feature = "server")]
-pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
 #[cfg(feature = "server")]
 pub use types::{
     ChatRequest, FunctionCall, LlmSeedOverride, Message, ToolCall, message_content_as_str,
