@@ -95,6 +95,9 @@ include = [
     "/README.md",
     "/README.zh.md",
     "/fixtures/workflows/schema/",
+    # 生产代码 `include_str!` 的编译期依赖（`self_config_info` 的 `env_override` 小节，#1526）。
+    # 不随包发出去的话，`cargo package` 产物会在编译期找不到该文件（本地有 `fixtures/` 才不漏）。
+    "/fixtures/env_override_keys.txt",
 ]
 
 [package.metadata.deb]
