@@ -334,6 +334,10 @@ pub(super) struct AgentSection {
     pub(super) project_profile_inject_max_chars: Option<u64>,
     pub(super) project_dependency_brief_inject_enabled: Option<bool>,
     pub(super) project_dependency_brief_inject_max_chars: Option<u64>,
+    /// 运行时环境快照（#1526 A1a）。
+    pub(super) runtime_env_snapshot_enabled: Option<bool>,
+    pub(super) runtime_env_snapshot_max_chars: Option<u64>,
+    pub(super) runtime_env_snapshot_probe_cache_ttl_secs: Option<u64>,
     pub(super) tool_call_explain_enabled: Option<bool>,
     pub(super) tool_call_explain_min_chars: Option<u64>,
     pub(super) tool_call_explain_max_chars: Option<u64>,

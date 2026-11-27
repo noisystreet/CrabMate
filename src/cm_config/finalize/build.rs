@@ -338,6 +338,9 @@ fn finalize_section_context_bootstrap_inject(
         project_profile_inject_max_chars: tail.project_profile_inject_max_chars,
         project_dependency_brief_inject_enabled: tail.project_dependency_brief_inject_enabled,
         project_dependency_brief_inject_max_chars: tail.project_dependency_brief_inject_max_chars,
+        runtime_env_snapshot_enabled: tail.runtime_env_snapshot_enabled,
+        runtime_env_snapshot_max_chars: tail.runtime_env_snapshot_max_chars,
+        runtime_env_snapshot_probe_cache_ttl_secs: tail.runtime_env_snapshot_probe_cache_ttl_secs,
     }
 }
 

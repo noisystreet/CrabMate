@@ -65,7 +65,11 @@ pub fn build_first_turn_user_context_markdown(
         cfg.context_bootstrap_inject
             .project_dependency_brief_inject_max_chars,
     );
-    if !want_dep && memory_snippet.is_none() && living_snippet.is_none() {
+    // 运行时环境快照（#1526 A1a）：与其它首轮注入走同一入口，排在**最前**——
+    // 后面的活文档 / 备忘 / 依赖摘要都要靠「我在什么环境里」来解读。
+    let env_snapshot =
+        super::runtime_env_snapshot::build_runtime_env_snapshot_markdown(workspace_root, cfg);
+    if !want_dep && memory_snippet.is_none() && living_snippet.is_none() && env_snapshot.is_none() {
         return None;
     }
     let dep_md = if want_dep {
@@ -77,11 +81,18 @@ pub fn build_first_turn_user_context_markdown(
     } else {
         String::new()
     };
-    merge_first_turn_injections(
+    let merged = merge_first_turn_injections(
         living_snippet.as_deref(),
         memory_snippet.as_deref(),
         dep_md.as_str(),
-    )
+    );
+    match env_snapshot {
+        Some(snap) => Some(match merged {
+            Some(body) => format!("{snap}\n\n---\n\n{body}"),
+            None => snap,
+        }),
+        None => merged,
+    }
 }
 
 /// 合并活文档摘要、备忘、依赖结构摘要为一条首轮 `user` 正文。

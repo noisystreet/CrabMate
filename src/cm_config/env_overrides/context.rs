@@ -11,6 +11,7 @@ pub(super) fn apply(b: &mut ConfigBuilder) {
     bootstrap_memory_file(b);
     bootstrap_living_docs_and_project_profile(b);
     bootstrap_dependency_brief(b);
+    bootstrap_runtime_env_snapshot(b);
 }
 
 fn pipeline_budget_and_summary(b: &mut ConfigBuilder) {
@@ -121,5 +122,23 @@ fn bootstrap_dependency_brief(b: &mut ConfigBuilder) {
             .context_bootstrap_inject
             .project_dependency_brief_inject_max_chars,
         "CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS",
+    );
+}
+
+/// 运行时环境快照（#1526 A1a）：首轮注入 OS/arch、工作区根、cwd、工具链版本与日期。
+fn bootstrap_runtime_env_snapshot(b: &mut ConfigBuilder) {
+    apply_bool(
+        &mut b.context_bootstrap_inject.runtime_env_snapshot_enabled,
+        "CM_RUNTIME_ENV_SNAPSHOT_ENABLED",
+    );
+    apply_parse(
+        &mut b.context_bootstrap_inject.runtime_env_snapshot_max_chars,
+        "CM_RUNTIME_ENV_SNAPSHOT_MAX_CHARS",
+    );
+    apply_parse(
+        &mut b
+            .context_bootstrap_inject
+            .runtime_env_snapshot_probe_cache_ttl_secs,
+        "CM_RUNTIME_ENV_SNAPSHOT_PROBE_CACHE_TTL_SECS",
     );
 }

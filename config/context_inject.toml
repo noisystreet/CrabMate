@@ -17,3 +17,9 @@ project_profile_inject_enabled = true
 project_profile_inject_max_chars = 6000
 project_dependency_brief_inject_enabled = true
 project_dependency_brief_inject_max_chars = 4000
+# 首轮注入**运行时环境快照**（OS/arch、会话工作区根、cwd、rustc/cargo 版本、日期、权限等级）——
+# 让模型不必先调 `diagnostic_summary` 才知道自己在什么环境里（#1526 A1a）。
+# `max_chars = 0` 关闭；`probe_cache_ttl_secs = 0` 表示不缓存外部探测结果。CM_RUNTIME_ENV_SNAPSHOT_*
+runtime_env_snapshot_enabled = true
+runtime_env_snapshot_max_chars = 2000
+runtime_env_snapshot_probe_cache_ttl_secs = 300

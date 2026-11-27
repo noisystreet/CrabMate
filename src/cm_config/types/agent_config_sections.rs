@@ -344,6 +344,12 @@ pub struct ContextBootstrapInjectConfig {
     pub project_profile_inject_max_chars: usize,
     pub project_dependency_brief_inject_enabled: bool,
     pub project_dependency_brief_inject_max_chars: usize,
+    /// 首轮注入运行时环境快照（OS/arch、工作区根、cwd、工具链版本、日期、权限等级）——#1526 A1a。
+    pub runtime_env_snapshot_enabled: bool,
+    /// 快照正文上限（`0` = 关闭；与 `_enabled` 构成双闸，同其它注入项）。
+    pub runtime_env_snapshot_max_chars: usize,
+    /// 外部命令探测结果（`rustc -V` 等）的进程内缓存 TTL；`0` = 不缓存（每次重探）。
+    pub runtime_env_snapshot_probe_cache_ttl_secs: u64,
 }
 
 #[derive(Debug, Clone)]
