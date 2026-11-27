@@ -345,6 +345,38 @@ pub fn run_and_capture(
     wait_child_session(child, &ctl, max_output_len)
 }
 
+/// 执行命令并取 stdout 首段非空文本；无法执行、非零退出或空输出均返回 `None`。
+///
+/// 供 `diagnostic_summary`、`crabmate doctor` 与运行时环境快照（#1526）三处共用，
+/// 避免各自主持一份「探测一次外部命令」的口径。刻意**不**沿用 [`run_and_capture`] 的
+/// 进程组 / 墙钟语义：调用方探测的都是已知短命命令（`rustc -V` 等），
+/// 多一层墙钟控制只会让调用点变长。
+pub fn capture_trimmed(cmd: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(cmd).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// 从 `rustc -vV` 输出里解析 `host:` / `release:` 两行（缺失时对应项为 `None`）。
+///
+/// 与 [`capture_trimmed`] 同属「探测外部工具链」，故一并放在本模块：
+/// 调用方（诊断摘要 / doctor / 环境快照）不应各自写一份前缀匹配。
+pub fn parse_rustc_vv(text: &str) -> (Option<String>, Option<String>) {
+    let mut host = None;
+    let mut release = None;
+    for line in text.lines() {
+        if let Some(v) = line.strip_prefix("host: ") {
+            host = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("release: ") {
+            release = Some(v.trim().to_string());
+        }
+    }
+    (host, release)
+}
+
 /// 异步版 [`wait_child_session`]：`tokio::process` + `tokio::time`，供 async 宿主直接 `.await`。
 ///
 /// 语义与同步版一一对应（新进程组、SIGTERM→SIGKILL、并发排空、墙钟/取消、增量回调、观测计数），
