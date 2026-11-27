@@ -127,6 +127,30 @@ pub fn merge_first_turn_injections(
 mod tests {
     use super::*;
 
+    /// 环境快照必须排在首轮合并正文的**最前**，且「只有快照」时也要产出。
+    ///
+    /// 后者钉的是 `build_first_turn_user_context_markdown` 里那条提前返回的守卫
+    /// （`!want_dep && memory.is_none() && living.is_none() && env_snapshot.is_none()`）：
+    /// 少了最后的 `env_snapshot.is_none()`，只开快照的配置会**静默不注入**。
+    #[test]
+    fn env_snapshot_leads_and_alone_is_enough() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
+        cfg.context_bootstrap_inject.agent_memory_file_enabled = false;
+        cfg.context_bootstrap_inject.living_docs_inject_enabled = false;
+        cfg.context_bootstrap_inject
+            .project_dependency_brief_inject_enabled = false;
+        cfg.context_bootstrap_inject.runtime_env_snapshot_enabled = true;
+        cfg.context_bootstrap_inject.runtime_env_snapshot_max_chars = 2000;
+
+        let root = std::env::current_dir().expect("cwd");
+        let out = build_first_turn_user_context_markdown(&root, &cfg, None)
+            .expect("只开快照也应产出首轮上下文");
+        assert!(
+            out.starts_with("## 运行时环境快照"),
+            "快照应排在合并正文最前: {out}"
+        );
+    }
+
     #[test]
     fn merge_first_turn_two_parts() {
         let got = merge_first_turn_injections(None, Some("memo line"), "## Dep\nx").expect("some");

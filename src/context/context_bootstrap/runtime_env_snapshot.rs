@@ -59,7 +59,7 @@ fn render_body(workspace_root: &Path, cfg: &AgentConfig, ttl_secs: u64) -> Strin
         ),
         format!(
             "- 会话工作区根: {}",
-            root.map_or_else(|| "(未设置)".to_string(), |r| display_in_root(r, r))
+            root.map_or_else(|| "(未设置)".to_string(), workspace_root_label)
         ),
     ];
     if let Ok(cwd) = std::env::current_dir() {
@@ -82,6 +82,15 @@ fn render_body(workspace_root: &Path, cfg: &AgentConfig, ttl_secs: u64) -> Strin
         "路径已脱敏：会话根内用相对路径，根外只留末段；不含主机名与环境变量取值。".to_string(),
     );
     lines.join("\n")
+}
+
+/// 会话根的展示形态。
+///
+/// **不能**用 [`display_in_root`]：`display_in_root(root, root)` 恒为 `.`，而「我在哪个项目里」
+/// 恰恰是这条快照最该回答的问题。改为给**末段**（项目目录名）——既让模型认得出工作区，
+/// 又不把 `/home/<user>/...` 的上级目录带出去。
+fn workspace_root_label(root: &Path) -> String {
+    format!("./（{}）", basename_or_unknown(root))
 }
 
 /// `path` 相对 `root` 的展示形态；不在根内则退化为末段。
@@ -124,6 +133,8 @@ fn render_toolchain() -> String {
     format!("{rustc} · {cargo}")
 }
 
+/// 软上限：截断提示本身不计入 `max_chars`（与 `living_docs` / 依赖摘要同一约定），
+/// 因此被截断的正文会比预算多出约 40 字符。
 fn truncate_chars(out: &mut String, max_chars: usize) {
     if out.chars().count() <= max_chars {
         return;
@@ -183,6 +194,17 @@ mod tests {
         );
     }
 
+    /// 会话根必须给出**末段**（项目名），而不是恒定的 `.`。
+    ///
+    /// 回归守卫：初版误用 `display_in_root(root, root)`，那一行恒为 `.`——等于没回答
+    /// 「我在哪个项目里」，而这是整条快照最该回答的问题。
+    #[test]
+    fn workspace_root_label_keeps_the_project_name() {
+        let label = workspace_root_label(Path::new("/srv/acme/crabmate"));
+        assert_eq!(label, "./（crabmate）");
+        assert!(!label.contains("acme"), "不得带出上级目录: {label}");
+    }
+
     /// 正文包含关键事实且**不含**绝对路径的上级片段。
     #[test]
     fn body_reports_platform_and_toolchain() {
@@ -195,12 +217,17 @@ mod tests {
         assert!(body.contains("工作区允许根:"), "{body}");
     }
 
-    /// 预算极小也要截断而不是无限增长。
+    /// 预算极小时截断（`max_chars` 是**软**上限：截断提示本身不计入预算）。
     #[test]
     fn tiny_budget_is_truncated() {
         let cfg = cfg_with(true, 64);
         let root = std::env::current_dir().expect("cwd");
         let body = build_runtime_env_snapshot_markdown(&root, &cfg).expect("应产出正文");
-        assert!(body.chars().count() <= 64 + 40, "截断后仍过长: {body}");
+        assert!(
+            body.contains("已按 runtime_env_snapshot_max_chars 截断"),
+            "应出现截断标记（而不是静默丢弃）: {body}"
+        );
+        // 上界只为挡住「无界增长」；`+64` 容纳截断提示本身（见 `truncate_chars` 的软上限说明）。
+        assert!(body.chars().count() <= 64 + 64, "截断后仍无界增长: {body}");
     }
 }
