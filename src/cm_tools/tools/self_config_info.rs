@@ -9,6 +9,7 @@ use crate::cm_config::{AgentConfig, ExposeSecret};
 
 /// 全部可用小节名（唯一真源：过滤、空输出提示、实现分发与一致性测试均由此派生）。
 pub const SECTION_NAMES: &[&str] = &[
+    "env_override",
     "llm",
     "sampling",
     "vendor_flags",
@@ -51,6 +52,7 @@ pub fn self_config_info(cfg: &AgentConfig, sections: Option<&[String]>) -> Strin
 /// 按小节名取正文；未知名返回 `None`。
 fn section_body(cfg: &AgentConfig, name: &str) -> Option<String> {
     match name {
+        "env_override" => Some(env_override_section(cfg)),
         "llm" => Some(llm_section(cfg)),
         "sampling" => Some(sampling_section(cfg)),
         "vendor_flags" => Some(vendor_flags_section(cfg)),
@@ -73,6 +75,57 @@ fn section_body(cfg: &AgentConfig, name: &str) -> Option<String> {
         "sandbox" => Some(sandbox_section(cfg)),
         "permission" => Some(permission_section(cfg)),
         _ => None,
+    }
+}
+
+/// 全部 `CM_*` 环境覆盖键（编译期嵌入 `fixtures/env_override_keys.txt`）。
+///
+/// 该清单由 `scripts/env_override_guard.py` 与 `src/cm_config/env_overrides/` 双向钉住，
+/// 所以这里**不是**第二份真源，只是把同一份 golden 搬到运行时可见处（#1526 A2-lite）。
+/// 因而不需要维护「配置键 → `CM_*`」映射表：模型看到某键已设置，结合对应小节的取值
+/// 就能判断「TOML 里写的是否被盖掉」。
+const ENV_OVERRIDE_KEYS: &str = include_str!("../../../fixtures/env_override_keys.txt");
+
+/// 环境变量层覆盖线索：只列**已设置**的 `CM_*` 键。
+///
+/// 刻意**不**输出全量键（100+ 项灌进上下文是净负担，且绝大多数未设置时毫无信息量）。
+fn env_override_section(_cfg: &AgentConfig) -> String {
+    let mut out = String::from(
+        "`CM_*` 环境变量优先于 TOML 与 user-data；下列键已设置，若与你在 config.toml 写的值不符，\
+         以这里的状态为准（只报状态，永不输出取值）。\n",
+    );
+    let mut listed = 0usize;
+    for key in ENV_OVERRIDE_KEYS
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        let Some(state) = env_override_state(key) else {
+            continue;
+        };
+        listed += 1;
+        out.push_str(&format!("  {key}: {state}\n"));
+    }
+    if listed == 0 {
+        out.push_str("  （无已设置的 `CM_*` 键：当前取值来自 TOML / user-data / 内嵌默认）\n");
+    }
+    out
+}
+
+/// 单键状态；`None` = 未设置（不列出）。
+///
+/// 密钥类键只报「已设置」、**不报字符数**——长度对随机 token 也是信息量。
+/// 与 `diagnostic_summary` 共用 [`super::diagnostics::is_strict_secret_env`] 口径，
+/// 避免同一批 `CM_*` 在两个工具里按两种脱敏标准输出。
+fn env_override_state(key: &str) -> Option<String> {
+    match std::env::var(key) {
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => Some("已设置(非 Unicode，不展示)".to_string()),
+        Ok(v) if v.is_empty() => Some("已设置(空)".to_string()),
+        Ok(_) if super::diagnostics::is_strict_secret_env(key) => {
+            Some("已设置(非空，密钥值不展示)".to_string())
+        }
+        Ok(v) => Some(format!("已设置(非空, {} 字符)", v.len())),
     }
 }
 
@@ -364,7 +417,10 @@ fn permission_section(cfg: &AgentConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SECTION_NAMES, permission_section, section_body, self_config_info};
+    use super::{
+        ENV_OVERRIDE_KEYS, SECTION_NAMES, env_override_state, permission_section, section_body,
+        self_config_info,
+    };
 
     /// S7：配了非空 `workspace_allowed_roots` ⇒ 自检的 `caps.path_scope` 必须是
     /// `allowed_roots`。走 `caps_view()`（等价空根）会报 `session_root`，
@@ -448,6 +504,37 @@ mod tests {
                 "小节 {name} 缺少 section_body 实现"
             );
         }
+    }
+
+    /// `env_override` 小节：只列**已设置**的键，且密钥类不报长度。
+    ///
+    /// 不依赖真实环境（`std::env::set_var` 在 edition 2024 是 `unsafe`，本仓不写 `unsafe`）：
+    /// 钉的是两条结构性质——嵌入的 golden 确实有可观规模（`include_str!` 路径没写错）、
+    /// 未设置的键**不出现**在清单里（否则 100+ 项全量灌进上下文就失去「只列覆盖」的意义）。
+    #[test]
+    fn env_override_section_lists_only_set_keys() {
+        let golden_keys = ENV_OVERRIDE_KEYS
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .count();
+        assert!(
+            golden_keys > 50,
+            "嵌入的 CM_* golden 规模异常（{golden_keys} 项），检查 include_str! 路径"
+        );
+
+        assert!(
+            env_override_state("CM_CRABMATE_SURELY_UNSET_1526_PROBE").is_none(),
+            "未设置的键不应被列出"
+        );
+
+        let cfg = crate::config::load_config(None).expect("embed default config");
+        let out = self_config_info(&cfg, Some(&["env_override".to_string()]));
+        assert!(out.contains("[env_override]"), "{out}");
+        assert!(
+            out.contains("优先于 TOML") || out.contains("（无已设置的"),
+            "应给出覆盖说明或「无已设置键」提示: {out}"
+        );
     }
 
     #[test]

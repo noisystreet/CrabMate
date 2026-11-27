@@ -64,7 +64,11 @@ fn is_proxy_env_with_credentials(u: &str) -> bool {
     u.ends_with("PROXY") && u != "NO_PROXY"
 }
 
-fn is_strict_secret_env(name: &str) -> bool {
+/// 密钥类环境变量：只报「是否已设置」，**不报长度**。
+///
+/// `pub(super)` 而非本模块私有：`self_config_info` 的 `env_override` 小节要复用同一口径，
+/// 否则同一批 `CM_*` 键会在两个工具里按两种脱敏标准输出。
+pub(super) fn is_strict_secret_env(name: &str) -> bool {
     let u = name.to_ascii_uppercase();
     if matches!(
         u.as_str(),

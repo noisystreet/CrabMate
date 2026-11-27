@@ -40,10 +40,10 @@ pub struct DiagnosticSummaryArgs {
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SelfConfigInfoArgs {
-    /// 仅输出指定小节（`llm`、`sampling`、`vendor_flags`、`http_retry`、`command_exec`、`weather`、
-    /// `web_search`、`http_fetch`、`per_plan_policy`、`subagent`、`roles`、`workspace`、`web_api`、
-    /// `context_pipeline`、`turn_budget`、`long_term_memory`、`conversation`、`mcp`、`tool_registry`、
-    /// `sandbox`、`permission`）；缺省输出全部。
+    /// 仅输出指定小节（`env_override`、`llm`、`sampling`、`vendor_flags`、`http_retry`、
+    /// `command_exec`、`weather`、`web_search`、`http_fetch`、`per_plan_policy`、`subagent`、
+    /// `roles`、`workspace`、`web_api`、`context_pipeline`、`turn_budget`、`long_term_memory`、
+    /// `conversation`、`mcp`、`tool_registry`、`sandbox`、`permission`）；缺省输出全部。
     ///
     /// 与 `cm_tools::tools::self_config_info::SECTION_NAMES` 同集同序，由
     /// `self_config_info_args_doc_mentions_every_section_name` 钉住——这段注释会进 JSON Schema
