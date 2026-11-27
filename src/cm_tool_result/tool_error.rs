@@ -287,7 +287,7 @@ impl ToolError {
     }
 
     /// 工作区路径解析 / 越界失败（`error_code`：`workspace_resolve_failed`；正文保持 `错误：…`）。
-    pub fn path_resolve_failed(e: crate::cm_tools::workspace::path::WorkspacePathError) -> Self {
+    pub fn path_resolve_failed(e: crate::cm_tool_fs::path::WorkspacePathError) -> Self {
         Self::external_code("workspace_resolve_failed", e.prefixed_user_message())
     }
 

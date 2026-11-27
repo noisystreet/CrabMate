@@ -101,11 +101,15 @@ check_forbidden_mod src/cm_kernel.rs crate::cm_agent \
 # （安全敏感面，属 P3 `cm_tool_fs` 批次），所以这里只约束 `cm_agent`。
 check_forbidden_mod src/cm_agent crate::cm_tools \
   "domain layer must not depend on the tool layer; shared types live in cm_tool_result / cm_kernel"
-# `cm_tool_result` 目前仍依赖 `cm_tools::workspace::path::WorkspacePathError`（安全敏感面，
-# 待 P3 `cm_tool_fs` 批次下沉），所以不能整体禁 `crate::cm_tools`；先堵住大头：
-# 结果信封/解析不该反向依赖工具实现。
-check_forbidden_mod src/cm_tool_result crate::cm_tools::tools \
-  "tool_result must not depend on tool implementations; only workspace::path is a known exception"
+# #1510 P3-4：`WorkspacePathError` 已随 `workspace/` 下沉到 `cm_tool_fs`，所以
+# `cm_tool_result` 对工具层可以**整体**禁边（此前只能窄口径 `↛ cm_tools::tools`）。
+check_forbidden_mod src/cm_tool_result crate::cm_tools \
+  "tool_result must not depend on the tool layer"
+# `cm_tool_fs` 是工作区路径策略与安全打开语义，只依赖 cm_types / cm_config。
+check_forbidden_mod src/cm_tool_fs crate::cm_tools \
+  "workspace path policy must not depend on the tool layer"
+check_forbidden_mod src/cm_tool_fs crate::cm_agent \
+  "workspace path policy must not depend on the domain layer"
 # #1510 P3 第二批：`cm_tool_exec` 是纯执行基础设施（零 crate 依赖起步），
 # 不能被工具层/领域层反向拖进来。
 check_forbidden_mod src/cm_tool_exec.rs crate::cm_tools \
