@@ -1,4 +1,7 @@
 use super::*;
+use crate::cm_tools::tools::tool_param_types::{
+    SEARCH_REPLACE_NEW_TEXT_ALIASES, SEARCH_REPLACE_OLD_TEXT_ALIASES,
+};
 use serde_json::json;
 
 #[test]
@@ -74,6 +77,50 @@ fn create_file_filename_alias_passes_schema() {
     assert_eq!(v["content"], "x");
     let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
     assert!(r.is_ok(), "{r:?}");
+}
+
+/// `search_replace` 的每个入站别名都必须能过 **coerce + schema**。
+///
+/// 期望表**硬编码**而不是读实现常量：别名表是「旧名仍可用」的唯一保障（它跑在 JSON
+/// Schema 校验之前那一层），从常量里读等于让测试跟实现一起变——误删 alias 时测试照样绿，
+/// 线上旧名调用却会直接撞 `required`。
+#[test]
+fn search_replace_alias_matrix_passes_schema() {
+    const OLD: &[&str] = &["search", "old_string", "find", "search_text", "original"];
+    const NEW: &[&str] = &[
+        "replace",
+        "new_string",
+        "replacement",
+        "replace_with",
+        "replacement_text",
+    ];
+    for alias in OLD {
+        assert!(
+            SEARCH_REPLACE_OLD_TEXT_ALIASES.contains(alias),
+            "old_text 别名表漏了 {alias}"
+        );
+    }
+    for alias in NEW {
+        assert!(
+            SEARCH_REPLACE_NEW_TEXT_ALIASES.contains(alias),
+            "new_text 别名表漏了 {alias}"
+        );
+    }
+    for &old_key in OLD {
+        for &new_key in NEW {
+            let mut v = json!({ "path": "a.rs" });
+            v[old_key] = json!("x");
+            v[new_key] = json!("y");
+            assert!(
+                coerce_builtin_tool_args_value("search_replace", &mut v),
+                "{old_key}/{new_key} 未发生 coerce"
+            );
+            assert_eq!(v["old_text"], "x", "{old_key}/{new_key}");
+            assert_eq!(v["new_text"], "y", "{old_key}/{new_key}");
+            let r = validate_parsed_value_if_known("search_replace", &v).expect("search_replace");
+            assert!(r.is_ok(), "{old_key}/{new_key}: {r:?}");
+        }
+    }
 }
 
 #[test]

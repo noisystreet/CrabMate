@@ -220,7 +220,10 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `search_replace`: Single-file replace (literal or regex, capture groups `$1` preserved in regex mode; default `dry_run` preview;
     write needs `dry_run=false`, `confirm` is deprecated). **Preferred tool for localized content edits** — text-anchored with no line numbers,
     so it is immune to line-number drift and less likely than line-based `modify_file` to hit the wrong line.
-    **`search` must match exactly once unless you say otherwise**: multiple hits are **refused** (nothing written)
+    Parameters: **`old_text`** = the text **already in the file**, **`new_text`** = the text to **replace it with**
+      (**required**; pass an empty string to delete — omitting it is refused). Legacy `search` / `replace` and
+      `old_string` / `new_string` still work as aliases.
+    **`old_text` must match exactly once unless you say otherwise**: multiple hits are **refused** (nothing written)
       with every hit's line number and text listed — either give more context so the anchor is unique, or **declare the scope explicitly**:
       `max_replacements=N` (first N only) or `replace_all=true` / `max_replacements=0` (all)
       . Passing a non-zero `max_replacements` together with `replace_all=true` is a hard error. The old contract — "
@@ -228,7 +231,9 @@ This document describes built-in tools, common function-calling JSON examples, a
         `unwrap_or(0)` collapsed "not stated" and "unlimited"
       into one value. Replacement now walks the **original** text left-to-right without overlap (`str::replacen` / `Regex::replacen`), so "first N"
         can never re-hit text inserted by an earlier replacement. Multi-site writes put `⚠ 多处替换` (multiple sites)
-      plus the hit line numbers on the first body line. The dry-run preview returns the **same unified diff** used for real writes instead of a
+      plus the hit line numbers on the first body line. When `old_text` has no match the tool also checks `new_text`:
+        if that one matches, the error says the two values look **swapped** and returns the corrected call
+        plus the hit lines. The dry-run preview returns the **same unified diff** used for real writes instead of a
         line-by-line guess. Optional **`base_revision`** adds a CAS (`错误[stale_revision]`, nothing written);
         this turn's `read_file` binding is checked too when present,
           and **neither present means no check** — text anchoring does not depend on a line-number snapshot,

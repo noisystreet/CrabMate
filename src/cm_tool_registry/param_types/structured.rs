@@ -463,16 +463,63 @@ pub struct CreateDirArgs {
     pub parents: bool,
 }
 
+/// `SearchReplaceArgs.old_text` 的规范键名。
+pub const SEARCH_REPLACE_OLD_TEXT_KEY: &str = "old_text";
+
+/// `old_text` 的入站别名（与 `#[serde(alias)]` 逐一对应）。
+///
+/// 两处都要：`coerce` 在 **JSON Schema 校验之前**把别名搬到规范键（schema 只认主名，
+/// 别名不进 schema），而 serde 侧负责直接反序列化的调用面。缺任何一边，
+/// 旧名调用都会在另一道门上失败。
+///
+/// 刻意**不放**裸 `old` / `new`：`coerce` 只按别名搬值、**不做类型检查**，这两个词太通用，
+/// 调用方一旦在本工具里顺手传了 `"new": true` 之类无关字段，会被搬成 `new_text: true`，
+/// 然后卡在 serde 的英文类型错误上——比「缺少 new_text」更难读。
+pub const SEARCH_REPLACE_OLD_TEXT_ALIASES: &[&str] =
+    &["search", "old_string", "find", "search_text", "original"];
+
+/// `SearchReplaceArgs.new_text` 的规范键名。
+pub const SEARCH_REPLACE_NEW_TEXT_KEY: &str = "new_text";
+
+/// `new_text` 的入站别名（同上）。
+pub const SEARCH_REPLACE_NEW_TEXT_ALIASES: &[&str] = &[
+    "replace",
+    "new_string",
+    "replacement",
+    "replace_with",
+    "replacement_text",
+];
+
 /// `file::mutate::search_replace` 入参。
+///
+/// 主名用 `old_text` / `new_text`：`search` / `replace` 都是**动词**，`replace` 既能读成
+/// 「要被替换掉的」（旧文本）又能读成「替换进去的」（新文本），两个值写反时没有任何信号。
+/// 旧名全部保留为 serde 别名（`alias` 不进 schema），既有调用与 Client 都无需改动。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SearchReplaceArgs {
     pub path: String,
-    pub search: String,
-    #[serde(default)]
-    pub replace: String,
+    /// 文件里**已有的**原文（要被找出来的那一段）。
+    #[serde(
+        alias = "search",
+        alias = "old_string",
+        alias = "find",
+        alias = "search_text",
+        alias = "original"
+    )]
+    pub old_text: String,
+    /// **替换进去**的新文本。**必填**：要删除这段内容请显式传空串——漏传会被拒绝，
+    /// 因为「新文本写进了 old_text」与「忘记传 new_text」在结果上都是静默删改。
+    #[serde(
+        alias = "replace",
+        alias = "new_string",
+        alias = "replacement",
+        alias = "replace_with",
+        alias = "replacement_text"
+    )]
+    pub new_text: String,
     #[serde(default)]
     pub regex: bool,
-    /// **省略 = 唯一性守卫**：`search` 必须只匹配 1 处，多处即拒写（未写盘）并列出命中位置。
+    /// **省略 = 唯一性守卫**：`old_text` 必须只匹配 1 处，多处即拒写（未写盘）并列出命中位置。
     /// `0` = 显式全部替换；`N` = 只替换前 N 处。
     #[serde(default)]
     #[schemars(range(min = 0))]

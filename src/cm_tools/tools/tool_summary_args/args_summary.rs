@@ -4,7 +4,7 @@ use super::core::{
     command_display_tokens, run_command_arg_display_tokens, terminal_session_arg_display_token,
 };
 use super::gh_archive::gh_repo_suffix;
-use super::{ToolArgsSummary, arg_bool, arg_str, arg_str_raw, arg_str_vec, arg_u64};
+use super::{ToolArgsSummary, arg_bool, arg_str, arg_str_any, arg_str_raw, arg_str_vec, arg_u64};
 
 // ── 摘要与 Args 同源（#1157 落地后的现状形态，不再是「迁移目标」）──────────
 //
@@ -336,7 +336,16 @@ impl ToolArgsSummary for super::super::tool_param_types::SearchInFilesEnhancedAr
 impl ToolArgsSummary for super::super::tool_param_types::SearchReplaceArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
-        let short = truncate_chars(arg_str(args, "search")?, 30);
+        // 读的是**原始 JSON**（不是 typed struct），所以新名与旧别名都要认：只读 `search`
+        // 会让以 `old_text` 调用的摘要静默变成 None（Chat 面板少一行，无任何提示）。
+        let short = truncate_chars(
+            arg_str_any(
+                args,
+                super::super::tool_param_types::SEARCH_REPLACE_OLD_TEXT_KEY,
+                super::super::tool_param_types::SEARCH_REPLACE_OLD_TEXT_ALIASES,
+            )?,
+            30,
+        );
         // `max_replacements` / `replace_all` 的三种组合在摘要里必须可区分：默认是「唯一匹配
         // 守卫」，`(all)` 才是全量替换，`(first N)` 是显式限量。混成一句等于把「改多了」藏起来。
         let scope = match (
@@ -612,6 +621,17 @@ mod field_family_summary_tests {
     #[test]
     fn search_replace_default_is_unique_guard() {
         let v = json!({ "path": "a.rs", "search": "foo" });
+        assert_eq!(
+            SearchReplaceArgs::summary_line(&v).expect("summary"),
+            "search_replace (preview): a.rs / \"foo\""
+        );
+    }
+
+    /// 主名 `old_text` 也必须能出摘要：摘要读的是**原始 JSON**（不是 typed struct），
+    /// 只认 `search` 会让新名调用的整行摘要静默变成 `None`（Chat 面板少一行、无提示）。
+    #[test]
+    fn search_replace_primary_key_yields_summary() {
+        let v = json!({ "path": "a.rs", "old_text": "foo", "new_text": "bar" });
         assert_eq!(
             SearchReplaceArgs::summary_line(&v).expect("summary"),
             "search_replace (preview): a.rs / \"foo\""

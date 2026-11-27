@@ -46,7 +46,7 @@
             tags: [dev_tag::GENERAL],
             runner: runner_search_replace_try,
             summary: dynamic,
-            description: "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 search 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
+            description: "在工作区内**单个文件**中替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。参数语义：**`old_text` = 文件里已有的原文**（要被找出来的那一段），**`new_text` = 替换进去的新文本**（必填；要删除内容请显式传空串，漏传会被拒绝）。旧名 `search` / `replace` 以及 `old_string` / `new_string` 等仍作为别名接受。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 `old_text` 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。`old_text` 零命中时会顺带检查 `new_text` 是否命中：命中即提示**两个参数疑似写反**并给出对调后的调用。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
         },
         // ── 新增纯内存 / 开发辅助工具 ────────────────────────
 ]

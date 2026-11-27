@@ -551,11 +551,11 @@
         "confirm": false,
         "dry_run": false,
         "max_replacements": 1,
+        "new_text": "x",
+        "old_text": "x",
         "path": "x",
         "regex": false,
-        "replace": "x",
         "replace_all": false,
-        "search": "x",
         "skip_precheck": false
       },
       "summary": "search_replace (first 1): x / \"x\"",
@@ -4842,10 +4842,10 @@
     },
     "search_replace": {
       "category": "development",
-      "description": "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 search 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
+      "description": "在工作区内**单个文件**中替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。参数语义：**`old_text` = 文件里已有的原文**（要被找出来的那一段），**`new_text` = 替换进去的新文本**（必填；要删除内容请显式传空串，漏传会被拒绝）。旧名 `search` / `replace` 以及 `old_string` / `new_string` 等仍作为别名接受。支持字面量或正则表达式匹配（正则保留 `$1` 展开）。**默认要求 `old_text` 在文件中唯一匹配**：命中多处即拒写并列出各命中行号（未写盘），请补足上下文让锚点唯一，或显式声明范围——`max_replacements=N` 只改前 N 处，`replace_all=true`（等价 `max_replacements=0`）全部替换。`old_text` 零命中时会顺带检查 `new_text` 是否命中：命中即提示**两个参数疑似写反**并给出对调后的调用。**dry_run 默认 true 仅预览**（返回 unified diff）；显式 dry_run=false 即写盘，不再要求 confirm（该字段仅为兼容保留）。可选 `base_revision` 做写前 CAS（本轮 read_file 有绑定也会自动校验）。文件上限 4MiB。",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "`file::mutate::search_replace` 入参。",
+        "description": "`file::mutate::search_replace` 入参。\n\n主名用 `old_text` / `new_text`：`search` / `replace` 都是**动词**，`replace` 既能读成\n「要被替换掉的」（旧文本）又能读成「替换进去的」（新文本），两个值写反时没有任何信号。\n旧名全部保留为 serde 别名（`alias` 不进 schema），既有调用与 Client 都无需改动。",
         "properties": {
           "allow_stale_revision": {
             "default": null,
@@ -4874,13 +4874,21 @@
           },
           "max_replacements": {
             "default": null,
-            "description": "**省略 = 唯一性守卫**：`search` 必须只匹配 1 处，多处即拒写（未写盘）并列出命中位置。\n`0` = 显式全部替换；`N` = 只替换前 N 处。",
+            "description": "**省略 = 唯一性守卫**：`old_text` 必须只匹配 1 处，多处即拒写（未写盘）并列出命中位置。\n`0` = 显式全部替换；`N` = 只替换前 N 处。",
             "format": "uint64",
             "minimum": 0,
             "type": [
               "integer",
               "null"
             ]
+          },
+          "new_text": {
+            "description": "**替换进去**的新文本。**必填**：要删除这段内容请显式传空串——漏传会被拒绝，\n因为「新文本写进了 old_text」与「忘记传 new_text」在结果上都是静默删改。",
+            "type": "string"
+          },
+          "old_text": {
+            "description": "文件里**已有的**原文（要被找出来的那一段）。",
+            "type": "string"
           },
           "path": {
             "type": "string"
@@ -4889,17 +4897,10 @@
             "default": false,
             "type": "boolean"
           },
-          "replace": {
-            "default": "",
-            "type": "string"
-          },
           "replace_all": {
             "default": false,
             "description": "`true` 等价于 `max_replacements=0`（显式全部替换），语义更直白。与 `max_replacements`\n给非 0 值时冲突报错。",
             "type": "boolean"
-          },
-          "search": {
-            "type": "string"
           },
           "skip_precheck": {
             "default": false,
@@ -4909,7 +4910,8 @@
         },
         "required": [
           "path",
-          "search"
+          "old_text",
+          "new_text"
         ],
         "title": "SearchReplaceArgs",
         "type": "object"

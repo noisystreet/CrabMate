@@ -64,6 +64,8 @@ mod tests_metadata;
 #[cfg(test)]
 mod tests_revision;
 #[cfg(test)]
+mod tests_search_replace_params;
+#[cfg(test)]
 mod tests_typed_dir_perm;
 #[cfg(test)]
 mod tests_typed_readonly;
