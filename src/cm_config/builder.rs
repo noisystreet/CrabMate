@@ -500,6 +500,15 @@ impl ConfigBuilder {
         cbi.project_dependency_brief_inject_max_chars = agent
             .project_dependency_brief_inject_max_chars
             .or(cbi.project_dependency_brief_inject_max_chars);
+        cbi.runtime_env_snapshot_enabled = agent
+            .runtime_env_snapshot_enabled
+            .or(cbi.runtime_env_snapshot_enabled);
+        cbi.runtime_env_snapshot_max_chars = agent
+            .runtime_env_snapshot_max_chars
+            .or(cbi.runtime_env_snapshot_max_chars);
+        cbi.runtime_env_snapshot_probe_cache_ttl_secs = agent
+            .runtime_env_snapshot_probe_cache_ttl_secs
+            .or(cbi.runtime_env_snapshot_probe_cache_ttl_secs);
         let tce = &mut self.tool_call_explain;
         tce.tool_call_explain_enabled = agent
             .tool_call_explain_enabled

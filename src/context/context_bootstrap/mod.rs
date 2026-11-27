@@ -9,6 +9,7 @@ pub mod first_turn_inject;
 pub mod living_docs;
 pub mod project_dependency_brief;
 pub mod prompt_compose;
+pub mod runtime_env_snapshot;
 
 pub use crate::cm_tools::project_profile;
 pub use first_turn_inject::build_first_turn_user_context_markdown;

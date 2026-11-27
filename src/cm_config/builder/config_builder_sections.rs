@@ -266,6 +266,9 @@ pub(crate) struct ConfigBuilderContextBootstrapInject {
     pub(crate) project_profile_inject_max_chars: Option<u64>,
     pub(crate) project_dependency_brief_inject_enabled: Option<bool>,
     pub(crate) project_dependency_brief_inject_max_chars: Option<u64>,
+    pub(crate) runtime_env_snapshot_enabled: Option<bool>,
+    pub(crate) runtime_env_snapshot_max_chars: Option<u64>,
+    pub(crate) runtime_env_snapshot_probe_cache_ttl_secs: Option<u64>,
 }
 
 #[derive(Default)]

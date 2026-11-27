@@ -23,6 +23,9 @@ pub(super) struct TailStorageInjectNetScalars {
     pub(super) project_profile_inject_max_chars: usize,
     pub(super) project_dependency_brief_inject_enabled: bool,
     pub(super) project_dependency_brief_inject_max_chars: usize,
+    pub(super) runtime_env_snapshot_enabled: bool,
+    pub(super) runtime_env_snapshot_max_chars: usize,
+    pub(super) runtime_env_snapshot_probe_cache_ttl_secs: u64,
     pub(super) tool_call_explain_enabled: bool,
     pub(super) tool_call_explain_min_chars: usize,
     pub(super) tool_call_explain_max_chars: usize,
@@ -119,6 +122,24 @@ pub(super) fn derive_tail_storage_inject_net_scalars(
         .project_dependency_brief_inject_max_chars
         .unwrap_or(4000)
         .clamp(0, 500_000) as usize;
+    // 默认开启：「环境事实不必先调工具就能看见」正是本项的全部意义（#1526 A1a）；
+    // `runtime_env_snapshot_max_chars = 0` 是关闭开关（与其它注入项同一套双闸语义）。
+    let runtime_env_snapshot_enabled = b
+        .context_bootstrap_inject
+        .runtime_env_snapshot_enabled
+        .unwrap_or(true);
+    let runtime_env_snapshot_max_chars = b
+        .context_bootstrap_inject
+        .runtime_env_snapshot_max_chars
+        .unwrap_or(2000)
+        .clamp(0, 100_000) as usize;
+    // 探测缓存默认 300s：`rustc -V` / `cargo -V` 的取值在一个进程生命周期内基本不变，
+    // 而每次首轮都起 2~3 个子进程是白付的启动成本。
+    let runtime_env_snapshot_probe_cache_ttl_secs = b
+        .context_bootstrap_inject
+        .runtime_env_snapshot_probe_cache_ttl_secs
+        .unwrap_or(300)
+        .clamp(0, 86_400);
     let tool_call_explain_enabled = b
         .tool_call_explain
         .tool_call_explain_enabled
@@ -203,6 +224,9 @@ pub(super) fn derive_tail_storage_inject_net_scalars(
         project_profile_inject_max_chars,
         project_dependency_brief_inject_enabled,
         project_dependency_brief_inject_max_chars,
+        runtime_env_snapshot_enabled,
+        runtime_env_snapshot_max_chars,
+        runtime_env_snapshot_probe_cache_ttl_secs,
         tool_call_explain_enabled,
         tool_call_explain_min_chars,
         tool_call_explain_max_chars,
