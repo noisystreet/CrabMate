@@ -464,4 +464,21 @@ mod tests {
             );
         }
     }
+
+    /// `SelfConfigInfoArgs` 的 `sections` doc 会随 JSON Schema 发给模型，因此**必须**列全小节：
+    /// 漏项时模型会以为该小节不存在，转而凭记忆编造（#1526 实测漏过 `subagent` / `permission`）。
+    ///
+    /// 钉在 schema 上而不是钉在源码注释上：这条路径才是真正到达模型的那一份。
+    #[test]
+    fn self_config_info_args_doc_mentions_every_section_name() {
+        let schema =
+            schemars::schema_for!(crate::cm_tool_registry::param_types::SelfConfigInfoArgs);
+        let text = serde_json::to_string(&schema).expect("schema 应可序列化");
+        for name in SECTION_NAMES {
+            assert!(
+                text.contains(name),
+                "sections 参数的 schema 未提及小节 {name}（模型会以为它不可查）"
+            );
+        }
+    }
 }
