@@ -23,4 +23,7 @@ pub mod tool_dispatch;
 pub mod tool_retry_policy;
 pub mod tool_runtime;
 pub mod tools;
-pub mod workspace;
+// 定义已下沉到 `crate::cm_tool_fs`（#1510 P3-4）：工作区路径策略与安全打开语义。
+// 保留模块别名使既有 41 处 `cm_tools::workspace::…` 引用零涟漪；
+// **新代码请直接引 `crate::cm_tool_fs::…`**（别名只为兼容，不再新增使用者）。
+pub(crate) use crate::cm_tool_fs as workspace;

@@ -237,11 +237,10 @@ pub fn record_file_state_after_write(
     if rel.is_empty() {
         return;
     }
-    let after =
-        match crate::cm_tools::workspace::path::absolutize_relative_under_root(working_dir, rel) {
-            Ok(p) => std::fs::read_to_string(&p).ok(),
-            Err(_) => None,
-        };
+    let after = match crate::cm_tool_fs::path::absolutize_relative_under_root(working_dir, rel) {
+        Ok(p) => std::fs::read_to_string(&p).ok(),
+        Err(_) => None,
+    };
     c.record_mutation(rel, before, after);
 }
 

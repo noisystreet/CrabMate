@@ -102,7 +102,7 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 
 | Area | Entry points | Focus |
 |------|--------------|-------|
-| Workspace switching & paths | `src/web/workspace/`, `src/workspace/path.rs`, `src/workspace/fs.rs`, `src/tools/file/path.rs` | Normalization, no unauthorized arbitrary directories, `..` / symlink handling; Linux already uses `openat2` `RESOLVE_IN_ROOT` on some paths — residual TOCTOU is documented in `path_workspace` / `workspace_fs` and must not be softened. |
+| Workspace switching & paths | `src/web/workspace/`, `src/cm_tool_fs/path.rs`, `src/cm_tool_fs/fs.rs`, `src/cm_tools/tools/file/path.rs` | Normalization, no unauthorized arbitrary directories, `..` / symlink handling; Linux already uses `openat2` `RESOLVE_IN_ROOT` on some paths — residual TOCTOU is documented in `path_workspace` / `workspace_fs` and must not be softened. |
 | Command execution | `src/tools/command.rs`, allowlist config, `run_command` in `tool_registry` | Allowlisted commands only; `..` / absolute-path argument rejections stay as-is unless intentionally changed *and* documented. |
 | HTTP fetching | `src/tools/http_fetch.rs`, `http_fetch` / `http_request`, `http_fetch_allowed_prefixes` | Conservative prefixes; approval semantics for unmatched URLs (including the `http_request` METHOD key) must match the docs. |
 | File read/write tools | `src/tools/file.rs` and friends | `resolve_for_read` / `resolve_for_write` semantics must not be bypassed. |

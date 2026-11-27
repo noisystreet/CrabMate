@@ -108,6 +108,9 @@ pub(crate) mod cm_runtime;
 /// 工具**执行基础设施**（#1510 P3 第二批）：子进程会话、进程组 kill、管道排空、墙钟与截断缓冲。
 #[cfg(feature = "server")]
 pub(crate) mod cm_tool_exec;
+/// 工作区路径策略与安全打开语义（#1510 P3-4）：`openat2 RESOLVE_IN_ROOT` 的落点。
+#[cfg(feature = "server")]
+pub(crate) mod cm_tool_fs;
 /// 工具注册面的中立部分（#1510 P3-3 第一批）：参数类型 + JSON Schema 生成。
 #[cfg(feature = "server")]
 pub(crate) mod cm_tool_registry;
