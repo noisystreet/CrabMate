@@ -441,12 +441,12 @@ pub async fn workspace_search_handler(
     let cfg_arc = Arc::new(cfg_snap);
     let work_dir = base_canonical.clone();
     let output = match tokio::task::spawn_blocking(move || {
-        let ctx = crate::tools::tool_context_for(
+        let ctx = crate::cm_tools::tools::tool_context_for(
             cfg_arc.as_ref(),
             cfg_arc.command_exec.allowed_commands.as_ref(),
             &work_dir,
         );
-        crate::tools::run_tool(tool_names::SEARCH_IN_FILES, &args_json, &ctx)
+        crate::cm_tools::tools::run_tool(tool_names::SEARCH_IN_FILES, &args_json, &ctx)
     })
     .await
     {

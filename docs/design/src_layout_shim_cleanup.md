@@ -44,7 +44,7 @@
 | `cm_chat_export/` 与 `cm_runtime/chat_export.rs` | 后者再导出前者全部符号再加落盘 IO，命名几乎相同 | ✅ 已改名 |
 | `cm_tools/tools/mod/`、`src/lib/` | 目录名仅为绕开 `mod.rs` / `lib.rs` 命名冲突而存在 | ✅ 已归位 |
 | `agent/agent_turn/` 与 `cm_agent/agent_turn/` | 一个逻辑模块在两个顶层目录各叫一次 `agent_turn` | ✅ 已合并（P1a） |
-| `crate::tools` | 解析链 `lib_server → cm_internal → cm_tools::tools`，三级别名 | ⬜ P2 |
+| `crate::tools` | ~~三级别名 `lib_server → cm_internal → cm_tools::tools`~~ → 三级已自然消失，别名已删（#1522） | ✅ |
 | `cm_tools/tools/` | 66 个平铺 `.rs` + 763 行 `mod.rs`（63 条 `mod` 声明） | ⬜ P3 |
 | ~~42 个 `.inc.rs`（5521 行）~~ → **代码分片已清零** | 原为绕开 `fn-nloc-ratchet` 的「假模块」。现剩 **20 个 `.inc.rs` / 696 行，全部是 `specs/` 的数据字面量**（`static SPECS_X: &[ToolSpec] = &include!("x.inc.rs")`，表达式位置，不制造作用域边界）；最后两处代码分片（`tool_summary_args/fragment_*.rs` 6 片、`text_encoding/*.inc.rs` 1 片）已改为真子模块 / 内联 | ✅ |
 | `#[path = "loop/mod.rs"] mod turn_loop;` | `loop` 是 Rust 关键字，被迫加一层间接 | ✅ 已消除（P1a，目录改名 `turn_loop/`） |
@@ -58,7 +58,7 @@
 | **P0** ✅ | 删纯转发壳；合并同名双份；tests 目录归位 | **无** | 否 |
 | **P1a** ✅ | 合并 `agent_turn` 双树：纯逻辑入 `agent/agent_turn/policy/`；目录 `loop/` → `turn_loop/` 去掉 `#[path]` | 无（纯搬家） | 是（已更新 `docs/开发文档.md`、`agent_turn_split.md`） |
 | **P1b** ✅ | 删除 `web/http_types` 的 4 个残留壳（`skills`/`tasks`/`tool_jobs`/`workspace`），18 处引用直连真源 | 无 | 否 |
-| P2 | 拆 `cm_internal`；`crate::tools` 收敛为一级别名 | 无 | 是 |
+| **P2** ✅ | 拆 `cm_internal`（S4-P4 已删）；`crate::tools` 别名已收敛删除（#1522） | 无 | 否（未增删顶层 `mod`） |
 | P3 | `cm_tools/tools` 按域分组；`.inc.rs` 收敛为真子模块 | 无 | 否（无顶层模块增减） |
 
 P0 之所以可以做到「无行为变化」，是因为它只删除**转发层**：删除前后，所有符号的定义位置、路径可见性、序列化形状均不变。
@@ -175,8 +175,8 @@ pre-commit run --all-files                   # 全绿（含 lizard / fn-param / 
 
 - **P1b** ✅：已删除 `web/http_types/{skills,tasks,tool_jobs,workspace}` 4 个 1 跳壳（实际 18 处引用，非预估 40 处），DTO 直连真源。
   `crate::web::http_types` 现只剩 `chat` / `github` / `memory` / `tools` / `validation`。
-- **P2**：`cm_internal`（18 文件）既是别名表、又转发 12 个 `cm_tools` 模块、
-  又有自身职责（`tool_registry` / `tool_jobs` / `tool_sandbox` / `terminal_session` / `user_data` / `context_bootstrap` / `observability` / `health`）。
-  按职责拆分为工具基建 / 上下文装配 / 可观测三块，并把 `crate::tools` 收敛为一级别名。需同步 `docs/开发文档.md`。
+- **P2** ✅：`cm_internal` 已由 S4-P4 整包删除；它残留的「`crate::tools` 收敛」在 #1522 收尾——
+  6 处 `use` + 13 处内联路径直连 `crate::cm_tools::tools`，`src/lib.rs` 的 `pub(crate) use … tools` 已删，
+  并由 `scripts/tools-alias-guard.sh` 防回退。删的是 `pub(crate) use` 项，未增删顶层 `mod`，故架构文档无需同步。
 - **P3**：`cm_tools/tools/` 40 个残留散文件按域分组（`command*.rs` 已达 10 个）；42 个 `.inc.rs` 中仅 `tool_specs_registry/specs/`（20 个，表驱动、
   语义自洽）保留，其余转真子模块。

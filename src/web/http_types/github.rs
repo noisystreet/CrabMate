@@ -2,8 +2,8 @@
 //!
 //! 响应信封在 **`cm_web_host`**；`data` 类型仍来自工具层。
 
+use crate::cm_tools::tools::web_api::{GithubPrCurrentChecksData, GithubRepoContextData};
 pub use crate::cm_web_host::http_types::github::GithubApiResponse;
-pub use crate::tools::web_api::{GithubPrCurrentChecksData, GithubRepoContextData};
 
 pub type GithubRepoContextResponse = GithubApiResponse<GithubRepoContextData>;
 pub type GithubPrCurrentChecksResponse = GithubApiResponse<GithubPrCurrentChecksData>;

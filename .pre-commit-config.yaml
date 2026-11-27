@@ -107,6 +107,18 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+      # `crate::tools` 别名守卫（#1522）：别名已从 `src/lib.rs` 删除，正名是
+      # `crate::cm_tools::tools`。与上面几条 ratchet 不同，这里**没有存量可留**，
+      # 所以是硬 0 断言而不是基线机制（基线只适合「还有一堆存量、先钉住不涨」）。
+      # 守卫只是 `grep`，代价可忽略，故 `always_run`——避免「改了 lib.rs 却因
+      # 文件过滤没跑」的漏检。
+      - id: tools-alias-guard
+        name: crate::tools alias removed (no second path to cm_tools::tools, #1522)
+        entry: bash scripts/tools-alias-guard.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       # 环境覆盖守卫（#1353）：`part_<数字>` 函数名只许降不许升；`cm_config/env_overrides/`
       # 的 `CM_*` 键集合必须与 `fixtures/env_override_keys.txt` 一致且不重复。为什么单独
       # 需要键 golden：现有 `cargo test` 只有少数几个键真跑过 env 层，其余键搬错文件或

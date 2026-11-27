@@ -256,7 +256,8 @@ resolver = "2"
 3. 不把两棵 `agent_turn` 树硬并成一个目录（`src/agent/agent_turn` vs `src/cm_agent/agent_turn`）。
 4. `protocol` feature 只编译下表「P」列；其余 `cfg(feature = "server")`（默认）。
 5. 原 crate 内 `crate::foo` → `crate::cm_<x>::foo`。根包 `src/` 里 `crabmate_<pkg>::` → `crate::cm_<x>::`。
-6. 组合面别名（`types` / `sse` / `config` / `crate::tools`）仅服务本仓 `src/`，**`cfg(feature = "server")`**，不作为 Client 契约。
+6. 组合面别名（`types` / `sse` / `config`）仅服务本仓 `src/`，**`cfg(feature = "server")`**，不作为 Client 契约。
+   `crate::tools` 已在 #1522 删除（正名 `crate::cm_tools::tools`，现无第二路径）。
 7. 无组合面模块再导出的 server 实现（`cm_tools`、`cmd_mate`、`cm_runtime`、`cm_memory` 等）为 **`pub(crate)`**。
   `cm_agent` / `cm_config` / `cm_llm` / `cm_workflow` / `cm_internal` 因 `pub use` 整模块（`agent` / `config` / `http_client` / `workflow` /
   `tool_sandbox`）须保持 `pub`，标 **`#[doc(hidden)]`**，不作为 Client 契约。
@@ -283,7 +284,7 @@ resolver = "2"
 | `crabmate-llm` | `src/cm_llm/` | 今日 `pub use crabmate_llm` |
 | `crabmate-runtime` | `src/cm_runtime/` | 退出码、消息展示、`save-session` 辅助 |
 | `crabmate-config` | `src/cm_config/` | 可 `pub use cm_config as config` |
-| `crabmate-tools` | `src/cm_tools/` | 经 `cm_internal` 再导出可继续叫 `crate::tools` |
+| `crabmate-tools` | `src/cm_tools/` | `cm_internal` 已删；#1522 后无 `crate::tools`，正名 `cm_tools::tools` |
 | `crabmate-memory` | `src/cm_memory/` | |
 | `crabmate-workflow` | `src/cm_workflow/` | `crate::agent::workflow` 再导出可保留 |
 | `crabmate-approval` | `src/cm_approval/` | |
