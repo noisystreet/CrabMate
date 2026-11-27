@@ -449,7 +449,41 @@ where
     for_each_decoded_line_from_file(file, hint, on_line)
 }
 
-include!("text_encoding/for_each_decoded_head.inc.rs");
+fn drain_pending_decoder_lines<F>(
+    line_no: &mut usize,
+    pending: &mut String,
+    on_line: &mut F,
+) -> Result<std::ops::ControlFlow<()>, TextDecodeError>
+where
+    F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
+{
+    while let Some(pos) = pending.find('\n') {
+        *line_no += 1;
+        let mut line = pending[..pos].to_string();
+        if line.ends_with('\r') {
+            line.pop();
+        }
+        pending.drain(..=pos);
+        if on_line(*line_no, &line).is_break() {
+            return Ok(std::ops::ControlFlow::Break(()));
+        }
+    }
+    Ok(std::ops::ControlFlow::Continue(()))
+}
+
+fn emit_decoder_pending_tail_line<F>(line_no: &mut usize, mut pending: String, on_line: &mut F)
+where
+    F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
+{
+    if pending.is_empty() {
+        return;
+    }
+    *line_no += 1;
+    if pending.ends_with('\r') {
+        pending.pop();
+    }
+    let _ = on_line(*line_no, &pending);
+}
 
 /// 与 [`for_each_decoded_line_from_file`] 相同，但 `head` 已由调用方从 `file` 读出且文件指针位于 `head` 之后（与 `read_file` 嗅探阶段一致）。
 pub fn for_each_decoded_line_from_file_with_head<F>(

@@ -104,9 +104,15 @@ pub(super) fn arg_str_default<'a>(args: &'a serde_json::Value, key: &str) -> Opt
     }
 }
 
-include!("tool_summary_args/fragment_args_summary.rs");
-include!("tool_summary_args/fragment_core.rs");
-include!("tool_summary_args/fragment_git_files_diff.rs");
-include!("tool_summary_args/fragment_web_search.rs");
-include!("tool_summary_args/fragment_file_ops.rs");
-include!("tool_summary_args/fragment_gh_archive.rs");
+// 各工具族的摘要实现（#1510 后清理：原为 6 个 `fragment_*.rs` 经 `include!` 拼进本模块的
+// 同一作用域，属「假模块」——rust-analyzer 看不到边界、`tests` 名不能复用只能加前缀。
+// 现改为真子模块，各自 `use super::{…}` 显式依赖 helper 与 trait。
+// `specs/*.inc.rs` 用 `ts::summary_copy_file` / `ts::summary_move_file` 指定摘要函数。
+pub(super) use args_summary::{summary_copy_file, summary_move_file};
+
+mod args_summary;
+mod core;
+mod file_ops;
+mod gh_archive;
+mod git_files_diff;
+mod web_search;

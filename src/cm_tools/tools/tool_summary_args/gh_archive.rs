@@ -1,7 +1,9 @@
+use super::{ToolArgsSummary, arg_opt_bool, arg_opt_str, arg_opt_u64, arg_str_raw};
+
 // ── gh *（`gh_pr` / `gh_run`）──────────────────────────────────
 
 /// `repo` 后缀：只有 trim 后非空时才追加 ` (owner/repo)`。
-fn gh_repo_suffix(repo: Option<&str>) -> String {
+pub(super) fn gh_repo_suffix(repo: Option<&str>) -> String {
     repo.map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|r| format!(" ({r})"))
@@ -11,7 +13,7 @@ fn gh_repo_suffix(repo: Option<&str>) -> String {
 /// `gh_pr` 的摘要行：`action` 必填（旧 `GhPrSummaryArgs` 里它没有 `#[serde(default)]`），
 /// 其余字段**先全部取值**再按 action 拼装——旧结构体是整体反序列化，用不到的字段类型不符
 /// 同样不该有摘要。
-impl ToolArgsSummary for super::tool_param_types::GhPrArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GhPrArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action = arg_str_raw(args, "action")?.trim();
         let repo = arg_opt_str(args, "repo")?;
@@ -68,7 +70,7 @@ fn gh_pr_title_suffix(title: Option<&str>) -> String {
 }
 
 /// `gh_run` 的摘要行：`action` 与 `run_id` 都必填（旧结构体两者都没有 `#[serde(default)]`）。
-impl ToolArgsSummary for super::tool_param_types::GhRunArgs {
+impl ToolArgsSummary for super::super::tool_param_types::GhRunArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let action = arg_str_raw(args, "action")?.trim();
         let run_id = arg_str_raw(args, "run_id")?.trim();

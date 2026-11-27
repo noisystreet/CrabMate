@@ -1,3 +1,5 @@
+use super::{ToolArgsSummary, arg_opt_str, arg_opt_u64, arg_str, arg_str_raw, arg_str_vec};
+
 // ── 文件 / 归档 / 写入 / 导航族的摘要与「旧结构体反序列化边界」────────────────────
 //
 // 与 `fragment_args_summary.rs` 同属一个模块（`include!` 拼进同一 `mod`），拆出来只是为
@@ -14,7 +16,7 @@
 // `cargo test -p crabmate --features archive-tools --lib cm_tools::tools::tool_specs_registry`.
 
 #[cfg(feature = "archive-tools")]
-impl ToolArgsSummary for super::tool_param_types::ArchivePackArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ArchivePackArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let output = arg_str(args, "output")?;
         // `sources` 只用来数个数，但元素类型仍要校验（`arg_str_vec` 负责）：
@@ -27,7 +29,7 @@ impl ToolArgsSummary for super::tool_param_types::ArchivePackArgs {
 }
 
 #[cfg(feature = "archive-tools")]
-impl ToolArgsSummary for super::tool_param_types::ArchiveUnpackArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ArchiveUnpackArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let archive = arg_str(args, "archive")?;
         // 旧实现是 `Option<String>` + `.filter(|s| !s.is_empty())` + `unwrap_or(".")`：
@@ -44,7 +46,7 @@ impl ToolArgsSummary for super::tool_param_types::ArchiveUnpackArgs {
 }
 
 #[cfg(feature = "archive-tools")]
-impl ToolArgsSummary for super::tool_param_types::ArchiveListArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ArchiveListArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         Some(format!("list archive: {}", arg_str(args, "archive")?))
     }
@@ -52,7 +54,7 @@ impl ToolArgsSummary for super::tool_param_types::ArchiveListArgs {
 
 // ── P2 批：写入 / 导航族（`modify_file` / `apply_patch` / `code_nav`）─────────────
 
-impl ToolArgsSummary for super::tool_param_types::ModifyFileArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ModifyFileArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         let path = arg_str(args, "path")?;
         // `mode` **既不 trim 也不做别名归一**：旧结构体是 `Option<String>` + `unwrap_or("full")`，
@@ -74,7 +76,7 @@ impl ToolArgsSummary for super::tool_param_types::ModifyFileArgs {
     }
 }
 
-impl ToolArgsSummary for super::tool_param_types::ApplyPatchArgs {
+impl ToolArgsSummary for super::super::tool_param_types::ApplyPatchArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         // `patch` 用 raw 取值：空串是**合法**入参，旧实现会给「apply patch」（没有文件名可列）；
         // 用 `arg_str` 会把空串当成「没给」而吞掉整行摘要。
@@ -104,7 +106,7 @@ fn patched_files(patch: &str) -> Vec<String> {
         .collect()
 }
 
-impl ToolArgsSummary for super::tool_param_types::CodeNavArgs {
+impl ToolArgsSummary for super::super::tool_param_types::CodeNavArgs {
     fn summary_line(args: &serde_json::Value) -> Option<String> {
         // 四个 action 共用一条摘要通道：这里只做分发，每个 action 的文案各自一个小函数
         // （避免堆成分支丛林，lizard CCN≤10）。三个可选字段即使与 action 无关也照旧校验类型，
