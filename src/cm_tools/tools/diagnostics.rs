@@ -2,9 +2,9 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::process::Command;
 
 use super::file;
+use crate::cm_tool_exec::{capture_trimmed, parse_rustc_vv};
 use crate::cm_tool_result::ToolError;
 
 /// 与 `config/mod.rs`、README、AGENTS 中常见项对齐；按字母序输出。
@@ -101,29 +101,6 @@ fn env_presence_line(name: &str, val: Result<String, std::env::VarError>) -> Str
             Ok(s) => format!("  {}: 已设置(非空, {} 字符，值已隐藏)", name, s.len()),
         }
     }
-}
-
-/// 供 CLI `doctor` 等复用：执行命令并取 stdout 首段非空文本。
-pub fn capture_trimmed(cmd: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(cmd).args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
-
-fn parse_rustc_vv(text: &str) -> (Option<String>, Option<String>) {
-    let mut host = None;
-    let mut release = None;
-    for line in text.lines() {
-        if let Some(v) = line.strip_prefix("host: ") {
-            host = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("release: ") {
-            release = Some(v.trim().to_string());
-        }
-    }
-    (host, release)
 }
 
 fn is_safe_extra_env_name(name: &str) -> bool {

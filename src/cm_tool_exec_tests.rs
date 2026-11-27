@@ -405,3 +405,37 @@ fn session_stats_histogram_places_duration_into_overflow_bucket() {
         "累计均值应随两段新增时长上升: {after:?}"
     );
 }
+
+/// `parse_rustc_vv` 只认 `host:` / `release:` 前缀，缺失项为 `None`。
+///
+/// 三个调用方（诊断摘要 / `doctor` / 运行时环境快照）共用本函数，故在此钉住解析口径：
+/// 换成 `contains("host")` 之类的宽松匹配会让 `hostname:` 行被误取（用例里就带了一行）。
+#[test]
+fn parse_rustc_vv_extracts_host_and_release_only() {
+    let text = "rustc 1.88.0 (abc 2025-01-01)\n\
+                binary: rustc\n\
+                host: x86_64-unknown-linux-gnu\n\
+                release: 1.88.0\n\
+                hostname: ignored\n";
+    let (host, release) = parse_rustc_vv(text);
+    assert_eq!(host.as_deref(), Some("x86_64-unknown-linux-gnu"));
+    assert_eq!(release.as_deref(), Some("1.88.0"));
+
+    let (h, r) = parse_rustc_vv("no such lines");
+    assert!(h.is_none(), "无 host 行时应为 None");
+    assert!(r.is_none(), "无 release 行时应为 None");
+}
+
+/// 探测不存在的命令时返回 `None` 而非 `Err`/panic：调用方一律按「缺失即降级」处理。
+#[test]
+fn capture_trimmed_missing_binary_is_none() {
+    assert!(capture_trimmed("crabmate-no-such-binary-1526", &["-V"]).is_none());
+}
+
+/// 成功路径：取 stdout 并 trim 首尾空白（环境快照直接把它拼进上下文，带换行会破坏行结构）。
+#[cfg(unix)]
+#[test]
+fn capture_trimmed_trims_stdout() {
+    let got = capture_trimmed("sh", &["-c", "printf '  hello  \\n'"]).expect("sh 应可用");
+    assert_eq!(got, "hello");
+}
