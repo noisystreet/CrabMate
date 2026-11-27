@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::cm_tool_result::ToolError;
 
-use super::output_util;
+use super::super::output_util;
 
 /// 单次输出最多保留的行数（stdout / stderr 分别截断）。
 pub(super) const MAX_OUTPUT_LINES: usize = 500;

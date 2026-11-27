@@ -10,11 +10,11 @@ use crate::cm_tool_exec::{
     wait_child_session, wait_child_session_async,
 };
 
+use super::super::test_result_cache::store_cached;
 use super::command_outcome::{CommandOutcome, ExitStatusKind};
-use super::test_result_cache::store_cached;
 
-use super::command::{CacheWritePlan, SpawnPlan};
 use super::command_error::{RunCommandError, map_spawn_error};
+use super::{CacheWritePlan, SpawnPlan};
 
 pub(super) fn execute_spawn_plan_sync(
     plan: SpawnPlan,

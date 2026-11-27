@@ -54,7 +54,7 @@
 |---|---|---|
 | 工具可见性 | `SessionMode` Ask/Plan → `PlanStepExecutorKind::ReviewReadonly` | `src/agent/agent_turn/turn_loop/run_dispatch.rs:34`、`turn_loop/outer_loop.rs:101`（`build_planner_round_tools`） |
 | 工具准入 | 子代理角色 / 角色 `allowed_tools` 的 early-deny | `src/agent/agent_turn/policy/tool_execution.rs:93`（`tool_policy_early_deny_message`）、`src/context/agent_role_turn.rs:202` |
-| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/tool_host/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
+| 命令 | `allowed_commands` 白名单（`*` 哨兵已支持） | `src/cm_tools/tools/command/command_shell_script.rs:29`（`allowlist_allows_all`）、`src/tool_host/tool_registry/execute/run_command/approval.rs`（`evaluate_policy`） |
 | 路径 | 根内相对路径硬校验；绝对路径 / `..` 在文件工具直接拒 | `src/cm_tools/tools/file/path.rs:127`（`resolve_for_read`）、`:159`（`resolve_for_write`）、`src/cm_tools/workspace/path.rs` |
 | 出站网络 | `http_fetch_allowed_prefixes`（`config/tools.toml` 默认 `["*"]`） | `src/tool_host/tool_registry/execute/http/gate.rs`（`http_tool_url_allowed`） |
 | 人工审批 / 隔离 | `SensitiveCapability`（5 类）+ Docker 沙盒 | `src/cm_approval/mod.rs:26`、`src/tool_host/tool_approval/approval_specs.rs`、`src/tool_sandbox/mod.rs:82` |
@@ -1131,7 +1131,7 @@ grep -rn "resolve_for_\(read\|read_open\|write\)(" src/cm_tools/tools/file/ | gr
 | 只读/写工具分类 | `src/cm_tools/registry_policy.rs:105`、`:149` |
 | `run_command` 策略评估 | `src/tool_host/tool_registry/execute/run_command/approval.rs` |
 | `PolicyDecision` 结构 | 同上（`run_command/approval.rs`，`struct PolicyDecision`） |
-| 白名单 `*` 哨兵 | `src/cm_tools/tools/command_shell_script.rs:29` |
+| 白名单 `*` 哨兵 | `src/cm_tools/tools/command/command_shell_script.rs:29` |
 | 文件路径解析/写入 | `src/cm_tools/tools/file/path.rs:127`、`:159` |
 | 工作区路径与敏感前缀 | `src/cm_tools/workspace/path.rs`、`src/cm_types/path_utils.rs`（`SENSITIVE_WORKSPACE_PREFIXES`，单一来源） |
 | `read_dir` 工作区外审批 | `src/tool_host/tool_registry/execute/mod.rs:134` |

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use thiserror::Error;
 
-use super::output_util;
+use super::super::output_util;
 use crate::cm_tool_result::{ParsedToolOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::CdPeelError;

@@ -1,6 +1,6 @@
 //! 将 `run_command` 的 command+args 拼成一行脚本，并在白名单含 `bash`/`sh` 时经 `bash -c` 执行。
 
-use super::super::command_line_prepare::parse_cd_prefix;
+use super::command_line_prepare::parse_cd_prefix;
 
 /// POSIX 登录/非登录 shell 名（小写比较）。
 pub fn is_posix_shell_name(cmd: &str) -> bool {

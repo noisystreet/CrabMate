@@ -9,32 +9,43 @@ use super::test_result_cache::{
     TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
 };
 
-use super::command_outcome::{CommandDigest, CommandOutcome};
-
-#[path = "command_rate_limit.rs"]
+mod command_error;
+mod command_exec;
+mod command_line_prepare;
+mod command_outcome;
 mod command_rate_limit;
-#[path = "command_shell_script.rs"]
 mod command_shell_script;
-#[path = "command_prepare_invocation.rs"]
 mod prepare_invocation;
 
-use super::command_error::RunCommandError;
-use super::command_exec::{execute_spawn_plan_async, execute_spawn_plan_sync};
-use command_rate_limit::check_rate_limit;
-use prepare_invocation::prepare_run_command_spec;
-
+// ---- 对 `tools::` 的再导出：`tools/mod.rs` 用 `pub use command::*;` 承接 ----
+pub use command_error::RunCommandError;
+pub use command_line_prepare::split_command_prefix_if_embedded;
+pub use command_outcome::CommandDigest;
+#[cfg(test)]
+pub use command_outcome::ExitStatusKind;
 #[cfg(test)]
 pub use command_rate_limit::reset_run_command_rate_limit_for_tests;
-pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
-pub use prepare_invocation::{CommandSpec, parse_command_spec};
-pub use prepare_invocation::{UnsafeArgScan, scan_run_command_unsafe_args_spec};
-
 pub use command_shell_script::{
     allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
-    argv_needs_shell_expansion, dash_c_script_body, is_posix_shell_name,
-    is_shell_dash_c_invocation, join_run_command_argv_tail, join_run_command_shell_script,
+    argv_needs_shell_expansion, dash_c_script_body, is_shell_dash_c_invocation,
+    join_run_command_argv_tail, join_run_command_shell_script,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
 };
+pub use prepare_invocation::{
+    CommandSpec, UnsafeArgScan, parse_command_spec, scan_run_command_unsafe_args_spec,
+};
+// 收窄为 `pub(super)`（#1521 批次 1）：`command` 是私有 `mod`，`pub(crate)` 的“全 crate
+// 可见”会被模块私有性挡住，实际只有 `tools` 子树能看见 —— 写 `pub(super)` 才与事实一致。
+// 这两项此前是「模块内 pub 但 `tools::` 看不到」的半暴露状态，收窄后 `tools::` 的符号集合
+// 与搬迁前逐符号一致（`run` 同理，见下方 `pub(super) fn run`）。
+pub(super) use command_shell_script::is_posix_shell_name;
+pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
+
+// ---- 内部使用（不对外）----
+use command_exec::{execute_spawn_plan_async, execute_spawn_plan_sync};
+use command_outcome::CommandOutcome;
+use command_rate_limit::check_rate_limit;
+use prepare_invocation::prepare_run_command_spec;
 
 /// 可选：`cargo test …` 的进程内结果缓存（与内置 `cargo_test` 工具共用指纹逻辑）。
 pub struct RunCommandTestCacheOpts<'a> {
@@ -237,7 +248,10 @@ fn plan_cargo_test_cache(
 ///
 /// 返回 [`CommandOutcome`]：进程启动后的成功 / 非零退出 / 超时 / 取消都在 `status` 中；
 /// `Err` 仅表示未启动（解析、策略、限流、spawn 失败）。
-pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<CommandOutcome, RunCommandError> {
+pub(super) fn run(
+    spec: &CommandSpec,
+    opts: RunOptions<'_>,
+) -> Result<CommandOutcome, RunCommandError> {
     match plan_run_command_spec(
         spec,
         opts.allowed_commands,
@@ -323,5 +337,4 @@ pub(super) fn check_shell_variable_references(
 }
 
 #[cfg(test)]
-#[path = "command_run_tests.rs"]
 mod tests;
