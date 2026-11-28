@@ -159,7 +159,7 @@ mod registry_golden_tests {
     use super::*;
     use crate::cm_names as tool_names;
     use serde_json::{Map, Value, json};
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
     use std::path::{Path, PathBuf};
 
     /// 手写入参样本：覆盖真实场景下的关键组合（`read_file` 的两种行号形态、写副作用工具、
@@ -551,6 +551,232 @@ mod registry_golden_tests {
         assert!(
             snapshot["tools"].get("archive_pack").is_some(),
             "其它 feature 注册的工具形状也必须留在 tools 里"
+        );
+    }
+
+    // ── 参数字段 doc 棘轮 ───────────────────────────────────────────
+
+    /// 字段 doc 基线：每行 `<工具名>.<字段路径>`。
+    ///
+    /// 与 `tool_registry_golden.json` 同口径，**必须用 `--all-features` 生成**，
+    /// 否则默认 feature 下没有的 `archive_*` 会在 CI 里被判成「新增缺失」。
+    ///
+    /// 放 `fixtures/` 而不是 `scripts/`：这份基线由 Rust 测试直读（与快照同目录、
+    /// 同 `CARGO_MANIFEST_DIR` 解析），`scripts/*-baseline.txt` 那批是 shell 棘轮读的。
+    fn doc_baseline_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/tool_args_field_doc_baseline.txt")
+    }
+
+    /// 解一层 `$ref`（`#/$defs/<Name>`）；不是引用就原样返回。
+    ///
+    /// schemars 把嵌套结构体提取到 `$defs`（`modify_file` 的 `edits[]` / `guard` 就是），
+    /// 不解引用会整块漏统计。
+    fn deref_once<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
+        schema
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_prefix("#/$defs/"))
+            .and_then(|name| root.get("$defs").and_then(|defs| defs.get(name)))
+            .unwrap_or(schema)
+    }
+
+    /// doc 为空串等同于没写（schemars 对空 `///` 会发空串）。
+    fn has_description(schema: &Value) -> bool {
+        schema
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|d| !d.trim().is_empty())
+    }
+
+    fn join_field_path(prefix: &str, name: &str) -> String {
+        if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        }
+    }
+
+    /// 递归收集一个 schema 里缺 `description` 的字段路径（`a.b`、数组元素记作 `a[]`）。
+    ///
+    /// `root` 用于解 `$ref`；`depth` 兜住自引用 schema，避免递归不收敛。
+    fn collect_undocumented(
+        root: &Value,
+        schema: &Value,
+        prefix: &str,
+        out: &mut BTreeSet<String>,
+        depth: u8,
+    ) {
+        // 12 是实测最深链路（`modify_file.edits[].guard.*` 约 4 层）的三倍余量。
+        // 超限**静默放过**而不是 panic：漏统计只会让棘轮偏松，不会假红；
+        // 真出现更深的嵌套时再抬这个数。
+        if depth >= 12 {
+            return;
+        }
+        let schema = deref_once(root, schema);
+        let Some(obj) = schema.as_object() else {
+            return;
+        };
+        if let Some(props) = obj.get("properties").and_then(Value::as_object) {
+            for (name, sub) in props {
+                let path = join_field_path(prefix, name);
+                if !has_description(sub) {
+                    out.insert(path.clone());
+                }
+                collect_undocumented(root, sub, &path, out, depth + 1);
+            }
+        }
+        if let Some(items) = obj.get("items") {
+            collect_undocumented(root, items, &format!("{prefix}[]"), out, depth + 1);
+        }
+        for key in ["anyOf", "oneOf", "allOf"] {
+            let Some(branches) = obj.get(key).and_then(Value::as_array) else {
+                continue;
+            };
+            for branch in branches {
+                collect_undocumented(root, branch, prefix, out, depth + 1);
+            }
+        }
+    }
+
+    /// 当前构建里所有「参数字段缺 doc」的 `工具.路径` 集合。
+    fn undocumented_fields() -> BTreeSet<String> {
+        let (_, tools) = current_snapshot();
+        let mut missing = BTreeSet::new();
+        for (name, shape) in &tools {
+            let params = &shape["parameters"];
+            collect_undocumented(params, params, name, &mut missing, 0);
+        }
+        missing
+    }
+
+    fn read_doc_baseline(path: &Path) -> BTreeSet<String> {
+        let raw = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            panic!(
+                "读不到 {}: {e}；用 `CRABMATE_UPDATE_DOC_BASELINE=1 cargo test --all-features --lib \
+                 cm_tools::tools::tool_specs_registry::registry_golden_tests::args_field_docs_never_regress` 生成",
+                path.display()
+            )
+        });
+        raw.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// 参数字段 doc 棘轮（`#1534` L2 的全工具面推广）：**只许减，不许增**。
+    ///
+    /// `param_types/*.rs` 的字段 doc 随 JSON Schema 发给模型，是「模型必须知道才能正确调用」
+    /// 的唯一载体——只写在 `docs/` 里的语义模型看不到（`AGENTS.md` §4.7）。存量还有一批
+    /// 字段没写，一次补齐不现实，所以先把现状冻住，禁止再欠新账。
+    ///
+    /// - **新增缺失 ⇒ 失败**。正解是补字段 doc，不是往基线里加一行；
+    /// - **已补 doc 但基线没删 ⇒ 也失败**。原先只 `eprintln` 提示，而通过的测试看不到
+    ///   stderr，等于没人会去删——基线只增不减，很快就烂成一堆陈旧行，下一个人分不清
+    ///   哪行是真空账。收紧时只看「当前构建已注册的工具」，避免 feature 组合互相打脸。
+    ///
+    /// **已知边界**：只看 `properties` 里声明过的字段。约 20 个工具顶层
+    /// `additionalProperties` 不为 `false`，其额外字段无从枚举，棘轮看不到。
+    #[test]
+    fn args_field_docs_never_regress() {
+        let missing = undocumented_fields();
+        let path = doc_baseline_path();
+
+        if std::env::var_os("CRABMATE_UPDATE_DOC_BASELINE").is_some() {
+            let body: String = missing.iter().map(|line| format!("{line}\n")).collect();
+            std::fs::write(&path, body).expect("写入 fixtures/tool_args_field_doc_baseline.txt");
+            eprintln!("已写入 {}（{} 行）", path.display(), missing.len());
+            return;
+        }
+
+        let baseline = read_doc_baseline(&path);
+
+        let added: Vec<&String> = missing.difference(&baseline).collect();
+        assert!(
+            added.is_empty(),
+            "新增了 {} 个缺 description 的参数字段（模型看不到它们怎么用）：\n{}\n\
+             请在 `cm_tool_registry/param_types/*.rs` 的字段上补 `///` doc；\
+             确实要欠账才更新基线，且必须在 PR 里说明理由。",
+            added.len(),
+            added
+                .iter()
+                .take(20)
+                .map(|s| format!("  - {s}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+
+        // 只对「当前构建已注册的工具」要求收紧：默认 feature 跑测试时 `archive_*` 根本没注册，
+        // 它的基线行天然是多余的，不能因此判红（否则两套 feature 组合会互相打脸）。
+        let registered: HashSet<&str> = tool_specs().iter().map(|s| s.name).collect();
+        let stale: Vec<&String> = baseline
+            .difference(&missing)
+            .filter(|line| {
+                line.split('.')
+                    .next()
+                    .is_some_and(|tool| registered.contains(tool))
+            })
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "以下 {} 个字段已补上 doc，但 {} 里还留着它们的行——请删掉（基线只许减不许增）：\n{}\n\
+             若只是刚改完文档，也可以跑 CRABMATE_UPDATE_DOC_BASELINE=1 重生成。",
+            stale.len(),
+            path.display(),
+            stale
+                .iter()
+                .take(20)
+                .map(|s| format!("  - {s}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    /// 合成 schema 用例：`collect_undocumented` 若静默退化成「永远返回空集」，
+    /// 上面那条棘轮依然会全绿（空集与空基线一致），所以在这里直接钉住它的行为。
+    #[test]
+    fn collect_undocumented_walks_refs_items_and_branches() {
+        let schema = json!({
+            "$defs": {
+                "Inner": {
+                    "type": "object",
+                    "properties": {
+                        "documented": {"description": "有 doc", "type": "string"},
+                        "bare": {"type": "string"},
+                        "blank": {"description": "   ", "type": "string"},
+                    }
+                }
+            },
+            "type": "object",
+            "properties": {
+                "plain": {"description": "有 doc", "type": "string"},
+                "no_doc": {"type": "string"},
+                "list": {
+                    "description": "数组",
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/Inner"}
+                },
+                "chosen": {
+                    "description": "分支",
+                    "anyOf": [{"$ref": "#/$defs/Inner"}, {"type": "null"}]
+                }
+            }
+        });
+
+        let mut out = BTreeSet::new();
+        collect_undocumented(&schema, &schema, "t", &mut out, 0);
+        let got: Vec<&str> = out.iter().map(String::as_str).collect();
+
+        assert_eq!(
+            got,
+            vec![
+                "t.chosen.bare",
+                "t.chosen.blank",
+                "t.list[].bare",
+                "t.list[].blank",
+                "t.no_doc",
+            ],
+            "应只报「无 doc / 空白 doc」的字段，且能穿过 $ref、items、anyOf"
         );
     }
 }
