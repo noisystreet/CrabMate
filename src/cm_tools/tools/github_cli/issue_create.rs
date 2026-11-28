@@ -61,3 +61,47 @@ pub fn gh_issue_create_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String, T
     drop(dir);
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 钉住 `GhIssueCreateArgs` 字段 doc 里写明的 flag 映射。
+    /// 这个文件此前没有测试，而字段 doc 是模型唯一能看到的语义。
+    #[test]
+    fn argv_maps_documented_fields_to_flags() {
+        let v = json!({
+            "title": "t",
+            "repo": "owner/repo",
+            "labels": ["bug", "   ", "docs"],
+            "assignee": "  octocat  ",
+            "web": true,
+            "extra_args": ["--yes"]
+        });
+        let argv =
+            gh_issue_create_build_argv(&v, "  t  ", "body.md".into()).expect("argv 应可构造");
+        assert_eq!(
+            argv,
+            [
+                "issue",
+                "create",
+                "--title",
+                "t",
+                "--body-file",
+                "body.md",
+                "-R",
+                "owner/repo",
+                "--label",
+                "bug",
+                // 空白标签被跳过，不留 `--label ""`
+                "--label",
+                "docs",
+                "--assignee",
+                "octocat",
+                "--web",
+                "--yes",
+            ]
+        );
+    }
+}

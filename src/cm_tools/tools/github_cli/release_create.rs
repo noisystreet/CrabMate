@@ -124,3 +124,44 @@ pub fn gh_release_create_try(args_json: &str, ctx: &GhCtx<'_>) -> Result<String,
     drop(dir);
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 钉住 `GhReleaseCreateArgs` 字段 doc 里写明的 flag 映射。
+    /// 这个文件此前没有测试，而字段 doc 是模型唯一能看到的语义。
+    #[test]
+    fn argv_maps_documented_fields_to_flags() {
+        let v = json!({
+            "title": "My Release",
+            "repo": "owner/repo",
+            "target": "main",
+            "draft": true,
+            "prerelease": true,
+            // `false` 不应拼出 `--web`
+            "web": false
+        });
+        let argv =
+            gh_release_create_build_argv(&v, "v0.9.1", "notes.md".into()).expect("argv 应可构造");
+        assert_eq!(
+            argv,
+            [
+                "release",
+                "create",
+                "v0.9.1",
+                "--notes-file",
+                "notes.md",
+                "--title",
+                "My Release",
+                "-R",
+                "owner/repo",
+                "--target",
+                "main",
+                "--draft",
+                "--prerelease",
+            ]
+        );
+    }
+}
