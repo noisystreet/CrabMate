@@ -155,33 +155,53 @@ pub enum GhPrReviewEvent {
     Comment,
 }
 
+// 校验不对称（有意）：`gh_issue_create.labels` 只 trim + 跳过空串，不拦 `..` / 前导 `/`；
+// `gh_pr.add_label` 等 6 个字段走 `is_safe_token_item`，这两类值会被拒。改任一侧时留意另一侧。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GhIssueCreateArgs {
+    /// Issue 标题：**单行文本**，不得含换行（`\n` / `\r`）；正文请放 `body`。
     pub title: String,
+    /// Issue 正文（Markdown）。经临时文件传 `--body-file`，可放任意长文本与换行，不必自己转义。
     pub body: Option<String>,
+    /// 目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。
     pub repo: Option<String>,
+    /// 要添加的标签名，逐个转成 `--label`（可给多个）。
     pub labels: Option<Vec<String>>,
+    /// 指派给某个 GitHub 用户名（`--assignee`）。
     pub assignee: Option<String>,
+    /// `true` 时用浏览器打开、不打印正文（`--web`）。
     pub web: Option<bool>,
+    /// 追加给 `gh issue create` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。
     pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GhReleaseCreateArgs {
+    /// Release 的 tag 名（如 `v0.9.1`）；tag 尚未存在时由 `target` 决定创建点。
+    /// 不得含 `..` 或以 `/` 开头（与 `extra_args` 同一套安全约束）。
     pub tag: String,
+    /// Release 标题（`--title`）；省略时用 tag 名。
     pub title: Option<String>,
+    /// 发布说明（Markdown）。经临时文件传 `--notes-file`，可放任意长文本与换行。
     pub notes: Option<String>,
+    /// 目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。
     pub repo: Option<String>,
+    /// `--target <分支或 commit>`：tag 尚不存在时从该点创建。
     pub target: Option<String>,
+    /// `true` 时存为草稿、不立即发布（`--draft`）。
     pub draft: Option<bool>,
+    /// `true` 时标记为预发布（`--prerelease`），不会被选为 latest。
     pub prerelease: Option<bool>,
+    /// `true` 时用浏览器打开、不打印正文（`--web`）。
     pub web: Option<bool>,
     /// 当 `notes` 为空时，自最近 tag 至 HEAD 的 commit 列表生成 notes 草稿。
     pub auto_notes: Option<bool>,
+    /// `auto_notes` 生成草稿时最多取多少个 commit（1～500）。
     #[schemars(range(min = 1, max = 500))]
     pub max_commits: Option<u32>,
+    /// 追加给 `gh release create` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。
     pub extra_args: Option<Vec<String>>,
 }
 
@@ -202,7 +222,11 @@ pub enum GhApiMethod {
 pub struct GhApiArgs {
     /// `gh api` 相对端点路径（无前导 `/`，如 `repos/owner/repo/pulls`）。字符集受限：仅字母数字与 `/ _ . @ - :`，且不得含查询串 `?`；查询参数请改用 `query`。
     pub path: String,
+    /// HTTP 方法，默认 `GET`。工具**总是显式**传 `--method`——`gh` 见到 `-f` 会默认改用 POST，
+    /// 只有显式指定才能保证 `GET` 不被翻转。
     pub method: Option<GhApiMethod>,
+    /// 请求体，**必须是合法 JSON 字符串**（否则直接拒绝）；`GET` 请求带非空 body 同样被拒。
+    /// 经 stdin 交给 `gh api`，不必自己拼 `--input`。
     pub body: Option<String>,
     /// URL 查询参数（对象，如 `{"state":"open","per_page":50}`）。值须为字符串/数字/布尔，键仅字母数字与 `- _ .`。工具自动转为 `-f key=value` 并**显式传 `--method`**（避免 `gh` 见到 `-f` 默认改用 POST），无需手动拼接查询串。
     pub query: Option<JsonValue>,
@@ -259,37 +283,51 @@ pub enum GhPrAction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GhPrArgs {
+    /// 要执行的 PR 子命令：`checks` / `create` / `merge` / `review` / `comment` / `edit` / `body_draft`。
     pub action: GhPrAction,
+    /// 目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。
     pub repo: Option<String>,
+    /// PR 编号（1～999999）；省略时取当前分支对应的 PR。
     pub number: Option<u32>,
     /// 仅 `checks`：附加 `--json` 并在末尾汇总失败/进行中检查项。
     pub structured: Option<bool>,
-    /// 仅 `create`：PR 标题（必填）。
+    /// `create` 必填、`edit` 用于改标题（`--title`）：**单行文本**，不得含换行（`\n` / `\r`）。
     pub title: Option<String>,
+    /// 正文（Markdown）：`create` / `edit` 经 `--body-file` 传；`comment` / `review` 经 `--body` 直传。
     pub body: Option<String>,
+    /// `create` 的目标分支 / `edit` 改目标分支（`--base`），如 `main`。
     pub base: Option<String>,
-    /// 仅 `create`：源分支。
+    /// 仅 `create`：源分支（`--head`）。
     pub head: Option<String>,
-    /// `create` 置为草稿；`edit` 亦可用于 `--draft`。
+    /// `create` 建为草稿；`edit` 也可用（`--draft`）。
     pub draft: Option<bool>,
     /// 仅 `edit`：取消草稿（`--undraft`）。
     pub undraft: Option<bool>,
+    /// 仅 `create`：用浏览器打开、不打印正文（`--web`）。
     pub web: Option<bool>,
     /// 仅 `create`：`body` 为空时从 PR 模板 + `git log` 生成正文。
     pub auto_body: Option<bool>,
-    /// 仅 `merge`：默认 `rebase`。
+    /// 仅 `merge`：合并方式（`--merge` / `--squash` / `--rebase`），默认 `rebase`。
     pub merge_method: Option<GhPrMergeMethod>,
-    /// 仅 `merge`：`--auto`。
+    /// 仅 `merge`：`--auto`，等检查通过后自动合并。
     pub auto: Option<bool>,
+    /// 仅 `merge`：`--delete-branch`，合并后删除源分支。
     pub delete_branch: Option<bool>,
+    /// 仅 `merge`：`--admin`，以管理员权限合并（绕过分支保护，属仓库治理动作）。
     pub admin: Option<bool>,
-    /// 仅 `review`：必填事件类型。
+    /// 仅 `review`：必填事件类型（`approve` / `request-changes` / `comment`）。
     pub event: Option<GhPrReviewEvent>,
+    /// 仅 `edit`：要添加的标签（`--add-label`）；值不得含 `..` 或以 `/` 开头。
     pub add_label: Option<Vec<String>>,
+    /// 仅 `edit`：要移除的标签（`--remove-label`）；值不得含 `..` 或以 `/` 开头。
     pub remove_label: Option<Vec<String>>,
+    /// 仅 `edit`：要请求评审的用户（`--add-reviewer`）；值不得含 `..` 或以 `/` 开头。
     pub add_reviewer: Option<Vec<String>>,
+    /// 仅 `edit`：要移除的评审人（`--remove-reviewer`）；值不得含 `..` 或以 `/` 开头。
     pub remove_reviewer: Option<Vec<String>>,
+    /// 仅 `edit`：要指派的用户（`--add-assignee`）；值不得含 `..` 或以 `/` 开头。
     pub add_assignee: Option<Vec<String>>,
+    /// 仅 `edit`：要取消指派的用户（`--remove-assignee`）；值不得含 `..` 或以 `/` 开头。
     pub remove_assignee: Option<Vec<String>>,
     /// 仅 `body_draft`：`git log` 摘要的最大 commit 数。
     #[schemars(range(min = 1, max = 200))]
@@ -298,6 +336,7 @@ pub struct GhPrArgs {
     pub include_template: Option<bool>,
     /// 仅 `body_draft`。
     pub include_commit_log: Option<bool>,
+    /// 追加给 `gh pr <子命令>` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。
     pub extra_args: Option<Vec<String>>,
 }
 
@@ -313,8 +352,11 @@ pub enum GhRunAction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GhRunArgs {
+    /// 要执行的动作：`rerun`（重跑）/ `failure_summary`（摘要失败 job 的日志尾部）。
     pub action: GhRunAction,
+    /// Workflow run 的数据库 id，**纯数字**（与 `gh run list --json databaseId` 一致），≤ 24 位。
     pub run_id: String,
+    /// 目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。
     pub repo: Option<String>,
     /// 仅 `rerun`：只重跑失败的 job。
     pub failed: Option<bool>,
@@ -324,5 +366,6 @@ pub struct GhRunArgs {
     /// 仅 `failure_summary`：最多摘要几个失败 job（默认 5）。
     #[schemars(range(min = 1, max = 20))]
     pub max_failed_jobs: Option<u32>,
+    /// 追加给 `gh run <子命令>` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。
     pub extra_args: Option<Vec<String>>,
 }

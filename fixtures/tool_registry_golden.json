@@ -2490,6 +2490,7 @@
         "additionalProperties": false,
         "properties": {
           "body": {
+            "description": "请求体，**必须是合法 JSON 字符串**（否则直接拒绝）；`GET` 请求带非空 body 同样被拒。\n经 stdin 交给 `gh api`，不必自己拼 `--input`。",
             "type": [
               "string",
               "null"
@@ -2513,7 +2514,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "HTTP 方法，默认 `GET`。工具**总是显式**传 `--method`——`gh` 见到 `-f` 会默认改用 POST，\n只有显式指定才能保证 `GET` 不被翻转。"
           },
           "path": {
             "description": "`gh api` 相对端点路径（无前导 `/`，如 `repos/owner/repo/pulls`）。字符集受限：仅字母数字与 `/ _ . @ - :`，且不得含查询串 `?`；查询参数请改用 `query`。",
@@ -2544,6 +2546,7 @@
         "properties": {
           "assignee": {
             "default": null,
+            "description": "指派给某个 GitHub 用户名（`--assignee`）。",
             "type": [
               "string",
               "null"
@@ -2551,6 +2554,7 @@
           },
           "body": {
             "default": null,
+            "description": "Issue 正文（Markdown）。经临时文件传 `--body-file`，可放任意长文本与换行，不必自己转义。",
             "type": [
               "string",
               "null"
@@ -2558,6 +2562,7 @@
           },
           "extra_args": {
             "default": null,
+            "description": "追加给 `gh issue create` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。",
             "items": {
               "type": "string"
             },
@@ -2568,6 +2573,7 @@
           },
           "labels": {
             "default": null,
+            "description": "要添加的标签名，逐个转成 `--label`（可给多个）。",
             "items": {
               "type": "string"
             },
@@ -2578,6 +2584,7 @@
           },
           "repo": {
             "default": null,
+            "description": "目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。",
             "type": [
               "string",
               "null"
@@ -2585,10 +2592,12 @@
           },
           "title": {
             "default": "",
+            "description": "Issue 标题：**单行文本**，不得含换行（`\\n` / `\\r`）；正文请放 `body`。",
             "type": "string"
           },
           "web": {
             "default": null,
+            "description": "`true` 时用浏览器打开、不打印正文（`--web`）。",
             "type": [
               "boolean",
               "null"
@@ -2644,9 +2653,11 @@
         "description": "`github_cli::gh_pr` 入参：动作 + 各动作字段的并集。\n\n只取用 `action` 对应动作的字段，其余字段被忽略；`deny_unknown_fields` 仍拦住拼错的键。",
         "properties": {
           "action": {
-            "$ref": "#/$defs/GhPrAction"
+            "$ref": "#/$defs/GhPrAction",
+            "description": "要执行的 PR 子命令：`checks` / `create` / `merge` / `review` / `comment` / `edit` / `body_draft`。"
           },
           "add_assignee": {
+            "description": "仅 `edit`：要指派的用户（`--add-assignee`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2656,6 +2667,7 @@
             ]
           },
           "add_label": {
+            "description": "仅 `edit`：要添加的标签（`--add-label`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2665,6 +2677,7 @@
             ]
           },
           "add_reviewer": {
+            "description": "仅 `edit`：要请求评审的用户（`--add-reviewer`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2674,13 +2687,14 @@
             ]
           },
           "admin": {
+            "description": "仅 `merge`：`--admin`，以管理员权限合并（绕过分支保护，属仓库治理动作）。",
             "type": [
               "boolean",
               "null"
             ]
           },
           "auto": {
-            "description": "仅 `merge`：`--auto`。",
+            "description": "仅 `merge`：`--auto`，等检查通过后自动合并。",
             "type": [
               "boolean",
               "null"
@@ -2694,25 +2708,28 @@
             ]
           },
           "base": {
+            "description": "`create` 的目标分支 / `edit` 改目标分支（`--base`），如 `main`。",
             "type": [
               "string",
               "null"
             ]
           },
           "body": {
+            "description": "正文（Markdown）：`create` / `edit` 经 `--body-file` 传；`comment` / `review` 经 `--body` 直传。",
             "type": [
               "string",
               "null"
             ]
           },
           "delete_branch": {
+            "description": "仅 `merge`：`--delete-branch`，合并后删除源分支。",
             "type": [
               "boolean",
               "null"
             ]
           },
           "draft": {
-            "description": "`create` 置为草稿；`edit` 亦可用于 `--draft`。",
+            "description": "`create` 建为草稿；`edit` 也可用（`--draft`）。",
             "type": [
               "boolean",
               "null"
@@ -2727,9 +2744,10 @@
                 "type": "null"
               }
             ],
-            "description": "仅 `review`：必填事件类型。"
+            "description": "仅 `review`：必填事件类型（`approve` / `request-changes` / `comment`）。"
           },
           "extra_args": {
+            "description": "追加给 `gh pr <子命令>` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。",
             "items": {
               "type": "string"
             },
@@ -2739,7 +2757,7 @@
             ]
           },
           "head": {
-            "description": "仅 `create`：源分支。",
+            "description": "仅 `create`：源分支（`--head`）。",
             "type": [
               "string",
               "null"
@@ -2778,9 +2796,10 @@
                 "type": "null"
               }
             ],
-            "description": "仅 `merge`：默认 `rebase`。"
+            "description": "仅 `merge`：合并方式（`--merge` / `--squash` / `--rebase`），默认 `rebase`。"
           },
           "number": {
+            "description": "PR 编号（1～999999）；省略时取当前分支对应的 PR。",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -2789,6 +2808,7 @@
             ]
           },
           "remove_assignee": {
+            "description": "仅 `edit`：要取消指派的用户（`--remove-assignee`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2798,6 +2818,7 @@
             ]
           },
           "remove_label": {
+            "description": "仅 `edit`：要移除的标签（`--remove-label`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2807,6 +2828,7 @@
             ]
           },
           "remove_reviewer": {
+            "description": "仅 `edit`：要移除的评审人（`--remove-reviewer`）；值不得含 `..` 或以 `/` 开头。",
             "items": {
               "type": "string"
             },
@@ -2816,6 +2838,7 @@
             ]
           },
           "repo": {
+            "description": "目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。",
             "type": [
               "string",
               "null"
@@ -2829,7 +2852,7 @@
             ]
           },
           "title": {
-            "description": "仅 `create`：PR 标题（必填）。",
+            "description": "`create` 必填、`edit` 用于改标题（`--title`）：**单行文本**，不得含换行（`\\n` / `\\r`）。",
             "type": [
               "string",
               "null"
@@ -2843,6 +2866,7 @@
             ]
           },
           "web": {
+            "description": "仅 `create`：用浏览器打开、不打印正文（`--web`）。",
             "type": [
               "boolean",
               "null"
@@ -2878,6 +2902,7 @@
           },
           "draft": {
             "default": null,
+            "description": "`true` 时存为草稿、不立即发布（`--draft`）。",
             "type": [
               "boolean",
               "null"
@@ -2885,6 +2910,7 @@
           },
           "extra_args": {
             "default": null,
+            "description": "追加给 `gh release create` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。",
             "items": {
               "type": "string"
             },
@@ -2895,6 +2921,7 @@
           },
           "max_commits": {
             "default": null,
+            "description": "`auto_notes` 生成草稿时最多取多少个 commit（1～500）。",
             "format": "uint32",
             "maximum": 500,
             "minimum": 1,
@@ -2905,6 +2932,7 @@
           },
           "notes": {
             "default": null,
+            "description": "发布说明（Markdown）。经临时文件传 `--notes-file`，可放任意长文本与换行。",
             "type": [
               "string",
               "null"
@@ -2912,6 +2940,7 @@
           },
           "prerelease": {
             "default": null,
+            "description": "`true` 时标记为预发布（`--prerelease`），不会被选为 latest。",
             "type": [
               "boolean",
               "null"
@@ -2919,6 +2948,7 @@
           },
           "repo": {
             "default": null,
+            "description": "目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。",
             "type": [
               "string",
               "null"
@@ -2926,10 +2956,12 @@
           },
           "tag": {
             "default": "",
+            "description": "Release 的 tag 名（如 `v0.9.1`）；tag 尚未存在时由 `target` 决定创建点。\n不得含 `..` 或以 `/` 开头（与 `extra_args` 同一套安全约束）。",
             "type": "string"
           },
           "target": {
             "default": null,
+            "description": "`--target <分支或 commit>`：tag 尚不存在时从该点创建。",
             "type": [
               "string",
               "null"
@@ -2937,6 +2969,7 @@
           },
           "title": {
             "default": null,
+            "description": "Release 标题（`--title`）；省略时用 tag 名。",
             "type": [
               "string",
               "null"
@@ -2944,6 +2977,7 @@
           },
           "web": {
             "default": null,
+            "description": "`true` 时用浏览器打开、不打印正文（`--web`）。",
             "type": [
               "boolean",
               "null"
@@ -2978,9 +3012,11 @@
         "description": "`github_cli::gh_run` 入参。",
         "properties": {
           "action": {
-            "$ref": "#/$defs/GhRunAction"
+            "$ref": "#/$defs/GhRunAction",
+            "description": "要执行的动作：`rerun`（重跑）/ `failure_summary`（摘要失败 job 的日志尾部）。"
           },
           "extra_args": {
+            "description": "追加给 `gh run <子命令>` 的原始参数；**不得含 `..` 或以 `/` 开头**（否则整条调用被拒）。",
             "items": {
               "type": "string"
             },
@@ -3007,12 +3043,14 @@
             ]
           },
           "repo": {
+            "description": "目标仓库（`owner/name`，走 `-R`）；省略时用当前工作区的仓库。",
             "type": [
               "string",
               "null"
             ]
           },
           "run_id": {
+            "description": "Workflow run 的数据库 id，**纯数字**（与 `gh run list --json databaseId` 一致），≤ 24 位。",
             "type": "string"
           },
           "tail_lines": {
