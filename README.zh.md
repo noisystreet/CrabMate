@@ -19,7 +19,7 @@
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
 本仓是 **Server**：HTTP **`serve`**（永远纯 API，不托管 SPA）、`protocol` 契约与运维 CLI。官方 **Web UI、Desktop/Android、远程终端（`crabmate-tui`）
-  **在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（本机开发默认同级 `../crabmate-client`）；
+  **在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（构建与运行步骤见该仓 README）；
   本仓同进程 `repl` / `chat` / `tui` 已移除（[ADR](docs/design/client_shell_split.md)）。
 
 ## 目录
@@ -59,8 +59,9 @@
 cargo build
 ./target/debug/crabmate serve            # 默认 127.0.0.1:8080；或：API_KEY=… ./target/debug/crabmate serve
 
-# Client UI（独立仓）
-cd ../crabmate-client && make frontend   # 再指向 http://127.0.0.1:8080/ 并填 Bearer
+# Client UI（独立仓）——先把变量指向你的 crabmate-client 检出目录
+export CRABMATE_CLIENT_DIR=/path/to/crabmate-client
+cd "$CRABMATE_CLIENT_DIR" && make frontend   # 再指向 http://127.0.0.1:8080/ 并填 Bearer
 ```
 
 推荐用 Makefile：**`make help`**、**`make backend`**（`cargo build -p crabmate`）、**`make package`**（server-only tar.gz + 可选 `.deb` → `dist/`）。

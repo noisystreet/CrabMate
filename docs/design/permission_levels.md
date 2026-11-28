@@ -754,7 +754,7 @@ dst.permission.permission_level_max =
 | **Q1** | 默认等级是否在**新装**环境从 `approved` 改为 `workspace`？ | **已结案**：保持 `approved`（= 现状）；“更安全”诉求由显式 `permission_level_max = "workspace"` 表达，不动默认等级 |
 | **Q2** | L4 是否允许出现在 Web？ | **已结案**：loopback 默认允许（推导 `unrestricted`，客户端可自由切）；非 loopback 需显式配置 + `CM_ALLOW_…` 开关（§5.3 / MB-3） |
 | **Q3** | `session_mode` 是否折进等级？ | **已结案：不折**（§4.3）。二者职责不同（一个决定提示词附录与编排姿态，一个决定能力天花板），`min()` 组合足够 |
-| **Q4** | 是否实现 `PathScope::AllowedRoots`（S7，原编号 S6）？ | **已结案并落地**：L2 / L3 + 非空 `workspace_allowed_roots` 产出 `AllowedRoots`，消掉 `../crabmate-client` 兄弟仓每次都要审批的摩擦（AGENTS.md 明确要求本地同级仓）。**命令轴同档覆盖**（#1315）：`run_command` 的 argv 与 `cwd`、`terminal_session` 新会话的 argv 按同一根集合逐参数判，`script` 正文仍走 shell 审批、Docker 沙盒仍按会话根 |
+| **Q4** | 是否实现 `PathScope::AllowedRoots`（S7，原编号 S6）？ | **已结案并落地**：L2 / L3 + 非空 `workspace_allowed_roots` 产出 `AllowedRoots`，消掉 Client 仓每次都要审批的摩擦（本仓**不写死**其本地路径，检出位置由 `CRABMATE_CLIENT_DIR` 指定）。**命令轴同档覆盖**（#1315）：`run_command` 的 argv 与 `cwd`、`terminal_session` 新会话的 argv 按同一根集合逐参数判，`script` 正文仍走 shell 审批、Docker 沙盒仍按会话根 |
 | **Q5** | L4 下是否保留 `permission_deny_system_paths`？ | **默认清空**（§8.3）：`unrestricted` 名实要相符；加固由运维显式填写 |
 | **Q6** | `AllowAlways` 的等级作用域用前缀键还是结构化元组存储？ | **已结案：前缀键**（§6.3），作为**第一优先级方案**：沿用现有 `HashSet<String>`，不加新类型、不改序列化、不动调用方签名；集合是内存态，零迁移 |
 | **Q7** | `GET /tools` 用每项 `available_at_level: bool`，还是 `?permission_level=` 过滤？ | **已结案：`available_at_level: bool`**（§16.4）：`GET /tools` 是“枚举 + 策略投影”，不是“本回合可用集” |

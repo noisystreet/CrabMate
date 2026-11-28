@@ -470,7 +470,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   no allow/deny decision reads them.
 - **Multi-root path scope (S7)**: for `workspace` / `approved`, file tools **and the command axis** resolve
   against `{session root} ∪ workspace_allowed_roots` — a path under any allowed root is admitted, so the
-  sibling `../crabmate-client/...` no longer needs approval. L1 stays session-root-only, L4 stays
+  sibling Client checkout path no longer needs approval. L1 stays session-root-only, L4 stays
   unrestricted, and an empty list fails closed back to the session root.
 - **Command axis (#1315)**: `run_command` (argv and `cwd`) and `terminal_session` (argv of a new session)
   judge args against the same root set — `terminal_session` has no `cwd` field, and `input` typed into a

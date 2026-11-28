@@ -114,7 +114,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 
 1. **契约优先**：不新开会话 API；Client（含 `crabmate-tui`）只认现有 HTTP + SSE（见 `docs/SSE协议.md`）。
 2. **与宿主解耦正交**：`turn_runtime_placement` / `web_host_p5_placement` **不阻塞**本决策。
-3. **现状**：壳与业务 UI 在 [crabmate-client](https://github.com/noisystreet/crabmate-client)（本机默认同级 `../crabmate-client`）；
+3. **现状**：壳与业务 UI 在 [crabmate-client](https://github.com/noisystreet/crabmate-client)（`CRABMATE_CLIENT_DIR` 指该仓检出位置）；
   远程终端见 Client [remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)（P2+）。
   兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
 4. **安全**：CORS 默认保守；非回环须 Bearer；模型密钥权威在 Client。

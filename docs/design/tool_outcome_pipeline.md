@@ -277,7 +277,7 @@ S3 收窄 `parse_tool_output` 可见性之前，`from_body_and_payload` 仍是�
 ## 7. 契约与文档同步
 
 - **本仓**：`docs/SSE协议.md` 无需改（线格式不变）；`src/cm_sse_protocol/` 不动。
-- **Client 仓**（`../crabmate-client`）：无需改。唯一例外是若 §5 第 5 条统一了成功定义，需复核 Client 侧「成功」口径是否一致。
+- **Client 仓**：无需改。唯一例外是若 §5 第 5 条统一了成功定义，需复核 Client 侧「成功」口径是否一致。
 - **金样**：`fixtures/` 全程逐字节不变（含 `sse_ag_ui_golden.jsonl`、各 `*_golden` 测试）。
 - 每阶段落地后同步更新本文档的「状态」与对应小节。
 

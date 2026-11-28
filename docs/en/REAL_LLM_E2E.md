@@ -4,7 +4,7 @@ Runs only when **`REAL_LLM_E2E=1`**. Default **`cargo test`** / CI use SSE stubs
 
 Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
-Victauri lives **only** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`).
+Victauri lives **only** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (checkout path via `CRABMATE_CLIENT_DIR`).
 
 ## Specs
 
@@ -15,14 +15,14 @@ Victauri lives **only** in [crabmate-client](https://github.com/noisystreet/crab
 ## Quick start
 
 ```bash
-unset NO_COLOR && cd ../crabmate-client && make frontend
+unset NO_COLOR && cd "$CRABMATE_CLIENT_DIR" && make frontend
 
 # Terminal 1: backend (this repo; serve is always API-only)
 cd ../server
 cargo run -- serve --host 127.0.0.1 --port 18080
 
 # Terminal 2: Tauri app (Client repo; skip connect page)
-cd ../crabmate-client/desktop-tauri/src-tauri
+cd "$CRABMATE_CLIENT_DIR"/desktop-tauri/src-tauri
 CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
 # Terminal 3: real LLM tests (same src-tauri)

@@ -21,7 +21,7 @@ usage() {
   - crabmate_<version>_<arch>.deb（仅 Linux；含 crabmate.service，默认不 enable）
 
 依赖: Rust；.deb 需 cargo install cargo-deb
-业务 UI：在 ../crabmate-client 构建与托管（serve 永远纯 API，不托管 UI）
+业务 UI：在 Client 仓构建与托管（检出位置由 CRABMATE_CLIENT_DIR 指定；serve 永远纯 API，不托管 UI）
 EOF
 }
 

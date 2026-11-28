@@ -11,7 +11,8 @@
   Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream)
   或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、
   **`fixtures/turn_project_projection_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
-    下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
+    下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径
+    （测试命令用 `CRABMATE_CLIENT_DIR` 指该仓检出目录）。
 
 ---
 
@@ -117,7 +118,7 @@ finalized/active）。原 v1 金样 `turn_project_golden.jsonl` / `turn_project_
 （`project_turn` / `project_turn_web`）在 #1333 一并删除；`batch_narration_row` 仍由 `batch_narration_text`
 派生。事件语料另见 Client 侧 `golden_turn_web_stored_sync`（读 `fixtures/turn_web_v2_stored_sync.jsonl`，
 其用例与本文原 v1 金样同源，改任一侧仍要回填）。
-**测试**：`cargo test --lib golden_turn_project_projection` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
+**测试**：`cargo test --lib golden_turn_project_projection` · `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
 
@@ -208,7 +209,7 @@ finalized/active）。原 v1 金样 `turn_project_golden.jsonl` / `turn_project_
 | `tool_call` | 工具占位 | `TurnLayout::on_tool_call_declared` |
 | plain delta | LLM 流 | `try_apply_commentary_delta` 或 lane 写入 |
 
-分类金样：**`fixtures/sse_ag_ui_golden.jsonl`**；`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
+分类金样：**`fixtures/sse_ag_ui_golden.jsonl`**；`cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
 
 ---
 
@@ -217,10 +218,10 @@ finalized/active）。原 v1 金样 `turn_project_golden.jsonl` / `turn_project_
 | 命令 | 覆盖 |
 |------|------|
 | `cargo test -p crabmate-turn-layout` | reducer + `golden_turn_project` + `golden_turn_project_web` |
-| `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
-| `cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected` | AG-UI 控制面分类 |
-| `cd ../crabmate-client/frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
-| `cd ../crabmate-client/frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
+| `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
+| `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test golden_ag_ui_v2_parser_matches_expected` | AG-UI 控制面分类 |
+| `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
+| `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
 
 **手动**：`trunk build` 后重启 `serve`，跑含多工具（read_dir → create → cmake）的任务，导出 Markdown 核对旁注是否在对应工具 **之前**。
 
@@ -244,7 +245,7 @@ finalized/active）。原 v1 金样 `turn_project_golden.jsonl` / `turn_project_
   `parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
 - [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_projection_golden.jsonl` +
   `cargo test -p crabmate golden_turn_project_projection` +
-  `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
+  `cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测
 - [ ] 实现 §12 某 Phase → 同步本节金样 + 手测导出场景

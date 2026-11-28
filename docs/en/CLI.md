@@ -196,7 +196,7 @@ Hot reload for **`serve`**: **`POST /config/reload`** (see **`docs/en/CONFIGURAT
 Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client) (clone as a sibling first):
 
 ```bash
-cd ../crabmate-client && make frontend
+cd "$CRABMATE_CLIENT_DIR" && make frontend
 ```
 
 `serve` is **always API-only** and never hosts a SPA; browser UIs are hosted from the Client repo (its dev flow or any static server)

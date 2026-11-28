@@ -3,6 +3,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLIENT="${CRABMATE_CLIENT_DIR:-$ROOT/../crabmate-client}"
+# 上面 `:-` 后是**零配置回退**（未设 `CRABMATE_CLIENT_DIR` 时按同级默认名猜一次）。
+# 文档不依赖这条回退：文档只用 `CRABMATE_CLIENT_DIR`，不写死 Client 仓的本地路径。
 SCRIPT="$CLIENT/scripts/e2e-playwright.sh"
 if [[ ! -x "$SCRIPT" ]]; then
   echo "错误: 未找到 Client Playwright 入口：$SCRIPT" >&2
