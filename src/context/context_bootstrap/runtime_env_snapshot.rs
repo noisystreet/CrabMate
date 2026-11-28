@@ -12,7 +12,8 @@
 //!
 //! 探测复用 [`crate::cm_tool_exec::capture_trimmed`]，按
 //! `runtime_env_snapshot_probe_cache_ttl_secs` 做进程内缓存：`rustc -V` 在一个进程生命周期内
-//! 基本不变，每次首轮都起子进程是白付的启动成本。
+//! 基本不变，**每轮**都起子进程是白付的启动成本——TTL 命中时是纯内存读，未命中才起
+//! `rustc -V` / `cargo -V` 两个子进程（落在 async 的 `prepare` 路径上，见下方风险说明）。
 
 use std::path::Path;
 use std::sync::Mutex;

@@ -23,15 +23,8 @@ pub fn project_scan_needs_spawn_blocking(cfg: &AgentConfig) -> bool {
                 .context_bootstrap_inject
                 .project_dependency_brief_inject_max_chars
                 > 0)
-        // 环境快照要起 `rustc -V` / `cargo -V` 两个子进程（有 TTL 缓存，但仍属阻塞操作）——
-        // 与活文档 / `cargo metadata` 一起放阻塞线程，别卡住 async 执行器。
-        || (cfg
-            .context_bootstrap_inject
-            .runtime_env_snapshot_enabled
-            && cfg
-                .context_bootstrap_inject
-                .runtime_env_snapshot_max_chars
-                > 0)
+    // 运行时环境快照**不在此判定内**：`#1526` A1b 起它不再进首轮注入，改由
+    // `prepare_messages_for_model` 每轮构建（阻塞成本由 `PROBE_CACHE` 的 TTL 兜住）。
 }
 
 /// 首轮「工作区上下文」`user` 条正文（无则 `None`）。`memory_snippet` 仅 Web 新会话传入；CLI 传 `None`。
