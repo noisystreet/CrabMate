@@ -31,12 +31,21 @@ pub struct TerminalSessionArgs {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct RunCommandArgs {
-    /// 纯命令名（详见工具说明；禁止嵌入参数）。与 `script` 二选一。
+    /// 命令名；**可内嵌参数**（按 shell 词法拆分，如 `"git status"` 等价于 `command: "git"` + `args: ["status"]`）。
+    /// 与 `script` 二选一。
     pub command: Option<String>,
+    /// 参数数组，逐项作为 argv 传给进程 —— **默认不经 shell**，`|`、`*`、`$` 都按字面量。
+    ///
+    /// 例外：任一参数含 glob（`*`、路径形 `?`/`[`）、`$VAR`、`${...}` 或 `~` 时，
+    /// 整条命令会被包进 `bash -c` 交由 shell 展开（此时 `$VAR` 会替换成真实值）。
+    /// 该形态下 `$()` 与反引号**不会**被当作命令替换（会转义为字面量）；
+    /// 需要命令替换请改用 `script`。
     pub args: Option<Vec<String>>,
     /// 工作区内的相对目录（等价于 `cd <cwd> && ...`）；禁止绝对路径与 `..`。
     pub cwd: Option<String>,
-    /// 交给 POSIX shell（`bash -c` / `sh -c`）执行的脚本；与 `command`/`args` 互斥。
+    /// 一行 shell 脚本，交给 `bash -c` / `sh -c` 执行 —— **完整 shell 语义**：
+    /// `|` 是管道、`$VAR` 会展开、`$()` 与反引号**会执行**（与 `args` 相反）。
+    /// 与 `command`/`args` 互斥。
     pub script: Option<String>,
     /// 墙钟秒（钳制 1～600，对齐 `python_snippet_run`）；`async` 与非 `async` 均生效。
     #[schemars(range(min = 1, max = 600))]
@@ -47,6 +56,72 @@ pub struct RunCommandArgs {
     /// 命令须已在白名单或已 AllowAlways 批准。
     #[serde(rename = "async")]
     pub async_: Option<bool>,
+}
+
+#[cfg(test)]
+mod run_command_args_doc_tests {
+    use super::RunCommandArgs;
+
+    /// `RunCommandArgs` 的字段 doc 是**唯一到达模型**的那份（`docs/工具说明.md` 模型看不到）。
+    /// 此前 `args` 完全没有 doc、`command` 还写着不存在的「禁止嵌入参数」限制（#1534）。
+    ///
+    /// 钉在 schema 上而不是源码注释上：这条路径才是真正到达模型的那一份
+    /// —— 与 `self_config_info_args_doc_mentions_every_section_name` 同一口径。
+    #[test]
+    fn run_command_args_docs_cover_shell_semantics() {
+        let schema = serde_json::to_value(schemars::schema_for!(RunCommandArgs))
+            .expect("RunCommandArgs schema 应可序列化");
+        let props = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .expect("RunCommandArgs schema 应有 properties");
+
+        // ① 每个字段都必须有 description —— 防「又漏一个」
+        for field in ["command", "args", "cwd", "script", "timeout_secs", "async"] {
+            let desc = props.get(field).and_then(|v| v.get("description"));
+            assert!(
+                desc.is_some_and(serde_json::Value::is_string),
+                "字段 `{field}` 缺 schema description：模型看不到它的语义"
+            );
+        }
+
+        let desc_of = |field: &str| {
+            props
+                .get(field)
+                .and_then(|v| v.get("description"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+        };
+
+        // ② `args`：默认逐项 argv 不经 shell；命中展开类参数时才被 bash -c 包装
+        let args_doc = desc_of("args");
+        assert!(
+            args_doc.contains("argv"),
+            "`args` doc 未说明逐项 argv：{args_doc}"
+        );
+        assert!(
+            ["bash -c", "包进", "包装"]
+                .iter()
+                .any(|k| args_doc.contains(k)),
+            "`args` doc 未说明触发 shell 包装的例外：{args_doc}"
+        );
+
+        // ③ `script`：完整 shell 语义，命令替换会执行（与 args 相反）
+        let script_doc = desc_of("script");
+        assert!(
+            ["命令替换", "command substitution", "$()"]
+                .iter()
+                .any(|k| script_doc.contains(k)),
+            "`script` doc 未说明命令替换会执行：{script_doc}"
+        );
+
+        // ④ `command` 不得再声称「禁止嵌入参数」——实现是支持的（会按词法拆分）
+        assert!(
+            !desc_of("command").contains("禁止嵌入参数"),
+            "`command` doc 仍写着不存在的限制：{}",
+            desc_of("command")
+        );
+    }
 }
 
 // ── file_core ────────────────────────────────────────────────────

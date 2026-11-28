@@ -119,6 +119,12 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 - **用户可见变更**（CLI flag、API、配置键、TUI/Web 行为、工具）⇒ 同步 `README.md` + `docs/工具说明.md`；
   动 `config/*.toml`、axum 路由/handler（路径、方法、请求/响应体、新端点）或增删 `CM_*` ⇒ **必须**同步 `README.md` + `docs/开发文档.md`。
 - `docs/待办清单.md`：条目实现后删除（不要留 `- [x]`）；小节空了连标题一起删。
+- **文档写「不变量」，不复述实现细节**：实现会变，复述细节的文档立刻变假。
+  例：`docs/工具说明.md` 曾写「判定只看跳过 `NAME=VALUE` 后的首个参数」，而代码早已改为扫**整个** argv（`argv_invokes_nested_shell`）。
+  正确写法是「内层已有 shell 调用时外层不再包装，避免抢先展开 `$VAR`」+ 指向符号。
+  同理，**字段 doc 是唯一到达模型的语义**（随 JSON Schema 发出）：凡「模型必须知道才能正确调用」的约束，
+  要在 `param_types/*.rs` 的字段 doc 写清，并像 `run_command_args_docs_cover_shell_semantics` 那样用测试钉住；
+  只写在 `docs/` 里的语义，模型看不到。
 
 ### 4.8 Chat / SSE 契约（两端）/ Chat / SSE contract
 
