@@ -466,7 +466,7 @@ AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，
 
 - **`fixtures/sse_control_golden.jsonl`**：V1 JSON 形状参考向量（每行 `描述<TAB>JSON<TAB>期望分类`；`#` 开头行为注释），
   与 **`classify_sse_control_outcome`** 对齐维护。
-- **Web AG-UI**：`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
+- **Web AG-UI**：`cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
 - **`fixtures/http_sse_failure_path_golden.jsonl`**：
   HTTP/SSE **失败路径**契约（`RunAgentTurnError` → `code` / HTTP 状态 / `ApiError`↔SSE `reason_code` 分流；`client_sse_protocol` 握手；
   `QUEUE_FULL` / `STREAM_JOB_GONE` 等码常量）。本仓：`golden_http_sse_failure_path_*`（亦由 **`./scripts/check-sse-protocol.sh`** 跑）。

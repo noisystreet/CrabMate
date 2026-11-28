@@ -8,8 +8,8 @@
 
 Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（DeepSeek / MiniMax / 智谱 GLM / Moonshot Kimi / Ollama 等）；
 本仓是 HTTP **`serve`**（Axum）+ 运维 CLI。**Web / Desktop / 远程终端（`crabmate-tui`）在
-[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（本地同级 `../crabmate-client`；Playwright 转发认
-`CRABMATE_CLIENT_DIR`）。同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 `docs/design/client_shell_split.md`）。
+[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（Playwright 转发认
+`CRABMATE_CLIENT_DIR`；本仓**不写死** Client 仓的本地路径）。同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 `docs/design/client_shell_split.md`）。
 上手看 `README.md`，其余见 §6。
 
 ## 2. 工作区约定 / Workspace
@@ -26,7 +26,7 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 - `serve --host 0.0.0.0`（非 loopback）必须配 `CM_WEB_API_BEARER_TOKEN` 或
   `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`，否则拒绝启动。
 - **`POST /config/reload`** 热重载大部分 `AgentConfig`（**`API_KEY` 不从环境重读**）。
-- 构建需 **Rust 1.85+**（edition 2024）；`--features fastembed` 另需 `g++` / libstdc++。
+- 构建需 **Rust 1.88+**（edition 2024；以 `Cargo.toml` 的 **`rust-version`** 为准）；`--features fastembed` 另需 `g++` / libstdc++。
 - 配置项与供应商开关只查 `docs/配置说明.md`；缺失 CLI、`/health` degraded、Web Bearer 排障见
   `docs/调试指南.md`「环境与工具链陷阱」。
 
@@ -144,8 +144,8 @@ Rust 写的 AI Agent，调用 **OpenAI 兼容** `chat/completions` 后端（Deep
 ### 4.9 工具注册 / Tool registry (`src/cm_tools/`)
 
 - **Args 与 spec 同源**（#1157 已迁移）：`cm_tool_registry/param_types/` 写 Args（`Deserialize + JsonSchema`），
-  `specs/*.inc.rs` 用 `builtin_tool!` 声明一行，执行体是 `runners.rs` 的 `runner_*` 薄包装。别再手抄 `ToolSpec` 的 `parameters`。
-- **`name` 必须用 `src/cm_tools/tool_names.rs` 的常量（绝不写字面量）并同时加进 `tool_names::ALL`**——
+  `specs/*.inc.rs` 用 `builtin_tool!` 声明一行，执行体是 `src/cm_tools/tools/runners.rs` 的 `runner_*` 薄包装。别再手抄 `ToolSpec` 的 `parameters`。
+- **`name` 必须用 `src/cm_names.rs`（`crate::cm_names`）的常量（绝不写字面量）并同时加进 `tool_names::ALL`**——
   `all_tool_names_match_specs` 会拦住漏加。同步 `README.md` + `docs/工具说明.md`。
 - 零漂移：`cargo test -p crabmate --lib cm_tools::tools::tool_specs_registry`（archive 三件套需 `--features archive-tools`），
   **不带 BLESS** 跑绿才算没漂移。完整三步流程 / `ToolArgsSummary` 宽容取值 / `async_only` runner / golden 细节见

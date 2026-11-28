@@ -1,5 +1,5 @@
 # CrabMate 构建入口：后端（serve / CLI）、发布打包与清理。
-# 业务 UI：同级 Client 仓 ../crabmate-client（路径 A Phase 4.2）；本仓打包默认不附带 UI。
+# 业务 UI：在 Client 仓构建（检出位置由 CRABMATE_CLIENT_DIR 指定）；本仓打包默认不附带 UI。
 # 用法：make help
 
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -33,8 +33,8 @@ help:
 	@echo "  make workspace        工作区全部 Rust crate（debug）"
 	@echo "  make workspace-release 工作区全部 Rust crate（release）"
 	@echo "  make all / all-dev    同 backend-release / backend"
-	@echo "  业务 UI：cd ../crabmate-client && make frontend"
-	@echo "  桌面/Android 壳：cd ../crabmate-client && make help"
+	@echo "  业务 UI：在 Client 仓（CRABMATE_CLIENT_DIR）执行 make frontend"
+	@echo "  桌面/Android 壳：在 Client 仓（CRABMATE_CLIENT_DIR）执行 make help"
 	@echo ""
 	@echo "发布打包（server-only，不附带 frontend）："
 	@echo "  make package          tar.gz + 可选 .deb → dist/（需 cargo-deb 才出 deb）"
@@ -60,7 +60,7 @@ help:
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
 	@echo "变量：RELEASE=1 作用于 backend / workspace"
-	@echo "serve：永远纯 API，不托管 UI；UI 在 Client 仓（cd ../crabmate-client && make frontend）"
+	@echo "serve：永远纯 API，不托管 UI；UI 在 Client 仓（CRABMATE_CLIENT_DIR）执行 make frontend"
 
 # --- 聚合 ---
 

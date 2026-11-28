@@ -777,7 +777,8 @@ One knob projects onto six axes (tool visibility / external tools / path / comma
 - **No ceiling-writing endpoint, by design**: an HTTP endpoint able to raise `permission_level_max` would defeat the startup gate (design doc §16.3).
 - **Audit**: `unrestricted` records every level-based allow under `target: "permission_audit"`; denials (L0–L2) and human approvals are always recorded.
 - **S7 landed**: `PathScope::AllowedRoots` widens the **file-tool** path axis for `workspace` / `approved` to
-  `{session root} ∪ workspace_allowed_roots` (a path under any allowed root is admitted; `../crabmate-client` no longer prompts).
+  `{session root} ∪ workspace_allowed_roots` (a path under any allowed root is admitted; a sibling Client checkout
+  no longer prompts).
   L1 stays session-root-only and L4 stays unrestricted; an **empty** list fails closed back to `SessionRoot`
   (deliberately the opposite of the Web-selection rule "empty = anywhere").
   The **command axis** is covered too (#1315): `run_command` (argv and `cwd`) and the argv of a new

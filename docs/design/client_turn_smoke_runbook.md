@@ -24,7 +24,7 @@
 | 项 | 说明 |
 |----|------|
 | 密钥 | 默认 `llm_http_auth_mode=bearer` 时须有可用 **`API_KEY`**（或钥匙串 / 侧栏已存）；**勿**把真密钥写进本文件或 commit |
-| 前端静态包 | 业务 UI 由 Client 仓构建与托管：`cd ../crabmate-client && make frontend`；本仓 **`serve` 永不托管 SPA**（`--with-web` / `CM_WEB_STATIC_DIR` 均已移除） |
+| 前端静态包 | 业务 UI 由 Client 仓构建与托管：`cd "$CRABMATE_CLIENT_DIR" && make frontend`；本仓 **`serve` 永不托管 SPA**（`--with-web` / `CM_WEB_STATIC_DIR` 均已移除） |
 | 工作区 | 选一可信本地目录作 `--workspace` / Web 当前工作区 |
 | 代理 | Playwright / 本机 `127.0.0.1` 时注意 `no_proxy=127.0.0.1,localhost`（见 `AGENTS.md`） |
 | Bearer | 若启用 Web API 共享密钥：侧栏 / 连接页填的是 **`CM_WEB_API_BEARER_TOKEN`**，**不是**模型 `API_KEY` |
@@ -40,7 +40,7 @@
 | 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** 终端宿主面；**不**覆盖壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
 | Playwright mock | Client [`e2e/specs/mock-*.spec.ts`](https://github.com/noisystreet/crabmate-client/tree/main/e2e/specs) | **不**替代（无真模型 / 无壳生命周期） |
-| Victauri 真 LLM | **仅** Client 仓：`cd ../crabmate-client && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
+| Victauri 真 LLM | **仅** Client 仓：`cd "$CRABMATE_CLIENT_DIR" && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
 
 本 runbook 的价值是：**跨入口人工勾选 + 协议错位 + 远程壳**，补自动化盲区。
 
@@ -63,7 +63,7 @@
 ### 4.2 宿主：Web（浏览器本机）
 
 ```bash
-cd ../crabmate-client && make frontend   # UI 由 Client 仓构建/托管
+cd "$CRABMATE_CLIENT_DIR" && make frontend   # UI 由 Client 仓构建/托管
 cd ../server
 API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1
 # 浏览器打开 Client 仓托管的 UI（本仓 serve 只提供 API）；若配置了 Web Bearer，侧栏先保存同一共享密钥
@@ -100,7 +100,7 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 cd ../server
 cargo run -- serve --host 127.0.0.1 --port 8080
 # 终端 B：Client 仓
-cd ../crabmate-client/desktop-tauri/src-tauri
+cd "$CRABMATE_CLIENT_DIR"/desktop-tauri/src-tauri
 cargo tauri dev
 ```
 
@@ -212,7 +212,7 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 ### 9.1 服务端
 
 ```bash
-cd ../crabmate-client && make frontend
+cd "$CRABMATE_CLIENT_DIR" && make frontend
 # 跨 Origin：serve 保持纯 API；将 UI Origin 加入白名单（示例：静态站 :8081，API :8080）
 CM_WEB_API_BEARER_TOKEN='…shared…' \
 CM_WEB_CORS_ALLOWED_ORIGINS='http://127.0.0.1:8081' \

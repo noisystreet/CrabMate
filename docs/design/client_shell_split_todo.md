@@ -3,6 +3,8 @@
 > **权威决策**：[`client_shell_split.md`](./client_shell_split.md)（ADR）  
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **日期**：2026-08-08  
+> **定向**：本文是 **Phase 执行记录**；文中出现的 `../crabmate-client` 是**当时的**本地检出路径，
+> 不作为现行约定——现行做法是「本仓文档只引用 Client 仓的 GitHub URL，本地检出位置用 `CRABMATE_CLIENT_DIR` 指定」。  
 > **约定**：完成某阶段后更新本文件勾选；**勿**把本地草稿目录当作本计划的引用源（见根目录 `AGENTS.md`）。  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`client_compat_matrix.md`](./client_compat_matrix.md)、
 > `docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟 / Victauri：**仅** **`../crabmate-client`**（Phase 4.1 起本仓已无壳目录）

@@ -17,8 +17,9 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 - **Rust**: 1.88+ (edition 2024); see [`README.md`](../../README.md).
 - **E2E**:
-  **Playwright** and **Victauri** live in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`;
-  `./scripts/e2e-playwright.sh` honors **`CRABMATE_CLIENT_DIR`**). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
+  **Playwright** and **Victauri** live in [crabmate-client](https://github.com/noisystreet/crabmate-client);
+  `./scripts/e2e-playwright.sh` honors **`CRABMATE_CLIENT_DIR`** (that directory holds the Client checkout). This repo
+  keeps `crabmate e2e` / HTTP real-LLM tests.
 - **Web assets**: E2E builds the UI in the Client repo (**`make frontend`**) and hosts it there;
   it connects to this repo's `serve` over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**; always API-only, no SPA).
 
@@ -130,19 +131,19 @@ cargo +nightly test
 
 ## Frontend (Leptos / Client `frontend`)
 
-Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client). Run the following from sibling **`../crabmate-client`** (or
-  set **`CRABMATE_CLIENT_DIR`**).
+Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client). Run the following inside your
+  Client checkout (**`CRABMATE_CLIENT_DIR`** names that directory for the scripts in this repo).
 
 ### Host target unit tests (default)
 
 ```bash
-cd ../crabmate-client/frontend && cargo test
+cd "$CRABMATE_CLIENT_DIR"/frontend && cargo test
 ```
 
 Or:
 
 ```bash
-cd ../crabmate-client && cargo test -p crabmate-web
+cd "$CRABMATE_CLIENT_DIR" && cargo test -p crabmate-web
 ```
 
 Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no browser).
@@ -165,26 +166,26 @@ If `wasm-bindgen` is bumped in the lockfile, use that version in the install com
 After protocol or large UI changes, at least:
 
 ```bash
-cd ../crabmate-client && cargo check -p crabmate-web --target wasm32-unknown-unknown
+cd "$CRABMATE_CLIENT_DIR" && cargo check -p crabmate-web --target wasm32-unknown-unknown
 ```
 
 ### Static bundle build (required for E2E / `serve`)
 
 ```bash
-cd ../crabmate-client && make frontend
+cd "$CRABMATE_CLIENT_DIR" && make frontend
 # Production-sized WASM:
-# cd ../crabmate-client && make frontend --release
+# cd "$CRABMATE_CLIENT_DIR" && make frontend --release
 ```
 
 ## Desktop E2E (Victauri)
 
-> **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling
-> `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md)
-> there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
+> **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client); see
+> [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md).
+> This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
 
 Directory:
-  Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling
-    `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri)
+  Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests).
+  Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri)
   (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes;
   stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`**
     suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
@@ -202,7 +203,7 @@ Directory:
   default **`VICTAURI_USE_XVFB=1`**):
 
 ```bash
-cd ../crabmate-client
+cd "$CRABMATE_CLIENT_DIR"
 # optional: CM_DESKTOP_BACKEND_BIN=/path/to/crabmate
 ./scripts/victauri-e2e.sh victauri_scroll_send
 ./scripts/victauri-e2e.sh all
@@ -216,7 +217,7 @@ cd ../server
 cargo run -- serve --host 127.0.0.1 --port 18080
 
 # terminal B (Client repo)
-cd ../crabmate-client/desktop-tauri/src-tauri
+cd "$CRABMATE_CLIENT_DIR"/desktop-tauri/src-tauri
 CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
 # terminal C (same src-tauri)
@@ -239,7 +240,7 @@ Install **`xvfb`** on Debian/Ubuntu: **`sudo apt install xvfb`**.
 Force headless on a machine with **`DISPLAY`** (Client repo root):
 
 ```bash
-cd ../crabmate-client
+cd "$CRABMATE_CLIENT_DIR"
 VICTAURI_USE_XVFB=1 ./scripts/victauri-e2e.sh victauri_scroll_send
 ```
 
@@ -251,7 +252,7 @@ Without **`VICTAURI_E2E=1`**, Victauri tests **skip**. Full suites: Client repo 
 Quick smoke (Client repo):
 
 ```bash
-cd ../crabmate-client/desktop-tauri/src-tauri
+cd "$CRABMATE_CLIENT_DIR"/desktop-tauri/src-tauri
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
   cargo test --test victauri_real_llm -- --nocapture
 ```

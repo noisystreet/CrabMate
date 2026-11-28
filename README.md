@@ -20,7 +20,7 @@
 
 This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI,
   Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)
-  ** (local checkouts default to sibling `../crabmate-client`); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
+  ** (build and run steps live in its own README); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
 
@@ -61,8 +61,9 @@ Requires **Rust 1.88+** (edition 2024).
 cargo build
 ./target/debug/crabmate serve            # default 127.0.0.1:8080; or: API_KEY=… ./target/debug/crabmate serve
 
-# Client UI (separate repo)
-cd ../crabmate-client && make frontend   # then point it at http://127.0.0.1:8080/ + Bearer
+# Client UI (separate repo) — point this at your crabmate-client checkout
+export CRABMATE_CLIENT_DIR=/path/to/crabmate-client
+cd "$CRABMATE_CLIENT_DIR" && make frontend   # then point it at http://127.0.0.1:8080/ + Bearer
 ```
 
 Prefer the Makefile: **`make help`**, **`make backend`** (`cargo build -p crabmate`), **`make package`** (server-only tar.gz + optional `.deb` → `dist/`).
