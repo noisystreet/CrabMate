@@ -252,37 +252,67 @@ pub struct CodespellCheckArgs {
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DocsHealthSweepArgs {
+    /// 是否执行第 1 段：主文档头预览（内部走 `read_file` 读前 N 行）。默认 `true`。
     #[serde(default = "super::defaults::default_true")]
     pub run_doc_preview: bool,
+    /// 主文档预览的路径（工作区相对）；**留空或全为空白**时回退到默认清单
+    /// （README / AGENTS / docs 等，与 `repo_overview_sweep` 同一份）。不存在的路径记「跳过」而非报错。
     #[serde(default)]
     pub doc_paths: Vec<String>,
+    /// 每个主文档预览的行数上限（10～200，默认 60）。
     #[serde(default = "default_doc_preview_max_lines")]
     #[schemars(range(min = 10, max = 200))]
     pub doc_preview_max_lines: Option<u64>,
+    /// 是否执行第 2 段：`typos` 拼写检查。默认 `true`；关掉时该段在汇总里记 `skipped`。
     #[serde(default = "super::defaults::default_true")]
     pub run_typos: bool,
+    /// 是否执行第 3 段：`codespell` 拼写检查。默认 `true`；关掉时该段在汇总里记 `skipped`。
     #[serde(default = "super::defaults::default_true")]
     pub run_codespell: bool,
+    /// 是否执行第 4 段：`markdown_check_links`（相对链接 + 锚点校验）。默认 `true`。
     #[serde(default = "super::defaults::default_true")]
     pub run_markdown_links: bool,
+    /// 拼写检查的扫描路径（`typos` 与 `codespell` 共用）；留空则用两者各自的默认
+    /// （`README.md` + `docs`）。每项须为工作区内相对路径（不以 `/` 开头、不含 `..`），**最多 24 项**。
     #[serde(default)]
     pub spell_paths: Vec<String>,
+    /// `typos` 的配置文件路径；省略则用 `typos` 自己的查找规则。
+    /// 须为工作区内相对路径（不以 `/` 开头、不含 `..`），**文件不存在直接报错**。
     pub typos_config_path: Option<String>,
+    /// `codespell --skip` 的跳过模式（逗号分隔，如 `"*.json,target"`）。
+    /// 不得含 `..` 或换行，长度 ≤ 512。
     pub codespell_skip: Option<String>,
+    /// `codespell` 的自定义词典路径（可多个）；每项须为工作区内相对路径
+    /// （不以 `/` 开头、不含 `..`），**最多 8 项**。
     #[serde(default)]
     pub codespell_dictionary_paths: Vec<String>,
+    /// `codespell` 的忽略词表（逗号分隔）。
     pub codespell_ignore_words_list: Option<String>,
+    /// 链接检查的扫描根（`.md` 文件或目录）；**留空**则用 `markdown_check_links` 的默认
+    /// （`README.md` + `docs`）。
     #[serde(default)]
     pub md_roots: Vec<String>,
+    // 下面三个 `md_*` 不写 `#[schemars(range)]`：边界由 `markdown_check_links` 自己钳制，
+    // 在这里重复定义会形成两处真相。`doc_preview_max_lines` 没有对应子工具，边界必须写在本 schema 上。
+    /// 最多处理多少个 Markdown 文件（默认 300、上限 3000，由子工具钳制）。
     pub md_max_files: Option<u64>,
+    /// 目录递归深度上限（默认 24、上限 80）。
     pub md_max_depth: Option<u64>,
+    /// 仅对这些前缀匹配的 `http(s)` / `//` 外链发 HEAD 探测；**留空则外链只计数、不联网**。
     #[serde(default)]
     pub md_allowed_external_prefixes: Vec<String>,
+    /// 外链探测超时秒数（默认 10、上限 60）。
     pub md_external_timeout_secs: Option<u64>,
+    /// 是否校验 `#fragment` 锚点（默认 `true`）。
     pub md_check_fragments: Option<bool>,
+    /// 链接检查输出形式：`text`（默认）/ `json` / `sarif`。
     pub md_output_format: Option<MarkdownCheckLinksOutputFormat>,
+    /// 某段**发现内容问题**后立即停跑后续段（后续段在汇总里记 `skipped`）。默认 `false`。
+    /// 实际只对 `typos` / `codespell` 两段生效：第 1 段（文档预览）只会记 `Done`，
+    /// 第 4 段（链接检查）已是末段。执行故障（入参非法、CLI 缺失等）仍按 `Err` 上抛。
     #[serde(default)]
     pub fail_fast: bool,
+    /// 只输出各段状态汇总，不输出各段正文。默认 `false`。
     #[serde(default)]
     pub summary_only: bool,
 }

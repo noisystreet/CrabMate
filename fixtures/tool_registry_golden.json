@@ -2129,6 +2129,7 @@
         "properties": {
           "codespell_dictionary_paths": {
             "default": [],
+            "description": "`codespell` 的自定义词典路径（可多个）；每项须为工作区内相对路径\n（不以 `/` 开头、不含 `..`），**最多 8 项**。",
             "items": {
               "type": "string"
             },
@@ -2136,6 +2137,7 @@
           },
           "codespell_ignore_words_list": {
             "default": null,
+            "description": "`codespell` 的忽略词表（逗号分隔）。",
             "type": [
               "string",
               "null"
@@ -2143,6 +2145,7 @@
           },
           "codespell_skip": {
             "default": null,
+            "description": "`codespell --skip` 的跳过模式（逗号分隔，如 `\"*.json,target\"`）。\n不得含 `..` 或换行，长度 ≤ 512。",
             "type": [
               "string",
               "null"
@@ -2150,6 +2153,7 @@
           },
           "doc_paths": {
             "default": [],
+            "description": "主文档预览的路径（工作区相对）；**留空或全为空白**时回退到默认清单\n（README / AGENTS / docs 等，与 `repo_overview_sweep` 同一份）。不存在的路径记「跳过」而非报错。",
             "items": {
               "type": "string"
             },
@@ -2157,6 +2161,7 @@
           },
           "doc_preview_max_lines": {
             "default": 60,
+            "description": "每个主文档预览的行数上限（10～200，默认 60）。",
             "format": "uint64",
             "maximum": 200,
             "minimum": 10,
@@ -2167,10 +2172,12 @@
           },
           "fail_fast": {
             "default": false,
+            "description": "某段**发现内容问题**后立即停跑后续段（后续段在汇总里记 `skipped`）。默认 `false`。\n实际只对 `typos` / `codespell` 两段生效：第 1 段（文档预览）只会记 `Done`，\n第 4 段（链接检查）已是末段。执行故障（入参非法、CLI 缺失等）仍按 `Err` 上抛。",
             "type": "boolean"
           },
           "md_allowed_external_prefixes": {
             "default": [],
+            "description": "仅对这些前缀匹配的 `http(s)` / `//` 外链发 HEAD 探测；**留空则外链只计数、不联网**。",
             "items": {
               "type": "string"
             },
@@ -2178,6 +2185,7 @@
           },
           "md_check_fragments": {
             "default": null,
+            "description": "是否校验 `#fragment` 锚点（默认 `true`）。",
             "type": [
               "boolean",
               "null"
@@ -2185,6 +2193,7 @@
           },
           "md_external_timeout_secs": {
             "default": null,
+            "description": "外链探测超时秒数（默认 10、上限 60）。",
             "format": "uint64",
             "minimum": 0,
             "type": [
@@ -2194,6 +2203,7 @@
           },
           "md_max_depth": {
             "default": null,
+            "description": "目录递归深度上限（默认 24、上限 80）。",
             "format": "uint64",
             "minimum": 0,
             "type": [
@@ -2203,6 +2213,7 @@
           },
           "md_max_files": {
             "default": null,
+            "description": "最多处理多少个 Markdown 文件（默认 300、上限 3000，由子工具钳制）。",
             "format": "uint64",
             "minimum": 0,
             "type": [
@@ -2219,10 +2230,12 @@
                 "type": "null"
               }
             ],
-            "default": null
+            "default": null,
+            "description": "链接检查输出形式：`text`（默认）/ `json` / `sarif`。"
           },
           "md_roots": {
             "default": [],
+            "description": "链接检查的扫描根（`.md` 文件或目录）；**留空**则用 `markdown_check_links` 的默认\n（`README.md` + `docs`）。",
             "items": {
               "type": "string"
             },
@@ -2230,22 +2243,27 @@
           },
           "run_codespell": {
             "default": true,
+            "description": "是否执行第 3 段：`codespell` 拼写检查。默认 `true`；关掉时该段在汇总里记 `skipped`。",
             "type": "boolean"
           },
           "run_doc_preview": {
             "default": true,
+            "description": "是否执行第 1 段：主文档头预览（内部走 `read_file` 读前 N 行）。默认 `true`。",
             "type": "boolean"
           },
           "run_markdown_links": {
             "default": true,
+            "description": "是否执行第 4 段：`markdown_check_links`（相对链接 + 锚点校验）。默认 `true`。",
             "type": "boolean"
           },
           "run_typos": {
             "default": true,
+            "description": "是否执行第 2 段：`typos` 拼写检查。默认 `true`；关掉时该段在汇总里记 `skipped`。",
             "type": "boolean"
           },
           "spell_paths": {
             "default": [],
+            "description": "拼写检查的扫描路径（`typos` 与 `codespell` 共用）；留空则用两者各自的默认\n（`README.md` + `docs`）。每项须为工作区内相对路径（不以 `/` 开头、不含 `..`），**最多 24 项**。",
             "items": {
               "type": "string"
             },
@@ -2253,10 +2271,12 @@
           },
           "summary_only": {
             "default": false,
+            "description": "只输出各段状态汇总，不输出各段正文。默认 `false`。",
             "type": "boolean"
           },
           "typos_config_path": {
             "default": null,
+            "description": "`typos` 的配置文件路径；省略则用 `typos` 自己的查找规则。\n须为工作区内相对路径（不以 `/` 开头、不含 `..`），**文件不存在直接报错**。",
             "type": [
               "string",
               "null"
