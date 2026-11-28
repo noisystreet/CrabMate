@@ -4559,6 +4559,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "args": {
+            "description": "参数数组，逐项作为 argv 传给进程 —— **默认不经 shell**，`|`、`*`、`$` 都按字面量。\n\n例外：任一参数含 glob（`*`、路径形 `?`/`[`）、`$VAR`、`${...}` 或 `~` 时，\n整条命令会被包进 `bash -c` 交由 shell 展开（此时 `$VAR` 会替换成真实值）。\n该形态下 `$()` 与反引号**不会**被当作命令替换（会转义为字面量）；\n需要命令替换请改用 `script`。",
             "items": {
               "type": "string"
             },
@@ -4575,7 +4576,7 @@
             ]
           },
           "command": {
-            "description": "纯命令名（详见工具说明；禁止嵌入参数）。与 `script` 二选一。",
+            "description": "命令名；**可内嵌参数**（按 shell 词法拆分，如 `\"git status\"` 等价于 `command: \"git\"` + `args: [\"status\"]`）。\n与 `script` 二选一。",
             "type": [
               "string",
               "null"
@@ -4589,7 +4590,7 @@
             ]
           },
           "script": {
-            "description": "交给 POSIX shell（`bash -c` / `sh -c`）执行的脚本；与 `command`/`args` 互斥。",
+            "description": "一行 shell 脚本，交给 `bash -c` / `sh -c` 执行 —— **完整 shell 语义**：\n`|` 是管道、`$VAR` 会展开、`$()` 与反引号**会执行**（与 `args` 相反）。\n与 `command`/`args` 互斥。",
             "type": [
               "string",
               "null"
