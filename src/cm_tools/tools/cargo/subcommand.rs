@@ -241,3 +241,86 @@ pub(super) fn run_and_format_try(
         Err(e) => Err(ToolError::subprocess_spawn_error(title, e)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 构造 `cargo <subcmd> <args...>` 的 argv（不含 program 名）。
+    ///
+    /// `CARGO_MANIFEST_DIR` 本身就有 `Cargo.toml`，`build_cargo_subcommand_command` 的
+    /// workspace 前置检查因此能过，不必造临时目录。
+    fn argv(subcmd: &str, args: serde_json::Value) -> Vec<String> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cmd = build_cargo_subcommand_command(subcmd, &args, root)
+            .unwrap_or_else(|e| panic!("构造 `cargo {subcmd}` 命令应成功，实际失败: {e:?}"));
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// 下面几条钉的是**字段 doc 里写明的行为**（`CargoCommonCliArgs` / `CargoTestArgs` /
+    /// `CargoRunArgs` 的 `///`）。字段 doc 是模型唯一能看到的语义，而这块拼装逻辑此前
+    /// 一个测试都没有 —— 实现改了 doc 不会红，`#1534` 正是这么来的。
+    #[test]
+    fn all_targets_only_applies_to_check_and_clippy() {
+        for subcmd in ["check", "clippy"] {
+            assert!(
+                argv(subcmd, json!({"all_targets": true})).contains(&"--all-targets".to_owned()),
+                "doc 声明 `{subcmd}` 认 all_targets"
+            );
+        }
+        // `cargo_test` / `cargo_run` 的 Args 结构里根本没有 all_targets，传了也不该拼进去。
+        for subcmd in ["test", "run"] {
+            assert!(
+                !argv(subcmd, json!({"all_targets": true})).contains(&"--all-targets".to_owned()),
+                "`{subcmd}` 不应拼 --all-targets"
+            );
+        }
+    }
+
+    #[test]
+    fn nocapture_is_independent_of_test_filter() {
+        // 只有 nocapture：`--` 与 `--nocapture` 仍要出现（doc 写明「可单独使用」）。
+        assert_eq!(
+            argv("test", json!({"nocapture": true})),
+            ["test", "--", "--nocapture"]
+        );
+        // filter 是位置参数，必须排在 `--` 之前。
+        assert_eq!(
+            argv("test", json!({"test_filter": "foo", "nocapture": true})),
+            ["test", "foo", "--", "--nocapture"]
+        );
+    }
+
+    #[test]
+    fn run_args_go_after_double_dash() {
+        assert_eq!(
+            argv("run", json!({"args": ["--port", "9000"]})),
+            ["run", "--", "--port", "9000"]
+        );
+        // 空数组不追加多余的 `--`。
+        assert_eq!(argv("run", json!({"args": []})), ["run"]);
+    }
+
+    #[test]
+    fn common_flags_map_to_their_cargo_flags() {
+        assert_eq!(
+            argv(
+                "check",
+                json!({"release": true, "package": "p", "bin": "b", "features": "x,y"})
+            ),
+            [
+                "check",
+                "--release",
+                "--package",
+                "p",
+                "--bin",
+                "b",
+                "--features",
+                "x,y",
+            ]
+        );
+    }
+}
