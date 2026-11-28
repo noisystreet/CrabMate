@@ -126,6 +126,10 @@ mod tests {
     ///
     /// 断言以**内容到达**为主（`normalize` 可能合并相邻 user、丢掉 `name`），
     /// 这只影响归因，不影响「模型看不看得见」。
+    /// `cm_llm` 只在 `server` feature 下存在；`scripts/check-client-contract.sh` 用
+    /// `--no-default-features --features protocol` 编译 `cm_types` 的测试，故本断言须跟着收窄。
+    /// 默认构建（本地 / CI 的 clippy·test job）仍会跑它。
+    #[cfg(feature = "server")]
     #[test]
     fn probe_non_runtime_refreshed_injection_reaches_vendor_body() {
         let m = Message::user_forced_skill_injection("SNAPSHOT_PROBE_BODY");
