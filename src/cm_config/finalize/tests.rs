@@ -208,3 +208,21 @@ mod subagent_depth_tests {
         assert!(err.contains("禁止嵌套"), "{err}");
     }
 }
+
+/// 子 Agent 委托默认**开**：这条钉住「默认值」本身。
+///
+/// 没有它，把 `tail.rs` 的 `unwrap_or(true)` 改回 `false`、或把
+/// `config/planning.toml` 的 `subagent_enabled` 改回 `false`，CI 都会全绿——
+/// 而用户可见行为（模型看不看得到 `delegate_task`）已经悄悄变了。
+mod subagent_default_tests {
+    /// 走完整 `load_config` 链路（嵌入默认 → `finalize`），因此同时覆盖
+    /// 「shipped 配置值」与「`unwrap_or` 兜底」两层。
+    #[test]
+    fn subagent_enabled_defaults_to_on() {
+        let cfg = crate::cm_config::load_config(None).expect("嵌入默认配置应可加载");
+        assert!(
+            cfg.subagent.enabled,
+            "subagent_enabled 默认应为 true（见 config/planning.toml 与 finalize/tail.rs）"
+        );
+    }
+}

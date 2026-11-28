@@ -193,8 +193,10 @@ fn derive_tail_plan_tool_thinking_scalars(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    // 子 Agent 委托（#839 P1，设计 §10）。默认关；关 = 工具不注入。
-    let subagent_enabled = b.subagent.enabled.unwrap_or(false);
+    // 子 Agent 委托（#839 P1，设计 §10）。**默认开**；关 = 工具不注入。
+    // 默认能开的前提：子任务只用只读工具子集、权限取父的 `min` 链结果、
+    // LLM 次数与墙钟各有硬上限——本开关不扩大任何权限面。
+    let subagent_enabled = b.subagent.enabled.unwrap_or(true);
     let subagent_max_depth = b.subagent.max_depth.unwrap_or(1).min(8) as u8;
     let subagent_max_llm_calls = b.subagent.max_llm_calls.unwrap_or(8).clamp(1, 64) as u32;
     let subagent_max_wall_secs = b.subagent.max_wall_secs.unwrap_or(300).clamp(1, 3600);

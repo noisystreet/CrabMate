@@ -90,7 +90,7 @@ pub struct PerPlanPolicyConfig {
 /// - 后者首版恒按 `is_readonly_tool` 派生全集，等 P2 再做「收窄」的配置化。
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
-    /// 总开关。**关闭时 `delegate_task` 不注入给模型**（不是「注入后拒绝」）。
+    /// 总开关，**默认开**。关闭时 `delegate_task` 不注入给模型（不是「注入后拒绝」）。
     pub enabled: bool,
     /// 递归深度上限。**当前只接受 `1`**（禁止嵌套）。
     ///

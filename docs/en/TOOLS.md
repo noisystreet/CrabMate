@@ -93,7 +93,7 @@ This document describes built-in tools, common function-calling JSON examples, a
 
 ## Built-in tools (model-callable)
 
-**`delegate_task` sub-agent delegation (off by default):** With `subagent_enabled = true` the model can dispatch a **bounded read-only
+**`delegate_task` sub-agent delegation (on by default):** the model can dispatch a **bounded read-only
   sub-task** that runs in its **own message window and budget** and returns only a bounded summary — tool logs never flow back into the
   parent turn. **When off, the tool is not injected at all** (the model cannot see it).
   **Use it for:** broad exploration, context isolation, or "what is this directory/code roughly about". **Do not use it for** reading a

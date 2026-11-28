@@ -38,8 +38,8 @@ This repo is the **Server**: HTTP **`serve`** (always API-only — it never host
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace file tools, **`run_command`** (allowlist only), HTTP,
   **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily),
-  and workspace **code search** (keyword + optional semantic). Optional **`delegate_task`** dispatches a bounded read-only sub-agent
-  (off by default; `subagent_enabled`). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+  and workspace **code search** (keyword + optional semantic). **`delegate_task`** dispatches a bounded read-only sub-agent
+  (on by default; set `subagent_enabled = false` to hide it). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
 - **Act turn constraints**: each Act turn starts with one short tool-less call that decides whether the user asked for **read-only**
   this turn (e.g. 「别动代码，先分析」). A `true` verdict narrows the whole turn to `review_readonly` — the tool list is filtered
   and writes / command execution are denied at execution time. **Fail-open**: disabled / call error / cancelled / unparsable →

@@ -389,7 +389,7 @@ fn assemble_run_loop_params<'a>(
     // 所有权跟着 `RunLoopParams`（`Arc`），随回合结束释放。**不要**用 `Box::leak`
     // 换取 `'a` —— 那是每回合永久泄漏。
     //
-    // 仅在 `subagent_enabled = true` 时构造；默认关闭 → 零分配、零行为变化。
+    // 仅在 `subagent_enabled = true` 时构造；置 `false` → 零分配、零行为变化。
     let delegator: Option<std::sync::Arc<dyn crate::cm_tools::delegation_host::SubAgentDelegator>> =
         if cfg.subagent.enabled {
             let readonly_tools =

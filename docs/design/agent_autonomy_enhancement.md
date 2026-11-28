@@ -333,7 +333,7 @@ P3（C 层护栏），**不要跳过 A 直接扩 E 层沉淀面**——否则噪
 | S0.5 L1 完成判定层重建 | ✅ 已落地：#1390 证据层 → #1391 契约 → #1392 LLM + 配置 → #1393 接入早停门 |
 | S1 验收反接 + 步后抑制接线 | ❌ 已放弃：#1424 删除（生产无消费者） |
 | S2 L2 `TaskState` 与续跑 | 🚧 **A / B / C 已交付，仅 JSON 队列收尾未接线**（`#1455`）：A = 落盘（`cm_agent::task_state` + `autonomy_*` 三键，默认关）；B = 跨回合累计预算（三个 `autonomy_max_cumulative_*`，**软闸**，起点注入不改判定）与暂停摘要注入（≤800 字符、运行时刷新、不落盘）；C = **决策层 + 通道 + 账本就绪**：`decide_auto_resume`（开关分层 / 遇审批即停 / 轮数硬闸 / 无进展止损 / 上下文变化即停，含单测）、`TurnOrigin`（谁发起这一轮，与「发了什么」正交）、`RunEpoch`（进程内轮数账本 + 无进展计数 + TTL/数量清理）、暂停信号通道（`paused_reason_sink` 贯穿 7 层装配，流式路径回合结束后可读）+ 三个配置键；**入队已落地（流式路径）**：`maybe_auto_resume_next_turn` 在 `chat_job_queue/worker/stream_job.rs` 收尾处调用，`submit_resumed_turn` 走 JSON 队列再起回合；**JSON 队列路径（`worker/json_job.rs`）尚未接线** |
-| S3 L3 `delegate_task` P1 | ✅ 已落地（#1389 / #1394 / #1395 / #1397），默认关 |
+| S3 L3 `delegate_task` P1 | ✅ 已落地（#1389 / #1394 / #1395 / #1397），默认开 |
 | S4 / S5 / S6 | ⬜ 未开工 |
 
 **为什么 S0.5 前置**：L2 的 `TaskState` 存的是「子项 → 完成状态」，L6 读的是三态信号。
