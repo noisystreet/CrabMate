@@ -260,14 +260,14 @@ pub fn runner_delegate_task_try(_args: &str, _ctx: &ToolContext<'_>) -> Result<S
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
 #[allow(clippy::result_large_err)]
 pub fn runner_cargo_check_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    cargo_tools::cargo_check_try(args, ctx.working_dir, ctx.command_max_output_len)
+    cargo::cargo_check_try(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 // ── 原 dispatch 特判的 cargo_* / rust_* Typed runner（strangler 收尾）──
 
 define_runners_cwd_maxlen_try! {
-    runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
-    runner_cargo_run_try => cargo_tools::cargo_run_try,
+    runner_cargo_clippy_try => cargo::cargo_clippy_try,
+    runner_cargo_run_try => cargo::cargo_run_try,
     runner_code_stats_try => code_metrics::code_stats_try,
     runner_dependency_graph_try => code_metrics::dependency_graph_try,
     runner_coverage_report_try => code_metrics::coverage_report_try,
@@ -278,7 +278,7 @@ define_runners_cwd_maxlen_try! {
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
 #[allow(clippy::result_large_err)]
 pub fn runner_cargo_test_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    cargo_tools::cargo_test_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
+    cargo::cargo_test_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
 /// `pytest_run` 的 Typed runner：pytest 的 `5`（未收集到用例）不算失败，见
@@ -351,7 +351,7 @@ pub fn runner_skill_manage_try(args: &str, ctx: &ToolContext<'_>) -> Result<Stri
     };
     let parsed: super::tool_param_types::SkillManageArgs =
         super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
-    skill_manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
+    skill::manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
 }
 
 #[allow(clippy::result_large_err)]
@@ -364,7 +364,7 @@ pub fn runner_skill_read_try(args: &str, ctx: &ToolContext<'_>) -> Result<String
     };
     let parsed: super::tool_param_types::SkillReadArgs =
         super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
-    skill_read::skill_read(parsed, &cfg.skills, ctx.working_dir)
+    skill::read::skill_read(parsed, &cfg.skills, ctx.working_dir)
 }
 
 #[allow(clippy::result_large_err)]

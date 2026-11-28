@@ -228,7 +228,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 |---|---|---|
 | `python_snippet_run` | [python_tools.rs](../../../src/cm_tools/tools/python_tools.rs) | 同步 `prepare_piped_process_group` + `wait_child_session` |
 | `pytest_run` | [python_tools.rs](../../../src/cm_tools/tools/python_tools.rs) | `run_and_capture` |
-| `cargo_test` 等 | [cargo_subcommand.rs](../../../src/cm_tools/tools/cargo_subcommand.rs) | `run_and_capture` |
+| `cargo_test` 等 | [cargo/subcommand.rs](../../../src/cm_tools/tools/cargo/subcommand.rs) | `run_and_capture` |
 
 **路线决策（PR0 二选一，须写进 PR 描述）**：
 

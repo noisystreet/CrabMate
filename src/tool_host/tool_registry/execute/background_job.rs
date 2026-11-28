@@ -34,7 +34,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
     // 故装配函数同源、argv 逐项相同。
     match name {
         crate::cm_names::CARGO_CHECK => Some(|args_json, workspace_root| {
-            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+            crate::cm_tools::tools::cargo::cargo_subcommand_background_argv(
                 "check",
                 args_json,
                 workspace_root,
@@ -42,7 +42,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
             .map_err(|e| e.message)
         }),
         crate::cm_names::CARGO_TEST => Some(|args_json, workspace_root| {
-            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+            crate::cm_tools::tools::cargo::cargo_subcommand_background_argv(
                 "test",
                 args_json,
                 workspace_root,
@@ -50,7 +50,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
             .map_err(|e| e.message)
         }),
         crate::cm_names::CARGO_CLIPPY => Some(|args_json, workspace_root| {
-            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+            crate::cm_tools::tools::cargo::cargo_subcommand_background_argv(
                 "clippy",
                 args_json,
                 workspace_root,
@@ -58,7 +58,7 @@ fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler
             .map_err(|e| e.message)
         }),
         crate::cm_names::CARGO_RUN => Some(|args_json, workspace_root| {
-            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+            crate::cm_tools::tools::cargo::cargo_subcommand_background_argv(
                 "run",
                 args_json,
                 workspace_root,

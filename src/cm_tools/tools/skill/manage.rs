@@ -546,7 +546,7 @@ mod tests {
     /// 这样断言仍可沿用 `contains` / `starts_with("错误：")` 的原口径（消息文案逐字未变），
     /// 同时失败路径已不再依赖正文关键词判定。
     fn run(args_json: &str, skills: &SkillsConfigSection, ws: &Path) -> String {
-        let args: SkillManageArgs = super::super::parse_args_typed(args_json).unwrap();
+        let args: SkillManageArgs = crate::cm_tools::tools::parse_args_typed(args_json).unwrap();
         match skill_manage(args, skills, ws) {
             Ok(out) => out,
             Err(e) => e.message,

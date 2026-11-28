@@ -30,7 +30,7 @@
 | **内置工具** | 编译期静态表 | 原名（如 `run_command`） | [tool_specs_registry/mod.rs](../../src/cm_tools/tools/tool_specs_registry/mod.rs#L13-L46) |
 | **工作区动态工具** | 每回合扫描 `<workspace>/plugins/*.json` | `dyn__` 前缀 | [dynamic_tools.rs](../../src/tool_host/dynamic_tools.rs#L17-L41) |
 | **MCP 工具** | 每回合按配置开/复用会话后合并 | `mcp__{slug}__{remote}` | [agent_turn_prep.rs](../../src/context/agent_turn_prep.rs#L64-L76) |
-| **skills** | 不进工具表；经元工具 `skill_manage`（install/list/remove）与 composer `/` 斜杠 | — | [skill_manage.rs](../../src/cm_tools/tools/skill_manage.rs) |
+| **skills** | 不进工具表；经元工具 `skill_manage`（install/list/remove）与 composer `/` 斜杠 | — | [skill/manage.rs](../../src/cm_tools/tools/skill/manage.rs) |
 
 四类工具的**共同事实**：没有任何一处「启用/禁用」状态位——「在场」只由构建期特性门与回合拼接逻辑决定。
 
