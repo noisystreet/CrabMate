@@ -94,11 +94,9 @@ fn maybe_cache_cargo_test_try(
     run()
 }
 
-#[path = "cargo_subcommand.rs"]
-mod cargo_subcommand;
-pub(crate) use cargo_subcommand::cargo_subcommand_background_argv;
-use cargo_subcommand::{run_cargo_subcommand_str_try, run_cargo_subcommand_value_try};
+mod subcommand;
+pub(crate) use subcommand::cargo_subcommand_background_argv;
+use subcommand::{run_cargo_subcommand_str_try, run_cargo_subcommand_value_try};
 
 #[cfg(test)]
-#[path = "cargo_tools_run_tests.rs"]
 mod tests;

@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use super::cargo_subcommand::run_and_format_try;
+use super::subcommand::run_and_format_try;
 
 #[cfg(unix)]
 #[test]

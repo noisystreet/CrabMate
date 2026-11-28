@@ -6,7 +6,7 @@
 mod archive;
 mod background_job_tools;
 mod call_graph_sketch;
-pub(crate) mod cargo_tools;
+pub(crate) mod cargo;
 mod code_metrics;
 mod code_nav;
 mod code_nav_dispatch;
@@ -55,8 +55,7 @@ mod repo_overview;
 mod rust_ide;
 mod schedule;
 mod self_config_info;
-mod skill_manage;
-mod skill_read;
+mod skill;
 mod spell_tools;
 #[cfg(feature = "csv-tools")]
 mod structured_data;

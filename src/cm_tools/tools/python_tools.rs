@@ -472,7 +472,7 @@ fn is_safe_py_expr(s: &str) -> bool {
 /// 经共享子进程会话运行并格式化输出；`tool_code` 拼成 `{tool_code}_failed`，
 /// `allowed_exit` 列出「非零但语义正常」的退出码。
 ///
-/// 与 `cargo_subcommand::run_and_format_try` 同构（那边不需要 `allowed_exit`，cargo 的
+/// 与 `cargo::subcommand::run_and_format_try` 同构（那边不需要 `allowed_exit`，cargo 的
 /// 子命令没有这种退出码）；同一份逻辑第三次出现时应抽到公共模块，而不是再抄一遍。
 #[allow(clippy::result_large_err)]
 fn run_and_format_try(
