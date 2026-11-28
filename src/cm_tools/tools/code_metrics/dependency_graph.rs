@@ -10,7 +10,6 @@ use crate::cm_tools::tools::tool_param_types::{
     DependencyGraphArgs, DependencyGraphFormat, DependencyGraphKind,
 };
 
-#[path = "code_metrics_dep_graph_cargo.rs"]
 mod dep_cargo;
 
 struct ParsedDepGraph {

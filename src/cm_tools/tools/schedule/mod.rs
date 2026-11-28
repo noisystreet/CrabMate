@@ -2,6 +2,9 @@
 //!
 //! 文件位置：<working_dir>/.crabmate/reminders.json 与 <working_dir>/.crabmate/events.json
 
+pub(crate) mod date_calc;
+pub(crate) mod dispatch;
+
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

@@ -139,10 +139,9 @@ fn format_code_stats_table(
     output_util::truncate_output_lines(&out, max_output_len, MAX_OUTPUT_LINES)
 }
 
-#[path = "code_metrics_dependency_graph.rs"]
-mod code_metrics_dependency_graph;
+mod dependency_graph;
 
-pub use code_metrics_dependency_graph::dependency_graph_try;
+pub use dependency_graph::dependency_graph_try;
 
 // ── coverage_report：覆盖率报告解析 ────────────────────────
 

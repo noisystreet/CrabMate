@@ -9,14 +9,14 @@ use crate::cm_tool_result::ToolError;
 /// 本族无内部 String 消费者，故不保留 `run` 门面；测试用本地 `run_str` 还原旧形态。
 #[allow(clippy::result_large_err)]
 pub fn run_try(args_json: &str) -> Result<String, ToolError> {
-    let args: super::tool_param_types::DateCalcArgs =
-        super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    let args: crate::cm_tools::tools::tool_param_types::DateCalcArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     match args
         .mode
-        .unwrap_or(super::tool_param_types::DateCalcMode::Offset)
+        .unwrap_or(crate::cm_tools::tools::tool_param_types::DateCalcMode::Offset)
     {
-        super::tool_param_types::DateCalcMode::Diff => run_diff(&args),
-        super::tool_param_types::DateCalcMode::Offset => run_offset(&args),
+        crate::cm_tools::tools::tool_param_types::DateCalcMode::Diff => run_diff(&args),
+        crate::cm_tools::tools::tool_param_types::DateCalcMode::Offset => run_offset(&args),
     }
 }
 
@@ -25,7 +25,9 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
 }
 
 #[allow(clippy::result_large_err)]
-fn run_diff(args: &super::tool_param_types::DateCalcArgs) -> Result<String, ToolError> {
+fn run_diff(
+    args: &crate::cm_tools::tools::tool_param_types::DateCalcArgs,
+) -> Result<String, ToolError> {
     let from_str = match args.from.as_deref() {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => {
@@ -75,7 +77,9 @@ fn run_diff(args: &super::tool_param_types::DateCalcArgs) -> Result<String, Tool
 }
 
 #[allow(clippy::result_large_err)]
-fn run_offset(args: &super::tool_param_types::DateCalcArgs) -> Result<String, ToolError> {
+fn run_offset(
+    args: &crate::cm_tools::tools::tool_param_types::DateCalcArgs,
+) -> Result<String, ToolError> {
     let base_str = args.base.as_deref().unwrap_or("");
     let base = if base_str.trim().is_empty() {
         Local::now().date_naive()
