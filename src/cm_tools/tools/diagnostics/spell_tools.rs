@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::output_util;
+use super::super::output_util;
 
 use crate::cm_tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::{CodespellCheckArgs, TyposCheckArgs};

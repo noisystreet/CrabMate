@@ -1,5 +1,10 @@
 //! 只读环境/工具链诊断摘要：不输出密钥与敏感变量的值或长度（仅 未设置/空/非空）。
 
+pub(crate) mod docs_health_sweep;
+pub(crate) mod env_var_check;
+pub(crate) mod self_config_info;
+pub(crate) mod spell_tools;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 

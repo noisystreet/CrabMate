@@ -39,13 +39,13 @@ fn format_one_env_var_line(
 /// 本族无内部 String 消费者，故不保留 `run` 门面；测试用本地 `run_str` 还原旧形态。
 #[allow(clippy::result_large_err)]
 pub fn run_try(args_json: &str) -> Result<String, ToolError> {
-    let v = super::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let v = super::super::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if v.get("names").is_none() {
         return Err(ToolError::invalid_args(
             "错误：缺少 names 数组参数".to_string(),
         ));
     }
-    let args: super::tool_param_types::EnvVarCheckArgs = serde_json::from_value(v)
+    let args: super::super::tool_param_types::EnvVarCheckArgs = serde_json::from_value(v)
         .map_err(|e| ToolError::invalid_args(format!("参数 JSON 无效: {e}")))?;
     let names: Vec<&str> = args.names.iter().map(String::as_str).collect();
     if names.is_empty() {

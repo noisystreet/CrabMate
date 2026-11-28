@@ -100,7 +100,7 @@
 ### 1.6 观测面与文档/契约漂移
 
 - **观测面缺口**：模型可读的 `self_config_info` 中，`tool_registry_section` **只输出 2 个字段**（`background_jobs_enabled`、
-  `parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/self_config_info.rs#L266-L273)），
+  `parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/diagnostics/self_config_info.rs#L266-L273)），
   25 字段里的策略集合与超时表全部不可见。
 - **文档漂移（双缺口）**：[`docs/命令行与路由.md`](../命令行与路由.md) 自称路由真源，但其受保护 API 鉴权矩阵与路由表**均无 `/tools/jobs/*`**；
   该端点契约目前只存在于 `docs/openapi.json` 快照、[openapi_paths_tool_jobs.rs](../../src/web/openapi/openapi_paths_tool_jobs.rs)

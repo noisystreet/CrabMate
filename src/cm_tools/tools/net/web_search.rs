@@ -10,7 +10,7 @@ use log::warn;
 use serde::Deserialize;
 use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind, search};
 
-use super::ToolContext;
+use super::super::ToolContext;
 
 const BRAVE_SEARCH_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 const TAVILY_SEARCH_URL: &str = "https://api.tavily.com/search";
@@ -57,8 +57,8 @@ struct TavilyResult {
 /// `parse_tool_output` 从正文里猜，而是显式 `Err`。
 #[allow(clippy::result_large_err)]
 pub fn run_try(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    let args: super::tool_param_types::WebSearchArgs =
-        super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    let args: super::super::tool_param_types::WebSearchArgs =
+        super::super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let query = args.query.trim();
     let query = if query.len() >= 2 {
         query.to_string()
