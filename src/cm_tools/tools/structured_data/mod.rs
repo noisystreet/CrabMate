@@ -708,7 +708,6 @@ pub fn structured_diff_try(args_json: &str, working_dir: &Path) -> Result<String
     ))
 }
 
-#[path = "structured_data_patch/mod.rs"]
 mod structured_data_patch;
 
 /// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（`dry_run` 默认 `true` 只预览，显式 `dry_run=false` 才写盘）。
