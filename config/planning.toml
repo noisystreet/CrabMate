@@ -30,9 +30,11 @@ completion_judge_model = ""
 turn_execution_constraint_judge_enabled = true
 
 # 子 Agent 委托（#839 P1，见 docs/design/subagent_delegation.md）。
-# 默认关：关 = `delegate_task` 不注入给模型（不是「注入后拒绝」）。
-# 子任务只用只读工具子集，权限取父的 min 链结果，故本开关不改变任何权限面。
-subagent_enabled = false
+# 默认**开**：关 = `delegate_task` 不注入给模型（不是「注入后拒绝」）。
+# 子任务只用只读工具子集，权限取父的 min 链结果，故本开关不改变任何权限面——
+# 这也正是默认可开的前提。若不需要这套「多一个工具」的提示成本，设 false 即可：
+# 默认开有**每回合固定开销**——一次只读工具子集派生（`Vec<Tool>` 拷贝）+ 一个工具定义进 prompt。
+subagent_enabled = true
 # 递归深度上限。**当前只接受 1**（1 = 禁止嵌套）：首版派生子任务时会显式排除
 # delegate_task，嵌套不可能发生；配 > 1 会在启动时报错而不是静默无效。
 subagent_max_depth = 1

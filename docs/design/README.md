@@ -56,7 +56,7 @@
 | [per_state_machine_consolidation.md](per_state_machine_consolidation.md) | PER 编排：用显式状态机收拢分支 |
 | [audience_critic_role.md](audience_critic_role.md) | 观众角色（侧向点评）：设计草案 |
 | [multi_agent_collaboration.md](multi_agent_collaboration.md) | 多 Agent 协作：分层演进设计草案（L0–L4 与 A2A 定位） |
-| [subagent_delegation.md](subagent_delegation.md) | 隔离上下文的子 Agent 委托（#839）：**P1 已落地、默认关**（#1389/#1394/#1395/#1397） |
+| [subagent_delegation.md](subagent_delegation.md) | 隔离上下文的子 Agent 委托（#839）：**P1 已落地、默认开**（#1389/#1394/#1395/#1397） |
 
 ## 5. 上下文 / 提示词（9）
 

@@ -86,6 +86,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **`delegate_task` is now enabled by default (`subagent_enabled` defaults to `true`).** The bounded read-only
+  sub-agent shipped off-by-default, which in practice meant most deployments never reached it. Flipping the
+  default is **not** a widening of the permission surface: sub-tasks can only use the `is_readonly_tool` subset,
+  permission stays `min(parent, config cap)`, nesting is rejected (`subagent_max_depth` accepts `1` only), and the
+  LLM-call / wall-clock caps still apply. Deployments that want the old behaviour set `subagent_enabled = false`
+  (`CM_SUBAGENT_ENABLED=0`); the key stays `/config/reload`-able, so the tool can be dropped without a restart.
+  Cost of the default: one read-only tool-subset derivation plus one extra tool schema in the prompt **per turn**.
+  The tool description shown to the model changed accordingly, so `fixtures/tool_registry_golden.json` was
+  regenerated.
 - **BREAKING: `search_replace` renames its two text parameters to `old_text` / `new_text`.** `search` and
   `replace` are both verbs, and `replace` reads either as "the text to be replaced" (old) or "the text to replace
   with" (new), so swapping the two values carried no signal at all. Canonical names are now **`old_text`** (the text

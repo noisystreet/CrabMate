@@ -1,7 +1,7 @@
 # 隔离上下文的子 Agent 委托（`delegate_task`）设计稿
 
 > **状态**：设计已定稿（§9 的 5 个问题已落结论）；**P0 四项前置重构已落地**（#839）；
-> **P1 已落地且默认关闭**（#1389 / #1394 / #1395 / #1397）；契约与接线点见 §4.2 / §6。
+> **P1 已落地，默认值已翻转为开**（#1389 / #1394 / #1395 / #1397）；契约与接线点见 §4.2 / §6。
 > **跟踪**：[#839](https://github.com/noisystreet/CrabMate/issues/839) · **路线图**：`docs/待办清单.md`「多 Agent 协作」
 > **与 `context_slice` 的关系**：本稿 §4.2 的 `summary` + `key_paths` 是**刻意窄化**的 L2 契约；
 > [`multi_agent_collaboration.md`](multi_agent_collaboration.md) §5 的 `context_slice` 留到 L3（#1496），
@@ -140,7 +140,7 @@ pub struct SubTaskReport {
 
 ## 8. 安全边界
 
-- **双保险，而不是二选一**：`cfg.subagent.enabled = false`（默认）或 `depth >= max_depth` 时**不注入** delegator
+- **双保险，而不是二选一**：`cfg.subagent.enabled = false` 或 `depth >= max_depth` 时**不注入** delegator
   （越权无入口）；同时实现侧按 `req.depth` 再拒一次（越权有记录）。两条都要，理由见 §9 Q2。
 - **不继承父上下文**：`prompt` 是唯一入口。父的历史、工具日志、system 全文都不进子回合。
 - **能力按分类派生，不按名单枚举**：子任务的工具集 = `is_readonly_tool` 为真的那些（§9 Q4），并允许配置**收窄**；
@@ -173,18 +173,21 @@ pub struct SubTaskReport {
 **这 5 条互相自洽**：工具落点（Q1）使「一次有界调用」成立 → 只读派生（Q4）+ 不落盘（Q5）让失败可丢弃 →
 `depth` 双保险（Q2）+ 禁 profile（Q3）保证递归与提权两个方向都被封住。
 
-## 10. 配置面（建议）
+## 10. 配置面
+
+实际键名在 **`[agent]` 下、扁平带 `subagent_` 前缀**（**不是** `[subagent]` 表）：
 
 ```toml
-[subagent]
-enabled = false              # 默认关；关 = 工具不可见
-max_depth = 1                # 1 = 子任务不能再派
-max_llm_calls = 8
-max_tool_calls = 16
-max_wall_secs = 300
-max_report_chars = 4000
-allowed_tools = []           # 空 = 按只读性派生全集；非空只能**收窄**（写工具写进来也无效）
+[agent]
+subagent_enabled = true      # 默认开；关 = 工具不可见
+subagent_max_depth = 1       # 只接受 1：子任务不能再派
+subagent_max_llm_calls = 8
+subagent_max_wall_secs = 300
+subagent_max_report_chars = 4000
 ```
+
+**设计初期设想的 `max_tool_calls` / `allowed_tools` 未落地**：前者施加不了（`TurnBudgetCounter`
+无工具调用维度），后者留到 P2。写进配置会因未知键**解析失败**——别照抄旧样稿。
 
 需要同步：`config/default_config.toml`、`docs/配置说明.md`、`docs/工具说明.md`、`README.md`（用户可见面）。
 
