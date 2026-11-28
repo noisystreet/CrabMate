@@ -1,4 +1,4 @@
-//! 运行时环境快照：首轮注入「我在什么环境里」的只读事实（#1526 A1a）。
+//! 运行时环境快照：「我在什么环境里」的只读事实（#1526 A1a 首轮注入，A1b 起改为每轮刷新）。
 //!
 //! **为什么需要**：全仓原本只有 `diagnostic_summary` 输出 `std::env::consts::OS`，而它是**工具返回**
 //! ——模型得先想到去调才知道。默认可见之后，它就不会写出 Windows 路径、假设机器上没有的工具链、
@@ -28,11 +28,14 @@ static PROBE_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
 
 /// 渲染快照正文；关闭（`_enabled = false` 或预算 `0`）时返回 `None`。
 ///
-/// 双闸与其它首轮注入项一致：`_enabled` 表达意图，`max_chars = 0` 是运行期硬关。
+/// 双闸与其它注入项一致：`_enabled` 表达意图，`max_chars = 0` 是运行期硬关。
+/// `session_permission_level` 是本会话**实际生效**的等级（可能被角色 / 上限钳制）；
+/// `None` 时回退 `cfg.permission.permission_level`（进程默认）。
 #[must_use]
 pub fn build_runtime_env_snapshot_markdown(
     workspace_root: &Path,
     cfg: &AgentConfig,
+    session_permission_level: Option<&str>,
 ) -> Option<String> {
     let c = &cfg.context_bootstrap_inject;
     if !c.runtime_env_snapshot_enabled || c.runtime_env_snapshot_max_chars == 0 {
@@ -42,15 +45,56 @@ pub fn build_runtime_env_snapshot_markdown(
         workspace_root,
         cfg,
         c.runtime_env_snapshot_probe_cache_ttl_secs,
+        session_permission_level,
     );
     truncate_chars(&mut out, c.runtime_env_snapshot_max_chars);
     Some(out)
 }
 
-fn render_body(workspace_root: &Path, cfg: &AgentConfig, ttl_secs: u64) -> String {
+/// 供 `prepare_messages_for_model`：先移除旧条，再视需要插入最新快照（`#1526` A1b）。
+///
+/// **每轮刷新**的语义与「内容未变」无关——重建后正文逐字相同、位置相同，
+/// 出站 body 序列不变，前缀缓存不受影响，因此不做内容去重。
+///
+/// 关闭（`_enabled = false` / `max_chars = 0`）时**仍会 strip 旧条**：旧副本留着会与
+/// 当前配置各说一套（这正是 `#1475` 的坑）。
+pub fn sync_runtime_env_snapshot_user_message(
+    messages: &mut Vec<crate::cm_types::Message>,
+    workspace_root: Option<&Path>,
+    cfg: &AgentConfig,
+    session_permission_level: Option<&str>,
+) {
+    messages.retain(|m| !crate::cm_types::is_runtime_env_snapshot_injection(m));
+    let root = workspace_root
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new(""));
+    let Some(body) = build_runtime_env_snapshot_markdown(root, cfg, session_permission_level)
+    else {
+        return;
+    };
+    if messages.is_empty() {
+        return;
+    }
+    messages.push(crate::cm_types::Message {
+        role: "user".to_string(),
+        content: Some(body.into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: Some(crate::cm_types::CRABMATE_RUNTIME_ENV_SNAPSHOT_NAME.to_string()),
+        tool_call_id: None,
+    });
+}
+
+fn render_body(
+    workspace_root: &Path,
+    cfg: &AgentConfig,
+    ttl_secs: u64,
+    session_permission_level: Option<&str>,
+) -> String {
     let root = Some(workspace_root).filter(|p| !p.as_os_str().is_empty());
     let mut lines = vec![
-        "## 运行时环境快照（首轮注入；只读事实）".to_string(),
+        "## 运行时环境快照（每轮刷新；只读事实）".to_string(),
         String::new(),
         format!(
             "- 平台: {} / {}",
@@ -74,8 +118,13 @@ fn render_body(workspace_root: &Path, cfg: &AgentConfig, ttl_secs: u64) -> Strin
     ));
     lines.push(format!("- 工具链: {}", probe_toolchain(ttl_secs)));
     lines.push(format!(
-        "- 权限等级（进程默认）: {}",
-        cfg.permission.permission_level.as_str()
+        "- 权限等级（{}）: {}",
+        if session_permission_level.is_some() {
+            "本会话生效"
+        } else {
+            "进程默认"
+        },
+        session_permission_level.unwrap_or_else(|| cfg.permission.permission_level.as_str())
     ));
     lines.push(String::new());
     lines.push(
@@ -161,15 +210,15 @@ mod tests {
     fn disabled_or_zero_budget_yields_none() {
         let root = Path::new(".");
         assert!(
-            build_runtime_env_snapshot_markdown(root, &cfg_with(false, 2000)).is_none(),
+            build_runtime_env_snapshot_markdown(root, &cfg_with(false, 2000), None).is_none(),
             "enabled=false 时不得注入"
         );
         assert!(
-            build_runtime_env_snapshot_markdown(root, &cfg_with(true, 0)).is_none(),
+            build_runtime_env_snapshot_markdown(root, &cfg_with(true, 0), None).is_none(),
             "max_chars=0 时不得注入"
         );
         assert!(
-            build_runtime_env_snapshot_markdown(root, &cfg_with(true, 2000)).is_some(),
+            build_runtime_env_snapshot_markdown(root, &cfg_with(true, 2000), None).is_some(),
             "默认配置应产出正文"
         );
     }
@@ -210,7 +259,7 @@ mod tests {
     fn body_reports_platform_and_toolchain() {
         let cfg = cfg_with(true, 4000);
         let root = std::env::current_dir().expect("cwd");
-        let body = build_runtime_env_snapshot_markdown(&root, &cfg).expect("应产出正文");
+        let body = build_runtime_env_snapshot_markdown(&root, &cfg, None).expect("应产出正文");
         assert!(body.contains("运行时环境快照"), "{body}");
         assert!(body.contains(std::env::consts::OS), "应报告平台: {body}");
         assert!(body.contains("工具链:"), "{body}");
@@ -222,12 +271,86 @@ mod tests {
     fn tiny_budget_is_truncated() {
         let cfg = cfg_with(true, 64);
         let root = std::env::current_dir().expect("cwd");
-        let body = build_runtime_env_snapshot_markdown(&root, &cfg).expect("应产出正文");
+        let body = build_runtime_env_snapshot_markdown(&root, &cfg, None).expect("应产出正文");
         assert!(
             body.contains("已按 runtime_env_snapshot_max_chars 截断"),
             "应出现截断标记（而不是静默丢弃）: {body}"
         );
         // 上界只为挡住「无界增长」；`+64` 容纳截断提示本身（见 `truncate_chars` 的软上限说明）。
         assert!(body.chars().count() <= 64 + 64, "截断后仍无界增长: {body}");
+    }
+
+    /// `#1526` A1b：每轮同步幂等（只留一条），关闭时**剥掉旧条**而不是留旧副本。
+    ///
+    /// 后半段是 `#1475` 的坑：关闭时若提前 `return`（不做 retain），旧副本会继续留在
+    /// 消息里，与新配置「各说一套」。
+    #[test]
+    fn sync_keeps_one_and_strips_when_disabled() {
+        let root = std::env::current_dir().expect("cwd");
+        let mut messages = vec![crate::cm_types::Message::user_only("hi")];
+
+        sync_runtime_env_snapshot_user_message(
+            &mut messages,
+            Some(&root),
+            &cfg_with(true, 2000),
+            None,
+        );
+        sync_runtime_env_snapshot_user_message(
+            &mut messages,
+            Some(&root),
+            &cfg_with(true, 2000),
+            None,
+        );
+        let shots = messages
+            .iter()
+            .filter(|m| crate::cm_types::is_runtime_env_snapshot_injection(m))
+            .count();
+        assert_eq!(shots, 1, "重复同步不应堆叠快照条");
+
+        sync_runtime_env_snapshot_user_message(
+            &mut messages,
+            Some(&root),
+            &cfg_with(false, 2000),
+            None,
+        );
+        assert_eq!(messages.len(), 1, "enabled=false 时应只剩真实消息");
+        sync_runtime_env_snapshot_user_message(
+            &mut messages,
+            Some(&root),
+            &cfg_with(true, 0),
+            None,
+        );
+        assert_eq!(messages.len(), 1, "预算 0 同样视为关闭");
+    }
+
+    /// 会话级生效权限优先于进程默认——A1b 相对 A1a 的唯一语义增量。
+    #[test]
+    fn session_permission_overrides_process_default() {
+        let root = std::env::current_dir().expect("cwd");
+        let cfg = cfg_with(true, 4000);
+
+        let session = snapshot_body(&root, &cfg, Some("read"));
+        assert!(
+            session.contains("权限等级（本会话生效）: read"),
+            "会话级等级应被采用: {session}"
+        );
+
+        let process = snapshot_body(&root, &cfg, None);
+        assert!(
+            process.contains(&format!(
+                "权限等级（进程默认）: {}",
+                cfg.permission.permission_level.as_str()
+            )),
+            "None 时应回退进程默认: {process}"
+        );
+    }
+
+    fn snapshot_body(root: &Path, cfg: &AgentConfig, level: Option<&str>) -> String {
+        let mut messages = vec![crate::cm_types::Message::user_only("hi")];
+        sync_runtime_env_snapshot_user_message(&mut messages, Some(root), cfg, level);
+        assert_eq!(messages.len(), 2, "应注入一条快照");
+        crate::cm_types::message_content_as_str(&messages[1].content)
+            .expect("快照正文")
+            .to_string()
     }
 }

@@ -65,11 +65,10 @@ pub fn build_first_turn_user_context_markdown(
         cfg.context_bootstrap_inject
             .project_dependency_brief_inject_max_chars,
     );
-    // 运行时环境快照（#1526 A1a）：与其它首轮注入走同一入口，排在**最前**——
-    // 后面的活文档 / 备忘 / 依赖摘要都要靠「我在什么环境里」来解读。
-    let env_snapshot =
-        super::runtime_env_snapshot::build_runtime_env_snapshot_markdown(workspace_root, cfg);
-    if !want_dep && memory_snippet.is_none() && living_snippet.is_none() && env_snapshot.is_none() {
+    // 运行时环境快照（#1526）**不在这里注入**：A1b 起改由 `prepare_messages_for_model`
+    // 每轮刷新（见 `runtime_env_snapshot::sync_runtime_env_snapshot_user_message`）。
+    // 首轮若仍内嵌一份，会与每轮那条并存；而内嵌的那份随「首轮工作区画像」持久化、永不更新。
+    if !want_dep && memory_snippet.is_none() && living_snippet.is_none() {
         return None;
     }
     let dep_md = if want_dep {
@@ -81,18 +80,11 @@ pub fn build_first_turn_user_context_markdown(
     } else {
         String::new()
     };
-    let merged = merge_first_turn_injections(
+    merge_first_turn_injections(
         living_snippet.as_deref(),
         memory_snippet.as_deref(),
         dep_md.as_str(),
-    );
-    match env_snapshot {
-        Some(snap) => Some(match merged {
-            Some(body) => format!("{snap}\n\n---\n\n{body}"),
-            None => snap,
-        }),
-        None => merged,
-    }
+    )
 }
 
 /// 合并活文档摘要、备忘、依赖结构摘要为一条首轮 `user` 正文。
@@ -127,13 +119,11 @@ pub fn merge_first_turn_injections(
 mod tests {
     use super::*;
 
-    /// 环境快照必须排在首轮合并正文的**最前**，且「只有快照」时也要产出。
-    ///
-    /// 后者钉的是 `build_first_turn_user_context_markdown` 里那条提前返回的守卫
-    /// （`!want_dep && memory.is_none() && living.is_none() && env_snapshot.is_none()`）：
-    /// 少了最后的 `env_snapshot.is_none()`，只开快照的配置会**静默不注入**。
+    /// 回归守卫：运行时环境快照**不再**进首轮合并正文（`#1526` A1b 起改由
+    /// `prepare_messages_for_model` 每轮刷新）。内嵌一份会与每轮那条并存，
+    /// 且它会随「首轮工作区画像」持久化、永不更新。
     #[test]
-    fn env_snapshot_leads_and_alone_is_enough() {
+    fn env_snapshot_no_longer_rides_on_first_turn() {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
         cfg.context_bootstrap_inject.agent_memory_file_enabled = false;
         cfg.context_bootstrap_inject.living_docs_inject_enabled = false;
@@ -143,11 +133,10 @@ mod tests {
         cfg.context_bootstrap_inject.runtime_env_snapshot_max_chars = 2000;
 
         let root = std::env::current_dir().expect("cwd");
-        let out = build_first_turn_user_context_markdown(&root, &cfg, None)
-            .expect("只开快照也应产出首轮上下文");
+        // 只开快照 ⇒ 首轮上下文为空（快照走每轮注入，不再由首轮承担）。
         assert!(
-            out.starts_with("## 运行时环境快照"),
-            "快照应排在合并正文最前: {out}"
+            build_first_turn_user_context_markdown(&root, &cfg, None).is_none(),
+            "快照不应再进入首轮合并正文"
         );
     }
 

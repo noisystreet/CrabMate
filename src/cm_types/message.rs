@@ -336,6 +336,19 @@ pub fn is_paused_task_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_PAUSED_TASK_NAME)
 }
 
+/// `#1526` A1b：运行时环境快照（`user.name`）。由 `prepare_messages_for_model` **每轮**刷新，
+/// 因此落盘前剥离（`strip_orchestration_injected_users_for_conversation_store`）。
+///
+/// **刻意不登记进 `is_runtime_refreshed_injection`**：那个判定同时挂在落盘剥离**和**出站
+/// filter（[`messages_for_api_stripping_reasoning_skip_ui_separators`]）上，登记后正文会被
+/// 从发往模型的请求里剔除 —— 而这条注入的全部意义就是让模型看见当前环境。实测与取舍见 #1526。
+pub const CRABMATE_RUNTIME_ENV_SNAPSHOT_NAME: &str = "crabmate_runtime_env_snapshot";
+
+#[inline]
+pub fn is_runtime_env_snapshot_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_RUNTIME_ENV_SNAPSHOT_NAME)
+}
+
 #[inline]
 pub fn is_workspace_changelist_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)

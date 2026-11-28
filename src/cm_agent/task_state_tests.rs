@@ -104,6 +104,44 @@ fn runtime_refreshed_strip_removes_paused_brief() {
     assert_eq!(messages.len(), 1, "落盘剥离后不应残留注入条");
 }
 
+/// 探针（`#1526` A1b 前置）：运行时刷新类注入**必须**出现在出站 body 里。
+///
+/// `messages_for_api_stripping_reasoning_skip_ui_separators` 的 filter 里有
+/// `!is_runtime_refreshed_injection(m)`，而出站唯一路径
+/// （`cm_llm::api::stream_chat` → `conversation_messages_to_vendor_body`）必过它。
+/// 若本断言失败，说明注入条「进得了 messages、进不了请求体」，
+/// 那么任何照此范式新增的同类注入（含 A1b 运行时环境快照）都对模型无效。
+///
+/// **实测结论（2026-11 核对）**：本断言**当前为红**——body 只剩 `["s", "hi"]`，
+/// 注入条整条消失（不是被 normalize 合并）。故先 `#[ignore]`，避免把已知缺陷带进 CI；
+/// 等注入宿主方案定稿（改成「UI 隐藏 + 落盘剥离、但不登记 runtime_refreshed」，
+/// 或调整出站 filter）后去掉 `#[ignore]`，即成为回归守卫。
+#[ignore = "已知缺陷：runtime_refreshed 注入被出站 filter 整体剔除（#1526 A1b 决策中）"]
+#[test]
+fn probe_runtime_refreshed_injection_reaches_vendor_body() {
+    let mut messages = vec![
+        crate::cm_types::Message::system_only("s"),
+        crate::cm_types::Message::user_only("hi"),
+    ];
+    sync_paused_task_brief_user_message(&mut messages, Some("摘要"));
+    assert_eq!(messages.len(), 3, "前置：注入条已进入 messages");
+
+    let body = crate::cm_llm::conversation_messages_to_vendor_body(&messages, false, false, false);
+    let names: Vec<_> = body.iter().map(|m| m.name.clone()).collect();
+    let bodies: Vec<String> = body
+        .iter()
+        .map(|m| {
+            crate::cm_types::message_content_as_str(&m.content)
+                .unwrap_or("<none>")
+                .to_string()
+        })
+        .collect();
+    assert!(
+        body.iter().any(crate::cm_types::is_paused_task_injection),
+        "注入条未出现在出站 body（实际 names={names:?} bodies={bodies:?}）"
+    );
+}
+
 /// `#1455` C 步的硬闸决策：八种组合各自钉住，安全优先顺序不可颠倒。
 #[test]
 fn auto_resume_decision_covers_every_branch() {
