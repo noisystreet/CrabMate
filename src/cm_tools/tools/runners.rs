@@ -590,8 +590,8 @@ define_runners_cwd_try! {
     runner_text_diff_try => text_diff::run_try,
     runner_table_text_try => table_text::run_try,
     runner_markdown_check_links_try => markdown_links::markdown_check_links_try,
-    runner_reminder_try => schedule_dispatch::reminder,
-    runner_event_try => schedule_dispatch::event,
+    runner_reminder_try => schedule::dispatch::reminder,
+    runner_event_try => schedule::dispatch::event,
     // `code_nav`：action 选择器（4 个只读动作），失败码由 `code_nav_paths` / 各实现给出。
     runner_code_nav_try => code_nav_dispatch::dispatch_try,
 }
@@ -636,7 +636,7 @@ pub fn runner_regex_test_try(args: &str, _ctx: &ToolContext<'_>) -> Result<Strin
 /// `date_calc`：diff/offset 的缺参与日期解析失败均为 `invalid_args`。
 #[allow(clippy::result_large_err)]
 pub fn runner_date_calc_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    date_calc::run_try(args)
+    schedule::date_calc::run_try(args)
 }
 
 /// `json_format`：解析失败为 `invalid_args`；序列化失败为内部错误。

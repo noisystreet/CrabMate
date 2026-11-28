@@ -37,10 +37,8 @@ enum RaLspOp {
     WorkspaceSymbol,
 }
 
-#[path = "rust_ide_lsp_response_format.rs"]
 mod lsp_response_format;
 
-#[path = "rust_ide_lsp_request.rs"]
 mod lsp_request;
 
 // ---------- rust-analyzer LSP（stdio）----------

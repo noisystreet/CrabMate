@@ -1,6 +1,6 @@
 //! 日程 / 提醒工具的 `action` 选择器分派层（2026-10-24 九合一）。
 //!
-//! 九个既有实现留在 [`super::schedule`]，这里只把 union 入参拆回各自的 per-action DTO：
+//! 九个既有实现留在 [`crate::cm_tools::tools::schedule`]，这里只把 union 入参拆回各自的 per-action DTO：
 //! 合并动的是对外 schema，不重写已验证的读写流程。代价是多一次 JSON 往返（参数体积很小）。
 //!
 //! 为什么单独成文件：`schedule.rs` 已接近 920 行的单文件上限，分派层与读写实现职责也不同。
@@ -12,8 +12,8 @@ use crate::cm_tools::tools::tool_param_types::{
     EventAction, EventArgs, ReminderAction, ReminderArgs,
 };
 
-use super::schedule;
 use crate::cm_names as tool_names;
+use crate::cm_tools::tools::schedule;
 
 /// 提醒工具入口：`list` / `add` / `update` / `delete` / `complete`。
 ///
