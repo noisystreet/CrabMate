@@ -672,4 +672,56 @@ mod tests {
 
         assert_eq!(e.code, "invalid_args");
     }
+
+    /// 关掉的段必须在汇总里如实记 `skipped`，而不是静默消失。
+    ///
+    /// `run_*` 四个字段的 doc 都写着「关掉时该段在汇总里记 `skipped`」，这里钉住那句话。
+    /// 全关掉可避免依赖本机是否装了 `typos` / `codespell`。
+    #[test]
+    fn all_stages_off_are_reported_as_skipped() {
+        let root = temp_root("all_off");
+        let out = docs_health_sweep_try(
+            r#"{"run_doc_preview":false,"run_typos":false,"run_codespell":false,"run_markdown_links":false}"#,
+            &root,
+            80_000,
+        )
+        .expect("全关也应得到一份汇总");
+        let _ = fs::remove_dir_all(&root);
+
+        for stage in [
+            "doc_preview",
+            "typos_check",
+            "codespell_check",
+            "markdown_check_links",
+        ] {
+            assert!(
+                out.contains(&format!("{stage}: skipped")),
+                "汇总里缺少 `{stage}: skipped`：\n{out}"
+            );
+        }
+    }
+
+    /// `summary_only` 只出汇总，不逐篇渲染文档正文。
+    ///
+    /// 注意段标题（`## 1) 主文档预览`）仍会出现——被省略的是每篇文档的 `### <path>` 与正文，
+    /// 字段 doc 里「不输出各段正文」指的是后者。
+    #[test]
+    fn summary_only_omits_document_bodies() {
+        let root = temp_root("summary_only");
+        fs::write(root.join("README.md"), "# Hi\n\n[me](./README.md)\n").expect("w");
+
+        let out = docs_health_sweep_try(
+            r#"{"run_doc_preview":true,"doc_paths":["README.md"],"run_typos":false,"run_codespell":false,"run_markdown_links":false,"summary_only":true}"#,
+            &root,
+            80_000,
+        )
+        .expect("应成功");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(
+            !out.contains("### `README.md`"),
+            "summary_only 不应渲染文档正文：\n{out}"
+        );
+        assert!(out.contains("doc_preview"), "汇总仍应列出该段：\n{out}");
+    }
 }
