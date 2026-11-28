@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::cm_tool_result::ToolError;
 
 use super::ToolContext;
-use super::test_result_cache::{
+use super::command::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_args_fingerprint, fingerprint_rust_workspace_sources,
     store_cached, try_get_cached, wrap_cache_hit,
 };

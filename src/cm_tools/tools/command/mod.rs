@@ -5,7 +5,7 @@ use std::process::Command;
 
 use crate::cm_tool_exec::SubprocessWaitCtl;
 
-use super::test_result_cache::{
+use test_result_cache::{
     TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
 };
 
@@ -16,6 +16,9 @@ mod command_outcome;
 mod command_rate_limit;
 mod command_shell_script;
 mod prepare_invocation;
+// `#1530` Step 2：`test_result_cache` 由 `tools/` 顶层移入本域——它就是 `run_command` 的
+// 测试结果缓存（`RunCommandTestCacheOpts` 在这里），`cargo` 域只是调用方，故 `pub(crate)`。
+pub(crate) mod test_result_cache;
 
 // ---- 对 `tools::` 的再导出：`tools/mod.rs` 用 `pub use command::*;` 承接 ----
 pub use command_error::RunCommandError;

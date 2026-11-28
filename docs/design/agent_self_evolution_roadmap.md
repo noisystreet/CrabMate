@@ -37,7 +37,7 @@
 | 回合结束自动索引 | `user`/`assistant` 终答正文入库（可配 `long_term_memory_auto_index_turns`） | [`long_term_memory.rs`](../../src/cm_memory/memory/long_term_memory.rs) |
 | 召回注入 | 经验源优先 + 标签/关键词加权 | [`long_term_memory_recall.rs`](../../src/cm_memory/memory/long_term_memory_recall.rs#L19-L40) |
 | 存储 | 会话级 SQLite，列含 TTL / 标签 / 来源 | [`long_term_memory_store.rs`](../../src/cm_memory/memory/long_term_memory_store.rs#L42-L72) |
-| 自我认知 | `self_config_info`（**只读**，19 小节） | [`self_config_info.rs`](../../src/cm_tools/tools/self_config_info.rs#L37) |
+| 自我认知 | `self_config_info`（**只读**，19 小节） | [`self_config_info.rs`](../../src/cm_tools/tools/diagnostics/self_config_info.rs#L37) |
 | 工作区备忘 | `.crabmate/agent_memory.md` 首轮注入（**需人工编辑**） | [`agent_memory.rs`](../../src/cm_memory/memory/agent_memory.rs) |
 | 效果评估 | benchmark + LLM-as-Judge | [`e2e_scenario.rs`](../../src/e2e_scenario.rs#L767) |
 

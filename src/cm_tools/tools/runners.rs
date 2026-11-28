@@ -272,7 +272,7 @@ define_runners_cwd_maxlen_try! {
     runner_dependency_graph_try => code_metrics::dependency_graph_try,
     runner_coverage_report_try => code_metrics::coverage_report_try,
     runner_repo_overview_sweep_try => repo_overview::repo_overview_sweep_try,
-    runner_docs_health_sweep_try => docs_health_sweep::docs_health_sweep_try,
+    runner_docs_health_sweep_try => diagnostics::docs_health_sweep::docs_health_sweep_try,
 }
 
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
@@ -331,11 +331,11 @@ pub fn runner_self_config_info_try(args: &str, ctx: &ToolContext<'_>) -> Result<
     };
     let parsed: super::tool_param_types::SelfConfigInfoArgs =
         super::parse_args_typed(args).map_err(ToolError::invalid_args)?;
-    let out = self_config_info::self_config_info(cfg, parsed.sections.as_deref());
+    let out = diagnostics::self_config_info::self_config_info(cfg, parsed.sections.as_deref());
     if out.is_empty() {
         return Err(ToolError::invalid_args(format!(
             "未匹配到任何配置小节；可用小节：{}。",
-            self_config_info::SECTION_NAMES.join("、")
+            diagnostics::self_config_info::SECTION_NAMES.join("、")
         )));
     }
     Ok(out)
@@ -525,13 +525,13 @@ pub fn runner_search_in_files_try(args: &str, ctx: &ToolContext<'_>) -> Result<S
 /// `get_weather` 的 Typed runner：外部 API（Open-Meteo）失败显式成 `Err`。
 #[allow(clippy::result_large_err)]
 pub fn runner_get_weather_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    weather::run_try(args, ctx.weather_timeout_secs)
+    net::weather::run_try(args, ctx.weather_timeout_secs)
 }
 
 /// `web_search` 的 Typed runner：worbrow / Brave / Tavily 的失败分支显式成 `Err`。
 #[allow(clippy::result_large_err)]
 pub fn runner_web_search_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    web_search::run_try(args, ctx)
+    net::web_search::run_try(args, ctx)
 }
 
 /// `http_fetch` 的 Typed runner：同步路径只允许白名单 URL，未匹配即策略拒绝。
@@ -648,7 +648,7 @@ pub fn runner_json_format_try(args: &str, _ctx: &ToolContext<'_>) -> Result<Stri
 /// `env_var_check`：参数缺失 / 为空 / 超上限均为 `invalid_args`。
 #[allow(clippy::result_large_err)]
 pub fn runner_env_var_check_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    env_var_check::run_try(args)
+    diagnostics::env_var_check::run_try(args)
 }
 
 // ── Git 工具 ────────────────────────────────────────────────

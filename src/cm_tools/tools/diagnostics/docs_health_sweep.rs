@@ -2,10 +2,10 @@
 
 use std::path::Path;
 
-use super::ToolContext;
-use super::file::read_file;
-use super::output_util::truncate_output_bytes;
-use super::repo_overview;
+use super::super::ToolContext;
+use super::super::file::read_file;
+use super::super::output_util::truncate_output_bytes;
+use super::super::repo_overview;
 use super::spell_tools;
 use crate::cm_names as tool_names;
 use crate::cm_tool_result::ToolError;
@@ -370,7 +370,8 @@ fn run_markdown_links_phase(
         return Ok(());
     }
     let md_args = markdown_check_links_args_json(v)?;
-    let report = super::markdown_links::markdown_check_links_report_try(&md_args, workspace_root)?;
+    let report =
+        super::super::markdown_links::markdown_check_links_report_try(&md_args, workspace_root)?;
     summary.push((
         tool_names::MARKDOWN_CHECK_LINKS.to_string(),
         if report.verdict.is_clean() {

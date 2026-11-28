@@ -19,13 +19,11 @@ pub(crate) use command::parse_run_command_payload_lenient;
 pub use command::*;
 mod contract_map;
 mod diagnostics;
-mod docs_health_sweep;
 pub use crate::cm_tool_exec::capture_trimmed;
 pub use parse_args::parse_args_from_value;
 pub use parse_args::parse_args_json;
 pub use parse_args::parse_args_typed;
 pub use tool_param_types::DelegateTaskArgs;
-mod env_var_check;
 mod exec;
 pub use exec::{
     resolve_workspace_executable, run_command_invocation_targets_workspace_script_or_executable,
@@ -54,9 +52,7 @@ mod registry_macro;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
-mod self_config_info;
 mod skill;
-mod spell_tools;
 #[cfg(feature = "csv-tools")]
 mod structured_data;
 #[cfg(feature = "csv-tools")]
@@ -65,7 +61,6 @@ pub mod structured_preview;
 mod symbol;
 #[cfg(feature = "csv-tools")]
 mod table_text;
-mod test_result_cache;
 #[cfg(feature = "diff-tools")]
 mod text_diff;
 mod text_truncate;
@@ -79,10 +74,9 @@ mod tool_args_validate;
 // 兼容既有调用点，不再新增使用者（否则又长成两条路径）。
 pub(crate) use crate::cm_tool_registry::json_schema as tool_json_schema;
 pub(crate) use crate::cm_tool_registry::param_types as tool_param_types;
+mod net;
 mod tool_specs_registry;
 mod tool_summary_args;
-mod weather;
-mod web_search;
 mod workspace_image_chat_hint;
 mod write_sse_preview;
 
@@ -124,7 +118,7 @@ pub use runners::*;
 #[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {
     command::reset_run_command_rate_limit_for_tests();
-    test_result_cache::reset_test_result_cache_for_tests();
+    command::test_result_cache::reset_test_result_cache_for_tests();
 }
 
 pub use github_cli::GhCtx;

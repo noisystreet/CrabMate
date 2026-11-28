@@ -14,6 +14,6 @@
 src/tool_host/readonly_tool_ttl_cache.rs	git	1
 src/cm_memory/memory/long_term_memory_recall.rs	summarize_experience	2
 src/cm_memory/memory/long_term_memory_store.rs	summarize_experience	1
-src/cm_tools/tools/self_config_info.rs	http_fetch	1
-src/cm_tools/tools/self_config_info.rs	web_search	1
+src/cm_tools/tools/diagnostics/self_config_info.rs	http_fetch	1
+src/cm_tools/tools/diagnostics/self_config_info.rs	web_search	1
 src/cm_tools/tools/structured_preview.rs	git	1

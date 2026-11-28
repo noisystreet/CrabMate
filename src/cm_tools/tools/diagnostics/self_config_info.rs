@@ -2,7 +2,7 @@
 //! 热重载、Web 密钥注入等均已生效）序列化为模型可读文本，供模型回答「自身配置」
 //! 类问题（用什么模型 / 网关地址 / 采样参数 / 超时 / 工作区根等）。
 //!
-//! 与 [`super::diagnostics::diagnostic_summary_try`]（环境与工具链状态）互补。
+//! 与 [`super::diagnostic_summary_try`]（环境与工具链状态）互补。
 //! **密钥类字段一律只报是否已设置，绝不输出值**（沿用 `diagnostic_summary` 的脱敏约定）。
 
 use crate::cm_config::{AgentConfig, ExposeSecret};
@@ -84,7 +84,7 @@ fn section_body(cfg: &AgentConfig, name: &str) -> Option<String> {
 /// 所以这里**不是**第二份真源，只是把同一份 golden 搬到运行时可见处（#1526 A2-lite）。
 /// 因而不需要维护「配置键 → `CM_*`」映射表：模型看到某键已设置，结合对应小节的取值
 /// 就能判断「TOML 里写的是否被盖掉」。
-const ENV_OVERRIDE_KEYS: &str = include_str!("../../../fixtures/env_override_keys.txt");
+const ENV_OVERRIDE_KEYS: &str = include_str!("../../../../fixtures/env_override_keys.txt");
 
 /// 环境变量层覆盖线索：只列**已设置**的 `CM_*` 键。
 ///
@@ -115,16 +115,14 @@ fn env_override_section(_cfg: &AgentConfig) -> String {
 /// 单键状态；`None` = 未设置（不列出）。
 ///
 /// 密钥类键只报「已设置」、**不报字符数**——长度对随机 token 也是信息量。
-/// 与 `diagnostic_summary` 共用 [`super::diagnostics::is_strict_secret_env`] 口径，
+/// 与 `diagnostic_summary` 共用 [`super::is_strict_secret_env`] 口径，
 /// 避免同一批 `CM_*` 在两个工具里按两种脱敏标准输出。
 fn env_override_state(key: &str) -> Option<String> {
     match std::env::var(key) {
         Err(std::env::VarError::NotPresent) => None,
         Err(std::env::VarError::NotUnicode(_)) => Some("已设置(非 Unicode，不展示)".to_string()),
         Ok(v) if v.is_empty() => Some("已设置(空)".to_string()),
-        Ok(_) if super::diagnostics::is_strict_secret_env(key) => {
-            Some("已设置(非空，密钥值不展示)".to_string())
-        }
+        Ok(_) if super::is_strict_secret_env(key) => Some("已设置(非空，密钥值不展示)".to_string()),
         Ok(v) => Some(format!("已设置(非空, {} 字符)", v.len())),
     }
 }

@@ -91,8 +91,8 @@ fn city_not_found_error(city: &str) -> ToolError {
 
 #[allow(clippy::result_large_err)]
 fn parse_weather_city(args_json: &str) -> Result<String, ToolError> {
-    let args: super::tool_param_types::GetWeatherArgs =
-        super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
+    let args: super::super::tool_param_types::GetWeatherArgs =
+        super::super::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let city = args
         .city
         .as_deref()
