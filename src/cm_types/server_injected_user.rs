@@ -4,8 +4,8 @@ use crate::cm_types::message::{
     CRABMATE_AUTO_RESUME_NAME, CRABMATE_CONTEXT_SUMMARY_NAME,
     CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_FORCED_SKILL_NAME,
     CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PAUSED_TASK_NAME, CRABMATE_PLAN_REWRITE_NAME,
-    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
-    message_content_as_str,
+    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_RUNTIME_ENV_SNAPSHOT_NAME,
+    CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, message_content_as_str,
 };
 
 /// 是否为 **`role: user`** 且非用户真实发言（编排注入、画像、记忆等）。
@@ -34,6 +34,9 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
             | Some(CRABMATE_CONTEXT_SUMMARY_NAME)
             | Some(CRABMATE_PAUSED_TASK_NAME)
             | Some(CRABMATE_AUTO_RESUME_NAME)
+            // `#1526` A1b：运行时环境快照——UI 不展示、落盘剥离，但**必须**发往模型，
+            // 故只登记在这里，不登记进 `is_runtime_refreshed_injection`（见该函数注释）。
+            | Some(CRABMATE_RUNTIME_ENV_SNAPSHOT_NAME)
     )
 }
 
@@ -110,5 +113,43 @@ mod tests {
         let mut persisted = vec![m];
         strip_orchestration_injected_users_for_conversation_store(&mut persisted);
         assert!(persisted.is_empty(), "落盘前必须剥离");
+    }
+
+    /// 探针（`#1526` A1b「方向 A」可行性）：**只**登记 UI 隐藏、**不**登记
+    /// `is_runtime_refreshed_injection` 的注入，必须能到达出站 body（模型可见），
+    /// 同时落盘前仍被剥离。
+    ///
+    /// 与 [`forced_skill_survives_api_filter_but_is_persist_stripped`] 互补：那条用
+    /// `messages_for_api_stripping_reasoning_skip_ui_separators`，这条走**真实出站函数**
+    /// `conversation_messages_to_vendor_body`（`cm_llm::api::stream_chat` 的唯一入口），
+    /// 因此与 `probe_runtime_refreshed_injection_reaches_vendor_body` 同口径可比。
+    ///
+    /// 断言以**内容到达**为主（`normalize` 可能合并相邻 user、丢掉 `name`），
+    /// 这只影响归因，不影响「模型看不看得见」。
+    #[test]
+    fn probe_non_runtime_refreshed_injection_reaches_vendor_body() {
+        let m = Message::user_forced_skill_injection("SNAPSHOT_PROBE_BODY");
+        assert!(is_server_injected_user_message(&m), "须识别为服务端注入");
+        assert!(
+            !is_runtime_refreshed_injection(&m),
+            "前置：不得登记 runtime_refreshed（否则出站被剔除）"
+        );
+
+        let messages = vec![Message::system_only("s"), m.clone()];
+        let body =
+            crate::cm_llm::conversation_messages_to_vendor_body(&messages, false, false, false);
+        let joined = body
+            .iter()
+            .filter_map(|x| crate::cm_types::message_content_as_str(&x.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            joined.contains("SNAPSHOT_PROBE_BODY"),
+            "正文应到达模型（实际 body={joined:?}）"
+        );
+
+        let mut persisted = vec![Message::user_only("hi"), m];
+        strip_orchestration_injected_users_for_conversation_store(&mut persisted);
+        assert_eq!(persisted.len(), 1, "落盘前必须剥离，不留副本");
     }
 }

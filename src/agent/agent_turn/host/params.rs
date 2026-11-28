@@ -398,6 +398,8 @@ impl RunLoopParams<'_> {
         per_coord_layer_cache: Option<&mut crate::agent::per_coord::PerCoordinator>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let model_override = self.effective_model().map(str::to_owned);
+        // `#1526` A1b：先绑定，再取 `as_str()`——`level` 是 `PermissionCaps` 上的按值字段。
+        let session_permission_level = self.ctx.attach.permission.level;
         let delta = crate::agent::context_window::prepare_messages_for_model(
             self.ctx.core.llm_backend,
             self.ctx.core.client,
@@ -417,6 +419,8 @@ impl RunLoopParams<'_> {
                 run_loop_messages_revision: Some(&mut self.turn.messages_revision),
                 turn_budget: Some(&self.turn.turn_budget),
                 paused_task_brief: self.turn.paused_task_brief.as_deref(),
+                workspace_root: Some(self.ctx.core.effective_working_dir),
+                session_permission_level: Some(session_permission_level.as_str()),
             },
         )
         .await?;

@@ -721,6 +721,11 @@ pub struct PrepareMessagesForModelHooks<'a> {
     pub workspace_changelist: Option<&'a crate::workspace::changelist::WorkspaceChangelist>,
     /// `#1455` B 步：跨回合任务状态摘要（`render_task_brief` 的产物，`None` = 不注入）。
     pub paused_task_brief: Option<&'a str>,
+    /// `#1526` A1b：本会话工作区根（每轮刷新的运行时环境快照用）；`None` = 不带路径信息。
+    pub workspace_root: Option<&'a std::path::Path>,
+    /// `#1526` A1b：本会话**实际生效**的权限等级（可能被角色 / 上限钳制）。
+    /// `None` 时快照回退到 `cfg.permission.permission_level`（进程默认）。
+    pub session_permission_level: Option<&'a str>,
     pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
     pub run_loop_messages_revision: Option<&'a mut u64>,
     pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
@@ -762,6 +767,16 @@ pub async fn prepare_messages_for_model(
     crate::cm_agent::task_state::sync_paused_task_brief_user_message(
         messages,
         hooks.paused_task_brief,
+    );
+    // `#1526` A1b：运行时环境快照。与变更集 / 任务摘要同一位置、同一刷新节奏，
+    // 因此同样计入本轮 token 预算（在 `finalize_token_budget_compaction` 之前）。
+    //
+    // 关闭时这个函数**仍会**剥掉旧条，不能提前 return 跳过它（#1475 的坑）。
+    crate::context::context_bootstrap::runtime_env_snapshot::sync_runtime_env_snapshot_user_message(
+        messages,
+        hooks.workspace_root,
+        cfg,
+        hooks.session_permission_level,
     );
     delta.compaction = finalize_token_budget_compaction(
         cfg,
