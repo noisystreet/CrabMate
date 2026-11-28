@@ -6,13 +6,23 @@ use serde_json::Value as JsonValue;
 
 // ── Cargo / Rust ─────────────────────────────────────────────────
 
+// 注意：`release` / `package` / `bin` / `features` 在这三个 Args 里各写一份，字段 doc 也因此
+// 各重复一遍 —— schemars 的 `description` 只接受字面量，没法引用共享常量（见 `AGENTS.md` §4.7、
+// #1534 原则二的降级处理）。改这些字段的语义时三处要一起改。
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct CargoCommonCliArgs {
+    /// 追加 `--release`：用 release profile 构建并检查（不传则用 dev profile）。
     pub release: Option<bool>,
+    /// 追加 `--all-targets`：把 lib / bin / test / bench / example 全部纳入检查范围。
+    /// 不传则只检查默认目标。
     pub all_targets: Option<bool>,
+    /// 追加 `--package <名字>`：workspace 里只检查指定的 crate。
     pub package: Option<String>,
+    /// 追加 `--bin <名字>`：只检查指定的二进制目标。
     pub bin: Option<String>,
+    /// 追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `"fastembed,archive-tools"`），不是数组。
     pub features: Option<String>,
     /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
     /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
@@ -25,11 +35,18 @@ pub struct CargoCommonCliArgs {
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct CargoTestArgs {
+    /// 追加 `--release`：用 release profile 构建并测试（不传则用 dev profile）。
     pub release: Option<bool>,
+    /// 追加 `--package <名字>`：workspace 里只测指定的 crate。
     pub package: Option<String>,
+    /// 追加 `--bin <名字>`：只测该二进制目标里的用例。
     pub bin: Option<String>,
+    /// 追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `"fastembed,archive-tools"`），不是数组。
     pub features: Option<String>,
+    /// 测试名过滤器，作为**位置参数**传给 `cargo test`：只跑名字匹配的用例（等价 `cargo test <filter>`）。
     pub test_filter: Option<String>,
+    /// `true` 时追加 `-- --nocapture`：连**通过**的用例也把 stdout/stderr 直接打出来
+    /// （默认只显示失败用例的输出）。与 `test_filter` 互相独立，可单独使用。
     pub nocapture: Option<bool>,
     /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
     /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
@@ -41,10 +58,15 @@ pub struct CargoTestArgs {
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct CargoRunArgs {
+    /// 追加 `--release`：用 release profile 构建并运行（不传则用 dev profile）。
     pub release: Option<bool>,
+    /// 追加 `--package <名字>`：workspace 里只针对指定的 crate。
     pub package: Option<String>,
+    /// 追加 `--bin <名字>`：指定要运行的二进制目标。
     pub bin: Option<String>,
+    /// 追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `"fastembed,archive-tools"`），不是数组。
     pub features: Option<String>,
+    /// 透传给程序自身的参数：以 `--` 分隔追加到 `cargo run` 之后（如 `["--port","9000"]`）。
     pub args: Option<Vec<String>>,
     /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
     /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。

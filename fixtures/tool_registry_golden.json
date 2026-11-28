@@ -1037,6 +1037,7 @@
         "properties": {
           "all_targets": {
             "default": null,
+            "description": "追加 `--all-targets`：把 lib / bin / test / bench / example 全部纳入检查范围。\n不传则只检查默认目标。",
             "type": [
               "boolean",
               "null"
@@ -1052,6 +1053,7 @@
           },
           "bin": {
             "default": null,
+            "description": "追加 `--bin <名字>`：只检查指定的二进制目标。",
             "type": [
               "string",
               "null"
@@ -1059,6 +1061,7 @@
           },
           "features": {
             "default": null,
+            "description": "追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `\"fastembed,archive-tools\"`），不是数组。",
             "type": [
               "string",
               "null"
@@ -1066,6 +1069,7 @@
           },
           "package": {
             "default": null,
+            "description": "追加 `--package <名字>`：workspace 里只检查指定的 crate。",
             "type": [
               "string",
               "null"
@@ -1073,6 +1077,7 @@
           },
           "release": {
             "default": null,
+            "description": "追加 `--release`：用 release profile 构建并检查（不传则用 dev profile）。",
             "type": [
               "boolean",
               "null"
@@ -1099,6 +1104,7 @@
         "properties": {
           "all_targets": {
             "default": null,
+            "description": "追加 `--all-targets`：把 lib / bin / test / bench / example 全部纳入检查范围。\n不传则只检查默认目标。",
             "type": [
               "boolean",
               "null"
@@ -1114,6 +1120,7 @@
           },
           "bin": {
             "default": null,
+            "description": "追加 `--bin <名字>`：只检查指定的二进制目标。",
             "type": [
               "string",
               "null"
@@ -1121,6 +1128,7 @@
           },
           "features": {
             "default": null,
+            "description": "追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `\"fastembed,archive-tools\"`），不是数组。",
             "type": [
               "string",
               "null"
@@ -1128,6 +1136,7 @@
           },
           "package": {
             "default": null,
+            "description": "追加 `--package <名字>`：workspace 里只检查指定的 crate。",
             "type": [
               "string",
               "null"
@@ -1135,6 +1144,7 @@
           },
           "release": {
             "default": null,
+            "description": "追加 `--release`：用 release profile 构建并检查（不传则用 dev profile）。",
             "type": [
               "boolean",
               "null"
@@ -1161,6 +1171,7 @@
         "properties": {
           "args": {
             "default": null,
+            "description": "透传给程序自身的参数：以 `--` 分隔追加到 `cargo run` 之后（如 `[\"--port\",\"9000\"]`）。",
             "items": {
               "type": "string"
             },
@@ -1179,6 +1190,7 @@
           },
           "bin": {
             "default": null,
+            "description": "追加 `--bin <名字>`：指定要运行的二进制目标。",
             "type": [
               "string",
               "null"
@@ -1186,6 +1198,7 @@
           },
           "features": {
             "default": null,
+            "description": "追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `\"fastembed,archive-tools\"`），不是数组。",
             "type": [
               "string",
               "null"
@@ -1193,6 +1206,7 @@
           },
           "package": {
             "default": null,
+            "description": "追加 `--package <名字>`：workspace 里只针对指定的 crate。",
             "type": [
               "string",
               "null"
@@ -1200,6 +1214,7 @@
           },
           "release": {
             "default": null,
+            "description": "追加 `--release`：用 release profile 构建并运行（不传则用 dev profile）。",
             "type": [
               "boolean",
               "null"
@@ -1233,6 +1248,7 @@
           },
           "bin": {
             "default": null,
+            "description": "追加 `--bin <名字>`：只测该二进制目标里的用例。",
             "type": [
               "string",
               "null"
@@ -1240,6 +1256,7 @@
           },
           "features": {
             "default": null,
+            "description": "追加 `--features <列表>`：**单个字符串**，多个特性用逗号分隔（如 `\"fastembed,archive-tools\"`），不是数组。",
             "type": [
               "string",
               "null"
@@ -1247,6 +1264,7 @@
           },
           "nocapture": {
             "default": null,
+            "description": "`true` 时追加 `-- --nocapture`：连**通过**的用例也把 stdout/stderr 直接打出来\n（默认只显示失败用例的输出）。与 `test_filter` 互相独立，可单独使用。",
             "type": [
               "boolean",
               "null"
@@ -1254,6 +1272,7 @@
           },
           "package": {
             "default": null,
+            "description": "追加 `--package <名字>`：workspace 里只测指定的 crate。",
             "type": [
               "string",
               "null"
@@ -1261,6 +1280,7 @@
           },
           "release": {
             "default": null,
+            "description": "追加 `--release`：用 release profile 构建并测试（不传则用 dev profile）。",
             "type": [
               "boolean",
               "null"
@@ -1268,6 +1288,7 @@
           },
           "test_filter": {
             "default": null,
+            "description": "测试名过滤器，作为**位置参数**传给 `cargo test`：只跑名字匹配的用例（等价 `cargo test <filter>`）。",
             "type": [
               "string",
               "null"
